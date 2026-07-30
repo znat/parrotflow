@@ -48,7 +48,15 @@ actor Transcriber {
 
     private(set) var status: Status = .idle
 
-    private var manager: SlidingWindowAsrManager?
+    // Models are cached; the manager is not. SlidingWindowAsrManager holds its
+    // input AsyncStream in a `let` created at init, and finish() closes that
+    // stream for good — startStreaming() cannot re-arm it. A reused manager
+    // therefore reads from a dead stream, processes no audio, and returns
+    // whatever text was left over from the previous clip. Measured: the second
+    // and every later dictation came back as just the boosted vocabulary term.
+    private var models: AsrModels?
+    private var ctcModels: CtcModels?
+    private var vocabularyTerms: [CustomVocabularyTerm] = []
     private var loadedVocabulary: [Config.VocabularyTerm] = []
 
     /// Reported on the main queue so the menu bar can show download progress.
@@ -69,36 +77,53 @@ actor Transcriber {
     /// redoes work when the vocabulary has actually changed.
     func prepare(config: Config) async throws {
         let vocabulary = config.transcription.vocabulary
-        if manager != nil, vocabulary == loadedVocabulary {
+        if models != nil, vocabulary == loadedVocabulary {
             return
         }
 
-        setStatus(.downloading("speech model"))
-
-        let manager = SlidingWindowAsrManager(config: Self.dictationConfig)
-        try await manager.loadModels { [weak self] progress in
-            guard let self else { return }
-            Task { await self.reportDownload("speech model", progress) }
+        if models == nil {
+            setStatus(.downloading("speech model"))
+            models = try await AsrModels.downloadAndLoad(
+                progressHandler: { [weak self] progress in
+                    guard let self else { return }
+                    Task { await self.reportDownload("speech model", progress) }
+                }
+            )
         }
 
-        if !vocabulary.isEmpty {
-            setStatus(.downloading("keyword spotter"))
-            let ctcModels = try await CtcModels.downloadAndLoad()
-
+        if vocabulary.isEmpty {
+            ctcModels = nil
+            vocabularyTerms = []
+        } else {
+            if ctcModels == nil {
+                setStatus(.downloading("keyword spotter"))
+                ctcModels = try await CtcModels.downloadAndLoad()
+            }
+            setStatus(.loading)
             let tokenizer = try await CtcTokenizer.load(
                 from: CtcModels.defaultCacheDirectory(for: .ctc110m)
             )
-            let terms = Self.tokenize(vocabulary, using: tokenizer)
-            setStatus(.loading)
+            vocabularyTerms = Self.tokenize(vocabulary, using: tokenizer)
+        }
+
+        loadedVocabulary = vocabulary
+        setStatus(.ready)
+    }
+
+    /// A manager is good for exactly one clip — see the note on `models`.
+    private func makeManager() async throws -> SlidingWindowAsrManager {
+        guard let models else { throw TranscriberError.notReady }
+
+        let manager = SlidingWindowAsrManager(config: Self.dictationConfig)
+        try await manager.loadModels(models)
+
+        if !vocabularyTerms.isEmpty, let ctcModels {
             try await manager.configureVocabularyBoosting(
-                vocabulary: CustomVocabularyContext(terms: terms),
+                vocabulary: CustomVocabularyContext(terms: vocabularyTerms),
                 ctcModels: ctcModels
             )
         }
-
-        self.manager = manager
-        self.loadedVocabulary = vocabulary
-        setStatus(.ready)
+        return manager
     }
 
     private var lastReportedPercent: Int = -1
@@ -141,7 +166,7 @@ actor Transcriber {
     /// Transcribes a finished recording. Returns the cleaned-up text.
     func transcribe(url: URL, config: Config) async throws -> String {
         try await prepare(config: config)
-        guard let manager else { throw TranscriberError.notReady }
+        let manager = try await makeManager()
 
         let file = try AVAudioFile(forReading: url)
         try await manager.startStreaming(source: .microphone)
