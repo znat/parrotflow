@@ -63,6 +63,7 @@ final class CorrectionPanel {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.onCancel = { [weak self] in self?.dismiss(cancelled: true) }
         self.panel = panel
     }
 
@@ -104,8 +105,17 @@ enum CorrectionMetrics {
 /// Borderless panels refuse key status, which would leave every field unable
 /// to take a keystroke.
 private final class KeyPanel: NSPanel {
+    var onCancel: (() -> Void)?
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    /// SwiftUI's `onExitCommand` only fires when something inside holds focus.
+    /// Handling it on the panel means Escape always closes, even if the view
+    /// somehow renders with nothing focusable.
+    override func cancelOperation(_ sender: Any?) {
+        onCancel?()
+    }
 }
 
 // MARK: - Model
@@ -122,8 +132,12 @@ struct CorrectionToken: Identifiable {
     var suffix: String = ""
     var replacement: String = ""
     var isRemoved: Bool = false
+    /// Typed by hand rather than taken from a selection, so the word itself is
+    /// editable and it contributes nothing to reassembly.
+    var isManual: Bool = false
 
     var resolved: String {
+        guard !isManual else { return "" }
         let body = isRemoved || replacement.isEmpty ? word : replacement
         return prefix + body + suffix
     }
@@ -135,15 +149,17 @@ final class CorrectionModel: ObservableObject {
     var onCancel: (() -> Void)?
 
     var visibleTokens: [CorrectionToken] {
-        tokens.filter { !$0.isRemoved && !$0.word.isEmpty }
+        tokens.filter { !$0.isRemoved && (!$0.word.isEmpty || $0.isManual) }
     }
 
     var pendingRuleCount: Int { rules().count }
 
     func load(selection: String) {
-        tokens = Self.tokenize(selection)
-        if tokens.isEmpty {
-            tokens = [CorrectionToken(word: "")]
+        tokens = Self.tokenize(selection).filter { !$0.word.isEmpty || !$0.prefix.isEmpty }
+        // Nothing selected (or nothing readable): give a row you can type both
+        // halves into, rather than a panel with no fields at all.
+        if !tokens.contains(where: { !$0.word.isEmpty }) {
+            tokens.append(CorrectionToken(word: "", isManual: true))
         }
     }
 
@@ -234,7 +250,7 @@ private struct CorrectionView: View {
             ScrollView {
                 VStack(spacing: 0) {
                     ForEach($model.tokens) { $token in
-                        if !token.isRemoved, !token.word.isEmpty {
+                        if !token.isRemoved, !token.word.isEmpty || token.isManual {
                             row($token)
                         }
                     }
@@ -248,7 +264,10 @@ private struct CorrectionView: View {
         .frame(width: CorrectionMetrics.width)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.12)))
-        .onAppear { focused = model.visibleTokens.first?.id }
+        .onAppear {
+            focused = model.visibleTokens.first(where: { $0.isManual })?.id
+                ?? model.visibleTokens.first?.id
+        }
         .onExitCommand { model.onCancel?() }
     }
 
@@ -267,12 +286,24 @@ private struct CorrectionView: View {
 
     private func row(_ token: Binding<CorrectionToken>) -> some View {
         HStack(spacing: 12) {
-            Text(token.wrappedValue.word)
-                .font(.system(size: 14, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(width: 150, alignment: .leading)
+            Group {
+                if token.wrappedValue.isManual {
+                    TextField("wrong word", text: token.word)
+                        .textFieldStyle(.plain)
+                        .focused($focused, equals: token.wrappedValue.id)
+                        .onSubmit { model.onSubmit?() }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 6)
+                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                } else {
+                    Text(token.wrappedValue.word)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .font(.system(size: 14, weight: .medium, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .frame(width: 150, alignment: .leading)
 
             Image(systemName: "arrow.right")
                 .font(.system(size: 10, weight: .semibold))
@@ -313,9 +344,17 @@ private struct CorrectionView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 14) {
-            hint("return", "Save")
-            hint("esc", "Cancel")
+        HStack(spacing: 10) {
+            Button { model.onCancel?() } label: {
+                hint("esc", "Cancel")
+            }
+            .buttonStyle(.plain)
+
+            Button { model.onSubmit?() } label: {
+                hint("return", "Save")
+            }
+            .buttonStyle(.plain)
+
             Spacer()
             Text(summary)
                 .font(.system(size: 11))

@@ -20,13 +20,37 @@ enum SelectionReader {
         let owner: NSRunningApplication?
     }
 
-    static func read() -> Selection? {
+    /// Cheap, side-effect-free read. Safe to call on every hotkey press.
+    ///
+    /// Terminal selections are cleared by all sorts of things — a keystroke,
+    /// losing focus — so by the time a transcript comes back the selection may
+    /// be long gone. Snapshotting at press time is the only reliable moment.
+    static func snapshot() -> Selection? {
+        guard Permissions.accessibility == .granted else { return nil }
+        guard let text = viaAccessibility(), !text.isEmpty else { return nil }
+        return Selection(text: text, owner: NSWorkspace.shared.frontmostApplication)
+    }
+
+    /// Full read, in descending order of politeness. `snapshot` is preferred
+    /// when one was taken; this is the fallback.
+    static func read(fallbackTo pasteboard: Bool = true) -> Selection? {
         let owner = NSWorkspace.shared.frontmostApplication
 
         if let text = viaAccessibility(), !text.isEmpty {
+            Log.write("selection via accessibility")
             return Selection(text: text, owner: owner)
         }
         if let text = viaCopy(), !text.isEmpty {
+            Log.write("selection via synthetic copy")
+            return Selection(text: text, owner: owner)
+        }
+        // Last resort: whatever the user copied themselves. Terminals in
+        // particular drop their selection before we can read it, so "select,
+        // copy, then say the phrase" is the workflow that always works.
+        if pasteboard,
+           let text = NSPasteboard.general.string(forType: .string),
+           !text.isEmpty, text.count <= 200 {
+            Log.write("selection via clipboard")
             return Selection(text: text, owner: owner)
         }
         return nil

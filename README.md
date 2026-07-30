@@ -79,6 +79,13 @@ punctuation and spacing intact.
 Needs the Accessibility permission — reading your selection is exactly what
 that permission governs. Change the trigger with `transcription.correction_phrase`.
 
+**In a terminal**, selections are fragile: they get dropped on a keystroke or
+when focus moves, often before the transcript comes back. ParrotFlow snapshots
+the selection the moment the hotkey goes down, which covers most of it, and
+falls back to your clipboard when there is nothing to read. So if a terminal
+selection does not come through, copy it first — select, ⌘C, then say the
+phrase. The panel always opens either way, with a row you can type into.
+
 ## Configuration
 
 `~/.config/parrotflow/config.yaml`, created on first launch. Save the file and

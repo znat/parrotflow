@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var transcriptionLabel: String?
     private let correctionPanel = CorrectionPanel()
     private var pendingSelection: SelectionReader.Selection?
+    /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
+    private var selectionAtPress: SelectionReader.Selection?
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -120,6 +122,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey handling
 
     private func handleHotKeyPress() {
+        // Grab the selection now: by the time a transcript exists, a terminal
+        // will very likely have dropped it.
+        selectionAtPress = SelectionReader.snapshot()
+
         switch config.hotkey.mode {
         case .toggle:
             toggleRecording()
@@ -284,10 +290,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Reading the selection needs Accessibility; the panel does not. Open
         // it either way — typing both sides still beats editing YAML by hand,
         // and a panel that silently refuses to appear reads as a broken app.
-        let selection = Permissions.accessibility == .granted
-            ? SelectionReader.read()
-            : nil
+        let selection = selectionAtPress ?? (
+            Permissions.accessibility == .granted ? SelectionReader.read() : nil
+        )
+        selectionAtPress = nil
 
+        Log.write("correction: selection = \(selection.map { "\"\($0.text)\"" } ?? "none")")
         pendingSelection = selection
         correctionPanel.onSave = { [weak self] rules, correctedText in
             self?.saveCorrections(rules, correctedText: correctedText)
@@ -505,7 +513,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSApp.terminate(nil)
         }
         correctionPanel.onCancel = { NSApp.terminate(nil) }
-        correctionPanel.show(selection: "I work with Tasmin and Mick.")
+        correctionPanel.show(
+            selection: CommandLine.arguments.contains("--empty")
+                ? ""
+                : "I work with Tasmine and Meek on Versal and Subabase."
+        )
     }
 
     @objc private func openRecordingsFolder() {
