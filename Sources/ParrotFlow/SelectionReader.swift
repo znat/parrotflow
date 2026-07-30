@@ -72,35 +72,64 @@ enum SelectionReader {
     ) -> Bool {
         AXUIElementSetMessagingTimeout(element, 0.5)
 
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            element, kAXValueAttribute as CFString, &value
-        ) == .success, let text = value as? String, !text.isEmpty else { return false }
+        var role: CFTypeRef?
+        _ = AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
+        let roleName = (role as? String) ?? "unknown"
 
-        guard let found = text.range(of: needle, options: [.caseInsensitive, .backwards])
-        else { return false }
+        var value: CFTypeRef?
+        let readStatus = AXUIElementCopyAttributeValue(
+            element, kAXValueAttribute as CFString, &value
+        )
+        guard readStatus == .success, let text = value as? String, !text.isEmpty else {
+            Log.write("rewrite: can't read \(roleName) value (AXError \(readStatus.rawValue))")
+            return false
+        }
+        Log.write("rewrite: \(roleName), \(text.count) chars, looking for \"\(needle)\"")
+
+        guard let found = text.range(of: needle, options: [.caseInsensitive, .backwards]) else {
+            let preview = text.suffix(160).replacingOccurrences(of: "\n", with: "⏎")
+            Log.write("rewrite: \"\(needle)\" not in \(roleName); tail = \"\(preview)\"")
+            return false
+        }
 
         let nsRange = NSRange(found, in: text)
         var range = CFRange(location: nsRange.location, length: nsRange.length)
         guard let axRange = AXValueCreate(.cfRange, &range) else { return false }
 
-        guard AXUIElementSetAttributeValue(
+        let selectStatus = AXUIElementSetAttributeValue(
             element, kAXSelectedTextRangeAttribute as CFString, axRange
-        ) == .success else { return false }
+        )
+        guard selectStatus == .success else {
+            Log.write("rewrite: \(roleName) refused the selection (AXError \(selectStatus.rawValue))")
+            return false
+        }
 
-        guard AXUIElementSetAttributeValue(
+        let writeStatus = AXUIElementSetAttributeValue(
             element, kAXSelectedTextAttribute as CFString, replacement as CFTypeRef
-        ) == .success else { return false }
+        )
+        if writeStatus == .success, changed(element, from: text) {
+            return true
+        }
 
-        // Do not trust the status code. Terminals accept both writes and report
-        // success while changing nothing — the accessibility value they expose
-        // is a read-only view of the screen. Read it back and confirm.
+        // Some fields expose AXValue read-only and only accept text through the
+        // keyboard. The range is already selected at this point, so a paste
+        // lands exactly on it — this is the one case where Cmd-V is safe,
+        // because we put the selection there ourselves a moment ago.
+        Log.write("rewrite: \(roleName) ignored the direct write, trying paste over the selection")
+        TextInserter.insert(replacement, mode: .paste)
+        Thread.sleep(forTimeInterval: 0.2)
+
+        if changed(element, from: text) { return true }
+        Log.write("rewrite: \(roleName) would not accept either method")
+        return false
+    }
+
+    private static func changed(_ element: AXUIElement, from original: String) -> Bool {
         var after: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element, kAXValueAttribute as CFString, &after
         ) == .success, let updated = after as? String else { return false }
-
-        return updated != text
+        return updated != original
     }
 
     /// Full read, in descending order of politeness. `snapshot` is preferred

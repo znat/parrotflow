@@ -392,6 +392,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if !rules.isEmpty, let focus = focusAtPress, let element = focus.element {
             // Learned by voice: nothing was selected, but the misspelling is
             // still sitting in the field where it was dictated. Fix it there.
+            //
+            // Hand focus back first. Most apps only honour a write to
+            // kAXSelectedTextAttribute on the element that currently has focus,
+            // and at this point our own panel has it.
+            focus.owner?.activate()
+            Thread.sleep(forTimeInterval: 0.2)
+
             var fixed = 0
             for rule in rules
             where SelectionReader.replaceLastOccurrence(
@@ -401,7 +408,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if fixed > 0 {
                 Log.write("rewrote \(fixed) occurrence(s) in the focused field")
-                focus.owner?.activate()
                 outcome = .written
             } else {
                 Log.write("field would not accept the rewrite; correction is on the clipboard")
