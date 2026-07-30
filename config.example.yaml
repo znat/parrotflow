@@ -1,6 +1,10 @@
 transcription:
   enabled: true
 
+  # paste     -> type it straight into the app you're in (needs Accessibility)
+  # clipboard -> just copy it, you press Cmd-V
+  insert_mode: clipboard
+
   # ACOUSTIC CONTEXT BIASING.
   #
   # Terms here are matched against the audio itself, so this can recover a name

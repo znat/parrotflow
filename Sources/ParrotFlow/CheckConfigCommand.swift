@@ -47,6 +47,12 @@ enum CheckConfigCommand {
         let transcription = config.transcription
         print("  · transcription     \(transcription.enabled ? "enabled" : "disabled")")
         if transcription.enabled {
+            let mode = transcription.insertMode == .paste
+                ? "paste into frontmost app (needs Accessibility)"
+                : "copy to clipboard"
+            print("  · insert mode       \(mode)")
+        }
+        if transcription.enabled {
             if transcription.vocabulary.isEmpty {
                 print("  · vocabulary        none")
             } else {

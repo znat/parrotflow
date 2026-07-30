@@ -39,8 +39,15 @@ make logs      # tail its output
 
 ## Using it
 
-Default hotkey is **Right ⌥**: hold it, talk, let go. Recordings land in
-`~/Recordings/ParrotFlow`.
+Hold **Right ⌥**, talk, let go. A second or so later you get a chime and the
+transcript is on your clipboard — ⌘V wherever you want it.
+
+Set `transcription.insert_mode: paste` to have it typed straight into whatever
+app you're in instead. That needs the Accessibility permission; `clipboard`
+needs nothing.
+
+Audio is kept in `~/Recordings/ParrotFlow` and every transcript is logged to
+`~/Library/Logs/ParrotFlow.log`.
 
 The menu bar item shows the current state and gives you *Open Recordings
 Folder*, *Edit Config…*, and *Settings & Permissions…*.

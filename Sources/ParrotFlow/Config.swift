@@ -24,6 +24,19 @@ struct Config: Codable, Equatable {
 
     struct Transcription: Codable, Equatable {
         var enabled: Bool = true
+        /// `paste` types the transcript into the frontmost app (needs
+        /// Accessibility). `clipboard` just copies it and lets you paste.
+        var insertMode: InsertMode = .paste
+
+        enum InsertMode: String, Codable, Equatable {
+            case paste
+            case clipboard
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case enabled, vocabulary, replacements
+            case insertMode = "insert_mode"
+        }
         /// Words the model would otherwise never produce — see `VocabularyTerm`.
         var vocabulary: [VocabularyTerm] = []
         /// Applied after transcription, last. A blunt instrument: use it only
@@ -36,6 +49,16 @@ struct Config: Codable, Equatable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self.init()
             if let enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) { self.enabled = enabled }
+            if let raw = try c.decodeIfPresent(String.self, forKey: .insertMode) {
+                guard let mode = InsertMode(rawValue: raw.lowercased()) else {
+                    throw ConfigError.invalidValue(
+                        key: "transcription.insert_mode",
+                        value: raw,
+                        expected: "paste or clipboard"
+                    )
+                }
+                self.insertMode = mode
+            }
             if let vocabulary = try c.decodeIfPresent([VocabularyTerm].self, forKey: .vocabulary) {
                 self.vocabulary = vocabulary
             }
@@ -271,6 +294,10 @@ enum ConfigStore {
 
     transcription:
       enabled: true
+
+      # paste     -> type it straight into the app you're in (needs Accessibility)
+      # clipboard -> just copy it, you press Cmd-V
+      insert_mode: paste
 
       # Terms the model would otherwise never produce.
       # `aliases` are what the spotter listens for; `text` is what gets written

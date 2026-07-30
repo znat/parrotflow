@@ -14,6 +14,8 @@ enum TextInserter {
 
     enum Outcome {
         case pasted
+        /// Copied deliberately, because the config asked for it.
+        case copied
         /// Accessibility isn't granted — text is on the clipboard instead.
         case clipboardOnly
 
@@ -21,7 +23,7 @@ enum TextInserter {
     }
 
     @discardableResult
-    static func insert(_ text: String) -> Outcome {
+    static func insert(_ text: String, mode: Config.Transcription.InsertMode = .paste) -> Outcome {
         guard !text.isEmpty else { return .pasted }
 
         let pasteboard = NSPasteboard.general
@@ -29,6 +31,8 @@ enum TextInserter {
 
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+
+        guard mode == .paste else { return .copied }
 
         guard Permissions.accessibility == .granted else {
             // Leave the text on the clipboard — the user can paste it manually,

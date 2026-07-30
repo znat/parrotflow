@@ -266,10 +266,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.write("transcribed: \(trimmed)")
         settings.model.lastTranscript = trimmed
 
-        switch TextInserter.insert(trimmed) {
+        switch TextInserter.insert(trimmed, mode: config.transcription.insertMode) {
         case .pasted:
-            break
+            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+        case .copied:
+            // Deliberate clipboard mode — confirm it landed.
+            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            transcriptionLabel = "Copied — ⌘V to paste"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                self?.transcriptionLabel = nil
+                self?.updateUI()
+            }
         case .clipboardOnly:
+            if config.feedback.sound { NSSound(named: "Glass")?.play() }
             // Don't nag on every dictation — the text is safe on the clipboard.
             Log.write("Accessibility not granted; left transcript on the clipboard")
             transcriptionLabel = "Copied — grant Accessibility to auto-paste"
