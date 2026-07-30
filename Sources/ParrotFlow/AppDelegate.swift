@@ -24,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var pendingSelection: SelectionReader.Selection?
     /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
     private var selectionAtPress: SelectionReader.Selection?
+    /// Where the text was being typed when the hotkey went down, so a rule
+    /// learned by voice can fix the word already in the field.
+    private var focusAtPress: SelectionReader.Selection?
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -124,8 +127,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleHotKeyPress() {
         // Grab the selection now: by the time a transcript exists, a terminal
-        // will very likely have dropped it.
+        // will very likely have dropped it. Timed out hard inside snapshot(),
+        // because this is the main thread and recording must start regardless.
+        let snapshotStart = Date()
         selectionAtPress = SelectionReader.snapshot()
+        focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
+        let elapsed = Date().timeIntervalSince(snapshotStart)
+        if elapsed > 0.15 {
+            Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
+        }
 
         switch config.hotkey.mode {
         case .toggle:
@@ -379,11 +389,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var outcome: SelectionReader.ReplaceOutcome?
         if let selection = pendingSelection, !trimmed.isEmpty {
             outcome = SelectionReader.replaceSelection(with: correctedText, in: selection)
+        } else if !rules.isEmpty, let focus = focusAtPress, let element = focus.element {
+            // Learned by voice: nothing was selected, but the misspelling is
+            // still sitting in the field where it was dictated. Fix it there.
+            var fixed = 0
+            for rule in rules
+            where SelectionReader.replaceLastOccurrence(
+                of: rule.heard, with: rule.corrected, in: element
+            ) {
+                fixed += 1
+            }
+            if fixed > 0 {
+                Log.write("rewrote \(fixed) occurrence(s) in the focused field")
+                focus.owner?.activate()
+                outcome = .written
+            } else {
+                Log.write("could not rewrite in place; leaving the correction on the clipboard")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(rules[0].corrected, forType: .string)
+                outcome = .clipboardOnly
+            }
         } else if !trimmed.isEmpty {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(correctedText, forType: .string)
         }
         pendingSelection = nil
+        focusAtPress = nil
 
         if config.feedback.sound { NSSound(named: "Glass")?.play() }
         if outcome == .clipboardOnly {

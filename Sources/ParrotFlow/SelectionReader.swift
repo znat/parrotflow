@@ -42,6 +42,57 @@ enum SelectionReader {
         )
     }
 
+    /// The focused text element and its owning app, with no selection needed.
+    ///
+    /// Captured at hotkey press so a rule learned by voice can still fix the
+    /// word already sitting in the field — there was never a selection to
+    /// snapshot, only a transcript that got typed there a moment ago.
+    static func focusSnapshot() -> Selection? {
+        guard Permissions.accessibility == .granted else { return nil }
+        guard let element = focusedElement() else { return nil }
+        return Selection(
+            text: "",
+            owner: NSWorkspace.shared.frontmostApplication,
+            element: element,
+            range: nil
+        )
+    }
+
+    /// Rewrites the last occurrence of `needle` in a text element.
+    ///
+    /// Last rather than first: the word being corrected was dictated a moment
+    /// ago, so the most recent occurrence is the one meant. Replaces just that
+    /// range instead of rewriting the whole field, which would lose the caret
+    /// and clobber anything typed since.
+    @discardableResult
+    static func replaceLastOccurrence(
+        of needle: String,
+        with replacement: String,
+        in element: AXUIElement
+    ) -> Bool {
+        AXUIElementSetMessagingTimeout(element, 0.5)
+
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXValueAttribute as CFString, &value
+        ) == .success, let text = value as? String, !text.isEmpty else { return false }
+
+        guard let found = text.range(of: needle, options: [.caseInsensitive, .backwards])
+        else { return false }
+
+        let nsRange = NSRange(found, in: text)
+        var range = CFRange(location: nsRange.location, length: nsRange.length)
+        guard let axRange = AXValueCreate(.cfRange, &range) else { return false }
+
+        guard AXUIElementSetAttributeValue(
+            element, kAXSelectedTextRangeAttribute as CFString, axRange
+        ) == .success else { return false }
+
+        return AXUIElementSetAttributeValue(
+            element, kAXSelectedTextAttribute as CFString, replacement as CFTypeRef
+        ) == .success
+    }
+
     /// Full read, in descending order of politeness. `snapshot` is preferred
     /// when one was taken; this is the fallback.
     static func read(fallbackTo pasteboard: Bool = true) -> Selection? {
@@ -76,6 +127,11 @@ enum SelectionReader {
 
     static func focusedElement() -> AXUIElement? {
         let system = AXUIElementCreateSystemWide()
+        // Without this the default timeout is ~6s, and these calls run on the
+        // main thread on every hotkey press. One busy app — Xcode indexing, a
+        // beachballing Electron window — and the hotkey appears dead because
+        // the run loop is stuck waiting for it to answer.
+        AXUIElementSetMessagingTimeout(system, 0.25)
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             system,
@@ -89,6 +145,7 @@ enum SelectionReader {
     }
 
     static func selectedText(of element: AXUIElement) -> String? {
+        AXUIElementSetMessagingTimeout(element, 0.25)
         var selected: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element,
