@@ -324,8 +324,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Put the corrected phrase back where it came from, whether or not any
         // rules were saved — the user may just be fixing this one instance.
         let trimmed = correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        var outcome: SelectionReader.ReplaceOutcome?
         if let selection = pendingSelection, !trimmed.isEmpty {
-            SelectionReader.replaceSelection(with: correctedText, in: selection.owner)
+            outcome = SelectionReader.replaceSelection(with: correctedText, in: selection)
         } else if !trimmed.isEmpty {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(correctedText, forType: .string)
@@ -333,6 +334,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingSelection = nil
 
         if config.feedback.sound { NSSound(named: "Glass")?.play() }
+        if outcome == .clipboardOnly {
+            flash("Rules saved — corrected text is on the clipboard")
+            return
+        }
         switch rules.count {
         case 0: flash("Text replaced")
         case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)")

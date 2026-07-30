@@ -18,6 +18,11 @@ enum SelectionReader {
         let text: String
         /// The app the text came from, so focus can be handed back.
         let owner: NSRunningApplication?
+        /// The text element and the exact character range that was selected.
+        /// Kept so the correction can be written back to that range rather
+        /// than pasted at wherever the caret happens to be afterwards.
+        var element: AXUIElement?
+        var range: CFRange?
     }
 
     /// Cheap, side-effect-free read. Safe to call on every hotkey press.
@@ -27,8 +32,14 @@ enum SelectionReader {
     /// be long gone. Snapshotting at press time is the only reliable moment.
     static func snapshot() -> Selection? {
         guard Permissions.accessibility == .granted else { return nil }
-        guard let text = viaAccessibility(), !text.isEmpty else { return nil }
-        return Selection(text: text, owner: NSWorkspace.shared.frontmostApplication)
+        guard let element = focusedElement() else { return nil }
+        guard let text = selectedText(of: element), !text.isEmpty else { return nil }
+        return Selection(
+            text: text,
+            owner: NSWorkspace.shared.frontmostApplication,
+            element: element,
+            range: selectedRange(of: element)
+        )
     }
 
     /// Full read, in descending order of politeness. `snapshot` is preferred
@@ -59,27 +70,48 @@ enum SelectionReader {
     // MARK: - Accessibility attribute
 
     private static func viaAccessibility() -> String? {
-        let system = AXUIElementCreateSystemWide()
+        guard let element = focusedElement() else { return nil }
+        return selectedText(of: element)
+    }
 
+    static func focusedElement() -> AXUIElement? {
+        let system = AXUIElementCreateSystemWide()
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             system,
             kAXFocusedUIElementAttribute as CFString,
             &focused
-        ) == .success else { return nil }
+        ) == .success,
+            let element = focused,
+            CFGetTypeID(element) == AXUIElementGetTypeID()
+        else { return nil }
+        return (element as! AXUIElement)
+    }
 
-        guard let element = focused, CFGetTypeID(element) == AXUIElementGetTypeID() else {
-            return nil
-        }
-
+    static func selectedText(of element: AXUIElement) -> String? {
         var selected: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
-            element as! AXUIElement,
+            element,
             kAXSelectedTextAttribute as CFString,
             &selected
         ) == .success else { return nil }
-
         return selected as? String
+    }
+
+    private static func selectedRange(of element: AXUIElement) -> CFRange? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element,
+            kAXSelectedTextRangeAttribute as CFString,
+            &value
+        ) == .success,
+            let wrapped = value,
+            CFGetTypeID(wrapped) == AXValueGetTypeID()
+        else { return nil }
+
+        var range = CFRange()
+        guard AXValueGetValue(wrapped as! AXValue, .cfRange, &range) else { return nil }
+        return range
     }
 
     // MARK: - Synthetic copy
@@ -102,15 +134,67 @@ enum SelectionReader {
         return nil
     }
 
-    /// Types the corrected spelling over whatever is selected.
-    static func replaceSelection(with text: String, in owner: NSRunningApplication?) {
-        owner?.activate()
+    enum ReplaceOutcome {
+        /// Written straight into the range that was selected.
+        case written
+        /// Pasted over a selection we confirmed still existed.
+        case pasted
+        /// Nothing was safe to do; the text is on the clipboard instead.
+        case clipboardOnly
+    }
 
-        // Give the app a moment to come forward and restore its selection
-        // before the paste lands.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            TextInserter.insert(text, mode: .paste)
+    /// Puts the corrected text back, or refuses.
+    ///
+    /// Pasting blind is how you corrupt someone's document: if the selection
+    /// has collapsed to a caret — which is what a terminal does the moment it
+    /// loses focus — Cmd-V inserts instead of replacing, and you get
+    /// "and TasTasmeen.min." out of "and Tasmin.". So: write to the recorded
+    /// range if the element supports it, else paste only after confirming a
+    /// selection is genuinely still there, else leave it on the clipboard.
+    @discardableResult
+    static func replaceSelection(with text: String, in selection: Selection) -> ReplaceOutcome {
+        if let element = selection.element, writeDirectly(text, to: element, range: selection.range) {
+            Log.write("correction written via accessibility range")
+            return .written
         }
+
+        selection.owner?.activate()
+        // Let the app come forward before asking what it has selected.
+        Thread.sleep(forTimeInterval: 0.15)
+
+        if let element = focusedElement(),
+           let current = selectedText(of: element), !current.isEmpty {
+            Log.write("correction pasted over live selection")
+            TextInserter.insert(text, mode: .paste)
+            return .pasted
+        }
+
+        Log.write("selection gone; correction left on the clipboard")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        return .clipboardOnly
+    }
+
+    /// Restores the recorded range, then replaces its contents. No keystrokes,
+    /// no dependence on the app having kept its selection visible.
+    private static func writeDirectly(
+        _ text: String,
+        to element: AXUIElement,
+        range: CFRange?
+    ) -> Bool {
+        if var range {
+            guard let value = AXValueCreate(.cfRange, &range) else { return false }
+            guard AXUIElementSetAttributeValue(
+                element,
+                kAXSelectedTextRangeAttribute as CFString,
+                value
+            ) == .success else { return false }
+        }
+        return AXUIElementSetAttributeValue(
+            element,
+            kAXSelectedTextAttribute as CFString,
+            text as CFTypeRef
+        ) == .success
     }
 
     private static func postCommandKey(_ key: CGKeyCode) {
