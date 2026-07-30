@@ -5,30 +5,33 @@ transcription:
   # clipboard -> just copy it, you press Cmd-V
   insert_mode: clipboard
 
-  # ACOUSTIC CONTEXT BIASING.
+  # ACOUSTIC CONTEXT BIASING — OFF BY DEFAULT, AND IT SHOULD STAY OFF UNLESS
+  # YOU HAVE MEASURED IT ON YOUR OWN VOICE.
   #
-  # Terms here are matched against the audio itself, so this can recover a name
-  # the model has never seen. Two hard-won rules:
+  # It fires on audio that contains nothing like the term, and when it fires it
+  # deletes the words it lands on. Measured: with "Zilbershtayn" enabled,
+  # "Good morning, my name is Nathan." became "Zylbersztejn is Nathan."
+  # and a clip of plain "Good morning." became "Zylbersztejn".
   #
-  #  1. Spell the term the way it SOUNDS, not the way you write it. Only `text`
-  #     is tokenized and searched for; aliases are never given to the spotter.
-  #     Then map the sound to the spelling you want under `replacements`.
-  #  2. Keep this list short, long and distinctive. Terms under ~6 characters
-  #     over-fire badly — "Mick" swallowed "project called carrot flow" in
-  #     testing. Anything you can anticipate belongs in `replacements` instead.
+  # It is not tunable around. The false positive scored -8.98 while genuine
+  # detections scored -10.0 to -10.6, so no score threshold separates them, and
+  # raising the similarity guard to 0.85 did not block it either.
   #
-  # Check what the spotter actually finds with:  --spot <file.wav>
-  vocabulary:
-    - Zilbershtayn
+  # If you want to try: add ONE long distinctive term, spelled the way it
+  # SOUNDS, then check it against real clips with
+  #   ParrotFlow --spot <clip.wav>
+  # and re-run --transcribe on clips that do NOT contain the word, to see what
+  # it wrecks.
+  vocabulary: []
 
-  # Literal, word-boundary, case-insensitive swaps applied last. Safe and
-  # predictable — this is where most name fixing should live.
-  # Workflow: dictate, run --transcribe, map whatever the model wrote.
+  # This is what actually fixes names. Literal, word-boundary, case-insensitive
+  # swaps applied to the finished transcript. Predictable, and it cannot eat
+  # words that were correct.
+  #
+  # Workflow: dictate, run --transcribe on the clip, map whatever the model
+  # wrote to what you meant.
   replacements:
-    Zilbershtayn: Zylbersztejn
-    Tasman: Tasmeen
-    Tasmin: Tasmeen
-    Mick: Mik
-    Carrot Flow: ParrotFlow
     Superbase: Supabase
     Versov: Vercel
+    Tasman: Tasmeen
+    Tasmin: Tasmeen

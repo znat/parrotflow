@@ -299,14 +299,10 @@ enum ConfigStore {
       # clipboard -> just copy it, you press Cmd-V
       insert_mode: paste
 
-      # Terms the model would otherwise never produce.
-      # `aliases` are what the spotter listens for; `text` is what gets written
-      # — so spell the aliases the way an ASR would render the sound, and get
-      # back the spelling you want. A bare string is shorthand for text-only.
+      # Acoustic context biasing. Off by default: it fires on audio that
+      # contains nothing like the term and deletes the words it lands on.
+      # See docs/transcription.md before enabling, and verify with --spot.
       vocabulary: []
-      #  - text: Zylbersztejn
-      #    aliases: [Zilbershtayn, Silverstein]
-      #  - ParrotFlow
 
       # Last-resort literal swaps, applied after boosting. Word-boundary
       # matched and case-insensitive.

@@ -84,39 +84,35 @@ are mostly shorter, so the rescorer never ran. `Transcriber.dictationConfig`
 drops both. Both gates exist to stop a live transcript rewriting itself
 on-screen; we only ever submit a finished clip.
 
-### Keep the list short and long
+### Then it turned out to be unusable anyway
 
-With `Zilbershtayn`, `Tasmin` and `Mick` all boosted, the tail of the sentence
-was destroyed — "on a project called carrot flow" collapsed to "on a Tasmeen".
-Detection spans are loose (`Zilbershtayn` claimed 0.08s–5.86s of a 6.25s clip),
-and short terms match almost anywhere.
+Getting the spotter to fire was the easy half. It fires on audio containing
+nothing like the term, and when it fires it *deletes* the words underneath.
+Measured on real dictation:
 
-Cutting the list to the single long distinctive term fixed it:
+| Said | With boosting | Boosting off |
+| --- | --- | --- |
+| "Good morning, my name is Nathan." | "Zylbersztejn is Nathan." | ✓ correct |
+| "Good morning." | "Zylbersztejn" | ✓ correct |
+| "Hey there, good morning." | "Zylbersztejn good morning." | ✓ correct |
 
-    Hi, my name is Zylbersztejn I am working with Tasmeen and Mik
-    on a project called ParrotFlow.
+The name was never spoken in any of those clips. Every hit was a false
+positive, and each one destroyed a transcript that was already right.
 
-So the division of labour is:
+**It is not tunable around.** The false positive scored **−8.98**; genuine
+detections in the TTS test scored **−10.0 to −10.6**. The false match scores
+*better* than the real ones, so no `minScore` separates them. Raising the
+rescorer's similarity guard to 0.85 did not block it either. Detection spans
+are also far too loose — a term claimed 0.08s–5.86s of a 6.25s clip.
 
-- **`vocabulary`** — a handful of long, distinctive, phonetically-spelled terms.
-  For rare names you cannot anticipate the misspelling of. Verify each with
-  `--spot <file.wav>`, which prints raw detections and scores.
-- **`replacements`** — everything else. Literal, word-boundary, case-insensitive,
-  applied last. Predictable, and where most name fixing should live.
+So `vocabulary` now ships empty, and `replacements` carries the feature:
+literal, word-boundary, case-insensitive swaps on the finished transcript.
+Unglamorous, but it cannot delete words that were already correct, which is
+the failure mode that actually matters in a dictation tool.
 
-Known artifact: the rescorer drops sentence punctuation at a replacement site
-("Zylbersztejn I am" rather than "Zylbersztejn. I am").
-
-FluidAudio documents 99.4% recall and no latency impact up to ~100 terms. With
-loose spans and short-term over-firing, a list that size looks optimistic for
-dictation; a handful of long terms is what held up here. The YAML shape:
-
-```yaml
-vocabulary:
-  - Zilbershtayn          # spelled as it SOUNDS
-replacements:
-  Zilbershtayn: Zylbersztejn
-```
+`--spot <clip.wav>` prints raw detections with scores and spans. Anyone
+enabling `vocabulary` should run it against clips that do **not** contain the
+term, to see what it wrecks, not just clips that do.
 
 ### 2. A local LLM pass — for everything else
 
