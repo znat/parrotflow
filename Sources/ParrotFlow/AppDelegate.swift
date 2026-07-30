@@ -404,7 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 focus.owner?.activate()
                 outcome = .written
             } else {
-                Log.write("could not rewrite in place; leaving the correction on the clipboard")
+                Log.write("field would not accept the rewrite; correction is on the clipboard")
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(rules[0].corrected, forType: .string)
                 outcome = .clipboardOnly
@@ -418,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if config.feedback.sound { NSSound(named: "Glass")?.play() }
         if outcome == .clipboardOnly {
-            flash("Rules saved — corrected text is on the clipboard")
+            flash("Rule saved · \"\(rules.first?.corrected ?? "")\" copied — this app won't let me edit it")
             return
         }
         switch rules.count {

@@ -88,9 +88,19 @@ enum SelectionReader {
             element, kAXSelectedTextRangeAttribute as CFString, axRange
         ) == .success else { return false }
 
-        return AXUIElementSetAttributeValue(
+        guard AXUIElementSetAttributeValue(
             element, kAXSelectedTextAttribute as CFString, replacement as CFTypeRef
-        ) == .success
+        ) == .success else { return false }
+
+        // Do not trust the status code. Terminals accept both writes and report
+        // success while changing nothing — the accessibility value they expose
+        // is a read-only view of the screen. Read it back and confirm.
+        var after: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXValueAttribute as CFString, &after
+        ) == .success, let updated = after as? String else { return false }
+
+        return updated != text
     }
 
     /// Full read, in descending order of politeness. `snapshot` is preferred
