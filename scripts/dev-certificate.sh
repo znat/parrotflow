@@ -24,22 +24,39 @@ fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# Use the system LibreSSL, not whatever is first in PATH. OpenSSL 3 writes
+# PKCS#12 with an AES-256/SHA-256 MAC that macOS's Security framework cannot
+# verify — the import fails with "MAC verification failed (wrong password?)",
+# which is misleading: the password is fine, the MAC algorithm is not.
+SSL=/usr/bin/openssl
+[ -x "$SSL" ] || SSL=openssl
+
+# A throwaway password rather than an empty one; empty passphrases are another
+# reliable way to upset SecKeychainItemImport.
+P12PASS="parrotflow-temp"
+
 echo "==> Generating a self-signed code-signing certificate: $NAME"
-openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+"$SSL" req -x509 -newkey rsa:2048 -nodes -days 3650 \
     -keyout "$TMP/key.pem" -out "$TMP/cert.pem" \
     -subj "/CN=$NAME" \
     -addext "basicConstraints=critical,CA:false" \
     -addext "keyUsage=critical,digitalSignature" \
     -addext "extendedKeyUsage=critical,codeSigning" 2>/dev/null
 
-openssl pkcs12 -export -out "$TMP/cert.p12" \
-    -inkey "$TMP/key.pem" -in "$TMP/cert.pem" -passout pass: 2>/dev/null
+if ! "$SSL" pkcs12 -export -out "$TMP/cert.p12" \
+    -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
+    -passout "pass:$P12PASS" 2>/dev/null; then
+    # Newer OpenSSL needs -legacy to emit something macOS will accept.
+    "$SSL" pkcs12 -export -legacy -macalg sha1 -out "$TMP/cert.p12" \
+        -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
+        -passout "pass:$P12PASS" 2>/dev/null
+fi
 
-echo "==> Importing into your login keychain (macOS will ask for your password)"
-security import "$TMP/cert.p12" -k "$KEYCHAIN" -P "" \
+echo "==> Importing into your login keychain"
+security import "$TMP/cert.p12" -k "$KEYCHAIN" -P "$P12PASS" \
     -T /usr/bin/codesign -T /usr/bin/security >/dev/null
 
-echo "==> Trusting it for code signing"
+echo "==> Trusting it for code signing (macOS will ask for your password)"
 security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" "$TMP/cert.pem"
 
 # Stops codesign prompting for keychain access on every build.
