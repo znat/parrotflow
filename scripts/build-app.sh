@@ -28,6 +28,10 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 # Ad-hoc ("-") by default. Set CODESIGN_IDENTITY to a self-signed identity to
 # keep the microphone permission across rebuilds — see README.
+# Prefer a stable self-signed identity when one exists — see dev-certificate.sh.
+if [ -z "${CODESIGN_IDENTITY:-}" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "ParrotFlow Dev"; then
+    CODESIGN_IDENTITY="ParrotFlow Dev"
+fi
 IDENTITY="${CODESIGN_IDENTITY:--}"
 echo "==> Signing with identity: $IDENTITY"
 codesign --force --sign "$IDENTITY" "$APP"

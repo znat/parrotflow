@@ -2,7 +2,7 @@ APP_NAME   := ParrotFlow
 BUNDLE_ID  := com.parrotflow.app
 APP        := .build/$(APP_NAME).app
 
-.PHONY: app run install uninstall stop clean reset-permissions logs
+.PHONY: app run install uninstall stop clean reset-permissions logs dev-certificate
 
 ## Build ParrotFlow.app into .build/
 app:
@@ -25,6 +25,10 @@ uninstall: stop
 ## Quit any running instance
 stop:
 	@pkill -f "$(APP_NAME).app/Contents/MacOS/$(APP_NAME)" 2>/dev/null || true
+
+## Create a self-signed cert so permissions survive rebuilds (asks for your password)
+dev-certificate:
+	@scripts/dev-certificate.sh
 
 ## Forget the microphone grant so macOS prompts again
 reset-permissions:

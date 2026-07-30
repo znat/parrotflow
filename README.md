@@ -158,28 +158,20 @@ Microphone is more forgiving but still breaks when the bundle is replaced.
 The symptom is unmistakable: System Settings shows the app ticked, and the app
 insists the permission isn't granted.
 
-**Working around it, in increasing order of effort:**
-
-*Grant permissions to the installed copy, not the build directory.* `make run`
-rebuilds `.build/ParrotFlow.app` from scratch each time; `make install` puts a
-copy in `/Applications` that only changes when you ask it to. Use the
-`/Applications` copy day to day and the grants stay put.
-
-*Clear a stuck entry.* `make reset-permissions` — this runs `tccutil reset`,
-which deletes the record properly, unlike un-ticking the box.
-
-*Sign with a stable identity.* This removes the problem entirely: the
-designated requirement keys on the certificate instead of the binary hash, so
-every rebuild inherits the same grants.
-
-1. Keychain Access → *Certificate Assistant* → *Create a Certificate…*
-2. Name it `ParrotFlow Dev`, Identity Type **Self Signed Root**,
-   Certificate Type **Code Signing**.
-3. Build with it:
+**The fix, once:**
 
 ```sh
-CODESIGN_IDENTITY="ParrotFlow Dev" make install
+make dev-certificate                 # asks for your password
+make install                         # picks the identity up automatically
 ```
+
+That creates a self-signed code-signing certificate. The designated requirement
+then keys on the certificate rather than the binary hash, so grants survive
+every rebuild. Grant permissions *after* that install, not before.
+
+If a grant is already stuck, `make reset-permissions` deletes the record
+properly — un-ticking the box in System Settings does not, it leaves the dead
+entry in place, which is why re-ticking it never helps.
 
 The settings window detects an ad-hoc build and says so, rather than leaving
 you to guess why a granted permission reads as missing.

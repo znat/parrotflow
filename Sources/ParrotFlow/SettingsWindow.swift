@@ -105,10 +105,13 @@ private struct SettingsView: View {
                         title: "Accessibility",
                         detail: "Not needed yet — it's what will let ParrotFlow type the transcript into the app you're using.",
                         status: model.axStatus,
-                        actionTitle: "Open Settings",
-                        action: { Permissions.openAccessibilitySettings() },
-                        secondaryTitle: "Relaunch",
-                        secondaryAction: { Permissions.relaunch() },
+                        // "Request" must come first: AXIsProcessTrustedWithOptions
+                        // is what registers this binary with TCC. Merely opening
+                        // Settings shows a list this app may not be in yet.
+                        actionTitle: "Request",
+                        action: { Permissions.requestAccessibility() },
+                        secondaryTitle: "Open Settings",
+                        secondaryAction: { Permissions.openAccessibilitySettings() },
                         footnote: model.axBlocker
                             ?? "Ticked the box already? Relaunch so the running process picks it up."
                     )
