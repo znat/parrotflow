@@ -17,6 +17,8 @@ cleanup layer on top of it come next.
 - Records to 16 kHz mono WAV — exactly what Parakeet wants
 - Floating pill with a level meter so you know the mic is hot
 - Config reloads on save; no restart to try a different key
+- Parakeet transcription with custom-vocabulary boosting, so rare names come
+  out spelled the way you spell them
 
 ## Build & run
 
@@ -96,6 +98,7 @@ PF=.build/ParrotFlow.app/Contents/MacOS/ParrotFlow
 $PF --check-config       # validate the YAML, print what the app would use
 $PF --record 3           # record 3s and verify the file it produced
 $PF --watch-modifiers    # print which modifier keys are physically down, live
+$PF --transcribe a.wav   # transcribe a clip, showing which vocabulary terms landed
 ```
 
 ```

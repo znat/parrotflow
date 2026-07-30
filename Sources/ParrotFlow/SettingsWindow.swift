@@ -10,6 +10,7 @@ final class SettingsModel: ObservableObject {
     @Published var hotkeyError: String?
     @Published var outputDir: String = ""
     @Published var lastRecording: String?
+    @Published var lastTranscript: String?
 
     func refreshPermissions() {
         micStatus = Permissions.microphone

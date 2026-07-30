@@ -34,16 +34,66 @@ That's the important distinction from post-hoc substitution: a find-and-replace
 on "in video" → "NVIDIA" corrupts a genuine sentence about video. Biasing looks
 at the acoustics and only fires when the audio actually supports the term.
 
+> **Measured, 2026-07-30 — context biasing did not work.** Everything below
+> about how it *should* work is from FluidAudio's documentation. On a 6.3 s
+> clip with a 5-term vocabulary the rescorer ran and reported `Replacements: 0`
+> in every configuration tried, including one where a vocabulary term exactly
+> equalled the word the model had produced. See "What actually happened" below.
+
+Two things the docs get wrong, both verified by reading the checked-out source:
+
+**The documented API does not exist.** FluidAudio's CustomVocabulary page shows
+`asrManager.transcribe(samples, customVocabulary: vocabulary)`. No released
+version has it — not 0.15.5, not `main`. The only shipped path is
+`SlidingWindowAsrManager.configureVocabularyBoosting(vocabulary:ctcModels:)`,
+i.e. the *streaming* manager, which pulls a second model (`CtcModels`, ~98 MB).
+
+**Aliases are not spotter targets.** `CustomVocabularyContext.swift:291` does
+`ctcTokenizer.encode(term.text)` — only `text` is tokenized and searched for
+acoustically. Aliases appear in `VocabularyRescorer+Utilities` solely to widen
+a string-similarity gate *after* a candidate is found. So the "spell the alias
+phonetically, get the canonical spelling back" trick does not work; if `text`
+isn't spelled the way the word sounds, the spotter has nothing to look for.
+
 ```swift
-let vocabulary = CustomVocabularyContext(terms: [
-    CustomVocabularyTerm(text: "NVIDIA"),
-    CustomVocabularyTerm(text: "Häagen-Dazs", aliases: ["Hagen Das"]),
-])
-let result = try await asrManager.transcribe(samples, customVocabulary: vocabulary)
+let manager = SlidingWindowAsrManager(config: dictationConfig)
+try await manager.loadModels()
+try await manager.configureVocabularyBoosting(
+    vocabulary: CustomVocabularyContext(terms: [CustomVocabularyTerm(text: "Zilbershtayn")]),
+    ctcModels: try await CtcModels.downloadAndLoad()
+)
 ```
 
-Documented at 99.4% recall, no latency impact up to ~100 terms, tested to 230+.
-Single words beat multi-word phrases. Maps cleanly onto a YAML list:
+### What actually happened
+
+One real bug found and fixed. `SlidingWindowAsrConfig.default` gates rescoring
+behind `minContextForConfirmation: 10s` and a 0.85 confidence floor — so on any
+clip shorter than 10 seconds the rescorer **never ran at all**. Dictation clips
+are mostly shorter than that. `Transcriber.dictationConfig` drops both, and the
+logs confirm the rescorer now runs (`CONFIRMED (0.929, 6.3s context)`).
+
+It still produced zero replacements. Tried: phonetic spelling in `text`;
+aliases matching the model's exact output; a term identical to the emitted
+word. The CTC spotter runs, produces 79 frames of log-probs, and detects
+nothing. Not pursued further.
+
+**So `replacements` is what fixes names today** — a literal, word-boundary,
+case-insensitive swap applied last. On the test clip it took
+
+    Hi, my name is Ilbushtane... with Tasman and Mick... called Carrot Flow.
+
+to
+
+    Hi, my name is Zylbersztejn... with Tasmeen and Mik... called ParrotFlow.
+
+The workflow is: dictate, run `--transcribe`, see what the model wrote, map it.
+Less elegant than acoustic biasing and it can't generalise to a mispronunciation
+you haven't seen — but it works, and it's honest about what it does.
+
+Re-test biasing on each FluidAudio upgrade; if a batch API appears, try that.
+
+FluidAudio documents 99.4% recall, no latency impact up to ~100 terms. Not
+reproduced here. The YAML shape is in place either way:
 
 ```yaml
 vocabulary:

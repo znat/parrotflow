@@ -4,6 +4,7 @@ import AppKit
 //
 //   ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
 //   ParrotFlow.app/Contents/MacOS/ParrotFlow --record 3
+//   ParrotFlow.app/Contents/MacOS/ParrotFlow --transcribe clip.wav
 //
 let arguments = CommandLine.arguments
 
@@ -14,6 +15,14 @@ if arguments.contains("--check-config") {
 if let index = arguments.firstIndex(of: "--record") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     exit(RecordTestCommand.run(seconds: seconds ?? 3))
+}
+
+if let index = arguments.firstIndex(of: "--transcribe") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --transcribe <file.wav>")
+        exit(2)
+    }
+    exit(TranscribeCommand.run(path: arguments[index + 1]))
 }
 
 if let index = arguments.firstIndex(of: "--watch-modifiers") {

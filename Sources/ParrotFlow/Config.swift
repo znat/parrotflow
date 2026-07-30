@@ -20,6 +20,77 @@ struct Config: Codable, Equatable {
     var hotkey: Hotkey = Hotkey()
     var audio: Audio = Audio()
     var feedback: Feedback = Feedback()
+    var transcription: Transcription = Transcription()
+
+    struct Transcription: Codable, Equatable {
+        var enabled: Bool = true
+        /// Words the model would otherwise never produce — see `VocabularyTerm`.
+        var vocabulary: [VocabularyTerm] = []
+        /// Applied after transcription, last. A blunt instrument: use it only
+        /// for terms that can't collide with something you might really say.
+        var replacements: [String: String] = [:]
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init()
+            if let enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) { self.enabled = enabled }
+            if let vocabulary = try c.decodeIfPresent([VocabularyTerm].self, forKey: .vocabulary) {
+                self.vocabulary = vocabulary
+            }
+            if let replacements = try c.decodeIfPresent([String: String].self, forKey: .replacements) {
+                self.replacements = replacements
+            }
+        }
+    }
+
+    /// A term to bias recognition toward.
+    ///
+    /// `aliases` are what the *spotter* listens for and `text` is what gets
+    /// written, which is the whole trick for a name whose spelling doesn't
+    /// match its sound: list the phonetic renderings an ASR would actually
+    /// produce, and get back the spelling you want.
+    ///
+    /// Accepts either form in YAML:
+    ///
+    ///     vocabulary:
+    ///       - Parakeet
+    ///       - text: Zylbersztejn
+    ///         aliases: [Zilbershtayn, Silbershtein]
+    struct VocabularyTerm: Codable, Equatable {
+        var text: String
+        var aliases: [String] = []
+
+        // Not synthesized: this type defines both init(from:) and encode(to:).
+        enum CodingKeys: String, CodingKey {
+            case text, aliases
+        }
+
+        init(text: String, aliases: [String] = []) {
+            self.text = text
+            self.aliases = aliases
+        }
+
+        init(from decoder: Decoder) throws {
+            // Bare string form.
+            if let single = try? decoder.singleValueContainer(),
+               let text = try? single.decode(String.self) {
+                self.init(text: text)
+                return
+            }
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            let text = try c.decode(String.self, forKey: .text)
+            let aliases = try c.decodeIfPresent([String].self, forKey: .aliases) ?? []
+            self.init(text: text, aliases: aliases)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(text, forKey: .text)
+            if !aliases.isEmpty { try c.encode(aliases, forKey: .aliases) }
+        }
+    }
 
     struct Hotkey: Codable, Equatable {
         /// Key name understood by `KeyCodes.code(for:)`, e.g. "space", "d", "f13".
@@ -122,6 +193,9 @@ struct Config: Codable, Equatable {
         if let hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) { self.hotkey = hotkey }
         if let audio = try c.decodeIfPresent(Audio.self, forKey: .audio) { self.audio = audio }
         if let feedback = try c.decodeIfPresent(Feedback.self, forKey: .feedback) { self.feedback = feedback }
+        if let transcription = try c.decodeIfPresent(Transcription.self, forKey: .transcription) {
+            self.transcription = transcription
+        }
     }
 
     var resolvedOutputDir: URL {
@@ -194,6 +268,22 @@ enum ConfigStore {
     feedback:
       sound: true
       overlay: true
+
+    transcription:
+      enabled: true
+
+      # Terms the model would otherwise never produce.
+      # `aliases` are what the spotter listens for; `text` is what gets written
+      # — so spell the aliases the way an ASR would render the sound, and get
+      # back the spelling you want. A bare string is shorthand for text-only.
+      vocabulary: []
+      #  - text: Zylbersztejn
+      #    aliases: [Zilbershtayn, Silverstein]
+      #  - ParrotFlow
+
+      # Last-resort literal swaps, applied after boosting. Word-boundary
+      # matched and case-insensitive.
+      replacements: {}
     """
 }
 

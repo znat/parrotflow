@@ -1,34 +1,31 @@
-# ParrotFlow configuration
-# Edit and save — changes are picked up automatically.
+transcription:
+  enabled: true
 
-hotkey:
-  # Either a bare modifier used on its own:
-  #   right_option, left_option, right_command, left_command,
-  #   right_control, left_control, right_shift, left_shift, fn
-  # ...or a character key plus modifiers:
-  #   a-z, 0-9, space, return, tab, escape, f1-f20, arrows,
-  #   comma, period, slash, semicolon, quote, backslash,
-  #   leftbracket, rightbracket, minus, equal, grave, delete
-  key: right_option
-
-  # Any of: command, control, option, shift (aliases: cmd, ctrl, alt, opt).
-  # Required for a character key; ignored for a bare modifier.
-  modifiers: []
-
-  # toggle       -> tap to start, tap again to stop
-  # push_to_talk -> record only while the key is held
+  # Acoustic context biasing. NOTE: in FluidAudio 0.15.5 this produced zero
+  # replacements in every configuration tested — see docs/transcription.md.
+  # Kept because it costs nothing when it misses, and should start working as
+  # the library matures. `replacements` below is what actually does the work
+  # today.
   #
-  # Bare modifiers want push_to_talk: on toggle, Right Option would start
-  # recording every time you typed an accented character with it.
-  mode: push_to_talk
+  # Only `text` is tokenized for the spotter, so it must be spelled the way the
+  # word SOUNDS. Aliases are not given to the spotter at all — they only relax
+  # a string-similarity check afterwards.
+  vocabulary:
+    - text: Zylbersztejn
+      aliases: [Zilbershtayn, Zilberstein, Silverstein]
+    - text: Tasmeen
+      aliases: [Tasmin, Tasman]
+    - text: Mik
+      aliases: [Mick]
+    - Parakeet
 
-audio:
-  # 16 kHz mono is what Parakeet wants. Leave this alone.
-  sample_rate: 16000
-  output_dir: ~/Recordings/ParrotFlow
-  # Discard anything shorter than this (seconds)
-  min_duration_seconds: 0.3
-
-feedback:
-  sound: true
-  overlay: true
+  # What actually fixes names right now. Run `--transcribe` on a clip of your
+  # own voice, see what the model wrote, and map it here. Word-boundary matched
+  # and case-insensitive.
+  replacements:
+    Ilbushtane: Zylbersztejn
+    Zilbershtayn: Zylbersztejn
+    Tasman: Tasmeen
+    Tasmin: Tasmeen
+    Mick: Mik
+    Carrot Flow: ParrotFlow

@@ -15,6 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusInfoItem: NSMenuItem!
     private var toggleItem: NSMenuItem!
 
+    private lazy var transcriber = Transcriber { [weak self] status in
+        DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
+    }
+    private var transcriptionLabel: String?
+
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
     private var hotkeyError: String?
@@ -211,12 +216,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 recording.duration
             )
             Log.write(String(format: "wrote %@ (%.2fs)", recording.url.lastPathComponent, recording.duration))
+            if config.transcription.enabled {
+                transcribe(recording)
+            }
         }
 
         if let reason {
             presentAlert(title: "Recording stopped", message: reason)
         }
 
+        updateUI()
+    }
+
+    // MARK: - Transcription
+
+    private func transcribe(_ recording: Recorder.Recording) {
+        transcriptionLabel = "Transcribing…"
+        updateUI()
+
+        let config = self.config
+        Task { [weak self] in
+            do {
+                let text = try await self?.transcriber.transcribe(url: recording.url, config: config) ?? ""
+                await MainActor.run {
+                    guard let self else { return }
+                    self.transcriptionLabel = nil
+                    self.finishTranscription(text: text)
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self else { return }
+                    self.transcriptionLabel = nil
+                    Log.write("transcription failed: \(error.localizedDescription)")
+                    self.presentAlert(title: "Transcription failed", message: error.localizedDescription)
+                    self.updateUI()
+                }
+            }
+        }
+    }
+
+    private func finishTranscription(text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            Log.write("transcription produced no text")
+            updateUI()
+            return
+        }
+
+        Log.write("transcribed: \(trimmed)")
+        settings.model.lastTranscript = trimmed
+
+        switch TextInserter.insert(trimmed) {
+        case .pasted:
+            break
+        case .clipboardOnly:
+            // Don't nag on every dictation — the text is safe on the clipboard.
+            Log.write("Accessibility not granted; left transcript on the clipboard")
+            transcriptionLabel = "Copied — grant Accessibility to auto-paste"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+                self?.transcriptionLabel = nil
+                self?.updateUI()
+            }
+        }
+        updateUI()
+    }
+
+    private func handleTranscriberStatus(_ status: Transcriber.Status) {
+        switch status {
+        case .downloading(let what):
+            transcriptionLabel = "Downloading \(what)"
+        case .loading:
+            transcriptionLabel = "Loading speech model…"
+        case .ready, .idle:
+            break
+        case .failed(let message):
+            transcriptionLabel = "Model error: \(message)"
+        }
         updateUI()
     }
 
@@ -291,7 +366,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let shortcut = hotKeys.binding?.displayName
             ?? KeyCodes.displayString(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
 
-        if let hotkeyError {
+        if let transcriptionLabel {
+            statusInfoItem.title = transcriptionLabel
+        } else if let hotkeyError {
             statusInfoItem.title = "⚠︎ \(hotkeyError)"
         } else if recording {
             let elapsed = Int(overlay.model.elapsed)

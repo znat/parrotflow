@@ -42,6 +42,30 @@ enum CheckConfigCommand {
         print("  ✓ min duration      \(config.audio.minDurationSeconds)s")
         print("  · feedback          sound=\(config.feedback.sound) overlay=\(config.feedback.overlay)")
 
+        // Transcription — printed so a mis-decoded config is visible rather
+        // than silently falling back to "no vocabulary".
+        let transcription = config.transcription
+        print("  · transcription     \(transcription.enabled ? "enabled" : "disabled")")
+        if transcription.enabled {
+            if transcription.vocabulary.isEmpty {
+                print("  · vocabulary        none")
+            } else {
+                print("  ✓ vocabulary        \(transcription.vocabulary.count) terms")
+                for term in transcription.vocabulary {
+                    let aliases = term.aliases.isEmpty
+                        ? ""
+                        : "  ← \(term.aliases.joined(separator: ", "))"
+                    print("      \(term.text)\(aliases)")
+                }
+            }
+            if !transcription.replacements.isEmpty {
+                print("  ✓ replacements      \(transcription.replacements.count)")
+                for (from, to) in transcription.replacements.sorted(by: { $0.key < $1.key }) {
+                    print("      \(from) → \(to)")
+                }
+            }
+        }
+
         // Environment
         let mic = Permissions.microphone
         print("  \(mic == .granted ? "✓" : "✗") microphone        \(mic.label)")
