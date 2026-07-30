@@ -58,15 +58,20 @@ When a name comes out wrong, select it in whatever app you're in, hold the
 hotkey and say **"hey parrot"**. A panel opens showing what it heard and a
 field for what it should have written.
 
-    HEARD AS              SHOULD BE
-    ┌──────────┐    →    ┌──────────────────┐
-    │ Versov   │         │ Vercel           │
-    └──────────┘         └──────────────────┘
-    return Save rule   esc Cancel
+    HEARD AS         SHOULD BE
+    Tasmin      →   [Tasmeen            ]  ×
+    and         →   [                   ]  ×
+    Mick        →   [Mik                ]  ×
+    return Save   esc Cancel              2 rules
 
-Saving does two things: writes the rule into `config.yaml` (comments and all
-your other settings untouched), and fixes the word you had selected. The rule
-applies to every transcript from then on.
+You get a row per word, because rules are per-word — a phrase you selected
+once will never recur verbatim. Leave a row blank and it is skipped, so
+selecting a whole sentence to fix two names costs nothing. × drops a row you
+do not want to think about.
+
+Saving writes each filled-in rule to `config.yaml` — comments and your other
+settings untouched — and puts the corrected phrase back where it came from,
+punctuation and spacing intact.
 
 *Correct a Word…* in the menu does the same without speaking, and
 `--learn <heard> <corrected>` does it from the terminal.

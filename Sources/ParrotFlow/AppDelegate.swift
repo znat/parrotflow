@@ -289,36 +289,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             : nil
 
         pendingSelection = selection
-        correctionPanel.onSave = { [weak self] heard, corrected in
-            self?.saveCorrection(heard: heard, corrected: corrected)
+        correctionPanel.onSave = { [weak self] rules, correctedText in
+            self?.saveCorrections(rules, correctedText: correctedText)
         }
         correctionPanel.onCancel = { [weak self] in
             self?.pendingSelection = nil
         }
-        correctionPanel.show(heard: selection?.text ?? "")
+        correctionPanel.show(selection: selection?.text ?? "")
     }
 
-    private func saveCorrection(heard: String, corrected: String) {
-        do {
-            try ConfigWriter.addReplacement(heard: heard, corrected: corrected)
-            Log.write("learned replacement: \(heard) -> \(corrected)")
-        } catch {
-            presentAlert(title: "Could not save the rule", message: error.localizedDescription)
-            return
+    private func saveCorrections(
+        _ rules: [(heard: String, corrected: String)],
+        correctedText: String
+    ) {
+        for rule in rules {
+            do {
+                try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
+                Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+            } catch {
+                presentAlert(title: "Could not save the rule", message: error.localizedDescription)
+                pendingSelection = nil
+                return
+            }
         }
 
-        // Fix the word that prompted this, not just the next one. With no
-        // selection to replace, leave the corrected spelling on the clipboard
-        // so the fix is still one keystroke away.
-        if let selection = pendingSelection {
-            SelectionReader.replaceSelection(with: corrected, in: selection.owner)
-        } else {
+        // Put the corrected phrase back where it came from, whether or not any
+        // rules were saved — the user may just be fixing this one instance.
+        let trimmed = correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let selection = pendingSelection, !trimmed.isEmpty {
+            SelectionReader.replaceSelection(with: correctedText, in: selection.owner)
+        } else if !trimmed.isEmpty {
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(corrected, forType: .string)
+            NSPasteboard.general.setString(correctedText, forType: .string)
         }
         pendingSelection = nil
+
         if config.feedback.sound { NSSound(named: "Glass")?.play() }
-        flash("Saved  \(heard) → \(corrected)")
+        switch rules.count {
+        case 0: flash("Text replaced")
+        case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)")
+        default: flash("Saved \(rules.count) rules")
+        }
     }
 
     /// Briefly show a message in the menu bar status line.
@@ -489,12 +500,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `--preview-panel` shows the correction panel with sample text, so its
     /// layout can be iterated on without dictating into it every time.
     func previewCorrectionPanel() {
-        correctionPanel.onSave = { heard, corrected in
-            Log.write("preview: \(heard) -> \(corrected)")
+        correctionPanel.onSave = { rules, text in
+            Log.write("preview: \(rules.map { "\($0.heard)->\($0.corrected)" }.joined(separator: ", ")) | \(text)")
             NSApp.terminate(nil)
         }
         correctionPanel.onCancel = { NSApp.terminate(nil) }
-        correctionPanel.show(heard: "Versov")
+        correctionPanel.show(selection: "I work with Tasmin and Mick.")
     }
 
     @objc private func openRecordingsFolder() {
