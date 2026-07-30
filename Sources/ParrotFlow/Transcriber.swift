@@ -14,8 +14,9 @@ import Foundation
 /// preference — as of FluidAudio 0.15.5 it is the only manager that exposes
 /// `configureVocabularyBoosting`. The batch `AsrManager.transcribe(_:customVocabulary:)`
 /// shown in FluidAudio's own documentation does not exist in any released
-/// version. Worth re-checking on upgrade: batch mode is the better fit here,
-/// since we always hand it a finished clip rather than a live stream.
+/// version. Worth re-checking on upgrade.
+///
+/// See `tokenize(_:using:)` for the non-obvious step that makes any of it work.
 @available(macOS 14, *)
 actor Transcriber {
 
@@ -38,7 +39,7 @@ actor Transcriber {
     /// anything.
     private static let dictationConfig = SlidingWindowAsrConfig(
         chunkSeconds: 11.0,
-        hypothesisChunkSeconds: 2.0,
+        hypothesisChunkSeconds: 11.0,  // one pass: the clip is already finished
         leftContextSeconds: 2.0,
         rightContextSeconds: 2.0,
         minContextForConfirmation: 0.3,
@@ -84,12 +85,10 @@ actor Transcriber {
             setStatus(.downloading("keyword spotter"))
             let ctcModels = try await CtcModels.downloadAndLoad()
 
-            let terms = vocabulary.map { term in
-                CustomVocabularyTerm(
-                    text: term.text,
-                    aliases: term.aliases.isEmpty ? nil : term.aliases
-                )
-            }
+            let tokenizer = try await CtcTokenizer.load(
+                from: CtcModels.defaultCacheDirectory(for: .ctc110m)
+            )
+            let terms = Self.tokenize(vocabulary, using: tokenizer)
             setStatus(.loading)
             try await manager.configureVocabularyBoosting(
                 vocabulary: CustomVocabularyContext(terms: terms),
@@ -111,6 +110,30 @@ actor Transcriber {
         guard percent != lastReportedPercent else { return }
         lastReportedPercent = percent
         setStatus(.downloading("\(label) \(percent)%"))
+    }
+
+
+    /// Turns config terms into spotter-ready terms.
+    ///
+    /// The tokenization is not optional. `CtcKeywordSpotter` does
+    /// `term.ctcTokenIds ?? term.tokenIds` and `continue`s when both are nil —
+    /// so a term built as `CustomVocabularyTerm(text:)`, which is exactly what
+    /// FluidAudio's documentation shows, is silently skipped and the spotter
+    /// reports zero detections with no warning. Only the file-loading factory
+    /// `loadWithCtcTokens(from:)` tokenizes, and we take terms from YAML.
+    static func tokenize(
+        _ vocabulary: [Config.VocabularyTerm],
+        using tokenizer: CtcTokenizer
+    ) -> [CustomVocabularyTerm] {
+        vocabulary.compactMap { term in
+            let ids = tokenizer.encode(term.text)
+            guard !ids.isEmpty else { return nil }
+            return CustomVocabularyTerm(
+                text: term.text,
+                aliases: term.aliases.isEmpty ? nil : term.aliases,
+                ctcTokenIds: ids
+            )
+        }
     }
 
     // MARK: - Transcription

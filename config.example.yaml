@@ -1,29 +1,26 @@
 transcription:
   enabled: true
 
-  # Acoustic context biasing. NOTE: in FluidAudio 0.15.5 this produced zero
-  # replacements in every configuration tested — see docs/transcription.md.
-  # Kept because it costs nothing when it misses, and should start working as
-  # the library matures. `replacements` below is what actually does the work
-  # today.
+  # ACOUSTIC CONTEXT BIASING.
   #
-  # Only `text` is tokenized for the spotter, so it must be spelled the way the
-  # word SOUNDS. Aliases are not given to the spotter at all — they only relax
-  # a string-similarity check afterwards.
+  # Terms here are matched against the audio itself, so this can recover a name
+  # the model has never seen. Two hard-won rules:
+  #
+  #  1. Spell the term the way it SOUNDS, not the way you write it. Only `text`
+  #     is tokenized and searched for; aliases are never given to the spotter.
+  #     Then map the sound to the spelling you want under `replacements`.
+  #  2. Keep this list short, long and distinctive. Terms under ~6 characters
+  #     over-fire badly — "Mick" swallowed "project called carrot flow" in
+  #     testing. Anything you can anticipate belongs in `replacements` instead.
+  #
+  # Check what the spotter actually finds with:  --spot <file.wav>
   vocabulary:
-    - text: Zylbersztejn
-      aliases: [Zilbershtayn, Zilberstein, Silverstein]
-    - text: Tasmeen
-      aliases: [Tasmin, Tasman]
-    - text: Mik
-      aliases: [Mick]
-    - Parakeet
+    - Zilbershtayn
 
-  # What actually fixes names right now. Run `--transcribe` on a clip of your
-  # own voice, see what the model wrote, and map it here. Word-boundary matched
-  # and case-insensitive.
+  # Literal, word-boundary, case-insensitive swaps applied last. Safe and
+  # predictable — this is where most name fixing should live.
+  # Workflow: dictate, run --transcribe, map whatever the model wrote.
   replacements:
-    Ilbushtane: Zylbersztejn
     Zilbershtayn: Zylbersztejn
     Tasman: Tasmeen
     Tasmin: Tasmeen

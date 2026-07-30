@@ -72,7 +72,13 @@ enum TranscribeCommand {
                              elapsed, duration, duration / max(elapsed, 0.001)))
 
                 // Did the vocabulary actually land?
-                let hits = terms.filter { text.localizedCaseInsensitiveContains($0.text) }
+                // A boosted term is usually rewritten by `replacements` before
+                // it reaches us, so check the canonical form too.
+                let hits = terms.filter { term in
+                    let canonical = config.transcription.replacements[term.text] ?? term.text
+                    return text.localizedCaseInsensitiveContains(term.text)
+                        || text.localizedCaseInsensitiveContains(canonical)
+                }
                 if !terms.isEmpty {
                     print("vocabulary hits: \(hits.isEmpty ? "none" : hits.map(\.text).joined(separator: ", "))")
                 }

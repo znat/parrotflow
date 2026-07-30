@@ -25,6 +25,15 @@ if let index = arguments.firstIndex(of: "--transcribe") {
     exit(TranscribeCommand.run(path: arguments[index + 1]))
 }
 
+if let index = arguments.firstIndex(of: "--spot") {
+    guard #available(macOS 14, *), arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --spot <file.wav> [minScore]")
+        exit(2)
+    }
+    let score = arguments.indices.contains(index + 2) ? Float(arguments[index + 2]) : nil
+    exit(SpotCommand.run(path: arguments[index + 1], minScore: score))
+}
+
 if let index = arguments.firstIndex(of: "--watch-modifiers") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     exit(WatchModifiersCommand.run(seconds: seconds ?? 10))

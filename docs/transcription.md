@@ -1,6 +1,6 @@
 # Transcription: picking a Parakeet runtime
 
-Research notes for the step after v0.1. Nothing here is implemented yet.
+Implemented in `Transcriber.swift`. Findings below are measured, not quoted.
 
 ## Can Parakeet be prompted?
 
@@ -34,78 +34,89 @@ That's the important distinction from post-hoc substitution: a find-and-replace
 on "in video" → "NVIDIA" corrupts a genuine sentence about video. Biasing looks
 at the acoustics and only fires when the audio actually supports the term.
 
-> **Measured, 2026-07-30 — context biasing did not work.** Everything below
-> about how it *should* work is from FluidAudio's documentation. On a 6.3 s
-> clip with a 5-term vocabulary the rescorer ran and reported `Replacements: 0`
-> in every configuration tried, including one where a vocabulary term exactly
-> equalled the word the model had produced. See "What actually happened" below.
+> **It works, but only after a step neither doc mentions.** Three things had to
+> be found by reading the source before a single term ever matched. Verified
+> against FluidAudio 0.15.5 on 2026-07-30.
 
-Two things the docs get wrong, both verified by reading the checked-out source:
+### 1. Terms must be pre-tokenized, or they are silently ignored
 
-**The documented API does not exist.** FluidAudio's CustomVocabulary page shows
-`asrManager.transcribe(samples, customVocabulary: vocabulary)`. No released
-version has it — not 0.15.5, not `main`. The only shipped path is
-`SlidingWindowAsrManager.configureVocabularyBoosting(vocabulary:ctcModels:)`,
-i.e. the *streaming* manager, which pulls a second model (`CtcModels`, ~98 MB).
-
-**Aliases are not spotter targets.** `CustomVocabularyContext.swift:291` does
-`ctcTokenizer.encode(term.text)` — only `text` is tokenized and searched for
-acoustically. Aliases appear in `VocabularyRescorer+Utilities` solely to widen
-a string-similarity gate *after* a candidate is found. So the "spell the alias
-phonetically, get the canonical spelling back" trick does not work; if `text`
-isn't spelled the way the word sounds, the spotter has nothing to look for.
+This is the one that matters. `CtcKeywordSpotter` does:
 
 ```swift
-let manager = SlidingWindowAsrManager(config: dictationConfig)
-try await manager.loadModels()
-try await manager.configureVocabularyBoosting(
-    vocabulary: CustomVocabularyContext(terms: [CustomVocabularyTerm(text: "Zilbershtayn")]),
-    ctcModels: try await CtcModels.downloadAndLoad()
-)
+let ids = term.ctcTokenIds ?? term.tokenIds
+guard let ids, !ids.isEmpty else { continue }   // skipped, no warning
 ```
 
-### What actually happened
+`CustomVocabularyTerm(text: "Zilbershtayn")` — exactly what both the GitHub docs
+and docs.fluidinference.com show — leaves `ctcTokenIds` **nil**. So every term
+is skipped, the spotter returns zero detections, and nothing anywhere says why.
+Tokenization only happens inside `loadWithCtcTokens(from:)`, which reads a
+vocabulary *file*; there is no equivalent for terms you build in code.
 
-One real bug found and fixed. `SlidingWindowAsrConfig.default` gates rescoring
-behind `minContextForConfirmation: 10s` and a 0.85 confidence floor — so on any
-clip shorter than 10 seconds the rescorer **never ran at all**. Dictation clips
-are mostly shorter than that. `Transcriber.dictationConfig` drops both, and the
-logs confirm the rescorer now runs (`CONFIRMED (0.929, 6.3s context)`).
+The fix is to tokenize them yourself (`Transcriber.tokenize`):
 
-It still produced zero replacements. Tried: phonetic spelling in `text`;
-aliases matching the model's exact output; a term identical to the emitted
-word. The CTC spotter runs, produces 79 frames of log-probs, and detects
-nothing. Not pursued further.
+```swift
+let tokenizer = try await CtcTokenizer.load(
+    from: CtcModels.defaultCacheDirectory(for: .ctc110m))
+CustomVocabularyTerm(text: term.text, ctcTokenIds: tokenizer.encode(term.text))
+```
 
-**So `replacements` is what fixes names today** — a literal, word-boundary,
-case-insensitive swap applied last. On the test clip it took
+Before: `detections: 0` at every threshold, down to `minScore: -500`.
+After: all three test terms found, scores −10.0 to −10.6 against a −15 floor.
+Tuning thresholds first was wasted effort — the gate was never the problem.
 
-    Hi, my name is Ilbushtane... with Tasman and Mick... called Carrot Flow.
+### 2. Aliases are not spotter targets
 
-to
+`CustomVocabularyContext.swift:291` tokenizes only `term.text`. Aliases appear
+solely in `VocabularyRescorer+Utilities`, widening a string-similarity check
+*after* a candidate is found. So "put the phonetic spelling in `aliases` and get
+the canonical spelling out" does not work.
 
-    Hi, my name is Zylbersztejn... with Tasmeen and Mik... called ParrotFlow.
+Spell `text` the way the word **sounds**, and map it to the spelling you want
+with `replacements`. For a Polish surname that means `Zilbershtayn` in the
+vocabulary and `Zilbershtayn: Zylbersztejn` in replacements.
 
-The workflow is: dictate, run `--transcribe`, see what the model wrote, map it.
-Less elegant than acoustic biasing and it can't generalise to a mispronunciation
-you haven't seen — but it works, and it's honest about what it does.
+### 3. Short clips never reach the rescorer
 
-Re-test biasing on each FluidAudio upgrade; if a batch API appears, try that.
+`SlidingWindowAsrConfig.default` gates rescoring behind
+`minContextForConfirmation: 10s` and a 0.85 confidence floor. Dictation clips
+are mostly shorter, so the rescorer never ran. `Transcriber.dictationConfig`
+drops both. Both gates exist to stop a live transcript rewriting itself
+on-screen; we only ever submit a finished clip.
 
-FluidAudio documents 99.4% recall, no latency impact up to ~100 terms. Not
-reproduced here. The YAML shape is in place either way:
+### Keep the list short and long
+
+With `Zilbershtayn`, `Tasmin` and `Mick` all boosted, the tail of the sentence
+was destroyed — "on a project called carrot flow" collapsed to "on a Tasmeen".
+Detection spans are loose (`Zilbershtayn` claimed 0.08s–5.86s of a 6.25s clip),
+and short terms match almost anywhere.
+
+Cutting the list to the single long distinctive term fixed it:
+
+    Hi, my name is Zylbersztejn I am working with Tasmeen and Mik
+    on a project called ParrotFlow.
+
+So the division of labour is:
+
+- **`vocabulary`** — a handful of long, distinctive, phonetically-spelled terms.
+  For rare names you cannot anticipate the misspelling of. Verify each with
+  `--spot <file.wav>`, which prints raw detections and scores.
+- **`replacements`** — everything else. Literal, word-boundary, case-insensitive,
+  applied last. Predictable, and where most name fixing should live.
+
+Known artifact: the rescorer drops sentence punctuation at a replacement site
+("Zylbersztejn I am" rather than "Zylbersztejn. I am").
+
+FluidAudio documents 99.4% recall and no latency impact up to ~100 terms. With
+loose spans and short-term over-firing, a list that size looks optimistic for
+dictation; a handful of long terms is what held up here. The YAML shape:
 
 ```yaml
 vocabulary:
-  - Parakeet
-  - ParrotFlow
-  - Zylbersztejn
-  - text: Häagen-Dazs
-    aliases: [Hagen Das]
+  - Zilbershtayn          # spelled as it SOUNDS
+replacements:
+  Zilbershtayn: Zylbersztejn
 ```
-
-Caveat: biasing needs the complete log-probability matrix, so it is
-weaker in streaming mode. Not a problem for us — we transcribe a finished clip.
 
 ### 2. A local LLM pass — for everything else
 
