@@ -114,6 +114,63 @@ enum VoiceCommand {
     /// Understood as nothing actionable.
     case unrecognised(String)
 
+    /// Everything said after the wake phrase, or nil for plain dictation.
+    /// Empty string means the phrase was said on its own.
+    ///
+    /// Shared by the app and by `--command`; when these were two copies, the
+    /// test harness silently exercised different logic from the app.
+    static func commandAfterWakePhrase(_ text: String, phrase rawPhrase: String) -> String? {
+        let phrase = rawPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !phrase.isEmpty else { return nil }
+
+        func normalise(_ value: String) -> [String] {
+            value.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted)
+                .joined()
+                .split(separator: " ")
+                .map(String.init)
+        }
+
+        let phraseWords = normalise(phrase)
+        let spokenWords = text.split(separator: " ").map(String.init)
+        let normalised = normalise(text)
+        guard !phraseWords.isEmpty, !normalised.isEmpty else { return nil }
+
+        // Try a few lengths around the phrase. The wake phrase is the first
+        // thing said, which is exactly where audio gets clipped by the engine
+        // starting up — so "hey parrot, X" arrives as "parrot, X" or "hey
+        // parrots X". Requiring an exact prefix loses all of those.
+        // Take the best-scoring length, not the first above threshold: with
+        // "hey parrot fix vocabulary", "hey parrot fix" also clears 0.7 and
+        // would swallow the "fix".
+        var matchedWords: Int?
+        var bestScore = 0.7
+        for count in 1...min(phraseWords.count + 1, normalised.count) {
+            let candidate = normalised.prefix(count).joined(separator: " ")
+            let score = similarity(candidate, phrase)
+            if score > bestScore {
+                bestScore = score
+                matchedWords = count
+            }
+        }
+
+        // Last chance: the distinctive word survived on its own ("parrot"),
+        // which is what a clipped "hey" leaves behind.
+        if matchedWords == nil, let keyword = phraseWords.last, keyword.count >= 4,
+           similarity(normalised[0], keyword) >= 0.8 {
+            matchedWords = 1
+        }
+
+        guard let matchedWords else { return nil }
+
+        guard spokenWords.count == normalised.count else {
+            return normalised.dropFirst(matchedWords).joined(separator: " ")
+        }
+        return spokenWords.dropFirst(matchedWords)
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Phrases handled without troubling the LLM. Cheap, deterministic, and
     /// they work when Ollama isn't running.
     static func local(from command: String) -> VoiceCommand? {

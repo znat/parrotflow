@@ -20,7 +20,7 @@ enum CommandTestCommand {
             print("context:     \"\(lastTranscript)\"")
         }
 
-        guard let command = strip(phrase: phrase, from: text) else {
+        guard let command = VoiceCommand.commandAfterWakePhrase(text, phrase: phrase) else {
             print("→ not a command; this would be dictated as normal text")
             return 0
         }
@@ -77,25 +77,4 @@ enum CommandTestCommand {
         }
     }
 
-    /// Mirrors AppDelegate's prefix match.
-    private static func strip(phrase: String, from text: String) -> String? {
-        func normalise(_ value: String) -> [String] {
-            value.lowercased()
-                .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted)
-                .joined()
-                .split(separator: " ")
-                .map(String.init)
-        }
-        let phraseWords = normalise(phrase)
-        let spokenWords = text.split(separator: " ").map(String.init)
-        let normalised = normalise(text)
-        guard !phraseWords.isEmpty, phraseWords.count <= normalised.count,
-              Array(normalised.prefix(phraseWords.count)) == phraseWords else { return nil }
-        guard spokenWords.count == normalised.count else {
-            return normalised.dropFirst(phraseWords.count).joined(separator: " ")
-        }
-        return spokenWords.dropFirst(phraseWords.count)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
 }

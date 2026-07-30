@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private var transcriptionLabel: String?
     private let correctionPanel = CorrectionPanel()
+    private let notice = NoticeHUD()
     private var pendingSelection: SelectionReader.Selection?
     /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
     private var selectionAtPress: SelectionReader.Selection?
@@ -277,34 +278,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// original, so "Tasmin spells T A S M E E N" keeps its capitals — the
     /// spelling is the whole point of the command.
     private func commandAfterWakePhrase(_ text: String) -> String? {
-        let phrase = config.transcription.correctionPhrase
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !phrase.isEmpty else { return nil }
-
-        func normalise(_ value: String) -> [String] {
-            value.lowercased()
-                .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted)
-                .joined()
-                .split(separator: " ")
-                .map(String.init)
-        }
-
-        let phraseWords = normalise(phrase)
-        let spokenWords = text.split(separator: " ").map(String.init)
-        let normalisedSpoken = normalise(text)
-
-        guard phraseWords.count <= normalisedSpoken.count,
-              Array(normalisedSpoken.prefix(phraseWords.count)) == phraseWords
-        else { return nil }
-
-        // Word counts can differ between the two when punctuation splits
-        // things; fall back to the normalised remainder if so.
-        guard spokenWords.count == normalisedSpoken.count else {
-            return normalisedSpoken.dropFirst(phraseWords.count).joined(separator: " ")
-        }
-        return spokenWords.dropFirst(phraseWords.count)
-            .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        VoiceCommand.commandAfterWakePhrase(
+            text, phrase: config.transcription.correctionPhrase
+        )
     }
 
     private func handleVoiceCommand(_ command: String) {
@@ -421,8 +397,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Briefly show a message in the menu bar status line.
+    /// Show a message on screen, and in the menu bar for as long as it lasts.
     private func flash(_ message: String) {
+        notice.show(message)
         transcriptionLabel = message
         updateUI()
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
