@@ -1,0 +1,34 @@
+# ParrotFlow configuration
+# Edit and save — changes are picked up automatically.
+
+hotkey:
+  # Either a bare modifier used on its own:
+  #   right_option, left_option, right_command, left_command,
+  #   right_control, left_control, right_shift, left_shift, fn
+  # ...or a character key plus modifiers:
+  #   a-z, 0-9, space, return, tab, escape, f1-f20, arrows,
+  #   comma, period, slash, semicolon, quote, backslash,
+  #   leftbracket, rightbracket, minus, equal, grave, delete
+  key: right_option
+
+  # Any of: command, control, option, shift (aliases: cmd, ctrl, alt, opt).
+  # Required for a character key; ignored for a bare modifier.
+  modifiers: []
+
+  # toggle       -> tap to start, tap again to stop
+  # push_to_talk -> record only while the key is held
+  #
+  # Bare modifiers want push_to_talk: on toggle, Right Option would start
+  # recording every time you typed an accented character with it.
+  mode: push_to_talk
+
+audio:
+  # 16 kHz mono is what Parakeet wants. Leave this alone.
+  sample_rate: 16000
+  output_dir: ~/Recordings/ParrotFlow
+  # Discard anything shorter than this (seconds)
+  min_duration_seconds: 0.3
+
+feedback:
+  sound: true
+  overlay: true

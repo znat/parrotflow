@@ -1,0 +1,93 @@
+import AVFoundation
+import Foundation
+
+/// `--record [seconds]` — records straight from the terminal, no hotkey and no
+/// menu bar, and prints what landed on disk. The fastest way to answer "is the
+/// microphone actually reaching this app?".
+enum RecordTestCommand {
+
+    static func run(seconds: Double) -> Int32 {
+        let config: Config
+        do {
+            config = try ConfigStore.load()
+        } catch {
+            print("✗ config: \(CheckConfigCommand.describe(error))")
+            return 1
+        }
+
+        guard Permissions.microphone == .granted else {
+            print("✗ microphone permission not granted (\(Permissions.microphone.label))")
+            print("  Launch ParrotFlow.app once and allow it, then try again.")
+            return 1
+        }
+
+        let recorder = Recorder()
+        recorder.warmUp()
+        var peak: Float = 0
+        recorder.onLevel = { peak = max(peak, $0) }
+
+        do {
+            let url = try recorder.start(config: config)
+            print("● recording \(seconds)s → \(url.lastPathComponent)")
+        } catch {
+            print("✗ \(error.localizedDescription)")
+            return 1
+        }
+
+        // AVAudioEngine delivers tap buffers on the run loop's behalf.
+        RunLoop.current.run(until: Date().addingTimeInterval(seconds))
+
+        guard let recording = recorder.stop(config: config) else {
+            print("✗ nothing written (shorter than min_duration_seconds?)")
+            return 1
+        }
+
+        return report(recording: recording, peak: peak, config: config)
+    }
+
+    private static func report(recording: Recorder.Recording, peak: Float, config: Config) -> Int32 {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: recording.url.path)
+        let bytes = (attributes?[.size] as? Int) ?? 0
+
+        print("✓ wrote \(recording.url.path)")
+        print("  duration   \(String(format: "%.2f", recording.duration))s")
+        print("  size       \(bytes) bytes")
+
+        guard let file = try? AVAudioFile(forReading: recording.url) else {
+            print("✗ the file is not readable as audio")
+            return 1
+        }
+        let format = file.fileFormat
+        print("  format     \(Int(format.sampleRate)) Hz, \(format.channelCount) ch, \(bitDepth(of: format))-bit")
+        print("  frames     \(file.length)")
+
+        var ok = true
+
+        if format.sampleRate != config.audio.sampleRate || format.channelCount != 1 {
+            print("✗ expected \(Int(config.audio.sampleRate)) Hz mono")
+            ok = false
+        }
+
+        // A silent file usually means the grant went to the wrong binary, or
+        // something else has the input device.
+        if peak < 0.02 {
+            print("✗ signal is silent (peak \(String(format: "%.3f", peak))) — check the input device")
+            ok = false
+        } else {
+            print("  peak level \(String(format: "%.2f", peak))")
+        }
+
+        // 16 kHz mono 16-bit ≈ 32000 bytes/s. Well under that means dropped audio.
+        let expected = recording.duration * config.audio.sampleRate * 2
+        if Double(bytes) < expected * 0.8 {
+            print("✗ file is smaller than expected for its duration — buffers were dropped")
+            ok = false
+        }
+
+        return ok ? 0 : 1
+    }
+
+    private static func bitDepth(of format: AVAudioFormat) -> Int {
+        Int(format.streamDescription.pointee.mBitsPerChannel)
+    }
+}
