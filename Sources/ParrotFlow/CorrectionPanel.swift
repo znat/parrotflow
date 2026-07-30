@@ -35,6 +35,20 @@ final class CorrectionPanel {
         panel?.makeKeyAndOrderFront(nil)
     }
 
+    /// Opens with a rule already filled in — the model proposed it, the user
+    /// confirms it. One keystroke, and nothing is written on a guess.
+    func show(rule: (heard: String, corrected: String)) {
+        model.loadRule(heard: rule.heard, corrected: rule.corrected)
+        model.onSubmit = { [weak self] in self?.commit() }
+        model.onCancel = { [weak self] in self?.dismiss(cancelled: true) }
+
+        if panel == nil { build() }
+        resize()
+        reposition()
+        NSApp.activate(ignoringOtherApps: true)
+        panel?.makeKeyAndOrderFront(nil)
+    }
+
     private func commit() {
         let rules = model.rules()
         let corrected = model.correctedText()
@@ -161,6 +175,10 @@ final class CorrectionModel: ObservableObject {
         if !tokens.contains(where: { !$0.word.isEmpty }) {
             tokens.append(CorrectionToken(word: "", isManual: true))
         }
+    }
+
+    func loadRule(heard: String, corrected: String) {
+        tokens = [CorrectionToken(word: heard, replacement: corrected, isManual: true)]
     }
 
     func remove(_ id: UUID) {

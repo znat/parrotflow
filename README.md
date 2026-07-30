@@ -73,8 +73,28 @@ Saving writes each filled-in rule to `config.yaml` — comments and your other
 settings untouched — and puts the corrected phrase back where it came from,
 punctuation and spacing intact.
 
-*Correct a Word…* in the menu does the same without speaking, and
-`--learn <heard> <corrected>` does it from the terminal.
+### Saying the spelling instead
+
+You can skip the panel entirely and just say the correction:
+
+    "hey parrot, Tasmin spells T A S M E E N"
+    "hey parrot, Mick is spelled M I K"
+    "hey parrot, it's spelled S U P A B A S E not super base"
+
+A local model works out which word was wrong; the panel opens prefilled so you
+confirm with one keystroke rather than trusting it blindly.
+
+The spelled-out letters are read from the text, not the model — a run of single
+letters can only be the target spelling, and relying on the model for that got
+the direction backwards on "X spells Y" phrasing in three of seven test cases.
+
+Needs [Ollama](https://ollama.com) running with the model in `llm.model`
+(`ollama pull gemma3:4b`). Without it, `"hey parrot"` and `"hey parrot, fix
+vocabulary"` still open the panel — those are matched without a model.
+
+*Correct a Word…* in the menu does the same without speaking,
+`--learn <heard> <corrected>` adds a rule from the terminal, and
+`--command "<what you'd say>"` shows how a phrase would be routed.
 
 Needs the Accessibility permission — reading your selection is exactly what
 that permission governs. Change the trigger with `transcription.correction_phrase`.

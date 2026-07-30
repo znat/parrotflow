@@ -270,20 +270,96 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// True when the transcript is the correction phrase rather than dictation.
-    private func isCorrectionPhrase(_ text: String) -> Bool {
+    /// Everything said after the wake phrase, or nil when this is plain
+    /// dictation. Empty string means the phrase was said on its own.
+    ///
+    /// Matched word by word on a normalised copy but returned from the
+    /// original, so "Tasmin spells T A S M E E N" keeps its capitals — the
+    /// spelling is the whole point of the command.
+    private func commandAfterWakePhrase(_ text: String) -> String? {
         let phrase = config.transcription.correctionPhrase
-            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !phrase.isEmpty else { return false }
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !phrase.isEmpty else { return nil }
 
-        // Strip punctuation the model adds ("Hey, parrot.") and collapse spaces
-        // so the match doesn't hinge on how it chose to punctuate.
-        let spoken = text.lowercased()
-            .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted)
-            .joined()
-            .split(separator: " ")
+        func normalise(_ value: String) -> [String] {
+            value.lowercased()
+                .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted)
+                .joined()
+                .split(separator: " ")
+                .map(String.init)
+        }
+
+        let phraseWords = normalise(phrase)
+        let spokenWords = text.split(separator: " ").map(String.init)
+        let normalisedSpoken = normalise(text)
+
+        guard phraseWords.count <= normalisedSpoken.count,
+              Array(normalisedSpoken.prefix(phraseWords.count)) == phraseWords
+        else { return nil }
+
+        // Word counts can differ between the two when punctuation splits
+        // things; fall back to the normalised remainder if so.
+        guard spokenWords.count == normalisedSpoken.count else {
+            return normalisedSpoken.dropFirst(phraseWords.count).joined(separator: " ")
+        }
+        return spokenWords.dropFirst(phraseWords.count)
             .joined(separator: " ")
-        return spoken == phrase
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func handleVoiceCommand(_ command: String) {
+        // Deterministic phrases first: no model needed, and they work when
+        // Ollama is not running.
+        if let local = VoiceCommand.local(from: command) {
+            apply(local, command: command)
+            return
+        }
+
+        guard config.llm.enabled else {
+            flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands")
+            return
+        }
+
+        flash("Thinking…")
+        let llmConfig = LocalLLM.Config(
+            endpoint: config.llm.endpoint,
+            model: config.llm.model,
+            timeout: config.llm.timeoutSeconds
+        )
+        let context = settings.model.lastTranscript
+
+        Task { [weak self] in
+            do {
+                let result = try await VoiceCommand.interpret(
+                    command: command, lastTranscript: context, config: llmConfig
+                )
+                await MainActor.run { self?.apply(result, command: command) }
+            } catch {
+                await MainActor.run {
+                    Log.write("command interpretation failed: \(error.localizedDescription)")
+                    self?.flash(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func apply(_ command: VoiceCommand, command spoken: String) {
+        switch command {
+        case .openCorrectionPanel:
+            beginCorrection()
+        case .addRule(let heard, let corrected):
+            // Prefilled, not saved: the model proposed it, you confirm it.
+            Log.write("command proposed rule: \(heard) -> \(corrected)")
+            pendingSelection = nil
+            correctionPanel.onSave = { [weak self] rules, text in
+                self?.saveCorrections(rules, correctedText: text)
+            }
+            correctionPanel.onCancel = { [weak self] in self?.pendingSelection = nil }
+            correctionPanel.show(rule: (heard: heard, corrected: corrected))
+        case .unrecognised(let text):
+            Log.write("command not understood: \(text)")
+            flash("Didn't understand \"\(spoken)\"")
+        }
     }
 
     private func beginCorrection() {
@@ -358,9 +434,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func finishTranscription(text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if isCorrectionPhrase(trimmed) {
-            Log.write("correction phrase heard")
-            beginCorrection()
+        if let command = commandAfterWakePhrase(trimmed) {
+            Log.write("command heard: \"\(command)\"")
+            handleVoiceCommand(command)
             return
         }
 

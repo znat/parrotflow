@@ -39,3 +39,11 @@ transcription:
     Versov: Vercel
     Tasman: Tasmeen
     Tasmin: Tasmeen
+
+# A local Ollama model, used to interpret what you say after the wake phrase.
+# Everything else works without it — you just lose free-form spoken commands.
+llm:
+  enabled: true
+  model: gemma3:4b
+  endpoint: http://localhost:11434
+  timeout_seconds: 20

@@ -21,6 +21,31 @@ struct Config: Codable, Equatable {
     var audio: Audio = Audio()
     var feedback: Feedback = Feedback()
     var transcription: Transcription = Transcription()
+    var llm: LLM = LLM()
+
+    /// A local Ollama model, used to interpret spoken commands.
+    struct LLM: Codable, Equatable {
+        var enabled: Bool = true
+        var model: String = "gemma3:4b"
+        var endpoint: String = "http://localhost:11434"
+        var timeoutSeconds: Double = 20
+
+        enum CodingKeys: String, CodingKey {
+            case enabled, model, endpoint
+            case timeoutSeconds = "timeout_seconds"
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init()
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .endpoint) { endpoint = v }
+            if let v = try c.decodeIfPresent(Double.self, forKey: .timeoutSeconds) { timeoutSeconds = v }
+        }
+    }
 
     struct Transcription: Codable, Equatable {
         var enabled: Bool = true
@@ -226,6 +251,7 @@ struct Config: Codable, Equatable {
         if let transcription = try c.decodeIfPresent(Transcription.self, forKey: .transcription) {
             self.transcription = transcription
         }
+        if let llm = try c.decodeIfPresent(LLM.self, forKey: .llm) { self.llm = llm }
     }
 
     var resolvedOutputDir: URL {
@@ -318,6 +344,15 @@ enum ConfigStore {
       # Last-resort literal swaps, applied after boosting. Word-boundary
       # matched and case-insensitive.
       replacements: {}
+
+    # A local Ollama model, used to interpret what you say after the wake
+    # phrase. Everything still works without it — you just lose spoken
+    # commands like "hey parrot, Tasmin spells T A S M E E N".
+    llm:
+      enabled: true
+      model: gemma3:4b
+      endpoint: http://localhost:11434
+      timeout_seconds: 20
     """
 }
 

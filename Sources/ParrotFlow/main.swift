@@ -25,6 +25,14 @@ if let index = arguments.firstIndex(of: "--transcribe") {
     exit(TranscribeCommand.run(path: arguments[index + 1]))
 }
 
+if let index = arguments.firstIndex(of: "--command") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --command \"hey parrot, Tasmin spells T A S M E E N\"")
+        exit(2)
+    }
+    exit(CommandTestCommand.run(text: arguments[index + 1]))
+}
+
 if let index = arguments.firstIndex(of: "--learn") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --learn <heard> <corrected>")
