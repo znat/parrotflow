@@ -281,15 +281,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func beginCorrection() {
-        guard Permissions.accessibility == .granted else {
-            flash("Correcting needs the Accessibility permission")
-            settings.show()
-            return
-        }
-        guard let selection = SelectionReader.read() else {
-            flash("Select the wrong word first, then say the phrase")
-            return
-        }
+        // Reading the selection needs Accessibility; the panel does not. Open
+        // it either way — typing both sides still beats editing YAML by hand,
+        // and a panel that silently refuses to appear reads as a broken app.
+        let selection = Permissions.accessibility == .granted
+            ? SelectionReader.read()
+            : nil
 
         pendingSelection = selection
         correctionPanel.onSave = { [weak self] heard, corrected in
@@ -298,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         correctionPanel.onCancel = { [weak self] in
             self?.pendingSelection = nil
         }
-        correctionPanel.show(heard: selection.text)
+        correctionPanel.show(heard: selection?.text ?? "")
     }
 
     private func saveCorrection(heard: String, corrected: String) {
@@ -310,9 +307,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Fix the word that prompted this, not just the next one.
-        SelectionReader.replaceSelection(with: corrected, in: pendingSelection?.owner)
+        // Fix the word that prompted this, not just the next one. With no
+        // selection to replace, leave the corrected spelling on the clipboard
+        // so the fix is still one keystroke away.
+        if let selection = pendingSelection {
+            SelectionReader.replaceSelection(with: corrected, in: selection.owner)
+        } else {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(corrected, forType: .string)
+        }
         pendingSelection = nil
+        if config.feedback.sound { NSSound(named: "Glass")?.play() }
         flash("Saved  \(heard) → \(corrected)")
     }
 

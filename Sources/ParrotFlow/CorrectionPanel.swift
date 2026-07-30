@@ -104,21 +104,29 @@ final class CorrectionModel: ObservableObject {
 
 private struct CorrectionView: View {
     @EnvironmentObject private var model: CorrectionModel
-    @FocusState private var fieldFocused: Bool
+    private enum Field { case heard, corrected }
+    @FocusState private var focus: Field?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .center, spacing: 14) {
                 field(label: "Heard as") {
-                    Text(model.heard)
+                    // Editable too: without Accessibility there is no selection
+                    // to prefill from, and typing both sides still beats
+                    // hand-editing YAML.
+                    TextField("wrong word", text: $model.heard)
+                        .textFieldStyle(.plain)
                         .font(.system(size: 15, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                        .focused($focus, equals: .heard)
+                        .onSubmit { model.onSubmit?() }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7)
+                                .strokeBorder(Color.accentColor.opacity(focus == .heard ? 0.8 : 0), lineWidth: 1.5)
+                        )
                 }
 
                 Image(systemName: "arrow.right")
@@ -127,17 +135,17 @@ private struct CorrectionView: View {
                     .padding(.top, 18)
 
                 field(label: "Should be") {
-                    TextField("", text: $model.corrected)
+                    TextField("right spelling", text: $model.corrected)
                         .textFieldStyle(.plain)
                         .font(.system(size: 15, weight: .medium, design: .monospaced))
-                        .focused($fieldFocused)
+                        .focused($focus, equals: .corrected)
                         .onSubmit { model.onSubmit?() }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                         .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
                         .overlay(
                             RoundedRectangle(cornerRadius: 7)
-                                .strokeBorder(Color.accentColor.opacity(fieldFocused ? 0.8 : 0), lineWidth: 1.5)
+                                .strokeBorder(Color.accentColor.opacity(focus == .corrected ? 0.8 : 0), lineWidth: 1.5)
                         )
                 }
             }
@@ -155,7 +163,9 @@ private struct CorrectionView: View {
         .frame(width: 460, height: 132)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.12)))
-        .onAppear { fieldFocused = true }
+        // Start where there is work to do: the right field when the selection
+        // filled the left one, otherwise the left.
+        .onAppear { focus = model.heard.isEmpty ? .heard : .corrected }
         .onExitCommand { model.onCancel?() }
     }
 
