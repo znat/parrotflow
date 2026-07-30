@@ -146,7 +146,8 @@ enum VoiceCommand {
         Speech recognition misspells names. The user says the WRONG word (as recognition wrote it) and gives the RIGHT
         spelling, usually letter by letter.
 
-        "heard"     = the wrong word, the one to be replaced
+        "heard"     = the wrong word, the one to be replaced. If a previous
+                      transcript is given, "heard" must be a word from it.
         "corrected" = the right spelling, usually the spelled-out letters joined up
 
         Examples:
@@ -189,6 +190,13 @@ enum VoiceCommand {
               !heard.isEmpty
         else { return .unrecognised(command) }
 
+        // The word to fix lives in the previous transcript, and we already know
+        // the target spelling from the letters — so find it there rather than
+        // trusting the model. The command itself is dictated too, so the name
+        // gets misrecognised a second time: saying "Tasmine spells T A S M E E N"
+        // produced heard="Das mean", a rule matching nothing the user ever says.
+        // Matching "Tasmeen" against the last transcript finds "Tasmine".
+        //
         // A run of spelled-out letters is unambiguously the target spelling, so
         // take it from the text rather than the model. Without this the model
         // reverses the direction on "X spells Y" phrasing — measured: three of
@@ -198,11 +206,63 @@ enum VoiceCommand {
             ?? (object["corrected"] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard let corrected, !corrected.isEmpty, corrected != heard else {
+        guard let corrected, !corrected.isEmpty else {
             return .unrecognised(command)
         }
 
-        return .addRule(heard: heard, corrected: corrected)
+        let resolved = lastTranscript
+            .flatMap { closestWord(to: corrected, in: $0) }
+            ?? heard
+        guard resolved.lowercased() != corrected.lowercased() else {
+            return .unrecognised(command)
+        }
+
+        return .addRule(heard: resolved, corrected: corrected)
+    }
+
+    /// The word in `transcript` most like `target`, or nil if nothing is close.
+    ///
+    /// Tries one- and two-word windows, since a name can be split ("super base"
+    /// for "Supabase"). The threshold is deliberately forgiving — speech
+    /// recognition mangles exactly the words people need rules for — but not so
+    /// forgiving that an unrelated word wins.
+    static func closestWord(to target: String, in transcript: String) -> String? {
+        let words = transcript
+            .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "'-")).inverted)
+            .filter { !$0.isEmpty }
+        guard !words.isEmpty else { return nil }
+
+        var best: (text: String, score: Double)?
+        for size in 1...2 where words.count >= size {
+            for start in 0...(words.count - size) {
+                let candidate = words[start..<(start + size)].joined(separator: " ")
+                let score = similarity(candidate, target)
+                if score > (best?.score ?? 0) { best = (candidate, score) }
+            }
+        }
+
+        guard let best, best.score >= 0.5 else { return nil }
+        return best.text
+    }
+
+    /// 1 - (edit distance / longer length), case- and space-insensitive.
+    static func similarity(_ a: String, _ b: String) -> Double {
+        let x = Array(a.lowercased().filter { !$0.isWhitespace })
+        let y = Array(b.lowercased().filter { !$0.isWhitespace })
+        guard !x.isEmpty, !y.isEmpty else { return 0 }
+        if x == y { return 1 }
+
+        var previous = Array(0...y.count)
+        var current = [Int](repeating: 0, count: y.count + 1)
+        for i in 1...x.count {
+            current[0] = i
+            for j in 1...y.count {
+                let cost = x[i - 1] == y[j - 1] ? 0 : 1
+                current[j] = Swift.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + cost)
+            }
+            previous = current
+        }
+        return 1 - Double(previous[y.count]) / Double(Swift.max(x.count, y.count))
     }
 
     /// Finds "T A S M E E N" / "t-a-s-m-e-e-n" and joins it up.

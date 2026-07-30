@@ -7,7 +7,7 @@ import Foundation
 /// iterating on the prompt slow and makes regressions easy to miss.
 enum CommandTestCommand {
 
-    static func run(text: String) -> Int32 {
+    static func run(text: String, lastTranscript: String? = nil) -> Int32 {
         let config: Config
         do { config = try ConfigStore.load() } catch {
             print("✗ config: \(CheckConfigCommand.describe(error))")
@@ -16,6 +16,9 @@ enum CommandTestCommand {
 
         let phrase = config.transcription.correctionPhrase
         print("wake phrase: \"\(phrase)\"")
+        if let lastTranscript {
+            print("context:     \"\(lastTranscript)\"")
+        }
 
         guard let command = strip(phrase: phrase, from: text) else {
             print("→ not a command; this would be dictated as normal text")
@@ -49,7 +52,7 @@ enum CommandTestCommand {
             let started = Date()
             do {
                 let result = try await VoiceCommand.interpret(
-                    command: command, lastTranscript: nil, config: llmConfig
+                    command: command, lastTranscript: lastTranscript, config: llmConfig
                 )
                 print(String(format: "→ %@ in %.2fs", config.llm.model, Date().timeIntervalSince(started)))
                 describe(result)

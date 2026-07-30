@@ -30,7 +30,9 @@ if let index = arguments.firstIndex(of: "--command") {
         print("usage: ParrotFlow --command \"hey parrot, Tasmin spells T A S M E E N\"")
         exit(2)
     }
-    exit(CommandTestCommand.run(text: arguments[index + 1]))
+    let context = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
+        ? arguments[index + 2] : nil
+    exit(CommandTestCommand.run(text: arguments[index + 1], lastTranscript: context))
 }
 
 if let index = arguments.firstIndex(of: "--learn") {

@@ -88,6 +88,13 @@ The spelled-out letters are read from the text, not the model — a run of singl
 letters can only be the target spelling, and relying on the model for that got
 the direction backwards on "X spells Y" phrasing in three of seven test cases.
 
+The word being corrected is found in your **previous transcript**, not in the
+command. The command is dictated too, so the name gets misheard a second time:
+saying "Tasmine spells T A S M E E N" can come through as "Das mean spells…",
+and a rule for "Das mean" matches nothing you will ever say. Since the target
+spelling is already known from the letters, the closest match to it in the last
+transcript is the word that needs fixing.
+
 Needs [Ollama](https://ollama.com) running with the model in `llm.model`
 (`ollama pull gemma3:4b`). Without it, `"hey parrot"` and `"hey parrot, fix
 vocabulary"` still open the panel — those are matched without a model.
