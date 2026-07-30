@@ -5,6 +5,10 @@ transcription:
   # clipboard -> just copy it, you press Cmd-V
   insert_mode: clipboard
 
+  # Select a wrong word anywhere, hold the hotkey and say this, and a panel
+  # opens to teach ParrotFlow the right spelling. Needs Accessibility.
+  correction_phrase: hey parrot
+
   # ACOUSTIC CONTEXT BIASING — OFF BY DEFAULT, AND IT SHOULD STAY OFF UNLESS
   # YOU HAVE MEASURED IT ON YOUR OWN VOICE.
   #

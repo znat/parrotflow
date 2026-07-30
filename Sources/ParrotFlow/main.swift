@@ -25,6 +25,14 @@ if let index = arguments.firstIndex(of: "--transcribe") {
     exit(TranscribeCommand.run(path: arguments[index + 1]))
 }
 
+if let index = arguments.firstIndex(of: "--learn") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --learn <heard> <corrected>")
+        exit(2)
+    }
+    exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2]))
+}
+
 if let index = arguments.firstIndex(of: "--spot") {
     guard #available(macOS 14, *), arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --spot <file.wav> [minScore]")

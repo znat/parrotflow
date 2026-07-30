@@ -19,6 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
     }
     private var transcriptionLabel: String?
+    private let correctionPanel = CorrectionPanel()
+    private var pendingSelection: SelectionReader.Selection?
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -46,6 +48,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             + "mic=\(Permissions.microphone.label) "
             + "accessibility=\(Permissions.accessibility.label)"
         )
+
+        if CommandLine.arguments.contains("--preview-panel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.previewCorrectionPanel()
+            }
+            return
+        }
 
         // First run: get the microphone prompt out of the way immediately,
         // rather than at the moment the user first tries to dictate.
@@ -255,8 +264,77 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// True when the transcript is the correction phrase rather than dictation.
+    private func isCorrectionPhrase(_ text: String) -> Bool {
+        let phrase = config.transcription.correctionPhrase
+            .trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !phrase.isEmpty else { return false }
+
+        // Strip punctuation the model adds ("Hey, parrot.") and collapse spaces
+        // so the match doesn't hinge on how it chose to punctuate.
+        let spoken = text.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.union(.whitespaces).inverted)
+            .joined()
+            .split(separator: " ")
+            .joined(separator: " ")
+        return spoken == phrase
+    }
+
+    private func beginCorrection() {
+        guard Permissions.accessibility == .granted else {
+            flash("Correcting needs the Accessibility permission")
+            settings.show()
+            return
+        }
+        guard let selection = SelectionReader.read() else {
+            flash("Select the wrong word first, then say the phrase")
+            return
+        }
+
+        pendingSelection = selection
+        correctionPanel.onSave = { [weak self] heard, corrected in
+            self?.saveCorrection(heard: heard, corrected: corrected)
+        }
+        correctionPanel.onCancel = { [weak self] in
+            self?.pendingSelection = nil
+        }
+        correctionPanel.show(heard: selection.text)
+    }
+
+    private func saveCorrection(heard: String, corrected: String) {
+        do {
+            try ConfigWriter.addReplacement(heard: heard, corrected: corrected)
+            Log.write("learned replacement: \(heard) -> \(corrected)")
+        } catch {
+            presentAlert(title: "Could not save the rule", message: error.localizedDescription)
+            return
+        }
+
+        // Fix the word that prompted this, not just the next one.
+        SelectionReader.replaceSelection(with: corrected, in: pendingSelection?.owner)
+        pendingSelection = nil
+        flash("Saved  \(heard) → \(corrected)")
+    }
+
+    /// Briefly show a message in the menu bar status line.
+    private func flash(_ message: String) {
+        transcriptionLabel = message
+        updateUI()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+            self?.transcriptionLabel = nil
+            self?.updateUI()
+        }
+    }
+
     private func finishTranscription(text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if isCorrectionPhrase(trimmed) {
+            Log.write("correction phrase heard")
+            beginCorrection()
+            return
+        }
+
         guard !trimmed.isEmpty else {
             Log.write("transcription produced no text")
             updateUI()
@@ -329,6 +407,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.target = self
         menu.addItem(toggleItem)
 
+        let correctItem = NSMenuItem(
+            title: "Correct a Word…",
+            action: #selector(correctWord),
+            keyEquivalent: ""
+        )
+        correctItem.target = self
+        menu.addItem(correctItem)
+
         let revealItem = NSMenuItem(
             title: "Open Recordings Folder",
             action: #selector(openRecordingsFolder),
@@ -390,6 +476,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Menu actions
+
+    @objc private func correctWord() {
+        beginCorrection()
+    }
+
+    /// `--preview-panel` shows the correction panel with sample text, so its
+    /// layout can be iterated on without dictating into it every time.
+    func previewCorrectionPanel() {
+        correctionPanel.onSave = { heard, corrected in
+            Log.write("preview: \(heard) -> \(corrected)")
+            NSApp.terminate(nil)
+        }
+        correctionPanel.onCancel = { NSApp.terminate(nil) }
+        correctionPanel.show(heard: "Versov")
+    }
 
     @objc private func openRecordingsFolder() {
         let dir = config.resolvedOutputDir

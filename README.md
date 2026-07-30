@@ -52,6 +52,28 @@ Audio is kept in `~/Recordings/ParrotFlow` and every transcript is logged to
 The menu bar item shows the current state and gives you *Open Recordings
 Folder*, *Edit Config…*, and *Settings & Permissions…*.
 
+## Teaching it a word
+
+When a name comes out wrong, select it in whatever app you're in, hold the
+hotkey and say **"hey parrot"**. A panel opens showing what it heard and a
+field for what it should have written.
+
+    HEARD AS              SHOULD BE
+    ┌──────────┐    →    ┌──────────────────┐
+    │ Versov   │         │ Vercel           │
+    └──────────┘         └──────────────────┘
+    return Save rule   esc Cancel
+
+Saving does two things: writes the rule into `config.yaml` (comments and all
+your other settings untouched), and fixes the word you had selected. The rule
+applies to every transcript from then on.
+
+*Correct a Word…* in the menu does the same without speaking, and
+`--learn <heard> <corrected>` does it from the terminal.
+
+Needs the Accessibility permission — reading your selection is exactly what
+that permission governs. Change the trigger with `transcription.correction_phrase`.
+
 ## Configuration
 
 `~/.config/parrotflow/config.yaml`, created on first launch. Save the file and

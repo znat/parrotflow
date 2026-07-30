@@ -27,6 +27,9 @@ struct Config: Codable, Equatable {
         /// `paste` types the transcript into the frontmost app (needs
         /// Accessibility). `clipboard` just copies it and lets you paste.
         var insertMode: InsertMode = .paste
+        /// Say this instead of dictating to open the correction panel for the
+        /// text you have selected. Empty disables it.
+        var correctionPhrase: String = "hey parrot"
 
         enum InsertMode: String, Codable, Equatable {
             case paste
@@ -36,6 +39,7 @@ struct Config: Codable, Equatable {
         enum CodingKeys: String, CodingKey {
             case enabled, vocabulary, replacements
             case insertMode = "insert_mode"
+            case correctionPhrase = "correction_phrase"
         }
         /// Words the model would otherwise never produce — see `VocabularyTerm`.
         var vocabulary: [VocabularyTerm] = []
@@ -58,6 +62,9 @@ struct Config: Codable, Equatable {
                     )
                 }
                 self.insertMode = mode
+            }
+            if let phrase = try c.decodeIfPresent(String.self, forKey: .correctionPhrase) {
+                self.correctionPhrase = phrase
             }
             if let vocabulary = try c.decodeIfPresent([VocabularyTerm].self, forKey: .vocabulary) {
                 self.vocabulary = vocabulary
@@ -298,6 +305,10 @@ enum ConfigStore {
       # paste     -> type it straight into the app you're in (needs Accessibility)
       # clipboard -> just copy it, you press Cmd-V
       insert_mode: paste
+
+      # Select a wrong word anywhere, hold the hotkey and say this, and a panel
+      # opens to teach ParrotFlow the right spelling. Needs Accessibility.
+      correction_phrase: hey parrot
 
       # Acoustic context biasing. Off by default: it fires on audio that
       # contains nothing like the term and deletes the words it lands on.
