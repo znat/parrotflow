@@ -213,12 +213,21 @@ the app runs. Not the right default for a tool whose pitch is that it doesn't
 listen to you. Worth revisiting as an opt-in setting if the clipping ever
 actually bites.
 
+## Design notes
+
+- [docs/transcription.md](docs/transcription.md) — picking a Parakeet runtime,
+  why the model can't be prompted, and what to do instead
+- [docs/distribution.md](docs/distribution.md) — signing, notarization,
+  Homebrew, and the first-run flow
+
 ## Roadmap
 
-- [ ] Parakeet transcription (MLX or CoreML), running locally
+- [ ] Spike Apple `SpeechTranscriber` (macOS 26+) — no model download at all
+- [ ] Parakeet transcription via [FluidAudio](https://github.com/FluidInference/FluidAudio)
 - [ ] Paste/type the result into the frontmost app
-- [ ] Text cleanup layer — dictionary substitutions for names and jargon first,
-      optional local LLM pass second
+- [ ] Custom vocabulary from YAML — acoustic context biasing, not find-and-replace
+- [ ] Optional local LLM cleanup pass, off by default
+- [ ] Developer ID signing + notarization, then a Homebrew tap
 - [ ] App icon
 - [ ] Optional pre-roll buffer for zero-latency capture
 - [ ] Double-tap and long-press activation
