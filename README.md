@@ -96,7 +96,10 @@ spelling is already known from the letters, the closest match to it in the last
 transcript is the word that needs fixing.
 
 Needs [Ollama](https://ollama.com) running with the model in `llm.model`
-(`ollama pull gemma3:4b`). Without it, `"hey parrot"` and `"hey parrot, fix
+(`ollama pull gemma4:e4b`). `tests/spelling-cases.yaml` holds 35 names —
+French, Indian, Chinese, Turkish, Vietnamese, Korean, Nigerian, Polish, Irish,
+Arabic — plus product names recognition splits, and negative cases. Score a
+model or a prompt against it with `scripts/validate-prompt.py gemma4:e4b`. Without it, `"hey parrot"` and `"hey parrot, fix
 vocabulary"` still open the panel — those are matched without a model.
 
 *Correct a Word…* in the menu does the same without speaking,

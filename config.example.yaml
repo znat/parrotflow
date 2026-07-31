@@ -44,6 +44,6 @@ transcription:
 # Everything else works without it — you just lose free-form spoken commands.
 llm:
   enabled: true
-  model: gemma3:4b
+  model: gemma4:e4b
   endpoint: http://localhost:11434
   timeout_seconds: 20

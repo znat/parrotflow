@@ -52,8 +52,15 @@ enum LocalLLM {
             "system": system,
             "prompt": user,
             "stream": false,
-            // Deterministic: this is extraction, not writing.
-            "options": ["temperature": 0],
+            // gemma4 and friends think by default, which for a one-line answer
+            // means ~1000 wasted tokens: measured 98s with it on, 4.5s off.
+            "think": false,
+            "options": [
+                // Deterministic: this is extraction, not writing.
+                "temperature": 0,
+                // A mapping line cannot need more, and it caps any rambling.
+                "num_predict": 32,
+            ],
         ]
         if json { body["format"] = "json" }
 
@@ -192,120 +199,135 @@ enum VoiceCommand {
 
     /// Asks the model to pull a spelling rule out of something like
     /// "Tasmin spells T A S M E E N".
+    /// Asks the model which word in the transcript the speaker meant to fix.
+    ///
+    /// The model picks the span only; the spelling comes from the letters via
+    /// `spelledOutWord`. Scored against tests/spelling-cases.yaml — 35 names
+    /// across French, Indian, Chinese, Turkish, Vietnamese, Korean, Nigerian,
+    /// Polish, Irish and Arabic, plus split product names and negative cases:
+    ///
+    ///     span only            35/35
+    ///     span + model spelling 33/35
+    ///
+    /// The two it loses are both the model mangling letters it was copying —
+    /// "S I O B H A N" came back "Sibhan". That job belongs to the regex.
     static func interpret(
         command: String,
         lastTranscript: String?,
         config: LocalLLM.Config
     ) async throws -> VoiceCommand {
-        let system = """
-        You extract one spelling-correction rule from a spoken command. Reply with JSON only.
+        let system = extractionPrompt
 
-        Speech recognition misspells names. The user says the WRONG word (as recognition wrote it) and gives the RIGHT
-        spelling, usually letter by letter.
-
-        "heard"     = the wrong word, the one to be replaced
-        "corrected" = the right spelling, usually the spelled-out letters joined up
-
-        IMPORTANT: when a previous transcript is given, "heard" must be copied
-        exactly from it. The command was dictated too, so the same name is
-        misheard twice and the two spellings differ. Find the word in the
-        transcript that sounds like the one in the command, even if it is
-        spelled differently, and copy that.
-
-        Transcript: I'm working with Dasmi.
-        Command: Tasni spells T A S N E E N
-        {"action":"add_rule","heard":"Dasmi","corrected":"Tasneen"}
-
-        Examples:
-        Command: Tasmin spells T A S M E E N
-        {"action":"add_rule","heard":"Tasmin","corrected":"Tasmeen"}
-
-        Command: Mick is spelled M I K
-        {"action":"add_rule","heard":"Mick","corrected":"Mik"}
-
-        Command: it's spelled S U P A B A S E not super base
-        {"action":"add_rule","heard":"super base","corrected":"Supabase"}
-
-        Command: Versov is actually spelled V E R C E L
-        {"action":"add_rule","heard":"Versov","corrected":"Vercel"}
-
-        Command: what time is it
-        {"action":"none"}
-
-        Both fields are required when action is add_rule. Never output null.
-        Output JSON only.
-        """
-
-        var user = "Command: \(command)"
-        if let lastTranscript, !lastTranscript.isEmpty {
-            user += "\n\nThe transcript just before this, for context: \(lastTranscript)"
+        var user = "source: \(lastTranscript ?? "")\ncorrection: \(command)"
+        if lastTranscript?.isEmpty != false {
+            user = "source: (nothing yet)\ncorrection: \(command)"
         }
 
         let raw = try await LocalLLM.complete(
-            system: system, user: user, json: true, config: config
+            system: system, user: user, json: false, config: config
         )
+        let reply = raw.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard
-            let data = raw.data(using: .utf8),
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-        else { return .unrecognised(command) }
-
-        guard (object["action"] as? String) == "add_rule",
-              let heard = (object["heard"] as? String)?
-                  .trimmingCharacters(in: .whitespacesAndNewlines),
-              !heard.isEmpty
-        else { return .unrecognised(command) }
-
-        // The word to fix lives in the previous transcript, and we already know
-        // the target spelling from the letters — so find it there rather than
-        // trusting the model. The command itself is dictated too, so the name
-        // gets misrecognised a second time: saying "Tasmine spells T A S M E E N"
-        // produced heard="Das mean", a rule matching nothing the user ever says.
-        // Matching "Tasmeen" against the last transcript finds "Tasmine".
-        //
-        // A run of spelled-out letters is unambiguously the target spelling, so
-        // take it from the text rather than the model. Without this the model
-        // reverses the direction on "X spells Y" phrasing — measured: three of
-        // seven cases came back with heard and corrected swapped, or with
-        // corrected missing entirely.
-        let corrected = spelledOutWord(in: command)
-            ?? (object["corrected"] as? String)?
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard let corrected, !corrected.isEmpty else {
+        // "I like apples => NO MATCH" is the right decision, clumsily phrased.
+        if reply.range(of: "no match", options: .caseInsensitive) != nil || reply.isEmpty {
             return .unrecognised(command)
         }
 
-        // The model does the reconciling; this only catches it getting it
-        // plainly wrong. If its answer appears in the transcript, it found the
-        // right word and we keep it. If not, it either copied from the command
-        // — where the name was misheard a second time — or invented something.
-        //
-        // Measured prompt-only against six cases: gemma3:4b 2/6, phi4 (14B)
-        // 5/6, both failing by returning a word absent from the transcript.
-        // Checking membership and falling back gets the 4B model to 6/6.
+        guard let arrow = reply.range(of: "=>") else { return .unrecognised(command) }
+        let heard = reply[reply.startIndex..<arrow.lowerBound]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let modelSpelling = reply[arrow.upperBound...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .components(separatedBy: .newlines).first?
+            .trimmingCharacters(in: .whitespaces) ?? ""
+
+        guard !heard.isEmpty else { return .unrecognised(command) }
+
+        // The letters are unambiguous; the model's version of them is not.
+        let corrected = spelledOutWord(in: command) ?? modelSpelling
+        guard !corrected.isEmpty else { return .unrecognised(command) }
+
+        // Catch the model naming a word that is not actually in the transcript
+        // — it either copied from the command, where the name was misheard a
+        // second time, or invented one.
         let resolved: String
-        if let transcript = lastTranscript, !transcript.isEmpty {
-            if containsWord(heard, in: transcript) {
-                resolved = heard
-            } else {
-                Log.write("command: \"\(heard)\" is not in the transcript, matching instead")
-                resolved = [corrected, heard]
-                    .compactMap { candidate -> (String, Double)? in
-                        guard let match = closestWord(to: candidate, in: transcript) else { return nil }
-                        return (match, similarity(match, candidate))
-                    }
-                    .max { $0.1 < $1.1 }?.0 ?? heard
-            }
+        if let transcript = lastTranscript, !transcript.isEmpty,
+           !containsWord(heard, in: transcript) {
+            Log.write("command: \"\(heard)\" is not in the transcript, matching instead")
+            resolved = [corrected, heard]
+                .compactMap { candidate -> (String, Double)? in
+                    guard let match = closestWord(to: candidate, in: transcript) else { return nil }
+                    return (match, similarity(match, candidate))
+                }
+                .max { $0.1 < $1.1 }?.0 ?? heard
         } else {
             resolved = heard
         }
+
         guard resolved.lowercased() != corrected.lowercased() else {
             return .unrecognised(command)
         }
-
         return .addRule(heard: resolved, corrected: corrected)
     }
+
+    /// Prompt v4. Earlier versions and the scores that rejected them are in
+    /// scripts/validate-prompt.py, which reruns the set in about a minute.
+    ///
+    /// Two things it took measurement to learn. "Output nothing" for the
+    /// no-match case does not work — a model will not emit zero tokens, so it
+    /// invents a mapping instead; `NO MATCH` gives it somewhere to go and took
+    /// the set from 71% to 89%. And a prose rule against including surrounding
+    /// words over-trimmed real names ("Anna ees" to "Anna"); the same lesson
+    /// carried by two examples instead cost nothing.
+    static let extractionPrompt = """
+    Map a misheard name to the spelling the speaker just read out.
+
+    You get a source transcription, and a correction transcription in which \
+    the speaker says a name then spells it letter by letter.
+
+    Reply with exactly one line, and nothing else:
+    <span exactly as it appears in the source> => <the spelled letters joined up>
+    or
+    NO MATCH
+
+    - The left side must be copied character for character from the SOURCE. \
+    The correction transcription mishears the name a second time; ignore how \
+    it spells it there.
+    - The source span is often two or three words, because recognition splits \
+    names it does not know. Take the whole name, and only the name.
+    - The right side is the spelled letters, in the order given, joined up \
+    with one capital at the start.
+    - Reply NO MATCH when nothing in the source sounds like the spelled name, \
+    including when the nearest candidate is an ordinary English word.
+
+    source: I work with Tasmin
+    correction: Das mean spells T-A-S-M-E-E-N
+    Tasmin => Tasmeen
+
+    source: I work with Sarah
+    correction: Tasmin spells T-A-S-M-E-E-N
+    NO MATCH
+
+    source: I like apples
+    correction: Oranges spells O-R-A-N-G-E-S
+    NO MATCH
+
+    source: We deployed to Versal yesterday
+    correction: Versoff spells V E R C E L
+    Versal => Vercel
+
+    source: The Coober netties cluster is down
+    correction: Kuber nettis spells K U B E R N E T E S
+    Coober netties => Kubernetes
+
+    source: When is handling the deploy
+    correction: New yen spells N G U Y E N
+    When => Nguyen
+
+    source: Anna ees joined the design team
+    correction: Anna east spells A N A I S
+    Anna ees => Anais
+    """
 
     /// Whether `word` actually occurs in `transcript`, ignoring case and
     /// punctuation. Multi-word values are matched as a phrase.

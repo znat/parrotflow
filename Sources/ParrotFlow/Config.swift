@@ -26,7 +26,7 @@ struct Config: Codable, Equatable {
     /// A local Ollama model, used to interpret spoken commands.
     struct LLM: Codable, Equatable {
         var enabled: Bool = true
-        var model: String = "gemma3:4b"
+        var model: String = "gemma4:e4b"
         var endpoint: String = "http://localhost:11434"
         var timeoutSeconds: Double = 20
 
@@ -350,7 +350,7 @@ enum ConfigStore {
     # commands like "hey parrot, Tasmin spells T A S M E E N".
     llm:
       enabled: true
-      model: gemma3:4b
+      model: gemma4:e4b
       endpoint: http://localhost:11434
       timeout_seconds: 20
     """

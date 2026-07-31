@@ -1,0 +1,163 @@
+# Validation set for spoken spelling corrections.
+#
+# `source` is what speech recognition produced when the name was dictated —
+# the mangled form, not the correct one. `correction` is what it produced when
+# the user said the name and spelled it out; note the name is usually misheard
+# a second time here, differently.
+#
+# That double-mishearing is the whole difficulty: the correct spelling only
+# exists in the letters, and the word to replace only exists in the source.
+#
+# Names are weighted toward what a US English model actually struggles with:
+# non-Anglophone given names and surnames, and product names that are ordinary
+# English words glued together.
+
+cases:
+  # ---- French ----
+  - source: I had a call with Ghee yome about the migration
+    correction: Gee ohm spells G U I L L A U M E
+    expect: Ghee yome => Guillaume
+
+  - source: Tee bo is reviewing the pull request
+    correction: T bow spells T H I B A U L T
+    expect: Tee bo => Thibault
+
+  - source: Anna ees joined the design team
+    correction: Anna east spells A N A I S
+    expect: Anna ees => Anais
+
+  - source: Send it to Say goal enn please
+    correction: Segolen spells S E G O L E N E
+    expect: Say goal enn => Segolene
+
+  # ---- Indian / South Asian ----
+  - source: I work with Tasmine on the platform team
+    correction: Das mean spells T A S M E E N
+    expect: Tasmine => Tasmeen
+
+  - source: Ven cottage is on call this week
+    correction: Venka tesh spells V E N K A T E S H
+    expect: Ven cottage => Venkatesh
+
+  - source: Locks me reviewed the schema
+    correction: Lakshmi spells L A K S H M I
+    expect: Locks me => Lakshmi
+
+  - source: Pree anka set up the pipeline
+    correction: Priyanka spells P R I Y A N K A
+    expect: Pree anka => Priyanka
+
+  # ---- Chinese ----
+  - source: Shauw lee owns that service
+    correction: Sha oli spells X I A O L I
+    expect: Shauw lee => Xiaoli
+
+  - source: Jang way pushed the fix
+    correction: Zhang way spells Z H A N G W E I
+    expect: Jang way => Zhangwei
+
+  - source: Shin yee is presenting tomorrow
+    correction: Shinny spells X I N Y I
+    expect: Shin yee => Xinyi
+
+  # ---- Turkish ----
+  - source: Becker approved the design doc
+    correction: Beckeer spells B E K I R
+    expect: Becker => Bekir
+
+  - source: Ay shay is leading the migration
+    correction: Ayesha spells A Y S E
+    expect: Ay shay => Ayse
+
+  - source: Us lem filed the ticket
+    correction: Ozlem spells O Z L E M
+    expect: Us lem => Ozlem
+
+  # ---- Vietnamese, Korean, Nigerian, Polish, Irish, Arabic ----
+  - source: When is handling the deploy
+    correction: New yen spells N G U Y E N
+    expect: When => Nguyen
+
+  - source: Sung min opened the incident
+    correction: Soong min spells S E U N G M I N
+    expect: Sung min => Seungmin
+
+  - source: Oluwa shane wrote the RFC
+    correction: Oluwa sean spells O L U W A S E U N
+    expect: Oluwa shane => Oluwaseun
+
+  - source: Koval chick is the new lead
+    correction: Kowal chick spells K O W A L C Z Y K
+    expect: Koval chick => Kowalczyk
+
+  - source: Shivon runs the standup
+    correction: Chevonne spells S I O B H A N
+    expect: Shivon => Siobhan
+
+  - source: Kareem shipped it yesterday
+    correction: Karim spells K A R I M
+    expect: Kareem => Karim
+
+  - source: Zal is joining the call
+    correction: Zilbershtayn spells Z Y L B E R S Z T E J N
+    expect: Zal => Zylbersztejn
+
+  # ---- Technology providers ----
+  # Mostly English words glued together, which recognition happily splits.
+  - source: I love working on Super base project
+    correction: superbees spells S U P A B A S E
+    expect: Super base => Supabase
+
+  - source: We deployed to Versal yesterday
+    correction: Versoff spells V E R C E L
+    expect: Versal => Vercel
+
+  - source: Put it behind Cloud fair
+    correction: Cloud flair spells C L O U D F L A R E
+    expect: Cloud fair => Cloudflare
+
+  - source: The Coober netties cluster is down
+    correction: Kuber nettis spells K U B E R N E T E S
+    expect: Coober netties => Kubernetes
+
+  - source: Engine X is proxying those requests
+    correction: Engine ex spells N G I N X
+    expect: Engine X => Nginx
+
+  - source: We store sessions in Reddis
+    correction: Redis spells R E D I S
+    expect: Reddis => Redis
+
+  - source: Graph on a dashboards are broken
+    correction: Grafana spells G R A F A N A
+    expect: Graph on a => Grafana
+
+  - source: Auth zero handles the login
+    correction: Auth oh spells A U T H 0
+    expect: Auth zero => Auth0
+
+  - source: Sequel light is fine for this
+    correction: SQ lite spells S Q L I T E
+    expect: Sequel light => Sqlite
+
+  - source: Clark is our auth provider now
+    correction: Clerc spells C L E R K
+    expect: Clark => Clerk
+
+  # ---- Negative cases: nothing in the source matches ----
+  - source: The weather is nice today
+    correction: Tasni spells T A S N E E N
+    expect: NO MATCH
+
+  - source: I like apples
+    correction: Oranges spells O R A N G E S
+    expect: NO MATCH
+
+  - source: Let us ship it on Friday
+    correction: Kuber nettis spells K U B E R N E T E S
+    expect: NO MATCH
+
+  # ---- Already correct: spelling matches what is there ----
+  - source: I work with Sam
+    correction: Sam spells S A M
+    expect: Sam => Sam
