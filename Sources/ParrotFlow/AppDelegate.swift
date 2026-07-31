@@ -414,15 +414,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 outcome = .written
             } else if config.transcription.rewriteLine,
                       let element = focus.element,
-                      let line = SelectionReader.currentLine(of: element),
+                      let onScreen = SelectionReader.visibleText(of: element),
                       let inserted = lastInsertedText,
-                      rewritten(line: line, inserted: inserted, rules: rules) != nil {
+                      let corrected = rewritten(
+                          onScreen: onScreen, inserted: inserted, rules: rules
+                      ) {
                 // The accessibility API would not write, so clear the line with
-                // readline keys and retype it. Only when the line still ends
-                // with what we dictated — otherwise it is not ours to destroy.
-                let corrected = rewritten(line: line, inserted: inserted, rules: rules)!
+                // readline keys and retype the corrected transcript.
                 Log.write("rewrite: retyping the line via keystrokes")
                 SelectionReader.rewriteCurrentLine(with: corrected)
+                lastInsertedText = corrected
                 outcome = .written
             } else {
                 Log.write("field would not accept the rewrite; correction is on the clipboard")
@@ -449,24 +450,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The corrected line, or nil when the line is not recognisably ours.
+    /// The corrected text to retype, or nil when it is not safe to.
     ///
-    /// Requires the visible line to still contain the text we dictated. If the
-    /// user has typed something else since, or moved to another field, the
-    /// line belongs to them and clearing it would destroy work.
+    /// Built from the transcript we inserted, not from what is on screen.
+    /// Reading it back is unreliable — a terminal's accessibility value is the
+    /// screen, so a wrapped line arrives split across newlines and the last
+    /// fragment is only its tail. Ctrl-K kills the whole logical line, so
+    /// retyping that fragment would destroy the rest.
+    ///
+    /// Working from the transcript makes the text itself deterministic: we
+    /// know exactly what was inserted and exactly which rules apply. The only
+    /// judgement left is whether the line is still ours to overwrite.
     private func rewritten(
-        line: String,
+        onScreen: String,
         inserted: String,
         rules: [(heard: String, corrected: String)]
     ) -> String? {
-        let trimmedLine = line.trimmingCharacters(in: .whitespaces)
-        let trimmedInserted = inserted.trimmingCharacters(in: .whitespaces)
-        guard !trimmedInserted.isEmpty, trimmedLine.contains(trimmedInserted) else {
-            Log.write("rewrite: the line is not the text we dictated; leaving it alone")
+        let source = inserted.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else { return nil }
+
+        // It must still be on screen — otherwise the caret has moved on and
+        // Ctrl-A/Ctrl-K would clear a line belonging to someone else.
+        guard let position = onScreen.range(of: source) else {
+            Log.write("rewrite: dictated text is no longer on screen; leaving the line alone")
             return nil
         }
 
-        var corrected = trimmedLine
+        // Anything typed after it would be lost, since we retype the transcript
+        // rather than the line. Bail rather than eat it.
+        let trailing = onScreen[position.upperBound...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trailing.isEmpty {
+            Log.write("rewrite: text was typed after the dictation; leaving the line alone")
+            return nil
+        }
+
+        var corrected = source
         for rule in rules {
             guard let pattern = try? NSRegularExpression(
                 pattern: "\\b\(NSRegularExpression.escapedPattern(for: rule.heard))\\b",
@@ -478,7 +497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 withTemplate: NSRegularExpression.escapedTemplate(for: rule.corrected)
             )
         }
-        return corrected == trimmedLine ? nil : corrected
+        return corrected == source ? nil : corrected
     }
 
     /// Show a message on screen, and in the menu bar for as long as it lasts.

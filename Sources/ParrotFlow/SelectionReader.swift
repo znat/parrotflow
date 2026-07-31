@@ -164,14 +164,16 @@ enum SelectionReader {
         up.post(tap: .cghidEventTap)
     }
 
-    /// The text after the last newline of an element's value — the line the
-    /// caret is on, as far as we can tell from a screen-shaped AX value.
-    static func currentLine(of element: AXUIElement) -> String? {
+    /// An element's whole value. In a terminal this is the visible screen,
+    /// wrapping and all, which is why callers match against text they already
+    /// hold rather than trying to identify "the current line" within it.
+    static func visibleText(of element: AXUIElement) -> String? {
+        AXUIElementSetMessagingTimeout(element, 0.5)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element, kAXValueAttribute as CFString, &value
         ) == .success, let text = value as? String else { return nil }
-        return text.components(separatedBy: .newlines).last
+        return text
     }
 
     private static func changed(_ element: AXUIElement, from original: String) -> Bool {
