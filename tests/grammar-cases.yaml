@@ -1,0 +1,90 @@
+# Grammar prompt validation set. Run with scripts/check-grammar.sh.
+#
+# Inputs are real transcripts, taken from the log. The expectation is the
+# *minimal* correction — the smallest edit that makes it right — because the
+# failure mode here is not missing an error, it is a model that quietly
+# improves your writing. A grammar pass that rewords is worse than none: you
+# lose your own voice and cannot tell it happened without rereading.
+#
+# So the cases with `expect` identical to `input` are the important half. They
+# are sentences that are informal, blunt, or fragmentary but not wrong, and
+# they must come back untouched.
+#
+# 15/17 on gemma4:e4b. Prompt versions, in the order they were tried:
+#
+#     v1  minimal-change rules only              13/17
+#     v2  + names what must be fixed             15/17
+#     v3  v2 but "punctuation only where its
+#         absence is an error, never taste"      14/17
+#
+# v1 was too timid — hammering "change as little as possible" and nothing else
+# left real errors in ("he don't know" came back untouched). Naming the fixes
+# explicitly cost nothing on the untouched half and took every real error.
+#
+# v3 was an attempt at the last two failures and was dropped: it rewrote one
+# more correct sentence than v2. A rule about restraint made the model less
+# restrained, which is the reason changes here are measured rather than argued.
+#
+# The two that fail are both a single comma, and they pull opposite ways — one
+# wants a comma added after a fronted phrase, the other wants none added before
+# a trailing "please". Anything that fixes one should be expected to break the
+# other, which is why they are left alone.
+
+cases:
+  # --- real errors, minimally fixed ---------------------------------------
+  - input: the panel dont show up sometimes
+    expect: The panel doesn't show up sometimes.
+
+  - input: We was talking about the release process yesterday
+    expect: We were talking about the release process yesterday.
+
+  - input: he dont know what the config does
+    expect: He doesn't know what the config does.
+
+  - input: their going to ship it on friday
+    expect: They're going to ship it on Friday.
+
+  - input: Its not clear weather the model handles it
+    expect: It's not clear whether the model handles it.
+
+  # --- punctuation only ----------------------------------------------------
+  - input: Before doing a full design spec lets explore a few possibilities
+    expect: Before doing a full design spec, let's explore a few possibilities.
+
+  - input: Back to fuzzy matching recap your strategy
+    expect: Back to fuzzy matching, recap your strategy.
+
+  # --- must come back untouched -------------------------------------------
+  # Informal, terse, or fragmentary, and all of it correct. Anything that comes
+  # back "improved" here is the prompt failing at its one job.
+  - input: Explain your plan before implementing please.
+    expect: Explain your plan before implementing please.
+
+  - input: Back to fuzzy matching, recap your strategy.
+    expect: Back to fuzzy matching, recap your strategy.
+
+  - input: But how are you going to do this? Are you going to create substitutions for every number?
+    expect: But how are you going to do this? Are you going to create substitutions for every number?
+
+  - input: Don't add the task for later, the one that is just an idea.
+    expect: Don't add the task for later, the one that is just an idea.
+
+  - input: Can you make it closer to the real shape of a parrot?
+    expect: Can you make it closer to the real shape of a parrot?
+
+  - input: For that, obviously, we need to know the language that was transcribed, the main one.
+    expect: For that, obviously, we need to know the language that was transcribed, the main one.
+
+  - input: We don't need to keep the old flat form.
+    expect: We don't need to keep the old flat form.
+
+  # --- must not be tidied up ----------------------------------------------
+  # Blunt and repetitive on purpose. A prompt that "helps" will smooth these.
+  - input: Remove boosting entirely from the codebase.
+    expect: Remove boosting entirely from the codebase.
+
+  - input: Okay, let's kill it.
+    expect: Okay, let's kill it.
+
+  - input: It's a bit weird, but it works, and it works well, so leave it.
+    expect: It's a bit weird, but it works, and it works well, so leave it.

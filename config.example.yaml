@@ -97,8 +97,36 @@ prompts:
   - name: digits
     description: write spelled-out numbers as digits, or some of them
     content: |
-      Write spelled-out numbers as digits, following the instruction about
-      which ones to leave alone. Change nothing else.
+      Write spelled-out numbers as digits. Follow the instruction about
+      which ones to leave alone.
+
+        forty two people      ->  42 people
+        nineteen ninety eight ->  1998
+        two thousand five     ->  2005
+        three point one four  ->  3.14
+
+      Change nothing else: not the wording, not the punctuation, and not a
+      number the instruction excludes. Return only the text.
+
+  - name: grammar
+    description: fix grammar and punctuation, changing nothing else
+    content: |
+      Correct grammar, spelling and punctuation. Make the smallest change
+      that makes the text correct — and make it. Every error is fixed.
+      Nothing else is touched.
+
+      Fix: subject-verb agreement, verb forms, confused homophones
+      (its/it's, their/they're, weather/whether), missing or wrong
+      punctuation, a missing capital at the start of a sentence, and a
+      missing full stop at the end.
+
+      Never reword, reorder, shorten, expand, or improve. Never add or
+      remove words except where grammar requires it. Never add quotation
+      marks, emphasis, or punctuation the sentence does not need. Keep the
+      speaker's own vocabulary, register and phrasing, including informal,
+      blunt or repetitive wording. A sentence that is already correct comes
+      back exactly as it was.
+
       Return only the text.
 
   # Show the result before it replaces anything. On by default — a transform

@@ -55,6 +55,22 @@ cases:
   - instruction: shorten it but do not touch the first sentence
     expect: terse
 
+  # --- grammar, which competes with everything -----------------------------
+  # "fix the X" now names three different capabilities depending on X, which
+  # is the sharpest discrimination the catalogue asks for.
+  - instruction: fix the grammar
+    expect: grammar
+  - instruction: fix the punctuation
+    expect: grammar
+  - instruction: clean up the punctuation
+    expect: grammar
+  - instruction: add the missing commas
+    expect: grammar
+  - instruction: correct that sentence
+    expect: grammar
+  - instruction: fix the grammar but leave my wording alone
+    expect: grammar
+
   # --- built-ins -----------------------------------------------------------
   - instruction: Tasmin spells T A S M E E N
     expect: spelling
@@ -90,4 +106,6 @@ cases:
   - instruction: how many bullet points did I write yesterday
     expect: NONE
   - instruction: read that number back to me
+    expect: NONE
+  - instruction: her grammar is better than mine
     expect: NONE

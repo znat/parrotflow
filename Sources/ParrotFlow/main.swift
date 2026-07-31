@@ -65,6 +65,19 @@ if let index = arguments.firstIndex(of: "--route") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--prompt") {
+    guard arguments.indices.contains(index + 3) else {
+        print("usage: ParrotFlow --prompt <name> \"<instruction>\" \"<text>\" [--quiet]")
+        exit(2)
+    }
+    exit(PromptRunCommand.run(
+        name: arguments[index + 1],
+        instruction: arguments[index + 2],
+        text: arguments[index + 3],
+        quiet: arguments.contains("--quiet")
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--learn") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --learn <heard> <corrected>")
