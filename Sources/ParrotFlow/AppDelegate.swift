@@ -527,14 +527,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let cleaned = after.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
             Log.write("transform: \(prompt.name) returned nothing")
-            flash("\(prompt.name) returned nothing")
+            flash("\(prompt.name) returned nothing from \(quoted(before))")
             return
         }
         // Saying so beats replacing text with itself and calling it done, which
         // looks identical to the prompt having silently failed.
+        //
+        // Naming the text is most of the message. "nothing to change" on its
+        // own is indistinguishable from three different problems — the wrong
+        // target, an instruction that named something absent, a prompt that
+        // failed — and telling them apart took reading the log. Showing what it
+        // looked at answers the first two at a glance.
         guard cleaned != before.trimmingCharacters(in: .whitespacesAndNewlines) else {
             Log.write("transform: \(prompt.name) changed nothing")
-            flash("\(prompt.name): nothing to change")
+            flash("\(prompt.name): nothing to change in \(quoted(before))")
             return
         }
 
@@ -710,6 +716,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)")
         default: flash("Saved \(rules.count) rules")
         }
+    }
+
+    /// Text quoted for a one-line notice, shortened from the middle.
+    ///
+    /// The middle rather than the tail: what tells you whether the transform
+    /// looked at the right thing is how it starts and how it ends, and a tail
+    /// ellipsis throws away half of that.
+    private func quoted(_ text: String, limit: Int = 44) -> String {
+        let flat = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        guard flat.count > limit else { return "\"\(flat)\"" }
+        let head = flat.prefix(limit / 2).trimmingCharacters(in: .whitespaces)
+        let tail = flat.suffix(limit / 2 - 1).trimmingCharacters(in: .whitespaces)
+        return "\"\(head)…\(tail)\""
     }
 
     /// Show a message on screen, and in the menu bar for as long as it lasts.
