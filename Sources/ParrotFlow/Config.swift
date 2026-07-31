@@ -81,7 +81,8 @@ struct Config: Codable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, replacements, languages
+            case enabled, replacements
+            case fuzzyMatching = "fuzzy_matching", languages
             case insertMode = "insert_mode"
             case correctionPhrase = "correction_phrase"
             case rewriteLine = "rewrite_line"
@@ -93,6 +94,10 @@ struct Config: Codable, Equatable {
         ///     replacements:
         ///       Tasmeen: [Tasmid, Tasmin, Tasmine]
         var replacements: [String: [String]] = [:]
+        /// Also catch renderings you have not taught, by matching against the
+        /// spellings you want. Only a word the spell checker does not know can
+        /// be replaced, which is what keeps "Excel" from becoming "Vercel".
+        var fuzzyMatching: Bool = true
 
         /// Flattened the way the substitution pass needs it: misheard word to
         /// the word that should replace it.
@@ -131,6 +136,9 @@ struct Config: Codable, Equatable {
                 // than no language at all, so a typo degrades instead of
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
+            }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .fuzzyMatching) {
+                fuzzyMatching = v
             }
             do {
                 if let grouped = try c.decodeIfPresent(
@@ -363,6 +371,11 @@ enum ConfigStore {
       #     Tasmeen: [Tasmid, Tasmin, Tasmine]
       #     Supabase: [super base, superbees]
       replacements: {}
+
+      # Also catch renderings you have not taught, by matching against the
+      # spellings above. Only words the spell checker does not recognise can
+      # be replaced, so ordinary language is never touched.
+      fuzzy_matching: true
 
     # A local Ollama model, used to interpret what you say after the wake
     # phrase. Everything still works without it — you just lose spoken

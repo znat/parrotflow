@@ -25,6 +25,14 @@ if let index = arguments.firstIndex(of: "--transcribe") {
     exit(TranscribeCommand.run(path: arguments[index + 1]))
 }
 
+if let index = arguments.firstIndex(of: "--replace") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --replace \"<text>\"")
+        exit(2)
+    }
+    exit(ReplaceCommand.run(text: arguments[index + 1]))
+}
+
 if let index = arguments.firstIndex(of: "--normalize") {
     let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
         ? arguments[index + 1] : nil

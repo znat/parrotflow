@@ -1,0 +1,18 @@
+# input | expected output
+#
+# Run with: scripts/check-replacements.sh
+# Targets come from your own config, so these assume Tasmeen, Supabase,
+# Vercel, Matthieu. The last six must never change — they are the guard
+# against fuzzy matching touching ordinary language.
+I deployed it to Versel yesterday|I deployed it to Vercel yesterday
+We shipped on Ver Sal last week|We shipped on Vercel last week
+I love working on Superbase|I love working on Supabase
+It runs on super base now|It runs on Supabase now
+I work with Tasmia on this|I work with Tasmia on this
+Talk to Tasmine about it|Talk to Tasmeen about it
+Open the file in Excel please|Open the file in Excel please
+Matthew is joining us today|Matthew is joining us today
+The database is the base of it|The database is the base of it
+Generally speaking this is fine|Generally speaking this is fine
+Nothing here matches anything|Nothing here matches anything
+Je préfère une lettre plus courte|Je préfère une lettre plus courte

@@ -62,6 +62,7 @@ enum CheckConfigCommand {
         }
         if transcription.enabled {
             if !transcription.replacements.isEmpty {
+                print("  · fuzzy matching    \(transcription.fuzzyMatching ? "on" : "off")")
                 let total = transcription.substitutions.count
                 print("  ✓ replacements      \(total) across \(transcription.replacements.count) words")
                 for (target, sources) in transcription.replacements.sorted(by: { $0.key < $1.key }) {

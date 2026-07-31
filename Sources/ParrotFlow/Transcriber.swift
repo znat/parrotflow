@@ -187,20 +187,9 @@ actor Transcriber {
     /// Runs after vocabulary boosting has had its go, and only helps for terms
     /// that boosting missed. Word-boundary matched and case-insensitive so
     /// "mick" and "Mick" both land, but "Mickey" is left alone.
+    /// How names get fixed — see `Replacements`.
     nonisolated static func applyReplacements(to text: String, config: Config) -> String {
-        var output = text
-        for (from, to) in config.transcription.substitutions {
-            guard let pattern = try? NSRegularExpression(
-                pattern: "\\b\(NSRegularExpression.escapedPattern(for: from))\\b",
-                options: [.caseInsensitive]
-            ) else { continue }
-            output = pattern.stringByReplacingMatches(
-                in: output,
-                range: NSRange(output.startIndex..., in: output),
-                withTemplate: NSRegularExpression.escapedTemplate(for: to)
-            )
-        }
-        return output
+        Replacements.apply(to: text, config: config)
     }
 }
 
