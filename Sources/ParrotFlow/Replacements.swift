@@ -29,26 +29,59 @@ enum Replacements {
     static let minimumLength = 5
 
     static func apply(to text: String, config: Config) -> String {
-        let exact = applyExact(to: text, substitutions: config.transcription.substitutions)
+        let exact = applyExact(to: text, rules: config.transcription.rules)
         guard config.transcription.fuzzyMatching else { return exact }
-        return applyFuzzy(to: exact, targets: Array(config.transcription.replacements.keys))
+        let targets = config.transcription.replacements.keys.filter { !$0.isEmpty }
+        return applyFuzzy(to: exact, targets: Array(targets))
     }
 
     // MARK: - Exact
 
-    /// Literal, word-boundary, case-insensitive.
-    static func applyExact(to text: String, substitutions: [String: String]) -> String {
+    /// Literal on word boundaries, or a regular expression when the source is
+    /// wrapped in slashes. Case-insensitive either way.
+    static func applyExact(to text: String, rules: [Config.Transcription.Rule]) -> String {
         var output = text
-        for (from, to) in substitutions {
+        var deleted = false
+
+        for rule in rules {
             guard let pattern = try? NSRegularExpression(
-                pattern: "\\b\(NSRegularExpression.escapedPattern(for: from))\\b",
-                options: [.caseInsensitive]
-            ) else { continue }
+                pattern: rule.pattern, options: [.caseInsensitive]
+            ) else {
+                Log.write("replacements: \"\(rule.source)\" is not a valid pattern; skipped")
+                continue
+            }
+            let before = output
             output = pattern.stringByReplacingMatches(
                 in: output,
                 range: NSRange(output.startIndex..., in: output),
-                withTemplate: NSRegularExpression.escapedTemplate(for: to)
+                withTemplate: NSRegularExpression.escapedTemplate(for: rule.replacement)
             )
+            if rule.isDeletion, output != before { deleted = true }
+        }
+
+        return deleted ? tidy(output) : output
+    }
+
+    /// Closes the gaps a deletion leaves — doubled spaces, a space before a
+    /// comma, a lowercase word left at the start of a sentence.
+    static func tidy(_ text: String) -> String {
+        var output = text
+        for (pattern, template) in [
+            ("[ \\t]{2,}", " "),          // "So  I was" after a filler went
+            (" +([,.;:!?])", "$1"),      // "thinking ," 
+            ("([,;:]) *([,.;:])", "$2"), // "was, , thinking"
+            ("^[ \\t]+", ""),
+        ] {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            output = regex.stringByReplacingMatches(
+                in: output, range: NSRange(output.startIndex..., in: output),
+                withTemplate: template
+            )
+        }
+        output = output.trimmingCharacters(in: .whitespaces)
+        // A removed leading filler leaves the sentence starting lowercase.
+        if let first = output.first, first.isLowercase {
+            output = first.uppercased() + output.dropFirst()
         }
         return output
     }

@@ -63,10 +63,18 @@ enum CheckConfigCommand {
         if transcription.enabled {
             if !transcription.replacements.isEmpty {
                 print("  · fuzzy matching    \(transcription.fuzzyMatching ? "on" : "off")")
-                let total = transcription.substitutions.count
-                print("  ✓ replacements      \(total) across \(transcription.replacements.count) words")
+                let total = transcription.rules.count
+                print("  ✓ replacements      \(total) across \(transcription.replacements.count) entries")
                 for (target, sources) in transcription.replacements.sorted(by: { $0.key < $1.key }) {
-                    print("      \(target) ← \(sources.sorted().joined(separator: ", "))")
+                    let name = target.isEmpty ? "(removed)" : target
+                    print("      \(name) ← \(sources.sorted().joined(separator: ", "))")
+                }
+                let bad = transcription.rules.filter {
+                    $0.isRegex && (try? NSRegularExpression(pattern: $0.pattern)) == nil
+                }
+                for rule in bad {
+                    print("  ✗ not a valid pattern: \(rule.source)")
+                    ok = false
                 }
             }
         }

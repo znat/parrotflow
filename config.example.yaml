@@ -29,6 +29,10 @@ transcription:
   # Workflow: dictate, run --transcribe on the clip, map whatever the model
   # wrote to what you meant.
   replacements:
+    # Removed from every transcript. A source in /slashes/ is a regular
+    # expression; an empty target means delete. The pattern takes any comma
+    # and spacing with it, so nothing is left behind.
+    "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
     Tasmeen: [Tasmid, Tasmin, Tasmine]
     Supabase: [super base, superbees]
 

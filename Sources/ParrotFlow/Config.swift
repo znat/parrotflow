@@ -99,14 +99,42 @@ struct Config: Codable, Equatable {
         /// be replaced, which is what keeps "Excel" from becoming "Vercel".
         var fuzzyMatching: Bool = true
 
-        /// Flattened the way the substitution pass needs it: misheard word to
-        /// the word that should replace it.
-        var substitutions: [String: String] {
-            var flat: [String: String] = [:]
-            for (target, sources) in replacements {
-                for source in sources { flat[source] = target }
+        /// One rule per mishearing, flattened for the substitution pass.
+        var rules: [Rule] {
+            replacements.flatMap { target, sources in
+                sources.map { Rule(source: $0, replacement: target) }
             }
-            return flat
+        }
+
+        /// A single substitution.
+        ///
+        /// A source wrapped in slashes is a regular expression, which is how
+        /// filler words are removed — they need alternation and have to take
+        /// their surrounding punctuation with them. Everything else is matched
+        /// literally on word boundaries.
+        struct Rule {
+            let source: String
+            let replacement: String
+
+            var isRegex: Bool {
+                source.count >= 2 && source.hasPrefix("/") && source.hasSuffix("/")
+            }
+
+            /// Deleting rather than substituting. Written as an empty target.
+            var isDeletion: Bool { replacement.isEmpty }
+
+            /// The pattern to match, already anchored if it is a literal.
+            var pattern: String {
+                guard isRegex else {
+                    return "\\b\(NSRegularExpression.escapedPattern(for: source))\\b"
+                }
+                return String(source.dropFirst().dropLast())
+            }
+
+            /// Fuzzy matching compares spellings, so a pattern is not a
+            /// candidate and neither is a deletion — there is nothing to match
+            /// against.
+            var isFuzzyCandidate: Bool { !isRegex && !isDeletion }
         }
 
         init() {}
@@ -369,7 +397,11 @@ enum ConfigStore {
       #
       #   replacements:
       #     Tasmeen: [Tasmid, Tasmin, Tasmine]
-      #     Supabase: [super base, superbees]
+      #
+      # A source in /slashes/ is a regular expression, and an empty target
+      # deletes rather than substitutes — which is how filler words go:
+      #
+      #     "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
       replacements: {}
 
       # Also catch renderings you have not taught, by matching against the
