@@ -111,11 +111,18 @@ enum SelectionReader {
             return true
         }
 
-        // Some fields expose AXValue read-only and only accept text through the
-        // keyboard. The range is already selected at this point, so a paste
-        // lands exactly on it — this is the one case where Cmd-V is safe,
-        // because we put the selection there ourselves a moment ago.
-        Log.write("rewrite: \(roleName) ignored the direct write, trying paste over the selection")
+        // Only paste once the selection is confirmed to exist. Setting the
+        // range can report success and do nothing — terminals expose their
+        // value as a read-only view of the screen — and pasting into that
+        // means Cmd-V inserts at the caret instead of replacing. That appends
+        // the correction to the end of the line: "Versalailles.Tasmeen".
+        guard let selected = selectedText(of: element),
+              selected.compare(needle, options: .caseInsensitive) == .orderedSame else {
+            Log.write("rewrite: \(roleName) ignored the range; not pasting blind")
+            return false
+        }
+
+        Log.write("rewrite: \(roleName) ignored the direct write, pasting over the confirmed selection")
         TextInserter.insert(replacement, mode: .paste)
         Thread.sleep(forTimeInterval: 0.2)
 
