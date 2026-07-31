@@ -180,39 +180,35 @@ enum SelectionReader {
     /// So the safety net is readline's own: Ctrl-K pushes to the kill ring and
     /// Ctrl-Y yanks it back. Any uncertainty ends in Ctrl-Y, which puts the
     /// line back whatever the accessibility API believes.
+    /// Retypes the input line corrected, when the field's value is readable
+    /// and is the line itself rather than a screenful of terminal.
+    ///
+    /// The last resort for surfaces that refuse accessibility writes but accept
+    /// keystrokes. Reading works in those; only writing does not.
+    ///
+    /// An earlier version killed the line and diffed the screen before and
+    /// after to learn what had been there. That cannot work against a live TUI:
+    /// Claude Code redrew its status bar between the two reads and the diff
+    /// swept up 140 characters of chrome for an 18 character line, which then
+    /// got typed into the input.
+    ///
+    /// So no diffing. The value is used only when it is plainly a field and not
+    /// a screen — no newlines, and short. Then the corrected text is known
+    /// exactly before a single key is pressed, and the keystrokes have nothing
+    /// to infer.
     @discardableResult
     static func rewriteCurrentLine(
         applying rules: [(heard: String, corrected: String)],
         in element: AXUIElement
     ) -> Bool {
-        let before = visibleText(of: element) ?? ""
+        guard let value = visibleText(of: element) else { return false }
 
-        postControlKey(0x00)   // Ctrl-A, start of line
-        Thread.sleep(forTimeInterval: 0.06)
-        postControlKey(0x28)   // Ctrl-K, kill to end of line
-
-        // The value can lag the screen, so give it a few chances to catch up
-        // before concluding the kill did nothing.
-        var killed: String?
-        for _ in 0..<4 {
-            Thread.sleep(forTimeInterval: 0.12)
-            if let after = visibleText(of: element),
-               let segment = removedSegment(before: before, after: after),
-               !segment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                killed = segment
-                break
-            }
-        }
-
-        guard let killed else {
-            // The line may well be gone even though the read says otherwise.
-            // Yank it back rather than leave an empty input.
-            Log.write("rewrite: could not read what was killed; yanking it back")
-            postControlKey(0x10)   // Ctrl-Y
+        guard !value.contains("\n"), value.count <= 2000 else {
+            Log.write("rewrite: value is \(value.count) chars of screen, not one line; not retyping")
             return false
         }
 
-        var corrected = killed
+        var corrected = value
         for rule in rules {
             guard let pattern = try? NSRegularExpression(
                 pattern: "\\b\(NSRegularExpression.escapedPattern(for: rule.heard))\\b",
@@ -224,17 +220,30 @@ enum SelectionReader {
                 withTemplate: NSRegularExpression.escapedTemplate(for: rule.corrected)
             )
         }
-
-        guard corrected != killed else {
-            Log.write("rewrite: nothing in the killed line matched a rule; yanking it back")
-            postControlKey(0x10)   // Ctrl-Y
+        guard corrected != value else {
+            Log.write("rewrite: no rule matched the line; leaving it alone")
             return false
         }
 
+        postControlKey(0x00)   // Ctrl-A, start of line
+        Thread.sleep(forTimeInterval: 0.06)
+        postControlKey(0x28)   // Ctrl-K, kill to end of line
+        Thread.sleep(forTimeInterval: 0.10)
+
         TextInserter.insert(corrected, mode: .paste)
-        Thread.sleep(forTimeInterval: 0.15)
-        Log.write("rewrite: retyped \(killed.count) chars with \(rules.count) rule(s) applied")
-        return true
+        Thread.sleep(forTimeInterval: 0.20)
+
+        // If the line is not what we meant to write, the kill or the paste
+        // missed. Ctrl-Y yanks back what Ctrl-K took, which is the only undo
+        // that does not depend on the accessibility API being truthful.
+        let after = visibleText(of: element) ?? ""
+        if after.contains(corrected) {
+            Log.write("rewrite: retyped \(value.count) chars with \(rules.count) rule(s) applied")
+            return true
+        }
+        Log.write("rewrite: line did not come back as expected; yanking it back")
+        postControlKey(0x10)   // Ctrl-Y
+        return false
     }
 
     /// The text present in `before` but not `after`, found by trimming the
