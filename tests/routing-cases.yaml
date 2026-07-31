@@ -1,0 +1,93 @@
+# Routing validation set. Run with scripts/check-routing.sh.
+#
+# One instruction in, one capability name out — or NONE. Written the way the
+# sentences actually arrive, which is with the routing word buried in a longer
+# request, because that is the case the router has to get right.
+#
+# The negative cases are not padding. Without them a router scores well by
+# routing everything somewhere, and the failure that costs you real text is
+# exactly that: a sentence that meant nothing in particular, confidently sent
+# to a prompt that rewrites your selection.
+
+cases:
+  # --- named outright: should never reach the model -----------------------
+  - instruction: bullets
+    expect: bullets
+  - instruction: terse
+    expect: terse
+  - instruction: spelling
+    expect: spelling
+
+  # --- plain requests ------------------------------------------------------
+  - instruction: make that a bullet list
+    expect: bullets
+  - instruction: turn this into bullet points
+    expect: bullets
+  - instruction: break that up into a list
+    expect: bullets
+  - instruction: shorten this
+    expect: terse
+  - instruction: make it shorter
+    expect: terse
+  - instruction: cut this down a bit
+    expect: terse
+  - instruction: tighten that up
+    expect: terse
+
+  # --- the instruction carries an argument ---------------------------------
+  # The router must ignore the detail and route on the request. The detail is
+  # for the prompt, and these are the cases where a router that tries to parse
+  # starts guessing.
+  - instruction: format those dates ISO
+    expect: dates
+  - instruction: format those dates with slashes
+    expect: dates
+  - instruction: rewrite the dates as day month year
+    expect: dates
+  - instruction: fix the numbers
+    expect: digits
+  - instruction: fix the numbers but leave the years alone
+    expect: digits
+  - instruction: write the numbers as digits except the ones in the quote
+    expect: digits
+  - instruction: make that a bullet list but keep the headings
+    expect: bullets
+  - instruction: shorten it but do not touch the first sentence
+    expect: terse
+
+  # --- built-ins -----------------------------------------------------------
+  - instruction: Tasmin spells T A S M E E N
+    expect: spelling
+  - instruction: Vercel is spelled V E R C E L
+    expect: spelling
+  - instruction: Nguyen spells N G U Y E N not when
+    expect: spelling
+  - instruction: fix vocabulary
+    expect: vocabulary
+  - instruction: open the correction panel
+    expect: vocabulary
+  - instruction: let me fix that word myself
+    expect: vocabulary
+
+  # --- must not route ------------------------------------------------------
+  - instruction: what is the weather tomorrow
+    expect: NONE
+  - instruction: remind me to call the bank
+    expect: NONE
+  - instruction: play some music
+    expect: NONE
+  - instruction: how much is a flight to Lisbon
+    expect: NONE
+
+  # --- must not route, and shares words with a capability ------------------
+  # The trap. Each of these contains a routing word while asking for something
+  # no capability does, which is how a router that matches on vocabulary rather
+  # than on intent gets caught.
+  - instruction: I bought a box of bullets
+    expect: NONE
+  - instruction: what date is the retro
+    expect: NONE
+  - instruction: how many bullet points did I write yesterday
+    expect: NONE
+  - instruction: read that number back to me
+    expect: NONE

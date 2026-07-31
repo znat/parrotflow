@@ -52,8 +52,9 @@ enum CheckConfigCommand {
                 ? "paste into frontmost app (needs Accessibility)"
                 : "copy to clipboard"
             print("  · insert mode       \(mode)")
-            print("  · wake phrase       \"\(transcription.correctionPhrase)\"")
+            print("  · wake phrase       \"\(transcription.activationPhrase)\"")
             print("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
+            print("  · numbers           \(transcription.numbers ? "written as digits" : "left as words")")
             let languages = transcription.languages.joined(separator: ", ")
             print("  · languages         \(languages)"
                 + (transcription.languages.count > 1
@@ -77,6 +78,20 @@ enum CheckConfigCommand {
                     ok = false
                 }
             }
+        }
+
+        // What "hey parrot" can reach. Printed even when `prompts:` is empty,
+        // because the built-ins are the answer to "why did it do that" as
+        // often as a prompt of your own is.
+        let catalogue = Catalogue(prompts: config.prompts)
+        print("  ✓ capabilities      \(catalogue.capabilities.count) reachable by \"\(transcription.activationPhrase)\"")
+        for capability in catalogue.capabilities {
+            let kind = capability.isTransform ? "prompt " : "built-in"
+            print("      \(kind)  \(capability.name) — \(capability.describedAs)")
+        }
+        for prompt in config.prompts where prompt.description.isEmpty {
+            print("  ✗ prompt \"\(prompt.name)\" has no description; the router cannot pick it")
+            ok = false
         }
 
         // LLM — only reachability is checked here; --command exercises it.
@@ -109,7 +124,7 @@ enum CheckConfigCommand {
         // bundle run from a terminal reported Not granted. A check that says no
         // when the answer is yes is worse than no check, so it reports where the
         // real answer lives instead — the app tests it at launch and logs it.
-        if transcription.insertMode == .paste || !transcription.correctionPhrase.isEmpty {
+        if transcription.insertMode == .paste || !transcription.activationPhrase.isEmpty {
             print("  · accessibility     needed, but not checkable from a terminal")
             print("      macOS credits this check to the shell, not to ParrotFlow.")
             print("      The app records the true value each time it starts:")

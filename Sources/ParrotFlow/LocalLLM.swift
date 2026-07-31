@@ -49,10 +49,17 @@ enum LocalLLM {
 
     /// One-shot completion. `json` asks Ollama to constrain output to valid
     /// JSON, which turns "hope the model formats it right" into a parse.
+    ///
+    /// `maxTokens` is a ceiling on the answer, and it is not a detail. It was
+    /// fixed at 32 while the only question asked was "which word maps to
+    /// which", where it caps rambling for free. A prompt that rewrites a
+    /// paragraph needs hundreds, and gets cut off mid-word instead of failing
+    /// — which reads as the model being bad rather than as a setting.
     static func complete(
         system: String,
         user: String,
         json: Bool,
+        maxTokens: Int = 32,
         config: Config
     ) async throws -> String {
         guard let url = URL(string: "\(config.endpoint)/api/generate") else {
@@ -70,8 +77,7 @@ enum LocalLLM {
             "options": [
                 // Deterministic: this is extraction, not writing.
                 "temperature": 0,
-                // A mapping line cannot need more, and it caps any rambling.
-                "num_predict": 32,
+                "num_predict": maxTokens,
             ],
         ]
         if json { body["format"] = "json" }

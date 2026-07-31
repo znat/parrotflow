@@ -328,7 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// spelling is the whole point of the command.
     private func commandAfterWakePhrase(_ text: String) -> String? {
         VoiceCommand.commandAfterWakePhrase(
-            text, phrase: config.transcription.correctionPhrase
+            text, phrase: config.transcription.activationPhrase
         )
     }
 

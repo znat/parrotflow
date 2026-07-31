@@ -22,6 +22,57 @@ struct Config: Codable, Equatable {
     var feedback: Feedback = Feedback()
     var transcription: Transcription = Transcription()
     var llm: LLM = LLM()
+    var prompts: [Prompt] = []
+
+    /// An instruction you can reach by voice: "hey parrot, make that a list".
+    ///
+    /// The description is not documentation — it is the only thing the router
+    /// sees when deciding where a spoken instruction goes, so it is doing real
+    /// work and wants to read like the thing you would say.
+    ///
+    /// `content` is the standing rule. What you actually said arrives
+    /// separately, because the same prompt has to serve "format those dates
+    /// ISO" and "format those dates with slashes" — see `Router`.
+    struct Prompt: Codable, Equatable {
+        var name: String
+        var description: String
+        var content: String
+        /// Show the result and wait for you before replacing anything.
+        ///
+        /// On by default: a transform overwrites text you selected, triggered
+        /// by voice, with no dialog in the way. Turn it off per prompt once
+        /// that prompt has earned it.
+        var confirm: Bool = true
+
+        enum CodingKeys: String, CodingKey {
+            case name, description, content, confirm
+        }
+
+        init(name: String, description: String, content: String, confirm: Bool = true) {
+            self.name = name
+            self.description = description
+            self.content = content
+            self.confirm = confirm
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            name = (try c.decodeIfPresent(String.self, forKey: .name) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            description = (try c.decodeIfPresent(String.self, forKey: .description) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            content = (try c.decodeIfPresent(String.self, forKey: .content) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
+        }
+
+        /// Where the spoken instruction goes if the prompt asks for it inline.
+        static let instructionPlaceholder = "{{instruction}}"
+
+        var wantsInstructionInline: Bool {
+            content.contains(Self.instructionPlaceholder)
+        }
+    }
 
     /// A local Ollama model, used to interpret spoken commands.
     struct LLM: Codable, Equatable {
@@ -57,9 +108,13 @@ struct Config: Codable, Equatable {
         /// `paste` types the transcript into the frontmost app (needs
         /// Accessibility). `clipboard` just copies it and lets you paste.
         var insertMode: InsertMode = .paste
-        /// Say this instead of dictating to open the correction panel for the
-        /// text you have selected. Empty disables it.
-        var correctionPhrase: String = "hey parrot"
+        /// Say this instead of dictating, and what follows is an instruction
+        /// rather than text. Empty disables it.
+        ///
+        /// Called `correction_phrase` when the only instruction was fixing a
+        /// spelling; that key still works and is still in configs written
+        /// before prompts existed.
+        var activationPhrase: String = "hey parrot"
         /// Last-resort in-place correction for surfaces the accessibility API
         /// cannot write, such as terminals: clear the input line with readline
         /// keys and retype it. Destructive if the guesses are wrong, so it is
@@ -81,11 +136,18 @@ struct Config: Codable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, replacements
+            case enabled, replacements, numbers
             case fuzzyMatching = "fuzzy_matching", languages
             case insertMode = "insert_mode"
-            case correctionPhrase = "correction_phrase"
+            case activationPhrase = "activation_phrase"
             case rewriteLine = "rewrite_line"
+        }
+
+        /// Keys that are read but never written. Kept out of `CodingKeys` so
+        /// the synthesised encoder doesn't need a property for a name we no
+        /// longer use.
+        private enum LegacyKeys: String, CodingKey {
+            case correctionPhrase = "correction_phrase"
         }
         /// Grouped by the word you want written, since one name accumulates
         /// several mishearings — eleven rules had built up for four names
@@ -98,6 +160,13 @@ struct Config: Codable, Equatable {
         /// spellings you want. Only a word the spell checker does not know can
         /// be replaced, which is what keeps "Excel" from becoming "Vercel".
         var fuzzyMatching: Bool = true
+        /// Write spoken numbers as digits — "two hundred forty-three" => 243.
+        /// See `Numbers` for what it will and will not touch.
+        ///
+        /// Off unless asked for. Unlike the name passes it changes transcripts
+        /// the model got right, and whether "chapter three" wants a 3 is a
+        /// house-style question rather than a correctness one.
+        var numbers: Bool = false
 
         /// One rule per mishearing, flattened for the substitution pass.
         var rules: [Rule] {
@@ -153,8 +222,14 @@ struct Config: Codable, Equatable {
                 }
                 self.insertMode = mode
             }
-            if let phrase = try c.decodeIfPresent(String.self, forKey: .correctionPhrase) {
-                self.correctionPhrase = phrase
+            // The new name wins if both are present, which is what someone
+            // mid-rename would expect.
+            let legacy = try decoder.container(keyedBy: LegacyKeys.self)
+            if let phrase = try legacy.decodeIfPresent(String.self, forKey: .correctionPhrase) {
+                self.activationPhrase = phrase
+            }
+            if let phrase = try c.decodeIfPresent(String.self, forKey: .activationPhrase) {
+                self.activationPhrase = phrase
             }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .rewriteLine) { rewriteLine = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) {
@@ -168,6 +243,7 @@ struct Config: Codable, Equatable {
             if let v = try c.decodeIfPresent(Bool.self, forKey: .fuzzyMatching) {
                 fuzzyMatching = v
             }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .numbers) { numbers = v }
             do {
                 if let grouped = try c.decodeIfPresent(
                     [String: [String]].self, forKey: .replacements
@@ -300,6 +376,21 @@ struct Config: Codable, Equatable {
             self.transcription = transcription
         }
         if let llm = try c.decodeIfPresent(LLM.self, forKey: .llm) { self.llm = llm }
+        if let prompts = try c.decodeIfPresent([Prompt].self, forKey: .prompts) {
+            // A prompt missing a name or content cannot be routed to or run, and
+            // dropping it silently is how a typo becomes an evening. Named here
+            // rather than thrown, so one bad entry doesn't cost you the others.
+            self.prompts = prompts.filter { prompt in
+                guard !prompt.name.isEmpty, !prompt.content.isEmpty else {
+                    Log.write("prompts: skipped an entry missing a name or content")
+                    return false
+                }
+                if prompt.description.isEmpty {
+                    Log.write("prompts: \"\(prompt.name)\" has no description; the router cannot pick it")
+                }
+                return true
+            }
+        }
     }
 
     var resolvedOutputDir: URL {
@@ -408,6 +499,19 @@ enum ConfigStore {
       # spellings above. Only words the spell checker does not recognise can
       # be replaced, so ordinary language is never touched.
       fuzzy_matching: true
+
+      # Write spoken numbers as digits: "two hundred forty-three" -> 243.
+      # Also ordinals (twenty third -> 23rd), decimals (three point one four
+      # -> 3.14), years (nineteen eighty-four -> 1984) and spoken digits
+      # (five five one two -> 5512).
+      #
+      # A number word on its own stays a word below ten, so "chapter three"
+      # and "no one knows" are left as they are. Anything longer converts.
+      #
+      # Off by default. It rewrites transcripts that were already correct, and
+      # whether you want digits at all is a matter of taste. Run --numbers to
+      # see exactly what turning it on would do.
+      numbers: false
 
     # A local Ollama model, used to interpret what you say after the wake
     # phrase. Everything still works without it — you just lose spoken

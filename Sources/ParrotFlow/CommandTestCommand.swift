@@ -14,7 +14,7 @@ enum CommandTestCommand {
             return 1
         }
 
-        let phrase = config.transcription.correctionPhrase
+        let phrase = config.transcription.activationPhrase
         print("wake phrase: \"\(phrase)\"")
         if let lastTranscript {
             print("context:     \"\(lastTranscript)\"")

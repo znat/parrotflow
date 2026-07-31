@@ -36,6 +36,18 @@ transcription:
     Tasmeen: [Tasmid, Tasmin, Tasmine]
     Supabase: [super base, superbees]
 
+  # Write spoken numbers as digits: "two hundred forty-three" -> 243. Also
+  # ordinals (twenty third -> 23rd), decimals (three point one four -> 3.14),
+  # years (nineteen eighty-four -> 1984) and spoken digits (five five one two
+  # -> 5512).
+  #
+  # A number word on its own stays a word below ten, so "chapter three" and
+  # "no one knows" are left alone.
+  #
+  # Off by default — it rewrites transcripts that were already correct, and
+  # digits are a matter of taste. Run --numbers to see what it would do.
+  numbers: false
+
 # A local Ollama model, used to interpret what you say after the wake phrase.
 # Everything else works without it — you just lose free-form spoken commands.
 llm:
@@ -47,3 +59,50 @@ llm:
   # after five minutes, and reloading costs 7-10s on the next correction.
   # Turn off to get those seconds back as free RAM.
   keep_loaded: true
+
+# Things you can ask for by voice: say the wake phrase, then the instruction.
+#
+#     "hey parrot, make that a bullet list"
+#
+# A router picks which one you meant, reading the descriptions below — so a
+# description is not a comment, it is the thing being matched against. Write it
+# the way you would say it.
+#
+# The whole instruction is then passed to the prompt, not just the part that
+# chose it. That is what lets one prompt serve "format those dates ISO" and
+# "format those dates with slashes" without needing two entries.
+#
+# Fixing a misheard name is built in and does not appear here — run
+# --check-config to see everything the wake phrase reaches.
+prompts:
+  - name: bullets
+    description: turn text into a short bullet list
+    content: |
+      Rewrite the text as concise bullets, one idea each.
+      Keep the speaker's wording. Return only the bullets.
+
+  - name: terse
+    description: shorten text without losing anything it says
+    content: |
+      Cut this down. No filler, same facts, same voice.
+      Return only the shortened text.
+
+  - name: dates
+    description: rewrite dates in a particular format
+    content: |
+      Rewrite every date in the text to the format the instruction asks for.
+      If it names no format, use YYYY-MM-DD. Change nothing else.
+      Return only the text.
+
+  - name: digits
+    description: write spelled-out numbers as digits, or some of them
+    content: |
+      Write spelled-out numbers as digits, following the instruction about
+      which ones to leave alone. Change nothing else.
+      Return only the text.
+
+  # Show the result before it replaces anything. On by default — a transform
+  # overwrites text you selected, and it is triggered by voice, so there is no
+  # dialog in the way. Set false per prompt once you trust it.
+  #
+  #   confirm: false

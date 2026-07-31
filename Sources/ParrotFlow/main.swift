@@ -33,6 +33,12 @@ if let index = arguments.firstIndex(of: "--replace") {
     exit(ReplaceCommand.run(text: arguments[index + 1]))
 }
 
+if let index = arguments.firstIndex(of: "--numbers") {
+    let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
+        ? arguments[index + 1] : nil
+    exit(NumbersCommand.run(text: text))
+}
+
 if let index = arguments.firstIndex(of: "--normalize") {
     let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
         ? arguments[index + 1] : nil
@@ -47,6 +53,16 @@ if let index = arguments.firstIndex(of: "--command") {
     let context = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
         ? arguments[index + 2] : nil
     exit(CommandTestCommand.run(text: arguments[index + 1], lastTranscript: context))
+}
+
+if let index = arguments.firstIndex(of: "--route") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --route \"hey parrot, make that a bullet list\" [--quiet]")
+        exit(2)
+    }
+    exit(RouteTestCommand.run(
+        text: arguments[index + 1], quiet: arguments.contains("--quiet")
+    ))
 }
 
 if let index = arguments.firstIndex(of: "--learn") {

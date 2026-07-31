@@ -156,6 +156,7 @@ a resumable transfer, and a working app (record-only) until it lands.
 - [parakeet-tdt-0.6b-v3-coreml](https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)
 - [Can Parakeet be prompted? (NVIDIA discussion)](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3/discussions/8)
 - [NeMo word boosting](https://docs.nvidia.com/nemo-framework/user-guide/latest/nemotoolkit/asr/asr_customization/word_boosting.html)
+- [NeMo inverse text normalization](https://docs.nvidia.com/nemo-framework/user-guide/latest/nemotoolkit/nlp/text_normalization/wfst/wfst_text_normalization.html)
 - [WWDC25: SpeechAnalyzer](https://developer.apple.com/videos/play/wwdc2025/277/)
 - [parakeet-coreml-swift](https://github.com/mweinbach/parakeet-coreml-swift)
 
@@ -183,3 +184,72 @@ Two settings matter more than the prompt:
 
 `gemma4:e4b` at 8B matches `gemma4:12b` on this set at half the latency, since
 output tokens dominate rather than parameter count.
+
+## Numbers
+
+Parakeet writes numbers as words — "two hundred forty-three" — because inverse
+text normalisation is a separate stage in NeMo, not part of the acoustic model.
+Something has to run it.
+
+**FluidAudio's `TextNormalizer` is not that something.** It looks like an exact
+fit, and its documented examples are precisely the cases wanted here. But the
+Swift type is a `dlopen`/`dlsym` shim over a native NeMo library, and the SPM
+package does not ship the library. `--normalize` reports what that means:
+
+    native library: NOT LINKED — normalize() is a no-op
+    custom rules:   0
+      · two hundred
+      · five dollars and fifty cents
+
+All ten samples pass through untouched, and would do so silently — a rule that
+did not match and a library that is not there look identical from the outside,
+which is the reason that command prints the linkage rather than assuming it.
+Getting the real thing means vendoring and notarising a native blob for one
+pass. Not worth it.
+
+`Numbers.swift` does it instead: no model, no library, a linear scan measured in
+microseconds against the seconds an LLM pass would cost. It is off unless
+`transcription.numbers` asks for it — alone among these passes it rewrites
+transcripts that were already correct, and whether "chapter three" wants a 3 is
+a question of house style rather than of accuracy. About seventy words
+build every number in English, so it parses a grammar over that vocabulary
+rather than enumerating results — a substitution table cannot work when "forty"
+means 40 in "forty-three" and 40,000 in "forty thousand".
+
+| | | |
+| --- | --- | --- |
+| Cardinals | `two hundred and forty-three` | `243` |
+| Ordinals | `the twenty third of June` | `the 23rd of June` |
+| Decimals | `three point one four` | `3.14` |
+| Years | `nineteen eighty-four` | `1984` |
+| Spoken digits | `five five five one two three four` | `5551234` |
+
+Under ten a lone number word stays a word, which is both ordinary prose style
+and what keeps "one" the pronoun and "a" the article out of reach. Compounds
+convert at any size.
+
+### What the guards are for
+
+Addition is the easy half; knowing where a number *ends* is the hard half. A
+plain accumulator sums whatever it is handed, so "meet at ten fifteen" comes out
+as 25 — wrong in the worst way, because it looks like a number someone said.
+Every transition is checked instead, and anything invalid ends the number rather
+than folding into it. Two more guards came out of testing:
+
+- **A year is a standalone pair, never a slice of a longer one.** "ten fifteen
+  twenty" briefly produced `10 1520`, the year rule having matched the middle
+  two of three.
+- **Numbers left side by side are left as words.** If the parser could not read
+  them as one number they are a time, a ratio or a hesitation — "eleven thirty",
+  "sixty forty split", "nine eleven" — and writing them separately gives `11 30`
+  and `nine 11`, which nobody would type. Refusing to guess is the only option
+  that cannot make a transcript that was already right worse.
+
+The leading group of a year is held to 13–20, covering 1300–2099. That is every
+year anyone dictates, and stopping short of ten, eleven and twelve is what keeps
+a clock time from becoming one.
+
+`--numbers` runs the set these rules were written against — one line per rule,
+one per guard — and `--numbers "<text>"` runs a single line. Both run the pass
+whatever the setting says, and print the setting first, so what it *would* do
+can be read before it is turned on.

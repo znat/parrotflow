@@ -28,11 +28,18 @@ enum Replacements {
     /// Below this, similarity stops discriminating.
     static let minimumLength = 5
 
+    /// Names first, digits last. Both name passes match on words, and a
+    /// mishearing that happens to contain a number word — "Ver Sal two" — has
+    /// to still look like words while they run.
     static func apply(to text: String, config: Config) -> String {
         let exact = applyExact(to: text, rules: config.transcription.rules)
-        guard config.transcription.fuzzyMatching else { return exact }
-        let targets = config.transcription.replacements.keys.filter { !$0.isEmpty }
-        return applyFuzzy(to: exact, targets: Array(targets))
+        var output = exact
+        if config.transcription.fuzzyMatching {
+            let targets = config.transcription.replacements.keys.filter { !$0.isEmpty }
+            output = applyFuzzy(to: exact, targets: Array(targets))
+        }
+        guard config.transcription.numbers else { return output }
+        return Numbers.apply(to: output)
     }
 
     // MARK: - Exact
