@@ -27,9 +27,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Where the text was being typed when the hotkey went down, so a rule
     /// learned by voice can fix the word already in the field.
     private var focusAtPress: SelectionReader.Selection?
-    /// The last text we put into a field, used to confirm an input line is
-    /// ours before overwriting it.
-    private var lastInsertedText: String?
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -435,8 +432,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 if !config.transcription.rewriteLine {
                     Log.write("rewrite: rewrite_line is off; not retyping")
-                } else if lastInsertedText == nil {
-                    Log.write("rewrite: no dictated text recorded to rebuild from")
                 }
                 Log.write("field would not accept the rewrite; correction is on the clipboard")
                 NSPasteboard.general.clearContents()
@@ -460,56 +455,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)")
         default: flash("Saved \(rules.count) rules")
         }
-    }
-
-    /// The corrected text to retype, or nil when it is not safe to.
-    ///
-    /// Built from the transcript we inserted, not from what is on screen.
-    /// Reading it back is unreliable — a terminal's accessibility value is the
-    /// screen, so a wrapped line arrives split across newlines and the last
-    /// fragment is only its tail. Ctrl-K kills the whole logical line, so
-    /// retyping that fragment would destroy the rest.
-    ///
-    /// Working from the transcript makes the text itself deterministic: we
-    /// know exactly what was inserted and exactly which rules apply. The only
-    /// judgement left is whether the line is still ours to overwrite.
-    private func rewritten(
-        onScreen: String,
-        inserted: String,
-        rules: [(heard: String, corrected: String)]
-    ) -> String? {
-        let source = inserted.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !source.isEmpty else { return nil }
-
-        // It must still be on screen — otherwise the caret has moved on and
-        // Ctrl-A/Ctrl-K would clear a line belonging to someone else.
-        guard let position = onScreen.range(of: source) else {
-            Log.write("rewrite: dictated text is no longer on screen; leaving the line alone")
-            return nil
-        }
-
-        // Anything typed after it would be lost, since we retype the transcript
-        // rather than the line. Bail rather than eat it.
-        let trailing = onScreen[position.upperBound...]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trailing.isEmpty {
-            Log.write("rewrite: text was typed after the dictation; leaving the line alone")
-            return nil
-        }
-
-        var corrected = source
-        for rule in rules {
-            guard let pattern = try? NSRegularExpression(
-                pattern: "\\b\(NSRegularExpression.escapedPattern(for: rule.heard))\\b",
-                options: [.caseInsensitive]
-            ) else { continue }
-            corrected = pattern.stringByReplacingMatches(
-                in: corrected,
-                range: NSRange(corrected.startIndex..., in: corrected),
-                withTemplate: NSRegularExpression.escapedTemplate(for: rule.corrected)
-            )
-        }
-        return corrected == source ? nil : corrected
     }
 
     /// Show a message on screen, and in the menu bar for as long as it lasts.
@@ -540,7 +485,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Log.write("transcribed: \(trimmed)")
         settings.model.lastTranscript = trimmed
-        lastInsertedText = trimmed
 
         switch TextInserter.insert(trimmed, mode: config.transcription.insertMode) {
         case .pasted:

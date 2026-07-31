@@ -279,24 +279,6 @@ enum SelectionReader {
         return false
     }
 
-    /// The text present in `before` but not `after`, found by trimming the
-    /// common prefix and suffix. A line kill removes one contiguous run, so
-    /// what is left in the middle is exactly what went.
-    static func removedSegment(before: String, after: String) -> String? {
-        guard before.count > after.count else { return nil }
-        let b = Array(before), a = Array(after)
-
-        var head = 0
-        while head < a.count, b[head] == a[head] { head += 1 }
-
-        var tail = 0
-        while tail < a.count - head, b[b.count - 1 - tail] == a[a.count - 1 - tail] { tail += 1 }
-
-        let start = head, end = b.count - tail
-        guard start < end else { return nil }
-        return String(b[start..<end])
-    }
-
     private static func postControlKey(_ key: CGKeyCode) {
         let source = CGEventSource(stateID: .combinedSessionState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),

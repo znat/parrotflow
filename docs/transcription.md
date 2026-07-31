@@ -203,3 +203,28 @@ a resumable transfer, and a working app (record-only) until it lands.
 - [NeMo word boosting](https://docs.nvidia.com/nemo-framework/user-guide/latest/nemotoolkit/asr/asr_customization/word_boosting.html)
 - [WWDC25: SpeechAnalyzer](https://developer.apple.com/videos/play/wwdc2025/277/)
 - [parakeet-coreml-swift](https://github.com/mweinbach/parakeet-coreml-swift)
+
+## Voice corrections
+
+Saying "hey parrot, <name> spells T A S M E E N" adds a replacement rule. A
+local model picks which word in the previous transcript was meant; the spelling
+comes from the letters by regex, never from the model.
+
+That split is deliberate and measured. Given the whole job the model returns
+the right span but mangles the letters it is copying — "S I O B H A N" came
+back "Sibhan". Given only the span it scores 35/35 on
+`tests/spelling-cases.yaml`.
+
+`scripts/validate-prompt.py <model>` reruns that set in about a minute, and
+`.claude/skills/prompt-iteration/SKILL.md` documents how the prompt was
+arrived at, including the version that scored worse.
+
+Two settings matter more than the prompt:
+
+- `think: false`. gemma4 models reason by default and spent ~1000 tokens on a
+  one-line answer: 98s with it on, 4.5s off.
+- `num_predict: 32`. A mapping line cannot need more, and it bounds any
+  rambling.
+
+`gemma4:e4b` at 8B matches `gemma4:12b` on this set at half the latency, since
+output tokens dominate rather than parameter count.
