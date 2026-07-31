@@ -23,7 +23,7 @@ enum BoostEvalCommand {
         let hasTerm: Bool
     }
 
-    static func run(sharedEncoder: Bool, limit: Int) -> Int32 {
+    static func run(sharedEncoder: Bool, limit: Int, minSimilarity: Float?) -> Int32 {
         let config: Config
         do { config = try ConfigStore.load() } catch {
             print("✗ config: \(CheckConfigCommand.describe(error))")
@@ -55,7 +55,7 @@ enum BoostEvalCommand {
         var code: Int32 = 0
         let done = DispatchSemaphore(value: 0)
         Task<Void, Never> {
-            do { try await evaluate(clips: clips, terms: terms, sharedEncoder: sharedEncoder, config: config) }
+            do { try await evaluate(clips: clips, terms: terms, sharedEncoder: sharedEncoder, config: config, minSimilarity: minSimilarity) }
             catch { print("✗ \(error.localizedDescription)"); code = 1 }
             done.signal()
         }
@@ -64,11 +64,14 @@ enum BoostEvalCommand {
     }
 
     private static func evaluate(
-        clips: [Case], terms: [String], sharedEncoder: Bool, config: Config
+        clips: [Case], terms: [String], sharedEncoder: Bool, config: Config,
+        minSimilarity: Float?
     ) async throws {
         let version: AsrModelVersion = sharedEncoder ? .tdtCtc110m : .v3
         print("loading models…")
         let models = try await AsrModels.downloadAndLoad(version: version)
+        let asrManager = AsrManager(config: .default)
+        try await asrManager.loadModels(models)
         let ctcModels = try await CtcModels.downloadAndLoad()
         let tokenizer = try await CtcTokenizer.load(
             from: CtcModels.defaultCacheDirectory(for: .ctc110m)
@@ -81,13 +84,54 @@ enum BoostEvalCommand {
         )
         print("ready.\n")
 
+        let ctcModelDirectory = CtcModels.defaultCacheDirectory(for: .ctc110m)
+        let spotter = CtcKeywordSpotter(models: ctcModels, blankId: ctcModels.vocabulary.count)
+        let rescorer = try await VocabularyRescorer.create(
+            spotter: spotter,
+            vocabulary: vocabulary,
+            config: .default,
+            ctcModelDirectory: ctcModelDirectory
+        )
+        // rescorerConfig gives SMALL vocabularies the most permissive
+        // threshold — 0.50 for four terms against 0.60 for hundreds — which is
+        // backwards here. Overridable so it can be swept.
+        let sizeConfig = ContextBiasingConstants.rescorerConfig(forVocabSize: terms.count)
+        let similarity = minSimilarity ?? sizeConfig.minSimilarity
+        print("minSimilarity: \(similarity)  cbw: \(sizeConfig.cbw)\n")
+
         var damaged: [(String, String, String)] = []
         var recovered = 0, missed = 0, unchangedPositives = 0
 
         for (index, clip) in clips.enumerated() {
             guard let samples = load(url: clip.url) else { continue }
-            let off = try await transcribe(samples, models: models, vocabulary: nil, ctc: nil)
-            let on = try await transcribe(samples, models: models, vocabulary: vocabulary, ctc: ctcModels)
+
+            // Batch transcription, the way FluidAudio's own benchmark does it.
+            // The streaming manager builds its token timings from an encoder
+            // sequence length of zero, and the rescorer needs real ones to
+            // know which word a detection sits on.
+            var decoderState = TdtDecoderState.make(
+                decoderLayers: await asrManager.decoderLayerCount
+            )
+            let result = try await asrManager.transcribe(samples, decoderState: &decoderState)
+            let off = result.text
+
+            var on = off
+            if let timings = result.tokenTimings, !timings.isEmpty {
+                let spotted = try await spotter.spotKeywordsWithLogProbs(
+                    audioSamples: samples, customVocabulary: vocabulary, minScore: nil
+                )
+                if !spotted.logProbs.isEmpty {
+                    on = rescorer.ctcTokenRescore(
+                        transcript: off,
+                        tokenTimings: timings,
+                        logProbs: spotted.logProbs,
+                        frameDuration: spotted.frameDuration,
+                        cbw: sizeConfig.cbw,
+                        marginSeconds: ContextBiasingConstants.defaultMarginSeconds,
+                        minSimilarity: similarity
+                    ).text
+                }
+            }
 
             let changed = normalise(off) != normalise(on)
             if clip.hasTerm {
@@ -103,9 +147,7 @@ enum BoostEvalCommand {
                 missed += 1
             }
 
-            if (index + 1) % 10 == 0 {
-                print("  \(index + 1)/\(clips.count)…")
-            }
+            if (index + 1) % 10 == 0 { print("  \(index + 1)/\(clips.count)…") }
         }
 
         let positives = clips.filter(\.hasTerm).count
