@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// wipe a newer one that is still current.
     private var labelToken = 0
     private let correctionPanel = CorrectionPanel()
+    private let previewPanel = PreviewPanel()
     private let notice = NoticeHUD()
     private var pendingSelection: SelectionReader.Selection?
     /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
@@ -61,6 +62,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if CommandLine.arguments.contains("--preview-panel") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 self?.previewCorrectionPanel()
+            }
+            return
+        }
+
+        if CommandLine.arguments.contains("--preview-transform") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.previewPanel.onApply = { _ in NSApp.terminate(nil) }
+                self?.previewPanel.onCancel = { NSApp.terminate(nil) }
+                self?.previewPanel.show(
+                    prompt: "grammar",
+                    before: "he dont know what the config does, and their going to ship it on friday anyway",
+                    after: "He doesn't know what the config does, and they're going to ship it on Friday anyway."
+                )
             }
             return
         }
@@ -333,14 +347,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleVoiceCommand(_ command: String) {
+        let catalogue = Catalogue(prompts: config.prompts)
+
         // Deterministic phrases first: no model needed, and they work when
-        // Ollama is not running.
+        // Ollama is not running. This also covers the wake phrase said on its
+        // own, which means the panel rather than anything the router could pick.
         if let local = VoiceCommand.local(from: command) {
             apply(local, command: command)
             return
         }
+        if let capability = Router.local(instruction: command, catalogue: catalogue) {
+            Log.write("router: \"\(command)\" named \(capability.name) outright")
+            run(capability, instruction: command)
+            return
+        }
 
         guard config.llm.enabled else {
+            flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands")
+            return
+        }
+
+        beginProgress("Thinking…")
+        let llmConfig = llmConfig()
+
+        Task { [weak self] in
+            do {
+                let decision = try await Router.route(
+                    instruction: command, catalogue: catalogue, config: llmConfig
+                )
+                await MainActor.run {
+                    guard let self else { return }
+                    switch decision {
+                    case .matched(let capability):
+                        Log.write("router: \"\(command)\" → \(capability.name)")
+                        self.run(capability, instruction: command)
+                    case .none:
+                        // Nothing fits. Deliberately not falling through to
+                        // dictation: the wake phrase means you were not
+                        // dictating, and typing the instruction into the
+                        // document is the one failure that writes nonsense
+                        // without saying so.
+                        self.endProgress()
+                        Log.write("router: nothing matched \"\(command)\"")
+                        self.flash("No prompt for \"\(command)\"")
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    Log.write("routing failed: \(error.localizedDescription)")
+                    self?.endProgress()
+                    self?.flash(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    /// Runs whatever the router picked.
+    private func run(_ capability: Capability, instruction: String) {
+        switch capability {
+        case .action(.vocabulary):
+            endProgress()
+            beginCorrection()
+        case .action(.spelling):
+            interpretSpelling(instruction)
+        case .transform(let prompt):
+            runTransform(prompt, instruction: instruction)
+        }
+    }
+
+    /// The spelling extractor, which is a second model call rather than part of
+    /// routing — it reads the last transcript and returns a rule, not a name.
+    private func interpretSpelling(_ command: String) {
+        guard config.llm.enabled else {
+            endProgress()
             flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands")
             return
         }
@@ -368,10 +447,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await MainActor.run {
                     Log.write("command interpretation failed: \(error.localizedDescription)")
+                    self?.endProgress()
                     self?.flash(error.localizedDescription)
                 }
             }
         }
+    }
+
+    // MARK: - Transforms
+
+    /// Runs a prompt over the selection, or over the last dictation.
+    ///
+    /// The selection is taken from the snapshot made when the hotkey went down,
+    /// not read now — by the time this runs, our own panel may hold focus, and
+    /// reading then returns nothing or something of ours.
+    private func runTransform(_ prompt: Config.Prompt, instruction: String) {
+        let selection = selectionAtPress ?? (
+            Permissions.accessibility == .granted ? SelectionReader.read() : nil
+        )
+        selectionAtPress = nil
+
+        // Falling back to the last dictation is what makes "hey parrot, fix the
+        // grammar" work immediately after speaking, with nothing selected.
+        let target = selection?.text ?? settings.model.lastTranscript ?? ""
+        guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            endProgress()
+            Log.write("transform: nothing selected and nothing dictated yet")
+            flash("Select some text first, or dictate something")
+            return
+        }
+
+        Log.write("transform: \(prompt.name) over \(selection == nil ? "the last dictation" : "the selection") (\(target.count) chars)")
+        beginProgress("\(prompt.name)…")
+
+        let llmConfig = llmConfig()
+        Task { [weak self] in
+            do {
+                let result = try await PromptRunner.run(
+                    prompt: prompt, instruction: instruction,
+                    text: target, config: llmConfig
+                )
+                await MainActor.run {
+                    self?.finishTransform(
+                        prompt: prompt, selection: selection,
+                        before: target, after: result
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    Log.write("transform failed: \(error.localizedDescription)")
+                    self?.endProgress()
+                    self?.flash(error.localizedDescription)
+                }
+            }
+        }
+    }
+
+    private func finishTransform(
+        prompt: Config.Prompt,
+        selection: SelectionReader.Selection?,
+        before: String,
+        after: String
+    ) {
+        endProgress()
+
+        let cleaned = after.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else {
+            Log.write("transform: \(prompt.name) returned nothing")
+            flash("\(prompt.name) returned nothing")
+            return
+        }
+        // Saying so beats replacing text with itself and calling it done, which
+        // looks identical to the prompt having silently failed.
+        guard cleaned != before.trimmingCharacters(in: .whitespacesAndNewlines) else {
+            Log.write("transform: \(prompt.name) changed nothing")
+            flash("\(prompt.name): nothing to change")
+            return
+        }
+
+        guard prompt.confirm else {
+            applyTransform(cleaned, to: selection, prompt: prompt)
+            return
+        }
+
+        previewPanel.onApply = { [weak self] edited in
+            self?.applyTransform(edited, to: selection, prompt: prompt)
+        }
+        previewPanel.onCancel = {
+            Log.write("transform: \(prompt.name) discarded")
+        }
+        previewPanel.show(prompt: prompt.name, before: before, after: cleaned)
+    }
+
+    private func applyTransform(
+        _ text: String,
+        to selection: SelectionReader.Selection?,
+        prompt: Config.Prompt
+    ) {
+        // Replacing the selection puts it back exactly where it came from.
+        // Without one there is nowhere to aim, so it goes in at the cursor the
+        // same way a dictation would.
+        if let selection {
+            switch SelectionReader.replaceSelection(with: text, in: selection) {
+            case .written, .pasted:
+                if config.feedback.sound { NSSound(named: "Glass")?.play() }
+                flash("\(prompt.name) applied")
+            case .clipboardOnly:
+                Log.write("transform: this app would not accept the rewrite; left on the clipboard")
+                flash("\(prompt.name) copied — this app won't let me edit it")
+            }
+        } else {
+            switch TextInserter.insert(text, mode: config.transcription.insertMode) {
+            case .pasted, .copied:
+                if config.feedback.sound { NSSound(named: "Glass")?.play() }
+                flash("\(prompt.name) applied")
+            case .clipboardOnly:
+                flash("\(prompt.name) copied — grant Accessibility to paste")
+            }
+        }
+        settings.model.lastTranscript = text
     }
 
     private func apply(_ command: VoiceCommand, command spoken: String) {
