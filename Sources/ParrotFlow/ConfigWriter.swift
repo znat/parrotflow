@@ -19,7 +19,7 @@ enum ConfigWriter {
         }
     }
 
-    /// Inserts or updates `heard: corrected` under `transcription.replacements`.
+    /// Records that `heard` should be written as `corrected`.
     static func addReplacement(heard: String, corrected: String) throws {
         let url = ConfigStore.fileURL
         let original = try String(contentsOf: url, encoding: .utf8)
@@ -27,8 +27,12 @@ enum ConfigWriter {
         try updated.write(to: url, atomically: true, encoding: .utf8)
     }
 
-    /// Split out from file handling so it can be reasoned about (and tested)
-    /// on its own.
+    /// Splices the mishearing into the list under its target spelling, adding
+    /// the target if it is new.
+    ///
+    /// Text-level rather than decode-edit-encode: round-tripping through Yams
+    /// would strip every comment in the file, and the comments are most of what
+    /// makes that config readable.
     static func insert(heard: String, corrected: String, into yaml: String) throws -> String {
         var lines = yaml.components(separatedBy: "\n")
 
@@ -38,9 +42,7 @@ enum ConfigWriter {
             throw WriteError.noTranscriptionSection
         }
 
-        let entry = "\(quoted(heard)): \(quoted(corrected))"
-
-        // Find `replacements:` inside the transcription block. The block ends at
+        // Find `replacements:` inside the transcription block, which ends at
         // the first non-indented, non-blank line.
         var replacementsIndex: Int?
         var index = transcriptionIndex + 1
@@ -48,33 +50,30 @@ enum ConfigWriter {
             let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if !line.hasPrefix(" ") && !trimmed.isEmpty { break }
-            if trimmed.hasPrefix("replacements:") {
-                replacementsIndex = index
-                break
-            }
+            if trimmed.hasPrefix("replacements:") { replacementsIndex = index; break }
             index += 1
         }
 
         guard let start = replacementsIndex else {
-            // No replacements key: add one at the end of the transcription block.
             let insertAt = endOfBlock(in: lines, from: transcriptionIndex)
-            lines.insert(contentsOf: ["  replacements:", "    \(entry)"], at: insertAt)
+            lines.insert(contentsOf: [
+                "  replacements:",
+                "    \(quoted(corrected)): [\(quoted(heard))]",
+            ], at: insertAt)
             return lines.joined(separator: "\n")
         }
 
         let keyIndent = indentation(of: lines[start])
         let entryIndent = keyIndent + "  "
 
-        // `replacements: {}` — an empty flow mapping has to become a block
-        // mapping before anything can be added to it.
+        // `replacements: {}` has to become a block mapping first.
         if lines[start].trimmingCharacters(in: .whitespaces).hasSuffix("{}") {
             lines[start] = "\(keyIndent)replacements:"
-            lines.insert("\(entryIndent)\(entry)", at: start + 1)
+            lines.insert("\(entryIndent)\(quoted(corrected)): [\(quoted(heard))]", at: start + 1)
             return lines.joined(separator: "\n")
         }
 
-        // Walk the existing entries: replace the key if it's already mapped,
-        // otherwise remember where the block ends.
+        // Look for the target, and append to its list if it is already there.
         var lastEntry = start
         var cursor = start + 1
         while cursor < lines.count {
@@ -85,16 +84,27 @@ enum ConfigWriter {
 
             if !trimmed.hasPrefix("#"), let colon = trimmed.firstIndex(of: ":") {
                 let existing = unquoted(String(trimmed[trimmed.startIndex..<colon]))
-                if existing.caseInsensitiveCompare(heard) == .orderedSame {
-                    lines[cursor] = "\(entryIndent)\(entry)"
-                    return lines.joined(separator: "\n")
+                if existing.caseInsensitiveCompare(corrected) == .orderedSame {
+                    let sources = String(trimmed[trimmed.index(after: colon)...])
+                        .trimmingCharacters(in: .whitespaces)
+                    // Already listed: nothing to add.
+                    if sources.contains(heard) { return yaml }
+                    if let close = line.lastIndex(of: "]") {
+                        let separator = sources == "[]" ? "" : ", "
+                        lines[cursor] = String(line[line.startIndex..<close])
+                            + separator + quoted(heard) + "]"
+                        return lines.joined(separator: "\n")
+                    }
                 }
                 lastEntry = cursor
             }
             cursor += 1
         }
 
-        lines.insert("\(entryIndent)\(entry)", at: lastEntry + 1)
+        lines.insert(
+            "\(entryIndent)\(quoted(corrected)): [\(quoted(heard))]",
+            at: lastEntry + 1
+        )
         return lines.joined(separator: "\n")
     }
 

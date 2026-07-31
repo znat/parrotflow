@@ -1,0 +1,79 @@
+name: release
+
+# release-please watches main for Conventional Commits, keeps a release PR up to
+# date with the next version and the changelog, and cuts the tag when that PR is
+# merged. Only then does the build job run — so ordinary pushes cost nothing.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+
+  build:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The release commit, so the built bundle carries the released version.
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - name: Show toolchain
+        run: swift --version
+
+      # Signing with a stable certificate is what keeps users' Microphone and
+      # Accessibility grants alive across an upgrade — see
+      # scripts/release-certificate.sh. Without the secrets the release still
+      # happens, ad-hoc signed, and upgrading users re-grant permissions.
+      - name: Import signing certificate
+        env:
+          CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          if [ -z "$CERT_P12" ]; then
+            echo "::warning::SIGNING_CERT_P12 is not set — signing ad-hoc. Upgrading users will lose their permissions."
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Put it on the search list so codesign can find the identity.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+          echo "CODESIGN_IDENTITY=ParrotFlow Release" >> "$GITHUB_ENV"
+
+      # Interpolations go through env rather than straight into the script, so
+      # nothing from a workflow context is ever spliced into a shell command.
+      - name: Build and package
+        env:
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: scripts/release.sh "$VERSION"
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          gh release upload "$TAG" \
+            dist/ParrotFlow.zip dist/ParrotFlow.zip.sha256 --clobber

@@ -20,7 +20,9 @@ from the 39/25-case sets and are indicative, not comparable.
 
                         English  French  latency  size
     gemma4:e4b   v13       -      93%     1.5s    9.6GB  <- French prompt
-    gemma4:e4b   v8       98%      -      1.5s    9.6GB  <- shipped, English
+    gemma4:e4b   v8       98%     87%     1.5s    9.6GB  <- shipped, English
+    gemma4:e2b   v13       -      80%     1.0s    7.2GB
+    gemma4:e2b   v8       86%     60%     0.9s    7.2GB
     gemma4:e4b   v4       97%      -      1.4s
     gemma4:e4b   v9       95%      -      1.5s    over-took spans
     granite4:3b  v8       92%     68%     0.3s    2.1GB  <- best small model
@@ -39,6 +41,16 @@ Read this way. Only gemma clears the control on French by a margin worth
 paying for; qwen is far below it, so on French dictation qwen is worse than
 deleting the model call. The 2b's failure is a single stubborn one, returning
 the whole source sentence as the span, and no variant shifted it.
+
+gemma4:e2b is the one to read past the score on. It is only a quarter smaller
+than e4b (7.2GB against 9.6GB) and about a third quicker, for twelve points of
+English and thirteen of French — but the shape of what it loses is the reason
+not to take it. Of the six negative cases across the two sets it fails all
+six, where e4b fails one. It cannot say NO MATCH, and on this feature that is
+the expensive direction to fail in: a miss costs one correction, while a false
+positive writes a rule into transcription.replacements that then rewrites
+every future transcript. Scores treat those two as one point each; the user
+does not.
 
 The per-language prompt is a gemma-only win, and the size of that asymmetry
 is the point: v13 takes gemma from 84% to 92% and granite from 68% down to

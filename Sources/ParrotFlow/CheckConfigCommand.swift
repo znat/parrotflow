@@ -62,9 +62,10 @@ enum CheckConfigCommand {
         }
         if transcription.enabled {
             if !transcription.replacements.isEmpty {
-                print("  ✓ replacements      \(transcription.replacements.count)")
-                for (from, to) in transcription.replacements.sorted(by: { $0.key < $1.key }) {
-                    print("      \(from) → \(to)")
+                let total = transcription.substitutions.count
+                print("  ✓ replacements      \(total) across \(transcription.replacements.count) words")
+                for (target, sources) in transcription.replacements.sorted(by: { $0.key < $1.key }) {
+                    print("      \(target) ← \(sources.sorted().joined(separator: ", "))")
                 }
             }
         }
@@ -87,6 +88,23 @@ enum CheckConfigCommand {
         } else {
             print("  ✗ input device      none found")
             ok = false
+        }
+
+        // Accessibility deliberately isn't tested here.
+        //
+        // Asking `AXIsProcessTrustedWithOptions` from this command answers a
+        // different question than it appears to. TCC attributes the check to the
+        // *responsible* process, and for a binary exec'd from a shell that is the
+        // terminal, not ParrotFlow. Measured on a Mac where the app had the grant
+        // and was using it: launched by macOS it reported Granted, the same
+        // bundle run from a terminal reported Not granted. A check that says no
+        // when the answer is yes is worse than no check, so it reports where the
+        // real answer lives instead — the app tests it at launch and logs it.
+        if transcription.insertMode == .paste || !transcription.correctionPhrase.isEmpty {
+            print("  · accessibility     needed, but not checkable from a terminal")
+            print("      macOS credits this check to the shell, not to ParrotFlow.")
+            print("      The app records the true value each time it starts:")
+            print("      grep 'launched —' \(Log.fileURL.path) | tail -1")
         }
 
         return ok ? 0 : 1

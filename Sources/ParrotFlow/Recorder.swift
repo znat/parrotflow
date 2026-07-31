@@ -35,7 +35,9 @@ final class Recorder {
     /// Fired when recording stops on its own (e.g. the audio device changed).
     var onUnexpectedStop: ((Error?) -> Void)?
 
-    private let engine = AVAudioEngine()
+    /// Recreated when the audio device changes — an engine holds on to the
+    /// device it was prepared against.
+    private var engine = AVAudioEngine()
     private let writeLock = NSLock()
     private var audioFile: AVAudioFile?
     private var converter: AVAudioConverter?
@@ -44,6 +46,10 @@ final class Recorder {
     private var smoothedLevel: Float = 0
 
     init() {
+        observeConfigurationChanges()
+    }
+
+    private func observeConfigurationChanges() {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(configurationChanged),
@@ -152,6 +158,16 @@ final class Recorder {
             try? FileManager.default.removeItem(at: url)
             return nil
         }
+
+        // No frames despite a real duration means the engine was bound to a
+        // device that is no longer there. Silent failure looks identical to a
+        // silent room, so say it and re-acquire.
+        if let file = try? AVAudioFile(forReading: url), file.length == 0 {
+            Log.write("recording captured 0 frames — rebuilding the capture engine")
+            try? FileManager.default.removeItem(at: url)
+            DispatchQueue.main.async { [weak self] in self?.rebuildEngine() }
+            return nil
+        }
         return Recording(url: url, duration: duration)
     }
 
@@ -224,11 +240,32 @@ final class Recorder {
     }
 
     @objc private func configurationChanged(_ note: Notification) {
-        guard isRecording else { return }
+        guard isRecording else {
+            // Idle when the device changed. The engine is still bound to the
+            // one it was prepared against, so it starts happily and captures
+            // nothing — a recording that produces a 0-frame file and no error.
+            // Plugging in AirPods was enough to do it.
+            DispatchQueue.main.async { [weak self] in self?.rebuildEngine() }
+            return
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isRecording else { return }
             self.onUnexpectedStop?(nil)
         }
+    }
+
+    /// Replaces the engine so the next recording acquires the current device.
+    /// Re-preparing the existing one is not enough; it keeps the old device.
+    private func rebuildEngine() {
+        guard !isRecording else { return }
+        NotificationCenter.default.removeObserver(
+            self, name: .AVAudioEngineConfigurationChange, object: engine
+        )
+        engine.stop()
+        engine = AVAudioEngine()
+        observeConfigurationChanges()
+        warmUp()
+        Log.write("audio device changed; capture engine rebuilt")
     }
 
     // MARK: - Files

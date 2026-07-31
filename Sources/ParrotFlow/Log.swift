@@ -9,7 +9,7 @@ import Foundation
 enum Log {
     static let fileURL: URL = FileManager.default
         .homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/ParrotFlow.log")
+        .appendingPathComponent("Library/Logs/\(AppVariant.logFileName)")
 
     private static let queue = DispatchQueue(label: "com.parrotflow.log")
 

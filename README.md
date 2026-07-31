@@ -1,58 +1,80 @@
 # ParrotFlow
 
-A local dictation tool for macOS. Press a hotkey, talk, get text — with nothing
-leaving your machine.
+Dictation for people who type for a living. Hold a key, talk, and the text
+lands in whatever you are in — editor, terminal, browser, chat.
 
-This is **v0.1: the plumbing**. It handles the parts that are annoying to get
-right — microphone permission, a global hotkey that works from any app, and
-clean 16 kHz mono audio — and stops there. Transcription (Parakeet) and the
-cleanup layer on top of it come next.
+Everything runs on your Mac. No account, no API key, no network call. The
+audio never leaves the machine, which is the whole point: most of what a
+developer dictates is a bug report, a customer name, or a half-finished idea
+about their own product.
 
-**What works today**
+It also learns the words you actually use. Say a library name once, tell it
+how the name is spelled, and it gets it right from then on.
 
-- Menu bar app, no Dock icon
-- Global hotkey, configurable in YAML — a bare modifier like Right ⌥, or a
-  combo like ⌃⌥Space — in either **toggle** or **push-to-talk** mode
-- Microphone permission handled properly (with a status window so you can see where you stand)
-- Records to 16 kHz mono WAV — exactly what Parakeet wants
-- Floating pill with a level meter so you know the mic is hot
-- Config reloads on save; no restart to try a different key
-- Voice-activity gate, so a stray hotkey press doesn't decode room tone into
-  "Yeah." or "Thank you for watching"
-- Parakeet transcription, with a replacements map so rare names come out
-  spelled the way you spell them
+**Requires** an Apple Silicon Mac on macOS 14 or later.
 
-## Build & run
+## Install
 
-Requires Xcode command line tools. No Xcode project, no signing account.
+### Let Claude Code do it
 
-```sh
-make run
+Paste this into Claude Code, or any agent that can run shell commands:
+
+```
+Set up ParrotFlow on my Mac by following
+https://raw.githubusercontent.com/znat/parrotflow/main/docs/setup.md
 ```
 
-That builds `.build/ParrotFlow.app` and launches it. A 🎙 appears in your menu
-bar. macOS will ask for microphone access on first launch — say yes.
+It installs the app, walks you through the two macOS permissions, checks your
+Ollama version, sizes the model settings to your RAM, and confirms transcription
+works before it hands over. About five minutes of attention. The instructions it
+follows are [docs/setup.md](docs/setup.md) — worth reading first if you would
+rather know what is about to run.
+
+### Or by hand
 
 ```sh
-make install   # copy to /Applications
-make stop      # quit it
-make logs      # tail its output
+curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
+
+Downloads the latest release, checks it against its published SHA-256, and puts
+`ParrotFlow.app` in `/Applications`. Then:
+
+1. Say yes to the microphone prompt.
+2. Grant **Accessibility** in System Settings — that is what lets it type into
+   other apps.
+3. Hold **right ⌥**, say something, let go.
+
+The first dictation downloads the speech model (about 1.2 GB) and takes a
+couple of minutes. Everything after that is immediate.
+
+Spoken corrections need [Ollama](https://ollama.com) 0.22 or later with
+`ollama pull gemma4:e4b`. Optional — dictation works without it.
+
+### Or from source
+
+```sh
+git clone https://github.com/znat/parrotflow && cd parrotflow
+make dev-certificate    # once, so permissions survive rebuilds
+make install
+```
+
+Needs the Xcode command line tools. No Xcode project, no Apple developer
+account. Note that this installs **ParrotFlow Dev**, a separate app from the
+released one — see [Working on it](#working-on-it).
 
 ## Using it
 
-Hold **Right ⌥**, talk, let go. A second or so later you get a chime and the
-transcript is on your clipboard — ⌘V wherever you want it.
+Hold **right ⌥**, talk, let go. A second or so later the text is typed where
+your cursor is.
 
-Set `transcription.insert_mode: paste` to have it typed straight into whatever
-app you're in instead. That needs the Accessibility permission; `clipboard`
-needs nothing.
+Set `transcription.insert_mode: clipboard` to have it copied instead of typed —
+that mode needs no Accessibility permission, but you press ⌘V yourself.
 
 Audio is kept in `~/Recordings/ParrotFlow` and every transcript is logged to
 `~/Library/Logs/ParrotFlow.log`.
 
-The menu bar item shows the current state and gives you *Open Recordings
-Folder*, *Edit Config…*, and *Settings & Permissions…*.
+The menu bar item shows the current state and offers *Open Recordings Folder*,
+*Edit Config…*, *Correct a Word…* and *Settings & Permissions…*.
 
 ## Teaching it a word
 
@@ -97,21 +119,22 @@ and a rule for "Das mean" matches nothing you will ever say. Since the target
 spelling is already known from the letters, the closest match to it in the last
 transcript is the word that needs fixing.
 
-Needs [Ollama](https://ollama.com) running with the model in `llm.model`
-(`ollama pull gemma4:e4b`).
+Needs Ollama running with the model in `llm.model` (`ollama pull gemma4:e4b`).
 
 ParrotFlow loads that model at launch and asks Ollama to keep it there. Ollama
 otherwise drops it after five minutes idle, and reloading is most of what you
 wait for: measured 6.7s cold against 1.5s warm, so in practice almost every
 correction paid for a reload. The cost is the model sitting in memory for as
 long as the app runs — 9.6 GB for `gemma4:e4b`. Set `llm.keep_loaded: false` to
-have the RAM back and the wait with it.
+have the RAM back and the wait with it. On a 16 GB Mac that is the right
+setting; on 32 GB it is not.
 
-`tests/spelling-cases.yaml` holds 35 names —
-French, Indian, Chinese, Turkish, Vietnamese, Korean, Nigerian, Polish, Irish,
-Arabic — plus product names recognition splits, and negative cases. Score a
-model or a prompt against it with `scripts/validate-prompt.py gemma4:e4b`. Without it, `"hey parrot"` and `"hey parrot, fix
-vocabulary"` still open the panel — those are matched without a model.
+`tests/spelling-cases.yaml` holds 35 names — French, Indian, Chinese, Turkish,
+Vietnamese, Korean, Nigerian, Polish, Irish, Arabic — plus product names
+recognition splits, and negative cases. Score a model or a prompt against it
+with `scripts/validate-prompt.py gemma4:e4b`. Without a model, `"hey parrot"`
+and `"hey parrot, fix vocabulary"` still open the panel — those are matched
+without one.
 
 *Correct a Word…* in the menu does the same without speaking,
 `--learn <heard> <corrected>` adds a rule from the terminal, and
@@ -142,6 +165,12 @@ audio:
   sample_rate: 16000    # Parakeet wants 16 kHz mono; leave it
   output_dir: ~/Recordings/ParrotFlow
   min_duration_seconds: 0.3
+  speech_gate: true     # skip clips with no speech in them
+
+transcription:
+  insert_mode: paste    # or clipboard
+  correction_phrase: hey parrot
+  languages: [en]       # en and fr are the supported values
 
 feedback:
   sound: true
@@ -162,9 +191,15 @@ one modifier from `command`, `control`, `option`, `shift` (aliases `cmd`,
 If a combo is already owned by another app, registration fails and the menu bar
 item says so. Pick another one.
 
+**`languages`** is not passed to the speech model — Parakeet transcribes
+multilingually by itself and reports no language back. The list is what
+ParrotFlow uses to work out which language a transcript was in, so naming only
+what you actually speak makes that more accurate, and it selects the correction
+prompt written for that language. One entry means no detection runs at all.
+
 ### Bare modifiers want push-to-talk
 
-On `toggle`, Right ⌥ would start recording every time you used it to type an
+On `toggle`, right ⌥ would start recording every time you used it to type an
 accented character. Hold-to-talk is the mode that makes sense for these; it's
 also why apps in this category gravitate to `fn` or a right-hand modifier.
 
@@ -175,12 +210,12 @@ hotkey isn't firing and you want to know whether the config is the reason, or
 when you want to prove the microphone is reaching the app.
 
 ```sh
-PF=.build/ParrotFlow.app/Contents/MacOS/ParrotFlow
+PF=/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow
 
 $PF --check-config       # validate the YAML, print what the app would use
 $PF --record 3           # record 3s and verify the file it produced
 $PF --watch-modifiers    # print which modifier keys are physically down, live
-$PF --transcribe a.wav   # transcribe a clip, showing which vocabulary terms landed
+$PF --transcribe a.wav   # transcribe a clip
 ```
 
 ```
@@ -203,26 +238,40 @@ A silent clip or a short file gets a non-zero exit.
 dead — it shows whether the key is reaching the app at all, and whether left
 and right are distinguishable on your keyboard.
 
-The app also logs to `~/Library/Logs/ParrotFlow.log` (`make logs` tails it).
-It records the hotkey, permission states and every clip written, which is the
-fastest way to tell "the hotkey never fired" from "the recording was thrown
-away for being too short".
+You can make a test clip without a microphone at all — `say` writes exactly the
+format the model wants:
+
+```sh
+say -o /tmp/t.wav --data-format=LEI16@16000 --channels=1 "testing one two three"
+$PF --transcribe /tmp/t.wav
+```
+
+**Accessibility is the one thing these flags cannot tell you.** macOS credits a
+permission check made from a terminal to the terminal, not to ParrotFlow, so
+`--check-config` reports it as missing even when it is granted. The app tests it
+properly at launch and writes the answer down:
+
+```sh
+grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
+```
+
+The log (`make logs` tails it) records the hotkey, both permission states and
+every clip written, which is the fastest way to tell "the hotkey never fired"
+from "the recording was thrown away for being too short".
 
 ## Permissions
 
-**Microphone** — required. Requested on first launch; granting it is what makes
-recording work at all.
+**Microphone** — required. Requested on first launch.
 
-**Accessibility** — not needed yet. It's listed in the settings window because
-it's what will let ParrotFlow type the transcript into whatever app you're in,
-once transcription lands. You can grant it now or later.
+**Accessibility** — required for `insert_mode: paste` (the default) and for
+spoken corrections, because reading your selection is exactly what that
+permission governs. `insert_mode: clipboard` works without it.
 
 ### Why permissions don't survive a rebuild
 
 TCC — the subsystem behind these grants — identifies an app by its **code
-signature**, not its path. With an ad-hoc signature (the default here, since it
-needs no Apple developer account) the designated requirement pins the binary's
-`cdhash`, which changes on every single build.
+signature**, not its path. With an ad-hoc signature the designated requirement
+pins the binary's `cdhash`, which changes on every single build.
 
 So the grant you gave to yesterday's build does not apply to today's. Worse,
 the entry stays in System Settings pointing at a binary that no longer exists,
@@ -244,12 +293,15 @@ That creates a self-signed code-signing certificate. The designated requirement
 then keys on the certificate rather than the binary hash, so grants survive
 every rebuild. Grant permissions *after* that install, not before.
 
+Released builds are signed with a stable certificate for the same reason, so
+upgrading does not cost you your permissions.
+
+Since the dev build is a separate application, this only ever costs you the dev
+app's grants. The copy you rely on is untouched by anything you rebuild.
+
 If a grant is already stuck, `make reset-permissions` deletes the record
 properly — un-ticking the box in System Settings does not, it leaves the dead
 entry in place, which is why re-ticking it never helps.
-
-The settings window detects an ad-hoc build and says so, rather than leaving
-you to guess why a granted permission reads as missing.
 
 ## How it works
 
@@ -258,6 +310,8 @@ you to guess why a granted permission reads as missing.
 | Global hotkey | `HotKeyManager.swift` | Carbon `RegisterEventHotKey` — no Accessibility permission needed, and it swallows the keystroke so it doesn't leak into the app you're typing in |
 | Bare modifiers | `ModifierKey.swift` | `RegisterEventHotKey` can't express these, so they poll `CGEventSource.flagsState` for the device-dependent left/right bits — also permission-free |
 | Audio capture | `Recorder.swift` | `AVAudioEngine` tap → `AVAudioConverter` → 16 kHz mono WAV |
+| Transcription | `Transcriber.swift` | Parakeet TDT v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio), CoreML on the Neural Engine |
+| Spoken commands | `LocalLLM.swift` | HTTP to a local Ollama; degrades to "unavailable" when it isn't there |
 | Config | `Config.swift` | Yams + a `DispatchSource` file watcher for live reload |
 | Permissions | `Permissions.swift` | `AVCaptureDevice` for mic, `AXIsProcessTrusted` for Accessibility |
 | Menu bar & wiring | `AppDelegate.swift` | |
@@ -290,24 +344,74 @@ the app runs. Not the right default for a tool whose pitch is that it doesn't
 listen to you. Worth revisiting as an opt-in setting if the clipping ever
 actually bites.
 
+## Working on it
+
+The build you are changing and the build you use to get work done are **two
+separate applications**. Both can be installed, and both can run at once.
+
+|  | Released | Dev |
+| --- | --- | --- |
+| App | `ParrotFlow.app` | `ParrotFlowDev.app` |
+| Bundle id | `com.parrotflow.app` | `com.parrotflow.app.dev` |
+| Hotkey | right ⌥ | right ⌘ |
+| Config | `~/.config/parrotflow/` | `~/.config/parrotflow-dev/` |
+| Log | `ParrotFlow.log` | `ParrotFlow-Dev.log` |
+| Recordings | `~/Recordings/ParrotFlow` | `~/Recordings/ParrotFlow Dev` |
+| Menu bar | `mic` | `mic.circle` |
+
+This is not tidiness. macOS grants microphone and Accessibility **per bundle
+identifier**, so one identifier for both means every rebuild is revoking and
+re-granting permissions on the app you actually rely on — and a half-finished
+config change can break it. Separate identifiers make that impossible.
+
+Different hotkeys are what let both run at once: same key and both would record
+the same sentence and both paste it. You choose which build hears you by which
+key you hold.
+
+Everything in the Makefile works on the dev build by default:
+
+```sh
+make run                  # build and launch ParrotFlow Dev
+make logs                 # tail the dev log
+make which                # print what this variant resolves to
+make stop                 # quit dev; the installed app keeps running
+
+VARIANT=release make logs  # act on the shipped app instead
+```
+
+`scripts/variant.sh` is the one place the two identities are defined, and
+`AppVariant.swift` is where the app derives its own paths from the identifier it
+was built with.
+
+## Releasing
+
+Commits on `main` follow [Conventional Commits](https://www.conventionalcommits.org).
+release-please keeps a release PR up to date with the next version and the
+changelog; merging it tags the release, builds the app, and attaches the signed
+archive that `install.sh` downloads.
+
+```sh
+scripts/release-certificate.sh   # once, ever — see the warning in the file
+scripts/release.sh               # build the artefacts locally to inspect them
+```
+
 ## Design notes
 
+- [docs/setup.md](docs/setup.md) — the guided install an agent follows
 - [docs/transcription.md](docs/transcription.md) — picking a Parakeet runtime,
   why the model can't be prompted, and what to do instead
-- [docs/distribution.md](docs/distribution.md) — signing, notarization,
-  Homebrew, and the first-run flow
+- [docs/distribution.md](docs/distribution.md) — why this ships by curl rather
+  than Homebrew, and what notarization would change
 
 ## Roadmap
 
-- [ ] Spike Apple `SpeechTranscriber` (macOS 26+) — no model download at all
-- [ ] Parakeet transcription via [FluidAudio](https://github.com/FluidInference/FluidAudio)
-- [ ] Paste/type the result into the frontmost app
-- [ ] Custom vocabulary from YAML — acoustic context biasing, not find-and-replace
-- [ ] Optional local LLM cleanup pass, off by default
-- [ ] Developer ID signing + notarization, then a Homebrew tap
+- [ ] Developer ID signing + notarization, then a Homebrew cask
 - [ ] App icon
+- [ ] Spike Apple `SpeechTranscriber` (macOS 26+) — no model download at all
+- [ ] Custom vocabulary as acoustic context biasing, not find-and-replace
 - [ ] Optional pre-roll buffer for zero-latency capture
 - [ ] Double-tap and long-press activation
+- [ ] More correction-prompt languages than `en` and `fr`
 
 ## License
 

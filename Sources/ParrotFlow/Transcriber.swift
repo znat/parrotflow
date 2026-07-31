@@ -189,7 +189,7 @@ actor Transcriber {
     /// "mick" and "Mick" both land, but "Mickey" is left alone.
     nonisolated static func applyReplacements(to text: String, config: Config) -> String {
         var output = text
-        for (from, to) in config.transcription.replacements {
+        for (from, to) in config.transcription.substitutions {
             guard let pattern = try? NSRegularExpression(
                 pattern: "\\b\(NSRegularExpression.escapedPattern(for: from))\\b",
                 options: [.caseInsensitive]

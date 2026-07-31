@@ -597,8 +597,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.image = NSImage(
-            systemSymbolName: "mic",
-            accessibilityDescription: "ParrotFlow"
+            systemSymbolName: AppVariant.menuBarSymbol,
+            accessibilityDescription: AppVariant.displayName
         )
         statusItem.button?.image?.isTemplate = true
 
@@ -660,8 +660,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let recording = recorder.isRecording
 
         statusItem.button?.image = NSImage(
-            systemSymbolName: recording ? "mic.fill" : "mic",
-            accessibilityDescription: "ParrotFlow"
+            systemSymbolName: recording
+                ? AppVariant.menuBarSymbolRecording
+                : AppVariant.menuBarSymbol,
+            accessibilityDescription: AppVariant.displayName
         )
         // Stays a template image so `contentTintColor` applies — a non-template
         // symbol ignores the tint and renders black in a dark menu bar.

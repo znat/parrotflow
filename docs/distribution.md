@@ -1,6 +1,11 @@
 # Distribution and install flow
 
-How ParrotFlow gets onto someone else's Mac. Research notes; not implemented.
+How ParrotFlow gets onto someone else's Mac.
+
+Implemented: releases are automated, the app installs by `curl`, and a coding
+agent can drive the whole setup. Still open: notarization, and everything that
+unlocks — Homebrew, a double-clickable `.dmg`, a link that works for someone who
+was sent it.
 
 ## The Mac App Store is a dead end for this app
 
@@ -21,24 +26,76 @@ for related reasons.
 This is why every app in this category — Wispr Flow, VoiceInk, Handy, Raycast —
 ships outside the App Store. Direct download and Homebrew is the path.
 
-## Homebrew still needs notarization
+## Homebrew is closed to us until we notarize
 
-Homebrew is the right first channel, but it doesn't dodge code signing.
-[Acceptable Casks](https://docs.brew.sh/Acceptable-Casks) requires that a cask
-work on the latest macOS **"without requiring System Integrity Protection or
-Gatekeeper to be disabled."** An ad-hoc signed app fails that.
+This was the plan, and it no longer works. Homebrew **removed
+`--no-quarantine`** in the 5.0 line, deliberately, on the grounds that it
+existed only to bypass a macOS security mechanism. Verified on 6.0.10: the flag
+isn't recognised, `brew install` just prints its usage. `HOMEBREW_CASK_OPTS`
+went with it.
 
-Two tiers:
+So a cask now always installs the app quarantined, Gatekeeper always assesses
+it, and an app signed with anything short of a Developer ID always fails that
+assessment. What Homebrew's maintainers tell users to do instead is run
+`xattr -rd com.apple.quarantine /Applications/Whatever.app` by hand.
 
-**Your own tap** — `brew tap znat/parrotflow && brew install --cask parrotflow`.
-No review, no rules, works today. Users of an unsigned build still hit
-Gatekeeper and need `--no-quarantine` or a trip to System Settings.
+That is a bad sentence to put in the install instructions for *any* app. For
+this one — which then asks for the microphone and for permission to type into
+every window — it is disqualifying. "Turn off a security check, then let me
+listen to you" is not a trade a reasonable person should accept, and we should
+not be the ones asking.
 
-**Official homebrew-cask** — `brew install --cask parrotflow`. Needs the
-Gatekeeper clause satisfied, plus "substantial, independently verifiable public
-interest" for a new app. Realistic once it's notarized and has some traction.
+The official repo is further out than it was. [Acceptable Casks](https://docs.brew.sh/Acceptable-Casks)
+already required a cask work **"without requiring System Integrity Protection or
+Gatekeeper to be disabled"**, and homebrew-cask is dropping casks that fail its
+codesigning-and-notarization audit on **1 September 2026**.
 
-So: start with a personal tap, notarize as soon as it's worth it, then submit.
+So Homebrew is not a first channel any more. It is a thing that unlocks after
+notarization, at the same moment everything else does.
+
+## Why curl works, and it isn't a trick
+
+The quarantine attribute is not applied by macOS. It is applied by the
+*downloading application*, via `LSFileQuarantineEnabled` — browsers set it, Mail
+sets it, Slack sets it. `curl` does not.
+
+Measured:
+
+```
+$ curl -o file.zip <url> && xattr -l file.zip
+com.apple.provenance                    ← no com.apple.quarantine
+
+$ xattr -l .build/ParrotFlow.app
+com.apple.provenance
+$ spctl --assess --type execute -vv .build/ParrotFlow.app
+rejected                                ← and yet it launches, every day
+```
+
+Gatekeeper only assesses quarantined files. No attribute, no assessment — which
+is why a locally built app runs without ceremony, and why a curl-fetched one
+does too. Same mechanism, and it is the mechanism every `curl | sh` developer
+tool has relied on for a decade.
+
+This is not us disabling a security feature. It is us not triggering one, which
+is a different thing: nothing is turned off, no state is changed, and a user who
+downloads the same zip in a browser still gets the full Gatekeeper treatment.
+
+The honest caveat: it works because Apple has not closed this path, and closing
+it would break most of the developer tooling ecosystem. Unlikely, not promised.
+Notarization is the only future-proof answer — curl is what lets us ship before
+we have it.
+
+## Signing releases anyway
+
+Even without a Developer ID, release builds are signed with a **stable
+self-signed certificate** (`scripts/release-certificate.sh`). This does nothing
+for Gatekeeper. It is about the second problem below: TCC keys Microphone and
+Accessibility grants to the signing certificate, so signing every release with
+the same one is what stops an upgrade silently costing users both permissions.
+
+The certificate is therefore a durable asset, not a build artefact. Regenerating
+it breaks every existing install. It lives outside the repo and its `.p12` is a
+repository secret.
 
 ## Gatekeeper without notarization is now genuinely bad
 
@@ -125,20 +182,33 @@ The install matters as much as the app, because a dictation tool asks for two
 permissions and a ~1 GB download before it does anything.
 
 ```
-brew install --cask parrotflow          (or: open the .dmg, drag to Applications)
+curl -fsSL .../install.sh | sh          (~3 MB, checksum verified)
         │
         ▼
 Launch — no Dock icon, a 🎙 appears in the menu bar
         │
         ▼
-Welcome window
   ├─ Microphone       [Grant]   ← system prompt, required
   ├─ Accessibility    [Grant]   ← System Settings, required to type text
-  └─ Speech model     [~800 MB, downloading… 34%]
+  └─ Speech model     [1.2 GB, downloading… 34%]
         │
         ▼
 "Hold Right ⌥ and talk"  ← the one thing they need to know
 ```
+
+There are two of these paths now, and the agent-driven one is the front door:
+
+**[docs/setup.md](setup.md)** is the same sequence written for a coding agent to
+execute — install, both permissions, a transcription check that needs no
+microphone, languages, then the Ollama model pulled in the background. It exists
+because the audience already has an agent in a terminal, and because a setup
+that asks two permissions and downloads 11 GB is exactly the kind of thing
+people abandon halfway. Something that explains each step as it takes it, and
+verifies afterwards, converts better than a numbered list they read alone.
+
+It also solves a problem a GUI cannot: the parts of this setup that are
+genuinely conditional — Ollama's version, how much RAM decides `keep_loaded`,
+which languages — are judgement calls, and an agent can make them out loud.
 
 Notes on getting this right:
 
@@ -148,9 +218,17 @@ Notes on getting this right:
 - **Accessibility can't be granted in-app.** The best possible flow is a button
   that deep-links to the right System Settings pane plus a line saying what to
   tick. Detect the grant live rather than making them relaunch.
+- **Accessibility can't be *checked* from a terminal either**, which is less
+  obvious and cost us a wrong turn. TCC credits the check to the responsible
+  process, and for a binary exec'd from a shell that is the terminal. Measured
+  on a Mac where the app held the grant and was using it: launched by macOS it
+  reported `Granted`, the same bundle run from a terminal reported `Not
+  granted`. So `--check-config` deliberately does not test it — a check that
+  says no when the answer is yes is worse than no check. The app tests it at
+  launch and logs the result; that log line is the reliable read.
 - **The model download must not block.** Recording should work immediately;
   transcription unlocks when the download finishes. Resumable, cancellable,
-  with a real progress figure — a silent 800 MB fetch reads as a hang.
+  with a real progress figure — a silent 1.2 GB fetch reads as a hang.
 - **Ship a fallback.** If Apple's `SpeechTranscriber` proves good enough, offer
   it as the zero-download default and make Parakeet the opt-in upgrade.
 - **First run after install is the only chance.** Someone evaluating a dictation
@@ -158,10 +236,35 @@ Notes on getting this right:
 
 ## Updates
 
-Homebrew handles updates for cask users (`brew upgrade`). For `.dmg` users,
-[Sparkle](https://sparkle-project.org) is the standard: an appcast XML feed, EdDSA
-signatures, in-app update prompts. Worth adding only once there are users to
-update; a GitHub Releases link in the menu is enough before that.
+Re-running the install line upgrades in place — it replaces the bundle and
+relaunches. That is the whole update story for now, and it is enough while the
+audience is people who are comfortable with a curl line.
+
+It is not enough later, because it requires the user to think of it. [Sparkle](https://sparkle-project.org)
+is the standard answer: an appcast XML feed, EdDSA signatures, in-app prompts.
+Worth adding once there are users to update; a "new version available" item in
+the menu bar is a cheap intermediate step.
+
+Note that the upgrade path is exactly where the stable signing certificate earns
+its keep. Replacing the bundle with one signed by a different identity loses
+both permissions, and the failure is silent and baffling — the app stops working
+and System Settings still shows it ticked.
+
+## Releases are automated
+
+`main` uses [Conventional Commits](https://www.conventionalcommits.org).
+[release-please](https://github.com/googleapis/release-please) keeps a release PR
+open with the computed next version and the changelog; merging it tags the
+release. `.github/workflows/release.yml` then builds on a macOS runner, signs
+with the certificate from repository secrets, and attaches `ParrotFlow.zip` and
+its checksum — which is what `install.sh` downloads from
+`releases/latest/download/`.
+
+The version lands in `Info.plist` through release-please's `extra-files`
+annotation, so the bundle version and the tag cannot drift apart.
+
+Adding notarization later is an extra step in that workflow, not a redesign:
+sign with Developer ID instead, submit, staple, upload. The rest stays.
 
 ## Cost
 
@@ -170,14 +273,22 @@ update; a GitHub Releases link in the menu is enough before that.
 | Apple Developer Program (Developer ID + notarization) | $99/year |
 | Notarization submissions | Free, unlimited |
 | GitHub Releases hosting | Free |
-| Homebrew tap | Free |
+| Self-signed release certificate | Free |
 
-The $99 is the only real decision. Without it: permissions break on every
-rebuild, users fight Gatekeeper, and official homebrew-cask is out of reach.
+The $99 is still the only real decision, but what it buys has changed. It is no
+longer "polish plus a shorter install line" — Homebrew of any kind, a `.dmg`
+anyone can double-click, and a link that works when someone's colleague sends it
+to them are all on the far side of it. Curl covers the developer who is already
+in a terminal. It does not cover the person who was sent a link.
+
+What the self-signed certificate buys for free is the permissions problem:
+grants survive upgrades. That was the other half of the argument for $99, and it
+is now settled without it.
 
 ## Sources
 
 - [Acceptable Casks](https://docs.brew.sh/Acceptable-Casks) · [Cask Cookbook](https://docs.brew.sh/Cask-Cookbook)
+- [Removing support for `--no-quarantine` for casks](https://github.com/Homebrew/brew/issues/20755) · [Prepare for deprecation](https://github.com/Homebrew/brew/pull/20929) · [discussion](https://github.com/orgs/Homebrew/discussions/6537)
 - [Updates to runtime protection in macOS Sequoia](https://developer.apple.com/news/?id=saqachfa)
 - [Safely open apps on your Mac](https://support.apple.com/en-us/102445)
 - [An Exhaustive Guide to Signing and Notarizing on macOS](https://armaan.cc/blog/signing-and-notarizing-macos)

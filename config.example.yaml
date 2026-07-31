@@ -29,10 +29,8 @@ transcription:
   # Workflow: dictate, run --transcribe on the clip, map whatever the model
   # wrote to what you meant.
   replacements:
-    Superbase: Supabase
-    Versov: Vercel
-    Tasman: Tasmeen
-    Tasmin: Tasmeen
+    Tasmeen: [Tasmid, Tasmin, Tasmine]
+    Supabase: [super base, superbees]
 
 # A local Ollama model, used to interpret what you say after the wake phrase.
 # Everything else works without it — you just lose free-form spoken commands.

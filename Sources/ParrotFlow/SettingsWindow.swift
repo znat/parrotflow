@@ -137,7 +137,7 @@ private struct SettingsView: View {
                     }
 
                     HStack {
-                        Text("Configured in `~/.config/parrotflow/config.yaml`")
+                        Text("Configured in `~/\(AppVariant.configDirectory)/config.yaml`")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Spacer()

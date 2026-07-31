@@ -86,9 +86,26 @@ struct Config: Codable, Equatable {
             case correctionPhrase = "correction_phrase"
             case rewriteLine = "rewrite_line"
         }
-        /// Applied after transcription, last. A blunt instrument: use it only
-        /// for terms that can't collide with something you might really say.
-        var replacements: [String: String] = [:]
+        /// Grouped by the word you want written, since one name accumulates
+        /// several mishearings — eleven rules had built up for four names
+        /// before this was grouped. Reads as
+        ///
+        ///     replacements:
+        ///       Tasmeen: [Tasmid, Tasmin, Tasmine]
+        ///
+        /// The flat `heard: corrected` form still decodes, so older configs
+        /// keep working.
+        var replacements: [String: [String]] = [:]
+
+        /// Flattened the way the substitution pass needs it: misheard word to
+        /// the word that should replace it.
+        var substitutions: [String: String] {
+            var flat: [String: String] = [:]
+            for (target, sources) in replacements {
+                for source in sources { flat[source] = target }
+            }
+            return flat
+        }
 
         init() {}
 
@@ -118,15 +135,22 @@ struct Config: Codable, Equatable {
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
             }
-            if let replacements = try c.decodeIfPresent([String: String].self, forKey: .replacements) {
-                self.replacements = replacements
+            // Either shape: target to a list of mishearings, or the older flat
+            // mishearing to target.
+            if let grouped = (try? c.decodeIfPresent([String: [String]].self, forKey: .replacements)) ?? nil {
+                self.replacements = grouped
+            } else if let flat = try c.decodeIfPresent([String: String].self, forKey: .replacements) {
+                var grouped: [String: [String]] = [:]
+                for (source, target) in flat { grouped[target, default: []].append(source) }
+                self.replacements = grouped.mapValues { $0.sorted() }
             }
         }
     }
 
     struct Hotkey: Codable, Equatable {
         /// Key name understood by `KeyCodes.code(for:)`, e.g. "space", "d", "f13".
-        var key: String = "right_option"
+        /// Differs between the dev and released builds so both can run at once.
+        var key: String = AppVariant.defaultHotkey
         /// Any of: command, control, option, shift (aliases: cmd, ctrl, alt, opt).
         var modifiers: [String] = []
         /// `toggle` — press once to start, once to stop.
@@ -167,7 +191,7 @@ struct Config: Codable, Equatable {
     struct Audio: Codable, Equatable {
         /// Parakeet expects 16 kHz mono. Changing this is almost never what you want.
         var sampleRate: Double = 16000
-        var outputDir: String = "~/Recordings/ParrotFlow"
+        var outputDir: String = AppVariant.defaultOutputDir
         /// Recordings shorter than this are discarded (guards against fumbled hotkeys).
         var minDurationSeconds: Double = 0.3
         /// Run voice-activity detection before transcribing, and skip clips
@@ -249,7 +273,7 @@ struct Config: Codable, Equatable {
 enum ConfigStore {
     static var directory: URL {
         FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".config/parrotflow", isDirectory: true)
+            .appendingPathComponent(AppVariant.configDirectory, isDirectory: true)
     }
 
     static var fileURL: URL {
@@ -274,8 +298,11 @@ enum ConfigStore {
         return try YAMLDecoder().decode(Config.self, from: text)
     }
 
-    static let defaultYAML = """
-    # ParrotFlow configuration
+    /// Computed rather than a constant because the dev build seeds a different
+    /// hotkey and recordings directory — see `AppVariant`.
+    static var defaultYAML: String {
+        """
+    # \(AppVariant.displayName) configuration
     # Edit and save — changes are picked up automatically.
 
     hotkey:
@@ -286,7 +313,7 @@ enum ConfigStore {
       #   a-z, 0-9, space, return, tab, escape, f1-f20, arrows,
       #   comma, period, slash, semicolon, quote, backslash,
       #   leftbracket, rightbracket, minus, equal, grave, delete
-      key: right_option
+      key: \(AppVariant.defaultHotkey)
 
       # Any of: command, control, option, shift (aliases: cmd, ctrl, alt, opt).
       # Required for a character key; ignored for a bare modifier.
@@ -302,7 +329,7 @@ enum ConfigStore {
     audio:
       # 16 kHz mono is what Parakeet wants. Leave this alone.
       sample_rate: 16000
-      output_dir: ~/Recordings/ParrotFlow
+      output_dir: \(AppVariant.defaultOutputDir)
       # Discard anything shorter than this (seconds)
       min_duration_seconds: 0.3
 
@@ -326,8 +353,12 @@ enum ConfigStore {
       # opens to teach ParrotFlow the right spelling. Needs Accessibility.
       correction_phrase: hey parrot
 
-      # Literal swaps applied to the finished transcript. Word-boundary
-      # matched and case-insensitive.
+      # Grouped by the spelling you want, listing the ways it gets misheard.
+      # Word-boundary matched and case-insensitive.
+      #
+      #   replacements:
+      #     Tasmeen: [Tasmid, Tasmin, Tasmine]
+      #     Supabase: [super base, superbees]
       replacements: {}
 
     # A local Ollama model, used to interpret what you say after the wake
@@ -343,6 +374,7 @@ enum ConfigStore {
       # Turn off to get those seconds back as free RAM.
       keep_loaded: true
     """
+    }
 }
 
 // MARK: - Live reload
