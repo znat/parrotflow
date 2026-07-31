@@ -19,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
     }
     private var transcriptionLabel: String?
+    /// Bumped by every `setLabel`, so a self-clear armed for one message cannot
+    /// wipe a newer one that is still current.
+    private var labelToken = 0
     private let correctionPanel = CorrectionPanel()
     private let notice = NoticeHUD()
     private var pendingSelection: SelectionReader.Selection?
@@ -61,6 +64,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+
+        warmUpLLM()
 
         // First run: get the microphone prompt out of the way immediately,
         // rather than at the moment the user first tries to dictate.
@@ -281,6 +286,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func llmConfig() -> LocalLLM.Config {
+        LocalLLM.Config(
+            endpoint: config.llm.endpoint,
+            model: config.llm.model,
+            timeout: config.llm.timeoutSeconds,
+            keepLoaded: config.llm.keepLoaded
+        )
+    }
+
+    /// Loads the Ollama model now, so the first correction doesn't pay for it.
+    ///
+    /// A correction costs 6.7s cold and 1.5s warm, and Ollama drops the model
+    /// after five minutes idle — so in a day of real use nearly every one was
+    /// cold. Launch is the one moment when nobody is waiting on it.
+    ///
+    /// Only at launch, deliberately: `applyConfig` runs on every save of
+    /// config.yaml, and re-warming there would fire a multi-GB load each time
+    /// the file is touched.
+    private func warmUpLLM() {
+        guard config.llm.enabled, config.llm.keepLoaded else { return }
+
+        let llm = llmConfig()
+        Task.detached(priority: .background) {
+            let started = Date()
+            let loaded = await LocalLLM.warmUp(config: llm)
+            let elapsed = Date().timeIntervalSince(started)
+            Log.write(
+                loaded
+                    ? String(format: "llm: %@ loaded and pinned in %.1fs", llm.model, elapsed)
+                    : "llm: could not preload \(llm.model) — is Ollama running?"
+            )
+        }
+    }
+
     /// Everything said after the wake phrase, or nil when this is plain
     /// dictation. Empty string means the phrase was said on its own.
     ///
@@ -306,12 +345,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        flash("Thinking…")
-        let llmConfig = LocalLLM.Config(
-            endpoint: config.llm.endpoint,
-            model: config.llm.model,
-            timeout: config.llm.timeoutSeconds
-        )
+        beginProgress("Thinking…")
+        let llmConfig = llmConfig()
         let context = settings.model.lastTranscript
 
         Task { [weak self] in
@@ -330,6 +365,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func apply(_ command: VoiceCommand, command spoken: String) {
+        // Whatever happens next replaces it: a panel, or a flash of its own.
+        endProgress()
+
         switch command {
         case .openCorrectionPanel:
             beginCorrection()
@@ -460,11 +498,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Show a message on screen, and in the menu bar for as long as it lasts.
     private func flash(_ message: String) {
         notice.show(message)
+        setLabel(message, clearAfter: 4)
+    }
+
+    /// A message that stays up until `endProgress()`, for work of no
+    /// predictable length. "Thinking…" was a `flash`, so it timed out after
+    /// 3.5s while a cold Ollama was still loading — leaving the rest of a 10s
+    /// wait with nothing on screen at all.
+    private func beginProgress(_ message: String) {
+        notice.show(message, duration: nil)
+        setLabel(message)
+    }
+
+    private func endProgress() {
+        notice.hide()
+        setLabel(nil)
+    }
+
+    /// Sets the menu bar title, optionally clearing it again after a delay.
+    ///
+    /// The token matters: these clears are fire-and-forget, so without it a
+    /// timer armed for "Copied — ⌘V to paste" wipes whatever newer message has
+    /// replaced it in the meantime.
+    private func setLabel(_ message: String?, clearAfter: TimeInterval? = nil) {
+        labelToken += 1
+        let token = labelToken
         transcriptionLabel = message
         updateUI()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-            self?.transcriptionLabel = nil
-            self?.updateUI()
+
+        guard let clearAfter else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + clearAfter) { [weak self] in
+            guard let self, self.labelToken == token else { return }
+            self.transcriptionLabel = nil
+            self.updateUI()
         }
     }
 
@@ -492,20 +558,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .copied:
             // Deliberate clipboard mode — confirm it landed.
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
-            transcriptionLabel = "Copied — ⌘V to paste"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-                self?.transcriptionLabel = nil
-                self?.updateUI()
-            }
+            setLabel("Copied — ⌘V to paste", clearAfter: 4)
         case .clipboardOnly:
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
             // Don't nag on every dictation — the text is safe on the clipboard.
             Log.write("Accessibility not granted; left transcript on the clipboard")
-            transcriptionLabel = "Copied — grant Accessibility to auto-paste"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
-                self?.transcriptionLabel = nil
-                self?.updateUI()
-            }
+            setLabel("Copied — grant Accessibility to auto-paste", clearAfter: 4)
         }
         updateUI()
     }

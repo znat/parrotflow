@@ -14,7 +14,14 @@ final class NoticeHUD {
     private let model = NoticeModel()
     private var dismissWorkItem: DispatchWorkItem?
 
-    func show(_ message: String, duration: TimeInterval = 3.5) {
+    /// A `duration` of nil leaves the message up until `hide()`.
+    ///
+    /// Needed because the fixed 3.5s was a bet on how long the work would take,
+    /// and it lost: "Thinking…" dismissed itself while a cold Ollama was still
+    /// loading the model, so the rest of a 10s wait looked like the app had
+    /// gone back to doing nothing. Anything unbounded — a model call, a
+    /// download — has to hold the HUD until it finishes.
+    func show(_ message: String, duration: TimeInterval? = 3.5) {
         model.message = message
 
         if panel == nil { build() }
@@ -23,6 +30,9 @@ final class NoticeHUD {
         panel?.orderFrontRegardless()
 
         dismissWorkItem?.cancel()
+        dismissWorkItem = nil
+        guard let duration else { return }
+
         let work = DispatchWorkItem { [weak self] in self?.panel?.orderOut(nil) }
         dismissWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)

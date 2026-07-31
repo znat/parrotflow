@@ -52,3 +52,7 @@ llm:
   model: gemma4:e4b
   endpoint: http://localhost:11434
   timeout_seconds: 20
+  # Load the model at launch and keep it there. Ollama otherwise drops it
+  # after five minutes, and reloading costs 7-10s on the next correction.
+  # Turn off to get those seconds back as free RAM.
+  keep_loaded: true

@@ -1,0 +1,94 @@
+# Validation set for spoken spelling corrections, French dictation.
+#
+# Same shape as spelling-cases.yaml: `source` is what recognition produced when
+# the name was dictated, `correction` is what it produced when the user said
+# the name and spelled it out. The difference is that the dictated sentence is
+# French, which is the thing being tested — the English set already covers
+# non-English names inside English sentences.
+#
+# The last group uses French trigger words instead of "spells". It is separated
+# deliberately: LocalLLM.spelledOutWord only recognises spells/spelled/spelling,
+# so those cases exercise the regex, not the model, and a drop confined to that
+# group means the trigger list is what needs extending.
+
+cases:
+  # ---- French given names ----
+  - source: J'ai parlé avec Ghee yome ce matin
+    correction: Gee ohm spells G U I L L A U M E
+    expect: Ghee yome => Guillaume
+
+  - source: Tee bo relit la pull request
+    correction: T bow spells T H I B A U L T
+    expect: Tee bo => Thibault
+
+  - source: Anna ees a rejoint l'équipe design
+    correction: Anna east spells A N A I S
+    expect: Anna ees => Anais
+
+  - source: Envoie-le à Say goal enn s'il te plaît
+    correction: Segolen spells S E G O L E N E
+    expect: Say goal enn => Segolene
+
+  - source: Ma tie oo s'occupe du déploiement
+    correction: Mathieu spells M A T H I E U
+    expect: Ma tie oo => Mathieu
+
+  - source: Ex avier a validé la maquette
+    correction: Xavier spells X A V I E R
+    expect: Ex avier => Xavier
+
+  - source: Sea sill travaille sur le rapport
+    correction: Cecile spells C E C I L E
+    expect: Sea sill => Cecile
+
+  # ---- Non-French names inside French sentences ----
+  - source: Je travaille avec Tasmine sur la plateforme
+    correction: Das mean spells T A S M E E N
+    expect: Tasmine => Tasmeen
+
+  - source: Locks me a relu le schéma
+    correction: Lakshmi spells L A K S H M I
+    expect: Locks me => Lakshmi
+
+  # ---- Technology providers ----
+  - source: On a déployé sur Versal hier soir
+    correction: Versoff spells V E R C E L
+    expect: Versal => Vercel
+
+  - source: Le cluster Coober netties est en panne
+    correction: Kuber nettis spells K U B E R N E T E S
+    expect: Coober netties => Kubernetes
+
+  - source: Mets-le derrière Cloud fair
+    correction: Cloud flair spells C L O U D F L A R E
+    expect: Cloud fair => Cloudflare
+
+  - source: On stocke les sessions dans Reddis
+    correction: Redis spells R E D I S
+    expect: Reddis => Redis
+
+  # ---- Negatives: nothing in the source matches ----
+  - source: Il fait très beau aujourd'hui
+    correction: Tasmine spells T A S M E E N
+    expect: NO MATCH
+
+  - source: On livre vendredi prochain
+    correction: Kuber nettis spells K U B E R N E T E S
+    expect: NO MATCH
+
+  - source: J'aime beaucoup les pommes
+    correction: Oranges spells O R A N G E S
+    expect: NO MATCH
+
+  # ---- French trigger words: exercises spelledOutWord, not the model ----
+  - source: J'ai parlé avec Ghee yome ce matin
+    correction: Gee ohm ça s'écrit G U I L L A U M E
+    expect: Ghee yome => Guillaume
+
+  - source: Ma tie oo s'occupe du déploiement
+    correction: Mathieu s'épelle M A T H I E U
+    expect: Ma tie oo => Mathieu
+
+  - source: On a déployé sur Versal hier soir
+    correction: Versoff ça s'écrit V E R C E L
+    expect: Versal => Vercel

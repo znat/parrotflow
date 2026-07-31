@@ -40,6 +40,7 @@ enum CheckConfigCommand {
         print("  ✓ sample rate       \(Int(config.audio.sampleRate)) Hz mono")
         print("  ✓ output dir        \(config.resolvedOutputDir.path)")
         print("  ✓ min duration      \(config.audio.minDurationSeconds)s")
+        print("  · speech gate       \(config.audio.speechGate ? "on" : "off")")
         print("  · feedback          sound=\(config.feedback.sound) overlay=\(config.feedback.overlay)")
 
         // Transcription — printed so a mis-decoded config is visible rather
@@ -72,6 +73,14 @@ enum CheckConfigCommand {
                     print("      \(from) → \(to)")
                 }
             }
+        }
+
+        // LLM — only reachability is checked here; --command exercises it.
+        if config.llm.enabled {
+            print("  · llm               \(config.llm.model) at \(config.llm.endpoint)")
+            print("  · keep loaded       \(config.llm.keepLoaded ? "on (pinned in RAM)" : "off (Ollama unloads after 5 min; +7-10s on a cold call)")")
+        } else {
+            print("  · llm               disabled — no free-form spoken commands")
         }
 
         // Environment

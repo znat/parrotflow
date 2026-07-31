@@ -29,10 +29,14 @@ struct Config: Codable, Equatable {
         var model: String = "gemma4:e4b"
         var endpoint: String = "http://localhost:11434"
         var timeoutSeconds: Double = 20
+        /// Load the model at launch and pin it in Ollama's memory. Trades a few
+        /// GB of RAM for corrections that answer in 1–2s instead of 7–10s.
+        var keepLoaded: Bool = true
 
         enum CodingKeys: String, CodingKey {
             case enabled, model, endpoint
             case timeoutSeconds = "timeout_seconds"
+            case keepLoaded = "keep_loaded"
         }
 
         init() {}
@@ -44,6 +48,7 @@ struct Config: Codable, Equatable {
             if let v = try c.decodeIfPresent(String.self, forKey: .model) { model = v }
             if let v = try c.decodeIfPresent(String.self, forKey: .endpoint) { endpoint = v }
             if let v = try c.decodeIfPresent(Double.self, forKey: .timeoutSeconds) { timeoutSeconds = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .keepLoaded) { keepLoaded = v }
         }
     }
 
@@ -200,11 +205,16 @@ struct Config: Codable, Equatable {
         var outputDir: String = "~/Recordings/ParrotFlow"
         /// Recordings shorter than this are discarded (guards against fumbled hotkeys).
         var minDurationSeconds: Double = 0.3
+        /// Run voice-activity detection before transcribing, and skip clips
+        /// with no speech in them. On by default; turn it off if it ever
+        /// swallows something real.
+        var speechGate: Bool = true
 
         enum CodingKeys: String, CodingKey {
             case sampleRate = "sample_rate"
             case outputDir = "output_dir"
             case minDurationSeconds = "min_duration_seconds"
+            case speechGate = "speech_gate"
         }
 
         init() {}
@@ -225,6 +235,9 @@ struct Config: Codable, Equatable {
             if let dir = try c.decodeIfPresent(String.self, forKey: .outputDir) { self.outputDir = dir }
             if let min = try c.decodeIfPresent(Double.self, forKey: .minDurationSeconds) {
                 self.minDurationSeconds = max(0, min)
+            }
+            if let gate = try c.decodeIfPresent(Bool.self, forKey: .speechGate) {
+                self.speechGate = gate
             }
         }
     }
@@ -328,6 +341,11 @@ enum ConfigStore {
       # Discard anything shorter than this (seconds)
       min_duration_seconds: 0.3
 
+      # Check for speech before transcribing, and skip clips that have none.
+      # Without it a stray hotkey press decodes room tone into "Yeah." or
+      # "Thank you for watching". Turn off if it ever swallows real speech.
+      speech_gate: true
+
     feedback:
       sound: true
       overlay: true
@@ -360,6 +378,10 @@ enum ConfigStore {
       model: gemma4:e4b
       endpoint: http://localhost:11434
       timeout_seconds: 20
+      # Load the model at launch and keep it there. Ollama otherwise drops it
+      # after five minutes, and reloading costs 7-10s on the next correction.
+      # Turn off to get those seconds back as free RAM.
+      keep_loaded: true
     """
 }
 

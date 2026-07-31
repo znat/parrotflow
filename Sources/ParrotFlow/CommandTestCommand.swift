@@ -40,7 +40,8 @@ enum CommandTestCommand {
         let llmConfig = LocalLLM.Config(
             endpoint: config.llm.endpoint,
             model: config.llm.model,
-            timeout: config.llm.timeoutSeconds
+            timeout: config.llm.timeoutSeconds,
+            keepLoaded: config.llm.keepLoaded
         )
         if let spelled = VoiceCommand.spelledOutWord(in: command) {
             print("spelled-out: \"\(spelled)\"  (taken from the text, not the model)")

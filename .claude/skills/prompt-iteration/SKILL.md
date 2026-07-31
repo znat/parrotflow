@@ -61,6 +61,30 @@ separately. The two numbers answer different questions:
 A large gap between them means you are asking the model to do something your
 code should be doing. Move it and the gap closes.
 
+## Score the code you actually ship
+
+Both numbers are lies if the runner's version of the pipeline has drifted from
+the application's. This is easy to miss because the runner keeps working — it
+just answers a question about code nobody runs.
+
+Twice in this repo the runner understated the real pipeline: once because the
+app had moved on to a better way of reading the spelled letters, and once
+because it did not model the app's repair step at all. The second gap was worth
+31 points to a small model. If the application post-processes the model's answer
+— repairs it, validates it, falls back — the runner has to do the same thing,
+and the honest move is to port that code rather than approximate it.
+
+## Keep a control with no model in it
+
+Add a mode that runs the pipeline with the model removed and something trivial
+in its place. It costs a few lines and it is the only thing that answers the
+question you actually care about: is the model earning its place?
+
+Here the control — take the spelled letters, snap them to the nearest phrase in
+the transcript — scored 59%. The 0.8B model scored 62%. Four prompt variants
+and a day of tuning had been spent on three points of noise, and without the
+control the 62% would have read like progress.
+
 ## The loop
 
 1. Run the set. Record the number.
@@ -115,7 +139,7 @@ loading weights and will send you optimising the wrong thing.
 
 ## Choosing a model
 
-Run the same set across candidates. Two things regularly surprise:
+Run the same set across candidates. Three things regularly surprise:
 
 - **Bigger is often slower and no better** for narrow tasks. If output tokens
   dominate, an 8B model can match a 12B at half the latency.
@@ -123,6 +147,15 @@ Run the same set across candidates. Two things regularly surprise:
   task the failure mode that matters is a model that improves your prose when
   asked not to. A perfectly capable model can be unusable for this while a
   weaker one is fine.
+- **There is a floor, and prompting does not reach below it.** Past some size
+  the failures stop being instruction-following and start being the model
+  producing garbage — echoing the format placeholder instead of filling it in,
+  answering `YES MATCH`, shouting the input line back in capitals. No wording
+  fixes that. Recognising the floor early saves the day you would spend
+  re-rolling variants against it.
+
+The tell is where the variants land. If several genuinely different prompts all
+score about the same, you are measuring the model, not the prompt.
 
 ## The runner
 
@@ -142,12 +175,12 @@ Worth including:
 `tests/spelling-cases.yaml` and `scripts/validate-prompt.py` are a working
 instance. The task: map a misheard name to a spelling the user read out aloud.
 
-The set is 35 cases — names from ten language backgrounds, product names that
+The set is 39 cases — names from ten language backgrounds, product names that
 recognition splits into English words, three negatives, one already-correct.
 Inputs are real recogniser output, mangled twice over, because that
 double-mishearing is the actual difficulty.
 
-Scores across four prompt versions:
+Scores across the prompt versions, on gemma4:e4b:
 
 | | full line | model's part |
 | --- | --- | --- |
@@ -155,9 +188,29 @@ Scores across four prompt versions:
 | v2, `NO MATCH` token | 89% | 91% |
 | v3, + rule against extra words | 86% | 91% |
 | v4, examples instead of the rule | 94% | 100% |
+| v8, − the "ordinary English word" clause | 95% | 100% |
+| v9, + a three-word example | 92% | 97% |
 
 v3 is the regression that justifies the whole method: a change that looked
 obviously correct, made things worse, and would have shipped unnoticed without
-the set. And the gap between the last two columns is the split — the model's
-remaining errors were all in copying letters, which is now a regex, taking the
-pipeline to 100%.
+the set. v9 is the same lesson a second time — one extra example, and spans
+started over-running to "Graph on a dashboards".
+
+v8 is the one only a second model could find. Its deleted clause cost gemma
+nothing, so on gemma it was invisible; on granite4:3b it was firing on the
+names that *are* ordinary English words, and removing it was worth two points.
+A rule that helps no model and hurts a small one is pure liability, and you
+cannot see it with one model.
+
+Then the same set across models, scored end-to-end as the app runs it:
+
+| | | |
+| --- | --- | --- |
+| gemma4:e4b, 9.6GB | 97% | 1.4s |
+| granite4:3b, 2.1GB | 92% | 0.3s |
+| qwen3.5:0.8b, 1.0GB | 62% | 0.4s |
+| no model at all | 59% | — |
+
+The 0.8B is the floor: four variants, an output format designed around its
+weakness, and thinking mode all left it level with the control. The 3B is the
+actual answer — a fifth of the disk and five times the speed for five points.

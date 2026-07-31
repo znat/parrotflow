@@ -54,6 +54,7 @@ actor Transcriber {
     // therefore reads from a dead stream, processes no audio, and returns
     // whatever text was left over from the previous clip. Measured: the second
     // and every later dictation came back as just the boosted vocabulary term.
+    private var vad: VadManager?
     private var models: AsrModels?
     private var ctcModels: CtcModels?
     private var vocabularyTerms: [CustomVocabularyTerm] = []
@@ -104,6 +105,12 @@ actor Transcriber {
                 from: CtcModels.defaultCacheDirectory(for: .ctc110m)
             )
             vocabularyTerms = Self.tokenize(vocabulary, using: tokenizer)
+        }
+
+        if config.audio.speechGate, vad == nil {
+            setStatus(.downloading("voice detector"))
+            vad = try? await VadManager(config: .default)
+            if vad == nil { Log.write("speech gate: VAD unavailable; transcribing everything") }
         }
 
         loadedVocabulary = vocabulary
@@ -168,6 +175,11 @@ actor Transcriber {
         try await prepare(config: config)
         let manager = try await makeManager()
 
+        if config.audio.speechGate, try await isSilent(url: url) {
+            Log.write("speech gate: no speech detected; not transcribing")
+            return ""
+        }
+
         let file = try AVAudioFile(forReading: url)
         try await manager.startStreaming(source: .microphone)
 
@@ -187,6 +199,41 @@ actor Transcriber {
 
         let raw = try await manager.finish()
         return Self.applyReplacements(to: raw, config: config)
+    }
+
+    /// True when the clip holds no speech worth transcribing.
+    ///
+    /// An acoustic model asked to decode silence decodes *something* — five
+    /// clips in one session of real use, all under 0.51s of stray hotkey
+    /// press, came back as "Yeah." It is the same mechanism behind Whisper's
+    /// "Thank you for watching". A hallucination cannot appear if the decoder
+    /// never runs, so silence is caught before it gets there rather than
+    /// filtered out of the text afterwards.
+    ///
+    /// Fails open: if the detector is unavailable the clip is transcribed.
+    /// Losing real speech is far worse than an occasional stray "Yeah."
+    private func isSilent(url: URL) async throws -> Bool {
+        guard let vad else { return false }
+
+        let file = try AVAudioFile(forReading: url)
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: file.processingFormat,
+            frameCapacity: AVAudioFrameCount(file.length)
+        ) else { return false }
+        try file.read(into: buffer)
+        guard let channel = buffer.floatChannelData?[0] else { return false }
+        let samples = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+        guard !samples.isEmpty else { return true }
+
+        let segments = try await vad.segmentSpeech(samples)
+        let speech = segments.reduce(0.0) { $0 + ($1.endTime - $1.startTime) }
+        let total = Double(samples.count) / 16000
+
+        Log.write(String(
+            format: "speech gate: %.2fs speech in %.2fs (%d segment(s))",
+            speech, total, segments.count
+        ))
+        return segments.isEmpty || speech < 0.2
     }
 
     /// The last, blunt pass: literal substitutions from the config.

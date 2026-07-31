@@ -13,7 +13,19 @@ enum LocalLLM {
         var endpoint: String
         var model: String
         var timeout: TimeInterval
+        /// Hold the model in Ollama's memory between calls — see `keepAlive`.
+        var keepLoaded: Bool = true
     }
+
+    /// Ollama's `keep_alive` value meaning "never unload".
+    ///
+    /// Its default is 5 minutes, and a call after that pays to read the model
+    /// off disk again. Measured on gemma4:e4b from the app's own log: 7–10s for
+    /// a correction following a gap of more than five minutes, 1–2s for one
+    /// inside it. Every slow correction in a day of use was a reload — none was
+    /// slow inference. The cost of pinning is a few GB of resident RAM for as
+    /// long as the app runs, which is what `llm.keep_loaded` turns off.
+    private static let pinned = -1
 
     enum LLMError: LocalizedError {
         case unreachable
@@ -63,6 +75,7 @@ enum LocalLLM {
             ],
         ]
         if json { body["format"] = "json" }
+        if config.keepLoaded { body["keep_alive"] = pinned }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -90,6 +103,41 @@ enum LocalLLM {
         else { throw LLMError.emptyResponse }
 
         return text
+    }
+
+    /// Loads the model into Ollama's memory without asking it anything.
+    ///
+    /// A request with no prompt is Ollama's documented "just load it" call, so
+    /// this costs the load and no inference. Called at launch, it moves the
+    /// 7–10s cold start (see `pinned`) to a moment when nobody is waiting on
+    /// it; `keep_alive` then stops it coming back.
+    ///
+    /// Returns whether the model ended up loaded, for the log only. Silent on
+    /// failure: Ollama not being installed is an ordinary state for this app,
+    /// and the features that need it already say so at the point of use.
+    ///
+    /// The timeout is generous rather than `config.timeout` because it is
+    /// bounded by disk speed on a multi-GB file, not by how long a user will
+    /// wait — nobody is watching this one.
+    @discardableResult
+    static func warmUp(config: Config) async -> Bool {
+        guard let url = URL(string: "\(config.endpoint)/api/generate") else { return false }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["model": config.model]
+        // Omitted rather than sent as 0 when not pinning: 0 means "unload now",
+        // which would make warming up mean nothing at all.
+        if config.keepLoaded { body["keep_alive"] = pinned }
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        request.timeoutInterval = 120
+
+        guard
+            let (_, response) = try? await URLSession.shared.data(for: request),
+            let http = response as? HTTPURLResponse
+        else { return false }
+        return http.statusCode == 200
     }
 
     /// True when the server answers and has the model. Used to grey out
@@ -202,15 +250,25 @@ enum VoiceCommand {
     /// Asks the model which word in the transcript the speaker meant to fix.
     ///
     /// The model picks the span only; the spelling comes from the letters via
-    /// `spelledOutWord`. Scored against tests/spelling-cases.yaml — 35 names
+    /// `spelledOutWord`. Scored against tests/spelling-cases.yaml — 39 names
     /// across French, Indian, Chinese, Turkish, Vietnamese, Korean, Nigerian,
-    /// Polish, Irish and Arabic, plus split product names and negative cases:
+    /// Polish, Irish and Arabic, plus split product names and negative cases,
+    /// on gemma4:e4b with prompt v8:
     ///
-    ///     span only            35/35
-    ///     span + model spelling 33/35
+    ///     span only             39/39
+    ///     span + model spelling 37/39
+    ///     what this returns     38/39
     ///
-    /// The two it loses are both the model mangling letters it was copying —
+    /// The two the model loses are both it mangling letters it was copying —
     /// "S I O B H A N" came back "Sibhan". That job belongs to the regex.
+    ///
+    /// The one this loses is "Sam spells S A M", where the guard below drops a
+    /// rule mapping a word to itself. That is deliberate, so the set's
+    /// expectation for that case is what is wrong.
+    ///
+    /// The fallback matters more than the prompt on a weak model: it repaired
+    /// granite4:3b from 85% to 92%, and it is most of the reason
+    /// qwen3.5:0.8b's 62% is barely above the 59% that no model at all scores.
     static func interpret(
         command: String,
         lastTranscript: String?,
@@ -270,15 +328,23 @@ enum VoiceCommand {
         return .addRule(heard: resolved, corrected: corrected)
     }
 
-    /// Prompt v4. Earlier versions and the scores that rejected them are in
+    /// Prompt v8. Earlier versions and the scores that rejected them are in
     /// scripts/validate-prompt.py, which reruns the set in about a minute.
     ///
-    /// Two things it took measurement to learn. "Output nothing" for the
+    /// Three things it took measurement to learn. "Output nothing" for the
     /// no-match case does not work — a model will not emit zero tokens, so it
     /// invents a mapping instead; `NO MATCH` gives it somewhere to go and took
-    /// the set from 71% to 89%. And a prose rule against including surrounding
+    /// the set from 71% to 89%. A prose rule against including surrounding
     /// words over-trimmed real names ("Anna ees" to "Anna"); the same lesson
     /// carried by two examples instead cost nothing.
+    ///
+    /// And v8 deleted "including when the nearest candidate is an ordinary
+    /// English word" from the NO MATCH rule. It was meant to protect the
+    /// negative cases, but the examples already do that, and the clause fired
+    /// on the names that *are* ordinary English words — Clark/Clerk and
+    /// Becker/Bekir came back NO MATCH. Removing it changed gemma4:e4b not at
+    /// all and took granite4:3b from 90% to 92%: a rule that only ever cost
+    /// something. The negative cases did not regress.
     static let extractionPrompt = """
     Map a misheard name to the spelling the speaker just read out.
 
@@ -297,8 +363,7 @@ enum VoiceCommand {
     names it does not know. Take the whole name, and only the name.
     - The right side is the spelled letters, in the order given, joined up \
     with one capital at the start.
-    - Reply NO MATCH when nothing in the source sounds like the spelled name, \
-    including when the nearest candidate is an ordinary English word.
+    - Reply NO MATCH when nothing in the source sounds like the spelled name.
 
     source: I work with Tasmin
     correction: Das mean spells T-A-S-M-E-E-N

@@ -17,6 +17,8 @@ cleanup layer on top of it come next.
 - Records to 16 kHz mono WAV — exactly what Parakeet wants
 - Floating pill with a level meter so you know the mic is hot
 - Config reloads on save; no restart to try a different key
+- Voice-activity gate, so a stray hotkey press doesn't decode room tone into
+  "Yeah." or "Thank you for watching"
 - Parakeet transcription with custom-vocabulary boosting, so rare names come
   out spelled the way you spell them
 
@@ -96,7 +98,16 @@ spelling is already known from the letters, the closest match to it in the last
 transcript is the word that needs fixing.
 
 Needs [Ollama](https://ollama.com) running with the model in `llm.model`
-(`ollama pull gemma4:e4b`). `tests/spelling-cases.yaml` holds 35 names —
+(`ollama pull gemma4:e4b`).
+
+ParrotFlow loads that model at launch and asks Ollama to keep it there. Ollama
+otherwise drops it after five minutes idle, and reloading is most of what you
+wait for: measured 6.7s cold against 1.5s warm, so in practice almost every
+correction paid for a reload. The cost is the model sitting in memory for as
+long as the app runs — 9.6 GB for `gemma4:e4b`. Set `llm.keep_loaded: false` to
+have the RAM back and the wait with it.
+
+`tests/spelling-cases.yaml` holds 35 names —
 French, Indian, Chinese, Turkish, Vietnamese, Korean, Nigerian, Polish, Irish,
 Arabic — plus product names recognition splits, and negative cases. Score a
 model or a prompt against it with `scripts/validate-prompt.py gemma4:e4b`. Without it, `"hey parrot"` and `"hey parrot, fix
