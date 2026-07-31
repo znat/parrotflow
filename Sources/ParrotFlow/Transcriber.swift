@@ -210,6 +210,13 @@ actor Transcriber {
     /// never runs, so silence is caught before it gets there rather than
     /// filtered out of the text afterwards.
     ///
+    /// The test is presence, not duration. On the clips that produced the
+    /// artifacts, VAD found *zero* speech — 0.00s across 0 segments — while
+    /// the shortest genuine utterance held 0.34s across one. There is no
+    /// threshold to tune between those, and any threshold would eventually
+    /// eat a real one-word answer. So a single detected segment is enough to
+    /// let a clip through, however brief.
+    ///
     /// Fails open: if the detector is unavailable the clip is transcribed.
     /// Losing real speech is far worse than an occasional stray "Yeah."
     private func isSilent(url: URL) async throws -> Bool {
@@ -233,7 +240,7 @@ actor Transcriber {
             format: "speech gate: %.2fs speech in %.2fs (%d segment(s))",
             speech, total, segments.count
         ))
-        return segments.isEmpty || speech < 0.2
+        return segments.isEmpty
     }
 
     /// The last, blunt pass: literal substitutions from the config.

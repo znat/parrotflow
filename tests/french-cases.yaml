@@ -80,6 +80,26 @@ cases:
     correction: Oranges spells O R A N G E S
     expect: NO MATCH
 
+  # ---- How recognition actually renders spelled letters ----
+  # It stops treating them as letters partway through and merges the rest into
+  # syllables. With an English trigger this is fine, because spelledOutWord
+  # takes everything after "spells" however it was chunked.
+  - source: J'ai parlé avec Ghee yome ce matin
+    correction: Gee ohm spells G U I L L Aume
+    expect: Ghee yome => Guillaume
+
+  - source: Ma tie oo s'occupe du déploiement
+    correction: Mathieu spells M A T H Ieu
+    expect: Ma tie oo => Mathieu
+
+  - source: Sea sill travaille sur le rapport
+    correction: Cecile spells C E ci le
+    expect: Sea sill => Cecile
+
+  - source: On a déployé sur Versal hier soir
+    correction: Versoff spells V E R Cel
+    expect: Versal => Vercel
+
   # ---- French trigger words: exercises spelledOutWord, not the model ----
   - source: J'ai parlé avec Ghee yome ce matin
     correction: Gee ohm ça s'écrit G U I L L A U M E
@@ -92,3 +112,16 @@ cases:
   - source: On a déployé sur Versal hier soir
     correction: Versoff ça s'écrit V E R C E L
     expect: Versal => Vercel
+
+  # A French trigger AND a merged tail together. Neither path covers this: the
+  # trigger list does not know "s'écrit", so it falls back to matching a run of
+  # single letters, which is precisely what the merge breaks. These are the
+  # cases that justify extending the trigger list rather than leaving French to
+  # the fallback.
+  - source: Ma tie oo s'occupe du déploiement
+    correction: Mathieu s'écrit M A T H Ieu
+    expect: Ma tie oo => Mathieu
+
+  - source: Sea sill travaille sur le rapport
+    correction: Cecile s'épelle C E C Ile
+    expect: Sea sill => Cecile
