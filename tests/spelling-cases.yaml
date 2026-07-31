@@ -176,6 +176,32 @@ cases:
     correction: superbase spells su pa b a s e
     expect: superbase => Supabase
 
+  # ---- The speaker says what it is not, after spelling it ----
+  # spelledOutWord takes everything after "spells", so it needs somewhere to
+  # stop or it glues the rest of the sentence onto the name. These are the
+  # cases spellingStopWords exists for, and nothing exercised them before.
+  - source: I love working on Super base project
+    correction: superbees spells S U P A B A S E not super base
+    expect: Super base => Supabase
+
+  - source: We store sessions in Reddis
+    correction: Redis spells R E D I S instead of Reddis
+    expect: Reddis => Redis
+
+  - source: Clark is our auth provider now
+    correction: Clerc spells C L E R K but not Clark
+    expect: Clark => Clerk
+
+  - source: We deployed to Versal yesterday
+    correction: Versoff spells V E R C E L rather than Versal
+    expect: Versal => Vercel
+
+  # A merged first syllable that reads as a stop word. Breaking on it would
+  # return no spelling at all, so the stop list must not apply to token one.
+  - source: We keep the docs in Noshun
+    correction: Notion spells Not ion
+    expect: Noshun => Notion
+
   # ---- Already correct: spelling matches what is there ----
   - source: I work with Sam
     correction: Sam spells S A M

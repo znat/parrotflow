@@ -125,3 +125,28 @@ cases:
   - source: Sea sill travaille sur le rapport
     correction: Cecile s'épelle C E C Ile
     expect: Sea sill => Cecile
+
+  # ---- The speaker says what it is not, in French ----
+  # The English list stops at not/instead/rather/but. None of those are how a
+  # French speaker says it, so the greedy capture runs to the end of the
+  # sentence: "P I E R R E pas Pierrot" became "Pierrepaspierrot".
+  - source: On stocke les sessions dans Reddis
+    correction: Redis s'écrit R E D I S pas Reddis
+    expect: Reddis => Redis
+
+  - source: Sea sill travaille sur le rapport
+    correction: Cecile s'épelle C E C I L E non Cecilia
+    expect: Sea sill => Cecile
+
+  - source: Ma tie oo s'occupe du déploiement
+    correction: Mathieu s'écrit M A T H I E U plutôt que Matthieu
+    expect: Ma tie oo => Mathieu
+
+  - source: On a déployé sur Versal hier soir
+    correction: Versoff ça s'écrit V E R C E L mais pas Versal
+    expect: Versal => Vercel
+
+  # Same trap in French: "Pas cal" opens on a stop word.
+  - source: Pass cal a ouvert le ticket
+    correction: Pascal s'écrit Pas cal
+    expect: Pass cal => Pascal

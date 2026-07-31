@@ -54,6 +54,11 @@ enum CheckConfigCommand {
             print("  · insert mode       \(mode)")
             print("  · wake phrase       \"\(transcription.correctionPhrase)\"")
             print("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
+            let languages = transcription.languages.joined(separator: ", ")
+            print("  · languages         \(languages)"
+                + (transcription.languages.count > 1
+                   ? " (detected per transcript, picks the prompt)"
+                   : " (no detection; always the \(languages) prompt)"))
         }
         if transcription.enabled {
             if transcription.vocabulary.isEmpty {

@@ -14,6 +14,15 @@ transcription:
   # nature, so it only fires when the line still contains what you dictated.
   rewrite_line: true
 
+  # Languages you dictate in, most common first. Not sent to Parakeet — it
+  # transcribes multilingually by itself and reports no language back. This
+  # list is what ParrotFlow uses to work out which language a transcript was
+  # in, so listing only what you actually speak makes that more accurate, and
+  # it picks the correction prompt written for that language.
+  #
+  # One entry means no detection runs at all. Supported: en, fr.
+  languages: [en, fr]
+
   # ACOUSTIC CONTEXT BIASING — OFF BY DEFAULT, AND IT SHOULD STAY OFF UNLESS
   # YOU HAVE MEASURED IT ON YOUR OWN VOICE.
   #

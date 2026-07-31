@@ -65,6 +65,15 @@ struct Config: Codable, Equatable {
         /// keys and retype it. Destructive if the guesses are wrong, so it is
         /// opt-in and only fires when the line is recognisably one we wrote.
         var rewriteLine: Bool = false
+        /// Languages you dictate in, most common first.
+        ///
+        /// Not passed to Parakeet — it transcribes multilingually on its own
+        /// and reports no language. The list is what constrains ParrotFlow's
+        /// own language detection, which is why naming only the languages you
+        /// actually use makes it more accurate, and it selects the correction
+        /// prompt written for that language. One entry means no detection runs
+        /// at all.
+        var languages: [String] = ["en"]
 
         enum InsertMode: String, Codable, Equatable {
             case paste
@@ -72,7 +81,7 @@ struct Config: Codable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, vocabulary, replacements
+            case enabled, vocabulary, replacements, languages
             case insertMode = "insert_mode"
             case correctionPhrase = "correction_phrase"
             case rewriteLine = "rewrite_line"
@@ -103,6 +112,14 @@ struct Config: Codable, Equatable {
                 self.correctionPhrase = phrase
             }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .rewriteLine) { rewriteLine = v }
+            if let v = try c.decodeIfPresent([String].self, forKey: .languages) {
+                let known = v.map { $0.lowercased() }
+                    .filter { DictationLanguage.supported.contains($0) }
+                // An empty or wholly unrecognised list means English rather
+                // than no language at all, so a typo degrades instead of
+                // leaving the correction prompt undefined.
+                languages = known.isEmpty ? ["en"] : known
+            }
             if let vocabulary = try c.decodeIfPresent([VocabularyTerm].self, forKey: .vocabulary) {
                 self.vocabulary = vocabulary
             }

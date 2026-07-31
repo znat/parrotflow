@@ -272,9 +272,10 @@ enum VoiceCommand {
     static func interpret(
         command: String,
         lastTranscript: String?,
+        language: String = "en",
         config: LocalLLM.Config
     ) async throws -> VoiceCommand {
-        let system = extractionPrompt
+        let system = extractionPrompt(for: language)
 
         var user = "source: \(lastTranscript ?? "")\ncorrection: \(command)"
         if lastTranscript?.isEmpty != false {
@@ -345,6 +346,23 @@ enum VoiceCommand {
     /// Becker/Bekir came back NO MATCH. Removing it changed gemma4:e4b not at
     /// all and took granite4:3b from 90% to 92%: a rule that only ever cost
     /// something. The negative cases did not regress.
+    /// The prompt for a dictation language, English for anything unlisted.
+    ///
+    /// A prompt written in the user's language is worth having but only on a
+    /// capable model: on gemma4:e4b the French prompt scores 93% against the
+    /// English prompt's 87% on tests/french-cases.yaml, while on granite4:3b it
+    /// scores 48% against 68% — down to what no model at all scores. It removes
+    /// the English scaffolding a weaker model was leaning on, so this table is
+    /// a reason to keep the larger model rather than a way to shrink it.
+    static func extractionPrompt(for language: String) -> String {
+        extractionPrompts[language] ?? extractionPrompt
+    }
+
+    static let extractionPrompts: [String: String] = [
+        "en": extractionPrompt,
+        "fr": frenchExtractionPrompt,
+    ]
+
     static let extractionPrompt = """
     Map a misheard name to the spelling the speaker just read out.
 
@@ -392,6 +410,68 @@ enum VoiceCommand {
     source: Anna ees joined the design team
     correction: Anna east spells A N A I S
     Anna ees => Anais
+    """
+
+    /// The English prompt's structure, in French, with French examples.
+    ///
+    /// 93% on tests/french-cases.yaml against the English prompt's 87%, and it
+    /// gains them in the right place: the English prompt's French failures were
+    /// spans running on into French function words ("Mets-le derrière Cloud
+    /// fair"), and these examples stop that.
+    ///
+    /// "marche => Marc" is the French counterpart of the English prompt's
+    /// "When => Nguyen": an ordinary word that is in fact the misheard name.
+    ///
+    /// Written without accents, which was not deliberate but is what scored
+    /// 93%. Adding them is a change to measure, not to assume.
+    static let frenchExtractionPrompt = """
+    Associe un nom mal transcrit a l'orthographe que la personne vient d'epeler.
+
+    Tu recois une transcription source, et une transcription de correction dans \
+    laquelle la personne dit un nom puis l'epelle lettre par lettre.
+
+    Reponds par une seule ligne, et rien d'autre :
+    <les mots exactement comme ils apparaissent dans la source> => <les lettres epelees assemblees>
+    ou
+    NO MATCH
+
+    - La partie gauche doit etre copiee caractere par caractere depuis la \
+    SOURCE. La transcription de correction se trompe une seconde fois sur le \
+    nom ; ignore la facon dont il y apparait.
+    - Le nom occupe souvent deux ou trois mots dans la source, parce que la \
+    reconnaissance vocale decoupe les noms qu'elle ne connait pas. Prends le \
+    nom entier, et rien que le nom.
+    - La partie droite est constituee des lettres epelees, dans l'ordre donne, \
+    assemblees avec une majuscule au debut.
+    - Reponds NO MATCH si rien dans la source ne ressemble au nom epele.
+
+    source: J'ai vu Ni cola hier au bureau
+    correction: Nicolas s'ecrit N I C O L A S
+    Ni cola => Nicolas
+
+    source: J'ai vu Sophie hier au bureau
+    correction: Nicolas s'ecrit N I C O L A S
+    NO MATCH
+
+    source: Il pleut beaucoup en ce moment
+    correction: Oranges s'ecrit O R A N G E S
+    NO MATCH
+
+    source: On utilise Post gres pour les donnees
+    correction: Postgresse s'ecrit P O S T G R E S
+    Post gres => Postgres
+
+    source: Le cluster Elastic serge est lent
+    correction: Elastic search s'ecrit E L A S T I C S E A R C H
+    Elastic serge => Elasticsearch
+
+    source: Il faut que ca marche demain
+    correction: Marc s'ecrit M A R C
+    marche => Marc
+
+    source: Cle mence a rejoint l'equipe hier
+    correction: Clemence s'ecrit C L E M E N C E
+    Cle mence => Clemence
     """
 
     /// Whether `word` actually occurs in `transcript`, ignoring case and
@@ -480,9 +560,17 @@ enum VoiceCommand {
         return 1 - previous[y.count] / Double(Swift.max(x.count, y.count))
     }
 
-    /// Words that end the spelling: "spelled S U P A B A S E not super base".
+    /// Words that end the spelling: "spelled S U P A B A S E not super base",
+    /// or "s'écrit R E D I S pas Reddis".
+    ///
+    /// The French half is not optional now that French trigger words are
+    /// recognised. Before, "s'écrit" missed the trigger and fell through to the
+    /// single-letter fallback, which stopped on its own; now the greedy path
+    /// runs for French too and glued the rest of the sentence on, turning
+    /// "P I E R R E pas Pierrot" into "Pierrepaspierrot".
     private static let spellingStopWords: Set<String> = [
         "not", "instead", "rather", "but", "no",
+        "pas", "non", "plutôt", "plutot", "mais",
     ]
 
     /// The spelling the speaker read out.
@@ -496,16 +584,28 @@ enum VoiceCommand {
     ///
     /// Verified against every command logged in a session of real use: 17/17,
     /// against 8/17 for the single-letter pattern alone.
+    ///
+    /// The French triggers are here rather than left to that fallback for the
+    /// same reason. "Mathieu s'écrit M A T H Ieu" has both a trigger the list
+    /// did not know and a merged tail, so it fell through to the single-letter
+    /// pattern and yielded "Math". Adding them took tests/french-cases.yaml
+    /// from 76% to 84% on gemma4:e4b, and left the English set at 97%.
     static func spelledOutWord(in text: String) -> String? {
         if let trigger = text.range(
-            of: "\\b(?:spells?|spelled|spelling)\\b",
+            of: "(?:\\b(?:spells?|spelled|spelling)\\b"
+                + "|s['’]\\s*(?:é|e)(?:crit|pelle)"
+                + "|\\b(?:é|e)(?:crit|pelle)\\b)",
             options: [.regularExpression, .caseInsensitive]
         ) {
             var letters = ""
             for token in text[trigger.upperBound...]
                 .components(separatedBy: CharacterSet.alphanumerics.inverted)
                 .filter({ !$0.isEmpty }) {
-                if spellingStopWords.contains(token.lowercased()) { break }
+                // Never on the first token. Recognition merges letters into
+                // syllables, so "Pascal s'écrit Pas cal" opens on something
+                // that reads as a stop word; breaking there would yield
+                // nothing at all rather than "Pascal".
+                if !letters.isEmpty, spellingStopWords.contains(token.lowercased()) { break }
                 letters += token
             }
             if letters.count >= 2 {

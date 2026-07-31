@@ -47,13 +47,22 @@ enum CommandTestCommand {
             print("spelled-out: \"\(spelled)\"  (taken from the text, not the model)")
         }
 
+        // Resolved the same way the app resolves it, from the transcript. When
+        // this harness and the app disagree about anything, the harness is
+        // testing code nobody runs.
+        let language = DictationLanguage.forCorrection(
+            transcript: lastTranscript, allowed: config.transcription.languages
+        )
+        print("language:    \(language)  (of \(config.transcription.languages.joined(separator: ", ")))")
+
         var code: Int32 = 0
         let done = DispatchSemaphore(value: 0)
         Task<Void, Never> {
             let started = Date()
             do {
                 let result = try await VoiceCommand.interpret(
-                    command: command, lastTranscript: lastTranscript, config: llmConfig
+                    command: command, lastTranscript: lastTranscript,
+                    language: language, config: llmConfig
                 )
                 print(String(format: "→ %@ in %.2fs", config.llm.model, Date().timeIntervalSince(started)))
                 describe(result)

@@ -37,6 +37,9 @@ actor Transcriber {
     /// Both gates exist to stop a live transcript rewriting itself in front of
     /// the user. We only ever hand over a finished clip, so neither buys us
     /// anything.
+    /// Exposed so the boosting evaluation transcribes exactly as the app does.
+    static var evaluationConfig: SlidingWindowAsrConfig { dictationConfig }
+
     private static let dictationConfig = SlidingWindowAsrConfig(
         chunkSeconds: 11.0,
         hypothesisChunkSeconds: 11.0,  // one pass: the clip is already finished

@@ -348,11 +348,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         beginProgress("Thinking…")
         let llmConfig = llmConfig()
         let context = settings.model.lastTranscript
+        // From the transcript, never the command: the command is short and its
+        // trigger word plus a run of loose capitals reads as English whatever
+        // was actually said.
+        let language = DictationLanguage.forCorrection(
+            transcript: context, allowed: config.transcription.languages
+        )
+        if config.transcription.languages.count > 1 {
+            Log.write("command: prompting in \(language)")
+        }
 
         Task { [weak self] in
             do {
                 let result = try await VoiceCommand.interpret(
-                    command: command, lastTranscript: context, config: llmConfig
+                    command: command, lastTranscript: context,
+                    language: language, config: llmConfig
                 )
                 await MainActor.run { self?.apply(result, command: command) }
             } catch {

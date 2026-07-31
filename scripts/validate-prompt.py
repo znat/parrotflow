@@ -12,52 +12,55 @@ Three numbers, because they answer different questions. "pipeline" is the
 model's span plus the regex spelling. "APP" adds interpret()'s snap-to-
 transcript repair, and is the only one that says what a user would see.
 
-Scoreboard (APP). English is tests/spelling-cases.yaml, 39 cases; French is
-tests/french-cases.yaml, 19 cases, where the dictated sentence is French:
+Scoreboard (APP). English is tests/spelling-cases.yaml, 44 cases; French is
+tests/french-cases.yaml, 30 cases, where the dictated sentence is French.
+Only the gemma v8/v13 rows below were re-measured after the sets grew and
+spelledOutWord learned the French spelling verbs and stop words; the rest are
+from the 39/25-case sets and are indicative, not comparable.
 
                         English  French  latency  size
-    gemma4:e4b   v8       97%     79%     1.5s    9.6GB  <- shipped
+    gemma4:e4b   v13       -      93%     1.5s    9.6GB  <- French prompt
+    gemma4:e4b   v8       98%      -      1.5s    9.6GB  <- shipped, English
     gemma4:e4b   v4       97%      -      1.4s
-    gemma4:e4b   v12      95%     84%     1.5s           see below
-    gemma4:e4b   v10      97%     74%     1.5s
     gemma4:e4b   v9       95%      -      1.5s    over-took spans
     granite4:3b  v8       92%     68%     0.3s    2.1GB  <- best small model
     granite4:3b  v4       90%      -      0.3s
-    granite4:3b  v12      87%     68%     0.3s
-    granite4:3b  v11      82%     68%     0.3s
     granite4:3b  v9       87%      -      0.3s
-    granite4:3b  v10       -      63%     0.3s
+    granite4:3b  v13       -      48%     0.3s    French prompt HURTS it
     qwen3.5:0.8b v5       62%      -      0.4s    1.0GB
-    (no model)            59%     58%       -     <- the control to beat
-    qwen3.5:2b   v12      56%     16%     0.8s    2.7GB
-    qwen3.5:2b   v11      51%     11%     0.8s
-    qwen3.5:2b   v8       49%     11%     0.7s
+    (no model)            59%     48%       -     <- the control to beat
+    qwen3.5:2b   v8       49%     12%     0.7s    2.7GB
     qwen3.5:0.8b v4       46%      -      0.5s
     qwen3.5:0.8b v7       36%      -      0.4s    correction-first, worse
     qwen3.5:0.8b v6        8%      -      0.4s    by word number: all NONE
     qwen3.5:0.8b v5        8%      -      5.3s    --think: 11x slower, worse
 
-Read this way. Only gemma clears the control on French; granite is ten points
-above it and qwen is far below, so on French dictation both small models are
-worse than deleting the model call. Every qwen result is below the control on
-both sets — the 2b's failure is a single stubborn one, returning the whole
-source sentence as the span, and neither the rule in v12 nor the example in
-v11 shifted it.
+Read this way. Only gemma clears the control on French by a margin worth
+paying for; qwen is far below it, so on French dictation qwen is worse than
+deleting the model call. The 2b's failure is a single stubborn one, returning
+the whole source sentence as the span, and no variant shifted it.
 
-v12 is the interesting near-miss: +1 French case, -1 English. Not shipped,
-because the English case it loses is a false positive on a negative ("The
-weather is nice today" => Tasneen) while v8's only loss is the Sam case
-below. A wrong rule written into the user's vocabulary costs more than a
-missed one, so the two are not worth trading.
+The per-language prompt is a gemma-only win, and the size of that asymmetry
+is the point: v13 takes gemma from 84% to 92% and granite from 68% down to
+48%, which is the control. A prompt written for the task in the user's
+language does not rescue a model that was already struggling with the task —
+it costs it the English scaffolding it was leaning on.
+
+Two fixes to spelledOutWord were worth more than any prompt on French. The
+trigger list learning "ça s'écrit" / "s'épelle" took it from 76% to 84%, and
+the stop list learning "pas / non / plutôt / mais" from 79% to 93% — the
+second only became necessary because of the first, since before it French
+missed the trigger entirely and fell through to a fallback that stopped on
+its own. Neither moved English, which stayed at 98%.
 
 Three cautions when reading these. Ollama is not bit-reproducible for every
 model — qwen moved by a case or two between identical runs, though gemma
-repeated 15/19 exactly three times, so check before trusting a small delta.
-"Sam => Sam" fails for every model by design: the app refuses to add a rule
-mapping a word to itself, so the set's expectation is what is wrong there.
-And the French set's last three cases use French trigger words instead of
-"spells"; they pass only because spelledOutWord's fallback catches a run of
-single letters, so they will start failing if recognition merges the tail.
+repeated a French score exactly three times, so check before trusting a small
+delta. "Sam => Sam" fails for every model by design: the app refuses to add a
+rule mapping a word to itself, so the set's expectation is what is wrong
+there. And v13's two remaining French losses are one under-trimmed three-word
+span and one false positive on a negative — the latter is the failure class
+worth watching, since it writes a wrong rule rather than missing one.
 """
 import argparse, json, sys, time, urllib.request, pathlib, re
 
@@ -691,9 +694,35 @@ def normalise(text):
     return text
 
 LETTERS = re.compile(r"\b(?:[A-Za-z0-9][\s\-.]+){2,}[A-Za-z0-9]\b")
-TRIGGER = re.compile(r"\b(?:spells?|spelled|spelling)\b", re.I)
-# "spelled S U P A B A S E not super base" — the spelling ends here.
-STOP_WORDS = {"not", "instead", "rather", "but", "no"}
+# "spells" in English, "ça s'écrit" / "s'épelle" in French. The French forms
+# have to be here rather than left to the single-letter fallback: the fallback
+# only matches a run of separated letters, and recognition stops separating
+# them partway through ("M A T H Ieu"), so the two together yielded "Math".
+TRIGGER = re.compile(
+    r"(?:\b(?:spells?|spelled|spelling)\b"
+    r"|s['’]\s*(?:é|e)(?:crit|pelle)"
+    r"|\b(?:é|e)(?:crit|pelle)\b)", re.I)
+# "spelled S U P A B A S E not super base" — the spelling ends here, in either
+# language. Never applied to the first token: recognition merges letters into
+# syllables, so "Pascal s'écrit Pas cal" opens with something that looks like a
+# stop word, and breaking there would return no spelling at all.
+STOP_WORDS = {"not", "instead", "rather", "but", "no",
+              "pas", "non", "plutôt", "plutot", "mais"}
+
+def alnum_tokens(text):
+    """Runs of Unicode alphanumerics, matching Swift's
+    CharacterSet.alphanumerics.inverted. An ASCII-only split turned "plutôt"
+    into "plut", which is how a stop word goes missing on accented input."""
+    out, cur = [], []
+    for ch in text:
+        if ch.isalnum():
+            cur.append(ch)
+        elif cur:
+            out.append("".join(cur))
+            cur = []
+    if cur:
+        out.append("".join(cur))
+    return out
 
 def spelled_out(correction):
     """The spelling, taken from the text rather than the model — this is what
@@ -707,10 +736,8 @@ def spelled_out(correction):
     trigger = TRIGGER.search(correction)
     if trigger:
         letters = ""
-        for token in re.split(r"[^A-Za-z0-9]+", correction[trigger.end():]):
-            if not token:
-                continue
-            if token.lower() in STOP_WORDS:
+        for token in alnum_tokens(correction[trigger.end():]):
+            if letters and token.lower() in STOP_WORDS:
                 break
             letters += token
         if len(letters) >= 2:

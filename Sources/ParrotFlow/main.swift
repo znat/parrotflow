@@ -25,6 +25,21 @@ if let index = arguments.firstIndex(of: "--transcribe") {
     exit(TranscribeCommand.run(path: arguments[index + 1]))
 }
 
+if arguments.contains("--boost-eval") {
+    guard #available(macOS 14, *) else { exit(1) }
+    let limit = arguments.firstIndex(of: "--limit")
+        .flatMap { arguments.indices.contains($0 + 1) ? Int(arguments[$0 + 1]) : nil } ?? 60
+    exit(BoostEvalCommand.run(
+        sharedEncoder: arguments.contains("--shared-encoder"), limit: limit
+    ))
+}
+
+if let index = arguments.firstIndex(of: "--normalize") {
+    let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
+        ? arguments[index + 1] : nil
+    exit(NormalizeCommand.run(text: text))
+}
+
 if let index = arguments.firstIndex(of: "--command") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --command \"hey parrot, Tasmin spells T A S M E E N\"")
