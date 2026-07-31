@@ -408,24 +408,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if fixed > 0 {
                 Log.write("rewrote \(fixed) occurrence(s) in the focused field")
                 outcome = .written
-            } else if config.transcription.rewriteLine,
-                      let onScreen = SelectionReader.visibleText(of: element),
-                      let inserted = lastInsertedText,
-                      let corrected = rewritten(
-                          onScreen: onScreen, inserted: inserted, rules: rules
-                      ) {
-                // The accessibility API would not write, so clear the line with
-                // readline keys and retype the corrected transcript.
+            } else if config.transcription.rewriteLine {
+                // The accessibility API would not write. Clear the line and
+                // rebuild it from what the kill removed — the terminal tells
+                // us what was there rather than us having to guess.
                 Log.write("rewrite: retyping the line via keystrokes")
-                let source = inserted.trimmingCharacters(in: .whitespacesAndNewlines)
-                if SelectionReader.rewriteCurrentLine(
-                    replacing: source, with: corrected, in: element
-                ) {
-                    lastInsertedText = corrected
+                if SelectionReader.rewriteCurrentLine(applying: rules, in: element) {
                     outcome = .written
                 } else {
                     NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(corrected, forType: .string)
+                    NSPasteboard.general.setString(rules[0].corrected, forType: .string)
                     outcome = .clipboardOnly
                 }
             } else {

@@ -147,10 +147,26 @@ enum SelectionReader {
     /// still there the kill did not land, and nothing is typed — Ctrl-A alone
     /// only moved the caret, so bailing costs nothing. Pasting at that point
     /// is what appends "…Versalailles.Tasmeen" to the end of a line.
+    /// Clears the input line, works out what was in it from what disappeared,
+    /// and types back a corrected version.
+    ///
+    /// The last resort for surfaces the accessibility API cannot write —
+    /// terminals, whose AX value is a read-only view of the screen. Keystrokes
+    /// work there because accepting keystrokes is what a terminal is.
+    ///
+    /// Identifying "the current line" inside a screen-shaped value is not
+    /// reliable: a wrapped line arrives split across newlines, and the text may
+    /// have been edited since we dictated it. So the line is not identified in
+    /// advance at all — it is killed, and the difference between the screen
+    /// before and after says exactly what was there. That text is authoritative
+    /// because the terminal just gave it to us.
+    ///
+    /// If nothing was killed, nothing is typed. If something was, it is always
+    /// typed back — corrected when a rule applies, verbatim when none does —
+    /// so the line is never left emptied.
     @discardableResult
     static func rewriteCurrentLine(
-        replacing original: String,
-        with replacement: String,
+        applying rules: [(heard: String, corrected: String)],
         in element: AXUIElement
     ) -> Bool {
         let before = visibleText(of: element) ?? ""
@@ -160,28 +176,55 @@ enum SelectionReader {
         postControlKey(0x28)   // Ctrl-K, kill to end of line
         Thread.sleep(forTimeInterval: 0.12)
 
-        let afterKill = visibleText(of: element) ?? ""
-        guard !afterKill.contains(original) else {
-            Log.write("rewrite: the line did not clear; typing nothing")
+        let after = visibleText(of: element) ?? ""
+        guard let killed = removedSegment(before: before, after: after),
+              !killed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            Log.write("rewrite: nothing was killed; the line is unchanged")
             return false
         }
 
-        // Sanity on the size of the cut. Removing far more than the line means
-        // Ctrl-K did something other than what we assumed, and typing our text
-        // back would not restore whatever else went with it.
-        let removed = before.count - afterKill.count
-        guard removed >= 0, removed <= original.count + 40 else {
-            Log.write("rewrite: the kill removed \(removed) chars for a \(original.count) char line; typing nothing")
-            return false
+        var corrected = killed
+        for rule in rules {
+            guard let pattern = try? NSRegularExpression(
+                pattern: "\\b\(NSRegularExpression.escapedPattern(for: rule.heard))\\b",
+                options: [.caseInsensitive]
+            ) else { continue }
+            corrected = pattern.stringByReplacingMatches(
+                in: corrected,
+                range: NSRange(corrected.startIndex..., in: corrected),
+                withTemplate: NSRegularExpression.escapedTemplate(for: rule.corrected)
+            )
         }
 
-        TextInserter.insert(replacement, mode: .paste)
-        Thread.sleep(forTimeInterval: 0.2)
+        // Always type it back, even unchanged — the line is gone either way and
+        // leaving it empty would be worse than not having tried.
+        TextInserter.insert(corrected, mode: .paste)
+        Thread.sleep(forTimeInterval: 0.15)
 
-        let final = visibleText(of: element) ?? ""
-        if final.contains(replacement) { return true }
-        Log.write("rewrite: retyped text did not appear")
-        return false
+        if corrected == killed {
+            Log.write("rewrite: killed line had nothing to correct; restored verbatim")
+            return false
+        }
+        Log.write("rewrite: retyped \(killed.count) chars with \(rules.count) rule(s) applied")
+        return true
+    }
+
+    /// The text present in `before` but not `after`, found by trimming the
+    /// common prefix and suffix. A line kill removes one contiguous run, so
+    /// what is left in the middle is exactly what went.
+    static func removedSegment(before: String, after: String) -> String? {
+        guard before.count > after.count else { return nil }
+        let b = Array(before), a = Array(after)
+
+        var head = 0
+        while head < a.count, b[head] == a[head] { head += 1 }
+
+        var tail = 0
+        while tail < a.count - head, b[b.count - 1 - tail] == a[a.count - 1 - tail] { tail += 1 }
+
+        let start = head, end = b.count - tail
+        guard start < end else { return nil }
+        return String(b[start..<end])
     }
 
     private static func postControlKey(_ key: CGKeyCode) {
