@@ -409,7 +409,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write("rewrote \(fixed) occurrence(s) in the focused field")
                 outcome = .written
             } else if config.transcription.rewriteLine,
-                      let element = focus.element,
                       let onScreen = SelectionReader.visibleText(of: element),
                       let inserted = lastInsertedText,
                       let corrected = rewritten(
@@ -430,6 +429,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     outcome = .clipboardOnly
                 }
             } else {
+                if !config.transcription.rewriteLine {
+                    Log.write("rewrite: rewrite_line is off; not retyping")
+                } else if lastInsertedText == nil {
+                    Log.write("rewrite: no dictated text recorded to rebuild from")
+                }
                 Log.write("field would not accept the rewrite; correction is on the clipboard")
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(rules[0].corrected, forType: .string)
