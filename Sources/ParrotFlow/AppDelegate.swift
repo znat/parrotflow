@@ -422,9 +422,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // The accessibility API would not write, so clear the line with
                 // readline keys and retype the corrected transcript.
                 Log.write("rewrite: retyping the line via keystrokes")
-                SelectionReader.rewriteCurrentLine(with: corrected)
-                lastInsertedText = corrected
-                outcome = .written
+                let source = inserted.trimmingCharacters(in: .whitespacesAndNewlines)
+                if SelectionReader.rewriteCurrentLine(
+                    replacing: source, with: corrected, in: element
+                ) {
+                    lastInsertedText = corrected
+                    outcome = .written
+                } else {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(corrected, forType: .string)
+                    outcome = .clipboardOnly
+                }
             } else {
                 Log.write("field would not accept the rewrite; correction is on the clipboard")
                 NSPasteboard.general.clearContents()

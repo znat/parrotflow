@@ -132,7 +132,7 @@ enum SelectionReader {
     }
 
     /// Clears the current input line with readline keys and types a corrected
-    /// version of it.
+    /// version, checking between the two that the clear actually happened.
     ///
     /// The last resort for surfaces the accessibility API cannot write —
     /// terminals, mostly, whose AX value is a read-only view of the screen.
@@ -140,17 +140,48 @@ enum SelectionReader {
     /// is for.
     ///
     /// Ctrl-A then Ctrl-K is the readline idiom for "clear this line", and it
-    /// handles a wrapped line correctly because it works on the logical line
-    /// rather than the visual one. It is destructive by nature, which is why
-    /// the caller must first confirm the line is one we wrote.
+    /// works on the logical line, so a wrapped one is handled correctly.
+    ///
+    /// The keystrokes are blind, but their effect is not: reading the field
+    /// back after the kill turns this from a hope into a check. If the text is
+    /// still there the kill did not land, and nothing is typed — Ctrl-A alone
+    /// only moved the caret, so bailing costs nothing. Pasting at that point
+    /// is what appends "…Versalailles.Tasmeen" to the end of a line.
     @discardableResult
-    static func rewriteCurrentLine(with replacement: String) -> Bool {
+    static func rewriteCurrentLine(
+        replacing original: String,
+        with replacement: String,
+        in element: AXUIElement
+    ) -> Bool {
+        let before = visibleText(of: element) ?? ""
+
         postControlKey(0x00)   // Ctrl-A, start of line
-        Thread.sleep(forTimeInterval: 0.05)
+        Thread.sleep(forTimeInterval: 0.06)
         postControlKey(0x28)   // Ctrl-K, kill to end of line
-        Thread.sleep(forTimeInterval: 0.05)
+        Thread.sleep(forTimeInterval: 0.12)
+
+        let afterKill = visibleText(of: element) ?? ""
+        guard !afterKill.contains(original) else {
+            Log.write("rewrite: the line did not clear; typing nothing")
+            return false
+        }
+
+        // Sanity on the size of the cut. Removing far more than the line means
+        // Ctrl-K did something other than what we assumed, and typing our text
+        // back would not restore whatever else went with it.
+        let removed = before.count - afterKill.count
+        guard removed >= 0, removed <= original.count + 40 else {
+            Log.write("rewrite: the kill removed \(removed) chars for a \(original.count) char line; typing nothing")
+            return false
+        }
+
         TextInserter.insert(replacement, mode: .paste)
-        return true
+        Thread.sleep(forTimeInterval: 0.2)
+
+        let final = visibleText(of: element) ?? ""
+        if final.contains(replacement) { return true }
+        Log.write("rewrite: retyped text did not appear")
+        return false
     }
 
     private static func postControlKey(_ key: CGKeyCode) {
