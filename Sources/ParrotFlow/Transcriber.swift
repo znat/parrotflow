@@ -2,21 +2,16 @@ import AVFoundation
 import FluidAudio
 import Foundation
 
-/// Parakeet TDT transcription with custom-vocabulary boosting.
+/// Parakeet TDT v3 transcription. Models are downloaded on first use.
 ///
-/// Two model sets are involved, and both are downloaded on first use:
-///
-/// - **Parakeet TDT v3** does the transcribing.
-/// - **CTC 110M** backs the keyword spotter. It's only pulled when the config
-///   actually lists vocabulary terms, because without terms it does nothing.
-///
-/// The vocabulary path runs through `SlidingWindowAsrManager`. That is not a
-/// preference — as of FluidAudio 0.15.5 it is the only manager that exposes
-/// `configureVocabularyBoosting`. The batch `AsrManager.transcribe(_:customVocabulary:)`
-/// shown in FluidAudio's own documentation does not exist in any released
-/// version. Worth re-checking on upgrade.
-///
-/// See `tokenize(_:using:)` for the non-obvious step that makes any of it work.
+/// Acoustic vocabulary boosting was tried and removed. Measured against the
+/// recordings on disk it altered 48 of 50 transcripts that contained none of
+/// its terms — "Hey there, my name is Nathan." became "Matthieu my name is
+/// Nathan." — on the streaming path, on the batch path FluidAudio's own
+/// benchmark uses, and with the similarity threshold swept to 0.90. It is
+/// built for long-form audio with hundreds of domain terms, where 15% WER is
+/// an acceptable price; a four-word list against ordinary speech is the
+/// opposite case. `transcription.replacements` does the job instead.
 @available(macOS 14, *)
 actor Transcriber {
 
@@ -28,18 +23,13 @@ actor Transcriber {
         case failed(String)
     }
 
-    /// The stock `.default` config is built for long-form streaming and gates
-    /// vocabulary rescoring behind `minContextForConfirmation: 10s` plus a 0.85
-    /// confidence floor. Dictation clips are usually shorter than that, so with
-    /// the defaults the spotter never runs at all and vocabulary silently does
-    /// nothing — measured: a 6.3 s clip got zero boosting until these dropped.
+    /// The stock `.default` config is built for long-form streaming, and holds
+    /// text as provisional until `minContextForConfirmation: 10s` has passed
+    /// and confidence clears 0.85. Both gates exist to stop a live transcript
+    /// rewriting itself in front of the reader.
     ///
-    /// Both gates exist to stop a live transcript rewriting itself in front of
-    /// the user. We only ever hand over a finished clip, so neither buys us
-    /// anything.
-    /// Exposed so the boosting evaluation transcribes exactly as the app does.
-    static var evaluationConfig: SlidingWindowAsrConfig { dictationConfig }
-
+    /// Dictation clips are mostly shorter than 10s, and we only ever hand over
+    /// a finished recording, so neither buys anything here.
     private static let dictationConfig = SlidingWindowAsrConfig(
         chunkSeconds: 11.0,
         hypothesisChunkSeconds: 11.0,  // one pass: the clip is already finished
@@ -56,12 +46,9 @@ actor Transcriber {
     // stream for good — startStreaming() cannot re-arm it. A reused manager
     // therefore reads from a dead stream, processes no audio, and returns
     // whatever text was left over from the previous clip. Measured: the second
-    // and every later dictation came back as just the boosted vocabulary term.
+    // and every later dictation returned text left over from the previous one.
     private var vad: VadManager?
     private var models: AsrModels?
-    private var ctcModels: CtcModels?
-    private var vocabularyTerms: [CustomVocabularyTerm] = []
-    private var loadedVocabulary: [Config.VocabularyTerm] = []
 
     /// Reported on the main queue so the menu bar can show download progress.
     nonisolated let onStatusChange: @Sendable (Status) -> Void
@@ -80,11 +67,6 @@ actor Transcriber {
     /// Downloads and loads models if needed. Safe to call repeatedly; it only
     /// redoes work when the vocabulary has actually changed.
     func prepare(config: Config) async throws {
-        let vocabulary = config.transcription.vocabulary
-        if models != nil, vocabulary == loadedVocabulary {
-            return
-        }
-
         if models == nil {
             setStatus(.downloading("speech model"))
             models = try await AsrModels.downloadAndLoad(
@@ -95,28 +77,12 @@ actor Transcriber {
             )
         }
 
-        if vocabulary.isEmpty {
-            ctcModels = nil
-            vocabularyTerms = []
-        } else {
-            if ctcModels == nil {
-                setStatus(.downloading("keyword spotter"))
-                ctcModels = try await CtcModels.downloadAndLoad()
-            }
-            setStatus(.loading)
-            let tokenizer = try await CtcTokenizer.load(
-                from: CtcModels.defaultCacheDirectory(for: .ctc110m)
-            )
-            vocabularyTerms = Self.tokenize(vocabulary, using: tokenizer)
-        }
-
         if config.audio.speechGate, vad == nil {
             setStatus(.downloading("voice detector"))
             vad = try? await VadManager(config: .default)
             if vad == nil { Log.write("speech gate: VAD unavailable; transcribing everything") }
         }
 
-        loadedVocabulary = vocabulary
         setStatus(.ready)
     }
 
@@ -126,13 +92,6 @@ actor Transcriber {
 
         let manager = SlidingWindowAsrManager(config: Self.dictationConfig)
         try await manager.loadModels(models)
-
-        if !vocabularyTerms.isEmpty, let ctcModels {
-            try await manager.configureVocabularyBoosting(
-                vocabulary: CustomVocabularyContext(terms: vocabularyTerms),
-                ctcModels: ctcModels
-            )
-        }
         return manager
     }
 
@@ -147,29 +106,6 @@ actor Transcriber {
         setStatus(.downloading("\(label) \(percent)%"))
     }
 
-
-    /// Turns config terms into spotter-ready terms.
-    ///
-    /// The tokenization is not optional. `CtcKeywordSpotter` does
-    /// `term.ctcTokenIds ?? term.tokenIds` and `continue`s when both are nil —
-    /// so a term built as `CustomVocabularyTerm(text:)`, which is exactly what
-    /// FluidAudio's documentation shows, is silently skipped and the spotter
-    /// reports zero detections with no warning. Only the file-loading factory
-    /// `loadWithCtcTokens(from:)` tokenizes, and we take terms from YAML.
-    static func tokenize(
-        _ vocabulary: [Config.VocabularyTerm],
-        using tokenizer: CtcTokenizer
-    ) -> [CustomVocabularyTerm] {
-        vocabulary.compactMap { term in
-            let ids = tokenizer.encode(term.text)
-            guard !ids.isEmpty else { return nil }
-            return CustomVocabularyTerm(
-                text: term.text,
-                aliases: term.aliases.isEmpty ? nil : term.aliases,
-                ctcTokenIds: ids
-            )
-        }
-    }
 
     // MARK: - Transcription
 

@@ -25,19 +25,6 @@ if let index = arguments.firstIndex(of: "--transcribe") {
     exit(TranscribeCommand.run(path: arguments[index + 1]))
 }
 
-if arguments.contains("--boost-eval") {
-    guard #available(macOS 14, *) else { exit(1) }
-    let limit = arguments.firstIndex(of: "--limit")
-        .flatMap { arguments.indices.contains($0 + 1) ? Int(arguments[$0 + 1]) : nil } ?? 60
-    let similarity = arguments.firstIndex(of: "--min-similarity")
-        .flatMap { arguments.indices.contains($0 + 1) ? Float(arguments[$0 + 1]) : nil }
-    exit(BoostEvalCommand.run(
-        sharedEncoder: arguments.contains("--shared-encoder"),
-        limit: limit,
-        minSimilarity: similarity
-    ))
-}
-
 if let index = arguments.firstIndex(of: "--normalize") {
     let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
         ? arguments[index + 1] : nil
@@ -60,15 +47,6 @@ if let index = arguments.firstIndex(of: "--learn") {
         exit(2)
     }
     exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2]))
-}
-
-if let index = arguments.firstIndex(of: "--spot") {
-    guard #available(macOS 14, *), arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --spot <file.wav> [minScore]")
-        exit(2)
-    }
-    let score = arguments.indices.contains(index + 2) ? Float(arguments[index + 2]) : nil
-    exit(SpotCommand.run(path: arguments[index + 1], minScore: score))
 }
 
 if let index = arguments.firstIndex(of: "--watch-modifiers") {

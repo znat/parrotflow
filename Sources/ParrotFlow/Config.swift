@@ -81,13 +81,11 @@ struct Config: Codable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, vocabulary, replacements, languages
+            case enabled, replacements, languages
             case insertMode = "insert_mode"
             case correctionPhrase = "correction_phrase"
             case rewriteLine = "rewrite_line"
         }
-        /// Words the model would otherwise never produce — see `VocabularyTerm`.
-        var vocabulary: [VocabularyTerm] = []
         /// Applied after transcription, last. A blunt instrument: use it only
         /// for terms that can't collide with something you might really say.
         var replacements: [String: String] = [:]
@@ -120,59 +118,9 @@ struct Config: Codable, Equatable {
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
             }
-            if let vocabulary = try c.decodeIfPresent([VocabularyTerm].self, forKey: .vocabulary) {
-                self.vocabulary = vocabulary
-            }
             if let replacements = try c.decodeIfPresent([String: String].self, forKey: .replacements) {
                 self.replacements = replacements
             }
-        }
-    }
-
-    /// A term to bias recognition toward.
-    ///
-    /// `aliases` are what the *spotter* listens for and `text` is what gets
-    /// written, which is the whole trick for a name whose spelling doesn't
-    /// match its sound: list the phonetic renderings an ASR would actually
-    /// produce, and get back the spelling you want.
-    ///
-    /// Accepts either form in YAML:
-    ///
-    ///     vocabulary:
-    ///       - Parakeet
-    ///       - text: Zylbersztejn
-    ///         aliases: [Zilbershtayn, Silbershtein]
-    struct VocabularyTerm: Codable, Equatable {
-        var text: String
-        var aliases: [String] = []
-
-        // Not synthesized: this type defines both init(from:) and encode(to:).
-        enum CodingKeys: String, CodingKey {
-            case text, aliases
-        }
-
-        init(text: String, aliases: [String] = []) {
-            self.text = text
-            self.aliases = aliases
-        }
-
-        init(from decoder: Decoder) throws {
-            // Bare string form.
-            if let single = try? decoder.singleValueContainer(),
-               let text = try? single.decode(String.self) {
-                self.init(text: text)
-                return
-            }
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            let text = try c.decode(String.self, forKey: .text)
-            let aliases = try c.decodeIfPresent([String].self, forKey: .aliases) ?? []
-            self.init(text: text, aliases: aliases)
-        }
-
-        func encode(to encoder: Encoder) throws {
-            var c = encoder.container(keyedBy: CodingKeys.self)
-            try c.encode(text, forKey: .text)
-            if !aliases.isEmpty { try c.encode(aliases, forKey: .aliases) }
         }
     }
 
@@ -378,12 +326,7 @@ enum ConfigStore {
       # opens to teach ParrotFlow the right spelling. Needs Accessibility.
       correction_phrase: hey parrot
 
-      # Acoustic context biasing. Off by default: it fires on audio that
-      # contains nothing like the term and deletes the words it lands on.
-      # See docs/transcription.md before enabling, and verify with --spot.
-      vocabulary: []
-
-      # Last-resort literal swaps, applied after boosting. Word-boundary
+      # Literal swaps applied to the finished transcript. Word-boundary
       # matched and case-insensitive.
       replacements: {}
 

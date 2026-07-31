@@ -26,18 +26,6 @@ enum TranscribeCommand {
             return 1
         }
 
-        let terms = config.transcription.vocabulary
-        if terms.isEmpty {
-            print("vocabulary: none configured")
-        } else {
-            print("vocabulary: \(terms.count) terms")
-            for term in terms {
-                let aliases = term.aliases.isEmpty ? "" : "  ← \(term.aliases.joined(separator: ", "))"
-                print("  \(term.text)\(aliases)")
-            }
-        }
-        print("")
-
         var exitCode: Int32 = 0
         let done = DispatchSemaphore(value: 0)
 
@@ -71,17 +59,6 @@ enum TranscribeCommand {
                 print(String(format: "transcribe  %.2fs  (%.1fs audio → %.0fx realtime)",
                              elapsed, duration, duration / max(elapsed, 0.001)))
 
-                // Did the vocabulary actually land?
-                // A boosted term is usually rewritten by `replacements` before
-                // it reaches us, so check the canonical form too.
-                let hits = terms.filter { term in
-                    let canonical = config.transcription.replacements[term.text] ?? term.text
-                    return text.localizedCaseInsensitiveContains(term.text)
-                        || text.localizedCaseInsensitiveContains(canonical)
-                }
-                if !terms.isEmpty {
-                    print("vocabulary hits: \(hits.isEmpty ? "none" : hits.map(\.text).joined(separator: ", "))")
-                }
             } catch {
                 print("\r\u{1B}[K✗ \(error.localizedDescription)")
                 exitCode = 1

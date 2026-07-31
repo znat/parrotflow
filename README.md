@@ -19,8 +19,8 @@ cleanup layer on top of it come next.
 - Config reloads on save; no restart to try a different key
 - Voice-activity gate, so a stray hotkey press doesn't decode room tone into
   "Yeah." or "Thank you for watching"
-- Parakeet transcription with custom-vocabulary boosting, so rare names come
-  out spelled the way you spell them
+- Parakeet transcription, with a replacements map so rare names come out
+  spelled the way you spell them
 
 ## Build & run
 

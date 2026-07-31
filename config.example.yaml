@@ -23,28 +23,8 @@ transcription:
   # One entry means no detection runs at all. Supported: en, fr.
   languages: [en, fr]
 
-  # ACOUSTIC CONTEXT BIASING — OFF BY DEFAULT, AND IT SHOULD STAY OFF UNLESS
-  # YOU HAVE MEASURED IT ON YOUR OWN VOICE.
-  #
-  # It fires on audio that contains nothing like the term, and when it fires it
-  # deletes the words it lands on. Measured: with "Zilbershtayn" enabled,
-  # "Good morning, my name is Nathan." became "Zylbersztejn is Nathan."
-  # and a clip of plain "Good morning." became "Zylbersztejn".
-  #
-  # It is not tunable around. The false positive scored -8.98 while genuine
-  # detections scored -10.0 to -10.6, so no score threshold separates them, and
-  # raising the similarity guard to 0.85 did not block it either.
-  #
-  # If you want to try: add ONE long distinctive term, spelled the way it
-  # SOUNDS, then check it against real clips with
-  #   ParrotFlow --spot <clip.wav>
-  # and re-run --transcribe on clips that do NOT contain the word, to see what
-  # it wrecks.
-  vocabulary: []
-
-  # This is what actually fixes names. Literal, word-boundary, case-insensitive
-  # swaps applied to the finished transcript. Predictable, and it cannot eat
-  # words that were correct.
+  # How names get fixed: literal, word-boundary, case-insensitive swaps on
+  # the finished transcript.
   #
   # Workflow: dictate, run --transcribe on the clip, map whatever the model
   # wrote to what you meant.

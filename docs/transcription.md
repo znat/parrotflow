@@ -18,101 +18,33 @@ takes text prompts.
 So "transcribe this as bullet points" or "the speaker is French" cannot be
 passed to the model. Two things cover what you'd actually want from a prompt:
 
-### 1. Custom vocabulary — for names and jargon
+### 1. A replacements map — for names and jargon
 
-This is the real answer to "get proper nouns right", and it's better than the
-string substitution originally sketched out.
+Rare names are fixed by literal, word-boundary, case-insensitive substitution
+on the finished transcript, taught through the correction panel.
 
-FluidAudio ships
-[context biasing](https://github.com/FluidInference/FluidAudio/blob/main/Documentation/ASR/CustomVocabulary.md):
-a CTC keyword spotter scores your terms against the frame-level acoustic
-evidence, then a rescorer decides whether the acoustic support for your term
-beats what the decoder emitted. If you say "NVIDIA" and the model writes "in
-video", the spotter finds *NVIDIA* in the audio itself and swaps it.
+FluidAudio's acoustic context biasing was tried and removed. It is real and
+their Earnings22 numbers are real — 91.7% vocabulary F-score — but it is built
+for hour-long audio with hundreds of domain terms, where 15% WER is an
+acceptable price for recovering jargon. A handful of terms against ordinary
+speech is the opposite case, and there are vastly more non-matching words than
+matching ones for it to fire on.
 
-That's the important distinction from post-hoc substitution: a find-and-replace
-on "in video" → "NVIDIA" corrupts a genuine sentence about video. Biasing looks
-at the acoustics and only fires when the audio actually supports the term.
+Measured against the recordings on disk, boosting altered **48 of 50**
+transcripts containing none of its terms:
 
-> **It works, but only after a step neither doc mentions.** Three things had to
-> be found by reading the source before a single term ever matched. Verified
-> against FluidAudio 0.15.5 on 2026-07-30.
+    "Hey there, my name is Nathan."   ->  "Matthieu my name is Nathan."
+    "Something more something more graphic."  ->  "Supabase Tasmeen Matthieu"
 
-### 1. Terms must be pre-tokenized, or they are silently ignored
+Tried on the streaming path, on the batch path their own benchmark uses, with
+a shared CTC/TDT encoder, and with the similarity threshold swept to 0.90 —
+well past the 0.70 their comments call too conservative. Damage throughout.
+Worth knowing that `rescorerConfig(forVocabSize:)` gives *small* vocabularies
+the most permissive threshold, which is backwards for this use.
 
-This is the one that matters. `CtcKeywordSpotter` does:
-
-```swift
-let ids = term.ctcTokenIds ?? term.tokenIds
-guard let ids, !ids.isEmpty else { continue }   // skipped, no warning
-```
-
-`CustomVocabularyTerm(text: "Zilbershtayn")` — exactly what both the GitHub docs
-and docs.fluidinference.com show — leaves `ctcTokenIds` **nil**. So every term
-is skipped, the spotter returns zero detections, and nothing anywhere says why.
-Tokenization only happens inside `loadWithCtcTokens(from:)`, which reads a
-vocabulary *file*; there is no equivalent for terms you build in code.
-
-The fix is to tokenize them yourself (`Transcriber.tokenize`):
-
-```swift
-let tokenizer = try await CtcTokenizer.load(
-    from: CtcModels.defaultCacheDirectory(for: .ctc110m))
-CustomVocabularyTerm(text: term.text, ctcTokenIds: tokenizer.encode(term.text))
-```
-
-Before: `detections: 0` at every threshold, down to `minScore: -500`.
-After: all three test terms found, scores −10.0 to −10.6 against a −15 floor.
-Tuning thresholds first was wasted effort — the gate was never the problem.
-
-### 2. Aliases are not spotter targets
-
-`CustomVocabularyContext.swift:291` tokenizes only `term.text`. Aliases appear
-solely in `VocabularyRescorer+Utilities`, widening a string-similarity check
-*after* a candidate is found. So "put the phonetic spelling in `aliases` and get
-the canonical spelling out" does not work.
-
-Spell `text` the way the word **sounds**, and map it to the spelling you want
-with `replacements`. For a Polish surname that means `Zilbershtayn` in the
-vocabulary and `Zilbershtayn: Zylbersztejn` in replacements.
-
-### 3. Short clips never reach the rescorer
-
-`SlidingWindowAsrConfig.default` gates rescoring behind
-`minContextForConfirmation: 10s` and a 0.85 confidence floor. Dictation clips
-are mostly shorter, so the rescorer never ran. `Transcriber.dictationConfig`
-drops both. Both gates exist to stop a live transcript rewriting itself
-on-screen; we only ever submit a finished clip.
-
-### Then it turned out to be unusable anyway
-
-Getting the spotter to fire was the easy half. It fires on audio containing
-nothing like the term, and when it fires it *deletes* the words underneath.
-Measured on real dictation:
-
-| Said | With boosting | Boosting off |
-| --- | --- | --- |
-| "Good morning, my name is Nathan." | "Zylbersztejn is Nathan." | ✓ correct |
-| "Good morning." | "Zylbersztejn" | ✓ correct |
-| "Hey there, good morning." | "Zylbersztejn good morning." | ✓ correct |
-
-The name was never spoken in any of those clips. Every hit was a false
-positive, and each one destroyed a transcript that was already right.
-
-**It is not tunable around.** The false positive scored **−8.98**; genuine
-detections in the TTS test scored **−10.0 to −10.6**. The false match scores
-*better* than the real ones, so no `minScore` separates them. Raising the
-rescorer's similarity guard to 0.85 did not block it either. Detection spans
-are also far too loose — a term claimed 0.08s–5.86s of a 6.25s clip.
-
-So `vocabulary` now ships empty, and `replacements` carries the feature:
-literal, word-boundary, case-insensitive swaps on the finished transcript.
-Unglamorous, but it cannot delete words that were already correct, which is
-the failure mode that actually matters in a dictation tool.
-
-`--spot <clip.wav>` prints raw detections with scores and spans. Anyone
-enabling `vocabulary` should run it against clips that do **not** contain the
-term, to see what it wrecks, not just clips that do.
+Substitution cannot generalise to a mishearing you have not seen, so the map
+grows one entry at a time. It also cannot corrupt a transcript that was
+already right, which turned out to matter more.
 
 ### 2. A local LLM pass — for everything else
 
