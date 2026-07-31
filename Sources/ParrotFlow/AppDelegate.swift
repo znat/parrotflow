@@ -398,12 +398,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Learned by voice: nothing was selected, but the misspelling is
             // still sitting in the field where it was dictated. Fix it there.
             //
+            // Try the word as learned, then whatever in the field resembles
+            // the correct spelling — two hearings of a name rarely match.
             var fixed = 0
-            for rule in rules
-            where SelectionReader.replaceLastOccurrence(
-                of: rule.heard, with: rule.corrected, in: element
-            ) {
-                fixed += 1
+            for rule in rules {
+                if SelectionReader.replaceLastOccurrence(
+                    of: rule.heard, with: rule.corrected, in: element
+                ) {
+                    fixed += 1
+                    continue
+                }
+                if let text = SelectionReader.visibleText(of: element),
+                   let nearest = VoiceCommand.closestWord(to: rule.corrected, in: text),
+                   nearest.lowercased() != rule.corrected.lowercased(),
+                   SelectionReader.replaceLastOccurrence(
+                       of: nearest, with: rule.corrected, in: element
+                   ) {
+                    fixed += 1
+                }
             }
             if fixed > 0 {
                 Log.write("rewrote \(fixed) occurrence(s) in the focused field")

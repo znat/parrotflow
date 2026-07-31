@@ -180,6 +180,50 @@ enum SelectionReader {
     /// So the safety net is readline's own: Ctrl-K pushes to the kill ring and
     /// Ctrl-Y yanks it back. Any uncertainty ends in Ctrl-Y, which puts the
     /// line back whatever the accessibility API believes.
+    /// Applies rules to a line, falling back to the closest match.
+    ///
+    /// The word on screen and the word in the rule are two hearings of the
+    /// same name and often differ: a field reading "I love versall" against a
+    /// rule for "Versailles" matched nothing, so the correction silently did
+    /// not happen. The target spelling is known and correct, so the word to
+    /// replace is whatever in the line most resembles it.
+    static func applying(
+        _ rules: [(heard: String, corrected: String)],
+        to line: String
+    ) -> String {
+        var output = line
+        for rule in rules {
+            if let pattern = try? NSRegularExpression(
+                pattern: "\\b\(NSRegularExpression.escapedPattern(for: rule.heard))\\b",
+                options: [.caseInsensitive]
+            ), pattern.firstMatch(in: output, range: NSRange(output.startIndex..., in: output)) != nil {
+                output = pattern.stringByReplacingMatches(
+                    in: output,
+                    range: NSRange(output.startIndex..., in: output),
+                    withTemplate: NSRegularExpression.escapedTemplate(for: rule.corrected)
+                )
+                continue
+            }
+
+            // Not there verbatim — find what the correct spelling resembles.
+            guard let nearest = VoiceCommand.closestWord(to: rule.corrected, in: output),
+                  nearest.lowercased() != rule.corrected.lowercased(),
+                  let pattern = try? NSRegularExpression(
+                      pattern: "\\b\(NSRegularExpression.escapedPattern(for: nearest))\\b",
+                      options: [.caseInsensitive]
+                  )
+            else { continue }
+
+            Log.write("rewrite: \"\(rule.heard)\" not present; closest is \"\(nearest)\"")
+            output = pattern.stringByReplacingMatches(
+                in: output,
+                range: NSRange(output.startIndex..., in: output),
+                withTemplate: NSRegularExpression.escapedTemplate(for: rule.corrected)
+            )
+        }
+        return output
+    }
+
     /// Retypes the input line corrected, when the field's value is readable
     /// and is the line itself rather than a screenful of terminal.
     ///
@@ -208,18 +252,7 @@ enum SelectionReader {
             return false
         }
 
-        var corrected = value
-        for rule in rules {
-            guard let pattern = try? NSRegularExpression(
-                pattern: "\\b\(NSRegularExpression.escapedPattern(for: rule.heard))\\b",
-                options: [.caseInsensitive]
-            ) else { continue }
-            corrected = pattern.stringByReplacingMatches(
-                in: corrected,
-                range: NSRange(corrected.startIndex..., in: corrected),
-                withTemplate: NSRegularExpression.escapedTemplate(for: rule.corrected)
-            )
-        }
+        let corrected = applying(rules, to: value)
         guard corrected != value else {
             Log.write("rewrite: no rule matched the line; leaving it alone")
             return false
