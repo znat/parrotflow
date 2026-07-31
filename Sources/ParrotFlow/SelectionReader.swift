@@ -131,6 +131,49 @@ enum SelectionReader {
         return false
     }
 
+    /// Clears the current input line with readline keys and types a corrected
+    /// version of it.
+    ///
+    /// The last resort for surfaces the accessibility API cannot write —
+    /// terminals, mostly, whose AX value is a read-only view of the screen.
+    /// Keystrokes work there because accepting keystrokes is what a terminal
+    /// is for.
+    ///
+    /// Ctrl-A then Ctrl-K is the readline idiom for "clear this line", and it
+    /// handles a wrapped line correctly because it works on the logical line
+    /// rather than the visual one. It is destructive by nature, which is why
+    /// the caller must first confirm the line is one we wrote.
+    @discardableResult
+    static func rewriteCurrentLine(with replacement: String) -> Bool {
+        postControlKey(0x00)   // Ctrl-A, start of line
+        Thread.sleep(forTimeInterval: 0.05)
+        postControlKey(0x28)   // Ctrl-K, kill to end of line
+        Thread.sleep(forTimeInterval: 0.05)
+        TextInserter.insert(replacement, mode: .paste)
+        return true
+    }
+
+    private static func postControlKey(_ key: CGKeyCode) {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
+        else { return }
+        down.flags = .maskControl
+        up.flags = .maskControl
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+    }
+
+    /// The text after the last newline of an element's value — the line the
+    /// caret is on, as far as we can tell from a screen-shaped AX value.
+    static func currentLine(of element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXValueAttribute as CFString, &value
+        ) == .success, let text = value as? String else { return nil }
+        return text.components(separatedBy: .newlines).last
+    }
+
     private static func changed(_ element: AXUIElement, from original: String) -> Bool {
         var after: CFTypeRef?
         guard AXUIElementCopyAttributeValue(

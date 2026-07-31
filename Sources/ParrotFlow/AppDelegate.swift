@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Where the text was being typed when the hotkey went down, so a rule
     /// learned by voice can fix the word already in the field.
     private var focusAtPress: SelectionReader.Selection?
+    /// The last text we put into a field, used to confirm an input line is
+    /// ours before overwriting it.
+    private var lastInsertedText: String?
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -409,6 +412,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if fixed > 0 {
                 Log.write("rewrote \(fixed) occurrence(s) in the focused field")
                 outcome = .written
+            } else if config.transcription.rewriteLine,
+                      let element = focus.element,
+                      let line = SelectionReader.currentLine(of: element),
+                      let inserted = lastInsertedText,
+                      rewritten(line: line, inserted: inserted, rules: rules) != nil {
+                // The accessibility API would not write, so clear the line with
+                // readline keys and retype it. Only when the line still ends
+                // with what we dictated — otherwise it is not ours to destroy.
+                let corrected = rewritten(line: line, inserted: inserted, rules: rules)!
+                Log.write("rewrite: retyping the line via keystrokes")
+                SelectionReader.rewriteCurrentLine(with: corrected)
+                outcome = .written
             } else {
                 Log.write("field would not accept the rewrite; correction is on the clipboard")
                 NSPasteboard.general.clearContents()
@@ -432,6 +447,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)")
         default: flash("Saved \(rules.count) rules")
         }
+    }
+
+    /// The corrected line, or nil when the line is not recognisably ours.
+    ///
+    /// Requires the visible line to still contain the text we dictated. If the
+    /// user has typed something else since, or moved to another field, the
+    /// line belongs to them and clearing it would destroy work.
+    private func rewritten(
+        line: String,
+        inserted: String,
+        rules: [(heard: String, corrected: String)]
+    ) -> String? {
+        let trimmedLine = line.trimmingCharacters(in: .whitespaces)
+        let trimmedInserted = inserted.trimmingCharacters(in: .whitespaces)
+        guard !trimmedInserted.isEmpty, trimmedLine.contains(trimmedInserted) else {
+            Log.write("rewrite: the line is not the text we dictated; leaving it alone")
+            return nil
+        }
+
+        var corrected = trimmedLine
+        for rule in rules {
+            guard let pattern = try? NSRegularExpression(
+                pattern: "\\b\(NSRegularExpression.escapedPattern(for: rule.heard))\\b",
+                options: [.caseInsensitive]
+            ) else { continue }
+            corrected = pattern.stringByReplacingMatches(
+                in: corrected,
+                range: NSRange(corrected.startIndex..., in: corrected),
+                withTemplate: NSRegularExpression.escapedTemplate(for: rule.corrected)
+            )
+        }
+        return corrected == trimmedLine ? nil : corrected
     }
 
     /// Show a message on screen, and in the menu bar for as long as it lasts.
@@ -462,6 +509,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Log.write("transcribed: \(trimmed)")
         settings.model.lastTranscript = trimmed
+        lastInsertedText = trimmed
 
         switch TextInserter.insert(trimmed, mode: config.transcription.insertMode) {
         case .pasted:

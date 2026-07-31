@@ -9,6 +9,11 @@ transcription:
   # opens to teach ParrotFlow the right spelling. Needs Accessibility.
   correction_phrase: hey parrot
 
+  # When a field refuses accessibility writes — terminals, mostly — clear the
+  # input line with Ctrl-A Ctrl-K and retype it corrected. Destructive by
+  # nature, so it only fires when the line still contains what you dictated.
+  rewrite_line: true
+
   # ACOUSTIC CONTEXT BIASING — OFF BY DEFAULT, AND IT SHOULD STAY OFF UNLESS
   # YOU HAVE MEASURED IT ON YOUR OWN VOICE.
   #

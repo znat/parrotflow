@@ -55,6 +55,11 @@ struct Config: Codable, Equatable {
         /// Say this instead of dictating to open the correction panel for the
         /// text you have selected. Empty disables it.
         var correctionPhrase: String = "hey parrot"
+        /// Last-resort in-place correction for surfaces the accessibility API
+        /// cannot write, such as terminals: clear the input line with readline
+        /// keys and retype it. Destructive if the guesses are wrong, so it is
+        /// opt-in and only fires when the line is recognisably one we wrote.
+        var rewriteLine: Bool = false
 
         enum InsertMode: String, Codable, Equatable {
             case paste
@@ -65,6 +70,7 @@ struct Config: Codable, Equatable {
             case enabled, vocabulary, replacements
             case insertMode = "insert_mode"
             case correctionPhrase = "correction_phrase"
+            case rewriteLine = "rewrite_line"
         }
         /// Words the model would otherwise never produce — see `VocabularyTerm`.
         var vocabulary: [VocabularyTerm] = []
@@ -91,6 +97,7 @@ struct Config: Codable, Equatable {
             if let phrase = try c.decodeIfPresent(String.self, forKey: .correctionPhrase) {
                 self.correctionPhrase = phrase
             }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .rewriteLine) { rewriteLine = v }
             if let vocabulary = try c.decodeIfPresent([VocabularyTerm].self, forKey: .vocabulary) {
                 self.vocabulary = vocabulary
             }
