@@ -88,13 +88,10 @@ struct Config: Codable, Equatable {
         }
         /// Grouped by the word you want written, since one name accumulates
         /// several mishearings — eleven rules had built up for four names
-        /// before this was grouped. Reads as
+        /// before this was grouped.
         ///
         ///     replacements:
         ///       Tasmeen: [Tasmid, Tasmin, Tasmine]
-        ///
-        /// The flat `heard: corrected` form still decodes, so older configs
-        /// keep working.
         var replacements: [String: [String]] = [:]
 
         /// Flattened the way the substitution pass needs it: misheard word to
@@ -135,14 +132,20 @@ struct Config: Codable, Equatable {
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
             }
-            // Either shape: target to a list of mishearings, or the older flat
-            // mishearing to target.
-            if let grouped = (try? c.decodeIfPresent([String: [String]].self, forKey: .replacements)) ?? nil {
-                self.replacements = grouped
-            } else if let flat = try c.decodeIfPresent([String: String].self, forKey: .replacements) {
-                var grouped: [String: [String]] = [:]
-                for (source, target) in flat { grouped[target, default: []].append(source) }
-                self.replacements = grouped.mapValues { $0.sorted() }
+            do {
+                if let grouped = try c.decodeIfPresent(
+                    [String: [String]].self, forKey: .replacements
+                ) {
+                    self.replacements = grouped
+                }
+            } catch {
+                // The flat `heard: corrected` form was the earlier shape. Say so
+                // plainly rather than leaving a type mismatch to be decoded.
+                throw ConfigError.invalidValue(
+                    key: "transcription.replacements",
+                    value: "a flat mapping",
+                    expected: "the spelling you want, listing its mishearings — Tasmeen: [Tasmin, Tasmine]"
+                )
             }
         }
     }
