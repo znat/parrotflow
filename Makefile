@@ -24,11 +24,19 @@ app:
 run: stop app
 	@$(V) open ".build/$$APP_NAME.app" && echo "==> $$DISPLAY_NAME is in your menu bar."
 
-## Copy into /Applications — permissions are far more stable there than in .build
-install: app
+## Copy into /Applications and relaunch — permissions are far more stable
+## there than in .build.
+##
+## Stopping first is not tidiness. Replacing the bundle under a running process
+## leaves it executing an image that no longer exists: it keeps its menu bar
+## icon and answers nothing, which reads as the app being broken rather than as
+## the install having half happened. Relaunching after is the other half — an
+## install you have to remember to follow with a launch is one you will forget.
+install: stop app
 	@$(V) rm -rf "/Applications/$$APP_NAME.app" \
 	  && cp -R ".build/$$APP_NAME.app" /Applications/ \
-	  && echo "==> Installed /Applications/$$APP_NAME.app"
+	  && open "/Applications/$$APP_NAME.app" \
+	  && echo "==> Installed and launched /Applications/$$APP_NAME.app"
 
 uninstall: stop
 	@$(V) rm -rf "/Applications/$$APP_NAME.app"

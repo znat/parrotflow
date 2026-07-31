@@ -44,6 +44,8 @@ final class Recorder {
     private var targetFormat: AVAudioFormat?
     private var currentURL: URL?
     private var smoothedLevel: Float = 0
+    /// When the engine was last replaced — see `configurationChanged`.
+    private var rebuiltAt: Date?
 
     init() {
         observeConfigurationChanges()
@@ -245,6 +247,15 @@ final class Recorder {
             // one it was prepared against, so it starts happily and captures
             // nothing — a recording that produces a 0-frame file and no error.
             // Plugging in AirPods was enough to do it.
+            //
+            // Rebuilding prepares a fresh engine, and preparing one can post
+            // this same notification — which rebuilds again. Three landed
+            // inside one second in the log, and the app recorded nothing
+            // afterwards. A change arriving on the heels of our own rebuild is
+            // therefore ignored; a real one two seconds later still counts.
+            if let rebuiltAt, Date().timeIntervalSince(rebuiltAt) < 2 {
+                return
+            }
             DispatchQueue.main.async { [weak self] in self?.rebuildEngine() }
             return
         }
@@ -265,6 +276,7 @@ final class Recorder {
         engine = AVAudioEngine()
         observeConfigurationChanges()
         warmUp()
+        rebuiltAt = Date()
         Log.write("audio device changed; capture engine rebuilt")
     }
 
