@@ -392,16 +392,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var outcome: SelectionReader.ReplaceOutcome?
         if let selection = pendingSelection, !trimmed.isEmpty {
             outcome = SelectionReader.replaceSelection(with: correctedText, in: selection)
-        } else if !rules.isEmpty, let focus = focusAtPress, let element = focus.element {
+        } else if !rules.isEmpty, let focus = focusAtPress,
+                  let element = SelectionReader.refocusedElement(in: focus.owner)
+                      ?? focus.element.flatMap({ SelectionReader.isOurs($0) ? nil : $0 }) {
             // Learned by voice: nothing was selected, but the misspelling is
             // still sitting in the field where it was dictated. Fix it there.
             //
-            // Hand focus back first. Most apps only honour a write to
-            // kAXSelectedTextAttribute on the element that currently has focus,
-            // and at this point our own panel has it.
-            focus.owner?.activate()
-            Thread.sleep(forTimeInterval: 0.2)
-
             var fixed = 0
             for rule in rules
             where SelectionReader.replaceLastOccurrence(

@@ -247,6 +247,31 @@ enum SelectionReader {
         return selectedText(of: element)
     }
 
+    /// True when the element belongs to ParrotFlow itself.
+    ///
+    /// Worth checking before writing anywhere: by the time a correction is
+    /// confirmed, our own panel has held focus, and a stale or re-resolved
+    /// element reference points at its text field rather than the user's.
+    /// Editing that does nothing visible and looks like the target app
+    /// refusing.
+    static func isOurs(_ element: AXUIElement) -> Bool {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(element, &pid) == .success else { return false }
+        return pid == ProcessInfo.processInfo.processIdentifier
+    }
+
+    /// The focused element in a specific app, after handing focus back to it.
+    ///
+    /// Preferred over an element captured earlier: apps generally only honour
+    /// writes to whatever currently has focus, and re-querying guarantees we
+    /// are addressing that rather than a reference that has gone stale.
+    static func refocusedElement(in owner: NSRunningApplication?) -> AXUIElement? {
+        owner?.activate()
+        Thread.sleep(forTimeInterval: 0.25)
+        guard let element = focusedElement(), !isOurs(element) else { return nil }
+        return element
+    }
+
     static func focusedElement() -> AXUIElement? {
         let system = AXUIElementCreateSystemWide()
         // Without this the default timeout is ~6s, and these calls run on the
