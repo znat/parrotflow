@@ -164,6 +164,22 @@ enum SelectionReader {
     /// If nothing was killed, nothing is typed. If something was, it is always
     /// typed back — corrected when a rule applies, verbatim when none does —
     /// so the line is never left emptied.
+    /// Clears the input line, works out what was in it from what disappeared,
+    /// and types back a corrected version — restoring it if anything is unclear.
+    ///
+    /// The last resort for surfaces the accessibility API cannot write.
+    /// Keystrokes work in a terminal because accepting keystrokes is what a
+    /// terminal is.
+    ///
+    /// The line is not identified in advance: it is killed, and the difference
+    /// between the screen before and after says what was there. But that read
+    /// cannot be trusted to prove the kill happened — a terminal's AX value can
+    /// report the line unchanged while the screen shows it gone, which once
+    /// left an input emptied because we concluded there was nothing to restore.
+    ///
+    /// So the safety net is readline's own: Ctrl-K pushes to the kill ring and
+    /// Ctrl-Y yanks it back. Any uncertainty ends in Ctrl-Y, which puts the
+    /// line back whatever the accessibility API believes.
     @discardableResult
     static func rewriteCurrentLine(
         applying rules: [(heard: String, corrected: String)],
@@ -174,12 +190,25 @@ enum SelectionReader {
         postControlKey(0x00)   // Ctrl-A, start of line
         Thread.sleep(forTimeInterval: 0.06)
         postControlKey(0x28)   // Ctrl-K, kill to end of line
-        Thread.sleep(forTimeInterval: 0.12)
 
-        let after = visibleText(of: element) ?? ""
-        guard let killed = removedSegment(before: before, after: after),
-              !killed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            Log.write("rewrite: nothing was killed; the line is unchanged")
+        // The value can lag the screen, so give it a few chances to catch up
+        // before concluding the kill did nothing.
+        var killed: String?
+        for _ in 0..<4 {
+            Thread.sleep(forTimeInterval: 0.12)
+            if let after = visibleText(of: element),
+               let segment = removedSegment(before: before, after: after),
+               !segment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                killed = segment
+                break
+            }
+        }
+
+        guard let killed else {
+            // The line may well be gone even though the read says otherwise.
+            // Yank it back rather than leave an empty input.
+            Log.write("rewrite: could not read what was killed; yanking it back")
+            postControlKey(0x10)   // Ctrl-Y
             return false
         }
 
@@ -196,15 +225,14 @@ enum SelectionReader {
             )
         }
 
-        // Always type it back, even unchanged — the line is gone either way and
-        // leaving it empty would be worse than not having tried.
-        TextInserter.insert(corrected, mode: .paste)
-        Thread.sleep(forTimeInterval: 0.15)
-
-        if corrected == killed {
-            Log.write("rewrite: killed line had nothing to correct; restored verbatim")
+        guard corrected != killed else {
+            Log.write("rewrite: nothing in the killed line matched a rule; yanking it back")
+            postControlKey(0x10)   // Ctrl-Y
             return false
         }
+
+        TextInserter.insert(corrected, mode: .paste)
+        Thread.sleep(forTimeInterval: 0.15)
         Log.write("rewrite: retyped \(killed.count) chars with \(rules.count) rule(s) applied")
         return true
     }
