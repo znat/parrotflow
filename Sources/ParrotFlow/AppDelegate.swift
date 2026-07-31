@@ -462,8 +462,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// not read now — by the time this runs, our own panel may hold focus, and
     /// reading then returns nothing or something of ours.
     private func runTransform(_ prompt: Config.Prompt, instruction: String) {
+        // Never the clipboard. `read()` falls back to it for the correction
+        // panel, where you see the words before anything happens and can
+        // cancel; a transform gets no such look. The clipboard holds whatever
+        // was last copied — from another app, or an hour ago — and taking it
+        // as the target means rewriting text the speaker never pointed at.
+        // That is exactly what happened: "convert numbers to digits" ran over
+        // a comment line copied minutes earlier, while the sentence the
+        // speaker meant sat in the last transcript, unused.
         let selection = selectionAtPress ?? (
-            Permissions.accessibility == .granted ? SelectionReader.read() : nil
+            Permissions.accessibility == .granted
+                ? SelectionReader.read(fallbackTo: false)
+                : nil
         )
         selectionAtPress = nil
 
@@ -477,7 +487,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        Log.write("transform: \(prompt.name) over \(selection == nil ? "the last dictation" : "the selection") (\(target.count) chars)")
+        // The text itself, not just its length: a transform that worked on the
+        // wrong thing is otherwise indistinguishable in the log from one that
+        // worked on the right thing badly.
+        Log.write("transform: \(prompt.name) over \(selection == nil ? "the last dictation" : "the selection") — \"\(target.prefix(80))\"")
         beginProgress("\(prompt.name)…")
 
         let llmConfig = llmConfig()
