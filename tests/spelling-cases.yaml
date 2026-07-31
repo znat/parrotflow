@@ -157,6 +157,25 @@ cases:
     correction: Kuber nettis spells K U B E R N E T E S
     expect: NO MATCH
 
+  # ---- How recognition actually renders spelled letters ----
+  # It stops treating them as letters partway through and merges the rest into
+  # syllables, so the tail is where a spelling gets lost.
+  - source: I work with Tasmin on the platform team
+    correction: Tasmin spells T A S M Een.
+    expect: Tasmin => Tasmeen
+
+  - source: I work with Tasmin on the platform team
+    correction: Tasmin spells Tas Meen.
+    expect: Tasmin => Tasmeen
+
+  - source: We deployed to Versal yesterday
+    correction: Versal Spells, V E R Cel.
+    expect: Versal => Vercel
+
+  - source: I love working on superbase
+    correction: superbase spells su pa b a s e
+    expect: superbase => Supabase
+
   # ---- Already correct: spelling matches what is there ----
   - source: I work with Sam
     correction: Sam spells S A M
