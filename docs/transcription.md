@@ -23,6 +23,27 @@ passed to the model. Two things cover what you'd actually want from a prompt:
 Rare names are fixed by literal, word-boundary, case-insensitive substitution
 on the finished transcript, taught through the correction panel.
 
+A source wrapped in slashes is a regular expression instead, and an empty
+target deletes rather than substitutes. That combination is what handles
+filler words, which a literal map cannot: `um` arrives as "um", "umm",
+"ummm", "uh", "erm", "hmm", "mm-hmm", and each one drags punctuation along
+with it.
+
+```yaml
+replacements:
+  "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
+```
+
+The punctuation in that pattern matters more than it looks. Deleting only the
+word leaves "And uh, if" as "And, if"; taking the trailing comma too gives
+"And if", and a filler sitting between commas loses both so the clause reads
+straight through. A tidy pass then closes the remaining gaps — doubled spaces,
+a space stranded before a comma, a lowercase word left starting the sentence.
+
+Word boundaries do the rest of the work: "umbrella" and "hummingbird" contain
+fillers and are left alone. Fuzzy matching skips regex and deletion rules
+entirely — they are exact by construction.
+
 FluidAudio's acoustic context biasing was tried and removed. It is real and
 their Earnings22 numbers are real — 91.7% vocabulary F-score — but it is built
 for hour-long audio with hundreds of domain terms, where 15% WER is an
@@ -48,8 +69,10 @@ already right, which turned out to matter more.
 
 ### 2. A local LLM pass — for everything else
 
-Free-form instructions ("strip filler words", "format as bullets", "keep it
-terse") belong in a second stage that reads the finished transcript. On macOS
+Free-form instructions ("format as bullets", "keep it terse") belong in a
+second stage that reads the finished transcript. Filler words used to be on
+that list; a regex does it for free, with no latency and no chance of the
+model rewriting a sentence you meant literally. On macOS
 26+ Apple's Foundation Models framework gives a local LLM with no download and
 no dependency; an MLX model is the fallback for older systems.
 
