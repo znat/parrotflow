@@ -51,6 +51,8 @@ enum CheckConfigCommand {
                 ? "paste into frontmost app (needs Accessibility)"
                 : "copy to clipboard"
             print("  · insert mode       \(mode)")
+            print("  · wake phrase       \"\(transcription.correctionPhrase)\"")
+            print("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
         }
         if transcription.enabled {
             if transcription.vocabulary.isEmpty {
