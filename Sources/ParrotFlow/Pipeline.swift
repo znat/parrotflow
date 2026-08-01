@@ -44,18 +44,24 @@ struct Pipeline: Equatable, Codable {
 
     let stages: [Stage]
 
-    /// What runs when the config names no pipeline at all.
+    /// Every stage, in declaration order, which is the canonical order —
+    /// numbers last, always, because both name passes match on words and a
+    /// mishearing that happens to contain a number word has to still look like
+    /// words while they run.
     ///
-    /// Only `replacements`, because it is the one pass with no switch to turn
-    /// off: it does nothing until you have taught it a spelling, so it costs
-    /// nothing to leave in. Everything else stays out until asked for.
+    /// This is the only default there is. A config that names no pipeline gets
+    /// all of it, and a new install is written with the same list spelled out.
+    /// Putting a stage in a pipeline is the only way to turn it on, so the way
+    /// to turn one off is to delete a line you can already see — rather than to
+    /// discover a setting you cannot.
     ///
-    /// This is not what a new install gets. `Config.defaultYAML` writes a
-    /// complete pipeline, so someone starting today has every stage in front of
-    /// them, in order, to delete rather than to discover. The conservative
-    /// answer here is for a config that simply does not say — which after the
-    /// flags were retired mostly means one written before they were.
-    static let unconfigured = Pipeline(stages: [.replacements])
+    /// Derived from `allCases` on purpose: a stage added later is in the
+    /// default the moment it exists, which is what keeps that promise true
+    /// without anyone having to remember this line.
+    ///
+    /// An empty list is not the same as no list. `default: []` is a choice and
+    /// runs nothing; a missing `pipelines:` is silence and runs everything.
+    static let everything = Pipeline(stages: Stage.allCases)
 
     /// The pipeline for a transcript in `language`, from the config.
     ///
@@ -65,7 +71,7 @@ struct Pipeline: Equatable, Codable {
     static func resolved(config: Config, language: String) -> Pipeline {
         config.transcription.pipelines[language]
             ?? config.transcription.pipelines["default"]
-            ?? unconfigured
+            ?? everything
     }
 
     /// The pipeline for this text, and the language it was judged to be in.

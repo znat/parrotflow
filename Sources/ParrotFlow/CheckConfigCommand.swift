@@ -60,10 +60,15 @@ enum CheckConfigCommand {
             for language in transcription.languages {
                 let pipeline = Pipeline.resolved(config: config, language: language)
                 let source = transcription.pipelines[language] != nil ? language
-                    : (transcription.pipelines["default"] != nil ? "default" : "built-in")
-                print("  · pipeline \(language)        "
-                    + pipeline.stages.map(\.name).joined(separator: " → ")
-                    + "  (\(source))")
+                    : (transcription.pipelines["default"] != nil
+                        ? "default" : "nothing configured, so every stage")
+                // An empty pipeline is a choice, not a blank: printing
+                // nothing there reads as a display fault rather than as the
+                // answer to "why did none of this run".
+                let stages = pipeline.stages.isEmpty
+                    ? "nothing — the list is empty"
+                    : pipeline.stages.map(\.name).joined(separator: " → ")
+                print("  · pipeline \(language)        \(stages)  (\(source))")
                 for problem in pipeline.validate() {
                     print("  ✗ pipeline \(language): \(problem)")
                     ok = false

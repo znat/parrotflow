@@ -24,7 +24,13 @@ transcription:
   languages: [en, fr]
 
   # Everything a finished transcript goes through, in order, per language.
-  # A language's own list wins over `default`; anything not listed does not run.
+  # A language's own list wins over `default`.
+  #
+  # Being in a pipeline is the only way a stage runs, so this list is written
+  # out with all of them: turning one off means deleting a line you can see,
+  # not finding a setting you cannot. Delete `pipelines:` entirely and you get
+  # every stage back; write `default: []` and you get none, which is a choice
+  # rather than silence.
   #
   # Written out in full on purpose. The stages are few enough to read at a
   # glance, and deleting a line you can see beats discovering a setting you
