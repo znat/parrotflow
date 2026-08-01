@@ -14,13 +14,16 @@ transcript repair, and is the only one that says what a user would see.
 
 Scoreboard (APP). English is tests/spelling-cases.yaml, 44 cases; French is
 tests/french-cases.yaml, 30 cases, where the dictated sentence is French.
-Only the gemma v8/v13 rows below were re-measured after the sets grew and
+Only the gemma v8/v13/v14 rows below were re-measured after the sets grew and
 spelledOutWord learned the French spelling verbs and stop words; the rest are
 from the 39/25-case sets and are indicative, not comparable.
 
                         English  French  latency  size
-    gemma4:e4b   v13       -      93%     1.5s    9.6GB  <- French prompt
-    gemma4:e4b   v8       98%     87%     1.5s    9.6GB  <- shipped, English
+    gemma4:e4b   v14      98%     -       1.15s   9.6GB  <- shipped, English
+    gemma4:e4b   v13       -      93%     1.5s    9.6GB  <- shipped, French
+    gemma4:e4b   v8       98%     87%     1.33s   9.6GB  <- what v14 replaced
+    gemma4:12b   v8       98%      -      2.96s   7.6GB  <- twice the wait
+    gemma4:12b   v13       -      97%     3.29s   7.6GB
     gemma4:e2b   v13       -      80%     1.0s    7.2GB
     gemma4:e2b   v8       86%     60%     0.9s    7.2GB
     gemma4:e4b   v4       97%      -      1.4s
@@ -36,6 +39,43 @@ from the 39/25-case sets and are indicative, not comparable.
     qwen3.5:0.8b v7       36%      -      0.4s    correction-first, worse
     qwen3.5:0.8b v6        8%      -      0.4s    by word number: all NONE
     qwen3.5:0.8b v5        8%      -      5.3s    --think: 11x slower, worse
+
+Latency here is prefill, not generation, and that is the single most useful
+thing on this page. Measured on e4b with v8: 420 prompt tokens in against 6
+out, 0.87s reading the prompt against 0.13s writing the answer. Ollama reuses
+its KV cache only when the new prompt strictly extends the cached one — an
+appended token is free, a changed last character is not — and a fresh
+dictation never extends anything, so every call re-reads the whole prompt at
+about 2.1ms per token. Prompt length *is* the latency. num_ctx was swept from
+32768 down to 1024 and changed nothing (0.91-0.93s throughout); it is a memory
+setting, not a speed one, worth about 5GB of resident size but no time.
+
+So the length ladder, English, all span-only (the model's right-hand side is
+discarded and rebuilt by regex, so it is waste in the output and in the
+prompt):
+
+                 prompt   model's part   APP    latency
+    v8 (was)     420 tok      100%       98%     1.33s
+    v14          359 tok      100%       98%     1.15s  <- shipped
+    v15          282 tok       95%       93%     0.99s
+    v16          186 tok       86%       86%     0.82s
+    v18          291 tok       93%       91%     1.02s  compressed prose
+
+v14 is free: the deleted tokens were the ones nothing read. Below it the
+examples start earning their keep, and they fail in the expensive direction —
+v15 and v16 both broke by inventing matches for "The weather is nice today"
+and "I like apples", having dropped one of the two NO MATCH examples. v18 kept
+all seven examples and compressed the prose instead, and was worse again, so
+the rules are load bearing too. v17 (five examples, both negatives kept)
+scored 95%, which says it is not simply the negatives.
+
+French does not take the same edit: v19 is v13 span-only and fell 93% -> 83%,
+twice, under-trimming "Say goal enn" to "Say goal". Writing the target name
+out evidently makes the model commit to a span long enough to spell, and
+French needs that crutch where English does not. Two further French attempts
+scored 93% with the identical two failures and are not worth repeating: a
+product-name negative (v20) against the false positive, and a three-word
+example (v21) against the short span.
 
 Read this way. Only gemma clears the control on French by a margin worth
 paying for; qwen is far below it, so on French dictation qwen is worse than
@@ -648,6 +688,305 @@ marche => Marc
 source: Cle mence a rejoint l'equipe hier
 correction: Clemence s'ecrit C L E M E N C E
 Cle mence => Clemence""",
+
+# --- The length ladder ---------------------------------------------------
+#
+# Latency here is prefill, not generation. Measured on e4b: 420 prompt tokens
+# in, 6 out, 0.87s prefill against 0.13s generate. Ollama's cache only helps
+# when the new prompt strictly extends the cached one, and a fresh dictation
+# never does, so every call re-reads the whole prompt at ~2.1ms/token. Prompt
+# length *is* the latency.
+#
+# Two things make it safe to cut. The pipeline scores 100% on English, so
+# there is no accuracy being defended. And `pipeline` equals `APP`, which says
+# the model's right-hand side is thrown away and rebuilt by regex — so every
+# token spent teaching, and emitting, that right side is waste.
+#
+# v14 is v8 with the right side gone and nothing else changed. v15 and v16
+# then cut examples, which is where the risk actually is.
+
+# v8, span-only. The right-side rule is deleted with it. Deliberately NOT v5:
+# v5 carries the "ordinary English word" clause that v8 measured and removed.
+"v14": """Find the words in the source line that the speaker is correcting.
+
+You get a source transcription, and a correction transcription in which the speaker says a name then spells it letter by letter.
+
+Reply with those words copied from the source line, and nothing else.
+Or reply NO MATCH.
+
+- Copy the words from the SOURCE. The correction transcription mishears the name a second time; ignore how it appears there.
+- The source span is often two or three words, because recognition splits names it does not know. Take the whole name, and only the name.
+- Reply NO MATCH when nothing in the source sounds like the spelled name.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: I like apples
+correction: Oranges spells O-R-A-N-G-E-S
+NO MATCH
+
+source: We deployed to Versal yesterday
+correction: Versoff spells V E R C E L
+Versal
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When
+
+source: Anna ees joined the design team
+correction: Anna east spells A N A I S
+Anna ees""",
+
+# v14 with three examples dropped. The four kept are the four categories: a
+# one-word name, a negative, a multi-word split, and a name that is an
+# ordinary English word.
+"v15": """Find the words in the source line that the speaker is correcting.
+
+You get a source transcription, and a correction transcription in which the speaker says a name then spells it letter by letter.
+
+Reply with those words copied from the source line, and nothing else.
+Or reply NO MATCH.
+
+- Copy the words from the SOURCE. The correction transcription mishears the name a second time; ignore how it appears there.
+- The source span is often two or three words, because recognition splits names it does not know. Take the whole name, and only the name.
+- Reply NO MATCH when nothing in the source sounds like the spelled name.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When""",
+
+# The floor: one positive, one negative, rules compressed to two lines.
+"v16": """Find the words in the source line that the speaker is correcting.
+
+The correction line says a name and then spells it letter by letter. Reply with the matching words copied from the source line, and nothing else — often two or three words, because recognition splits names it does not know. Take the whole name and only the name, never words from the correction line. Reply NO MATCH when nothing in the source sounds like the spelled name.
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH""",
+
+# v15 and v16 both broke in the same place: they invented a match for "The
+# weather is nice today" and for "I like apples". Both had dropped one of the
+# two NO MATCH examples. So the negatives are load-bearing and the positives
+# may not be — v17 keeps both negatives and drops two positives instead.
+"v17": """Find the words in the source line that the speaker is correcting.
+
+You get a source transcription, and a correction transcription in which the speaker says a name then spells it letter by letter.
+
+Reply with those words copied from the source line, and nothing else.
+Or reply NO MATCH.
+
+- Copy the words from the SOURCE. The correction transcription mishears the name a second time; ignore how it appears there.
+- The source span is often two or three words, because recognition splits names it does not know. Take the whole name, and only the name.
+- Reply NO MATCH when nothing in the source sounds like the spelled name.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: I like apples
+correction: Oranges spells O-R-A-N-G-E-S
+NO MATCH
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When""",
+
+# The other axis: keep all seven of v14's examples, compress the prose. If the
+# examples are what carry the accuracy, the rules should be the cheap part.
+"v18": """Find the words in the source line that the speaker is correcting.
+
+The correction line says a name and then spells it letter by letter. Reply with the matching words copied from the source line and nothing else, or NO MATCH. Never answer with words from the correction line, which mishears the name a second time.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: I like apples
+correction: Oranges spells O-R-A-N-G-E-S
+NO MATCH
+
+source: We deployed to Versal yesterday
+correction: Versoff spells V E R C E L
+Versal
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When
+
+source: Anna ees joined the design team
+correction: Anna east spells A N A I S
+Anna ees""",
+
+# v13, span-only. Same edit as v8 -> v14, on the French prompt.
+"v19": """Trouve les mots de la ligne source que la personne est en train de corriger.
+
+Tu recois une transcription source, et une transcription de correction dans laquelle la personne dit un nom puis l'epelle lettre par lettre.
+
+Reponds avec ces mots copies depuis la ligne source, et rien d'autre.
+Ou reponds NO MATCH.
+
+- Copie les mots depuis la SOURCE. La transcription de correction se trompe une seconde fois sur le nom ; ignore la facon dont il y apparait.
+- Le nom occupe souvent deux ou trois mots dans la source, parce que la reconnaissance vocale decoupe les noms qu'elle ne connait pas. Prends le nom entier, et rien que le nom.
+- Reponds NO MATCH si rien dans la source ne ressemble au nom epele.
+
+source: J'ai vu Ni cola hier au bureau
+correction: Nicolas s'ecrit N I C O L A S
+Ni cola
+
+source: J'ai vu Sophie hier au bureau
+correction: Nicolas s'ecrit N I C O L A S
+NO MATCH
+
+source: Il pleut beaucoup en ce moment
+correction: Oranges s'ecrit O R A N G E S
+NO MATCH
+
+source: On utilise Post gres pour les donnees
+correction: Postgres s'ecrit P O S T G R E S
+Post gres
+
+source: marche est en conge cette semaine
+correction: Marc s'ecrit M A R C
+marche
+
+source: Cle mence a rejoint l'equipe hier
+correction: Clemence s'ecrit C L E M E N C E
+Cle mence""",
+
+# v13's two remaining French losses, one hypothesis each.
+#
+# v20: the false positive. "On livre vendredi prochain" against a spelled
+# K U B E R N E T E S came back as a match. Every negative in v13 is an
+# ordinary given name (Nicolas, Oranges); none is a product name, which is
+# exactly the shape that failed. This adds one, generated.
+"v20": """Associe un nom mal transcrit a l'orthographe que la personne vient d'epeler.
+
+Tu recois une transcription source, et une transcription de correction dans laquelle la personne dit un nom puis l'epelle lettre par lettre.
+
+Reponds par une seule ligne, et rien d'autre :
+<les mots exactement comme ils apparaissent dans la source> => <les lettres epelees assemblees>
+ou
+NO MATCH
+
+- La partie gauche doit etre copiee caractere par caractere depuis la SOURCE. La transcription de correction se trompe une seconde fois sur le nom ; ignore la facon dont il y apparait.
+- Le nom occupe souvent deux ou trois mots dans la source, parce que la reconnaissance vocale decoupe les noms qu'elle ne connait pas. Prends le nom entier, et rien que le nom.
+- La partie droite est constituee des lettres epelees, dans l'ordre donne, assemblees avec une majuscule au debut.
+- Reponds NO MATCH si rien dans la source ne ressemble au nom epele.
+
+source: J'ai vu Ni cola hier au bureau
+correction: Nicolas s'ecrit N I C O L A S
+Ni cola => Nicolas
+
+source: J'ai vu Sophie hier au bureau
+correction: Nicolas s'ecrit N I C O L A S
+NO MATCH
+
+source: Il pleut beaucoup en ce moment
+correction: Oranges s'ecrit O R A N G E S
+NO MATCH
+
+source: On se voit lundi matin
+correction: Dock heure s'ecrit D O C K E R
+NO MATCH
+
+source: On utilise Post gres pour les donnees
+correction: Postgres s'ecrit P O S T G R E S
+Post gres => Postgres
+
+source: marche est en conge cette semaine
+correction: Marc s'ecrit M A R C
+marche => Marc
+
+source: Cle mence a rejoint l'equipe hier
+correction: Clemence s'ecrit C L E M E N C E
+Cle mence => Clemence""",
+
+# v21: the under-trimmed span. "Say goal enn" came back as "Say goal" — every
+# positive example in v13 splits into exactly two words, so three is a shape
+# the prompt never shows. Note v9 tried this on English and made spans
+# over-run, so it is measured here rather than assumed.
+"v21": """Associe un nom mal transcrit a l'orthographe que la personne vient d'epeler.
+
+Tu recois une transcription source, et une transcription de correction dans laquelle la personne dit un nom puis l'epelle lettre par lettre.
+
+Reponds par une seule ligne, et rien d'autre :
+<les mots exactement comme ils apparaissent dans la source> => <les lettres epelees assemblees>
+ou
+NO MATCH
+
+- La partie gauche doit etre copiee caractere par caractere depuis la SOURCE. La transcription de correction se trompe une seconde fois sur le nom ; ignore la facon dont il y apparait.
+- Le nom occupe souvent deux ou trois mots dans la source, parce que la reconnaissance vocale decoupe les noms qu'elle ne connait pas. Prends le nom entier, et rien que le nom.
+- La partie droite est constituee des lettres epelees, dans l'ordre donne, assemblees avec une majuscule au debut.
+- Reponds NO MATCH si rien dans la source ne ressemble au nom epele.
+
+source: J'ai vu Ni cola hier au bureau
+correction: Nicolas s'ecrit N I C O L A S
+Ni cola => Nicolas
+
+source: J'ai vu Sophie hier au bureau
+correction: Nicolas s'ecrit N I C O L A S
+NO MATCH
+
+source: Il pleut beaucoup en ce moment
+correction: Oranges s'ecrit O R A N G E S
+NO MATCH
+
+source: On a croise Al ex andre au bureau
+correction: Alexandre s'ecrit A L E X A N D R E
+Al ex andre => Alexandre
+
+source: On utilise Post gres pour les donnees
+correction: Postgres s'ecrit P O S T G R E S
+Post gres => Postgres
+
+source: marche est en conge cette semaine
+correction: Marc s'ecrit M A R C
+marche => Marc
+
+source: Cle mence a rejoint l'equipe hier
+correction: Clemence s'ecrit C L E M E N C E
+Cle mence => Clemence""",
 }
 
 # Prompts to use per detected language, English falling back to itself. This is
@@ -655,7 +994,7 @@ Cle mence => Clemence""",
 BY_LANGUAGE = {"en": "v8", "fr": "v13"}
 
 # Variants whose reply is the span alone, so there is no full line to score.
-SPAN_ONLY = {"v5", "v6", "v7"}
+SPAN_ONLY = {"v5", "v6", "v7", "v14", "v15", "v16", "v17", "v18", "v19"}
 # Variants that answer with word numbers; the span is rebuilt from the source.
 INDEXED = {"v6"}
 # Variants that read the correction first, so the source is nearest the answer.
@@ -686,16 +1025,31 @@ def decode(variant, reply, src):
               if 1 <= n <= len(words)]
     return " ".join(picked) if picked else "NO MATCH"
 
-def ask(model, system, prompt, think, predict):
+def ask(model, system, prompt, think, predict, num_ctx=None, meter=None):
+    options = {"temperature": 0, "num_predict": predict}
+    # Left unset, Ollama sizes the KV cache from the model's own context length
+    # — 32k for gemma4 — which is orders of magnitude more than a one-line
+    # answer needs. Passing it makes that cost measurable.
+    if num_ctx:
+        options["num_ctx"] = num_ctx
     body = {"model": model, "system": system,
             "prompt": prompt,
             "stream": False, "think": think,
-            "options": {"temperature": 0, "num_predict": predict}}
+            "options": options}
     req = urllib.request.Request("http://localhost:11434/api/generate",
         data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     t = time.time()
     with urllib.request.urlopen(req, timeout=600) as r:
         d = json.load(r)
+    # Where the time went, split prefill from generation. Prefill that stays
+    # cheap across calls means Ollama is reusing the KV cache for the system
+    # prompt, and prompt length is nearly free; prefill that does not means
+    # shortening the prompt is the lever.
+    if meter is not None:
+        for key in ("prompt_eval_count", "eval_count",
+                    "prompt_eval_duration", "eval_duration", "load_duration"):
+            meter[key] = meter.get(key, 0) + (d.get(key) or 0)
+        meter["calls"] = meter.get("calls", 0) + 1
     return (d.get("response") or "").strip(), time.time() - t
 
 def normalise(text):
@@ -854,6 +1208,8 @@ def main():
     ap.add_argument("--variant", default="v2", choices=sorted(VARIANTS))
     ap.add_argument("--think", action="store_true")
     ap.add_argument("--predict", type=int, default=24)
+    ap.add_argument("--num-ctx", type=int, default=None,
+                    help="KV cache size; unset lets Ollama use the model's own 32k")
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--cases", default="tests/spelling-cases.yaml",
                     help="path to a case file, for probing a set you do not want to ship")
@@ -867,10 +1223,11 @@ def main():
     cases = yaml.safe_load(path.read_text())["cases"]
     system = VARIANTS[args.variant]
 
+    meter = {}
     if not args.code_only:
         ask(args.model, system,
             user_prompt(args.variant, "warm up", "warm up spells W A R M"),
-            args.think, args.predict)
+            args.think, args.predict, args.num_ctx)
 
     passed, total_time, failures = 0, 0.0, []
     left_passed = [0]
@@ -887,7 +1244,7 @@ def main():
         else:
             got, dt = ask(args.model, system,
                           user_prompt(args.variant, case["source"], case["correction"]),
-                          args.think, args.predict)
+                          args.think, args.predict, args.num_ctx, meter)
             got_n = decode(args.variant, got, case["source"])
         total_time += dt
         want_n = normalise(case["expect"])
@@ -932,6 +1289,10 @@ def main():
     print(f"  pipeline    {pipe_passed[0]}/{n} = {100*pipe_passed[0]/n:.0f}%  <- model span + regex spelling")
     print(f"  APP         {app_passed[0]}/{n} = {100*app_passed[0]/n:.0f}%  <- + interpret()'s snap-to-transcript")
     print(f"  {total_time/n:.2f}s avg")
+    if meter.get("calls"):
+        c = meter["calls"]
+        print(f"  tokens      {meter['prompt_eval_count']/c:.0f} in, {meter['eval_count']/c:.0f} out per call"
+              f"  |  prefill {meter['prompt_eval_duration']/c/1e9:.2f}s, generate {meter['eval_duration']/c/1e9:.2f}s")
     if app_failures:
         print("  app failures:")
         for src, got, want in app_failures:

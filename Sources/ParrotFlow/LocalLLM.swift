@@ -27,6 +27,27 @@ enum LocalLLM {
     /// long as the app runs, which is what `llm.keep_loaded` turns off.
     private static let pinned = -1
 
+    /// When the model last actually ran, for `keepWarm` to measure against.
+    ///
+    /// Only a completed generation counts. A load-only call leaves the weights
+    /// somewhere the next forward pass still has to fetch them from, which is
+    /// the whole thing `keepWarm` exists to prevent, so stamping on one would
+    /// suppress exactly the ping that was needed.
+    private static let clock = NSLock()
+    private static var stamp = Date.distantPast
+
+    static var lastCallAt: Date {
+        clock.lock()
+        defer { clock.unlock() }
+        return stamp
+    }
+
+    private static func stampCall() {
+        clock.lock()
+        stamp = Date()
+        clock.unlock()
+    }
+
     enum LLMError: LocalizedError {
         case unreachable
         case badStatus(Int)
@@ -108,7 +129,36 @@ enum LocalLLM {
             !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { throw LLMError.emptyResponse }
 
+        stampCall()
         return text
+    }
+
+    /// Generates a single token, to keep the model's weights where a forward
+    /// pass can reach them.
+    ///
+    /// `keep_alive` already stops Ollama unloading the model, and it is not
+    /// enough. Measured on a "hey parrot" that felt slow: the router took 4.01s
+    /// against 0.5s warm, and Ollama's own log put 3.59s of it in *prompt eval
+    /// of five tokens* — 291 of the 296 were served from its prompt cache, so
+    /// there was nothing to compute. 718ms a token against a normal 2ms is not
+    /// inference, it is 9.5GB of weights being fetched back on first touch. On
+    /// this machine, 19.4GB of 20.5GB swap in use, that is what an idle gap
+    /// buys you. A pinned model can be resident and cold at the same time.
+    ///
+    /// So the ping has to generate, not just load — `warmUp` deliberately does
+    /// not, and would not help here. One token is enough to touch every layer.
+    ///
+    /// It runs the router's own system prompt rather than a throwaway string,
+    /// which costs the same and keeps that prompt at the front of Ollama's
+    /// prompt cache too. The router is the call the user waits on with
+    /// "Thinking…" on screen, so it is the one worth holding warm.
+    @discardableResult
+    static func keepWarm(system: String, config: Config) async -> Bool {
+        let reply = try? await complete(
+            system: system, user: "instruction: hello",
+            json: false, maxTokens: 1, config: config
+        )
+        return reply != nil
     }
 
     /// Loads the model into Ollama's memory without asking it anything.
@@ -298,13 +348,30 @@ enum VoiceCommand {
             return .unrecognised(command)
         }
 
-        guard let arrow = reply.range(of: "=>") else { return .unrecognised(command) }
-        let heard = reply[reply.startIndex..<arrow.lowerBound]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let modelSpelling = reply[arrow.upperBound...]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .components(separatedBy: .newlines).first?
-            .trimmingCharacters(in: .whitespaces) ?? ""
+        // Both shapes are accepted, because the two prompts answer differently
+        // and a missing arrow was previously a total loss rather than a
+        // formatting one. English (v14) replies with the span alone; French
+        // (v13) still writes "span => spelling", which is not decoration there
+        // — measured span-only on French and it cost ten points, the model
+        // under-trimming "Say goal enn" to "Say goal" once it no longer had to
+        // write the name out. Spelling out the target evidently disciplines
+        // the span. English does not need the crutch and is 61 tokens lighter
+        // without it.
+        let heard: String
+        let modelSpelling: String
+        if let arrow = reply.range(of: "=>") {
+            heard = reply[reply.startIndex..<arrow.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            modelSpelling = reply[arrow.upperBound...]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .components(separatedBy: .newlines).first?
+                .trimmingCharacters(in: .whitespaces) ?? ""
+        } else {
+            heard = reply
+                .components(separatedBy: .newlines).first?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            modelSpelling = ""
+        }
 
         guard !heard.isEmpty else { return .unrecognised(command) }
 
@@ -369,29 +436,47 @@ enum VoiceCommand {
         "fr": frenchExtractionPrompt,
     ]
 
+    /// Prompt v14: v8 with the right-hand side deleted.
+    ///
+    /// Latency here is prefill, not generation — measured on e4b, 420 prompt
+    /// tokens in against 6 out, 0.87s reading the prompt against 0.13s writing
+    /// the answer. Ollama only reuses its cache when the new prompt strictly
+    /// extends the cached one, and a fresh dictation never does, so every call
+    /// re-reads the whole prompt at about 2.1ms per token. The prompt's length
+    /// *is* the latency, and the arrow and the spelling after it were being
+    /// generated and then discarded — `spelledOutWord` has always built the
+    /// real spelling from the letters.
+    ///
+    /// Deleting them cost nothing and saved 61 prompt tokens and 3 output
+    /// tokens: 1.33s to 1.15s, with the model's own score unchanged at 44/44,
+    /// reproduced on a second run.
+    ///
+    /// Cutting further was measured and rejected — the examples are load
+    /// bearing, and they fail in the expensive direction. Scores in
+    /// scripts/validate-prompt.py; in short, four examples (v15) scored 95%
+    /// and two (v16) 86%, both by inventing matches for "The weather is nice
+    /// today" and "I like apples". A false positive writes a rule that rewrites
+    /// every future transcript, so the two NO MATCH examples pay for
+    /// themselves. Compressing the prose instead (v18) was worse again, 93%,
+    /// over-trimming "Oluwa shane" to "shane".
     static let extractionPrompt = """
-    Map a misheard name to the spelling the speaker just read out.
+    Find the words in the source line that the speaker is correcting.
 
     You get a source transcription, and a correction transcription in which \
     the speaker says a name then spells it letter by letter.
 
-    Reply with exactly one line, and nothing else:
-    <span exactly as it appears in the source> => <the spelled letters joined up>
-    or
-    NO MATCH
+    Reply with those words copied from the source line, and nothing else.
+    Or reply NO MATCH.
 
-    - The left side must be copied character for character from the SOURCE. \
-    The correction transcription mishears the name a second time; ignore how \
-    it spells it there.
+    - Copy the words from the SOURCE. The correction transcription mishears \
+    the name a second time; ignore how it appears there.
     - The source span is often two or three words, because recognition splits \
     names it does not know. Take the whole name, and only the name.
-    - The right side is the spelled letters, in the order given, joined up \
-    with one capital at the start.
     - Reply NO MATCH when nothing in the source sounds like the spelled name.
 
     source: I work with Tasmin
     correction: Das mean spells T-A-S-M-E-E-N
-    Tasmin => Tasmeen
+    Tasmin
 
     source: I work with Sarah
     correction: Tasmin spells T-A-S-M-E-E-N
@@ -403,19 +488,19 @@ enum VoiceCommand {
 
     source: We deployed to Versal yesterday
     correction: Versoff spells V E R C E L
-    Versal => Vercel
+    Versal
 
     source: The Coober netties cluster is down
     correction: Kuber nettis spells K U B E R N E T E S
-    Coober netties => Kubernetes
+    Coober netties
 
     source: When is handling the deploy
     correction: New yen spells N G U Y E N
-    When => Nguyen
+    When
 
     source: Anna ees joined the design team
     correction: Anna east spells A N A I S
-    Anna ees => Anais
+    Anna ees
     """
 
     /// The English prompt's structure, in French, with French examples.
@@ -430,6 +515,19 @@ enum VoiceCommand {
     ///
     /// Written without accents, which was not deliberate but is what scored
     /// 93%. Adding them is a change to measure, not to assume.
+    ///
+    /// Keeps the "span => spelling" shape that English dropped for speed, and
+    /// that asymmetry is measured, not an oversight: span-only French (v19)
+    /// fell from 93% to 83%, twice, by under-trimming — "Say goal enn" came
+    /// back "Say goal", "Anna ees" came back "Anna". Writing the target name
+    /// out evidently makes the model commit to a span long enough to spell it,
+    /// and French needs that where English does not. The 0.3s it costs buys ten
+    /// points.
+    ///
+    /// Two attempts at the remaining pair failed and are not worth repeating:
+    /// a fourth negative built from a product name (v20), aimed at the false
+    /// positive, and a three-word example (v21), aimed at the short span.
+    /// Both scored 93% with the same two failures.
     static let frenchExtractionPrompt = """
     Associe un nom mal transcrit a l'orthographe que la personne vient d'epeler.
 
