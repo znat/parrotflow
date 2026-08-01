@@ -1,0 +1,200 @@
+# Validation set for DateRewriter. Run with scripts/check-dates.sh.
+#
+# The same set scores the model on the same cases — `scripts/check-dates.sh
+# --model` sends each one through the free-form prompt instead — because the
+# only question worth asking about a deterministic path is whether it beats the
+# one it would replace.
+#
+# What is being tested is a split, not a feature. Finding a date and rendering
+# it in a named format has exactly one right answer, so it is code; deciding
+# *which* format was asked for is reading an instruction, and even that turns
+# out to be closed enough to match on words. Nothing here calls a model.
+#
+# Cases marked `locale` depend on how this Mac writes dates — 12/03/2025 is
+# March under en_GB and fr_FR, December under en_US. That is the correct answer
+# to an ambiguous input rather than a bug, but it means these two are the ones
+# to look at first when the set fails on someone else's machine.
+#
+# `expect: unchanged` is a third of the set and the important third. A rewriter
+# that fires on an instruction that was not about dates is worse than one that
+# never fires, because it edits text nobody asked it to touch.
+#
+# One thing this set got wrong at first, and it is worth recording because it
+# is the difference between testing a library and testing this app. The cases
+# were written ISO-in, something-else-out — which is backwards. Dictation does
+# not hand you "2026-01-15"; it hands you "on se voit le 3 décembre", and what
+# the speaker wants is "3/12". Rewritten around that, two real defects fell out
+# of the first case: the rewriter printed a year nobody had said (the detector
+# resolves a bare "3 décembre" to the next December), and it zero-padded a day
+# that arrived unpadded.
+#
+# The detector's limit is the digit, measured: "3 décembre" and "December 3rd"
+# are found, "trois décembre" and "December third" are not. So a fully
+# spelled-out date needs `transcription.numbers` to have run first, and in
+# French that does not exist yet — `Numbers.swift` is English-only.
+
+cases:
+  # --- as dictation actually produces them ---------------------------------
+  # The month arrives as a word and the day as a digit, which is what Parakeet
+  # writes. These are the cases that matter most; everything below is the same
+  # machinery pointed in other directions.
+  - name: spoken French date to slashes
+    instruction: écris la date avec des slashs
+    input: on se voit le 3 décembre
+    expect: on se voit le 3/12
+
+  - name: spoken English date to slashes
+    locale: true
+    instruction: write the date with slashes
+    input: the meeting is December 3rd
+    expect: the meeting is 3/12
+
+  - name: spoken date with a year keeps it
+    locale: true
+    instruction: write the date with slashes
+    input: the meeting is December 3rd 2026
+    expect: the meeting is 3/12/2026
+
+  # The year is the one field that must never be invented: the detector
+  # resolves a bare "3 décembre" to the next December, so printing it would
+  # commit the speaker to a year they did not say.
+  - name: no year said, none written
+    instruction: convert the date to ISO
+    input: on se voit le 3 décembre
+    expect: on se voit le 12-03
+
+  - name: unpadded in, unpadded out
+    instruction: write the dates with dots, day first
+    input: shipping 3 December
+    expect: shipping 3.12
+
+  # --- dates, format named -------------------------------------------------
+  - name: written date to ISO
+    instruction: convert the date to ISO
+    input: the deadline is March 3 2026
+    expect: the deadline is 2026-03-03
+
+  # The one failure in the set, left standing because it is the detector's
+  # limit rather than a wording problem: given two dates in one sentence it
+  # returns only the first, and returns it with the words around it ("start on
+  # March 3 2026"). The range is trimmed back to the date now — before that the
+  # rewriter deleted "start on", which is how a helper loses you a sentence —
+  # so the cost today is the second date going unconverted, not text lost.
+  - name: two dates at once
+    instruction: make the dates ISO
+    input: we start on March 3 2026 and finish on April 9 2026
+    expect: we start on 2026-03-03 and finish on 2026-04-09
+
+  - name: day-first numeric dates
+    locale: true
+    instruction: these dates are day first, write them ISO
+    input: we met on 12/03/2025 and again on 05/01/2026
+    expect: we met on 2025-03-12 and again on 2026-01-05
+
+  - name: ISO to slashes, month first
+    instruction: write the dates with slashes, month first
+    input: the retro is on 2026-04-09
+    expect: the retro is on 04/09/2026
+
+  - name: ISO to dots, day first
+    instruction: write the dates with dots, day first
+    input: the retro is on 2026-04-09
+    expect: the retro is on 09.04.2026
+
+  - name: spell the month out
+    instruction: spell the month out
+    input: shipping 2026-01-15
+    expect: shipping 15 January 2026
+
+  - name: spell the month out, month first
+    instruction: spell the month out, month day year
+    input: shipping 2026-01-15
+    expect: shipping January 15, 2026
+
+  # --- the same, in French -------------------------------------------------
+  # The detector needs no hint to find these. The month name follows the
+  # language of the *text*, so a French sentence spells French on an English
+  # Mac — that part is `NLLanguageRecognizer`, reused from the correction path.
+  - name: French date to ISO
+    instruction: mets les dates au format ISO
+    input: la réunion est le 3 mars 2026
+    expect: la réunion est le 2026-03-03
+
+  - name: French month spelled from an English instruction
+    instruction: spell the month out
+    input: on livre le 2026-01-15 comme prévu
+    expect: on livre le 15 janvier 2026 comme prévu
+
+  - name: French, dates named in French
+    instruction: écris les dates en toutes lettres
+    input: le point de suivi est prévu le 2026-03-03
+    expect: le point de suivi est prévu le 3 mars 2026
+
+  # --- clock ---------------------------------------------------------------
+  - name: twelve hour to twenty four
+    instruction: use the 24 hour clock
+    input: standup is at 9:30am and the review at 4pm
+    expect: standup is at 09:30 and the review at 16:00
+
+  - name: twenty four to twelve hour
+    instruction: use the 12 hour clock
+    input: standup is at 09:30 and the review at 16:00
+    expect: standup is at 9:30am and the review at 4pm
+
+  - name: French clock
+    instruction: use the 24 hour clock
+    input: le point est à 9h30
+    expect: le point est à 09:30
+
+  - name: midnight and midday
+    instruction: use the 24 hour clock
+    input: the job runs at 12:00am and again at 12:00pm
+    expect: the job runs at 00:00 and again at 12:00
+
+  # --- must come back untouched -------------------------------------------
+  - name: already ISO
+    instruction: make the dates ISO
+    input: the release is 2026-02-01
+    expect: unchanged
+
+  - name: already 24 hour
+    instruction: use the 24 hour clock
+    input: standup is at 09:30 sharp
+    expect: unchanged
+
+  - name: no date in the text
+    instruction: convert the dates to ISO
+    input: call the vendor about the invoice
+    expect: unchanged
+
+  # A date and a time in one breath. The detector returns them as a single
+  # range, so rewriting it as a date would delete the time — refusing is the
+  # cheap failure and losing half the sentence is not.
+  - name: a date carrying a time
+    instruction: convert the date to ISO
+    input: we shipped it on March 3 2026 at 9:30am
+    expect: unchanged
+
+  # --- not a date instruction at all --------------------------------------
+  # This is the half that decides whether the rewriter can be wired to the
+  # router at all. Everything here contains something a date parser would
+  # happily match, and none of it was a request to reformat a date.
+  - name: a number instruction
+    instruction: write the numbers as digits
+    input: forty two people showed up
+    expect: unchanged
+
+  - name: a grammar instruction
+    instruction: fix the grammar and punctuation
+    input: the panel dont show up sometimes
+    expect: unchanged
+
+  - name: an idle question
+    instruction: what is the weather tomorrow
+    input: the release is cut on the fifteenth
+    expect: unchanged
+
+  - name: a remark about a date
+    instruction: we talked about the dates in the meeting
+    input: the retro is on 2026-04-09
+    expect: unchanged

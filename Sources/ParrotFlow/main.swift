@@ -78,6 +78,18 @@ if let index = arguments.firstIndex(of: "--prompt") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--dates") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --dates \"<instruction>\" \"<text>\" [--quiet]")
+        exit(2)
+    }
+    exit(DatesCommand.run(
+        instruction: arguments[index + 1],
+        text: arguments[index + 2],
+        quiet: arguments.contains("--quiet")
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--learn") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --learn <heard> <corrected>")
