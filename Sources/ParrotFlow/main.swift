@@ -8,6 +8,14 @@ import AppKit
 //
 let arguments = CommandLine.arguments
 
+// Log writes are asynchronous, which is right for a menu bar app and wrong for
+// a command that exits the moment it has printed: the process is gone before
+// the queue drains and the lines are silently lost. Two commands remembered to
+// flush and the rest did not, so `--replace` was dropping the very lines that
+// explain what the pipeline did — a stage saying it skipped, and why. Doing it
+// here covers every path, including the ones added later.
+atexit { Log.flush() }
+
 if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }

@@ -65,9 +65,17 @@ enum CheckConfigCommand {
                 // An empty pipeline is a choice, not a blank: printing
                 // nothing there reads as a display fault rather than as the
                 // answer to "why did none of this run".
-                let stages = pipeline.stages.isEmpty
+                // Conditions are printed with the stage they gate. A pipeline
+                // that reads as three stages when one of them almost never
+                // runs is a pipeline that explains nothing.
+                let stages = pipeline.steps.isEmpty
                     ? "nothing — the list is empty"
-                    : pipeline.stages.map(\.name).joined(separator: " → ")
+                    : pipeline.steps.map { step -> String in
+                        var described = step.stage.name
+                        if let when = step.when { described += " when \(when)" }
+                        if let unless = step.unless { described += " unless \(unless)" }
+                        return described
+                    }.joined(separator: " → ")
                 print("  · pipeline \(language)        \(stages)  (\(source))")
                 for problem in pipeline.validate() {
                     print("  ✗ pipeline \(language): \(problem)")

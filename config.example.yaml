@@ -32,6 +32,22 @@ transcription:
   # every stage back; write `default: []` and you get none, which is a choice
   # rather than silence.
   #
+  # A stage can carry a condition, which is what makes an expensive one
+  # affordable — it is skipped on the transcripts that do not need it:
+  #
+  #   - stage: numbers
+  #     when: /\b(vingt|cent|mille)\b/     # only if a number word is left
+  #   - stage: fuzzy
+  #     unless: /```/                      # never inside a code fence
+  #
+  # `when` and `unless` read the text as it stands *at that point*, after the
+  # stages above — so a cheap stage can make an expensive one unnecessary
+  # rather than merely earlier. Both may be set; `unless` wins. The pattern is
+  # written like a replacement source: between slashes it is a regular
+  # expression, otherwise a word matched on word boundaries. Case-insensitive
+  # either way. A skipped stage says so in the log, because a stage that
+  # silently does not run looks exactly like one that ran and found nothing.
+  #
   # Written out in full on purpose. The stages are few enough to read at a
   # glance, and deleting a line you can see beats discovering a setting you
   # cannot.

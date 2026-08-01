@@ -214,6 +214,33 @@ struct Config: Codable, Equatable {
         /// filler words are removed — they need alternation and have to take
         /// their surrounding punctuation with them. Everything else is matched
         /// literally on word boundaries.
+        /// One line of a pipeline. Written either way:
+        ///
+        ///     - numbers
+        ///     - stage: numbers
+        ///       when: /\\d/
+        ///
+        /// The short form is the one almost every line wants, and a format that
+        /// makes the common case verbose is a format people work around.
+        struct PipelineEntry: Decodable {
+            let name: String
+            var when: String?
+            var unless: String?
+
+            private enum CodingKeys: String, CodingKey { case stage, when, unless }
+
+            init(from decoder: Decoder) throws {
+                if let bare = try? decoder.singleValueContainer().decode(String.self) {
+                    name = bare
+                    return
+                }
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                name = try c.decodeIfPresent(String.self, forKey: .stage) ?? ""
+                when = try c.decodeIfPresent(String.self, forKey: .when)
+                unless = try c.decodeIfPresent(String.self, forKey: .unless)
+            }
+        }
+
         struct Rule {
             let source: String
             let replacement: String
@@ -273,16 +300,18 @@ struct Config: Codable, Equatable {
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
             }
-            if let raw = try c.decodeIfPresent([String: [String]].self, forKey: .pipelines) {
-                for (language, names) in raw {
-                    let stages = names.compactMap { name -> Pipeline.Stage? in
-                        guard let stage = Pipeline.stage(named: name) else {
-                            unknownStages.append(name)
+            if let raw = try c.decodeIfPresent(
+                [String: [PipelineEntry]].self, forKey: .pipelines
+            ) {
+                for (language, entries) in raw {
+                    let steps = entries.compactMap { entry -> Pipeline.Step? in
+                        guard let stage = Pipeline.stage(named: entry.name) else {
+                            unknownStages.append(entry.name)
                             return nil
                         }
-                        return stage
+                        return Pipeline.Step(stage: stage, when: entry.when, unless: entry.unless)
                     }
-                    pipelines[language.lowercased()] = Pipeline(stages: stages)
+                    pipelines[language.lowercased()] = Pipeline(steps: steps)
                 }
             }
             for key in [LegacyKeys.numbers, .fuzzyMatching] {
@@ -555,6 +584,22 @@ enum ConfigStore {
       # not finding a setting you cannot. Delete `pipelines:` entirely and you get
       # every stage back; write `default: []` and you get none, which is a choice
       # rather than silence.
+      #
+      # A stage can carry a condition, which is what makes an expensive one
+      # affordable — it is skipped on the transcripts that do not need it:
+      #
+      #   - stage: numbers
+      #     when: /\\b(vingt|cent|mille)\\b/     # only if a number word is left
+      #   - stage: fuzzy
+      #     unless: /```/                      # never inside a code fence
+      #
+      # `when` and `unless` read the text as it stands *at that point*, after the
+      # stages above — so a cheap stage can make an expensive one unnecessary
+      # rather than merely earlier. Both may be set; `unless` wins. The pattern is
+      # written like a replacement source: between slashes it is a regular
+      # expression, otherwise a word matched on word boundaries. Case-insensitive
+      # either way. A skipped stage says so in the log, because a stage that
+      # silently does not run looks exactly like one that ran and found nothing.
       #
       # This is written out in full on purpose. The stages are few enough to
       # read at a glance, and deleting a line you can see beats discovering a

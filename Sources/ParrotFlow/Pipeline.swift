@@ -42,7 +42,61 @@ struct Pipeline: Equatable, Codable {
         var name: String { rawValue }
     }
 
-    let stages: [Stage]
+    /// A stage plus when it runs. The condition is the whole reason a pipeline
+    /// beats a list: a stage that costs a second is affordable exactly when it
+    /// can be skipped on the transcripts that do not need it.
+    struct Step: Equatable, Codable {
+        let stage: Stage
+        /// Run only when this matches the text as it stands *at this point* —
+        /// after the stages before it, not on the original. That ordering is
+        /// what lets a cheap deterministic stage make an expensive one
+        /// unnecessary rather than merely earlier.
+        var when: String?
+        /// Skip when this matches. Both may be set; `unless` wins, because a
+        /// reason not to run is a stronger statement than a reason to.
+        var unless: String?
+
+        /// Same convention as `replacements`, so there is one thing to learn:
+        /// between slashes it is a regular expression, otherwise it is a word,
+        /// matched on word boundaries. Case-insensitive either way.
+        static func pattern(for condition: String) -> String {
+            let trimmed = condition.trimmingCharacters(in: .whitespaces)
+            guard trimmed.count >= 2, trimmed.hasPrefix("/"), trimmed.hasSuffix("/") else {
+                return "\\b\(NSRegularExpression.escapedPattern(for: trimmed))\\b"
+            }
+            return String(trimmed.dropFirst().dropLast())
+        }
+
+        func matches(_ text: String, _ condition: String) -> Bool {
+            guard let expression = Step.expression(for: condition) else { return false }
+            return expression.firstMatch(
+                in: text, range: NSRange(text.startIndex..., in: text)
+            ) != nil
+        }
+
+        /// Compiled once per pattern. A pipeline runs on every transcript, and
+        /// rebuilding the same expression each time is work nobody asked for.
+        private static var cache: [String: NSRegularExpression] = [:]
+        static func expression(for condition: String) -> NSRegularExpression? {
+            if let cached = cache[condition] { return cached }
+            guard let built = try? NSRegularExpression(
+                pattern: pattern(for: condition), options: [.caseInsensitive]
+            ) else { return nil }
+            cache[condition] = built
+            return built
+        }
+
+        /// Whether this step should run against the text as it now stands.
+        func shouldRun(on text: String) -> Bool {
+            if let unless, matches(text, unless) { return false }
+            if let when, !matches(text, when) { return false }
+            return true
+        }
+    }
+
+    let steps: [Step]
+
+    var stages: [Stage] { steps.map(\.stage) }
 
     /// Every stage, in declaration order, which is the canonical order —
     /// numbers last, always, because both name passes match on words and a
@@ -61,7 +115,7 @@ struct Pipeline: Equatable, Codable {
     ///
     /// An empty list is not the same as no list. `default: []` is a choice and
     /// runs nothing; a missing `pipelines:` is silence and runs everything.
-    static let everything = Pipeline(stages: Stage.allCases)
+    static let everything = Pipeline(steps: Stage.allCases.map { Step(stage: $0) })
 
     /// The pipeline for a transcript in `language`, from the config.
     ///
@@ -104,6 +158,16 @@ struct Pipeline: Equatable, Codable {
     /// enough against "Supabase" to swallow the preceding word.
     func validate() -> [String] {
         var problems: [String] = []
+        for step in steps {
+            for (label, condition) in [("when", step.when), ("unless", step.unless)] {
+                guard let condition else { continue }
+                if Step.expression(for: condition) == nil {
+                    // Otherwise the stage simply never runs, which looks
+                    // exactly like the stage being broken.
+                    problems.append("\(step.stage.name): \(label) \"\(condition)\" is not a valid pattern")
+                }
+            }
+        }
         if let fuzzy = stages.firstIndex(of: .fuzzy) {
             guard let exact = stages.firstIndex(of: .replacements) else {
                 problems.append("fuzzy has no replacements before it; it reads that table and will find nothing")
@@ -118,8 +182,15 @@ struct Pipeline: Equatable, Codable {
 
     func run(_ text: String, config: Config) -> String {
         var output = text
-        for stage in stages {
-            output = apply(stage, to: output, config: config)
+        for step in steps {
+            guard step.shouldRun(on: output) else {
+                // Said out loud, because a stage that silently does not run is
+                // indistinguishable from a stage that ran and found nothing —
+                // and only one of those is answerable by editing a condition.
+                Log.write("pipeline: skipped \(step.stage.name) — its condition did not hold")
+                continue
+            }
+            output = apply(step.stage, to: output, config: config)
         }
         return output
     }
