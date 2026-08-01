@@ -20,11 +20,19 @@ enum NumbersCommand {
             return 0
         }
 
-        let enabled = (try? ConfigStore.load())?.transcription.numbers
-        switch enabled {
-        case true?: print("transcription.numbers: on — dictation gets this")
-        case false?: print("transcription.numbers: off — dictation is unaffected by what follows")
-        case nil: print("transcription.numbers: unknown — the config could not be read")
+        // Whether dictation actually gets this is now a question about the
+        // pipeline, and the answer differs per language — so say which.
+        if let config = try? ConfigStore.load() {
+            let carrying = config.transcription.languages.filter { language in
+                Pipeline.resolved(config: config, language: language).stages.contains(.numbers)
+            }
+            if carrying.isEmpty {
+                print("no pipeline runs numbers — dictation is unaffected by what follows")
+            } else {
+                print("pipeline: numbers runs for \(carrying.joined(separator: ", "))")
+            }
+        } else {
+            print("the config could not be read; what follows is the pass on its own")
         }
         print("")
 

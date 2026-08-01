@@ -54,7 +54,21 @@ enum CheckConfigCommand {
             print("  · insert mode       \(mode)")
             print("  · wake phrase       \"\(transcription.activationPhrase)\"")
             print("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
-            print("  · numbers           \(transcription.numbers ? "written as digits" : "left as words")")
+            // The pipeline, per language, because "why was this not
+            // converted" is a question about the order and not about a
+            // setting any more.
+            for language in transcription.languages {
+                let pipeline = Pipeline.resolved(config: config, language: language)
+                let source = transcription.pipelines[language] != nil ? language
+                    : (transcription.pipelines["default"] != nil ? "default" : "built-in")
+                print("  · pipeline \(language)        "
+                    + pipeline.stages.map(\.name).joined(separator: " → ")
+                    + "  (\(source))")
+                for problem in pipeline.validate() {
+                    print("  ✗ pipeline \(language): \(problem)")
+                    ok = false
+                }
+            }
             let languages = transcription.languages.joined(separator: ", ")
             print("  · languages         \(languages)"
                 + (transcription.languages.count > 1
@@ -63,7 +77,6 @@ enum CheckConfigCommand {
         }
         if transcription.enabled {
             if !transcription.replacements.isEmpty {
-                print("  · fuzzy matching    \(transcription.fuzzyMatching ? "on" : "off")")
                 let total = transcription.rules.count
                 print("  ✓ replacements      \(total) across \(transcription.replacements.count) entries")
                 for (target, sources) in transcription.replacements.sorted(by: { $0.key < $1.key }) {
@@ -78,6 +91,23 @@ enum CheckConfigCommand {
                     ok = false
                 }
             }
+        }
+
+        // A key that no longer does anything is worse than a key that is
+        // wrong: nothing fails, and two passes quietly stop running. So it is
+        // an error, with the replacement spelled out.
+        for name in Set(transcription.unknownStages).sorted() {
+            print("  ✗ pipelines: \"\(name)\" is not a stage — have: "
+                + Pipeline.stageNames.joined(separator: ", "))
+            ok = false
+        }
+        for key in transcription.retired {
+            print("  ✗ transcription.\(key) no longer does anything — it is a pipeline stage now")
+            ok = false
+        }
+        if !transcription.retired.isEmpty {
+            print("      pipelines:")
+            print("        default: [\(Pipeline.stageNames.joined(separator: ", "))]")
         }
 
         // What "hey parrot" can reach. Printed even when `prompts:` is empty,

@@ -155,8 +155,7 @@ struct Config: Codable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, replacements, numbers
-            case fuzzyMatching = "fuzzy_matching", languages
+            case enabled, replacements, pipelines, languages
             case insertMode = "insert_mode"
             case activationPhrase = "activation_phrase"
             case rewriteLine = "rewrite_line"
@@ -167,6 +166,10 @@ struct Config: Codable, Equatable {
         /// longer use.
         private enum LegacyKeys: String, CodingKey {
             case correctionPhrase = "correction_phrase"
+            // Retired into `pipelines:`. Still read, only so that a config
+            // carrying them can be told so — see `retired`.
+            case numbers
+            case fuzzyMatching = "fuzzy_matching"
         }
         /// Grouped by the word you want written, since one name accumulates
         /// several mishearings — eleven rules had built up for four names
@@ -175,17 +178,28 @@ struct Config: Codable, Equatable {
         ///     replacements:
         ///       Tasmeen: [Tasmid, Tasmin, Tasmine]
         var replacements: [String: [String]] = [:]
-        /// Also catch renderings you have not taught, by matching against the
-        /// spellings you want. Only a word the spell checker does not know can
-        /// be replaced, which is what keeps "Excel" from becoming "Vercel".
-        var fuzzyMatching: Bool = true
-        /// Write spoken numbers as digits — "two hundred forty-three" => 243.
-        /// See `Numbers` for what it will and will not touch.
+        /// What a finished transcript goes through, in order, per language —
+        /// see `Pipeline`. A language's own list wins over `default`.
         ///
-        /// Off unless asked for. Unlike the name passes it changes transcripts
-        /// the model got right, and whether "chapter three" wants a 3 is a
-        /// house-style question rather than a correctness one.
-        var numbers: Bool = false
+        /// Empty here means the config said nothing, not that nothing should
+        /// run: `Pipeline.unconfigured` decides that. A new install is written
+        /// with every stage listed, so the answer to "what else could go here"
+        /// is in the file rather than in the documentation.
+        var pipelines: [String: Pipeline] = [:]
+
+        /// Keys this config still carries that no longer do anything.
+        ///
+        /// `numbers` and `fuzzy_matching` became stages. The decoder ignores
+        /// keys it does not know, so a config still setting them would lose
+        /// two passes without a word — which is the one outcome a rename must
+        /// not have. They are read here purely so `--check-config` can refuse
+        /// them and say what to write instead.
+        var retired: [String] = []
+
+        /// Stage names in `pipelines:` that are not stages. Dropped from the
+        /// pipeline, kept here: a line silently doing nothing is the same
+        /// failure as a retired key, and the log is not where anyone looks.
+        var unknownStages: [String] = []
 
         /// One rule per mishearing, flattened for the substitution pass.
         var rules: [Rule] {
@@ -259,10 +273,23 @@ struct Config: Codable, Equatable {
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
             }
-            if let v = try c.decodeIfPresent(Bool.self, forKey: .fuzzyMatching) {
-                fuzzyMatching = v
+            if let raw = try c.decodeIfPresent([String: [String]].self, forKey: .pipelines) {
+                for (language, names) in raw {
+                    let stages = names.compactMap { name -> Pipeline.Stage? in
+                        guard let stage = Pipeline.stage(named: name) else {
+                            unknownStages.append(name)
+                            return nil
+                        }
+                        return stage
+                    }
+                    pipelines[language.lowercased()] = Pipeline(stages: stages)
+                }
             }
-            if let v = try c.decodeIfPresent(Bool.self, forKey: .numbers) { numbers = v }
+            for key in [LegacyKeys.numbers, .fuzzyMatching] {
+                if (try? legacy.decodeIfPresent(Bool.self, forKey: key)) ?? nil != nil {
+                    retired.append(key.stringValue)
+                }
+            }
             do {
                 if let grouped = try c.decodeIfPresent(
                     [String: [String]].self, forKey: .replacements
@@ -517,23 +544,31 @@ enum ConfigStore {
       #     "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
       replacements: {}
 
-      # Also catch renderings you have not taught, by matching against the
-      # spellings above. Only words the spell checker does not recognise can
-      # be replaced, so ordinary language is never touched.
-      fuzzy_matching: true
-
-      # Write spoken numbers as digits: "two hundred forty-three" -> 243.
-      # Also ordinals (twenty third -> 23rd), decimals (three point one four
-      # -> 3.14), years (nineteen eighty-four -> 1984) and spoken digits
-      # (five five one two -> 5512).
+      # Everything a finished transcript goes through, in order, per language.
+      # A language's own list wins over `default`; anything not listed here
+      # does not run.
       #
-      # A number word on its own stays a word below ten, so "chapter three"
-      # and "no one knows" are left as they are. Anything longer converts.
+      # This is written out in full on purpose. The stages are few enough to
+      # read at a glance, and deleting a line you can see beats discovering a
+      # setting you cannot.
       #
-      # Off by default. It rewrites transcripts that were already correct, and
-      # whether you want digits at all is a matter of taste. Run --numbers to
-      # see exactly what turning it on would do.
-      numbers: false
+      #   replacements  the substitutions above: literal, word-boundary,
+      #                 case-insensitive, or a regex between slashes
+      #   fuzzy         the same table, used to catch renderings you have not
+      #                 taught — "super bays" reaches Supabase. Only words the
+      #                 spell checker does not know are eligible, which is what
+      #                 keeps "Excel" from becoming "Vercel". Needs
+      #                 `replacements` before it, and says so if it does not
+      #                 have one.
+      #   numbers       spoken numbers as digits: "two hundred forty-three"
+      #                 -> 243, ordinals, decimals, years, spoken digits.
+      #                 English and French, chosen per transcript. A number
+      #                 word on its own stays a word below ten, so "chapter
+      #                 three" is left alone. It does rewrite transcripts that
+      #                 were already correct — run --numbers on a line to see
+      #                 exactly what it would do before leaving it in.
+      pipelines:
+        default: [replacements, fuzzy, numbers]
 
     # A local Ollama model, used to interpret what you say after the wake
     # phrase. Everything still works without it — you just lose spoken

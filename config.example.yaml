@@ -36,24 +36,36 @@ transcription:
     Tasmeen: [Tasmid, Tasmin, Tasmine]
     Supabase: [super base, superbees]
 
-  # Write spoken numbers as digits: "two hundred forty-three" -> 243. Also
-  # ordinals (twenty third -> 23rd), decimals (three point one four -> 3.14),
-  # years (nineteen eighty-four -> 1984) and spoken digits (five five one two
-  # -> 5512).
+  # Everything a finished transcript goes through, in order, per language.
+  # A language's own list wins over `default`; anything not listed does not run.
   #
-  # English and French, picked per transcript from the `languages` list above.
-  # French gets its own grammar because its numbers are arithmetic —
-  # quatre-vingt-dix-sept is 4 x 20 + 10 + 7 — and its own decimal comma:
-  # "trois virgule un quatre" -> 3,14.
+  # Written out in full on purpose. The stages are few enough to read at a
+  # glance, and deleting a line you can see beats discovering a setting you
+  # cannot.
   #
-  # A number word on its own stays a word below ten, so "chapter three", "on
-  # est deux" and "no one knows" are left alone. That threshold is the whole
-  # judgement: it is what writes "a deux, on a depense deux cents euros" as
-  # "a deux, on a depense 200 euros" rather than "a 2".
+  #   replacements  the substitutions above: literal, word-boundary,
+  #                 case-insensitive, or a regex between slashes
+  #   fuzzy         the same table, used to catch renderings you have not
+  #                 taught — "super bays" reaches Supabase. Only words the
+  #                 spell checker does not know are eligible, which is what
+  #                 keeps "Excel" from becoming "Vercel". It needs
+  #                 `replacements` before it and says so if it does not have
+  #                 one, because on its own it swallows the preceding word.
+  #   numbers       spoken numbers as digits: "two hundred forty-three" -> 243,
+  #                 plus ordinals, decimals, years and spoken digits. English
+  #                 and French, septante/huitante/nonante included, chosen per
+  #                 transcript. A number word on its own stays a word below
+  #                 ten, so "chapter three" and "on est deux" are left alone.
+  #                 It does rewrite transcripts that were already correct — run
+  #                 --numbers on a line to see exactly what it would do.
   #
-  # Off by default — it rewrites transcripts that were already correct, and
-  # digits are a matter of taste. Run --numbers to see what it would do.
-  numbers: false
+  # Per language, when they should differ:
+  #
+  #   pipelines:
+  #     default: [replacements, fuzzy]
+  #     fr: [replacements, fuzzy, numbers]
+  pipelines:
+    default: [replacements, fuzzy, numbers]
 
 # A local Ollama model, used to interpret what you say after the wake phrase.
 # Everything else works without it — you just lose free-form spoken commands.

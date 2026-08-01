@@ -22,45 +22,71 @@ import Foundation
 /// evidence" — the guard that stops French reading the "cents" in "I have 99
 /// cents" as hundreds. Collapsing that to one language here would quietly
 /// delete it.
-struct Pipeline {
+struct Pipeline: Equatable, Codable {
 
     /// One step. Deliberately not a closure: a stage has to be nameable in a
     /// config file, comparable in a test, and printable in a log, and a
     /// function value is none of those.
-    enum Stage: Equatable {
+    /// The raw value is the name written in the config, so the two cannot
+    /// drift apart — a stage that cannot be spelled is a stage nobody can ask
+    /// for.
+    enum Stage: String, Equatable, Codable, CaseIterable {
         /// Literal and regex substitutions from `transcription.replacements`.
         case replacements
         /// The same table, used to catch spellings it does not contain.
         /// Meaningless before `replacements` — see `validate`.
         case fuzzy
-        /// Spoken numbers as digits, in the resolved language's grammar.
+        /// Spoken numbers as digits, in the language its own pass resolves.
         case numbers
 
-        var name: String {
-            switch self {
-            case .replacements: return "replacements"
-            case .fuzzy: return "fuzzy"
-            case .numbers: return "numbers"
-            }
-        }
+        var name: String { rawValue }
     }
 
     let stages: [Stage]
 
-    /// The pipeline the flags used to describe.
+    /// What runs when the config names no pipeline at all.
     ///
-    /// Phase one keeps them, so that moving three steps behind a type can be
-    /// proven to change nothing before anything about the config changes. The
-    /// order is the order `Replacements.apply` ran them in, and the reason for
-    /// it is still true: both name passes match on words, so a mishearing that
-    /// happens to contain a number word — "Ver Sal two" — has to still look
-    /// like words while they run. Numbers last, always.
-    static func fromFlags(_ config: Config) -> Pipeline {
-        var stages: [Stage] = [.replacements]
-        if config.transcription.fuzzyMatching { stages.append(.fuzzy) }
-        if config.transcription.numbers { stages.append(.numbers) }
-        return Pipeline(stages: stages)
+    /// Only `replacements`, because it is the one pass with no switch to turn
+    /// off: it does nothing until you have taught it a spelling, so it costs
+    /// nothing to leave in. Everything else stays out until asked for.
+    ///
+    /// This is not what a new install gets. `Config.defaultYAML` writes a
+    /// complete pipeline, so someone starting today has every stage in front of
+    /// them, in order, to delete rather than to discover. The conservative
+    /// answer here is for a config that simply does not say — which after the
+    /// flags were retired mostly means one written before they were.
+    static let unconfigured = Pipeline(stages: [.replacements])
+
+    /// The pipeline for a transcript in `language`, from the config.
+    ///
+    /// A language's own list wins, then `default`, then `unconfigured`. Falling
+    /// back rather than merging: a pipeline is an order, and an order that is
+    /// half yours and half inherited is not one anybody can read off the page.
+    static func resolved(config: Config, language: String) -> Pipeline {
+        config.transcription.pipelines[language]
+            ?? config.transcription.pipelines["default"]
+            ?? unconfigured
     }
+
+    /// The pipeline for this text, and the language it was judged to be in.
+    ///
+    /// Detection happens here because the pipeline is what it selects. It is
+    /// skipped entirely when there is nothing to select between, which is the
+    /// common case and saves the recogniser a call.
+    static func forText(_ text: String, config: Config) -> (Pipeline, String) {
+        let languages = config.transcription.languages
+        let language = languages.count > 1
+            ? DictationLanguage.detect(text, allowed: languages, fallback: languages.first ?? "en")
+            : (languages.first ?? "en")
+        return (resolved(config: config, language: language), language)
+    }
+
+    /// The stage a config line names, or nil if it names nothing.
+    static func stage(named name: String) -> Stage? {
+        Stage(rawValue: name.trimmingCharacters(in: .whitespaces).lowercased())
+    }
+
+    static var stageNames: [String] { Stage.allCases.map(\.rawValue) }
 
     /// Complaints about a pipeline that would run but not do what it looks
     /// like it does. Returned rather than thrown: one bad line should be
