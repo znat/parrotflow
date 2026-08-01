@@ -17,6 +17,14 @@
 # Nothing here is interactive: this script is read from stdin when piped to sh,
 # so it can never prompt.
 #
+# Two URLs, and they do not move together. This file is read from `main`, which
+# changes whenever anything is pushed; the app is fetched from the latest
+# release, which changes only when one is cut. So this script is always at least
+# as new as the app it installs, and often newer. Nothing in here may depend on
+# the app's own behaviour — not a flag, not an output format, not a config key
+# it has only just learned. Ask the filesystem, ask another program, or ask the
+# user's own config file. Those are true across the gap; the app is not.
+#
 #   PARROTFLOW_VERSION=0.2.0   install a specific version instead of the latest
 #   PARROTFLOW_DEST=~/Applications   install somewhere other than /Applications
 set -eu
@@ -131,6 +139,60 @@ cat <<'EOF'
       1. Say yes to the microphone prompt.
       2. Hold Right Option, say something, let go.
 
+EOF
+
+# --- What is still missing ---------------------------------------------------
+#
+# Reported, never installed. Nothing here can prompt, and starting a 10 GB
+# download because someone ran an install command is not a decision to take on
+# their behalf.
+#
+# Every check below asks the filesystem or another program, never the app we
+# just installed. That is the rule, and the reason is the URLs: this script is
+# read from main, which moves, while the app comes from the latest release,
+# which does not. A check written against a flag this app might not have yet
+# would break for the person who most needs the script to work — the one who
+# does not have the app.
+
+MODELS="$HOME/Library/Application Support/FluidAudio/Models"
+if ! ls -d "$MODELS"/parakeet-* >/dev/null 2>&1; then
+    printf '    The speech model is not on this Mac yet. Your first dictation\n'
+    printf '    downloads it: about 1.2 GB, a few minutes, once. That wait is\n'
+    printf '    normal and only happens the first time.\n\n'
+fi
+
+# Their config wins if it names a different model; this file is the user's, so
+# reading it costs nothing and does not depend on the app's version.
+MODEL="gemma4:e4b"
+CONFIG="$HOME/.config/parrotflow/config.yaml"
+if [ -f "$CONFIG" ]; then
+    NAMED="$(sed -n 's/^[[:space:]]*model:[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$CONFIG" | head -1)"
+    [ -n "$NAMED" ] && MODEL="$NAMED"
+fi
+
+if ! command -v ollama >/dev/null 2>&1; then
+    printf '    Voice commands — "hey parrot, fix the grammar", teaching it how a\n'
+    printf '    name is spelled — need Ollama, which runs a language model on this\n'
+    printf '    Mac. Optional: dictation works without it.\n\n'
+    printf '      brew install ollama && brew services start ollama\n'
+    printf '      ollama pull %s\n\n' "$MODEL"
+elif ! INSTALLED="$(ollama list 2>/dev/null)"; then
+    printf '    Ollama is installed but not answering, so voice commands will not\n'
+    printf '    work. Start it:\n\n'
+    printf '      brew services start ollama\n\n'
+elif ! printf '%s\n' "$INSTALLED" | grep -qF "$MODEL"; then
+    printf '    Voice commands need the %s model, which is not downloaded yet:\n\n' "$MODEL"
+    printf '      ollama pull %s\n\n' "$MODEL"
+    # Only the default's size is known here. A model named in someone's own
+    # config could be any size, and a wrong number is worse than none.
+    if [ "$MODEL" = "gemma4:e4b" ]; then
+        printf '    About 9.6 GB. Dictation works the whole time it downloads.\n\n'
+    else
+        printf '    Dictation works the whole time it downloads.\n\n'
+    fi
+fi
+
+cat <<'EOF'
     Full setup, including spoken corrections:
       https://github.com/znat/parrotflow#install
 
