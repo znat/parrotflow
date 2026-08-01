@@ -36,7 +36,12 @@ if let index = arguments.firstIndex(of: "--replace") {
 if let index = arguments.firstIndex(of: "--numbers") {
     let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
         ? arguments[index + 1] : nil
-    exit(NumbersCommand.run(text: text))
+    let language = arguments.firstIndex(of: "--lang").flatMap { index in
+        arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+    }
+    exit(NumbersCommand.run(
+        text: text, quiet: arguments.contains("--quiet"), language: language
+    ))
 }
 
 if let index = arguments.firstIndex(of: "--normalize") {

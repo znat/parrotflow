@@ -35,7 +35,7 @@ enum DictationLanguage {
     /// 98% at four words and above, 94% at three, and confidence does not
     /// warn you: "Locks me a relu" came back English at 1.00. So the guard is
     /// on length, not on the recogniser's own score.
-    private static let minimumWords = 4
+    static let minimumWords = 4
 
     /// The language of `text`, restricted to `allowed`.
     ///

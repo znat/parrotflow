@@ -39,7 +39,12 @@ enum Replacements {
             output = applyFuzzy(to: exact, targets: Array(targets))
         }
         guard config.transcription.numbers else { return output }
-        return Numbers.apply(to: output)
+        // Which grammar reads the numbers is the transcript's own question, not
+        // the system's: `NumberGrammar.french` on an English sentence finds
+        // nothing, and the English one turns "quatre-vingts" into no number at
+        // all. Same recogniser the correction prompts use, constrained to the
+        // configured list, so a one-language config never pays for detection.
+        return Numbers.apply(to: output, languages: config.transcription.languages)
     }
 
     // MARK: - Exact

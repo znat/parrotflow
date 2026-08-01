@@ -1,0 +1,195 @@
+# Spoken-number validation set. Run with scripts/check-numbers.sh.
+#
+# Two jobs in one file. The English half is a regression guard: it was written
+# against the behaviour that shipped before `NumberGrammar` existed, so that
+# pulling the vocabulary out of `Numbers.swift` could be proven to change
+# nothing. The French half is new work, and the case that started it is the
+# first one below.
+#
+# `lang` pins the grammar rather than detecting it, because half these cases are
+# two words long and `DictationLanguage` needs four to answer. Detection is
+# exercised by the app, not here; what is being scored is the grammar.
+#
+# The set is deliberately lopsided toward text that must come back untouched.
+# A number pass runs on every transcript, including the ones that were already
+# right, so a false positive is not one bad case — it is a rewrite of correct
+# text that nobody asked for and nobody sees happen. "à deux" and "chapitre
+# trois" are the whole reason `digitsFrom` exists.
+
+cases:
+  # =========================================================================
+  # French
+  # =========================================================================
+
+  # --- the case this was built for ----------------------------------------
+  - name: à deux, deux cents
+    lang: fr
+    input: à deux, on a dépensé deux cents euros
+    expect: à deux, on a dépensé 200 euros
+
+  # Both halves of the threshold in one sentence, which is why it is worth
+  # more than either alone: the lone "deux" stays a word and the compound
+  # "vingt et un" becomes 21, in the same breath. Its English twin is below.
+  - { lang: fr, input: j'ai mangé deux des vingt et un poissons, expect: j'ai mangé deux des 21 poissons }
+  - { lang: fr, input: j'ai mangé deux des vingt-et-un poissons, expect: j'ai mangé deux des 21 poissons }
+
+  # --- 70, 80, 90: the vigesimal rule -------------------------------------
+  - { lang: fr, input: il y avait soixante-dix personnes, expect: il y avait 70 personnes }
+  - { lang: fr, input: soixante-quinze pour cent, expect: 75 pour cent }
+  - { lang: fr, input: soixante-dix-sept euros, expect: 77 euros }
+  - { lang: fr, input: on en a compté quatre-vingts, expect: on en a compté 80 }
+  - { lang: fr, input: il en reste quatre-vingt-un, expect: il en reste 81 }
+  - { lang: fr, input: quatre-vingt-dix dossiers, expect: 90 dossiers }
+  - { lang: fr, input: quatre-vingt-dix-sept dossiers, expect: 97 dossiers }
+  - { lang: fr, input: quatre vingt dix sept dossiers, expect: 97 dossiers }
+  - { lang: fr, input: soixante et onze euros, expect: 71 euros }
+  - { lang: fr, input: vingt et un jours, expect: 21 jours }
+  - { lang: fr, input: trente-deux personnes, expect: 32 personnes }
+  - { lang: fr, input: quarante-cinq minutes, expect: 45 minutes }
+  - { lang: fr, input: cinquante-neuf secondes, expect: 59 secondes }
+  - { lang: fr, input: dix-sept ans, expect: 17 ans }
+  - { lang: fr, input: dix-huit mois, expect: 18 mois }
+  - { lang: fr, input: dix-neuf euros, expect: 19 euros }
+  - { lang: fr, input: seize personnes, expect: 16 personnes }
+
+  # --- hundreds, thousands, and the bare scale ----------------------------
+  - { lang: fr, input: cent cinquante euros, expect: 150 euros }
+  - { lang: fr, input: cent euros, expect: 100 euros }
+  - { lang: fr, input: mille euros par mois, expect: 1000 euros par mois }
+  - { lang: fr, input: deux mille vingt-six, expect: '2026' }
+  - { lang: fr, input: deux cent cinquante mille, expect: '250000' }
+  - { lang: fr, input: cinq cent mille, expect: '500000' }
+  - { lang: fr, input: trois millions de dollars, expect: 3000000 de dollars }
+  - { lang: fr, input: deux milliards d'euros, expect: 2000000000 d'euros }
+  - { lang: fr, input: mille neuf cent quatre-vingt-quatre, expect: '1984' }
+
+  # --- decimals and ordinals ----------------------------------------------
+  - { lang: fr, input: trois virgule un quatre, expect: "3,14" }
+  - { lang: fr, input: zéro virgule cinq, expect: "0,5" }
+  - { lang: fr, input: le vingtième étage, expect: le 20e étage }
+  - { lang: fr, input: le vingt et unième jour, expect: le 21e jour }
+  - { lang: fr, input: le quinzième essai, expect: le 15e essai }
+
+  # --- Belgium and Switzerland --------------------------------------------
+  # Added as vocabulary only, no new rule: `.vigesimal` already reads a tens
+  # word plus a unit. They share the table with the metropolitan forms because
+  # no speaker uses both, and nothing upstream knows which French this is.
+  - { lang: fr, input: j'en ai quatre cent septante-huit, expect: j'en ai 478 }
+  - { lang: fr, input: j'en ai quatre cent septante huit, expect: j'en ai 478 }
+  - { lang: fr, input: nonante-neuf centimes, expect: 99 centimes }
+  - { lang: fr, input: il y avait septante personnes, expect: il y avait 70 personnes }
+  - { lang: fr, input: huitante euros, expect: 80 euros }
+  - { lang: fr, input: octante-cinq dossiers, expect: 85 dossiers }
+  - { lang: fr, input: septante et un jours, expect: 71 jours }
+  # The metropolitan forms must be untouched by all of that.
+  - { lang: fr, input: j'en ai quatre cent soixante-dix-huit, expect: j'en ai 478 }
+  - { lang: fr, input: quatre-vingt-dix-neuf centimes, expect: 99 centimes }
+
+  # --- French: must come back untouched -----------------------------------
+  # Every one of these contains a number word, and none of them is a number
+  # anyone wants written as a digit.
+  - { lang: fr, input: j'ai une question, expect: unchanged }
+  - { lang: fr, input: chapitre trois du livre, expect: unchanged }
+  - { lang: fr, input: on est deux sur le projet, expect: unchanged }
+  - { lang: fr, input: un et deux sont revenus, expect: unchanged }
+  - { lang: fr, input: il y en a un qui manque, expect: unchanged }
+  - { lang: fr, input: on se voit à cinq heures, expect: unchanged }
+  - { lang: fr, input: des centaines de gens, expect: unchanged }
+  # The threshold's own cost, in both languages, and not a French bug: a lone
+  # "dix" is at the floor so it converts, and "neuf fois sur 10" is not what
+  # anyone would type. The English twin below does exactly the same thing.
+  # Lowering the floor is not the fix — it is what keeps "chapitre trois" and
+  # "on est deux" as words, which is the failure that costs more.
+  - { lang: fr, input: neuf fois sur dix, expect: neuf fois sur 10 }
+  - { lang: fr, input: le premier de la liste, expect: unchanged }
+  - { lang: fr, input: en deux mots, expect: unchanged }
+
+  # =========================================================================
+  # English — the regression guard for the NumberGrammar refactor
+  # =========================================================================
+
+  # --- cardinals and the threshold ----------------------------------------
+  - { lang: en, input: two hundred forty-three, expect: '243' }
+  - { lang: en, input: two hundred and forty-three, expect: '243' }
+  - { lang: en, input: twenty-five people, expect: 25 people }
+  - { lang: en, input: about twelve of them, expect: about 12 of them }
+  - { lang: en, input: forty two people showed up, expect: 42 people showed up }
+  - { lang: en, input: a hundred and fifty bucks, expect: 150 bucks }
+  - { lang: en, input: two hundred fifty thousand, expect: '250000' }
+  - { lang: en, input: three million dollars, expect: 3000000 dollars }
+
+  # The twin of the French pair above — same sentence, same two behaviours,
+  # and the hyphen makes no difference because the tokeniser splits it.
+  - { lang: en, input: I ate two of the twenty one fishes, expect: I ate two of the 21 fishes }
+  - { lang: en, input: I ate two of the twenty-one fishes, expect: I ate two of the 21 fishes }
+
+  # --- extras --------------------------------------------------------------
+  - { lang: en, input: three point one four, expect: '3.14' }
+  - { lang: en, input: the twenty third of June, expect: the 23rd of June }
+  - { lang: en, input: nineteen eighty-four, expect: '1984' }
+  - { lang: en, input: it shipped in twenty twenty five, expect: it shipped in 2025 }
+  - { lang: en, input: call five five five one two three four, expect: call 5551234 }
+  - { lang: en, input: we hired twelve people, expect: we hired 12 people }
+
+  # --- English: the guards -------------------------------------------------
+  # Each of these broke a rule at some point, which is why they are here rather
+  # than in a comment.
+  - { lang: en, input: I have one question, expect: unchanged }
+  - { lang: en, input: no one knows, expect: unchanged }
+  - { lang: en, input: chapter three, expect: unchanged }
+  - { lang: en, input: the fifth of January, expect: unchanged }
+  - { lang: en, input: let's meet at eleven thirty, expect: unchanged }
+  - { lang: en, input: two three-inch bolts, expect: unchanged }
+  - { lang: en, input: one and two came back, expect: unchanged }
+  - { lang: en, input: hundreds of people came, expect: unchanged }
+  # The twin of the French case above, kept so the trade-off is visibly a
+  # design choice rather than one language misbehaving.
+  - { lang: en, input: nine times out of ten, expect: nine times out of 10 }
+  # "second" is out of the ordinal table on purpose: it is a unit of time more
+  # often than an ordinal, and this is the sentence that decides it.
+  - { lang: en, input: a thirty second timeout, expect: a 30 second timeout }
+
+  # =========================================================================
+  # No language pinned — what the app itself resolves
+  # =========================================================================
+  #
+  # `DictationLanguage` needs four words to answer and returns the first
+  # configured language below that, so these would all have been handed the
+  # English grammar and come back untouched. The pass tries the detected
+  # language first and the rest of the list after it, which also covers the
+  # recogniser's documented weak spot: a French sentence carrying English
+  # technical vocabulary.
+
+  # --- too short to detect -------------------------------------------------
+  - { lang: auto, input: cent euros, expect: 100 euros }
+  - { lang: auto, input: vingt et un, expect: '21' }
+  - { lang: auto, input: quatre-vingts, expect: '80' }
+  - { lang: auto, input: two hundred euros, expect: 200 euros }
+  - { lang: auto, input: twenty one, expect: '21' }
+
+  # --- code-switching ------------------------------------------------------
+  - { lang: auto, input: "on a mergé la pull request avec vingt et un commits", expect: "on a mergé la pull request avec 21 commits" }
+  - { lang: auto, input: I ate two of the twenty one fishes, expect: I ate two of the 21 fishes }
+
+  # --- and it still leaves alone what it should ---------------------------
+  - { lang: auto, input: on est deux sur le projet, expect: unchanged }
+  - { lang: auto, input: I have one question, expect: unchanged }
+  - { lang: auto, input: chapitre trois du livre, expect: unchanged }
+
+  # --- where the two vocabularies collide ---------------------------------
+  # "cents" is French for hundreds and English for money, and the fallback that
+  # makes short French work turned "I have 99 cents" into "I have 99 100". A
+  # language the recogniser did not pick now has to recognise a unit, a teen or
+  # a tens word before it is allowed to win — a lone scale word is not enough.
+  - { lang: auto, input: I have 99 cents, expect: unchanged }
+  - { lang: auto, input: it costs 50 cents each, expect: unchanged }
+  # Same word, but English itself reads the number, so nothing falls through.
+  - { lang: auto, input: we made two hundred cents, expect: we made 200 cents }
+  # And the guard must not cost the French it was built for.
+  - { lang: auto, input: j'ai payé deux cents euros hier, expect: j'ai payé 200 euros hier }
+  - { lang: auto, input: j'en ai quatre cent septante-huit, expect: j'en ai 478 }
+
+  # --- already digits, nothing to do --------------------------------------
+  - { lang: auto, input: I was born in 1975, expect: unchanged }
+  - { lang: auto, input: Just the two of us, expect: unchanged }
+  - { lang: auto, input: Seulement nous deux, expect: unchanged }

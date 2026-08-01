@@ -9,7 +9,17 @@ import Foundation
 /// what it does before deciding. Whether dictation gets it is printed first, so
 /// the two are not confused.
 enum NumbersCommand {
-    static func run(text: String?) -> Int32 {
+    static func run(text: String?, quiet: Bool = false, language: String? = nil) -> Int32 {
+        // `--quiet` prints the rewritten line and nothing else, which is what
+        // scripts/check-numbers.sh reads. `--lang` pins the grammar instead of
+        // detecting it, so a two-word case can be scored without being a
+        // sentence long enough for the language recogniser.
+        if quiet, let text {
+            print(language.map { Numbers.apply(to: text, language: $0) }
+                ?? Numbers.apply(to: text, languages: configuredLanguages()))
+            return 0
+        }
+
         let enabled = (try? ConfigStore.load())?.transcription.numbers
         switch enabled {
         case true?: print("transcription.numbers: on — dictation gets this")
@@ -45,7 +55,8 @@ enum NumbersCommand {
 
         var changed = 0
         for sample in samples {
-            let out = Numbers.apply(to: sample)
+            let out = language.map { Numbers.apply(to: sample, language: $0) }
+                ?? Numbers.apply(to: sample, languages: configuredLanguages())
             if out == sample {
                 print("  · \(sample)")
             } else {
@@ -57,5 +68,12 @@ enum NumbersCommand {
         print("")
         print("\(changed) of \(samples.count) rewritten")
         return 0
+    }
+
+    /// The languages the app would try, so this command and the dictation path
+    /// answer the same question the same way. `--lang` overrides it to score
+    /// one grammar on its own.
+    private static func configuredLanguages() -> [String] {
+        (try? ConfigStore.load())?.transcription.languages ?? ["en"]
     }
 }

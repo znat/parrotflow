@@ -4,9 +4,15 @@ import Foundation
 ///
 /// Not a substitution table — there are infinitely many numbers, and "forty"
 /// means 40 in "forty-three" and 40,000 in "forty thousand". About seventy
-/// words build every number in English, so this parses a grammar over that
-/// vocabulary instead of enumerating results. English only; the French words
-/// are absent from the maps, so a French transcript passes through untouched.
+/// words build every number in a language, so this parses a grammar over that
+/// vocabulary instead of enumerating results.
+///
+/// English and French, chosen by `NumberGrammar` — the vocabulary and the three
+/// rules that differ live there, and everything below is the same in both. What
+/// is *not* in the grammar is the judgement that matters most: a lone number
+/// word below `digitsFrom` stays a word, compounds convert whatever their size.
+/// That is why "à deux, on a dépensé deux cents euros" keeps its `deux` and
+/// writes 200, in exactly the way "just the two of us" already did.
 ///
 /// The arithmetic is the easy half. The hard half is knowing where a number
 /// *ends*, because a plain accumulator sums whatever it is handed:
@@ -33,85 +39,89 @@ enum Numbers {
     static let digitRunLength = 2
 
     // MARK: - Vocabulary
+    //
+    // Moved to NumberGrammar and its per-language files. What is left in this
+    // file is the machinery, which is the same in every language it supports.
 
-    private static let units: [String: Int] = [
-        "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
-        "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
-    ]
-    private static let teens: [String: Int] = [
-        "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
-        "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
-    ]
-    private static let tensWords: [String: Int] = [
-        "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
-        "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
-    ]
-    private static let scales: [String: Int] = [
-        "thousand": 1_000, "million": 1_000_000,
-        "billion": 1_000_000_000, "trillion": 1_000_000_000_000,
-    ]
-
-    /// "second" is deliberately missing. It is a unit of time far more often
-    /// than an ordinal here, and the collision is not decidable without
-    /// context: "a thirty second timeout" would become "a 32nd timeout".
-    /// Leaving it out costs "the twenty second of March" — which lands as
-    /// "the 20 second of March" — and buys back every spoken duration.
-    private static let ordinalUnits: [String: Int] = [
-        "first": 1, "third": 3, "fourth": 4, "fifth": 5,
-        "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9,
-    ]
-    private static let ordinalTeens: [String: Int] = [
-        "tenth": 10, "eleventh": 11, "twelfth": 12, "thirteenth": 13, "fourteenth": 14,
-        "fifteenth": 15, "sixteenth": 16, "seventeenth": 17, "eighteenth": 18, "nineteenth": 19,
-    ]
-    private static let ordinalTens: [String: Int] = [
-        "twentieth": 20, "thirtieth": 30, "fortieth": 40, "fiftieth": 50,
-        "sixtieth": 60, "seventieth": 70, "eightieth": 80, "ninetieth": 90,
-    ]
-    private static let ordinalScales: [String: Int] = [
-        "thousandth": 1_000, "millionth": 1_000_000, "billionth": 1_000_000_000,
-    ]
-
-    /// Ordinary English words that only join a number when a number is on both
-    /// sides of them — see `runs`.
-    private static let connectors: [String: Word] = [
-        "and": .and, "point": .point, "oh": .oh,
-    ]
-
-    private enum Word {
-        case unit(Int)      // zero…nine
-        case teen(Int)      // ten…nineteen
-        case tens(Int)      // twenty…ninety
-        case hundred
-        case scale(Int)     // thousand…trillion
-        case and
-        case point
-        case oh             // zero, but only mid-run: "five oh five"
-    }
-
-    private static func classify(_ word: String) -> (word: Word, ordinal: Bool)? {
-        if let value = units[word] { return (.unit(value), false) }
-        if let value = teens[word] { return (.teen(value), false) }
-        if let value = tensWords[word] { return (.tens(value), false) }
-        if word == "hundred" { return (.hundred, false) }
-        if let value = scales[word] { return (.scale(value), false) }
-        if let value = ordinalUnits[word] { return (.unit(value), true) }
-        if let value = ordinalTeens[word] { return (.teen(value), true) }
-        if let value = ordinalTens[word] { return (.tens(value), true) }
-        if word == "hundredth" { return (.hundred, true) }
-        if let value = ordinalScales[word] { return (.scale(value), true) }
-        return nil
-    }
+    typealias Word = NumberGrammar.Word
 
     // MARK: - Entry point
 
-    static func apply(to text: String) -> String {
+    static func apply(to text: String, language: String = "en") -> String {
+        apply(to: text, grammar: .named(language))
+    }
+
+    /// Reads the numbers in `text` using whichever configured language actually
+    /// finds any.
+    ///
+    /// Detection alone is not enough, and the gap is not exotic. The recogniser
+    /// needs four words to answer and returns the fallback below that, so "cent
+    /// euros" and "vingt et un" — two of the commonest things anyone dictates —
+    /// would be handed the English grammar and come back untouched. Its other
+    /// known miss, code-switching, fails the same way on longer text.
+    ///
+    /// So the detected language is tried first and the rest of the configured
+    /// list after it, stopping at the one that changes something.
+    ///
+    /// That fallback needs a guard, and the case that proved it was "I have 99
+    /// cents": English finds nothing to do, French reads `cents` as its word
+    /// for hundreds, and a correct sentence came back as "I have 99 100". The
+    /// vocabularies do overlap, and where they overlap they do not agree — a
+    /// French number word can be an ordinary word in English.
+    ///
+    /// So a language the recogniser did not choose has to bring more evidence
+    /// than a bare scale word. When the text was long enough to identify —
+    /// four words, `DictationLanguage`'s own floor — a candidate grammar is
+    /// only allowed to win if it recognises a unit, a teen or a tens word
+    /// somewhere: something that is unmistakably a number in that language.
+    /// "vingt et un" clears that bar inside an otherwise English sentence,
+    /// which is what keeps code-switching working; a lone "cents" does not.
+    ///
+    /// Below four words nothing can be identified, so the bar comes down and
+    /// every configured grammar gets a turn — otherwise "cent euros" and
+    /// "vingt et un", two of the commonest things anyone dictates, would be
+    /// handed the wrong grammar and come back untouched.
+    static func apply(to text: String, languages: [String]) -> String {
+        let fallback = languages.first ?? "en"
+        let detected = DictationLanguage.detect(
+            text, allowed: languages, fallback: fallback
+        )
+
+        let primary = apply(to: text, grammar: .named(detected))
+        if primary != text { return primary }
+
+        let identifiable = text.split(whereSeparator: { $0.isWhitespace }).count
+            >= DictationLanguage.minimumWords && languages.count > 1
+
+        for language in languages where language != detected {
+            let grammar = NumberGrammar.named(language)
+            let output = apply(to: text, grammar: grammar)
+            guard output != text else { continue }
+            if identifiable, !hasPlainNumberWord(text, grammar) { continue }
+            return output
+        }
+        return text
+    }
+
+    /// Whether the text contains a word this grammar reads as a unit, a teen or
+    /// a tens word — as opposed to only a scale word, which is where the two
+    /// languages collide.
+    private static func hasPlainNumberWord(_ text: String, _ grammar: NumberGrammar) -> Bool {
+        tokenize(text).contains { token in
+            switch grammar.classify(token.text)?.word {
+            case .unit, .teen, .tens: return true
+            default: return false
+            }
+        }
+    }
+
+    static func apply(to text: String, grammar: NumberGrammar) -> String {
         let tokens = tokenize(text)
         guard !tokens.isEmpty else { return text }
 
         var replacements: [(range: Range<String.Index>, text: String)] = []
-        for run in runs(in: tokens) {
-            replacements.append(contentsOf: convert(run: run, tokens: tokens))
+        for run in runs(in: tokens, grammar: grammar) {
+            replacements.append(contentsOf: convert(run: run, tokens: tokens, grammar: grammar))
         }
         guard !replacements.isEmpty else { return text }
 
@@ -168,7 +178,7 @@ enum Numbers {
     /// Maximal stretches of adjacent number words. Every item in a run is a
     /// consecutive token, which is what later lets adjacency be tested on run
     /// positions alone.
-    private static func runs(in tokens: [Token]) -> [[Item]] {
+    private static func runs(in tokens: [Token], grammar: NumberGrammar) -> [[Item]] {
         var runs: [[Item]] = []
         var current: [Item] = []
 
@@ -176,17 +186,33 @@ enum Numbers {
             let continues = !current.isEmpty && index > 0 && tokens[index - 1].joinedToNext
             var item: Item?
 
-            if let classified = classify(token.text) {
+            // A scale word opening a run, right after a word that makes it a
+            // fixed phrase, is not a number: "pour cent" is a percent sign.
+            // Only when it *opens* one — "trois pour cent" leaves the three
+            // alone but "deux cent trois" is untouched by this.
+            let blocked = current.isEmpty && index > 0
+                && grammar.bareScaleBlockers.contains(tokens[index - 1].text)
+                && (grammar.hundred.contains(token.text) || grammar.scales[token.text] != nil)
+
+            if blocked {
+                runs.append(current)
+                current = []
+                continue
+            }
+
+            if let classified = grammar.classify(token.text) {
                 item = Item(word: classified.word, ordinal: classified.ordinal, index: index)
-            } else if token.text == "a", token.joinedToNext, index + 1 < tokens.count,
-                ["hundred", "thousand"].contains(tokens[index + 1].text) {
+            } else if let article = grammar.articleOne, token.text == article,
+                token.joinedToNext, index + 1 < tokens.count,
+                grammar.hundred.contains(tokens[index + 1].text)
+                    || grammar.scales[tokens[index + 1].text] == 1_000 {
                 // "a hundred and fifty" is a number said aloud; "a" anywhere
                 // else is an article. Not extended to million and up: "a
                 // million reasons" is a figure of speech, not a figure.
                 item = Item(word: .unit(1), ordinal: false, index: index)
-            } else if let connector = connectors[token.text], continues,
+            } else if let connector = grammar.connector(token.text), continues,
                 token.joinedToNext, index + 1 < tokens.count,
-                classify(tokens[index + 1].text) != nil {
+                grammar.classify(tokens[index + 1].text) != nil {
                 // Number words on both sides, or it is just English: "one and
                 // two came back", "the point five people missed".
                 item = Item(word: connector, ordinal: false, index: index)
@@ -224,14 +250,16 @@ enum Numbers {
         var words: Int { end - begin }
     }
 
-    private static func convert(run: [Item], tokens: [Token]) -> [(Range<String.Index>, String)] {
+    private static func convert(
+        run: [Item], tokens: [Token], grammar: NumberGrammar
+    ) -> [(Range<String.Index>, String)] {
         var numbers: [Number] = []
         var index = 0
         while index < run.count {
             if let digits = digitRun(in: run, at: index, tokens: tokens) {
                 numbers.append(digits)
                 index = digits.end
-            } else if let number = parseNumber(run, index), number.end > index {
+            } else if let number = parseNumber(run, index, grammar), number.end > index {
                 numbers.append(number)
                 index = number.end
             } else {
@@ -247,7 +275,7 @@ enum Numbers {
             guard wanted else { return nil }
             let range = tokens[run[number.begin].index].range.lowerBound
                 ..< tokens[run[number.end - 1].index].range.upperBound
-            return (range, written(number))
+            return (range, written(number, grammar))
         }
     }
 
@@ -293,8 +321,12 @@ enum Numbers {
     }
 
     /// Below 100: a unit, a teen, or a tens word taking one unit.
-    private static func parseTwoDigit(_ run: [Item], _ start: Int) -> (value: Int, end: Int, ordinal: Bool)? {
+    private static func parseTwoDigit(
+        _ run: [Item], _ start: Int, _ grammar: NumberGrammar
+    ) -> (value: Int, end: Int, ordinal: Bool)? {
         guard start < run.count else { return nil }
+        if grammar.twoDigit == .vigesimal { return parseVigesimal(run, start, grammar) }
+
         let item = run[start]
         switch item.word {
         case .unit(let value), .teen(let value):
@@ -310,11 +342,105 @@ enum Numbers {
         }
     }
 
+    /// Below 100 in a language that counts in twenties.
+    ///
+    /// Three shapes English does not have, and they compose:
+    ///
+    ///     soixante-dix            60 + 10          a tens word taking a teen
+    ///     quatre-vingts           4 × 20           a unit multiplying a tens
+    ///     quatre-vingt-dix-sept   4 × 20 + 10 + 7  both, and a teen taking a unit
+    ///
+    /// The multiplication is deliberately narrow — only four, only twenty. A
+    /// general "unit times tens" rule would read "deux vingt" as 40, which is
+    /// not French and would fabricate a number out of two ordinary words. Every
+    /// widening here has to be paid for in tests/numbers-cases.yaml, because
+    /// this is the function where a wrong answer looks like a right one.
+    private static func parseVigesimal(
+        _ run: [Item], _ start: Int, _ grammar: NumberGrammar
+    ) -> (value: Int, end: Int, ordinal: Bool)? {
+        let item = run[start]
+        var base: Int
+        var index: Int
+        var ordinal = item.ordinal
+
+        switch item.word {
+        case .unit(4) where !item.ordinal
+            && start + 1 < run.count
+            && isTens(run[start + 1].word, 20)
+            && !run[start + 1].ordinal:
+            base = 80
+            index = start + 2
+        case .tens(let value):
+            base = value
+            index = start + 1
+        case .unit(let value), .teen(let value):
+            // "dix-sept" is one number, and arrives as two tokens because the
+            // tokeniser splits hyphens. Only seven, eight and nine: "dix un"
+            // is not a number, and reading it as one would make 11 out of a
+            // sentence that said ten and one.
+            if case .teen(10) = item.word, !item.ordinal, start + 1 < run.count,
+                case .unit(let digit) = run[start + 1].word, (7...9).contains(digit) {
+                return (10 + digit, start + 2, run[start + 1].ordinal)
+            }
+            return (value, start + 1, item.ordinal)
+        default:
+            return nil
+        }
+        guard !ordinal else { return (base, index, true) }
+
+        // "vingt et un", "soixante et onze". The connector only survived into
+        // the run with a number on both sides, so it cannot be prose here.
+        var afterConnector = index
+        if afterConnector < run.count, case .and = run[afterConnector].word {
+            afterConnector += 1
+        }
+        guard afterConnector < run.count else { return (base, index, ordinal) }
+
+        let tail = run[afterConnector]
+        switch tail.word {
+        // Only the sixties and eighties carry a teen: 70-79 and 90-99. Adding
+        // one to any other tens word would read "trente douze" as 42.
+        case .teen(let value) where base == 60 || base == 80:
+            var total = base + value
+            var end = afterConnector + 1
+            if value == 10, end < run.count, case .unit(let digit) = run[end].word,
+                (7...9).contains(digit), !tail.ordinal {
+                total = base + 10 + digit
+                ordinal = run[end].ordinal
+                end += 1
+            } else {
+                ordinal = tail.ordinal
+            }
+            return (total, end, ordinal)
+        case .unit(let digit) where digit > 0:
+            return (base + digit, afterConnector + 1, tail.ordinal)
+        default:
+            return (base, index, ordinal)
+        }
+    }
+
+    private static func isTens(_ word: Word, _ value: Int) -> Bool {
+        if case .tens(let found) = word { return found == value }
+        return false
+    }
+
     /// Below 1000, with the British "and": "two hundred and forty-three".
     private static func parseHundreds(
-        _ run: [Item], _ start: Int
+        _ run: [Item], _ start: Int, _ grammar: NumberGrammar
     ) -> (value: Int, end: Int, ordinal: Bool, scaled: Bool)? {
-        guard let head = parseTwoDigit(run, start) else { return nil }
+        // "cent cinquante" is 150 with nothing in front of the hundred, where
+        // English wants "a hundred" — a bare "hundreds of people" must not
+        // become a number. Standing in a one here rather than in the vocabulary
+        // keeps that difference to a single flag.
+        var head: (value: Int, end: Int, ordinal: Bool)
+        if grammar.bareScaleIsOne, case .hundred = run[start].word, !run[start].ordinal {
+            head = (1, start, false)
+        } else if let parsed = parseTwoDigit(run, start, grammar) {
+            head = parsed
+        } else {
+            return nil
+        }
+
         guard !head.ordinal, head.end < run.count, case .hundred = run[head.end].word else {
             return (head.value, head.end, head.ordinal, false)
         }
@@ -323,15 +449,15 @@ enum Numbers {
         var index = head.end + 1
         if run[head.end].ordinal { return (value, index, true, true) }
 
-        if index < run.count, case .and = run[index].word, parseTwoDigit(run, index + 1) != nil {
+        if index < run.count, case .and = run[index].word, parseTwoDigit(run, index + 1, grammar) != nil {
             index += 1
         }
-        guard let tail = parseTwoDigit(run, index) else { return (value, index, false, true) }
+        guard let tail = parseTwoDigit(run, index, grammar) else { return (value, index, false, true) }
         return (value + tail.value, tail.end, tail.ordinal, true)
     }
 
     /// One number, ending the moment the words stop describing one.
-    private static func parseNumber(_ run: [Item], _ start: Int) -> Number? {
+    private static func parseNumber(_ run: [Item], _ start: Int, _ grammar: NumberGrammar) -> Number? {
         var index = start
         var total = 0
         var lastScale = Int.max
@@ -340,7 +466,20 @@ enum Numbers {
         var any = false
 
         while index < run.count {
-            guard let group = parseHundreds(run, index) else { break }
+            // "mille" on its own is a thousand. Same rule as a bare hundred,
+            // and the same reason it is a flag: English "thousands of them" is
+            // not 1000 of them.
+            if grammar.bareScaleIsOne, case .scale(let scale) = run[index].word,
+                !run[index].ordinal, scale < lastScale,
+                parseHundreds(run, index, grammar) == nil {
+                total += scale
+                lastScale = scale
+                scaled = true
+                any = true
+                index += 1
+                continue
+            }
+            guard let group = parseHundreds(run, index, grammar) else { break }
             if group.scaled { scaled = true }
 
             // A scale word closes the group and opens the next, and they have
@@ -354,7 +493,7 @@ enum Numbers {
                 index = group.end + 1
                 if run[group.end].ordinal { ordinal = true; break }
                 if index < run.count, case .and = run[index].word,
-                    parseHundreds(run, index + 1) != nil {
+                    parseHundreds(run, index + 1, grammar) != nil {
                     index += 1
                 }
                 continue
@@ -451,10 +590,12 @@ enum Numbers {
 
     /// No thousands separators anywhere: a comma reads well in prose and badly
     /// in the terminals and code fields this app pastes into.
-    private static func written(_ number: Number) -> String {
+    private static func written(_ number: Number, _ grammar: NumberGrammar) -> String {
         if let literal = number.literal { return literal }
-        if let fraction = number.fraction { return "\(number.value).\(fraction)" }
-        if number.ordinal { return "\(number.value)\(ordinalSuffix(number.value))" }
+        if let fraction = number.fraction {
+            return "\(number.value)\(grammar.decimalSeparator)\(fraction)"
+        }
+        if number.ordinal { return "\(number.value)\(grammar.ordinalSuffix(number.value))" }
         return String(number.value)
     }
 

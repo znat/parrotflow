@@ -41,8 +41,15 @@ transcription:
   # years (nineteen eighty-four -> 1984) and spoken digits (five five one two
   # -> 5512).
   #
-  # A number word on its own stays a word below ten, so "chapter three" and
-  # "no one knows" are left alone.
+  # English and French, picked per transcript from the `languages` list above.
+  # French gets its own grammar because its numbers are arithmetic —
+  # quatre-vingt-dix-sept is 4 x 20 + 10 + 7 — and its own decimal comma:
+  # "trois virgule un quatre" -> 3,14.
+  #
+  # A number word on its own stays a word below ten, so "chapter three", "on
+  # est deux" and "no one knows" are left alone. That threshold is the whole
+  # judgement: it is what writes "a deux, on a depense deux cents euros" as
+  # "a deux, on a depense 200 euros" rather than "a 2".
   #
   # Off by default — it rewrites transcripts that were already correct, and
   # digits are a matter of taste. Run --numbers to see what it would do.
