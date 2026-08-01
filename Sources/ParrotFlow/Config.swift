@@ -532,6 +532,11 @@ enum ConfigStore {
       # opens to teach ParrotFlow the right spelling. Needs Accessibility.
       correction_phrase: hey parrot
 
+      # When a field refuses accessibility writes — terminals, mostly — clear the
+      # input line with Ctrl-A Ctrl-K and retype it corrected. Destructive by
+      # nature, so it only fires when the line still contains what you dictated.
+      rewrite_line: true
+
       # Languages you dictate in, most common first. Not sent to Parakeet — it
       # transcribes multilingually by itself and reports no language back. This
       # is the list ParrotFlow chooses between when working out which language a
@@ -599,6 +604,77 @@ enum ConfigStore {
       # after five minutes, and reloading costs 7-10s on the next correction.
       # Turn off to get those seconds back as free RAM.
       keep_loaded: true
+
+    # Things you can ask for by voice: say the wake phrase, then the instruction.
+    #
+    #     "hey parrot, make that a bullet list"
+    #
+    # A router picks which one you meant, reading the descriptions below — so a
+    # description is not a comment, it is the thing being matched against. Write it
+    # the way you would say it.
+    #
+    # The whole instruction is then passed to the prompt, not just the part that
+    # chose it. That is what lets one prompt serve "format those dates ISO" and
+    # "format those dates with slashes" without needing two entries.
+    #
+    # Fixing a misheard name is built in and does not appear here — run
+    # --check-config to see everything the wake phrase reaches.
+    prompts:
+      - name: bullets
+        description: turn text into a short bullet list
+        content: |
+          Rewrite the text as concise bullets, one idea each.
+          Keep the speaker's wording. Return only the bullets.
+
+      - name: terse
+        description: shorten text without losing anything it says
+        content: |
+          Cut this down. No filler, same facts, same voice.
+          Return only the shortened text.
+
+      # There used to be a `dates` prompt and a `digits` prompt here. Both are gone,
+      # because free_form does their job and the measurement said so: on the sixteen
+      # cases they covered in tests/generic-cases.yaml they scored 12/16 against the
+      # built-in's 14/16. `digits` was a straight tie, five cases to five. `dates`
+      # was worse — asked to make "the deadline is March 3 2026" ISO it answered
+      # "2026-03-03", dropping the sentence around the date, which is what a prompt
+      # written for one subject does when handed a whole sentence.
+      #
+      # `grammar` below stays for the opposite reason. It has a validation set of
+      # its own and it beats the built-in on it, 5/5 against 4/5, and the case it
+      # wins is the one that matters most here: leaving alone a sentence that was
+      # already right.
+
+      - name: grammar
+        description: fix grammar and punctuation mistakes, not formatting or numbers
+        content: |
+          Correct grammar, spelling and punctuation. Make the smallest change
+          that makes the text correct — and make it. Every error is fixed.
+          Nothing else is touched.
+
+          Fix: subject-verb agreement, verb forms, confused homophones
+          (its/it's, their/they're, weather/whether), missing or wrong
+          punctuation, a missing capital at the start of a sentence, and a
+          missing full stop at the end.
+
+          Never reword, reorder, shorten, expand, or improve. Never add or
+          remove words except where grammar requires it. Never add quotation
+          marks, emphasis, or punctuation the sentence does not need. Keep the
+          speaker's own vocabulary, register and phrasing, including informal,
+          blunt or repetitive wording. A sentence that is already correct comes
+          back exactly as it was.
+
+          A phrase before the main clause takes a comma after it. A trailing
+          please or thanks does not.
+
+          Return only the text.
+
+      # Show the result before it replaces anything. On by default — a transform
+      # overwrites text you selected, and it is triggered by voice, so there is no
+      # dialog in the way. Set false per prompt once you trust it.
+      #
+      #   confirm: false
+
 
     # Do what was asked even when no prompt matches — which, with no `prompts:`
     # section yet, is everything:
