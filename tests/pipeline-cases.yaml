@@ -91,3 +91,13 @@ cases:
     pipeline: prompt
     input: on en a genre vingt et un
     expect: on en a genre 21
+
+  # --- from the code review -----------------------------------------------
+  # A prompt stage must not touch a wake-phrase utterance. It runs inside
+  # transcription, before anything has looked for the phrase, so a rewrite
+  # would eat "hey parrot" and what should have run as a command would be
+  # pasted into the document instead.
+  - name: a prompt never rewrites a spoken command
+    pipeline: prompt
+    input: hey parrot, make that a bullet list
+    expect: unchanged

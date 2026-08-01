@@ -89,22 +89,30 @@ struct Pipeline: Equatable, Codable {
 
         /// Compiled once per pattern. A pipeline runs on every transcript, and
         /// rebuilding the same expression each time is work nobody asked for.
+        /// Locked, like `Replacements.wordCache` and for the same reason:
+        /// `Pipeline.run` is nonisolated and suspends inside a prompt stage for
+        /// seconds, so actor reentrancy lets a second transcript's pipeline
+        /// reach this while the first is still waiting. A Swift Dictionary
+        /// mutated from two threads corrupts or crashes, and the transcript in
+        /// flight goes with it.
         private static var cache: [String: NSRegularExpression] = [:]
+        private static let cacheLock = NSLock()
+
         static func expression(for condition: String) -> NSRegularExpression? {
-            if let cached = cache[condition] { return cached }
+            cacheLock.lock()
+            if let cached = cache[condition] { cacheLock.unlock(); return cached }
+            cacheLock.unlock()
+
             guard let built = try? NSRegularExpression(
                 pattern: pattern(for: condition), options: [.caseInsensitive]
             ) else { return nil }
+
+            cacheLock.lock()
             cache[condition] = built
+            cacheLock.unlock()
             return built
         }
 
-        /// Whether this step should run against the text as it now stands.
-        func shouldRun(on text: String) -> Bool {
-            if let unless, matches(text, unless) { return false }
-            if let when, !matches(text, when) { return false }
-            return true
-        }
     }
 
     let steps: [Step]
@@ -204,15 +212,44 @@ struct Pipeline: Equatable, Codable {
     /// on a cooperative thread after transcription — blocking one there for up
     /// to the LLM timeout is how a thread pool stops being a thread pool. The
     /// deterministic stages suspend nowhere, so the cost of this is a keyword.
-    func run(_ text: String, config: Config) async -> String {
+    /// Why a step would not run, or nil if it would.
+    ///
+    /// One copy, because there were two: `run` decided, and the stage-by-stage
+    /// viewer in `--pipeline` decided again from `shouldRun` alone — which knew
+    /// nothing about the wake-phrase guard, so a prompt the pipeline had
+    /// skipped was reported as having "ran, changed nothing". A diagnostic that
+    /// disagrees with the thing it is diagnosing is worse than none.
+    static func skipReason(
+        for step: Step, text: String, config: Config, allowPrompts: Bool
+    ) -> String? {
+        if step.stage == .prompt {
+            if !allowPrompts { return "prompts are off on this path" }
+            if VoiceCommand.commandAfterWakePhrase(
+                text, phrase: config.transcription.activationPhrase
+            ) != nil {
+                return "this is a spoken command"
+            }
+        }
+        if let unless = step.unless, step.matches(text, unless) {
+            return "unless \(unless) matched"
+        }
+        if let when = step.when, !step.matches(text, when) {
+            return "when \(when) did not match"
+        }
+        return nil
+    }
+
+    func run(_ text: String, config: Config, allowPrompts: Bool = true) async -> String {
         var output = text
         for step in steps {
-            guard step.shouldRun(on: output) else {
-                // Said out loud, because a stage that silently does not run is
-                // indistinguishable from a stage that ran and found nothing —
-                // and only one of those is answerable by editing a condition.
+            if let reason = Pipeline.skipReason(
+                for: step, text: output, config: config, allowPrompts: allowPrompts
+            ) {
+                // Said out loud: a stage that silently does not run is
+                // indistinguishable from one that ran and found nothing, and
+                // only one of those is answerable by editing a condition.
                 let named = step.prompt.map { "\(step.stage.name) \($0)" } ?? step.stage.name
-                Log.write("pipeline: skipped \(named) — its condition did not hold")
+                Log.write("pipeline: skipped \(named) — \(reason)")
                 continue
             }
             output = await apply(step, to: output, config: config)

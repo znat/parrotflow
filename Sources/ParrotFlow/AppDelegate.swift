@@ -117,6 +117,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyConfig() {
+        // Said out loud on the app's own path, not only by --check-config,
+        // which the app never runs. A mistyped stage name used to vanish at
+        // decode time with no trace anywhere: replacements simply stopped
+        // happening, and nothing distinguished that from an empty table.
+        for problem in config.problems() { Log.write("config: \(problem)") }
+
         hotkeyError = nil
         hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
         hotKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }

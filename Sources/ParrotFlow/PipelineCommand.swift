@@ -116,9 +116,9 @@ enum PipelineCommand {
         print("in:   \(text)")
         var current = text
         for step in steps {
-            guard step.shouldRun(on: current) else {
-                let reason = step.unless.map { "unless \($0) matched" }
-                    ?? step.when.map { "when \($0) did not match" } ?? "its condition"
+            if let reason = Pipeline.skipReason(
+                for: step, text: current, config: config, allowPrompts: true
+            ) {
                 print("  ⊘ \(step.stage.name)  — skipped, \(reason)")
                 continue
             }

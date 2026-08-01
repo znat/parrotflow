@@ -82,6 +82,7 @@ final class CorrectionPanel {
         panel.hasShadow = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.adoptParrotAppearance()
         panel.onCancel = { [weak self] in self?.dismiss(cancelled: true) }
         self.panel = panel
     }

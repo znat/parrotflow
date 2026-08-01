@@ -12,7 +12,13 @@ enum ReplaceCommand {
         // the pipeline rather than return into an empty runloop.
         let done = DispatchSemaphore(value: 0)
         Task {
-            print(await Replacements.apply(to: text, config: config))
+            // Deterministic passes only. This command is what
+            // scripts/check-replacements.sh scores, and a `prompt` stage in
+            // the config would send every case to the model and repunctuate
+            // it — a replacement set failing wholesale for a reason that has
+            // nothing to do with the replacement table. It is also not what
+            // the name promises: --replace should not reach the network.
+            print(await Replacements.apply(to: text, config: config, allowPrompts: false))
             done.signal()
         }
         done.wait()

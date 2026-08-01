@@ -201,6 +201,15 @@ struct Config: Codable, Equatable {
         /// failure as a retired key, and the log is not where anyone looks.
         var unknownStages: [String] = []
 
+        /// `pipelines:` keys that are neither `default` nor a configured
+        /// language. Stored and never used otherwise — the pipeline someone
+        /// wrote for `french:` or `de:` would simply never run.
+        var unknownPipelineLanguages: [String] = []
+
+        /// Entries naming both `stage:` and `prompt:`. Their own list, because
+        /// "grammar is not a stage" is not what went wrong.
+        var contradictoryEntries: [String] = []
+
         /// One rule per mishearing, flattened for the substitution pass.
         var rules: [Rule] {
             replacements.flatMap { target, sources in
@@ -233,6 +242,8 @@ struct Config: Codable, Equatable {
             var prompt: String?
             var when: String?
             var unless: String?
+            /// `stage:` and `prompt:` on the same entry.
+            var namesBoth = false
 
             private enum CodingKeys: String, CodingKey { case stage, prompt, when, unless }
 
@@ -242,11 +253,16 @@ struct Config: Codable, Equatable {
                     return
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
+                let stage = try c.decodeIfPresent(String.self, forKey: .stage)
                 if let named = try c.decodeIfPresent(String.self, forKey: .prompt) {
                     name = "prompt"
                     prompt = named
+                    // Both keys on one entry is a contradiction, not a
+                    // preference to resolve — recorded so the caller refuses it
+                    // rather than dropping whichever it liked less.
+                    namesBoth = stage != nil
                 } else {
-                    name = try c.decodeIfPresent(String.self, forKey: .stage) ?? ""
+                    name = stage ?? ""
                 }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
@@ -312,22 +328,49 @@ struct Config: Codable, Equatable {
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
             }
-            if let raw = try c.decodeIfPresent(
-                [String: [PipelineEntry]].self, forKey: .pipelines
-            ) {
-                for (language, entries) in raw {
-                    let steps = entries.compactMap { entry -> Pipeline.Step? in
-                        guard let stage = Pipeline.stage(named: entry.name) else {
-                            unknownStages.append(entry.name)
-                            return nil
+            // Wrapped, as `replacements:` is below and for the same reason.
+            // Anything thrown here leaves `ConfigStore.load()` entirely, and at
+            // launch `loadConfig(announceErrors: false)` swallows it — so one
+            // mis-shaped key would drop the whole config back to stock defaults:
+            // no replacements, the built-in wake phrase, the default hotkey, in
+            // silence. The shape most people will get wrong is writing a bare
+            // list where a map per language belongs, because `languages:` two
+            // lines above is a bare list.
+            do {
+                if let raw = try c.decodeIfPresent(
+                    [String: [PipelineEntry]].self, forKey: .pipelines
+                ) {
+                    for (language, entries) in raw {
+                        let steps = entries.compactMap { entry -> Pipeline.Step? in
+                            guard let stage = Pipeline.stage(named: entry.name) else {
+                                unknownStages.append(entry.name)
+                                return nil
+                            }
+                            if entry.namesBoth {
+                                // Silently preferring one would delete a stage
+                                // the config asked for.
+                                contradictoryEntries.append(entry.prompt ?? "prompt")
+                                return nil
+                            }
+                            return Pipeline.Step(
+                                stage: stage, prompt: entry.prompt,
+                                when: entry.when, unless: entry.unless
+                            )
                         }
-                        return Pipeline.Step(
-                            stage: stage, prompt: entry.prompt,
-                            when: entry.when, unless: entry.unless
-                        )
+                        let key = language.lowercased()
+                        if key != "default", !languages.contains(key) {
+                            unknownPipelineLanguages.append(language)
+                        }
+                        pipelines[key] = Pipeline(steps: steps)
                     }
-                    pipelines[language.lowercased()] = Pipeline(steps: steps)
                 }
+            } catch {
+                throw ConfigError.invalidValue(
+                    key: "transcription.pipelines",
+                    value: "a bare list, or a language with nothing under it",
+                    expected: "a language, then its stages — `default: [replacements, fuzzy]`, "
+                        + "or `fr:` with `- replacements` under it"
+                )
             }
             for key in [LegacyKeys.numbers, .fuzzyMatching] {
                 if (try? legacy.decodeIfPresent(Bool.self, forKey: key)) ?? nil != nil {
@@ -484,6 +527,45 @@ struct Config: Codable, Equatable {
         if let freeForm = try c.decodeIfPresent(Bool.self, forKey: .freeForm) {
             self.freeForm = freeForm
         }
+    }
+
+    /// Everything the config says that will not do what it looks like it does.
+    ///
+    /// One list rather than two, because the version `--check-config` printed
+    /// and the version the running app knew about had already drifted: a
+    /// mistyped stage name was reported by the command and nowhere else, so an
+    /// app running with `replacements` silently missing looked exactly like an
+    /// app whose replacement table was empty. The command prints these; the app
+    /// logs them at every load.
+    func problems() -> [String] {
+        var found: [String] = []
+        for key in transcription.retired {
+            found.append("transcription.\(key) no longer does anything — it is a pipeline stage now")
+        }
+        for name in Set(transcription.unknownStages).sorted() {
+            found.append("pipelines: \"\(name)\" is not a stage — have: "
+                + Pipeline.stageNames.joined(separator: ", "))
+        }
+        for name in Set(transcription.contradictoryEntries).sorted() {
+            found.append("pipelines: an entry names both `stage:` and `prompt: \(name)`"
+                + " — it can be one or the other")
+        }
+        for name in Set(transcription.unknownPipelineLanguages).sorted() {
+            found.append("pipelines: \"\(name)\" is not a configured language, so that pipeline never runs"
+                + " — configured: \(transcription.languages.joined(separator: ", "))")
+        }
+        for language in transcription.languages {
+            let pipeline = Pipeline.resolved(config: self, language: language)
+            for problem in pipeline.validate() {
+                found.append("pipeline \(language): \(problem)")
+            }
+            for step in pipeline.steps where step.stage == .prompt {
+                guard let name = step.prompt, !name.isEmpty else { continue }
+                let known = prompts.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+                if !known { found.append("pipeline \(language): no prompt named \"\(name)\"") }
+            }
+        }
+        return found
     }
 
     var resolvedOutputDir: URL {

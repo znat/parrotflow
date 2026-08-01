@@ -84,15 +84,16 @@ enum PanelsCommand {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: canvas)
 
-        for (index, appearance) in [NSAppearance.Name.aqua, .darkAqua].enumerated() {
+        // The surfaces are dark either way; the columns are the two kinds of app
+        // they land on top of.
+        for index in 0..<2 {
             let left = CGFloat(index) * column
-            // A plain backdrop, in the shade the material would be sitting on.
             (index == 0 ? NSColor.white : NSColor(white: 0.13, alpha: 1)).setFill()
             NSRect(x: left, y: 0, width: column, height: size.height).fill()
 
             var top = size.height - margin
             for (view, natural) in surfaces {
-                view.appearance = NSAppearance(named: appearance)
+                view.appearance = NSAppearance(named: .darkAqua)
                 view.frame = NSRect(origin: .zero, size: natural)
                 view.layoutSubtreeIfNeeded()
                 guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }

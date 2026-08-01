@@ -78,65 +78,19 @@ enum CheckConfigCommand {
                         return described
                     }.joined(separator: " → ")
                 print("  · pipeline \(language)        \(stages)  (\(source))")
-                for problem in pipeline.validate() {
-                    print("  ✗ pipeline \(language): \(problem)")
-                    ok = false
-                }
-                // A prompt stage naming a prompt that is not there does
-                // nothing, quietly, on every transcript. The catalogue is not
-                // built yet at this point, so it is checked against the config
-                // directly — a prompt shadowed by a built-in is a separate
-                // complaint that `Catalogue` already makes.
-                for step in pipeline.steps where step.stage == .prompt {
-                    guard let name = step.prompt, !name.isEmpty else { continue }
-                    let known = config.prompts.contains {
-                        $0.name.caseInsensitiveCompare(name) == .orderedSame
-                    }
-                    if !known {
-                        print("  ✗ pipeline \(language): no prompt named \"\(name)\"")
-                        ok = false
-                    }
-                }
-            }
-            let languages = transcription.languages.joined(separator: ", ")
-            print("  · languages         \(languages)"
-                + (transcription.languages.count > 1
-                   ? " (detected per transcript, picks the prompt)"
-                   : " (no detection; always the \(languages) prompt)"))
-        }
-        if transcription.enabled {
-            if !transcription.replacements.isEmpty {
-                let total = transcription.rules.count
-                print("  ✓ replacements      \(total) across \(transcription.replacements.count) entries")
-                for (target, sources) in transcription.replacements.sorted(by: { $0.key < $1.key }) {
-                    let name = target.isEmpty ? "(removed)" : target
-                    print("      \(name) ← \(sources.sorted().joined(separator: ", "))")
-                }
-                let bad = transcription.rules.filter {
-                    $0.isRegex && (try? NSRegularExpression(pattern: $0.pattern)) == nil
-                }
-                for rule in bad {
-                    print("  ✗ not a valid pattern: \(rule.source)")
-                    ok = false
-                }
             }
         }
 
         // A key that no longer does anything is worse than a key that is
         // wrong: nothing fails, and two passes quietly stop running. So it is
         // an error, with the replacement spelled out.
-        for name in Set(transcription.unknownStages).sorted() {
-            print("  ✗ pipelines: \"\(name)\" is not a stage — have: "
-                + Pipeline.stageNames.joined(separator: ", "))
-            ok = false
-        }
-        for key in transcription.retired {
-            print("  ✗ transcription.\(key) no longer does anything — it is a pipeline stage now")
+        for problem in config.problems() {
+            print("  ✗ \(problem)")
             ok = false
         }
         if !transcription.retired.isEmpty {
             print("      pipelines:")
-            print("        default: [\(Pipeline.stageNames.joined(separator: ", "))]")
+            print("        default: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
         }
 
         // What "hey parrot" can reach. Printed even when `prompts:` is empty,
