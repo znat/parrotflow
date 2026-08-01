@@ -416,7 +416,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard config.llm.enabled else {
-            flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands")
+            flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands", tone: .caution)
             return
         }
 
@@ -459,14 +459,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("router: nothing matched \"\(command)\"")
                         self.flash(freeForm
                             ? "Not something to change in the text: \"\(command)\""
-                            : "No prompt for \"\(command)\"")
+                            : "No prompt for \"\(command)\"", tone: .caution)
                     }
                 }
             } catch {
                 await MainActor.run {
                     Log.write("routing failed: \(error.localizedDescription)")
                     self?.endProgress()
-                    self?.flash(error.localizedDescription)
+                    self?.flash(error.localizedDescription, tone: .failure)
                 }
             }
         }
@@ -490,7 +490,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func interpretSpelling(_ command: String) {
         guard config.llm.enabled else {
             endProgress()
-            flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands")
+            flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands", tone: .caution)
             return
         }
 
@@ -518,7 +518,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     Log.write("command interpretation failed: \(error.localizedDescription)")
                     self?.endProgress()
-                    self?.flash(error.localizedDescription)
+                    self?.flash(error.localizedDescription, tone: .failure)
                 }
             }
         }
@@ -553,7 +553,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             endProgress()
             Log.write("transform: nothing selected and nothing dictated yet")
-            flash("Select some text first, or dictate something")
+            flash("Select some text first, or dictate something", tone: .caution)
             return
         }
 
@@ -580,7 +580,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     Log.write("transform failed: \(error.localizedDescription)")
                     self?.endProgress()
-                    self?.flash(error.localizedDescription)
+                    self?.flash(error.localizedDescription, tone: .failure)
                 }
             }
         }
@@ -597,7 +597,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let cleaned = after.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
             Log.write("transform: \(prompt.name) returned nothing")
-            flash("\(prompt.name) returned nothing from \(quoted(before))")
+            flash("\(prompt.name) returned nothing from \(quoted(before))", tone: .caution)
             return
         }
         // Saying so beats replacing text with itself and calling it done, which
@@ -610,7 +610,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // looked at answers the first two at a glance.
         guard cleaned != before.trimmingCharacters(in: .whitespacesAndNewlines) else {
             Log.write("transform: \(prompt.name) changed nothing")
-            flash("\(prompt.name): nothing to change in \(quoted(before))")
+            flash("\(prompt.name): nothing to change in \(quoted(before))", tone: .plain)
             return
         }
 
@@ -739,10 +739,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch SelectionReader.replaceSelection(with: text, in: selection) {
             case .written, .pasted:
                 if config.feedback.sound { NSSound(named: "Glass")?.play() }
-                flash("\(prompt.name) applied")
+                flash("\(prompt.name) applied", tone: .done)
             case .clipboardOnly:
                 Log.write("transform: this app would not accept the rewrite; left on the clipboard")
-                flash("\(prompt.name) copied — this app won't let me edit it")
+                flash("\(prompt.name) copied — this app won't let me edit it", tone: .caution)
             }
         } else {
             // Hand focus back first. Showing the preview called NSApp.activate
@@ -770,14 +770,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch applyInPlace([edit], dictated: original, in: element) {
                 case .replaced:
                     if config.feedback.sound { NSSound(named: "Glass")?.play() }
-                    flash("\(prompt.name) applied")
+                    flash("\(prompt.name) applied", tone: .done)
                     settings.model.lastTranscript = text
                     return
                 case .failed:
                     Log.write("transform: the line would not take the rewrite; left on the clipboard")
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
-                    flash("\(prompt.name) copied — this app won't let me edit it")
+                    flash("\(prompt.name) copied — this app won't let me edit it", tone: .caution)
                     settings.model.lastTranscript = text
                     return
                 case .notAttempted:
@@ -788,9 +788,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch TextInserter.insert(text, mode: config.transcription.insertMode) {
             case .pasted, .copied:
                 if config.feedback.sound { NSSound(named: "Glass")?.play() }
-                flash("\(prompt.name) applied")
+                flash("\(prompt.name) applied", tone: .done)
             case .clipboardOnly:
-                flash("\(prompt.name) copied — grant Accessibility to paste")
+                flash("\(prompt.name) copied — grant Accessibility to paste", tone: .caution)
             }
         }
         settings.model.lastTranscript = text
@@ -814,7 +814,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             correctionPanel.show(rule: (heard: heard, corrected: corrected))
         case .unrecognised(let text):
             Log.write("command not understood: \(text)")
-            flash("Didn't understand \"\(spoken)\"")
+            flash("Didn't understand \"\(spoken)\"", tone: .caution)
         }
     }
 
@@ -889,13 +889,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if config.feedback.sound { NSSound(named: "Glass")?.play() }
         if outcome == .clipboardOnly {
-            flash("Rule saved · \"\(rules.first?.corrected ?? "")\" copied — this app won't let me edit it")
+            flash("Rule saved · \"\(rules.first?.corrected ?? "")\" copied — this app won't let me edit it", tone: .caution)
             return
         }
         switch rules.count {
-        case 0: flash("Text replaced")
-        case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)")
-        default: flash("Saved \(rules.count) rules")
+        case 0: flash("Text replaced", tone: .done)
+        case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)", tone: .done)
+        default: flash("Saved \(rules.count) rules", tone: .done)
         }
     }
 
@@ -915,8 +915,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Show a message on screen, and in the menu bar for as long as it lasts.
-    private func flash(_ message: String) {
-        notice.show(message)
+    private func flash(_ message: String, tone: NoticeTone = .plain) {
+        notice.show(message, tone: tone)
         setLabel(message, clearAfter: 4)
     }
 
@@ -925,7 +925,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 3.5s while a cold Ollama was still loading — leaving the rest of a 10s
     /// wait with nothing on screen at all.
     private func beginProgress(_ message: String) {
-        notice.show(message, duration: nil)
+        notice.show(message, tone: .thinking, duration: nil)
         setLabel(message)
     }
 

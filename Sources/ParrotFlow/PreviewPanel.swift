@@ -31,7 +31,7 @@ final class PreviewPanel {
         reposition()
 
         NSApp.activate(ignoringOtherApps: true)
-        panel?.makeKeyAndOrderFront(nil)
+        panel?.riseIntoView(makeKey: true)
     }
 
     var isVisible: Bool { panel?.isVisible ?? false }
@@ -42,7 +42,10 @@ final class PreviewPanel {
         onApply?(text)
     }
 
+    /// Escape has two ways in — the button that advertises it and the panel's
+    /// own `cancelOperation` — and only the first of them should be answered.
     private func dismiss(cancelled: Bool) {
+        guard panel?.isVisible == true else { return }
         panel?.orderOut(nil)
         if cancelled { onCancel?() }
     }
@@ -95,7 +98,7 @@ final class PreviewPanel {
 
 enum PreviewMetrics {
     static let width: CGFloat = 560
-    private static let chrome: CGFloat = 132
+    private static let chrome: CGFloat = 146
     private static let minimumBody: CGFloat = 92
     private static let maximumBody: CGFloat = 320
 
@@ -143,7 +146,7 @@ final class PreviewModel: ObservableObject {
 
 // MARK: - View
 
-private struct PreviewView: View {
+struct PreviewView: View {
     @EnvironmentObject private var model: PreviewModel
     @FocusState private var editing: Bool
 
@@ -165,69 +168,28 @@ private struct PreviewView: View {
                         .scrollContentBackground(.hidden)
                         .focused($editing)
                         .frame(minHeight: 44)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 5)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6).strokeBorder(
-                                Color.accentColor.opacity(editing ? 0.8 : 0), lineWidth: 1.5
-                            )
-                        )
+                        .parrotField(focused: editing)
                 }
             }
 
-            footer
+            PanelActions(
+                status: "Edit it here before replacing",
+                cancelTitle: "Discard",
+                confirmTitle: "Replace",
+                onCancel: { model.onCancel?() },
+                onConfirm: { model.onSubmit?() }
+            )
         }
-        .padding(16)
+        .padding(Parrot.panelPadding)
         .frame(width: PreviewMetrics.width)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.12)))
+        .parrotSurface(RoundedRectangle(cornerRadius: Parrot.panelRadius, style: .continuous))
         .onExitCommand { model.onCancel?() }
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
-            Text(model.prompt.uppercased())
-                .font(.system(size: 9, weight: .semibold))
-                .kerning(0.8)
-                .foregroundStyle(Color.accentColor)
-            Text(model.isUnchanged ? "NOTHING TO CHANGE" : "PROPOSED")
-                .font(.system(size: 9, weight: .semibold))
-                .kerning(0.8)
-                .foregroundStyle(.tertiary)
-            Spacer()
-        }
-        .padding(.bottom, 10)
-    }
-
-    private var footer: some View {
-        HStack(spacing: 10) {
-            Button { model.onCancel?() } label: { hint("esc", "Discard") }
-                .buttonStyle(.plain)
-            Button { model.onSubmit?() } label: { hint("⌘↩", "Replace") }
-                .buttonStyle(.plain)
-                // ⌘-return rather than return: the text is editable, so plain
-                // return has to insert a newline.
-                .keyboardShortcut(.return, modifiers: .command)
-
-            Spacer()
-            Text("editable")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.top, 12)
-    }
-
-    private func hint(_ key: String, _ meaning: String) -> some View {
-        HStack(spacing: 5) {
-            Text(key)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(Color.primary.opacity(0.09), in: RoundedRectangle(cornerRadius: 4))
-            Text(meaning)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-        }
+        PanelHeader(
+            title: model.prompt,
+            note: model.isUnchanged ? "nothing to change" : "proposed"
+        )
     }
 }

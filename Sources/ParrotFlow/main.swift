@@ -139,6 +139,23 @@ if let index = arguments.firstIndex(of: "--edit-test") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--panel-sheet") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --panel-sheet <out.png>")
+        exit(2)
+    }
+    exit(PanelsCommand.sheet(to: arguments[index + 1]))
+}
+
+if let index = arguments.firstIndex(of: "--panels") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --panels <notice|caution|failure|thinking|vocabulary|rule|preview|pill> [seconds]")
+        exit(2)
+    }
+    let seconds = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) : nil
+    exit(PanelsCommand.run(surface: arguments[index + 1], seconds: seconds ?? 20))
+}
+
 if let index = arguments.firstIndex(of: "--watch-modifiers") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     exit(WatchModifiersCommand.run(seconds: seconds ?? 10))

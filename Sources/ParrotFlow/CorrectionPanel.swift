@@ -9,10 +9,10 @@ import SwiftUI
 /// two rules, not one rule for a phrase that will never recur verbatim. Rows
 /// left blank are skipped, so the words you did not come to fix cost nothing.
 ///
-/// Visually a sibling of the recording pill: same translucent material, same
-/// hairline border, same place on screen. The words are set in monospace —
-/// they are literal strings being mapped to other literal strings, and each
-/// row is a line that lands in config.yaml.
+/// Visually a sibling of the recording pill and the notice: same material,
+/// same plumage rim, same footer as the preview panel. The words are set in
+/// monospace — they are literal strings being mapped to other literal strings,
+/// and each row is a line that lands in config.yaml.
 final class CorrectionPanel {
 
     private var panel: KeyPanel?
@@ -32,7 +32,7 @@ final class CorrectionPanel {
         reposition()
 
         NSApp.activate(ignoringOtherApps: true)
-        panel?.makeKeyAndOrderFront(nil)
+        panel?.riseIntoView(makeKey: true)
     }
 
     /// Opens with a rule already filled in — the model proposed it, the user
@@ -46,7 +46,7 @@ final class CorrectionPanel {
         resize()
         reposition()
         NSApp.activate(ignoringOtherApps: true)
-        panel?.makeKeyAndOrderFront(nil)
+        panel?.riseIntoView(makeKey: true)
     }
 
     private func commit() {
@@ -56,7 +56,12 @@ final class CorrectionPanel {
         onSave?(rules, corrected)
     }
 
+    /// Escape reaches here twice — once through the button that advertises it,
+    /// once through the panel's own `cancelOperation` for when nothing inside
+    /// holds focus. Whichever arrives first closes the panel; the other finds
+    /// it already gone.
     private func dismiss(cancelled: Bool) {
+        guard panel?.isVisible == true else { return }
         panel?.orderOut(nil)
         if cancelled { onCancel?() }
     }
@@ -106,10 +111,11 @@ final class CorrectionPanel {
 }
 
 enum CorrectionMetrics {
-    static let width: CGFloat = 480
+    static let width: CGFloat = 500
     static let rowHeight: CGFloat = 38
     static let maxRows = 7
-    private static let chrome: CGFloat = 96
+    /// Title, column labels, and the footer the preview panel also carries.
+    private static let chrome: CGFloat = 126
 
     static func height(forRows rows: Int) -> CGFloat {
         chrome + rowHeight * CGFloat(max(1, min(rows, maxRows)))
@@ -257,13 +263,14 @@ final class CorrectionModel: ObservableObject {
 
 // MARK: - View
 
-private struct CorrectionView: View {
+struct CorrectionView: View {
     @EnvironmentObject private var model: CorrectionModel
     @FocusState private var focused: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
+            PanelHeader(title: "Vocabulary", note: "teach a word")
+            columns
 
             ScrollView {
                 VStack(spacing: 0) {
@@ -276,12 +283,17 @@ private struct CorrectionView: View {
             }
             .frame(maxHeight: CorrectionMetrics.rowHeight * CGFloat(CorrectionMetrics.maxRows))
 
-            footer
+            PanelActions(
+                status: summary,
+                cancelTitle: "Cancel",
+                confirmTitle: "Save",
+                onCancel: { model.onCancel?() },
+                onConfirm: { model.onSubmit?() }
+            )
         }
-        .padding(16)
+        .padding(Parrot.panelPadding)
         .frame(width: CorrectionMetrics.width)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.12)))
+        .parrotSurface(RoundedRectangle(cornerRadius: Parrot.panelRadius, style: .continuous))
         .onAppear {
             focused = model.visibleTokens.first(where: { $0.isManual })?.id
                 ?? model.visibleTokens.first?.id
@@ -289,17 +301,17 @@ private struct CorrectionView: View {
         .onExitCommand { model.onCancel?() }
     }
 
-    private var header: some View {
+    private var columns: some View {
         HStack(spacing: 12) {
             Text("HEARD AS")
                 .frame(width: 150, alignment: .leading)
             Text("SHOULD BE")
             Spacer()
         }
-        .font(.system(size: 9, weight: .semibold))
-        .kerning(0.8)
-        .foregroundStyle(.tertiary)
-        .padding(.bottom, 8)
+        .font(.system(size: 9, weight: .semibold, design: .rounded))
+        .kerning(0.9)
+        .foregroundStyle(.quaternary)
+        .padding(.bottom, 6)
     }
 
     private func row(_ token: Binding<CorrectionToken>) -> some View {
@@ -310,9 +322,7 @@ private struct CorrectionView: View {
                         .textFieldStyle(.plain)
                         .focused($focused, equals: token.wrappedValue.id)
                         .onSubmit { model.onSubmit?() }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 6)
-                        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+                        .parrotField(focused: focused == token.wrappedValue.id)
                 } else {
                     Text(token.wrappedValue.word)
                         .lineLimit(1)
@@ -327,8 +337,8 @@ private struct CorrectionView: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(
                     token.wrappedValue.replacement.isEmpty
-                        ? AnyShapeStyle(.tertiary)
-                        : AnyShapeStyle(Color.accentColor)
+                        ? AnyShapeStyle(.quaternary)
+                        : AnyShapeStyle(Parrot.leaf)
                 )
 
             TextField("leave blank to skip", text: token.replacement)
@@ -336,15 +346,7 @@ private struct CorrectionView: View {
                 .font(.system(size: 14, weight: .medium, design: .monospaced))
                 .focused($focused, equals: token.wrappedValue.id)
                 .onSubmit { model.onSubmit?() }
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6).strokeBorder(
-                        Color.accentColor.opacity(focused == token.wrappedValue.id ? 0.8 : 0),
-                        lineWidth: 1.5
-                    )
-                )
+                .parrotField(focused: focused == token.wrappedValue.id)
 
             Button {
                 model.remove(token.wrappedValue.id)
@@ -361,44 +363,11 @@ private struct CorrectionView: View {
         .frame(height: CorrectionMetrics.rowHeight)
     }
 
-    private var footer: some View {
-        HStack(spacing: 10) {
-            Button { model.onCancel?() } label: {
-                hint("esc", "Cancel")
-            }
-            .buttonStyle(.plain)
-
-            Button { model.onSubmit?() } label: {
-                hint("return", "Save")
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-            Text(summary)
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.top, 10)
-    }
-
     private var summary: String {
         switch model.pendingRuleCount {
         case 0: return "Fill in a word to save a rule"
-        case 1: return "1 rule"
-        case let count: return "\(count) rules"
-        }
-    }
-
-    private func hint(_ key: String, _ meaning: String) -> some View {
-        HStack(spacing: 5) {
-            Text(key)
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(Color.primary.opacity(0.09), in: RoundedRectangle(cornerRadius: 4))
-            Text(meaning)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+        case 1: return "1 rule to save"
+        case let count: return "\(count) rules to save"
         }
     }
 }
