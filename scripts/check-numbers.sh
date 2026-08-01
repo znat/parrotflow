@@ -33,7 +33,10 @@ while IFS='|' read -r lang input expect; do
   # rest of the configured languages. Anything else pins one grammar, which is
   # how a two-word case gets scored at all.
   if [ "$lang" = auto ]; then
-    got="$("$BIN" --numbers "$input" --quiet 2>/dev/null | tail -1)"
+    # The configured list, stated rather than inherited: on a machine whose
+    # config lists only English these cases scored 12/18, and nothing about the
+    # numbers was wrong.
+    got="$("$BIN" --numbers "$input" --quiet --lang en,fr 2>/dev/null | tail -1)"
   else
     got="$("$BIN" --numbers "$input" --quiet --lang "$lang" 2>/dev/null | tail -1)"
   fi

@@ -8,10 +8,15 @@ import Foundation
 /// scripts/validate-generic.py runs the model over the same cases.
 enum DatesCommand {
 
-    static func run(instruction: String, text: String, quiet: Bool = false) -> Int32 {
-        // Only for the language a spelled month is written in. Reading it is
-        // best-effort: this command has to work before the config does.
-        let languages = (try? ConfigStore.load())?.transcription.languages ?? ["en"]
+    static func run(
+        instruction: String, text: String, quiet: Bool = false, languages: [String]? = nil
+    ) -> Int32 {
+        // Only for the language a spelled month is written in. `--lang` lets a
+        // case file say which languages it assumes rather than inheriting
+        // whatever this machine configured — the French cases scored 24/27 on a
+        // config listing only English, and nothing about the dates was wrong.
+        let languages = languages
+            ?? (try? ConfigStore.load())?.transcription.languages ?? ["en"]
 
         let started = Date()
         let result = DateRewriter.apply(

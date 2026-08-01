@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Scores the replacement passes against tests/replacement-cases.txt.
 #
+# Through a fixture rather than your config. The set used to read whichever
+# names happened to be configured — its own header said so — and scored 8/20 on
+# an empty table, which is a number about the machine and not about the passes.
+# tests/pipelines/replacements.yaml carries the four names the cases assume.
+#
 # The fuzzy half is not deterministic and cannot be made so here. It asks
 # NSSpellChecker whether a word is real, and that service intermittently times
 # out — a timeout is indistinguishable from "known word", so fuzzy declines and
@@ -16,7 +21,7 @@ pass=0; total=0; failed=""
 while IFS='|' read -r input want; do
   case "$input" in \#*|"") continue;; esac
   total=$((total + 1))
-  got="$("$BIN" --replace "$input" 2>/dev/null)"
+  got="$("$BIN" --pipeline "$ROOT/tests/pipelines/replacements.yaml" "$input" --quiet 2>/dev/null | tail -1)"
   if [ "$got" = "$want" ]; then
     pass=$((pass + 1)); printf '  ✓ %s\n' "$input"
   else

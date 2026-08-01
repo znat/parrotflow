@@ -222,10 +222,10 @@ enum DateRewriter {
         guard let pattern = timePattern else { return text }
         var output = text
 
-        for match in pattern
+        let matches = pattern
             .matches(in: text, range: NSRange(text.startIndex..., in: text))
             .reversed()
-        {
+        for match in matches {
             guard let range = Range(match.range, in: text) else { continue }
             func group(_ index: Int) -> String? {
                 guard let r = Range(match.range(at: index), in: text) else { return nil }

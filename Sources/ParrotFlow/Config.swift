@@ -372,10 +372,14 @@ struct Config: Codable, Equatable {
                         + "or `fr:` with `- replacements` under it"
                 )
             }
-            for key in [LegacyKeys.numbers, .fuzzyMatching] {
-                if (try? legacy.decodeIfPresent(Bool.self, forKey: key)) ?? nil != nil {
-                    retired.append(key.stringValue)
-                }
+            // `try?` on an optional decode gives Bool??, and both layers mean
+            // "absent" — flattened here so the condition reads as the question
+            // being asked: is the key in the file at all.
+            func present(_ key: LegacyKeys) -> Bool {
+                ((try? legacy.decodeIfPresent(Bool.self, forKey: key)) ?? nil) != nil
+            }
+            for key in [LegacyKeys.numbers, .fuzzyMatching] where present(key) {
+                retired.append(key.stringValue)
             }
             do {
                 if let grouped = try c.decodeIfPresent(

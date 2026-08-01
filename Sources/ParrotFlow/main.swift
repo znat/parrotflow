@@ -16,6 +16,19 @@ let arguments = CommandLine.arguments
 // here covers every path, including the ones added later.
 atexit { Log.flush() }
 
+/// `--lang fr` or `--lang en,fr`. One entry pins a grammar; several stand in
+/// for the configured list, so a case file can state the environment it assumes
+/// instead of inheriting this machine's.
+func languageList(_ arguments: [String]) -> [String]? {
+    guard let index = arguments.firstIndex(of: "--lang"),
+          arguments.indices.contains(index + 1) else { return nil }
+    let listed = arguments[index + 1]
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+    return listed.isEmpty ? nil : listed
+}
+
 if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
@@ -44,11 +57,8 @@ if let index = arguments.firstIndex(of: "--replace") {
 if let index = arguments.firstIndex(of: "--numbers") {
     let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
         ? arguments[index + 1] : nil
-    let language = arguments.firstIndex(of: "--lang").flatMap { index in
-        arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
-    }
     exit(NumbersCommand.run(
-        text: text, quiet: arguments.contains("--quiet"), language: language
+        text: text, quiet: arguments.contains("--quiet"), languages: languageList(arguments)
     ))
 }
 
@@ -111,7 +121,8 @@ if let index = arguments.firstIndex(of: "--dates") {
     exit(DatesCommand.run(
         instruction: arguments[index + 1],
         text: arguments[index + 2],
-        quiet: arguments.contains("--quiet")
+        quiet: arguments.contains("--quiet"),
+        languages: languageList(arguments)
     ))
 }
 

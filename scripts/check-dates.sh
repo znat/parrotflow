@@ -30,7 +30,9 @@ while IFS='|' read -r name instruction input expect; do
   if [ "$MODEL" = 1 ]; then
     got="$("$BIN" --prompt anything "$instruction" "$input" --quiet 2>/dev/null | tail -1)"
   else
-    got="$("$BIN" --dates "$instruction" "$input" --quiet 2>/dev/null | tail -1)"
+    # Same reason as check-numbers.sh: the month a date is spelled out in
+    # follows the languages this set says it assumes, not the machine's.
+    got="$("$BIN" --dates "$instruction" "$input" --quiet --lang en,fr 2>/dev/null | tail -1)"
   fi
 
   if [ "$got" = "$want" ]; then

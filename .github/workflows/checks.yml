@@ -1,0 +1,97 @@
+# Every validation set that can run without a model, a microphone or a screen,
+# on every push to a pull request.
+#
+# What the split costs, stated up front so nobody reads a green tick as more
+# than it is. Four of the nine `scripts/check-*.sh` cannot run here:
+#
+#   check-grammar, check-routing, check-spelling   need Ollama and gemma4:e4b,
+#     which is a 9.6 GB pull and CPU inference on a hosted runner — minutes per
+#     case, for sets that take two minutes locally against a warm model.
+#   check-inplace                                  needs a real screen, an
+#     installed app, the Accessibility grant and tmux. It exists precisely
+#     because that path cannot be checked in a pipe.
+#
+# So this catches a broken build, a broken deterministic pass and a config the
+# app would refuse — not a prompt that has quietly got worse. Prompt changes
+# still have to be scored on a machine with the model, and the numbers belong
+# in the case file next to the prompt, as they already do.
+#
+# macOS only, and not by preference: FluidAudio wants CoreML and the ANE, and
+# NSSpellChecker — which the fuzzy pass depends on — is a macOS service with no
+# Linux equivalent.
+name: checks
+
+on:
+  pull_request:
+  # So a branch can be checked before the pull request exists.
+  workflow_dispatch:
+
+concurrency:
+  # A second push supersedes the first: nobody reads the result of a run whose
+  # commit has already been replaced.
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: macos-14
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The build is the whole cost here: 74s cold, and the tests it enables
+      # take six seconds between them. Keyed on Package.resolved so a run that
+      # changes no dependency reuses the compiled ones.
+      - name: Cache the build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          # Keyed on the dependencies alone. Adding the source hash would
+          # invalidate on every push, which is every run — a cache that never
+          # hits, paid for twice in upload and download.
+          key: build-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: build-${{ runner.os }}-
+
+      - name: Build
+        run: swift build -c release
+
+      # The runners for the YAML the case files are written in.
+      - name: Install pyyaml
+        # Runners differ on whether their python is externally managed, and the
+        # flag that satisfies one is rejected by the other.
+        run: |
+          python3 -m pip install --quiet pyyaml \
+            || python3 -m pip install --quiet --break-system-packages pyyaml
+
+      # Fails on errors, prints warnings. The config is calibrated against the
+      # codebase rather than SwiftLint's defaults — see .swiftlint.yml for why
+      # the default rules found 148 things here and no defect among them.
+      - name: Lint
+        run: |
+          command -v swiftlint >/dev/null || brew install swiftlint
+          swiftlint lint --reporter github-actions-logging
+
+      # Each on its own step, so a red run says which set broke in the summary
+      # rather than in the middle of a log.
+      - name: Numbers
+        run: scripts/check-numbers.sh
+
+      - name: Replacements
+        # The fuzzy half asks NSSpellChecker whether a word is real, and that
+        # service intermittently times out — a timeout reads as "known word", so
+        # a correction is missed. Seen twice locally, never reproducible. If
+        # this step alone goes red, re-run it before believing it.
+        run: scripts/check-replacements.sh
+
+      - name: Pipeline
+        run: scripts/check-pipeline.sh
+
+      - name: Dates
+        run: scripts/check-dates.sh
+
+      # Not a validation set: it checks that the file a new install is written
+      # with still teaches everything config.example.yaml documents. That has
+      # drifted twice, both times silently.
+      - name: The config a new install gets
+        run: scripts/check-default-config.sh

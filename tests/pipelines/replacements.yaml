@@ -1,0 +1,21 @@
+# The table tests/replacement-cases.txt has always assumed.
+#
+# It used to assume it from whoever's config was on the machine, and said so in
+# its own header — which meant the set scored 8/20 on a config with an empty
+# table, for a reason that had nothing to do with the passes it tests. Stated
+# here instead, so the number means the same thing everywhere.
+#
+# `Mik` and `Matthieu` are the two that make the fuzzy guard visible: "Mick"
+# must be corrected because it is a name, and "Matthew" must not, because the
+# spell checker knows it.
+languages: [en, fr]
+replacements:
+  Vercel: [Versailles, Versal]
+  Supabase: [Super Base, super bays, superbase, superbees]
+  Tasmeen: [Tasmid, Tasmin, Tasmine]
+  Matthieu: [Mathieu]
+  Mik: [Meek, Mick]
+  "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
+pipeline:
+  - replacements
+  - fuzzy
