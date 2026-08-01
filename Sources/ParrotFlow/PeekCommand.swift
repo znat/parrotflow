@@ -90,6 +90,23 @@ enum PeekCommand {
         }
 
         let selected = SelectionReader.selectedText(of: element)
+        // The decision a retype turns on: whether the input box can be found at
+        // all, and what it reads once its rows are joined back together.
+        if let value {
+            if let box = SelectionReader.joinedInputBox(in: value) {
+                report("box       \(box.count) chars — \"\(preview(box))\"")
+            } else {
+                report("box       none — no pair of rules to read between")
+            }
+            // Which rows the box reader counts as rules. The heuristic is
+            // "between the last two", and when that picks the wrong pair the
+            // box reads empty while the text is plainly on screen.
+            report("rows      (rule = counted as a boundary)")
+            for row in value.components(separatedBy: "\n").suffix(14) {
+                let kind = SelectionReader.isBorder(row) ? "rule" : "    "
+                report("  \(kind)  |\(row.prefix(64))|")
+            }
+        }
         report("selected  \(selected.map { "\"\(preview($0))\"" } ?? "none")")
         report("range     \(rangeDescription(of: element))")
 

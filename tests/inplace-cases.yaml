@@ -47,15 +47,19 @@ cases:
     expect: PFCHK-203 they're going to the store and now a great deal more text to push this line past the width of the terminal so that it certainly wraps
     log: retyped
 
-  # Nothing anchors the transcript, so which row is the input line is a guess.
-  - name: a transcript that is not on screen
+  # Reported from use. The app had recorded "So Georgie." as the last
+  # dictation while the field held "…Georgie.So " — the transcript described
+  # text that was not there, and a word plainly sitting in the box went
+  # uncorrected. The box is found by the rules drawn round it, so it does not
+  # need the transcript to vouch for it.
+  - name: a transcript that no longer matches the field
     id: PFCHK-204
     dictated: PFCHK-204 something never typed here
     line: PFCHK-204 their going to the store
     heard: their
     corrected: they're
-    expect: unchanged
-    log: nothing on screen anchors the transcript
+    expect: PFCHK-204 they're going to the store
+    log: retyped
 
   # A transform, not a correction: the whole dictated phrase is replaced by its
   # rewritten form. Punctuation at the end is the point — a word-boundary rule
@@ -69,4 +73,15 @@ cases:
     corrected: PFCHK-205 60 Euros.
     expect: PFCHK-205 60 Euros.
     literal: true
+    log: retyped
+
+  # Two dictations into one line: the anchor is only the second of them, and
+  # the line holds both. Reported from use — the correction was declined.
+  - name: two dictations, anchored by the last
+    id: PFCHK-206
+    dictated: So Georgie.
+    line: PFCHK-206 I saw a movie with Georgie.So Georgie.
+    heard: Georgie
+    corrected: Georgy
+    expect: PFCHK-206 I saw a movie with Georgy.So Georgy.
     log: retyped

@@ -291,9 +291,8 @@ enum SelectionReader {
         let line: String
         if !value.contains("\n"), value.count <= 2000 {
             line = value
-        } else if let dictated, !dictated.isEmpty,
-                  let located = inputLine(anchoredBy: dictated, in: value) {
-            Log.write("rewrite: value is a screen; using the row the transcript anchors")
+        } else if let located = inputLine(anchoredBy: dictated, in: value) {
+            Log.write("rewrite: value is a screen; using the input box")
             line = located
         } else {
             Log.write("rewrite: \(value.count) chars of screen and the line is not ours alone; not retyping")
@@ -372,7 +371,7 @@ enum SelectionReader {
     /// before and after and swept up 140 characters of status bar for an 18
     /// character line. This reads one row, and only ever the row that already
     /// contains text we placed there.
-    private static func inputLine(anchoredBy dictated: String, in screen: String) -> String? {
+    private static func inputLine(anchoredBy dictated: String?, in screen: String) -> String? {
         let rows = screen.components(separatedBy: "\n")
 
         // The input box: what lies between the last two rules the TUI draws.
@@ -388,12 +387,29 @@ enum SelectionReader {
         // reconstruction is checked before it is trusted — if the anchor is not
         // in the result, the rows did not go back together the way they came
         // apart, and this refuses rather than retyping a guess.
-        if let joined = joinedInputBox(in: screen), joined.contains(dictated) {
+        // No anchor needed here. The box is identified by the rules drawn round
+        // it, not by recognising its contents, and asking the transcript to
+        // vouch for it was what broke: the app had recorded "So Georgie." as
+        // the last dictation while the field held "…Georgie.So ", so the anchor
+        // described text that was not there and a word plainly sitting in the
+        // box went uncorrected.
+        //
+        // Nothing is risked by dropping it. The substitution decides whether
+        // there is anything to do, and a box with no match in it is left alone
+        // a few lines below.
+        if let joined = joinedInputBox(in: screen), !joined.isEmpty {
             guard joined.count <= 2000 else {
                 Log.write("rewrite: the input box holds \(joined.count) chars; not retyping")
                 return nil
             }
             return joined
+        }
+
+        // Past here there is no box, so the line can only be identified by
+        // recognising text we put there.
+        guard let dictated, !dictated.isEmpty else {
+            Log.write("rewrite: no input box, and no transcript to find the line by; not retyping")
+            return nil
         }
 
         // No box drawn, or the anchor is not inside it. Fall back to a single
@@ -466,7 +482,7 @@ enum SelectionReader {
     /// each soft wrap consumed. Used to read the line before a retype and to
     /// check it afterwards — and it has to be both, because after the
     /// substitution the anchor is the one thing no longer on the line.
-    private static func joinedInputBox(in screen: String) -> String? {
+    static func joinedInputBox(in screen: String) -> String? {
         let rows = screen.components(separatedBy: "\n")
         let borders = rows.indices.filter { isBorder(rows[$0]) }
         guard borders.count >= 2 else { return nil }
@@ -479,7 +495,7 @@ enum SelectionReader {
     }
 
     /// A rule the TUI drew, rather than anything anyone typed.
-    private static func isBorder(_ row: String) -> Bool {
+    static func isBorder(_ row: String) -> Bool {
         let bare = row.trimmingCharacters(in: .whitespaces)
         return !bare.isEmpty && bare.allSatisfy { "─━—-│┃|┌┐└┘├┤╭╮╰╯╌┄".contains($0) }
     }
