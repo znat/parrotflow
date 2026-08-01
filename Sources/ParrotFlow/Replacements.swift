@@ -31,20 +31,13 @@ enum Replacements {
     /// Names first, digits last. Both name passes match on words, and a
     /// mishearing that happens to contain a number word — "Ver Sal two" — has
     /// to still look like words while they run.
+    /// Every pass a finished transcript goes through, in the order the
+    /// pipeline names — see `Pipeline`.
+    ///
+    /// Kept as the entry point everything already calls, so moving the order
+    /// out of this function did not move the call sites too.
     static func apply(to text: String, config: Config) -> String {
-        let exact = applyExact(to: text, rules: config.transcription.rules)
-        var output = exact
-        if config.transcription.fuzzyMatching {
-            let targets = config.transcription.replacements.keys.filter { !$0.isEmpty }
-            output = applyFuzzy(to: exact, targets: Array(targets))
-        }
-        guard config.transcription.numbers else { return output }
-        // Which grammar reads the numbers is the transcript's own question, not
-        // the system's: `NumberGrammar.french` on an English sentence finds
-        // nothing, and the English one turns "quatre-vingts" into no number at
-        // all. Same recogniser the correction prompts use, constrained to the
-        // configured list, so a one-language config never pays for detection.
-        return Numbers.apply(to: output, languages: config.transcription.languages)
+        Pipeline.fromFlags(config).run(text, config: config)
     }
 
     // MARK: - Exact
