@@ -10,12 +10,17 @@
 # are sentences that are informal, blunt, or fragmentary but not wrong, and
 # they must come back untouched.
 #
-# 15/17 on gemma4:e4b. Prompt versions, in the order they were tried:
+# 16/17 on gemma4:e4b. Prompt versions, in the order they were tried:
 #
 #     v1  minimal-change rules only              13/17
 #     v2  + names what must be fixed             15/17
 #     v3  v2 but "punctuation only where its
 #         absence is an error, never taste"      14/17
+#     v4  + names the comma boundary as a rule   16/17  <- shipped
+#     v4a the same boundary as two examples      15/17
+#     v4b v4 + "never a comma before a trailing
+#         please", in with the other nevers      16/17
+#     v4c v4 + the trailing-please example       16/17
 #
 # v1 was too timid — hammering "change as little as possible" and nothing else
 # left real errors in ("he don't know" came back untouched). Naming the fixes
@@ -25,10 +30,23 @@
 # more correct sentence than v2. A rule about restraint made the model less
 # restrained, which is the reason changes here are measured rather than argued.
 #
-# The two that fail are both a single comma, and they pull opposite ways — one
-# wants a comma added after a fronted phrase, the other wants none added before
-# a trailing "please". Anything that fixes one should be expected to break the
-# other, which is why they are left alone.
+# The two that failed were both a single comma, and they pull opposite ways —
+# one wants a comma added after a fronted phrase, the other wants none added
+# before a trailing "please". That was read as a trade, and it was not: v4
+# names the boundary in one sentence and takes the first without giving up the
+# second, 15/17 -> 16/17 for ~25 tokens.
+#
+# The trailing "please" is the one that survives, and three framings bounced
+# off it — the rule at the end (v4), the prohibition moved in with the other
+# "never"s (v4b), and the rule plus a worked example (v4c) all scored 16/17
+# with the identical failure. Worth being honest that the model has the better
+# of the argument on style here; the expectation encodes a preference, and it
+# is the cheap direction to lose in, since `confirm` shows the rewrite first.
+#
+# One methodological note, because it inverts the usual lesson in this repo:
+# stating the boundary as a *rule* worked (v4, 16/17) where stating it as two
+# *examples* did not (v4a, 15/17). Elsewhere here examples beat rules. It is
+# worth trying both rather than assuming which way it will go.
 
 cases:
   # --- real errors, minimally fixed ---------------------------------------
