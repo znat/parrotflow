@@ -532,17 +532,15 @@ enum ConfigStore {
       # opens to teach ParrotFlow the right spelling. Needs Accessibility.
       correction_phrase: hey parrot
 
-      # Grouped by the spelling you want, listing the ways it gets misheard.
-      # Word-boundary matched and case-insensitive.
+      # Languages you dictate in, most common first. Not sent to Parakeet — it
+      # transcribes multilingually by itself and reports no language back. This
+      # is the list ParrotFlow chooses between when working out which language a
+      # transcript was in, so naming only what you actually speak makes that
+      # more accurate. It picks the correction prompt and the number grammar.
       #
-      #   replacements:
-      #     Tasmeen: [Tasmid, Tasmin, Tasmine]
-      #
-      # A source in /slashes/ is a regular expression, and an empty target
-      # deletes rather than substitutes — which is how filler words go:
-      #
-      #     "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
-      replacements: {}
+      # The first entry is the fallback, used when a transcript is too short to
+      # judge — under four words. Supported: en, fr.
+      languages: [en]
 
       # Everything a finished transcript goes through, in order, per language.
       # A language's own list wins over `default`; anything not listed here
@@ -552,7 +550,7 @@ enum ConfigStore {
       # read at a glance, and deleting a line you can see beats discovering a
       # setting you cannot.
       #
-      #   replacements  the substitutions above: literal, word-boundary,
+      #   replacements  the substitutions below: literal, word-boundary,
       #                 case-insensitive, or a regex between slashes
       #   fuzzy         the same table, used to catch renderings you have not
       #                 taught — "super bays" reaches Supabase. Only words the
@@ -569,6 +567,20 @@ enum ConfigStore {
       #                 exactly what it would do before leaving it in.
       pipelines:
         default: [replacements, fuzzy, numbers]
+
+      # Grouped by the spelling you want, listing the ways it gets misheard.
+      # Word-boundary matched and case-insensitive.
+      #
+      #   replacements:
+      #     Tasmeen: [Tasmid, Tasmin, Tasmine]
+      #
+      # A source in /slashes/ is a regular expression, and an empty target
+      # deletes rather than substitutes — which is how filler words go:
+      #
+      #     "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
+      replacements: {}
+
+
 
     # A local Ollama model, used to interpret what you say after the wake
     # phrase. Everything still works without it — you just lose spoken

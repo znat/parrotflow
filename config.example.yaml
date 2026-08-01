@@ -23,19 +23,6 @@ transcription:
   # One entry means no detection runs at all. Supported: en, fr.
   languages: [en, fr]
 
-  # How names get fixed: literal, word-boundary, case-insensitive swaps on
-  # the finished transcript.
-  #
-  # Workflow: dictate, run --transcribe on the clip, map whatever the model
-  # wrote to what you meant.
-  replacements:
-    # Removed from every transcript. A source in /slashes/ is a regular
-    # expression; an empty target means delete. The pattern takes any comma
-    # and spacing with it, so nothing is left behind.
-    "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
-    Tasmeen: [Tasmid, Tasmin, Tasmine]
-    Supabase: [super base, superbees]
-
   # Everything a finished transcript goes through, in order, per language.
   # A language's own list wins over `default`; anything not listed does not run.
   #
@@ -43,7 +30,7 @@ transcription:
   # glance, and deleting a line you can see beats discovering a setting you
   # cannot.
   #
-  #   replacements  the substitutions above: literal, word-boundary,
+  #   replacements  the substitutions below: literal, word-boundary,
   #                 case-insensitive, or a regex between slashes
   #   fuzzy         the same table, used to catch renderings you have not
   #                 taught — "super bays" reaches Supabase. Only words the
@@ -66,6 +53,20 @@ transcription:
   #     fr: [replacements, fuzzy, numbers]
   pipelines:
     default: [replacements, fuzzy, numbers]
+
+
+  # How names get fixed: literal, word-boundary, case-insensitive swaps on
+  # the finished transcript.
+  #
+  # Workflow: dictate, run --transcribe on the clip, map whatever the model
+  # wrote to what you meant.
+  replacements:
+    # Removed from every transcript. A source in /slashes/ is a regular
+    # expression; an empty target means delete. The pattern takes any comma
+    # and spacing with it, so nothing is left behind.
+    "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
+    Tasmeen: [Tasmid, Tasmin, Tasmine]
+    Supabase: [super base, superbees]
 
 # A local Ollama model, used to interpret what you say after the wake phrase.
 # Everything else works without it — you just lose free-form spoken commands.
