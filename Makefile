@@ -14,7 +14,7 @@ export VARIANT ?= dev
 V := . scripts/variant.sh &&
 
 .PHONY: app run install uninstall stop clean reset-permissions logs \
-        dev-certificate release release-certificate try-install which
+        dev-certificate release release-certificate try-install which hooks
 
 ## Build the app bundle into .build/
 app:
@@ -61,6 +61,12 @@ release:
 ## Create the certificate release builds are signed with — run once, ever
 release-certificate:
 	@scripts/release-certificate.sh
+
+## Point git at .githooks, so commit subjects are checked before they land.
+## Once per clone: hooks are not cloned with the repository.
+hooks:
+	@git config core.hooksPath .githooks
+	@echo "==> Commit subjects are now checked against Conventional Commits."
 
 ## Rehearse the curl install against dist/. Leaves /Applications alone, but does
 ## quit a running release build — the installer will not leave two of them

@@ -1,0 +1,58 @@
+#!/bin/sh
+#
+# Rejects a commit subject that release-please cannot read.
+#
+# The version number is computed from these subjects and nothing else: `feat:`
+# bumps the minor, `fix:` and `perf:` the patch, everything else bumps nothing.
+# A subject without a type is not a style slip — it is a change that will never
+# appear in a release or in the changelog, and the omission is silent. That is
+# how this repo reached fifteen commits with no release at all.
+#
+# Enable it once per clone:
+#
+#     make hooks
+#
+# The body is untouched by any of this. Write it exactly as before — the type is
+# a prefix on the first line, not a new way of writing.
+#
+#     feat: route spoken instructions to a catalogue of prompts
+#
+#     "hey parrot, fix the grammar" now reaches the grammar prompt and…
+
+SUBJECT="$(sed -n '1{/^#/d;p;}' "$1")"
+
+# Nothing to check on an empty message (git aborts anyway), and merges, reverts
+# and fixups are written by git rather than by a person.
+case "$SUBJECT" in
+    ''|Merge\ *|Revert\ *|fixup!\ *|squash!\ *) exit 0 ;;
+esac
+
+if printf '%s' "$SUBJECT" | grep -Eq '^(feat|fix|perf|docs|refactor|test|build|ci|chore)(\([a-z0-9 ._/-]+\))?!?: .+'; then
+    exit 0
+fi
+
+cat >&2 <<EOF
+commit-msg: the subject needs a Conventional Commits type.
+
+  $SUBJECT
+
+Releases and the changelog are computed from these, so a subject without a
+type ships nothing and says nothing about it.
+
+  feat:     a capability that was not there before   -> bumps the minor
+  fix:      behaviour that was wrong is now right    -> bumps the patch
+  perf:     same behaviour, measurably faster        -> bumps the patch
+  docs:     documentation only                       -> no release
+  refactor: same behaviour, different shape          -> no release
+  test:     tests only                               -> no release
+  build:    build, packaging, install or release     -> no release
+  ci:       workflows                                -> no release
+  chore:    anything else                            -> no release
+
+Add ! before the colon for a breaking change: feat!: …
+
+The body is unchanged. Only the first line gains a prefix:
+
+  feat: $SUBJECT
+EOF
+exit 1

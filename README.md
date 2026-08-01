@@ -55,6 +55,7 @@ Spoken corrections need [Ollama](https://ollama.com) 0.22 or later with
 ```sh
 git clone https://github.com/znat/parrotflow && cd parrotflow
 make dev-certificate    # once, so permissions survive rebuilds
+make hooks              # once, so commit subjects can cut releases
 make install
 ```
 
@@ -216,6 +217,8 @@ $PF --check-config       # validate the YAML, print what the app would use
 $PF --record 3           # record 3s and verify the file it produced
 $PF --watch-modifiers    # print which modifier keys are physically down, live
 $PF --transcribe a.wav   # transcribe a clip
+$PF --panels preview 20  # put one floating surface on screen and leave it there
+$PF --panel-sheet s.png  # draw every surface into one PNG, light beside dark
 ```
 
 ```
@@ -237,6 +240,12 @@ A silent clip or a short file gets a non-zero exit.
 `--watch-modifiers` is the one to reach for if a bare-modifier hotkey seems
 dead — it shows whether the key is reaching the app at all, and whether left
 and right are distinguishable on your keyboard.
+
+`--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`,
+`vocabulary`, `rule` or `preview`, and shows that one surface for as long as
+you ask. It is how the floating surfaces get looked at without dictating
+anything; `--panel-sheet` draws all of them at once, which is where drift
+between them shows up.
 
 You can make a test clip without a microphone at all — `say` writes exactly the
 format the model wants:
@@ -385,15 +394,37 @@ was built with.
 
 ## Releasing
 
-Commits on `main` follow [Conventional Commits](https://www.conventionalcommits.org).
-release-please keeps a release PR up to date with the next version and the
-changelog; merging it tags the release, builds the app, and attaches the signed
-archive that `install.sh` downloads.
+Nobody picks a version number. release-please reads the commit subjects since
+the last tag and works it out: a `feat:` bumps the minor, a `fix:` or `perf:`
+the patch, and anything else releases nothing at all. It keeps a release PR open
+with that version and the changelog it derived, and **merging that PR is the
+release** — it tags, builds on a macOS runner, signs, and attaches the archive
+that `install.sh` downloads.
+
+So the subject line is not housekeeping. A commit written without a type is
+invisible to all of this: no bump, no changelog entry, and no warning that it
+was skipped. `make hooks` points git at `.githooks/commit-msg`, which refuses
+one before it lands. Run it once per clone — hooks are not cloned.
+
+```
+feat:  a capability that was not there before   -> minor
+fix:   behaviour that was wrong is now right    -> patch
+perf:  same behaviour, measurably faster        -> patch
+docs: refactor: test: build: ci: chore:         -> no release
+```
+
+The body of the message is unaffected. It is still the place to say what broke
+and how you know it is fixed.
 
 ```sh
+make hooks                       # once per clone
 scripts/release-certificate.sh   # once, ever — see the warning in the file
 scripts/release.sh               # build the artefacts locally to inspect them
 ```
+
+Re-running the workflow by hand (Actions → release → Run workflow) recomputes
+the release PR. It cannot force a release: with no releasable commits since the
+last tag there is nothing to open a PR for.
 
 ## Design notes
 

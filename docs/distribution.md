@@ -263,6 +263,19 @@ its checksum — which is what `install.sh` downloads from
 The version lands in `Info.plist` through release-please's `extra-files`
 annotation, so the bundle version and the tag cannot drift apart.
 
+The failure mode of this arrangement is silence. release-please reads the
+*subject line* and nothing else, so a commit written as prose has no type, no
+bump and no changelog entry — and nothing anywhere reports that it was skipped.
+The workflow runs green in 24 seconds and no release exists. That is how this
+repository reached fifteen commits and zero tags with the pipeline fully wired
+and working exactly as configured. `.githooks/commit-msg`, installed by
+`make hooks`, is the only thing that makes the omission visible, and it has to
+be visible at commit time because afterwards nothing looks wrong.
+
+`workflow_dispatch` re-runs release-please by hand. It recomputes the release PR
+from the commits since the last tag; it cannot conjure a release out of commits
+that carry no type.
+
 Adding notarization later is an extra step in that workflow, not a redesign:
 sign with Developer ID instead, submit, staple, upload. The rest stays.
 

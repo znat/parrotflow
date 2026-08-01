@@ -3,9 +3,15 @@ name: release
 # release-please watches main for Conventional Commits, keeps a release PR up to
 # date with the next version and the changelog, and cuts the tag when that PR is
 # merged. Only then does the build job run — so ordinary pushes cost nothing.
+#
+# workflow_dispatch runs the same job by hand. It does not force a release: it
+# re-reads the commits since the last tag and opens or refreshes the release PR,
+# which is what you want when a commit landed with the wrong subject and the PR
+# needs recomputing. Merging that PR is still what cuts the release.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: write
