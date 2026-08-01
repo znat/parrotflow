@@ -219,15 +219,22 @@ struct Config: Codable, Equatable {
         ///     - numbers
         ///     - stage: numbers
         ///       when: /\\d/
+        ///     - prompt: hesitation
+        ///       when: /genre/
+        ///
+        /// A prompt names itself with `prompt:` rather than `stage: prompt`
+        /// plus a second key, because every prompt stage would need both and a
+        /// form that repeats itself is a form people mistype.
         ///
         /// The short form is the one almost every line wants, and a format that
         /// makes the common case verbose is a format people work around.
         struct PipelineEntry: Decodable {
             let name: String
+            var prompt: String?
             var when: String?
             var unless: String?
 
-            private enum CodingKeys: String, CodingKey { case stage, when, unless }
+            private enum CodingKeys: String, CodingKey { case stage, prompt, when, unless }
 
             init(from decoder: Decoder) throws {
                 if let bare = try? decoder.singleValueContainer().decode(String.self) {
@@ -235,7 +242,12 @@ struct Config: Codable, Equatable {
                     return
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
-                name = try c.decodeIfPresent(String.self, forKey: .stage) ?? ""
+                if let named = try c.decodeIfPresent(String.self, forKey: .prompt) {
+                    name = "prompt"
+                    prompt = named
+                } else {
+                    name = try c.decodeIfPresent(String.self, forKey: .stage) ?? ""
+                }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
             }
@@ -309,7 +321,10 @@ struct Config: Codable, Equatable {
                             unknownStages.append(entry.name)
                             return nil
                         }
-                        return Pipeline.Step(stage: stage, when: entry.when, unless: entry.unless)
+                        return Pipeline.Step(
+                            stage: stage, prompt: entry.prompt,
+                            when: entry.when, unless: entry.unless
+                        )
                     }
                     pipelines[language.lowercased()] = Pipeline(steps: steps)
                 }
@@ -600,6 +615,21 @@ enum ConfigStore {
       # expression, otherwise a word matched on word boundaries. Case-insensitive
       # either way. A skipped stage says so in the log, because a stage that
       # silently does not run looks exactly like one that ran and found nothing.
+      #
+      # A prompt from `prompts:` can be a stage too, which is the reason conditions
+      # exist: it calls the local model, so it costs about a second where every
+      # other stage costs nothing. Measured on one line, 3.2s with the prompt
+      # running against 0.035s with it skipped.
+      #
+      #   - prompt: hesitation
+      #     when: /\\b(genre|du coup|en fait)\\b/
+      #
+      # It is the only stage that rewrites your words without you asking, and
+      # nothing on screen shows it happened — so every rewrite is written to the
+      # log with the text before and after. If the model is not running, the prompt
+      # does not exist, or the call fails, the transcript comes back exactly as it
+      # arrived; a dictation tool can afford to skip a stage and cannot afford to
+      # lose a sentence.
       #
       # This is written out in full on purpose. The stages are few enough to
       # read at a glance, and deleting a line you can see beats discovering a

@@ -38,8 +38,17 @@ struct Pipeline: Equatable, Codable {
         case fuzzy
         /// Spoken numbers as digits, in the language its own pass resolves.
         case numbers
+        /// One of the prompts in `prompts:`, run over the whole transcript.
+        /// The only stage that calls a model, and the only one that names
+        /// something outside itself — see `Step.prompt`.
+        case prompt
 
         var name: String { rawValue }
+
+        /// Whether it can be in a default nobody wrote. `prompt` cannot: it
+        /// needs a name, and there is no prompt every install is guaranteed to
+        /// have. Everything else is in the default the moment it exists.
+        var isAutomatic: Bool { self != .prompt }
     }
 
     /// A stage plus when it runs. The condition is the whole reason a pipeline
@@ -47,6 +56,10 @@ struct Pipeline: Equatable, Codable {
     /// can be skipped on the transcripts that do not need it.
     struct Step: Equatable, Codable {
         let stage: Stage
+        /// Which prompt, for a `prompt` stage. Meaningless on any other, and
+        /// required on that one — a prompt stage with nothing to run is a
+        /// config error rather than a stage that does nothing.
+        var prompt: String?
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -115,7 +128,9 @@ struct Pipeline: Equatable, Codable {
     ///
     /// An empty list is not the same as no list. `default: []` is a choice and
     /// runs nothing; a missing `pipelines:` is silence and runs everything.
-    static let everything = Pipeline(steps: Stage.allCases.map { Step(stage: $0) })
+    static let everything = Pipeline(
+        steps: Stage.allCases.filter(\.isAutomatic).map { Step(stage: $0) }
+    )
 
     /// The pipeline for a transcript in `language`, from the config.
     ///
@@ -158,6 +173,9 @@ struct Pipeline: Equatable, Codable {
     /// enough against "Supabase" to swallow the preceding word.
     func validate() -> [String] {
         var problems: [String] = []
+        for step in steps where step.stage == .prompt && (step.prompt ?? "").isEmpty {
+            problems.append("a prompt stage names no prompt — write `- prompt: <name>`")
+        }
         for step in steps {
             for (label, condition) in [("when", step.when), ("unless", step.unless)] {
                 guard let condition else { continue }
@@ -180,23 +198,30 @@ struct Pipeline: Equatable, Codable {
         return problems
     }
 
-    func run(_ text: String, config: Config) -> String {
+    /// Asynchronous because one stage calls a model.
+    ///
+    /// The alternative was a semaphore inside the prompt stage, and this runs
+    /// on a cooperative thread after transcription — blocking one there for up
+    /// to the LLM timeout is how a thread pool stops being a thread pool. The
+    /// deterministic stages suspend nowhere, so the cost of this is a keyword.
+    func run(_ text: String, config: Config) async -> String {
         var output = text
         for step in steps {
             guard step.shouldRun(on: output) else {
                 // Said out loud, because a stage that silently does not run is
                 // indistinguishable from a stage that ran and found nothing —
                 // and only one of those is answerable by editing a condition.
-                Log.write("pipeline: skipped \(step.stage.name) — its condition did not hold")
+                let named = step.prompt.map { "\(step.stage.name) \($0)" } ?? step.stage.name
+                Log.write("pipeline: skipped \(named) — its condition did not hold")
                 continue
             }
-            output = apply(step.stage, to: output, config: config)
+            output = await apply(step, to: output, config: config)
         }
         return output
     }
 
-    private func apply(_ stage: Stage, to text: String, config: Config) -> String {
-        switch stage {
+    private func apply(_ step: Step, to text: String, config: Config) async -> String {
+        switch step.stage {
         case .replacements:
             return Replacements.applyExact(to: text, rules: config.transcription.rules)
         case .fuzzy:
@@ -204,6 +229,61 @@ struct Pipeline: Equatable, Codable {
             return Replacements.applyFuzzy(to: text, targets: Array(targets))
         case .numbers:
             return Numbers.apply(to: text, languages: config.transcription.languages)
+        case .prompt:
+            return await runPrompt(step, on: text, config: config)
+        }
+    }
+
+    /// The only stage that can fail, and the only one that must not fail loudly.
+    ///
+    /// Ollama not running is an ordinary state for this app, and a transcript is
+    /// the one thing a dictation tool cannot afford to drop: every way this goes
+    /// wrong returns the text exactly as it arrived. What it does not do is go
+    /// quiet — a model rewriting your words is the one stage whose before and
+    /// after belong in the log whether or not anything went wrong, because
+    /// nothing on screen will ever show you it happened.
+    private func runPrompt(_ step: Step, on text: String, config: Config) async -> String {
+        guard let name = step.prompt else {
+            Log.write("pipeline: a prompt stage names no prompt; skipped")
+            return text
+        }
+        guard config.llm.enabled else {
+            Log.write("pipeline: skipped prompt \(name) — llm.enabled is false")
+            return text
+        }
+        guard let prompt = config.prompts.first(where: {
+            $0.name.caseInsensitiveCompare(name) == .orderedSame
+        }) else {
+            Log.write("pipeline: no prompt named \"\(name)\"; skipped")
+            return text
+        }
+
+        do {
+            let result = try await PromptRunner.run(
+                prompt: prompt,
+                instruction: "",
+                text: text,
+                config: LocalLLM.Config(
+                    endpoint: config.llm.endpoint,
+                    model: config.llm.model,
+                    timeout: config.llm.timeoutSeconds,
+                    keepLoaded: config.llm.keepLoaded
+                )
+            )
+            guard !result.isEmpty else {
+                Log.write("pipeline: prompt \(name) returned nothing; kept the transcript")
+                return text
+            }
+            if result != text {
+                Log.write("pipeline: prompt \(name) rewrote the transcript")
+                Log.write("    before: \(text)")
+                Log.write("    after:  \(result)")
+            }
+            return result
+        } catch {
+            Log.write("pipeline: prompt \(name) failed (\(error.localizedDescription));"
+                + " kept the transcript")
+            return text
         }
     }
 }

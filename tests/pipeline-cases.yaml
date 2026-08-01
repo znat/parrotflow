@@ -68,3 +68,26 @@ cases:
     pipeline: empty
     input: super base has vingt et un users
     expect: unchanged
+
+  # --- a prompt stage, wired but never scored -----------------------------
+  # A prompt calls a model, so what it produces cannot be a fixed expectation.
+  # These two ask the only questions that have one right answer: does the
+  # condition decide, and is a prompt that cannot run survivable.
+
+  - name: the condition keeps the prompt out of the way
+    pipeline: prompt
+    input: on en a vingt et un
+    expect: on en a 21
+
+  # The condition holds, the prompt is named, and no such prompt exists. The
+  # stage must give the transcript back rather than empty it — the same
+  # contract as Ollama being absent, which is an ordinary state here.
+  #
+  # "genre" survives, and that is the assertion: the word the prompt would have
+  # removed is still there, so what came back is the transcript and not a
+  # half-finished rewrite. An expectation of "on en a 21" would have passed
+  # only if something else had quietly deleted it.
+  - name: a prompt that cannot run returns the transcript
+    pipeline: prompt
+    input: on en a genre vingt et un
+    expect: on en a genre 21

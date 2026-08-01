@@ -48,6 +48,21 @@ transcription:
   # either way. A skipped stage says so in the log, because a stage that
   # silently does not run looks exactly like one that ran and found nothing.
   #
+  # A prompt from `prompts:` can be a stage too, which is the reason conditions
+  # exist: it calls the local model, so it costs about a second where every
+  # other stage costs nothing. Measured on one line, 3.2s with the prompt
+  # running against 0.035s with it skipped.
+  #
+  #   - prompt: hesitation
+  #     when: /\b(genre|du coup|en fait)\b/
+  #
+  # It is the only stage that rewrites your words without you asking, and
+  # nothing on screen shows it happened — so every rewrite is written to the
+  # log with the text before and after. If the model is not running, the prompt
+  # does not exist, or the call fails, the transcript comes back exactly as it
+  # arrived; a dictation tool can afford to skip a stage and cannot afford to
+  # lose a sentence.
+  #
   # Written out in full on purpose. The stages are few enough to read at a
   # glance, and deleting a line you can see beats discovering a setting you
   # cannot.

@@ -72,6 +72,7 @@ enum CheckConfigCommand {
                     ? "nothing — the list is empty"
                     : pipeline.steps.map { step -> String in
                         var described = step.stage.name
+                        if let prompt = step.prompt { described += " \(prompt)" }
                         if let when = step.when { described += " when \(when)" }
                         if let unless = step.unless { described += " unless \(unless)" }
                         return described
@@ -80,6 +81,21 @@ enum CheckConfigCommand {
                 for problem in pipeline.validate() {
                     print("  ✗ pipeline \(language): \(problem)")
                     ok = false
+                }
+                // A prompt stage naming a prompt that is not there does
+                // nothing, quietly, on every transcript. The catalogue is not
+                // built yet at this point, so it is checked against the config
+                // directly — a prompt shadowed by a built-in is a separate
+                // complaint that `Catalogue` already makes.
+                for step in pipeline.steps where step.stage == .prompt {
+                    guard let name = step.prompt, !name.isEmpty else { continue }
+                    let known = config.prompts.contains {
+                        $0.name.caseInsensitiveCompare(name) == .orderedSame
+                    }
+                    if !known {
+                        print("  ✗ pipeline \(language): no prompt named \"\(name)\"")
+                        ok = false
+                    }
                 }
             }
             let languages = transcription.languages.joined(separator: ", ")

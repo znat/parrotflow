@@ -1,0 +1,15 @@
+# A prompt stage, gated. Nothing here scores what a prompt *does* — that is
+# non-deterministic and belongs to the prompt's own set. What is scored is the
+# wiring: that the condition decides, and that a stage which cannot run leaves
+# the transcript exactly as it arrived rather than losing it.
+#
+# The prompt named here does not exist in any config on purpose. A missing
+# prompt has to be survivable at runtime — Ollama absent, a renamed prompt, a
+# fixture like this one — and "survivable" means the text comes back untouched.
+languages: [en, fr]
+replacements: {}
+pipeline:
+  - stage: numbers
+    unless: /```/
+  - prompt: no-such-prompt
+    when: /genre/

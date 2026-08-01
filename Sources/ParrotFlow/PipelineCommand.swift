@@ -64,7 +64,9 @@ enum PipelineCommand {
                 unknown.append(entry.name)
                 return nil
             }
-            return Pipeline.Step(stage: stage, when: entry.when, unless: entry.unless)
+            return Pipeline.Step(
+                stage: stage, prompt: entry.prompt, when: entry.when, unless: entry.unless
+            )
         }
         for name in unknown {
             print("✗ \"\(name)\" is not a stage — have: \(Pipeline.stageNames.joined(separator: ", "))")
@@ -89,6 +91,7 @@ enum PipelineCommand {
             print("languages:  \(fixture.languages.joined(separator: ", "))")
             for step in steps {
                 var line = "  \(step.stage.name)"
+                if let prompt = step.prompt { line += " \(prompt)" }
                 if let when = step.when { line += "  when \(when)" }
                 if let unless = step.unless { line += "  unless \(unless)" }
                 print(line)
@@ -96,8 +99,13 @@ enum PipelineCommand {
             return 0
         }
 
+        let done = DispatchSemaphore(value: 0)
         if quiet {
-            print(pipeline.run(text, config: config))
+            Task {
+                print(await pipeline.run(text, config: config))
+                done.signal()
+            }
+            done.wait()
             return 0
         }
 
@@ -114,7 +122,13 @@ enum PipelineCommand {
                 print("  ⊘ \(step.stage.name)  — skipped, \(reason)")
                 continue
             }
-            let after = Pipeline(steps: [step]).run(current, config: config)
+            var after = current
+            let stepDone = DispatchSemaphore(value: 0)
+            Task {
+                after = await Pipeline(steps: [step]).run(current, config: config)
+                stepDone.signal()
+            }
+            stepDone.wait()
             if after == current {
                 print("  · \(step.stage.name)  — ran, changed nothing")
             } else {
