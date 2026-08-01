@@ -19,6 +19,16 @@ enum Log {
         return formatter
     }()
 
+    /// Waits for queued writes to reach the file.
+    ///
+    /// Writing asynchronously is right for a menu bar app and wrong for a
+    /// terminal command, which exits the instant it has finished: the process
+    /// is gone before the queue drains and the lines are silently lost. Any
+    /// CLI path that logs has to flush before it exits.
+    static func flush() {
+        queue.sync {}
+    }
+
     static func write(_ message: String) {
         let line = "\(timestampFormatter.string(from: Date()))  \(message)\n"
         NSLog("[ParrotFlow] %@", message)

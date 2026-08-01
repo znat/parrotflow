@@ -92,6 +92,15 @@ enum SelectionReader {
             return false
         }
 
+        // The replacement in the company it is supposed to keep. Checking for
+        // the replacement on its own would accept an append — "…the
+        // storethey're" contains "they're" quite happily — so the surrounding
+        // characters are what make this a check rather than a formality.
+        let context = 12
+        let fragment = String(text[..<found.lowerBound].suffix(context))
+            + replacement
+            + String(text[found.upperBound...].prefix(context))
+
         let nsRange = NSRange(found, in: text)
         var range = CFRange(location: nsRange.location, length: nsRange.length)
         guard let axRange = AXValueCreate(.cfRange, &range) else { return false }
@@ -107,15 +116,27 @@ enum SelectionReader {
         let writeStatus = AXUIElementSetAttributeValue(
             element, kAXSelectedTextAttribute as CFString, replacement as CFTypeRef
         )
-        if writeStatus == .success, changed(element, from: text) {
+        if writeStatus == .success, landed(element, expecting: fragment) {
             return true
         }
 
-        // Only paste once the selection is confirmed to exist. Setting the
-        // range can report success and do nothing — terminals expose their
-        // value as a read-only view of the screen — and pasting into that
-        // means Cmd-V inserts at the caret instead of replacing. That appends
-        // the correction to the end of the line: "Versalailles.Tasmeen".
+        // Everything past here is the paste fallback, which is only safe where
+        // the value is an editable buffer. A terminal's is a view of its
+        // screen: setting the range really does select the characters drawn
+        // there, but the program on the other side of the pty never hears
+        // about it, so Cmd-V arrives at the input caret and appends —
+        // "…the storethey're", the same shape as "Versalailles.Tasmeen".
+        //
+        // The guard below used to be the only one, and it could not catch that,
+        // because it asked whether the selection existed. It did: we had just
+        // made it two lines earlier. Confirming your own action is not
+        // evidence, so the check passed every time while the paste corrupted
+        // the line. What rules a terminal out is the shape of the value.
+        guard !text.contains("\n"), text.count <= 2000 else {
+            Log.write("rewrite: \(roleName) is a screen, not a field — its selection is of output, not input; not pasting")
+            return false
+        }
+
         guard let selected = selectedText(of: element),
               selected.compare(needle, options: .caseInsensitive) == .orderedSame else {
             Log.write("rewrite: \(roleName) ignored the range; not pasting blind")
@@ -126,7 +147,7 @@ enum SelectionReader {
         TextInserter.insert(replacement, mode: .paste)
         Thread.sleep(forTimeInterval: 0.2)
 
-        if changed(element, from: text) { return true }
+        if landed(element, expecting: fragment) { return true }
         Log.write("rewrite: \(roleName) would not accept either method")
         return false
     }
@@ -236,47 +257,243 @@ enum SelectionReader {
     /// swept up 140 characters of chrome for an 18 character line, which then
     /// got typed into the input.
     ///
-    /// So no diffing. The value is used only when it is plainly a field and not
-    /// a screen — no newlines, and short. Then the corrected text is known
-    /// exactly before a single key is pressed, and the keystrokes have nothing
-    /// to infer.
+    /// So no diffing, and nothing is read out of a screen. In a plain field the
+    /// value is the line and can be used directly. In a terminal it cannot be,
+    /// but it does not need to be: the line was dictated there a moment ago and
+    /// we still have what we typed. The corrected text is known exactly before
+    /// a single key is pressed, and the screen is asked one question only —
+    /// whether the line is still ours alone — which is weak enough that it can
+    /// answer honestly.
     @discardableResult
     static func rewriteCurrentLine(
         applying rules: [(heard: String, corrected: String)],
+        dictated: String? = nil,
         in element: AXUIElement
+    ) -> Bool {
+        rewriteCurrentLine(dictated: dictated, in: element) { applying(rules, to: $0) }
+    }
+
+    /// The same retype, told what to do to the line rather than which rules to
+    /// run over it.
+    ///
+    /// Rules match on word boundaries, which is right for correcting a word and
+    /// wrong for replacing a phrase: `\b` will not match after the full stop in
+    /// "Sixty Euros.", so a transform asked to rewrite that found nothing and
+    /// its result was pasted alongside instead.
+    @discardableResult
+    static func rewriteCurrentLine(
+        dictated: String?,
+        in element: AXUIElement,
+        correcting: (String) -> String
     ) -> Bool {
         guard let value = visibleText(of: element) else { return false }
 
-        guard !value.contains("\n"), value.count <= 2000 else {
-            Log.write("rewrite: value is \(value.count) chars of screen, not one line; not retyping")
+        let line: String
+        if !value.contains("\n"), value.count <= 2000 {
+            line = value
+        } else if let dictated, !dictated.isEmpty,
+                  let located = inputLine(anchoredBy: dictated, in: value) {
+            Log.write("rewrite: value is a screen; using the row the transcript anchors")
+            line = located
+        } else {
+            Log.write("rewrite: \(value.count) chars of screen and the line is not ours alone; not retyping")
             return false
         }
 
-        let corrected = applying(rules, to: value)
-        guard corrected != value else {
-            Log.write("rewrite: no rule matched the line; leaving it alone")
+        let corrected = correcting(line)
+        guard corrected != line else {
+            Log.write("rewrite: nothing to change on the line; leaving it alone")
             return false
         }
 
-        postControlKey(0x00)   // Ctrl-A, start of line
-        Thread.sleep(forTimeInterval: 0.06)
-        postControlKey(0x28)   // Ctrl-K, kill to end of line
-        Thread.sleep(forTimeInterval: 0.10)
-
+        guard clearedInput(of: element) else {
+            Log.write("rewrite: could not empty the line; not retyping over what is left")
+            return false
+        }
         TextInserter.insert(corrected, mode: .paste)
-        Thread.sleep(forTimeInterval: 0.20)
 
-        // If the line is not what we meant to write, the kill or the paste
-        // missed. Ctrl-Y yanks back what Ctrl-K took, which is the only undo
-        // that does not depend on the accessibility API being truthful.
-        let after = visibleText(of: element) ?? ""
-        if after.contains(corrected) {
-            Log.write("rewrite: retyped \(value.count) chars with \(rules.count) rule(s) applied")
+        // Poll, rather than read once after a guessed delay. The terminal
+        // services the paste asynchronously and repaints when it is ready, and
+        // a single read at 0.2s arrived before the repaint: the line was
+        // already right, the check said it was not, and the restore below
+        // undid a correction that had worked. `viaCopy` learned this first.
+        if appeared(corrected, in: element, within: 1.5) {
+            Log.write("rewrite: retyped \(line.count) chars")
             return true
         }
-        Log.write("rewrite: line did not come back as expected; yanking it back")
-        postControlKey(0x10)   // Ctrl-Y
+
+        // Put it back deliberately rather than with Ctrl-Y. The paste has
+        // already happened by now, so yanking inserts what Ctrl-K took *after*
+        // whatever landed and leaves you holding both — which is how a
+        // truncated correction became a duplicated line. We still have the text
+        // that was there, so type that instead and depend on nothing.
+        Log.write("rewrite: line did not come back as expected; restoring what was there")
+        _ = clearedInput(of: element)
+        TextInserter.insert(line, mode: .paste)
+        Thread.sleep(forTimeInterval: 0.20)
         return false
+    }
+
+    /// Waits for text to show up on screen, or gives up.
+    ///
+    /// The wait is the point: everything this class writes is written by
+    /// posting a keystroke, and a keystroke is a request. Reading back before
+    /// the app has serviced it does not measure the write, it measures the
+    /// delay — and concluding failure from that is worse than not checking,
+    /// because the recovery then destroys work that was fine.
+    private static func appeared(
+        _ text: String, in element: AXUIElement, within seconds: TimeInterval
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            if let value = visibleText(of: element) {
+                // The raw screen first, then the input box put back together.
+                // A corrected line long enough to wrap is drawn across several
+                // rows and never appears whole in the value — which reported a
+                // retype that had plainly worked as a failure, and undid it.
+                if value.contains(text) { return true }
+                if let joined = joinedInputBox(in: value), joined.contains(text) { return true }
+            }
+            Thread.sleep(forTimeInterval: 0.05)
+        } while Date() < deadline
+        return false
+    }
+
+    /// The input line, located by text we know we put on it.
+    ///
+    /// The transcript answers "which row", never "what is on it". Those are
+    /// very different questions and only the first one is safe to ask of a
+    /// transcript: a field can hold several dictations and whatever was typed
+    /// between them, so retyping the last transcript would quietly delete the
+    /// rest of the line. The row itself is authoritative about its own
+    /// contents, and it is authoritative about all of them.
+    ///
+    /// Nor is this the read that failed before. That one diffed whole screens
+    /// before and after and swept up 140 characters of status bar for an 18
+    /// character line. This reads one row, and only ever the row that already
+    /// contains text we placed there.
+    private static func inputLine(anchoredBy dictated: String, in screen: String) -> String? {
+        let rows = screen.components(separatedBy: "\n")
+
+        // The input box: what lies between the last two rules the TUI draws.
+        //
+        // A wrapped line occupies several rows of it, and refusing whenever a
+        // line crossed the width made this useless in practice — two dictated
+        // sentences reach the edge of an 80 column terminal, and every
+        // correction after that was declined. So the rows are put back
+        // together instead.
+        //
+        // Joined with a single space because that is what the break consumed:
+        // a soft wrap happens at a space and the space is not drawn. The
+        // reconstruction is checked before it is trusted — if the anchor is not
+        // in the result, the rows did not go back together the way they came
+        // apart, and this refuses rather than retyping a guess.
+        if let joined = joinedInputBox(in: screen), joined.contains(dictated) {
+            guard joined.count <= 2000 else {
+                Log.write("rewrite: the input box holds \(joined.count) chars; not retyping")
+                return nil
+            }
+            return joined
+        }
+
+        // No box drawn, or the anchor is not inside it. Fall back to a single
+        // row, which is all that can be identified without one.
+        guard let index = rows.indices.reversed().first(
+            where: { rows[$0].contains(dictated) }
+        ) else {
+            Log.write("rewrite: nothing on screen anchors the transcript; not retyping")
+            return nil
+        }
+        let row = rows[index]
+
+        // Whether the line wrapped cannot be read off its own width. A terminal
+        // soft-wraps at a word boundary, so a wrapped row stops short of the
+        // edge and measures no differently from a line that simply ended —
+        // which is how a 166 character line got retyped as its first 74 and the
+        // rest of the sentence was left stranded below.
+        //
+        // The row underneath is what tells you. Under an unwrapped input it is
+        // the box border; under a wrapped one it is the remainder of what was
+        // being typed.
+        let below = index + 1 < rows.count ? rows[index + 1] : ""
+        guard below.trimmingCharacters(in: .whitespaces).isEmpty || isBorder(below) else {
+            Log.write("rewrite: the row below has text on it; the line may have wrapped — not retyping")
+            return nil
+        }
+        return stripPrompt(row)
+    }
+
+    /// Empties the input line, checking between presses rather than assuming.
+    ///
+    /// Ctrl-K kills to the end of the *visual row* in this TUI, not the end of
+    /// the logical line, so a single press leaves behind everything a wrap
+    /// pushed onto the rows below — and the retype then landed on top of the
+    /// remainder: "…certainly wrapsthis line past the width…". Pressing until
+    /// the box reads empty is the only version of this that survives a line
+    /// that wrapped.
+    ///
+    /// Only where the box can be read. In a plain field there is nothing to
+    /// check against, and a loop that cannot see what it is doing would keep
+    /// killing; there, one press is what it always was.
+    private static func clearedInput(of element: AXUIElement) -> Bool {
+        func boxIsEmpty() -> Bool? {
+            guard let value = visibleText(of: element),
+                  let box = joinedInputBox(in: value) else { return nil }
+            return box.isEmpty
+        }
+
+        guard boxIsEmpty() != nil else {
+            postControlKey(0x00)   // Ctrl-A, start of line
+            Thread.sleep(forTimeInterval: 0.06)
+            postControlKey(0x28)   // Ctrl-K, kill to end of line
+            Thread.sleep(forTimeInterval: 0.10)
+            return true
+        }
+
+        for _ in 0..<12 {
+            if boxIsEmpty() == true { return true }
+            postControlKey(0x00)
+            Thread.sleep(forTimeInterval: 0.06)
+            postControlKey(0x28)
+            Thread.sleep(forTimeInterval: 0.12)
+        }
+        return boxIsEmpty() == true
+    }
+
+    /// The input box put back into one line, needing no anchor to find it.
+    ///
+    /// Between the last two rules the TUI draws, joined with the single space
+    /// each soft wrap consumed. Used to read the line before a retype and to
+    /// check it afterwards — and it has to be both, because after the
+    /// substitution the anchor is the one thing no longer on the line.
+    private static func joinedInputBox(in screen: String) -> String? {
+        let rows = screen.components(separatedBy: "\n")
+        let borders = rows.indices.filter { isBorder(rows[$0]) }
+        guard borders.count >= 2 else { return nil }
+        let lower = borders[borders.count - 1]
+        let upper = borders[borders.count - 2]
+        guard upper + 1 < lower else { return nil }
+        return rows[(upper + 1)..<lower]
+            .map(stripPrompt).filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    /// A rule the TUI drew, rather than anything anyone typed.
+    private static func isBorder(_ row: String) -> Bool {
+        let bare = row.trimmingCharacters(in: .whitespaces)
+        return !bare.isEmpty && bare.allSatisfy { "─━—-│┃|┌┐└┘├┤╭╮╰╯╌┄".contains($0) }
+    }
+
+    /// A row without the prompt or the padding the terminal drew around it.
+    ///
+    /// One glyph, not a run of them: dropping every leading `>` would eat a
+    /// line that genuinely begins with one.
+    private static func stripPrompt(_ row: String) -> String {
+        var line = Substring(row).drop(while: { $0 == " " })
+        if let first = line.first, "❯>$#%│⏵".contains(first) {
+            line = line.dropFirst().drop(while: { $0 == " " })
+        }
+        return String(line).trimmingCharacters(in: .whitespaces)
     }
 
     private static func postControlKey(_ key: CGKeyCode) {
@@ -302,12 +519,32 @@ enum SelectionReader {
         return text
     }
 
-    private static func changed(_ element: AXUIElement, from original: String) -> Bool {
+    /// True when the correction is where it was asked to go.
+    ///
+    /// This used to ask whether the value had changed at all, which is not the
+    /// same question and answered yes far too easily. A live TUI changes on its
+    /// own — a clock in a status bar is enough — so a paste that appended
+    /// "…the storethey're" and a paste that did nothing both reported success.
+    /// What matters is that the text now reads the way it would have if the
+    /// substitution had happened, in the place it was meant to happen, and an
+    /// append does not.
+    private static func landed(_ element: AXUIElement, expecting fragment: String) -> Bool {
         var after: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element, kAXValueAttribute as CFString, &after
         ) == .success, let updated = after as? String else { return false }
-        return updated != original
+        return folded(updated).contains(folded(fragment))
+    }
+
+    /// Typographic substitution is not a failed write. Most apps turn a
+    /// straight apostrophe curly as it arrives, so "they're" comes back as
+    /// "they’re" — the correction landed, and a literal comparison would call
+    /// it a refusal and send the text to the clipboard instead.
+    private static func folded(_ text: String) -> String {
+        text.replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "\u{2018}", with: "'")
+            .replacingOccurrences(of: "\u{201C}", with: "\"")
+            .replacingOccurrences(of: "\u{201D}", with: "\"")
     }
 
     /// Full read, in descending order of politeness. `snapshot` is preferred

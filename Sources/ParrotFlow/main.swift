@@ -86,6 +86,42 @@ if let index = arguments.firstIndex(of: "--learn") {
     exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2]))
 }
 
+if let index = arguments.firstIndex(of: "--peek") {
+    let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
+    let sentinel = arguments.firstIndex(of: "--find").flatMap { found in
+        arguments.indices.contains(found + 1) ? arguments[found + 1] : nil
+    }
+    exit(PeekCommand.run(seconds: seconds ?? 3, expecting: sentinel))
+}
+
+if let index = arguments.firstIndex(of: "--edit-test") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --edit-test <needle> <replacement> --find <sentinel> [--after <seconds>]")
+        exit(2)
+    }
+    guard let found = arguments.firstIndex(of: "--find"),
+          arguments.indices.contains(found + 1) else {
+        // Not a defaultable argument. Without it this writes into whatever is
+        // frontmost, which during a test run is as likely to be a real window.
+        print("✗ --find <sentinel> is required; it is what stops this writing into a real window")
+        exit(2)
+    }
+    let seconds = arguments.firstIndex(of: "--after").flatMap { after in
+        arguments.indices.contains(after + 1) ? Double(arguments[after + 1]) : nil
+    }
+    let dictated = arguments.firstIndex(of: "--dictated").flatMap { said in
+        arguments.indices.contains(said + 1) ? arguments[said + 1] : nil
+    }
+    exit(EditTestCommand.run(
+        needle: arguments[index + 1],
+        replacement: arguments[index + 2],
+        sentinel: arguments[found + 1],
+        dictated: dictated,
+        literal: arguments.contains("--literal"),
+        seconds: seconds ?? 3
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--watch-modifiers") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     exit(WatchModifiersCommand.run(seconds: seconds ?? 10))

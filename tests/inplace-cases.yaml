@@ -1,0 +1,72 @@
+# Cases for scripts/check-inplace.sh — in-place editing against a real
+# Claude Code TUI running in tmux.
+#
+# Unlike every other case file here these are not text in, text out. Each one
+# seeds a line into a live terminal, asks the app to correct it, and reads the
+# line back through the pty, which owes nothing to the accessibility API the
+# app is using. That independence is the point: the write path's own report of
+# what it did is the thing under test, not the evidence.
+#
+#   dictated  what the app believes it typed there — the anchor, never content
+#   line      what is actually on the line when the correction fires
+#   expect    the line afterwards, or `unchanged` where refusing is correct
+#
+# Refusing is a passing result wherever the line cannot be identified safely.
+# A correction that does not happen costs a trip to the clipboard; one that
+# happens to the wrong text costs the line.
+cases:
+  - name: a single dictation, untouched
+    id: PFCHK-201
+    dictated: PFCHK-201 their going to the store
+    line: PFCHK-201 their going to the store
+    heard: their
+    corrected: they're
+    expect: PFCHK-201 they're going to the store
+    log: retyped
+
+  # The case the transcript alone cannot survive: it describes part of the
+  # line, so retyping it would delete the rest.
+  - name: a dictation with text typed after it
+    id: PFCHK-202
+    dictated: PFCHK-202 their going to the store
+    line: PFCHK-202 their going to the store and typed by hand
+    heard: their
+    corrected: they're
+    expect: PFCHK-202 they're going to the store and typed by hand
+    log: retyped
+
+  # Two dictated sentences reach the edge of an 80 column terminal, so this is
+  # the ordinary case, not the exotic one. The rows of the input box are put
+  # back together and the whole logical line is retyped.
+  - name: a line long enough to wrap
+    id: PFCHK-203
+    dictated: PFCHK-203 their going to the store
+    line: PFCHK-203 their going to the store and now a great deal more text to push this line past the width of the terminal so that it certainly wraps
+    heard: their
+    corrected: they're
+    expect: PFCHK-203 they're going to the store and now a great deal more text to push this line past the width of the terminal so that it certainly wraps
+    log: retyped
+
+  # Nothing anchors the transcript, so which row is the input line is a guess.
+  - name: a transcript that is not on screen
+    id: PFCHK-204
+    dictated: PFCHK-204 something never typed here
+    line: PFCHK-204 their going to the store
+    heard: their
+    corrected: they're
+    expect: unchanged
+    log: nothing on screen anchors the transcript
+
+  # A transform, not a correction: the whole dictated phrase is replaced by its
+  # rewritten form. Punctuation at the end is the point — a word-boundary rule
+  # cannot match past the full stop, which is why "Sixty Euros." came back as
+  # "Sixty Euros.60 Euros." with both versions on the line.
+  - name: a phrase ending in punctuation
+    id: PFCHK-205
+    dictated: PFCHK-205 Sixty Euros.
+    line: PFCHK-205 Sixty Euros.
+    heard: PFCHK-205 Sixty Euros.
+    corrected: PFCHK-205 60 Euros.
+    expect: PFCHK-205 60 Euros.
+    literal: true
+    log: retyped

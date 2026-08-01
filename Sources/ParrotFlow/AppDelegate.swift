@@ -34,6 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
+    private var keepWarmTimer: Timer?
+    private var keepWarmInFlight = false
     private var hotkeyError: String?
     private var lastRecording: Recorder.Recording?
 
@@ -93,6 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         if recorder.isRecording { _ = recorder.stop(config: config) }
+        keepWarmTimer?.invalidate()
         hotKeys.unregister()
     }
 
@@ -132,6 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.model.hotkeyError = hotkeyError
         settings.model.outputDir = config.audio.outputDir
 
+        startKeepWarm()
         updateUI()
     }
 
@@ -331,6 +335,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? String(format: "llm: %@ loaded and pinned in %.1fs", llm.model, elapsed)
                     : "llm: could not preload \(llm.model) — is Ollama running?"
             )
+        }
+    }
+
+    /// Keeps the model warm by running one token a minute through it.
+    ///
+    /// See `LocalLLM.keepWarm` for why loading it once at launch is not enough.
+    /// A minute is under Ollama's own five, and well under the gaps that were
+    /// producing 4–11s routes in the log.
+    ///
+    /// Ticking every 15s rather than every 60s is what makes "a minute since
+    /// the last call" mean it: a timer that only fires on the minute is in
+    /// whatever phase launch left it in, so a real command landing just before
+    /// a tick pushes the next ping most of a second minute away — which is the
+    /// gap being closed. The tick itself is a date comparison, and only reaches
+    /// the network on the one in four that has earned it.
+    ///
+    /// Unlike `warmUpLLM` this is safe to restart from `applyConfig`, because
+    /// it costs a timer rather than a multi-GB load.
+    private func startKeepWarm() {
+        keepWarmTimer?.invalidate()
+        keepWarmTimer = nil
+        guard config.llm.enabled, config.llm.keepLoaded else { return }
+
+        let timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
+            self?.keepWarmTick()
+        }
+        // Nothing waits on this, so let the OS coalesce it with other wakeups.
+        timer.tolerance = 5
+        keepWarmTimer = timer
+    }
+
+    private func keepWarmTick() {
+        // A ping that is still in flight is a cold model being fetched — the
+        // slow case this exists for. Without the guard every tick through it
+        // would queue another, and the pile would land together.
+        guard !keepWarmInFlight else { return }
+        guard Date().timeIntervalSince(LocalLLM.lastCallAt) >= 60 else { return }
+
+        let llm = llmConfig()
+        let system = Router.prompt(for: Catalogue(prompts: config.prompts))
+        keepWarmInFlight = true
+        Task.detached(priority: .background) { [weak self] in
+            await LocalLLM.keepWarm(system: system, config: llm)
+            await MainActor.run { self?.keepWarmInFlight = false }
         }
     }
 
@@ -545,12 +593,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard prompt.confirm else {
-            applyTransform(cleaned, to: selection, prompt: prompt)
+            applyTransform(cleaned, to: selection, replacing: before, prompt: prompt)
             return
         }
 
         previewPanel.onApply = { [weak self] edited in
-            self?.applyTransform(edited, to: selection, prompt: prompt)
+            self?.applyTransform(edited, to: selection, replacing: before, prompt: prompt)
         }
         previewPanel.onCancel = {
             Log.write("transform: \(prompt.name) discarded")
@@ -558,9 +606,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         previewPanel.show(prompt: prompt.name, before: before, after: cleaned)
     }
 
+    /// Puts a transformed phrase where the phrase it replaces is sitting.
+    ///
+    /// The accessibility write first, because it disturbs nothing. A terminal
+    /// refuses it — its value is a picture of a screen — and there the only
+    /// thing that writes is keystrokes, which stays behind `rewrite_line`
+    /// because it clears the line to do it.
+    /// Three outcomes, not two.
+    ///
+    /// "It did not happen" and "it was tried and rolled back" call for opposite
+    /// things afterwards. Treating them alike is what produced
+    /// "Fifty cents.50 cents.": the retype had already put text on the line and
+    /// taken it off again, and the caller, seeing only false, pasted on top of
+    /// the result.
+    private enum InPlace { case replaced, notAttempted, failed }
+
+    private func replacedInPlace(
+        _ original: String, with text: String, in element: AXUIElement
+    ) -> InPlace {
+        if SelectionReader.replaceLastOccurrence(of: original, with: text, in: element) {
+            return .replaced
+        }
+        guard config.transcription.rewriteLine else {
+            Log.write("transform: would need to retype the line, but rewrite_line is off")
+            return .notAttempted
+        }
+        let retyped = SelectionReader.rewriteCurrentLine(dictated: original, in: element) { line in
+            // Literal, not a rule: the phrase may end in punctuation, and a
+            // word-boundary match will not see past it.
+            guard let found = line.range(
+                of: original, options: [.caseInsensitive, .backwards]
+            ) else { return line }
+            return line.replacingCharacters(in: found, with: text)
+        }
+        // The retype found its line and acted on it either way; if it came back
+        // false it has already put the line back, and the text belongs on the
+        // clipboard rather than on top of what it restored.
+        return retyped ? .replaced : .failed
+    }
+
     private func applyTransform(
         _ text: String,
         to selection: SelectionReader.Selection?,
+        replacing replaced: String,
         prompt: Config.Prompt
     ) {
         // Replacing the selection puts it back exactly where it came from.
@@ -576,6 +664,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 flash("\(prompt.name) copied — this app won't let me edit it")
             }
         } else {
+            // Hand focus back first. Showing the preview called NSApp.activate
+            // to put the panel in front, so by the time Apply is pressed we are
+            // the frontmost app and Cmd-V lands in our own window — which is
+            // how "digits applied" appeared over a TUI that never changed. The
+            // other branch never had this problem because replaceSelection
+            // activates the owner itself.
+            if let owner = focusAtPress?.owner, !owner.isActive {
+                owner.activate()
+                // Let it come forward before the keystroke is posted.
+                Thread.sleep(forTimeInterval: 0.15)
+            }
+
+            // The text this ran over is still in the field — we dictated it
+            // there a moment ago and nothing has taken it away. Pasting the
+            // result leaves both versions side by side: "Sixty Euros.60 Euros."
+            // So replace what we typed, with the machinery a correction uses,
+            // and only fall back to inserting when there is nothing to replace.
+            let original = replaced.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !original.isEmpty, config.transcription.insertMode == .paste,
+               let element = SelectionReader.focusedElement(),
+               !SelectionReader.isOurs(element) {
+                switch replacedInPlace(original, with: text, in: element) {
+                case .replaced:
+                    if config.feedback.sound { NSSound(named: "Glass")?.play() }
+                    flash("\(prompt.name) applied")
+                    settings.model.lastTranscript = text
+                    return
+                case .failed:
+                    Log.write("transform: the line would not take the rewrite; left on the clipboard")
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                    flash("\(prompt.name) copied — this app won't let me edit it")
+                    settings.model.lastTranscript = text
+                    return
+                case .notAttempted:
+                    break
+                }
+            }
+
             switch TextInserter.insert(text, mode: config.transcription.insertMode) {
             case .pasted, .copied:
                 if config.feedback.sound { NSSound(named: "Glass")?.play() }
@@ -683,7 +810,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // rebuild it from what the kill removed — the terminal tells
                 // us what was there rather than us having to guess.
                 Log.write("rewrite: retyping the line via keystrokes")
-                if SelectionReader.rewriteCurrentLine(applying: rules, in: element) {
+                // The transcript is what we typed into that line, so it is the
+                // one description of it that was not read off a screen.
+                if SelectionReader.rewriteCurrentLine(
+                    applying: rules,
+                    dictated: settings.model.lastTranscript,
+                    in: element
+                ) {
                     outcome = .written
                 } else {
                     NSPasteboard.general.clearContents()
