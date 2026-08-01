@@ -24,6 +24,25 @@ struct Config: Codable, Equatable {
     var llm: LLM = LLM()
     var prompts: [Prompt] = []
 
+    /// Do what was asked even when no prompt matches — see `FreeForm`.
+    ///
+    /// On by default. It is the difference between a fixed menu of commands
+    /// and being able to say what you want, and the measurements behind that
+    /// default are in scripts/validate-generic.py.
+    ///
+    /// The flag exists because it moves where the app fails. With it off, an
+    /// instruction nothing handles is refused and you lose nothing. With it on,
+    /// a sentence that was never an instruction can reach a prompt whose job is
+    /// to rewrite your selection. The router is what stops that — it answers
+    /// NONE for "not an edit" and ANY for "an edit with no tool", measured at
+    /// 18/19 — and `confirm` is what makes the residue survivable.
+    var freeForm: Bool = true
+
+    enum CodingKeys: String, CodingKey {
+        case hotkey, audio, feedback, transcription, llm, prompts
+        case freeForm = "free_form"
+    }
+
     /// An instruction you can reach by voice: "hey parrot, make that a list".
     ///
     /// The description is not documentation — it is the only thing the router
@@ -391,6 +410,9 @@ struct Config: Codable, Equatable {
                 return true
             }
         }
+        if let freeForm = try c.decodeIfPresent(Bool.self, forKey: .freeForm) {
+            self.freeForm = freeForm
+        }
     }
 
     var resolvedOutputDir: URL {
@@ -525,6 +547,21 @@ enum ConfigStore {
       # after five minutes, and reloading costs 7-10s on the next correction.
       # Turn off to get those seconds back as free RAM.
       keep_loaded: true
+
+    # Do what was asked even when no prompt matches — which, with no `prompts:`
+    # section yet, is everything:
+    #
+    #     "hey parrot, use the 24 hour clock"
+    #     "hey parrot, make sure fifty dollars is formatted as money"
+    #     "hey parrot, sort that list alphabetically"
+    #
+    # A remark that was never an instruction is still refused: the router
+    # answers three ways, and separating "an edit nothing covers" from "not an
+    # edit at all" is what keeps a passing question away from your selection.
+    # You see every result before it replaces anything.
+    #
+    # Turn it off to go back to a fixed menu of prompts.
+    free_form: true
     """
     }
 }

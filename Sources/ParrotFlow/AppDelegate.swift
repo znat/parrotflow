@@ -374,7 +374,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard Date().timeIntervalSince(LocalLLM.lastCallAt) >= 60 else { return }
 
         let llm = llmConfig()
-        let system = Router.prompt(for: Catalogue(prompts: config.prompts))
+        // The same string the router will send, `free_form` included: what is
+        // being kept warm is Ollama's prompt cache, and a system prompt that
+        // differs by one line is a cache miss and the 3.5s this exists to avoid.
+        let system = Router.prompt(
+            for: Catalogue(prompts: config.prompts), freeForm: config.freeForm
+        )
         keepWarmInFlight = true
         Task.detached(priority: .background) { [weak self] in
             await LocalLLM.keepWarm(system: system, config: llm)
@@ -417,11 +422,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         beginProgress("Thinking…")
         let llmConfig = llmConfig()
+        let freeForm = config.freeForm
 
         Task { [weak self] in
             do {
                 let decision = try await Router.route(
-                    instruction: command, catalogue: catalogue, config: llmConfig
+                    instruction: command,
+                    catalogue: catalogue,
+                    freeForm: freeForm,
+                    config: llmConfig
                 )
                 await MainActor.run {
                     guard let self else { return }
@@ -429,15 +438,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     case .matched(let capability):
                         Log.write("router: \"\(command)\" → \(capability.name)")
                         self.run(capability, instruction: command)
+                    case .anything:
+                        // An edit with no prompt behind it. The instruction is
+                        // the whole specification, so it goes through unsplit,
+                        // exactly as it would to a prompt of your own.
+                        Log.write("router: \"\(command)\" → \(FreeForm.name)")
+                        self.runTransform(FreeForm.prompt, instruction: command)
                     case .none:
                         // Nothing fits. Deliberately not falling through to
                         // dictation: the wake phrase means you were not
                         // dictating, and typing the instruction into the
                         // document is the one failure that writes nonsense
                         // without saying so.
+                        //
+                        // With free_form on this is the narrower verdict "that
+                        // was not an edit at all", so it says so — the two
+                        // reasons want different fixes, and "no prompt for it"
+                        // would send you writing one that would never be used.
                         self.endProgress()
                         Log.write("router: nothing matched \"\(command)\"")
-                        self.flash("No prompt for \"\(command)\"")
+                        self.flash(freeForm
+                            ? "Not something to change in the text: \"\(command)\""
+                            : "No prompt for \"\(command)\"")
                     }
                 }
             } catch {
@@ -621,23 +643,82 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the result.
     private enum InPlace { case replaced, notAttempted, failed }
 
-    private func replacedInPlace(
-        _ original: String, with text: String, in element: AXUIElement
+    /// One edit to make to text that is already in the field.
+    struct Edit {
+        let find: String
+        let replace: String
+        /// Whether to settle for the nearest thing when `find` is not there.
+        ///
+        /// Right for a rule learned by ear, where the word on screen and the
+        /// word in the rule are two hearings of one name — a field reading "I
+        /// love versall" against a rule for "Versailles" matched nothing.
+        /// Wrong for a transform, whose `find` is a whole sentence: the
+        /// nearest word to it is not a worse spelling of it, it is some other
+        /// part of the line.
+        let fuzzy: Bool
+    }
+
+    /// Makes edits to text where it already sits, by whichever means the app
+    /// in front will accept.
+    ///
+    /// The one ladder for both callers. Corrections and transforms want the
+    /// same thing — the field says X, make it say Y — and having each keep its
+    /// own version of this meant a fix for one silently left the other behind.
+    ///
+    /// The accessibility write first, per edit, because it disturbs nothing. A
+    /// terminal refuses it, and there the only thing that writes is keystrokes,
+    /// which stays behind `rewrite_line` because it clears the line to do it —
+    /// and which is done once for all the edits rather than once each, since
+    /// every retype is a chance to lose the line.
+    private func applyInPlace(
+        _ edits: [Edit], dictated: String?, in element: AXUIElement
     ) -> InPlace {
-        if SelectionReader.replaceLastOccurrence(of: original, with: text, in: element) {
+        guard !edits.isEmpty else { return .notAttempted }
+
+        var written = 0
+        for edit in edits {
+            if SelectionReader.replaceLastOccurrence(
+                of: edit.find, with: edit.replace, in: element
+            ) {
+                written += 1
+                continue
+            }
+            guard edit.fuzzy,
+                  let text = SelectionReader.visibleText(of: element),
+                  let nearest = VoiceCommand.closestWord(to: edit.replace, in: text),
+                  nearest.lowercased() != edit.replace.lowercased(),
+                  SelectionReader.replaceLastOccurrence(
+                      of: nearest, with: edit.replace, in: element
+                  )
+            else { continue }
+            written += 1
+        }
+        if written > 0 {
+            Log.write("rewrote \(written) occurrence(s) in the focused field")
             return .replaced
         }
+
         guard config.transcription.rewriteLine else {
-            Log.write("transform: would need to retype the line, but rewrite_line is off")
+            Log.write("rewrite: rewrite_line is off; not retyping")
             return .notAttempted
         }
-        let retyped = SelectionReader.rewriteCurrentLine(dictated: original, in: element) { line in
-            // Literal, not a rule: the phrase may end in punctuation, and a
-            // word-boundary match will not see past it.
-            guard let found = line.range(
-                of: original, options: [.caseInsensitive, .backwards]
-            ) else { return line }
-            return line.replacingCharacters(in: found, with: text)
+        Log.write("rewrite: retyping the line via keystrokes")
+        let retyped = SelectionReader.rewriteCurrentLine(dictated: dictated, in: element) { line in
+            // Fuzzy edits go through the rule machinery, which matches on word
+            // boundaries and falls back to the closest spelling. Literal ones
+            // cannot: a phrase may end in a full stop, and \b will not match
+            // past it, so "Sixty Euros." found nothing and was pasted alongside.
+            var output = SelectionReader.applying(
+                edits.filter(\.fuzzy).map { (heard: $0.find, corrected: $0.replace) },
+                to: line
+            )
+            for edit in edits where !edit.fuzzy {
+                guard let found = output.range(
+                    of: edit.find, options: [.caseInsensitive, .backwards]
+                ) else { continue }
+                output = output.replacingCharacters(in: found, with: edit.replace)
+            }
+            return output
         }
         // The retype found its line and acted on it either way; if it came back
         // false it has already put the line back, and the text belongs on the
@@ -685,7 +766,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !original.isEmpty, config.transcription.insertMode == .paste,
                let element = SelectionReader.focusedElement(),
                !SelectionReader.isOurs(element) {
-                switch replacedInPlace(original, with: text, in: element) {
+                let edit = Edit(find: original, replace: text, fuzzy: false)
+                switch applyInPlace([edit], dictated: original, in: element) {
                 case .replaced:
                     if config.feedback.sound { NSSound(named: "Glass")?.play() }
                     flash("\(prompt.name) applied")
@@ -781,52 +863,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let element = SelectionReader.refocusedElement(in: focus.owner)
                       ?? focus.element.flatMap({ SelectionReader.isOurs($0) ? nil : $0 }) {
             // Learned by voice: nothing was selected, but the misspelling is
-            // still sitting in the field where it was dictated. Fix it there.
-            //
-            // Try the word as learned, then whatever in the field resembles
-            // the correct spelling — two hearings of a name rarely match.
-            var fixed = 0
-            for rule in rules {
-                if SelectionReader.replaceLastOccurrence(
-                    of: rule.heard, with: rule.corrected, in: element
-                ) {
-                    fixed += 1
-                    continue
-                }
-                if let text = SelectionReader.visibleText(of: element),
-                   let nearest = VoiceCommand.closestWord(to: rule.corrected, in: text),
-                   nearest.lowercased() != rule.corrected.lowercased(),
-                   SelectionReader.replaceLastOccurrence(
-                       of: nearest, with: rule.corrected, in: element
-                   ) {
-                    fixed += 1
-                }
-            }
-            if fixed > 0 {
-                Log.write("rewrote \(fixed) occurrence(s) in the focused field")
+            // still sitting in the field where it was dictated. Fix it there,
+            // by the same ladder a transform uses. The transcript is what we
+            // typed into that line, so it is the one description of the line
+            // that was not read off a screen.
+            switch applyInPlace(
+                rules.map { Edit(find: $0.heard, replace: $0.corrected, fuzzy: true) },
+                dictated: settings.model.lastTranscript,
+                in: element
+            ) {
+            case .replaced:
                 outcome = .written
-            } else if config.transcription.rewriteLine {
-                // The accessibility API would not write. Clear the line and
-                // rebuild it from what the kill removed — the terminal tells
-                // us what was there rather than us having to guess.
-                Log.write("rewrite: retyping the line via keystrokes")
-                // The transcript is what we typed into that line, so it is the
-                // one description of it that was not read off a screen.
-                if SelectionReader.rewriteCurrentLine(
-                    applying: rules,
-                    dictated: settings.model.lastTranscript,
-                    in: element
-                ) {
-                    outcome = .written
-                } else {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(rules[0].corrected, forType: .string)
-                    outcome = .clipboardOnly
-                }
-            } else {
-                if !config.transcription.rewriteLine {
-                    Log.write("rewrite: rewrite_line is off; not retyping")
-                }
+            case .notAttempted, .failed:
                 Log.write("field would not accept the rewrite; correction is on the clipboard")
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(rules[0].corrected, forType: .string)

@@ -51,16 +51,23 @@ enum RouteTestCommand {
             let started = Date()
             do {
                 let decision = try await Router.route(
-                    instruction: instruction, catalogue: catalogue, config: llmConfig
+                    instruction: instruction,
+                    catalogue: catalogue,
+                    freeForm: config.freeForm,
+                    config: llmConfig
                 )
                 let elapsed = Date().timeIntervalSince(started)
+                let timing = String(format: "(%@ in %.2fs)", config.llm.model, elapsed)
                 switch decision {
                 case .matched(let capability):
-                    print(quiet
-                        ? capability.name
-                        : String(format: "→ %@  (%@ in %.2fs)", capability.name, config.llm.model, elapsed))
+                    print(quiet ? capability.name : "→ \(capability.name)  \(timing)")
+                case .anything:
+                    // ANY rather than the prompt's name, because what is being
+                    // reported is the router's answer. Which prompt runs after
+                    // it is `--prompt anything`'s question.
+                    print(quiet ? "ANY" : "→ ANY  \(timing)  an edit, but no prompt covers it")
                 case .none:
-                    print(quiet ? "NONE" : String(format: "→ NONE  (%@ in %.2fs)", config.llm.model, elapsed))
+                    print(quiet ? "NONE" : "→ NONE  \(timing)")
                 }
             } catch {
                 print("✗ \(error.localizedDescription)")

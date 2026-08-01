@@ -87,29 +87,21 @@ prompts:
       Cut this down. No filler, same facts, same voice.
       Return only the shortened text.
 
-  - name: dates
-    description: rewrite dates in a particular format
-    content: |
-      Rewrite every date in the text to the format the instruction asks for.
-      If it names no format, use YYYY-MM-DD. Change nothing else.
-      Return only the text.
-
-  - name: digits
-    description: write spelled-out numbers as digits, or some of them
-    content: |
-      Write spelled-out numbers as digits. Follow the instruction about
-      which ones to leave alone.
-
-        forty two people      ->  42 people
-        nineteen ninety eight ->  1998
-        two thousand five     ->  2005
-        three point one four  ->  3.14
-
-      Change nothing else: not the wording, not the punctuation, and not a
-      number the instruction excludes. Return only the text.
+  # There used to be a `dates` prompt and a `digits` prompt here. Both are gone,
+  # because free_form does their job and the measurement said so: on the sixteen
+  # cases they covered in tests/generic-cases.yaml they scored 12/16 against the
+  # built-in's 14/16. `digits` was a straight tie, five cases to five. `dates`
+  # was worse — asked to make "the deadline is March 3 2026" ISO it answered
+  # "2026-03-03", dropping the sentence around the date, which is what a prompt
+  # written for one subject does when handed a whole sentence.
+  #
+  # `grammar` below stays for the opposite reason. It has a validation set of
+  # its own and it beats the built-in on it, 5/5 against 4/5, and the case it
+  # wins is the one that matters most here: leaving alone a sentence that was
+  # already right.
 
   - name: grammar
-    description: fix grammar and punctuation, changing nothing else
+    description: fix grammar and punctuation mistakes, not formatting or numbers
     content: |
       Correct grammar, spelling and punctuation. Make the smallest change
       that makes the text correct — and make it. Every error is fixed.
@@ -127,6 +119,9 @@ prompts:
       blunt or repetitive wording. A sentence that is already correct comes
       back exactly as it was.
 
+      A phrase before the main clause takes a comma after it. A trailing
+      please or thanks does not.
+
       Return only the text.
 
   # Show the result before it replaces anything. On by default — a transform
@@ -134,3 +129,25 @@ prompts:
   # dialog in the way. Set false per prompt once you trust it.
   #
   #   confirm: false
+
+# Do what was asked even when nothing above matches.
+#
+#     "hey parrot, use the 24 hour clock"
+#     "hey parrot, make sure fifty dollars is formatted as money"
+#     "hey parrot, sort that list alphabetically"
+#
+# No prompt covers those and no list ever would, so the whole instruction goes
+# to a built-in transform instead. It is the difference between a fixed menu and
+# saying what you want.
+#
+# What it costs, stated plainly. The router now answers three ways instead of
+# two: a prompt name, ANY for "an edit nothing above handles", or NONE for "that
+# was not an edit at all". NONE is what keeps a passing remark — "what is the
+# weather tomorrow", said with text selected — away from a prompt whose one job
+# is to rewrite your selection. Measured at 18/19; the miss was a prompt name
+# used as an ordinary noun. The transform itself scores 32/38 on
+# tests/generic-cases.yaml, against 11/38 for changing nothing at all, and
+# `confirm` shows you the result before it lands.
+#
+# Turn it off and an instruction nothing matches is refused, as it was before.
+free_form: true

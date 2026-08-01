@@ -1,13 +1,45 @@
 # Routing validation set. Run with scripts/check-routing.sh.
 #
-# One instruction in, one capability name out — or NONE. Written the way the
-# sentences actually arrive, which is with the routing word buried in a longer
-# request, because that is the case the router has to get right.
+# One instruction in, one capability name out — or ANY, or NONE. Written the way
+# the sentences actually arrive, which is with the routing word buried in a
+# longer request, because that is the case the router has to get right.
+#
+# The expectations assume the catalogue in config.example.yaml: bullets, terse,
+# grammar, and the built-ins. `--route` reads your own config, so a machine with
+# extra prompts will disagree with this set, and rightly — it is scoring a
+# router against a list, and the list is part of the question.
+#
+# Three answers since free_form, and the third is what made the first two
+# honest. NONE used to carry two meanings, "no tool does this" and "that was
+# not an edit", and it was only ever tested on the second. ANY takes the first,
+# so a real request nothing covers now has somewhere to go.
 #
 # The negative cases are not padding. Without them a router scores well by
 # routing everything somewhere, and the failure that costs you real text is
 # exactly that: a sentence that meant nothing in particular, confidently sent
-# to a prompt that rewrites your selection.
+# to a prompt that rewrites your selection. That risk went up when ANY arrived,
+# not down, which is why there are more of them now than tools.
+#
+# 41/45 on gemma4:e4b, and the shape matters more than the number: nothing
+# routed something idle. Both cases that used to — "I bought a box of bullets"
+# and "her grammar is better than mine", the two Router.swift recorded as the
+# model's floor — pass with the third answer present. Splitting "not an edit"
+# off from "no tool for it" turned out to help the question it did not ask.
+#
+# The four that fail all fail cheaply, which is the only reason they are left
+# standing rather than argued with:
+#
+#     format those dates ISO                     -> grammar
+#     fix the numbers                            -> grammar
+#     fix the numbers but leave the years alone  -> grammar
+#     use the 24 hour clock                      -> NONE
+#
+# The first three are the residue of removing `dates` and `digits`: grammar is
+# now the only entry that mends anything, so "fix the ..." lands on it. It runs
+# a prompt whose every rule is against touching a number, so the cost is a
+# no-op you can see in the preview, not a rewrite. The fourth is a refusal —
+# you say it again. Five descriptions and a second ANY example were measured
+# against these; the notes are in Router.swift.
 
 cases:
   # --- named outright: should never reach the model -----------------------
@@ -38,22 +70,43 @@ cases:
   # The router must ignore the detail and route on the request. The detail is
   # for the prompt, and these are the cases where a router that tries to parse
   # starts guessing.
-  - instruction: format those dates ISO
-    expect: dates
-  - instruction: format those dates with slashes
-    expect: dates
-  - instruction: rewrite the dates as day month year
-    expect: dates
-  - instruction: fix the numbers
-    expect: digits
-  - instruction: fix the numbers but leave the years alone
-    expect: digits
-  - instruction: write the numbers as digits except the ones in the quote
-    expect: digits
   - instruction: make that a bullet list but keep the headings
     expect: bullets
   - instruction: shorten it but do not touch the first sentence
     expect: terse
+
+  # --- a real edit, and no prompt for it -----------------------------------
+  # The cases free_form exists for. The first six were `dates` and `digits`
+  # before those prompts were removed; the built-in beat them on their own
+  # validation cases, so the instructions stayed and the expectation moved.
+  #
+  # These are the expensive direction to fail in now. An ANY sent to NONE is a
+  # refusal, and you say it again; an ANY sent to a *prompt* is the wrong
+  # rewrite, which is why "fix the numbers" is here and not quietly dropped.
+  - instruction: format those dates ISO
+    expect: ANY
+  - instruction: format those dates with slashes
+    expect: ANY
+  - instruction: rewrite the dates as day month year
+    expect: ANY
+  - instruction: fix the numbers
+    expect: ANY
+  - instruction: fix the numbers but leave the years alone
+    expect: ANY
+  - instruction: write the numbers as digits except the ones in the quote
+    expect: ANY
+  - instruction: use the 24 hour clock
+    expect: ANY
+  - instruction: make sure the amounts are formatted as money
+    expect: ANY
+  - instruction: sort that list alphabetically
+    expect: ANY
+  - instruction: make it title case
+    expect: ANY
+  - instruction: convert that to metric
+    expect: ANY
+  - instruction: take the parentheses out
+    expect: ANY
 
   # --- grammar, which competes with everything -----------------------------
   # "fix the X" now names three different capabilities depending on X, which

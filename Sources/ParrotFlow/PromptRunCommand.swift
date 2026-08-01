@@ -15,11 +15,17 @@ enum PromptRunCommand {
             return 1
         }
 
-        guard let prompt = config.prompts.first(where: {
+        // The built-in is reachable by name here although it is not in the
+        // catalogue, because this command exists to exercise a prompt on its
+        // own and that one has the largest validation set behind it. Config
+        // first, so a prompt of your own called `anything` still wins.
+        let named = config.prompts.first {
             $0.name.caseInsensitiveCompare(name) == .orderedSame
-        }) else {
-            let known = config.prompts.map(\.name).joined(separator: ", ")
-            print("✗ no prompt named \"\(name)\"" + (known.isEmpty ? "" : " — have: \(known)"))
+        } ?? (FreeForm.name.caseInsensitiveCompare(name) == .orderedSame ? FreeForm.prompt : nil)
+
+        guard let prompt = named else {
+            let known = (config.prompts.map(\.name) + [FreeForm.name]).joined(separator: ", ")
+            print("✗ no prompt named \"\(name)\" — have: \(known)")
             return 1
         }
 

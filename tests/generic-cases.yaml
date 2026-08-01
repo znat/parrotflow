@@ -1,0 +1,323 @@
+# Validation set for a *generic* transform — one prompt that takes any spoken
+# instruction and applies it to the selected text. Run with
+# scripts/validate-generic.py.
+#
+# The question it exists to answer: if the router matches nothing, can a single
+# prompt on a small local model be trusted to just do what was asked? That
+# would let the narrow prompts (digits, dates, punctuation) go away, and would
+# cover the ones nobody wrote — money, units, clock times.
+#
+# Two halves, and the second is the important one.
+#
+#   change  the instruction asks for something and the text has it. The right
+#           answer is the smallest edit that satisfies the instruction.
+#   keep    the instruction does not apply — nothing in the text matches it,
+#           it is already in the form asked for, or it is not an instruction
+#           at all. The right answer is the text, byte for byte.
+#
+# `keep` is a third of the set on purpose. A generic prompt has no subject to
+# anchor it, so the failure it invites is doing *something* to text that needed
+# nothing — and unlike a narrow prompt there is no wrong-tool signal to catch
+# it. A question reaching this path ("what does this even mean") must come back
+# as the text, not as an answer to the question.
+#
+# `expect` is the answer. `accept` lists further answers that are equally
+# right, and exists only where the instruction genuinely underdetermines the
+# output (which month-first spelling, how many decimals in a conversion). It is
+# not a place to forgive a model for changing more than it was asked to.
+#
+# Inputs are dictated or selected text, so they are informal and lowercase
+# where a speaker would be. Several carry a second, unmentioned property —
+# a missing capital, an informal contraction — that must survive untouched.
+
+cases:
+  # --- money ---------------------------------------------------------------
+  - name: amounts as dollars
+    kind: change
+    category: money
+    instruction: format the amounts as dollars
+    input: hosting was 1200 and domains 340
+    expect: hosting was $1,200 and domains $340
+    accept:
+      - hosting was $1200 and domains $340
+
+  - name: spoken amount to money
+    kind: change
+    category: money
+    instruction: make sure fifty dollars is formatted as money
+    input: the licence costs fifty dollars a year
+    expect: the licence costs $50 a year
+
+  - name: thousands separator
+    kind: change
+    category: money
+    instruction: write the amounts with a thousands separator
+    input: the invoice came to $12500 and the refund was $2300
+    expect: the invoice came to $12,500 and the refund was $2,300
+
+  - name: euros, symbol after
+    kind: change
+    category: money
+    instruction: put the amounts in euros with the symbol after the number
+    input: 60 euros for the ticket and 12 euros for the seat
+    expect: 60€ for the ticket and 12€ for the seat
+    accept:
+      - 60 € for the ticket and 12 € for the seat
+
+  - name: round the amounts
+    kind: change
+    category: money
+    instruction: round the amounts to whole dollars
+    input: $14.27 for lunch and $3.60 for coffee
+    expect: $14 for lunch and $4 for coffee
+
+  - name: no money in the text
+    kind: keep
+    category: money
+    instruction: format the amounts as money
+    input: we should ship it on friday
+
+  # --- dates ---------------------------------------------------------------
+  - name: written date to ISO
+    kind: change
+    category: dates
+    instruction: convert the date to ISO
+    input: the deadline is March 3 2026
+    expect: the deadline is 2026-03-03
+
+  - name: day-first dates to ISO
+    kind: change
+    category: dates
+    instruction: these dates are day first, write them ISO
+    input: we met on 12/03/2025 and again on 05/01/2026
+    expect: we met on 2025-03-12 and again on 2026-01-05
+
+  - name: ISO to slashes
+    kind: change
+    category: dates
+    instruction: write the dates with slashes, month first
+    input: the retro is on 2026-04-09
+    expect: the retro is on 04/09/2026
+    accept:
+      - the retro is on 4/9/2026
+
+  - name: spell the month out
+    kind: change
+    category: dates
+    instruction: spell the month out
+    input: shipping 2026-01-15
+    expect: shipping 15 January 2026
+    accept:
+      - shipping January 15, 2026
+      - shipping January 15 2026
+
+  - name: already ISO
+    kind: keep
+    category: dates
+    instruction: make the dates ISO
+    input: the release is 2026-02-01
+
+  - name: no date in the text
+    kind: keep
+    category: dates
+    instruction: convert the dates to ISO
+    input: call the vendor about the invoice
+
+  # --- digits — what the `digits` prompt does today ------------------------
+  - name: spelled number to digits
+    kind: change
+    category: digits
+    instruction: write the numbers as digits
+    input: forty two people showed up
+    expect: 42 people showed up
+
+  - name: digits, years excepted
+    kind: change
+    category: digits
+    instruction: write the numbers as digits but leave the years alone
+    input: we hired twelve people in nineteen ninety eight
+    expect: we hired 12 people in nineteen ninety eight
+
+  - name: spoken decimal
+    kind: change
+    category: digits
+    instruction: write the numbers as digits
+    input: the ratio came out at three point one four
+    expect: the ratio came out at 3.14
+
+  - name: spoken year
+    kind: change
+    category: digits
+    instruction: write that as digits
+    input: it shipped in two thousand five
+    expect: it shipped in 2005
+
+  - name: already digits
+    kind: keep
+    category: digits
+    instruction: write the numbers as digits
+    input: 42 people showed up and 3 left early
+
+  # --- punctuation and grammar — what the `grammar` prompt does today ------
+  - name: contraction and full stop
+    kind: change
+    category: grammar
+    instruction: fix the grammar and punctuation
+    input: the panel dont show up sometimes
+    expect: The panel doesn't show up sometimes.
+
+  - name: agreement
+    kind: change
+    category: grammar
+    instruction: fix the grammar and punctuation
+    input: he dont know what the config does
+    expect: He doesn't know what the config does.
+
+  - name: fronted phrase takes a comma
+    kind: change
+    category: grammar
+    instruction: fix the punctuation
+    input: Before doing a full design spec lets explore a few possibilities
+    expect: Before doing a full design spec, let's explore a few possibilities.
+
+  - name: blunt but correct
+    kind: keep
+    category: grammar
+    instruction: fix the grammar and punctuation
+    input: It's a bit weird, but it works, and it works well, so leave it.
+
+  - name: terse but correct
+    kind: keep
+    category: grammar
+    instruction: fix the grammar and punctuation
+    input: Okay, let's kill it.
+
+  # --- case and shape ------------------------------------------------------
+  - name: all caps
+    kind: change
+    category: case
+    instruction: make that all caps
+    input: ship it today
+    expect: SHIP IT TODAY
+
+  - name: capitalise product names only
+    kind: change
+    category: case
+    instruction: capitalise the product names
+    input: we use supabase and postgres for this
+    expect: we use Supabase and Postgres for this
+
+  - name: title case
+    kind: change
+    category: case
+    instruction: make it title case
+    input: a guide to local models
+    expect: A Guide to Local Models
+    accept:
+      - A Guide To Local Models
+
+  - name: slug
+    kind: change
+    category: case
+    instruction: turn that into a file name slug
+    input: Weekly Ops Review Notes
+    expect: weekly-ops-review-notes
+
+  # --- units and clock -----------------------------------------------------
+  - name: inches to metric
+    kind: change
+    category: units
+    instruction: convert that to metric
+    input: the desk is 60 inches wide
+    expect: the desk is 152 cm wide
+    accept:
+      - the desk is 152.4 cm wide
+      - the desk is 1.52 m wide
+      - the desk is 1.5 m wide
+      # The input spells "inches" out, so spelling the unit out is the
+      # faithful answer, not a looser one.
+      - the desk is 152 centimeters wide
+      - the desk is 152.4 centimeters wide
+
+  - name: twelve hour to twenty four
+    kind: change
+    category: units
+    instruction: use the 24 hour clock
+    input: standup is at 9:30am and the review at 4pm
+    expect: standup is at 09:30 and the review at 16:00
+    accept:
+      - standup is at 9:30 and the review at 16:00
+
+  - name: already metric
+    kind: keep
+    category: units
+    instruction: convert that to metric
+    input: the desk is 150 cm wide
+
+  # --- structural ----------------------------------------------------------
+  - name: remove the parentheses
+    kind: change
+    category: structure
+    instruction: remove the parentheses
+    input: we shipped it (finally) on friday
+    expect: we shipped it finally on friday
+
+  - name: swap the names
+    kind: change
+    category: structure
+    instruction: swap the two names round
+    input: Nathan and Tasmeen are on call this week
+    expect: Tasmeen and Nathan are on call this week
+
+  - name: sort a list
+    kind: change
+    category: structure
+    instruction: sort the list alphabetically
+    input: pears, apples, cherries, bananas
+    expect: apples, bananas, cherries, pears
+
+  - name: one line
+    kind: change
+    category: structure
+    instruction: put that on one line
+    input: |-
+      the build is green
+      the tests pass
+      ship it
+    expect: the build is green the tests pass ship it
+    accept:
+      - the build is green, the tests pass, ship it
+
+  - name: strip the trailing please
+    kind: change
+    category: structure
+    instruction: drop the please at the end
+    input: Explain your plan before implementing please.
+    expect: Explain your plan before implementing.
+
+  # --- not an instruction at all ------------------------------------------
+  # The router used to absorb these by answering NONE. Under a generic
+  # fallback they land here instead, which is the whole risk of the design.
+  - name: a question about the text
+    kind: keep
+    category: idle
+    instruction: what does this even mean
+    input: the config file is at ~/.config/parrotflow
+
+  - name: a remark sharing the vocabulary
+    kind: keep
+    category: idle
+    instruction: I bought a box of bullets yesterday
+    input: we should ship it on friday
+
+  - name: a question about the world
+    kind: keep
+    category: idle
+    instruction: what is the weather tomorrow
+    input: the release is cut on the fifteenth
+
+  - name: thinking out loud
+    kind: keep
+    category: idle
+    instruction: we talked about the dates in the meeting
+    input: the retro is on 2026-04-09

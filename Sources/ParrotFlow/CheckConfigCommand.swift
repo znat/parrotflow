@@ -89,6 +89,15 @@ enum CheckConfigCommand {
             let kind = capability.isTransform ? "prompt " : "built-in"
             print("      \(kind)  \(capability.name) — \(capability.describedAs)")
         }
+        // Not one of the capabilities above — the router reaches it by
+        // answering ANY, not by picking it off the list — so it is printed
+        // apart from them rather than pretending to be a catalogue entry.
+        if config.freeForm {
+            print("      free-form  \(FreeForm.name) — \(FreeForm.prompt.description)")
+        } else {
+            print("  · free_form         off — an instruction no prompt covers is refused")
+        }
+
         for prompt in config.prompts where prompt.description.isEmpty {
             print("  ✗ prompt \"\(prompt.name)\" has no description; the router cannot pick it")
             ok = false
