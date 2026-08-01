@@ -36,7 +36,11 @@ chmod 700 "$OUT"
 SSL=/usr/bin/openssl
 [ -x "$SSL" ] || SSL=openssl
 
-P12PASS="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32)"
+# 128 bits, as hex. Read a fixed number of bytes rather than filtering an
+# endless stream: `tr < /dev/urandom | head -c 32` gets SIGPIPE the moment head
+# has its 32 characters, and under `set -o pipefail` that kills the script —
+# before the first echo, so it fails leaving an empty directory and no output.
+P12PASS="$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')"
 
 echo "==> Generating $NAME (valid 10 years)"
 "$SSL" req -x509 -newkey rsa:2048 -nodes -days 3650 \
