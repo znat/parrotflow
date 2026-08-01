@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 # Scores the replacement passes against tests/replacement-cases.txt.
+#
+# The fuzzy half is not deterministic and cannot be made so here. It asks
+# NSSpellChecker whether a word is real, and that service intermittently times
+# out — a timeout is indistinguishable from "known word", so fuzzy declines and
+# a correction is missed. Seen twice as 19/20, each time unreproducible, and
+# confirmed by `NSSpellServer findMisspelledWordInString timed out` appearing
+# four calls in a row. Re-run before believing a single low score.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"

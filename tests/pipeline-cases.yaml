@@ -1,0 +1,70 @@
+# Pipeline validation set. Run with scripts/check-pipeline.sh.
+#
+# What is scored here is the *assembly*, not the stages. Each stage already has
+# a set of its own — replacement-cases.txt, numbers-cases.yaml — and repeating
+# them through a pipeline would measure the same thing twice and fail in two
+# places for one reason. These cases ask a different question: does a stage run
+# when the config says it should, in the order it says, and does a condition
+# read what it is supposed to read.
+#
+# Every case names a fixture in tests/pipelines/, and a fixture carries its own
+# languages and its own replacement table. Nothing here reads your config, which
+# is deliberate: tests/routing-cases.yaml ended up coupled to whichever prompts
+# happened to be configured, and its expectations then only meant anything on
+# one machine.
+#
+# `fuzzy` appears in a fixture but no case depends on it firing. It is the one
+# stage that cannot be scored deterministically: it asks NSSpellChecker whether
+# a word is real, and that service intermittently times out — observed directly
+# while writing this, four calls in a row. A timeout reads as "known word", so
+# fuzzy declines, which is the safe direction and an unstable one.
+
+cases:
+  # --- the default pipeline, end to end -----------------------------------
+  - name: filler, then a name, then a number
+    pipeline: everything
+    input: "um, super base has vingt et un users"
+    expect: Supabase has 21 users
+
+  # The guard from numbers-cases.yaml, seen through a pipeline: the stage keeps
+  # its own language resolution, so assembling it here must not flatten that.
+  - name: the cents collision survives assembly
+    pipeline: everything
+    input: I have 99 cents
+    expect: unchanged
+
+  # --- conditions gate a stage --------------------------------------------
+  - name: unless does not match, so the stage runs
+    pipeline: conditions
+    input: on en a vingt et un
+    expect: on en a 21
+
+  - name: unless matches, so the stage is skipped
+    pipeline: conditions
+    input: "on en a vingt et un dans ```code```"
+    expect: unchanged
+
+  # --- a condition reads the text as it stands, not as it arrived ---------
+  # The whole reason conditions are evaluated per stage rather than once up
+  # front. `replacements` deletes the filler word, so by the time `numbers` is
+  # asked whether "genre" is present, it is not — and the stage does not run,
+  # even though the sentence arrived containing it.
+  #
+  # If this ever passes as "on en a 21", conditions have quietly gone back to
+  # reading the original text, and the composition this whole design rests on
+  # is gone.
+  #
+  # The capital is not a typo. Any deletion runs `tidy`, which closes the gaps
+  # it left and puts a capital back on a sentence a removed leading filler had
+  # left lowercase. It fires here although the deletion was mid-sentence, which
+  # is worth knowing when reading a diff of a transcript.
+  - name: the stage above removed what the condition looks for
+    pipeline: when
+    input: on en a genre vingt et un
+    expect: On en a vingt et un
+
+  # --- an empty pipeline is a choice --------------------------------------
+  - name: nothing listed, so nothing runs
+    pipeline: empty
+    input: super base has vingt et un users
+    expect: unchanged

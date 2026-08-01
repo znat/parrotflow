@@ -1,0 +1,12 @@
+# `when` rather than `unless`, and a condition that reads the text as it stands
+# after the stage above it — which is the ordering that makes conditions worth
+# having.
+languages: [en, fr]
+replacements:
+  # The exact pass deletes the filler, so the condition below sees a sentence
+  # that no longer contains it.
+  "": ['/[,]?\s*\bgenre\b[,]?/']
+pipeline:
+  - replacements
+  - stage: numbers
+    when: /genre/

@@ -91,6 +91,18 @@ if let index = arguments.firstIndex(of: "--prompt") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--pipeline") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"] [--quiet]")
+        exit(2)
+    }
+    let text = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
+        ? arguments[index + 2] : nil
+    exit(PipelineCommand.run(
+        path: arguments[index + 1], text: text, quiet: arguments.contains("--quiet")
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--dates") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --dates \"<instruction>\" \"<text>\" [--quiet]")

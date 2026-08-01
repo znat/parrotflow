@@ -1,0 +1,11 @@
+# The conditions, on stages cheap enough to score deterministically. `numbers`
+# stands in for the expensive stage a condition really exists for: what is being
+# tested is that a condition gates a stage, not what that stage does.
+languages: [en, fr]
+replacements:
+  Supabase: [super base]
+pipeline:
+  - replacements
+  # Never rewrite inside a code fence.
+  - stage: numbers
+    unless: /```/
