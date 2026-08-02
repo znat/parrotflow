@@ -222,3 +222,19 @@ cases:
     pipeline: command-unrunnable
     input: read user dot name
     expect: unchanged
+
+  # EOF on stdout is not the same event as the process exiting, and treating
+  # them as one meant a command could close its output, keep running, and hold
+  # the pipeline for as long as it liked.
+  - name: a command that closes stdout and keeps running gives up on time
+    pipeline: command-hangs
+    input: read user dot name
+    expect: unchanged
+
+  # A space in the path — in the directory the config lives in, and in the
+  # relative path itself. Both reached /bin/sh unquoted and were split into a
+  # program and an argument.
+  - name: a command path with a space in it still runs
+    pipeline: command-spaces
+    input: read user dot name
+    expect: READ USER DOT NAME

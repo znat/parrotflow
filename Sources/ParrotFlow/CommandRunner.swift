@@ -18,6 +18,25 @@ import Foundation
 /// halfway through writing is an ordinary state to be in.
 enum CommandRunner {
 
+    /// A value two threads touch: the reading handler appends on Foundation's
+    /// queue while this one waits. A Swift `Data` mutated from both corrupts.
+    private final class Locked<Value> {
+        private var stored: Value
+        private let lock = NSLock()
+
+        init(_ value: Value) { stored = value }
+
+        var value: Value {
+            lock.lock(); defer { lock.unlock() }
+            return stored
+        }
+
+        func mutate(_ change: (inout Value) -> Void) {
+            lock.lock(); defer { lock.unlock() }
+            change(&stored)
+        }
+    }
+
     /// Long enough for an interpreter to start — `python3` costs 40–60ms cold —
     /// and short enough that a script which hangs cannot hold your dictation.
     /// A stage that takes a second is not a stage anyone wants in a pipeline
@@ -45,7 +64,7 @@ enum CommandRunner {
         // which is why the rewriting below only touches a first word that
         // turns out to name a real file next to the config.
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", resolved(command, base: base)]
+        process.arguments = ["-c", shellCommand(for: command, base: base)]
         process.currentDirectoryURL = base
 
         let input = Pipe()
@@ -57,18 +76,25 @@ enum CommandRunner {
 
         // Read while it runs. A script that writes more than a pipe buffer
         // before exiting would otherwise block on the write while we block on
-        // waitUntilExit, and neither side would ever move.
-        var collected = Data()
-        let done = DispatchSemaphore(value: 0)
+        // the wait below, and neither side would ever move.
+        //
+        // Two things are being waited on, and conflating them was a bug: EOF on
+        // stdout says the output is complete, and termination says the process
+        // is gone. A command that closes stdout and keeps running — or hands it
+        // to a child and returns — reaches EOF while still alive, and waiting
+        // for exit without a deadline after that hangs the pipeline on every
+        // transcript from then on.
+        let collected = Locked(Data())
+        let exited = DispatchSemaphore(value: 0)
         output.fileHandleForReading.readabilityHandler = { handle in
             let chunk = handle.availableData
             if chunk.isEmpty {
                 handle.readabilityHandler = nil
-                done.signal()
             } else {
-                collected.append(chunk)
+                collected.mutate { $0.append(chunk) }
             }
         }
+        process.terminationHandler = { _ in exited.signal() }
 
         do {
             try process.run()
@@ -81,13 +107,13 @@ enum CommandRunner {
         input.fileHandleForWriting.write(Data(text.utf8))
         try? input.fileHandleForWriting.close()
 
-        if done.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
+        if exited.wait(timeout: .now() + timeout) == .timedOut {
+            stop(process)
             output.fileHandleForReading.readabilityHandler = nil
             Log.write("command: \"\(command)\" took longer than \(Int(timeout))s; kept the transcript")
             return nil
         }
-        process.waitUntilExit()
+        output.fileHandleForReading.readabilityHandler = nil
 
         guard process.terminationStatus == 0 else {
             let complaint = String(
@@ -100,37 +126,109 @@ enum CommandRunner {
             return nil
         }
 
+        // Whatever the handler had not been given yet. EOF and exit are not the
+        // same instant, and the last chunk is often still in the pipe.
+        let rest = output.fileHandleForReading.readDataToEndOfFile()
+        if !rest.isEmpty { collected.mutate { $0.append(rest) } }
+
         // Trailing newline only: a script that legitimately indents its output
         // is not this app's business, and `print` adds exactly one newline.
-        var result = String(data: collected, encoding: .utf8) ?? ""
+        var result = String(data: collected.value, encoding: .utf8) ?? ""
         if result.hasSuffix("\n") { result.removeLast() }
         return result.isEmpty ? nil : result
     }
 
-    /// The command with `~` expanded and, if its first word names a file next
-    /// to the config, that word made absolute.
+    /// SIGTERM, then SIGKILL if that was not enough.
     ///
-    /// Setting the working directory alone would not be enough: a shell looks a
-    /// bare `identifiers.py` up in PATH, not in the directory it is standing
-    /// in, so it would report "command not found" while the file sat right
-    /// there. `./identifiers.py` would have worked, and requiring the `./` is
-    /// the kind of detail that costs someone twenty minutes once.
-    ///
-    /// Existing is enough to be resolved — being executable is not required
-    /// here, deliberately. A script that is there but not `chmod +x` is the
-    /// single most likely thing to be wrong, and it deserves to be told about
-    /// as itself rather than as "command not found", which sends you looking
-    /// in the wrong place. `complaint` is what says it.
-    static func resolved(_ command: String, base: URL?) -> String {
-        let base = base ?? ConfigStore.directory
-        let expanded = (command as NSString).expandingTildeInPath
-        guard let first = expanded.split(separator: " ", maxSplits: 1).first,
-              !first.hasPrefix("/") else { return expanded }
-        let candidate = base.appendingPathComponent(String(first)).standardized
-        guard FileManager.default.fileExists(atPath: candidate.path) else {
-            return expanded
+    /// Only the shell is signalled. A command that started something of its own
+    /// and returned leaves that behind — killing a whole process tree needs the
+    /// child to lead its own process group, which Foundation's `Process` gives
+    /// no way to ask for. `shellCommand` narrows the exposure instead: a plain
+    /// command is `exec`ed, so the shell *is* the command and there is no tree.
+    private static func stop(_ process: Process) {
+        process.terminate()
+        // A second is generous for a process that has already been asked once.
+        let deadline = Date().addingTimeInterval(1)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
         }
-        return candidate.path + expanded.dropFirst(first.count)
+        if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+    }
+
+    /// A command split where the program ends and its arguments begin, with
+    /// the program made absolute when it names a file beside the config.
+    ///
+    /// The split is taken from what was *written*, never from the result: a
+    /// resolved path can contain spaces of its own, and re-splitting it was how
+    /// `~/My Configs/identifiers.py` became a program called
+    /// `/private/…/My` with `Configs/identifiers.py` for an argument.
+    static func parts(of command: String, base: URL?)
+        -> (program: String, arguments: String, isPath: Bool) {
+        let expanded = (command as NSString).expandingTildeInPath
+        let fm = FileManager.default
+
+        // The whole thing first, before splitting anything: a config that says
+        // `command: my scripts/rewrite.py` means one path with a space in it,
+        // and splitting it would look for a program called `my`. YAML quoting
+        // cannot help here — the parser eats the quotes before this sees them
+        // — so the file system is what settles it.
+        let whole = (base ?? ConfigStore.directory)
+            .appendingPathComponent(expanded).standardized
+        if expanded.contains(" "), fm.fileExists(atPath: whole.path) {
+            return (whole.path, "", true)
+        }
+
+        let written = expanded.split(separator: " ", maxSplits: 1)
+        guard let first = written.first else { return (expanded, "", false) }
+        let arguments = String(expanded.dropFirst(first.count))
+
+        if first.hasPrefix("/") {
+            return (String(first), arguments, true)
+        }
+        // Existing is enough — being executable is not required here,
+        // deliberately. A script that is there but not `chmod +x` is the single
+        // most likely thing to be wrong, and `complaint` names it as itself
+        // rather than leaving the shell to say "command not found".
+        let candidate = (base ?? ConfigStore.directory)
+            .appendingPathComponent(String(first)).standardized
+        if fm.fileExists(atPath: candidate.path) {
+            return (candidate.path, arguments, true)
+        }
+        // A bare name for the shell to find on PATH — `sed`, `python3`.
+        return (String(first), arguments, false)
+    }
+
+    /// What the shell is actually given.
+    ///
+    /// Two things happen to a program that resolved to a file, and neither
+    /// applies to a bare `sed` or a pipeline.
+    ///
+    /// It is **quoted**, because a path is not something the shell should be
+    /// reading for syntax. `~/My Configs/parrotflow/identifiers.py` was being
+    /// split on the space and half of it run as a program.
+    ///
+    /// And it is **`exec`ed**, which replaces the shell with the program, so
+    /// the process this code holds *is* the program. A timeout then kills the
+    /// thing that is slow rather than its parent — without it, terminating the
+    /// shell left the script running and the next transcript started another.
+    static func shellCommand(for command: String, base: URL?) -> String {
+        let (program, arguments, isPath) = parts(of: command, base: base)
+        guard isPath else { return program + arguments }
+        // A pipeline or a sequence stays the shell's business: `exec` takes one
+        // simple command, and the shell is the right thing to be waiting on
+        // when there are several.
+        let shellSyntax = CharacterSet(charactersIn: "|&;<>()$`\n")
+        let prefix = arguments.rangeOfCharacter(from: shellSyntax) == nil ? "exec " : ""
+        return prefix + quoted(program) + arguments
+    }
+
+    /// A path the shell will read as one word, whatever is in it.
+    ///
+    /// Single quotes, because they mean "no substitution of any kind" — the one
+    /// quoting a directory called `~/My Configs/$stuff` cannot escape from. An
+    /// embedded single quote ends the quoting, so it is spelled out.
+    private static func quoted(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     /// What is wrong with this command before it is even run, in words, or nil
@@ -141,12 +239,10 @@ enum CommandRunner {
     /// an interpreter that is not installed — is the shell's to report, and it
     /// reports those well.
     static func complaint(about command: String, base: URL?) -> String? {
-        let path = String(
-            resolved(command, base: base).split(separator: " ", maxSplits: 1).first ?? ""
-        )
+        let (program, _, isPath) = parts(of: command, base: base)
         let fm = FileManager.default
-        guard path.hasPrefix("/"), fm.fileExists(atPath: path),
-              !fm.isExecutableFile(atPath: path) else { return nil }
-        return "\(path) is not executable — chmod +x it"
+        guard isPath, fm.fileExists(atPath: program),
+              !fm.isExecutableFile(atPath: program) else { return nil }
+        return "\(program) is not executable — chmod +x it"
     }
 }

@@ -67,6 +67,18 @@ than two seconds leaves the transcript exactly as it arrived, and says so in
 the log — a script you are halfway through writing is an ordinary state to be
 in, and a dictation tool cannot answer it by dropping your words.
 
+The two seconds are counted to the process **exiting**, not to its output
+ending: a command that closes stdout and keeps working is over time like any
+other, and is killed rather than waited for. What a script starts and leaves
+behind is its own business — a plain command is `exec`ed, so the process
+ParrotFlow holds is your program itself and not a shell wrapping it, but a
+script that backgrounds something of its own outlives the timeout.
+
+Paths with spaces work, in the directory and in the command: `command: my
+scripts/rewrite.py` is one path, not a program and an argument. The whole value
+is tried as a file before anything is split, because YAML quoting cannot help
+here — the parser removes the quotes long before the app sees them.
+
 The script is run **directly**, so its first line picks the interpreter — the
 shebang, `#!/usr/bin/env python3` or `#!/bin/bash` or whatever you write it in.
 The app never needs to know the language. What it does need is the execute bit:
