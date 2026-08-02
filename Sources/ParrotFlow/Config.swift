@@ -1701,20 +1701,36 @@ if __name__ == "__main__":
       # with them: those are the two that wake people up, and @channel reaches the
       # ones who are away.
       #
+      #
+      # The marker has to open the message or follow a pause, and that is the half
+      # of the safety the first version of this table did not have. "mention" is an
+      # ordinary English verb: "I should mention here that the deadline changed"
+      # came back as "I should @here that the deadline changed", and "I wanted to
+      # mention Marie is off next week" pinged Marie. Neither is a message anyone
+      # meant to send, and a pipeline stage has no preview to catch it — it runs on
+      # a transcript nobody has seen yet.
+      #
+      # So the word counts only at the start of the utterance or straight after
+      # . ! ? ; or a comma, which is where it lands when you mean it and almost
+      # never where the verb does. Same shape as the stop lists on `dotted`, for
+      # the same reason: that pattern has to tell code from prose, this one has to
+      # tell an instruction from a verb. The cost is that "can you mention marie
+      # about the invoice" does nothing — a ping you did not get rather than one
+      # you did not mean, which is the direction to fail in.
       # To fill this in, hand Claude Code your team's names and handles and ask it
       # to update this table. The shape is regular and the names are yours.
       - name: slack_handles
         description: spoken names as Slack handles
         replace:
-          '@marie.dupont': ['/\\bmention(?:ne)? marie\\b/']
-          '@tleroy': ['/\\bmention(?:ne)? thomas\\b/']
-          '@priya': ['/\\bmention(?:ne)? priya\\b/']
+          '$1@marie.dupont': ['/(^|[.!?;,]\\s*)mention(?:ne)? marie\\b/']
+          '$1@tleroy': ['/(^|[.!?;,]\\s*)mention(?:ne)? thomas\\b/']
+          '$1@priya': ['/(^|[.!?;,]\\s*)mention(?:ne)? priya\\b/']
 
       - name: slack_mentions
         description: spoken group mentions as @here and @channel
         replace:
-          '@here': ['/\\bmention(?:ne)? (?:everyone here|here)\\b/']
-          '@channel': ['/\\bmention(?:ne)? (?:the )?(?:whole )?channel\\b/']
+          '$1@here': ['/(^|[.!?;,]\\s*)mention(?:ne)? (?:everyone here|here)\\b/']
+          '$1@channel': ['/(^|[.!?;,]\\s*)mention(?:ne)? (?:the )?(?:whole )?channel\\b/']
 
       # The two tables the pipeline above names. Same pattern, different output:
       # that is the whole reason a table has a name.

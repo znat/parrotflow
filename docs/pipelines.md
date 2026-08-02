@@ -436,6 +436,33 @@ name is the same opt-in, said in the same breath, and it costs no round trip:
 "mention everyone here"               ->  "@here"
 ```
 
+**It has to open the message or follow a pause**, and the first version of this
+table did not say so. `mention` is an ordinary English verb, and it read as an
+instruction wherever it appeared:
+
+```
+"I should mention here that the deadline changed"
+  ->  "I should @here that the deadline changed"
+"I wanted to mention Marie is off next week"
+  ->  "I wanted to @marie.dupont is off next week"
+```
+
+Neither is a message anyone meant to send, and a pipeline stage has no preview
+to catch it — it runs on a transcript nobody has seen yet, so `confirm` does not
+apply. The pattern therefore counts the word only at the start of the utterance
+or straight after `.` `!` `?` `;` or a comma:
+
+```
+/(^|[.!?;,]\s*)mention(?:ne)? marie\b/  ->  $1@marie.dupont
+```
+
+Which is the same shape as the stop lists on `dotted`, for the same reason: that
+pattern has to tell code from prose, and this one has to tell an instruction
+from a verb. **11/11** — five prose sentences that must not ping, six deliberate
+forms that must. The cost is that "can you mention marie about the invoice" does
+nothing, which is the direction to fail in: a ping you did not get rather than
+one you did not mean.
+
 That also removes the argument for keeping a mapping inside a prompt, which was
 the one place in this file where a lookup was not a table.
 
