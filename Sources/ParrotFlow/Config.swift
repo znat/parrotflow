@@ -294,6 +294,39 @@ struct Config: Codable, Equatable {
                 return String(source.dropFirst().dropLast())
             }
 
+            /// What gets written, as the replacement API wants it.
+            ///
+            /// A literal source keeps a literal target: a name is a word you
+            /// want written exactly, and `$` in one has to survive — escaping
+            /// is what stops "AT&T" or a price from being read as a group
+            /// reference nobody wrote.
+            ///
+            /// A source in slashes has already said it is a pattern, so its
+            /// target is a template and `$1` refers back to what the pattern
+            /// captured. That is the only way to write a rule whose output
+            /// depends on its input:
+            ///
+            ///     $1.$2: ['/(\\w+) dot (\\w+)/']    # "user dot name" -> user.name
+            ///
+            /// Without it a rule can only map a fixed phrase to a fixed one,
+            /// and "spoken dotted path" is not a fixed set.
+            var template: String {
+                isRegex ? replacement : NSRegularExpression.escapedTemplate(for: replacement)
+            }
+
+            /// Groups the template refers to. `$1` and `${1}`, not `\$1`.
+            var referencedGroups: [Int] {
+                guard isRegex else { return [] }
+                let expression = try? NSRegularExpression(
+                    pattern: "(?<!\\\\)\\$\\{?(\\d+)\\}?"
+                )
+                let range = NSRange(replacement.startIndex..., in: replacement)
+                return (expression?.matches(in: replacement, range: range) ?? []).compactMap {
+                    guard let group = Range($0.range(at: 1), in: replacement) else { return nil }
+                    return Int(replacement[group])
+                }
+            }
+
             /// Fuzzy matching compares spellings, so a pattern is not a
             /// candidate and neither is a deletion — there is nothing to match
             /// against.
@@ -547,6 +580,31 @@ struct Config: Codable, Equatable {
     /// app running with `replacements` silently missing looked exactly like an
     /// app whose replacement table was empty. The command prints these; the app
     /// logs them at every load.
+    /// What is wrong with the replacement table alone.
+    ///
+    /// Split out of `problems()` so a pipeline fixture can be checked against
+    /// it without dragging in the rest: `--pipeline` fixtures name prompts that
+    /// deliberately do not exist, and "no prompt named" is a case those sets
+    /// test rather than a complaint they want raised.
+    func replacementProblems() -> [String] {
+        var found: [String] = []
+        // A template referring to a group the pattern never captures is
+        // written as nothing at all — the rule fires, the output is quietly
+        // short, and the log shows a substitution that looks like it worked.
+        for rule in transcription.rules {
+            let referenced = Set(rule.referencedGroups).sorted()
+            guard !referenced.isEmpty,
+                  let expression = try? NSRegularExpression(pattern: rule.pattern)
+            else { continue }
+            for group in referenced where group > expression.numberOfCaptureGroups {
+                found.append("replacements: \"\(rule.source)\" writes $\(group), but the pattern"
+                    + " captures \(expression.numberOfCaptureGroups) group(s)"
+                    + " — $\(group) comes out as nothing")
+            }
+        }
+        return found
+    }
+
     func problems() -> [String] {
         var found: [String] = []
         for key in transcription.retired {
@@ -564,6 +622,7 @@ struct Config: Codable, Equatable {
             found.append("pipelines: \"\(name)\" is not a configured language, so that pipeline never runs"
                 + " — configured: \(transcription.languages.joined(separator: ", "))")
         }
+        found += replacementProblems()
         for language in transcription.languages {
             let pipeline = Pipeline.resolved(config: self, language: language)
             for problem in pipeline.validate() {
@@ -704,10 +763,16 @@ enum ConfigStore {
       # The spelling you want, and the ways it comes out wrong. Whole words,
       # case-insensitive. A source in /slashes/ is a regular expression, and an
       # empty target deletes rather than substitutes — which is how filler
-      # words go.
+      # words go. With a regex source the target is a template, so $1 writes
+      # back what the pattern captured.
       #
       #   Supabase: [super base, superbees]
       #   "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
+      #   $1.$2: ['/\\b(\\w+) dot (\\w+)\\b/']   # "user dot name" -> user.name
+      #
+      # That last one joins any two words either side of "dot", prose included
+      # — a pattern cannot tell your code from your sentence. Put it in a
+      # pipeline behind `app:` if you only mean it in a terminal.
       replacements: {}
 
 

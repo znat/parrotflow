@@ -326,7 +326,15 @@ struct Pipeline: Equatable, Codable {
         case .replacements:
             return Replacements.applyExact(to: text, rules: config.transcription.rules)
         case .fuzzy:
-            let targets = config.transcription.replacements.keys.filter { !$0.isEmpty }
+            // From the rules, not from the table's keys. Fuzzy matching
+            // compares spellings, so a target is only a candidate if it is one
+            // — `$1.$2` is a template, not a word anything could sound like,
+            // and offering it as one puts a string in the list that every
+            // comparison has to lose to. `isFuzzyCandidate` was written for
+            // this and had never been wired to anything.
+            let targets = Set(
+                config.transcription.rules.filter(\.isFuzzyCandidate).map(\.replacement)
+            )
             return Replacements.applyFuzzy(to: text, targets: Array(targets))
         case .numbers:
             return Numbers.apply(to: text, languages: config.transcription.languages)

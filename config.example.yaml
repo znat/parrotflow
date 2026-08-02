@@ -50,7 +50,8 @@ transcription:
   # The spelling you want, and the ways it comes out wrong. Whole words,
   # case-insensitive. A source in /slashes/ is a regular expression, and an
   # empty target deletes rather than substitutes — which is how filler words
-  # go, punctuation and spacing included.
+  # go, punctuation and spacing included. With a regex source the target is a
+  # template, so $1 writes back what the pattern captured.
   #
   # Workflow: dictate, run --transcribe on the clip, map whatever the model
   # wrote to what you meant.

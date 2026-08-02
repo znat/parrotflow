@@ -95,7 +95,11 @@ enum PipelineCommand {
         config.transcription.replacements = fixture.replacements
         config.transcription.pipelines = ["default": pipeline]
 
-        var problems = pipeline.validate()
+        // The fixture's own table is checked too, not just its stage list — a
+        // template naming a group the pattern never captures is refused here
+        // for the same reason `--check-config` refuses it, and being reachable
+        // from a fixture is what lets a validation set cover it at all.
+        var problems = pipeline.validate() + config.replacementProblems()
         for problem in problems { print("✗ \(problem)") }
         guard problems.isEmpty else { return 1 }
 
