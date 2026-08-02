@@ -5,22 +5,29 @@ import Foundation
 ///
 /// Voice commands are otherwise only testable by speaking, which makes
 /// iterating on the prompt slow and makes regressions easy to miss.
+///
+/// `--phrases "hey parrot,by the way parrot"` stands in for the configured
+/// list, the same way `--lang` stands in for the configured languages: a case
+/// file can then state the environment it assumes instead of inheriting
+/// whichever phrases happen to be on this machine.
 enum CommandTestCommand {
 
-    static func run(text: String, lastTranscript: String? = nil) -> Int32 {
+    static func run(
+        text: String, lastTranscript: String? = nil, phrases override: [String]? = nil
+    ) -> Int32 {
         let config: Config
         do { config = try ConfigStore.load() } catch {
             print("✗ config: \(CheckConfigCommand.describe(error))")
             return 1
         }
 
-        let phrase = config.transcription.activationPhrase
-        print("wake phrase: \"\(phrase)\"")
+        let phrases = override ?? config.transcription.activationPhrases
+        print("wake phrase: \(phrases.map { "\"\($0)\"" }.joined(separator: ", "))")
         if let lastTranscript {
             print("context:     \"\(lastTranscript)\"")
         }
 
-        guard let command = VoiceCommand.commandAfterWakePhrase(text, phrase: phrase) else {
+        guard let command = VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) else {
             print("→ not a command; this would be dictated as normal text")
             return 0
         }

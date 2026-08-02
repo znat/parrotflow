@@ -3,9 +3,13 @@ transcription:
   # clipboard -> copied, you press Cmd-V
   insert_mode: clipboard
 
-  # Say this instead of dictating and what follows is an instruction:
-  # "hey parrot, make that a bullet list". Empty disables it.
-  activation_phrase: hey parrot
+  # Say one of these instead of dictating and what follows is an
+  # instruction: "hey parrot, make that a bullet list". An empty list
+  # disables spoken commands.
+  #
+  # Several, because one phrase cannot be said in every position — and the
+  # first is the one to teach someone.
+  activation_phrases: [hey parrot]
 
   # Last resort for fields Accessibility cannot write, terminals mostly: clear
   # the input line with Ctrl-A Ctrl-K and retype it corrected. It only fires

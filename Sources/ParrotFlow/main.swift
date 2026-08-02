@@ -76,12 +76,24 @@ if let index = arguments.firstIndex(of: "--normalize") {
 
 if let index = arguments.firstIndex(of: "--command") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --command \"hey parrot, Tasmin spells T A S M E E N\"")
+        print("usage: ParrotFlow --command \"hey parrot, Tasmin spells T A S M E E N\""
+            + " [--phrases \"a,b\"]")
         exit(2)
     }
     let context = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
         ? arguments[index + 2] : nil
-    exit(CommandTestCommand.run(text: arguments[index + 1], lastTranscript: context))
+    // An empty list is a case of its own — spoken commands turned off — so it
+    // has to survive as [] rather than collapse back to the configured list.
+    let phrases = arguments.firstIndex(of: "--phrases").flatMap { at -> [String]? in
+        guard arguments.indices.contains(at + 1) else { return nil }
+        return arguments[at + 1]
+            .split(separator: ",", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+    exit(CommandTestCommand.run(
+        text: arguments[index + 1], lastTranscript: context, phrases: phrases
+    ))
 }
 
 if let index = arguments.firstIndex(of: "--route") {

@@ -225,12 +225,29 @@ enum VoiceCommand {
     /// Understood as nothing actionable.
     case unrecognised(String)
 
-    /// Everything said after the wake phrase, or nil for plain dictation.
+    /// Everything said after a wake phrase, or nil for plain dictation.
     /// Empty string means the phrase was said on its own.
     ///
     /// Shared by the app and by `--command`; when these were two copies, the
     /// test harness silently exercised different logic from the app.
-    static func commandAfterWakePhrase(_ text: String, phrase rawPhrase: String) -> String? {
+    ///
+    /// Several phrases are tried and the best-scoring one wins, rather than the
+    /// first that clears the bar. They overlap on purpose — "hey parrot" and
+    /// "by the way parrot" share their distinctive word — so first-past-the-post
+    /// would let a poor match on one phrase beat a good match on another and
+    /// swallow a different number of words.
+    static func commandAfterWakePhrase(_ text: String, phrases: [String]) -> String? {
+        var best: (score: Double, command: String)?
+        for phrase in phrases {
+            guard let found = match(text, phrase: phrase) else { continue }
+            if best == nil || found.score > best!.score { best = found }
+        }
+        return best?.command
+    }
+
+    /// One phrase, and how well it matched — the score is what lets the caller
+    /// choose between phrases.
+    private static func match(_ text: String, phrase rawPhrase: String) -> (score: Double, command: String)? {
         let phrase = rawPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !phrase.isEmpty else { return nil }
 
@@ -266,20 +283,25 @@ enum VoiceCommand {
         }
 
         // Last chance: the distinctive word survived on its own ("parrot"),
-        // which is what a clipped "hey" leaves behind.
-        if matchedWords == nil, let keyword = phraseWords.last, keyword.count >= 4,
-           similarity(normalised[0], keyword) >= 0.8 {
-            matchedWords = 1
+        // which is what a clipped "hey" leaves behind. Scored below any real
+        // match, so a phrase that matched properly always wins over one that
+        // only recognised its own last word.
+        if matchedWords == nil, let keyword = phraseWords.last, keyword.count >= 4 {
+            let score = similarity(normalised[0], keyword)
+            if score >= 0.8 {
+                matchedWords = 1
+                bestScore = score * 0.5
+            }
         }
 
         guard let matchedWords else { return nil }
 
         guard spokenWords.count == normalised.count else {
-            return normalised.dropFirst(matchedWords).joined(separator: " ")
+            return (bestScore, normalised.dropFirst(matchedWords).joined(separator: " "))
         }
-        return spokenWords.dropFirst(matchedWords)
+        return (bestScore, spokenWords.dropFirst(matchedWords)
             .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Phrases handled without troubling the LLM. Cheap, deterministic, and

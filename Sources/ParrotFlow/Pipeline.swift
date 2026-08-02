@@ -293,7 +293,7 @@ struct Pipeline: Equatable, Codable {
                 return "prompts are off on this path"
             }
             if VoiceCommand.commandAfterWakePhrase(
-                text, phrase: config.transcription.activationPhrase
+                text, phrases: config.transcription.activationPhrases
             ) != nil {
                 return "this is a spoken command"
             }
