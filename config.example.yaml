@@ -117,6 +117,27 @@ llm:
   # Turn off to get those seconds back as free RAM.
   keep_loaded: true
 
+# Checking whether a newer ParrotFlow exists.
+#
+# One call a day to GitHub's release API — no account, nothing about you, and
+# nothing about what you dictate. It is the only request this app makes on its
+# own; the speech model is fetched once on first use, and the language model
+# never leaves your Mac.
+#
+# The number is a waiting period, not how often it looks:
+#
+#   -1   never ask at all
+#    0   offer a release the day it is published
+#    7   only offer a release that has existed for a week
+#
+# The wait is the point. A release that turns out to be bad — a pipeline taken,
+# a key stolen — is one that gets noticed and pulled, and a week of distance
+# means your Mac never saw it. What proves an archive is ours is the pinned
+# signing certificate in scripts/install.sh; this is the other half, and buys
+# the time someone needs to notice in the first place.
+updates:
+  after_days: 7
+
 # Things you can ask for by voice: say the wake phrase, then the instruction.
 #
 #     "hey parrot, make that a bullet list"

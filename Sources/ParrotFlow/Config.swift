@@ -22,6 +22,7 @@ struct Config: Codable, Equatable {
     var feedback: Feedback = Feedback()
     var transcription: Transcription = Transcription()
     var llm: LLM = LLM()
+    var updates: UpdatePolicy = UpdatePolicy()
     var prompts: [Prompt] = []
 
     /// Do what was asked even when no prompt matches — see `FreeForm`.
@@ -39,7 +40,7 @@ struct Config: Codable, Equatable {
     var freeForm: Bool = true
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, audio, feedback, transcription, llm, prompts
+        case hotkey, audio, feedback, transcription, llm, prompts, updates
         case freeForm = "free_form"
     }
 
@@ -94,6 +95,31 @@ struct Config: Codable, Equatable {
     }
 
     /// A local Ollama model, used to interpret spoken commands.
+    /// How long a release has to have existed before this Mac will take it.
+    ///
+    /// Not a polling interval — the check itself is daily. This is a waiting
+    /// period, and it is the only defence a one-person project has against its
+    /// own release pipeline being taken: a bad release that is noticed and
+    /// pulled inside the window is one nobody's app ever offered. See
+    /// `Updates` for why that is worth a setting.
+    struct UpdatePolicy: Codable, Equatable {
+        /// Negative never asks GitHub at all. Zero takes a release the day it
+        /// is published. Anything else waits that many days.
+        var afterDays: Int = 7
+
+        enum CodingKeys: String, CodingKey {
+            case afterDays = "after_days"
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init()
+            if let v = try c.decodeIfPresent(Int.self, forKey: .afterDays) { afterDays = v }
+        }
+    }
+
     struct LLM: Codable, Equatable {
         var enabled: Bool = true
         var model: String = "gemma4:e4b"
@@ -513,6 +539,9 @@ struct Config: Codable, Equatable {
             self.transcription = transcription
         }
         if let llm = try c.decodeIfPresent(LLM.self, forKey: .llm) { self.llm = llm }
+        if let updates = try c.decodeIfPresent(UpdatePolicy.self, forKey: .updates) {
+            self.updates = updates
+        }
         if let prompts = try c.decodeIfPresent([Prompt].self, forKey: .prompts) {
             // A prompt missing a name or content cannot be routed to or run, and
             // dropping it silently is how a typo becomes an evening. Named here
@@ -765,6 +794,27 @@ enum ConfigStore {
       # after five minutes, and reloading costs 7-10s on the next correction.
       # Turn off to get those seconds back as free RAM.
       keep_loaded: true
+
+    # Checking whether a newer ParrotFlow exists.
+    #
+    # One call a day to GitHub's release API — no account, nothing about you, and
+    # nothing about what you dictate. It is the only request this app makes on its
+    # own; the speech model is fetched once on first use, and the language model
+    # never leaves your Mac.
+    #
+    # The number is a waiting period, not how often it looks:
+    #
+    #   -1   never ask at all
+    #    0   offer a release the day it is published
+    #    7   only offer a release that has existed for a week
+    #
+    # The wait is the point. A release that turns out to be bad — a pipeline taken,
+    # a key stolen — is one that gets noticed and pulled, and a week of distance
+    # means your Mac never saw it. What proves an archive is ours is the pinned
+    # signing certificate in scripts/install.sh; this is the other half, and buys
+    # the time someone needs to notice in the first place.
+    updates:
+      after_days: 7
 
     # Things you can ask for by voice: say the wake phrase, then the instruction.
     #

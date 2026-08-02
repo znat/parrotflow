@@ -190,6 +190,13 @@ if let index = arguments.firstIndex(of: "--panels") {
     exit(PanelsCommand.run(surface: arguments[index + 1], seconds: seconds ?? 20))
 }
 
+if arguments.contains("--update-check") {
+    let after = arguments.firstIndex(of: "--after-days").flatMap { index in
+        arguments.indices.contains(index + 1) ? Int(arguments[index + 1]) : nil
+    }
+    exit(UpdateCheckCommand.run(afterDays: after))
+}
+
 if let index = arguments.firstIndex(of: "--watch-modifiers") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     exit(WatchModifiersCommand.run(seconds: seconds ?? 10))
