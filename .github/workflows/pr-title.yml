@@ -1,0 +1,61 @@
+name: pr-title
+
+# The other half of .githooks/commit-msg, which cannot see this.
+#
+# A pull request merged in the browser takes its subject from the pull request
+# title, and the hook runs on your own machine at `git commit`. So a squash
+# merge walks straight past it. That is how #4 reached main untyped: 1640 lines
+# release-please cannot see — no version bump, no changelog entry, and nothing
+# anywhere saying it was skipped. The failure is silent by construction, so the
+# check has to be somewhere the merge cannot avoid.
+#
+# A single-commit pull request inherits that commit's subject when squashed
+# (the repository is set to COMMIT_OR_PR_TITLE), so the hook already covers
+# that case. This covers the rest: several commits, or a title edited after the
+# fact.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      # Through env rather than straight into the script: a pull request title
+      # is attacker-controlled text, and splicing it into a shell command is
+      # how a workflow gets to run someone else's.
+      - name: Check the title against Conventional Commits
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if printf '%s' "$TITLE" | grep -Eq '^(feat|fix|perf|docs|refactor|test|build|ci|chore)(\([a-z0-9 ._/-]+\))?!?: .+'; then
+            printf 'ok: %s\n' "$TITLE"
+            exit 0
+          fi
+
+          cat >&2 <<EOF
+          This title cannot cut a release:
+
+            $TITLE
+
+          Releases and the changelog are computed from merged subjects, so a
+          title with no type ships nothing and says nothing about it.
+
+            feat:     a capability that was not there before   -> bumps the minor
+            fix:      behaviour that was wrong is now right    -> bumps the patch
+            perf:     same behaviour, measurably faster        -> bumps the patch
+            docs:     documentation only                       -> no release
+            refactor: same behaviour, different shape          -> no release
+            test:     tests only                               -> no release
+            build:    build, packaging, install or release     -> no release
+            ci:       workflows                                -> no release
+            chore:    anything else                            -> no release
+
+          Add ! before the colon for a breaking change: feat!: …
+
+          Edit the title and this check runs again on its own.
+          EOF
+          exit 1
