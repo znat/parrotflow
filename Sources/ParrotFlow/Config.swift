@@ -72,11 +72,13 @@ struct Config: Decodable, Equatable {
         var confirm = true
         var body: Transform.Body?
         var directory: URL?
+        var timeout: Double?
         /// More than one of `prompt:`, `replace:` and `command:` on one entry.
         var namesBoth = false
 
         enum CodingKeys: String, CodingKey {
             case name, description, confirm, prompt, content, replace, command
+            case timeout = "timeout_seconds"
         }
 
         init(from decoder: Decoder) throws {
@@ -89,6 +91,7 @@ struct Config: Decodable, Equatable {
             description = try trimmed(.description)
             directory = decoder.userInfo[.configDirectory] as? URL
             confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
+            timeout = try c.decodeIfPresent(Double.self, forKey: .timeout)
 
             let instructions = try trimmed(.prompt).isEmpty ? trimmed(.content) : trimmed(.prompt)
             let table = try c.decodeIfPresent([String: [String]].self, forKey: .replace)
@@ -156,7 +159,7 @@ struct Config: Decodable, Equatable {
             }
             kept.append(Transform(
                 name: entry.name, description: entry.description,
-                directory: entry.directory,
+                directory: entry.directory, timeout: entry.timeout,
                 confirm: entry.confirm, body: body
             ))
         }
@@ -187,6 +190,15 @@ struct Config: Decodable, Equatable {
         /// what a relative `command:` is relative to. Nil when it was not
         /// decoded from a file — a default, or a test.
         var directory: URL?
+        /// How long a `command:` may take before the transcript is let through
+        /// untouched. Nil means `CommandRunner.timeout`, which is two seconds.
+        ///
+        /// Two seconds is right for a script and wrong for one that asks a
+        /// model: Ollama takes 7–10s when the weights have to come back off
+        /// disk, so the first correction after a pause silently did nothing.
+        /// Per transform rather than global, because the two live in the same
+        /// pipeline and want different answers.
+        var timeout: Double?
         /// Show the result and wait before replacing anything. Only consulted
         /// when a transform is run over your selection — a pipeline stage runs
         /// on a transcript nobody has seen yet, so there is nothing to confirm.
@@ -1530,11 +1542,18 @@ if __name__ == "__main__":
         command: identifiers.py
         # Add `--model gemma4:e4b` to have a model handle the namings the rules
         # cannot see — "call it max retries", "rename the variable to retry
-        # count". Measured over 70 cases: it takes the sentences that should
-        # change from 87% to 100%, and the ones that must come back untouched
+        # count". Measured over 75 cases: it takes the sentences that should
+        # change from 88% to 100%, and the ones that must come back untouched
         # from 94% to 84%, because a model asked only about what a careful rule
         # refused sees mostly near-misses. Off by default for that reason, and it
         # costs about a second.
+        #
+        # Raise `timeout_seconds` with it. A command has two seconds before the
+        # transcript is let through untouched, which is right for a script and
+        # wrong for one that asks Ollama: a model whose weights have gone back to
+        # disk takes 7-10s, so the first correction after a pause would silently
+        # do nothing.
+        # timeout_seconds: 12
 
     # Do what was asked even when no prompt above matches:
     #

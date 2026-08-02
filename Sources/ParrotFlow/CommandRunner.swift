@@ -50,7 +50,10 @@ enum CommandRunner {
     /// file that declared the transform, so a config carries its scripts beside
     /// it. Not the working directory, which for an app launched from the Finder
     /// is "/" and means nothing.
-    static func run(_ command: String, on text: String, base: URL?) -> String? {
+    static func run(
+        _ command: String, on text: String, base: URL?, seconds: TimeInterval? = nil
+    ) -> String? {
+        let timeout = seconds ?? Self.timeout
         let base = base ?? ConfigStore.directory
         if let complaint = complaint(about: command, base: base) {
             Log.write("command: \(complaint); kept the transcript")
@@ -110,7 +113,8 @@ enum CommandRunner {
         if exited.wait(timeout: .now() + timeout) == .timedOut {
             stop(process)
             output.fileHandleForReading.readabilityHandler = nil
-            Log.write("command: \"\(command)\" took longer than \(Int(timeout))s; kept the transcript")
+            Log.write("command: \"\(command)\" took longer than"
+                + " \(Int(timeout))s; kept the transcript")
             return nil
         }
         output.fileHandleForReading.readabilityHandler = nil
@@ -158,44 +162,44 @@ enum CommandRunner {
     /// A command split where the program ends and its arguments begin, with
     /// the program made absolute when it names a file beside the config.
     ///
-    /// The split is taken from what was *written*, never from the result: a
-    /// resolved path can contain spaces of its own, and re-splitting it was how
-    /// `~/My Configs/identifiers.py` became a program called
-    /// `/private/…/My` with `Configs/identifiers.py` for an argument.
+    /// Where to split cannot be decided by looking at the string. A space is
+    /// the only separator there is, and it is also an ordinary character in a
+    /// path, so `my scripts/rewrite.py --model gemma4:e4b` has three of them
+    /// and only one is the boundary. YAML quoting cannot mark it either — the
+    /// parser removes the quotes long before this sees them.
+    ///
+    /// So the file system decides: the longest prefix that names a file is the
+    /// program, and the rest is arguments. A first word that names nothing is
+    /// left alone for the shell to find on PATH — `sed`, `python3`.
     static func parts(of command: String, base: URL?)
         -> (program: String, arguments: String, isPath: Bool) {
         let expanded = (command as NSString).expandingTildeInPath
+        let base = base ?? ConfigStore.directory
         let fm = FileManager.default
 
-        // The whole thing first, before splitting anything: a config that says
-        // `command: my scripts/rewrite.py` means one path with a space in it,
-        // and splitting it would look for a program called `my`. YAML quoting
-        // cannot help here — the parser eats the quotes before this sees them
-        // — so the file system is what settles it.
-        let whole = (base ?? ConfigStore.directory)
-            .appendingPathComponent(expanded).standardized
-        if expanded.contains(" "), fm.fileExists(atPath: whole.path) {
-            return (whole.path, "", true)
+        func path(for prefix: Substring) -> String {
+            prefix.hasPrefix("/")
+                ? String(prefix)
+                : base.appendingPathComponent(String(prefix)).standardized.path
         }
 
-        let written = expanded.split(separator: " ", maxSplits: 1)
-        guard let first = written.first else { return (expanded, "", false) }
-        let arguments = String(expanded.dropFirst(first.count))
+        // Every place the command could be split, longest first. Existing is
+        // enough — being executable is not required here, deliberately: a
+        // script that is there but not `chmod +x` is the single most likely
+        // thing to be wrong, and `complaint` names it as itself rather than
+        // leaving the shell to say "command not found".
+        var boundaries = [expanded.endIndex]
+        boundaries += expanded.indices.filter { expanded[$0] == " " }.reversed()
+        for boundary in boundaries {
+            let candidate = path(for: expanded[expanded.startIndex..<boundary])
+            guard fm.fileExists(atPath: candidate) else { continue }
+            return (candidate, String(expanded[boundary...]), true)
+        }
 
-        if first.hasPrefix("/") {
-            return (String(first), arguments, true)
+        guard let first = expanded.split(separator: " ", maxSplits: 1).first else {
+            return (expanded, "", false)
         }
-        // Existing is enough — being executable is not required here,
-        // deliberately. A script that is there but not `chmod +x` is the single
-        // most likely thing to be wrong, and `complaint` names it as itself
-        // rather than leaving the shell to say "command not found".
-        let candidate = (base ?? ConfigStore.directory)
-            .appendingPathComponent(String(first)).standardized
-        if fm.fileExists(atPath: candidate.path) {
-            return (candidate.path, arguments, true)
-        }
-        // A bare name for the shell to find on PATH — `sed`, `python3`.
-        return (String(first), arguments, false)
+        return (String(first), String(expanded.dropFirst(first.count)), false)
     }
 
     /// What the shell is actually given.

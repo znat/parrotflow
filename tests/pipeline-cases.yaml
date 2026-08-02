@@ -238,3 +238,10 @@ cases:
     pipeline: command-spaces
     input: read user dot name
     expect: READ USER DOT NAME
+
+  # Two seconds is right for a script and wrong for one that asks a model, so
+  # the limit is a per-transform setting. Without it this comes back untouched.
+  - name: a command can be given longer than the default two seconds
+    pipeline: command-patient
+    input: read user dot name
+    expect: READ USER DOT NAME

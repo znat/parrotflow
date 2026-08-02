@@ -67,12 +67,18 @@ than two seconds leaves the transcript exactly as it arrived, and says so in
 the log — a script you are halfway through writing is an ordinary state to be
 in, and a dictation tool cannot answer it by dropping your words.
 
-The two seconds are counted to the process **exiting**, not to its output
-ending: a command that closes stdout and keeps working is over time like any
+The two seconds are `timeout_seconds` on the transform, and they are counted to
+the process **exiting**, not to its output ending: a command that closes stdout and keeps working is over time like any
 other, and is killed rather than waited for. What a script starts and leaves
 behind is its own business — a plain command is `exec`ed, so the process
 ParrotFlow holds is your program itself and not a shell wrapping it, but a
 script that backgrounds something of its own outlives the timeout.
+
+Two seconds is right for a script and wrong for one that asks a model — Ollama
+takes 7–10s when the weights have gone back to disk — so a `command:` that ends
+in `--model something` wants `timeout_seconds: 12` beside it. Per transform,
+because a `tr` one-liner and a model call live in the same pipeline and want
+different answers.
 
 Paths with spaces work, in the directory and in the command: `command: my
 scripts/rewrite.py` is one path, not a program and an argument. The whole value

@@ -238,11 +238,18 @@ transforms:
     command: identifiers.py
     # Add `--model gemma4:e4b` to have a model handle the namings the rules
     # cannot see — "call it max retries", "rename the variable to retry
-    # count". Measured over 70 cases: it takes the sentences that should
-    # change from 87% to 100%, and the ones that must come back untouched
+    # count". Measured over 75 cases: it takes the sentences that should
+    # change from 88% to 100%, and the ones that must come back untouched
     # from 94% to 84%, because a model asked only about what a careful rule
     # refused sees mostly near-misses. Off by default for that reason, and it
     # costs about a second.
+    #
+    # Raise `timeout_seconds` with it. A command has two seconds before the
+    # transcript is let through untouched, which is right for a script and
+    # wrong for one that asks Ollama: a model whose weights have gone back to
+    # disk takes 7-10s, so the first correction after a pause would silently
+    # do nothing.
+    # timeout_seconds: 12
 
 # Do what was asked even when no prompt above matches:
 #
