@@ -345,11 +345,37 @@ enum VoiceCommand {
         // Take the best-scoring length, not the first above threshold: with
         // "hey parrot fix vocabulary", "hey parrot fix" also clears 0.7 and
         // would swallow the "fix".
+        /// Every word has to look like the word it stands in for.
+        ///
+        /// Without this the distinctive word carries the whole comparison and
+        /// the first word is free to be anything: "my parrot escaped this
+        /// morning" scored as well as "hey parrot fix vocabulary", so a
+        /// sentence about a parrot was taken as a command and never written
+        /// down. Comparing the joined strings cannot tell them apart, because
+        /// "parrot" is most of the characters either way.
+        ///
+        /// Fewer words than the phrase is the clipped case — the start is what
+        /// the audio engine eats while it is still opening the microphone — so
+        /// a short candidate is aligned to the *end* of the phrase. More words
+        /// than the phrase is something said before it, so the phrase is
+        /// aligned to the end of the candidate.
+        ///
+        /// 0.55 per word, measured rather than picked: "ey" for "hey" scores
+        /// 0.67 and has to survive, while "my", "the", "a", "our", "his" and
+        /// "that" all score below 0.5 against "hey".
+        func aligns(_ candidate: ArraySlice<String>) -> Bool {
+            let pairs = candidate.count <= phraseWords.count
+                ? Array(zip(candidate, phraseWords.suffix(candidate.count)))
+                : Array(zip(candidate.suffix(phraseWords.count), phraseWords))
+            return pairs.allSatisfy { similarity($0, $1) >= 0.55 }
+        }
+
         var matchedWords: Int?
         var bestScore = 0.7
         for count in 1...min(phraseWords.count + 1, normalised.count) {
-            let candidate = normalised.prefix(count).joined(separator: " ")
-            let score = similarity(candidate, phrase)
+            let words = normalised.prefix(count)
+            guard aligns(words) else { continue }
+            let score = similarity(words.joined(separator: " "), phrase)
             if score > bestScore {
                 bestScore = score
                 matchedWords = count
