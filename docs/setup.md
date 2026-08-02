@@ -493,32 +493,33 @@ at all — they are handled by `free_form`, which sends the whole instruction to
 the model. This is why the list is not a menu: the user does not have to learn
 it. Do not read them a list of commands to memorise.
 
-**3. Optional — add the tuned prompts.**
+**3. The tuned ones are already there.**
 
-A new config has no `transforms:` section, so every command goes through
-`free_form`. That is fine, but three prompts in the example config score better
-on their own test sets than free-form does. Offer them:
+A new install is written with three transforms — `bullets`, `terse` and
+`grammar` — so there is nothing to add and nothing to fetch. They are in the
+`capabilities` lines you printed a moment ago. Each exists because it scores
+better on its own test set than `free_form` does at that one job; everything
+else is free-form's, which is why the list is not a menu.
 
-> There are three ready-made commands: bullet points, shorter text, and grammar.
-> They are more accurate than the general one for those three jobs. Shall I add
-> them?
+Point at them rather than offering them:
 
-If yes, take the `transforms:` block from the published example and append it to
-their config — the block only, not the whole file:
+> Three of those are tuned for one job each: bullet points, shorter text, and
+> grammar. Everything else you say goes to the general one. You do not have to
+> remember which is which — it works that out.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/config.example.yaml
-```
-
-Then check that ParrotFlow accepted them:
+If they want one of their own, it goes in `transforms:` and it needs a
+`description`: that is the text the router matches spoken words against, so an
+entry without one can never be picked, and `--check-config` reports it as an
+error rather than leaving it to look like the router misbehaving.
 
 ```sh
 /Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
 ```
 
-The `capabilities` count goes up and each prompt is listed by name. A prompt
-with no `description` is reported as an error — the router reads descriptions to
-choose, so a prompt without one can never be picked.
+The `capabilities` count goes up and the new entry is listed by name. A
+`transforms:` entry can also be a substitution table rather than a prompt, and
+those run from a pipeline instead of by voice — docs/pipelines.md, not something
+to cover in a handover.
 
 **If the Gemma download is still running,** say this now:
 
