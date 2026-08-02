@@ -1,0 +1,42 @@
+# phrases (comma-separated) | what was said | what the command should be
+#
+# Run with: scripts/check-wake.sh
+#
+# NONE means "not a command" — the sentence goes into your document as
+# dictation. EMPTY means the phrase was said on its own, which opens the
+# correction panel.
+#
+# The phrases are stated per case rather than read from the config, the same
+# way tests/pipeline-cases.yaml carries its own fixture: a set that inherits
+# whichever phrases happen to be on the machine only means something on that
+# machine.
+#
+# The clipped and misheard cases are not hypothetical. The wake phrase is the
+# first thing said, which is exactly where the audio engine is still starting
+# up, so "hey parrot, X" arrives as "parrot, X" or "hey parrots X" often
+# enough that an exact prefix match would lose most of them.
+
+# --- one phrase, as it has always worked -------------------------------
+hey parrot|hey parrot fix vocabulary|fix vocabulary
+hey parrot|parrot fix vocabulary|fix vocabulary
+hey parrot|hey parrots fix vocabulary|fix vocabulary
+hey parrot|hey parrot|EMPTY
+hey parrot|there is a bug in the parser|NONE
+
+# --- several, which is what this adds -----------------------------------
+# The two overlap on their distinctive word on purpose: "parrot" is what
+# survives a clipped "hey", and it is also the last word of the other phrase.
+# Each has to keep taking the right number of words off the front, which is
+# why the best-scoring phrase wins rather than the first one over the bar.
+hey parrot,by the way parrot|hey parrot format the function|format the function
+hey parrot,by the way parrot|by the way parrot format the function|format the function
+hey parrot,by the way parrot|by the way parrot, format the function in TypeScript|format the function in TypeScript
+hey parrot,by the way parrot|parrot format the function|format the function
+hey parrot,by the way parrot|there is a bug in get username|NONE
+
+# --- order must not matter ----------------------------------------------
+by the way parrot,hey parrot|hey parrot format the function|format the function
+by the way parrot,hey parrot|by the way parrot format the function|format the function
+
+# --- no phrases at all is how you turn spoken commands off ---------------
+|hey parrot fix vocabulary|NONE

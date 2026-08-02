@@ -91,6 +91,16 @@ jobs:
       - name: Pipeline
         run: scripts/check-pipeline.sh
 
+      # Where the wake phrase ends and the instruction begins. Deterministic,
+      # unlike the routing that follows it, so it runs here.
+      - name: Wake phrase
+        run: scripts/check-wake.sh
+
+      # And the same question for a phrase found mid-sentence, where a false
+      # positive splits an ordinary sentence and sends half of it to a model.
+      - name: Instruction inside a dictation
+        run: scripts/check-split.sh
+
       # Reads its pattern out of Config.defaultYAML, so this is also what keeps
       # the shipped default honest: the one rewrite that fires on ordinary
       # language rather than on a name someone taught it.

@@ -52,7 +52,9 @@ enum CheckConfigCommand {
                 ? "paste into frontmost app (needs Accessibility)"
                 : "copy to clipboard"
             print("  · insert mode       \(mode)")
-            print("  · wake phrase       \"\(transcription.activationPhrase)\"")
+            let listed = transcription.activationPhrases
+                .map { "\"\($0)\"" }.joined(separator: ", ")
+            print("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
             print("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
             // The pipeline, per language, because "why was this not
             // converted" is a question about the order and not about a
@@ -162,7 +164,7 @@ enum CheckConfigCommand {
         // bundle run from a terminal reported Not granted. A check that says no
         // when the answer is yes is worse than no check, so it reports where the
         // real answer lives instead — the app tests it at launch and logs it.
-        if transcription.insertMode == .paste || !transcription.activationPhrase.isEmpty {
+        if transcription.insertMode == .paste || !transcription.activationPhrases.isEmpty {
             print("  · accessibility     needed, but not checkable from a terminal")
             print("      macOS credits this check to the shell, not to ParrotFlow.")
             print("      The app records the true value each time it starts:")

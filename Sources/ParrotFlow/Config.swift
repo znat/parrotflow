@@ -283,7 +283,10 @@ struct Config: Decodable, Equatable {
         }
     }
 
-    struct Transcription: Codable, Equatable {
+    /// Decodable and not Encodable, like `Config` itself and for the same
+    /// reason: nothing writes a config back out, and `activationPhrase` is a
+    /// view over the list rather than storage.
+    struct Transcription: Decodable, Equatable {
         var enabled: Bool = true
         /// `paste` types the transcript into the frontmost app (needs
         /// Accessibility). `clipboard` just copies it and lets you paste.
@@ -292,9 +295,18 @@ struct Config: Decodable, Equatable {
         /// rather than text. Empty disables it.
         ///
         /// Called `correction_phrase` when the only instruction was fixing a
-        /// spelling; that key still works and is still in configs written
-        /// before prompts existed.
-        var activationPhrase: String = "hey parrot"
+        /// spelling, and `activation_phrase` when there was only ever one.
+        /// Both still read, and either may be written as a single phrase or as
+        /// a list — a config in any of the three shapes decodes the same way.
+        ///
+        /// Several because one phrase cannot be said in every position. "hey
+        /// parrot" opens an utterance and reads as nonsense inside one; "by the
+        /// way parrot" is the reverse. Empty disables the whole thing.
+        var activationPhrases: [String] = ["hey parrot"]
+
+        /// The one to show when a single phrase has to be named — a menu
+        /// label, a first-run message. The first is the one to teach.
+        var activationPhrase: String { activationPhrases.first ?? "" }
         /// Last-resort in-place correction for surfaces the accessibility API
         /// cannot write, such as terminals: clear the input line with readline
         /// keys and retype it.
@@ -322,6 +334,7 @@ struct Config: Decodable, Equatable {
         enum CodingKeys: String, CodingKey {
             case enabled, replacements, pipelines, languages
             case insertMode = "insert_mode"
+            case activationPhrases = "activation_phrases"
             case activationPhrase = "activation_phrase"
             case rewriteLine = "rewrite_line"
         }
@@ -520,14 +533,30 @@ struct Config: Decodable, Equatable {
                 }
                 self.insertMode = mode
             }
-            // The new name wins if both are present, which is what someone
-            // mid-rename would expect.
+            // Three spellings, oldest first, so the newest present wins — which
+            // is what someone mid-rename would expect. Each accepts a phrase or
+            // a list: the shape is not what the rename was about, and refusing
+            // `activation_phrase: [a, b]` would be a rule with no reason.
             let legacy = try decoder.container(keyedBy: LegacyKeys.self)
-            if let phrase = try legacy.decodeIfPresent(String.self, forKey: .correctionPhrase) {
-                self.activationPhrase = phrase
+            func phrases<K: CodingKey>(
+                _ container: KeyedDecodingContainer<K>, _ key: K
+            ) throws -> [String]? {
+                if let one = try? container.decodeIfPresent(String.self, forKey: key) {
+                    return [one]
+                }
+                return try container.decodeIfPresent([String].self, forKey: key)
             }
-            if let phrase = try c.decodeIfPresent(String.self, forKey: .activationPhrase) {
-                self.activationPhrase = phrase
+            for found in [
+                try phrases(legacy, LegacyKeys.correctionPhrase),
+                try phrases(c, CodingKeys.activationPhrase),
+                try phrases(c, CodingKeys.activationPhrases),
+            ] {
+                guard let found else { continue }
+                // Blanks would match nothing and cost a comparison per
+                // transcript; an all-blank list is how you turn this off.
+                activationPhrases = found
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
             }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .rewriteLine) { rewriteLine = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) {
@@ -886,9 +915,19 @@ enum ConfigStore {
       # clipboard -> copied, you press Cmd-V
       insert_mode: paste
 
-      # Say this instead of dictating and what follows is an instruction:
-      # "hey parrot, make that a bullet list". Empty disables it.
-      activation_phrase: hey parrot
+      # Say one of these instead of dictating and what follows is an
+      # instruction: "hey parrot, make that a bullet list". An empty list
+      # disables spoken commands.
+      #
+      # One of them mid-sentence turns the rest into an instruction about the
+      # words before it, in the same breath:
+      #
+      #   "there is a bug in get username by the way parrot format that name"
+      #
+      # which is why there are two: "hey parrot" opens an utterance and reads
+      # as nonsense inside one, and "by the way parrot" is the reverse. The
+      # first is the one to teach someone.
+      activation_phrases: [hey parrot, by the way parrot]
 
       # Last resort for fields Accessibility cannot write, terminals mostly:
       # clear the input line with Ctrl-A Ctrl-K and retype it corrected. It
