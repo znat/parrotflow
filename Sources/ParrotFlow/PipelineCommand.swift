@@ -31,8 +31,13 @@ enum PipelineCommand {
         var languages: [String] = ["en"]
         var replacements: [String: [String]] = [:]
         var pipeline: [Config.Transcription.PipelineEntry] = []
+        /// Its own `transforms:`, decoded by `Config` rather than re-read here,
+        /// so a fixture cannot disagree with a config about what a transform is.
+        var transforms: [Config.Transform] = []
 
-        enum CodingKeys: String, CodingKey { case languages, replacements, pipeline }
+        enum CodingKeys: String, CodingKey {
+            case languages, replacements, pipeline, transforms
+        }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -43,6 +48,12 @@ enum PipelineCommand {
             pipeline = try c.decodeIfPresent(
                 [Config.Transcription.PipelineEntry].self, forKey: .pipeline
             ) ?? []
+            if c.contains(.transforms) {
+                // Round-tripped through Config's own decoder: the fixture's
+                // section is handed back to the type that reads the real one.
+                let nested = try c.superDecoder(forKey: .transforms)
+                transforms = try Config.transforms(from: nested)
+            }
         }
     }
 
@@ -57,8 +68,13 @@ enum PipelineCommand {
     /// thing here, and saying so lets a caller pass the flag unconditionally.
     /// scripts/check-pipeline.sh does exactly that, because the alternative in
     /// bash 3.2 is an empty array under `set -u`, which is an error.
+    ///
+    /// `--no-prompts` mirrors what `--replace` does, the only other caller that
+    /// turns them off. Without it, "a table still runs when prompts are off" is
+    /// a claim no fixture can make — and it was wrong until something ran it.
     static func run(
-        path: String, text: String?, quiet: Bool = false, app: String? = nil
+        path: String, text: String?, quiet: Bool = false, app: String? = nil,
+        allowPrompts: Bool = true
     ) -> Int32 {
         let named = (app ?? "").trimmingCharacters(in: .whitespaces)
         let front = named.isEmpty ? nil : Pipeline.App(name: named, bundleID: "")
@@ -80,7 +96,7 @@ enum PipelineCommand {
                 return nil
             }
             return Pipeline.Step(
-                stage: stage, prompt: entry.prompt, when: entry.when,
+                stage: stage, transform: entry.transform, when: entry.when,
                 unless: entry.unless, app: entry.app
             )
         }
@@ -94,8 +110,13 @@ enum PipelineCommand {
         config.transcription.languages = fixture.languages
         config.transcription.replacements = fixture.replacements
         config.transcription.pipelines = ["default": pipeline]
+        config.transforms = fixture.transforms
 
-        var problems = pipeline.validate()
+        // The fixture's own table is checked too, not just its stage list — a
+        // template naming a group the pattern never captures is refused here
+        // for the same reason `--check-config` refuses it, and being reachable
+        // from a fixture is what lets a validation set cover it at all.
+        var problems = pipeline.validate() + config.replacementProblems()
         for problem in problems { print("✗ \(problem)") }
         guard problems.isEmpty else { return 1 }
 
@@ -107,7 +128,7 @@ enum PipelineCommand {
             print("languages:  \(fixture.languages.joined(separator: ", "))")
             for step in steps {
                 var line = "  \(step.stage.name)"
-                if let prompt = step.prompt { line += " \(prompt)" }
+                if let transform = step.transform { line += " \(transform)" }
                 if let when = step.when { line += "  when \(when)" }
                 if let unless = step.unless { line += "  unless \(unless)" }
                 if let app = step.app { line += "  app \(app)" }
@@ -119,7 +140,9 @@ enum PipelineCommand {
         let done = DispatchSemaphore(value: 0)
         if quiet {
             Task {
-                print(await pipeline.run(text, config: config, app: front))
+                print(await pipeline.run(
+                    text, config: config, allowPrompts: allowPrompts, app: front
+                ))
                 done.signal()
             }
             done.wait()
@@ -135,7 +158,8 @@ enum PipelineCommand {
         var current = text
         for step in steps {
             if let reason = Pipeline.skipReason(
-                for: step, text: current, config: config, allowPrompts: true, app: front
+                for: step, text: current, config: config,
+                allowPrompts: allowPrompts, app: front
             ) {
                 print("  ⊘ \(step.stage.name)  — skipped, \(reason)")
                 continue
@@ -143,7 +167,9 @@ enum PipelineCommand {
             var after = current
             let stepDone = DispatchSemaphore(value: 0)
             Task {
-                after = await Pipeline(steps: [step]).run(current, config: config, app: front)
+                after = await Pipeline(steps: [step]).run(
+                    current, config: config, allowPrompts: allowPrompts, app: front
+                )
                 stepDone.signal()
             }
             stepDone.wait()

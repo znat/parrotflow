@@ -72,7 +72,7 @@ enum CheckConfigCommand {
                     ? "nothing — the list is empty"
                     : pipeline.steps.map { step -> String in
                         var described = step.stage.name
-                        if let prompt = step.prompt { described += " \(prompt)" }
+                        if let transform = step.transform { described += " \(transform)" }
                         if let when = step.when { described += " when \(when)" }
                         if let unless = step.unless { described += " unless \(unless)" }
                         if let app = step.app { described += " in \(app)" }
@@ -110,6 +110,21 @@ enum CheckConfigCommand {
             print("      free-form  \(FreeForm.name) — \(FreeForm.prompt.description)")
         } else {
             print("  · free_form         off — an instruction no prompt covers is refused")
+        }
+
+        // A `replace:` transform is not in the catalogue — the router reaches
+        // prompts only, for now — so it would otherwise be invisible here, and
+        // "I wrote it and nothing says it exists" is the wrong way to find out
+        // that it runs from a pipeline and not from your voice.
+        let tables = config.transforms.filter { !$0.isPrompt }
+        if !tables.isEmpty {
+            print("  · replace           \(tables.count) transform(s), reachable from a pipeline"
+                + " and not by voice")
+            for table in tables {
+                let rules = table.rules.count
+                print("      table     \(table.name) — \(rules) rule(s)"
+                    + (table.description.isEmpty ? "" : ", \(table.description)"))
+            }
         }
 
         for prompt in config.prompts where prompt.description.isEmpty {

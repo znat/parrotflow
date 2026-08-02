@@ -111,6 +111,45 @@ cases:
     input: on en a vingt et un
     expect: on en a 21
 
+  # --- named tables, chosen by app ----------------------------------------
+  # The same sentence, two outputs, decided by where it is going. Both steps
+  # are in the pipeline and both conditions are evaluated; only one matches.
+  - name: a table transform runs where its app matches
+    pipeline: transforms
+    app: Ghostty
+    input: read user dot name
+    expect: read user.name
+
+  - name: the other app gets the other table
+    pipeline: transforms
+    app: Slack
+    input: read user dot name
+    expect: "read `user.name`"
+
+  - name: an app matching neither gets neither
+    pipeline: transforms
+    app: Mail
+    input: read user dot name
+    expect: unchanged
+
+  # The spoken word varies, not the language of the transcript, so the
+  # alternation belongs in the pattern and not in a per-language pipeline.
+  - name: point works as well as dot
+    pipeline: transforms
+    app: Ghostty
+    input: lis user point name
+    expect: lis user.name
+
+  # `--replace` turns prompts off so it cannot reach the network. A table is
+  # not a prompt, and holding it back would make the flag mean "no transforms".
+  # It did mean that, until this was run against a real config.
+  - name: a table still runs when prompts are off
+    pipeline: transforms
+    app: Ghostty
+    no_prompts: true
+    input: read user dot name
+    expect: read user.name
+
   # --- an empty pipeline is a choice --------------------------------------
   - name: nothing listed, so nothing runs
     pipeline: empty

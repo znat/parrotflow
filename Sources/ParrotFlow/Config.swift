@@ -16,13 +16,31 @@ enum ConfigError: LocalizedError {
 ///
 /// The file is written from `Config.defaultYAML` on first launch and re-read
 /// whenever it changes on disk, so iterating on a hotkey is edit-and-save.
-struct Config: Codable, Equatable {
+/// Decodable and not Encodable: nothing has ever written a Config back out —
+/// `defaultYAML` is what a file is created from — and `prompts` is now a view
+/// over `transforms` rather than storage, which there is no honest way to
+/// encode.
+struct Config: Decodable, Equatable {
     var hotkey: Hotkey = Hotkey()
     var audio: Audio = Audio()
     var feedback: Feedback = Feedback()
     var transcription: Transcription = Transcription()
     var llm: LLM = LLM()
-    var prompts: [Prompt] = []
+    /// Everything nameable: `transforms:`, plus anything still written under
+    /// the older `prompts:`.
+    var transforms: [Transform] = []
+
+    /// The prompt-bodied transforms, in order.
+    ///
+    /// Computed rather than stored so there is one list to keep straight. Every
+    /// existing caller — the catalogue, the router, `PromptRunner`, the panels
+    /// — asks for prompts and still gets exactly what it used to; a `replace:`
+    /// transform is simply not one of them.
+    var prompts: [Prompt] { transforms.compactMap(\.asPrompt) }
+
+    func transform(named name: String) -> Transform? {
+        transforms.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+    }
 
     /// Do what was asked even when no prompt matches — see `FreeForm`.
     ///
@@ -39,8 +57,151 @@ struct Config: Codable, Equatable {
     var freeForm: Bool = true
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, audio, feedback, transcription, llm, prompts
+        case hotkey, audio, feedback, transcription, llm, transforms, prompts
         case freeForm = "free_form"
+    }
+
+    /// One entry of `transforms:` as it is written, before it is known to be
+    /// valid. `content:` is accepted alongside `prompt:` because that is what
+    /// `prompts:` has always called it, and moving a section should not mean
+    /// renaming a key inside every entry of it.
+    private struct TransformEntry: Decodable {
+        var name = ""
+        var description = ""
+        var confirm = true
+        var body: Transform.Body?
+        /// `prompt:` and `replace:` on the same entry.
+        var namesBoth = false
+
+        enum CodingKeys: String, CodingKey {
+            case name, description, confirm, prompt, content, replace
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            func trimmed(_ key: CodingKeys) throws -> String {
+                (try c.decodeIfPresent(String.self, forKey: key) ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            name = try trimmed(.name)
+            description = try trimmed(.description)
+            confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
+
+            let instructions = try trimmed(.prompt).isEmpty ? trimmed(.content) : trimmed(.prompt)
+            let table = try c.decodeIfPresent([String: [String]].self, forKey: .replace)
+            namesBoth = !instructions.isEmpty && table != nil
+            if let table {
+                body = .replace(table)
+            } else if !instructions.isEmpty {
+                body = .prompt(instructions)
+            }
+        }
+    }
+
+    /// A `transforms:` section, wherever it is written.
+    ///
+    /// Exposed so a `--pipeline` fixture can carry one and have it read by the
+    /// type that reads the real thing, rather than by a second parser that
+    /// would be free to disagree about what a transform is.
+    static func transforms(from decoder: Decoder) throws -> [Transform] {
+        assembled(try [TransformEntry](from: decoder))
+    }
+
+    /// The entries worth keeping, with a line in the log for each that is not.
+    ///
+    /// An entry with no name, or with no body to run, cannot be routed to or
+    /// run, and dropping it silently is how a typo becomes an evening. Reported
+    /// rather than thrown, so one bad entry does not cost you the rest.
+    private static func assembled(_ entries: [TransformEntry]) -> [Transform] {
+        var kept: [Transform] = []
+        for entry in entries {
+            guard !entry.name.isEmpty else {
+                Log.write("transforms: skipped an entry with no name")
+                continue
+            }
+            if entry.namesBoth {
+                // Preferring one would run something the config did not ask
+                // for, on text nobody sees beforehand.
+                Log.write("transforms: \"\(entry.name)\" names both `prompt:` and `replace:`; skipped")
+                continue
+            }
+            guard let body = entry.body else {
+                Log.write("transforms: \"\(entry.name)\" has neither `prompt:` nor `replace:`; skipped")
+                continue
+            }
+            guard !kept.contains(where: {
+                $0.name.caseInsensitiveCompare(entry.name) == .orderedSame
+            }) else {
+                // First wins, which puts `transforms:` ahead of the older
+                // `prompts:` — a config carrying both has moved an entry and
+                // not yet deleted the old one.
+                Log.write("transforms: \"\(entry.name)\" is defined twice; kept the first")
+                continue
+            }
+            if entry.description.isEmpty {
+                Log.write("transforms: \"\(entry.name)\" has no description; the router cannot pick it")
+            }
+            kept.append(Transform(
+                name: entry.name, description: entry.description,
+                confirm: entry.confirm, body: body
+            ))
+        }
+        return kept
+    }
+
+    /// A named thing that takes text and gives text back.
+    ///
+    /// Two bodies, because the two ways to rewrite a transcript have nothing in
+    /// common but their shape. A `prompt:` asks the local model, costs about a
+    /// second and can do what no table expresses. A `replace:` is a
+    /// substitution table of its own, costs nothing, and is exact.
+    ///
+    /// They live in one list because everything downstream wants them in one
+    /// list: a pipeline step names either with `transform:`, and the voice
+    /// router reads the same `description` off both. Two sections would have
+    /// meant two namespaces for one question — "what can this app do to my
+    /// text" — and a pipeline key per kind.
+    ///
+    /// `replace:` exists because `transcription.replacements` is a single table
+    /// applied by a single stage: it cannot be two tables running in two places
+    /// under two conditions. Wanting "user dot name" to become `user.name` in a
+    /// terminal and `` `user.name` `` in chat is what a named table is for.
+    struct Transform: Equatable {
+        var name: String
+        var description: String
+        /// Show the result and wait before replacing anything. Only consulted
+        /// when a transform is run over your selection — a pipeline stage runs
+        /// on a transcript nobody has seen yet, so there is nothing to confirm.
+        var confirm: Bool = true
+        var body: Body
+
+        enum Body: Equatable {
+            /// Instructions for the local model.
+            case prompt(String)
+            /// A table of its own, in the shape of `transcription.replacements`
+            /// — the spelling you want, and the ways it comes out wrong.
+            case replace([String: [String]])
+        }
+
+        var isPrompt: Bool {
+            if case .prompt = body { return true }
+            return false
+        }
+
+        /// The prompt-shaped view of this transform, for everything that
+        /// already speaks `Prompt` — the router, `PromptRunner`, the panels.
+        var asPrompt: Prompt? {
+            guard case .prompt(let content) = body else { return nil }
+            return Prompt(
+                name: name, description: description, content: content, confirm: confirm
+            )
+        }
+
+        /// The rules a `replace:` body applies, flattened.
+        var rules: [Transcription.Rule] {
+            guard case .replace(let table) = body else { return [] }
+            return Transcription.rules(from: table)
+        }
     }
 
     /// An instruction you can reach by voice: "hey parrot, make that a list".
@@ -215,8 +376,12 @@ struct Config: Codable, Equatable {
         var contradictoryEntries: [String] = []
 
         /// One rule per mishearing, flattened for the substitution pass.
-        var rules: [Rule] {
-            replacements.flatMap { target, sources in
+        var rules: [Rule] { Self.rules(from: replacements) }
+
+        /// Shared with `Transform.replace`, which is the same table in another
+        /// place — one flattening, so the two cannot drift.
+        static func rules(from table: [String: [String]]) -> [Rule] {
+            table.flatMap { target, sources in
                 sources.map { Rule(source: $0, replacement: target) }
             }
         }
@@ -235,22 +400,26 @@ struct Config: Codable, Equatable {
         ///     - prompt: hesitation
         ///       when: /genre/
         ///
-        /// A prompt names itself with `prompt:` rather than `stage: prompt`
-        /// plus a second key, because every prompt stage would need both and a
-        /// form that repeats itself is a form people mistype.
+        /// A transform names itself with `transform:` rather than
+        /// `stage: transform` plus a second key, because every one of them
+        /// would need both and a form that repeats itself is a form people
+        /// mistype. `prompt:` is the older spelling of the same thing and still
+        /// reads, since a prompt is a transform with a prompt body.
         ///
         /// The short form is the one almost every line wants, and a format that
         /// makes the common case verbose is a format people work around.
         struct PipelineEntry: Decodable {
             let name: String
-            var prompt: String?
+            var transform: String?
             var when: String?
             var unless: String?
             var app: String?
-            /// `stage:` and `prompt:` on the same entry.
+            /// `stage:` and `transform:`/`prompt:` on the same entry.
             var namesBoth = false
 
-            private enum CodingKeys: String, CodingKey { case stage, prompt, when, unless, app }
+            private enum CodingKeys: String, CodingKey {
+                case stage, transform, prompt, when, unless, app
+            }
 
             init(from decoder: Decoder) throws {
                 if let bare = try? decoder.singleValueContainer().decode(String.self) {
@@ -259,9 +428,11 @@ struct Config: Codable, Equatable {
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 let stage = try c.decodeIfPresent(String.self, forKey: .stage)
-                if let named = try c.decodeIfPresent(String.self, forKey: .prompt) {
-                    name = "prompt"
-                    prompt = named
+                let named = try c.decodeIfPresent(String.self, forKey: .transform)
+                    ?? c.decodeIfPresent(String.self, forKey: .prompt)
+                if let named {
+                    name = "transform"
+                    transform = named
                     // Both keys on one entry is a contradiction, not a
                     // preference to resolve — recorded so the caller refuses it
                     // rather than dropping whichever it liked less.
@@ -292,6 +463,39 @@ struct Config: Codable, Equatable {
                     return "\\b\(NSRegularExpression.escapedPattern(for: source))\\b"
                 }
                 return String(source.dropFirst().dropLast())
+            }
+
+            /// What gets written, as the replacement API wants it.
+            ///
+            /// A literal source keeps a literal target: a name is a word you
+            /// want written exactly, and `$` in one has to survive — escaping
+            /// is what stops "AT&T" or a price from being read as a group
+            /// reference nobody wrote.
+            ///
+            /// A source in slashes has already said it is a pattern, so its
+            /// target is a template and `$1` refers back to what the pattern
+            /// captured. That is the only way to write a rule whose output
+            /// depends on its input:
+            ///
+            ///     $1.$2: ['/(\\w+) dot (\\w+)/']    # "user dot name" -> user.name
+            ///
+            /// Without it a rule can only map a fixed phrase to a fixed one,
+            /// and "spoken dotted path" is not a fixed set.
+            var template: String {
+                isRegex ? replacement : NSRegularExpression.escapedTemplate(for: replacement)
+            }
+
+            /// Groups the template refers to. `$1` and `${1}`, not `\$1`.
+            var referencedGroups: [Int] {
+                guard isRegex else { return [] }
+                let expression = try? NSRegularExpression(
+                    pattern: "(?<!\\\\)\\$\\{?(\\d+)\\}?"
+                )
+                let range = NSRange(replacement.startIndex..., in: replacement)
+                return (expression?.matches(in: replacement, range: range) ?? []).compactMap {
+                    guard let group = Range($0.range(at: 1), in: replacement) else { return nil }
+                    return Int(replacement[group])
+                }
             }
 
             /// Fuzzy matching compares spellings, so a pattern is not a
@@ -355,11 +559,11 @@ struct Config: Codable, Equatable {
                             if entry.namesBoth {
                                 // Silently preferring one would delete a stage
                                 // the config asked for.
-                                contradictoryEntries.append(entry.prompt ?? "prompt")
+                                contradictoryEntries.append(entry.transform ?? "transform")
                                 return nil
                             }
                             return Pipeline.Step(
-                                stage: stage, prompt: entry.prompt,
+                                stage: stage, transform: entry.transform,
                                 when: entry.when, unless: entry.unless, app: entry.app
                             )
                         }
@@ -519,21 +723,13 @@ struct Config: Codable, Equatable {
             self.transcription = transcription
         }
         if let llm = try c.decodeIfPresent(LLM.self, forKey: .llm) { self.llm = llm }
-        if let prompts = try c.decodeIfPresent([Prompt].self, forKey: .prompts) {
-            // A prompt missing a name or content cannot be routed to or run, and
-            // dropping it silently is how a typo becomes an evening. Named here
-            // rather than thrown, so one bad entry doesn't cost you the others.
-            self.prompts = prompts.filter { prompt in
-                guard !prompt.name.isEmpty, !prompt.content.isEmpty else {
-                    Log.write("prompts: skipped an entry missing a name or content")
-                    return false
-                }
-                if prompt.description.isEmpty {
-                    Log.write("prompts: \"\(prompt.name)\" has no description; the router cannot pick it")
-                }
-                return true
-            }
-        }
+        // `transforms:` first, then anything still under `prompts:`. Both are
+        // read: `prompts:` is what every config written before this existed
+        // says, and a rename that silently empties the section is the one
+        // outcome a rename must not have.
+        var entries = try c.decodeIfPresent([TransformEntry].self, forKey: .transforms) ?? []
+        entries += try c.decodeIfPresent([TransformEntry].self, forKey: .prompts) ?? []
+        transforms = Self.assembled(entries)
         if let freeForm = try c.decodeIfPresent(Bool.self, forKey: .freeForm) {
             self.freeForm = freeForm
         }
@@ -547,6 +743,35 @@ struct Config: Codable, Equatable {
     /// app running with `replacements` silently missing looked exactly like an
     /// app whose replacement table was empty. The command prints these; the app
     /// logs them at every load.
+    /// What is wrong with the replacement table alone.
+    ///
+    /// Split out of `problems()` so a pipeline fixture can be checked against
+    /// it without dragging in the rest: `--pipeline` fixtures name transforms
+    /// that deliberately do not exist, and "no transform named" is a case those
+    /// sets test rather than a complaint they want raised.
+    ///
+    /// Covers every table there is, `transcription.replacements` and each
+    /// `replace:` transform, because a template is wrong in the same way
+    /// wherever it is written.
+    func replacementProblems() -> [String] {
+        var found: [String] = []
+        // A template referring to a group the pattern never captures is
+        // written as nothing at all — the rule fires, the output is quietly
+        // short, and the log shows a substitution that looks like it worked.
+        for rule in transcription.rules + transforms.flatMap(\.rules) {
+            let referenced = Set(rule.referencedGroups).sorted()
+            guard !referenced.isEmpty,
+                  let expression = try? NSRegularExpression(pattern: rule.pattern)
+            else { continue }
+            for group in referenced where group > expression.numberOfCaptureGroups {
+                found.append("replacements: \"\(rule.source)\" writes $\(group), but the pattern"
+                    + " captures \(expression.numberOfCaptureGroups) group(s)"
+                    + " — $\(group) comes out as nothing")
+            }
+        }
+        return found
+    }
+
     func problems() -> [String] {
         var found: [String] = []
         for key in transcription.retired {
@@ -564,15 +789,19 @@ struct Config: Codable, Equatable {
             found.append("pipelines: \"\(name)\" is not a configured language, so that pipeline never runs"
                 + " — configured: \(transcription.languages.joined(separator: ", "))")
         }
+        found += replacementProblems()
         for language in transcription.languages {
             let pipeline = Pipeline.resolved(config: self, language: language)
             for problem in pipeline.validate() {
                 found.append("pipeline \(language): \(problem)")
             }
-            for step in pipeline.steps where step.stage == .prompt {
-                guard let name = step.prompt, !name.isEmpty else { continue }
-                let known = prompts.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
-                if !known { found.append("pipeline \(language): no prompt named \"\(name)\"") }
+            for step in pipeline.steps where step.stage == .transform {
+                guard let name = step.transform, !name.isEmpty else { continue }
+                if transform(named: name) == nil {
+                    found.append("pipeline \(language): no transform named \"\(name)\""
+                        + (transforms.isEmpty ? " — `transforms:` is empty"
+                            : " — have: \(transforms.map(\.name).joined(separator: ", "))"))
+                }
             }
         }
         return found
@@ -699,21 +928,41 @@ enum ConfigStore {
       #
       # See docs/pipelines.md.
       pipelines:
-        default: [replacements, fuzzy, numbers]
+        default:
+          - replacements
+          - fuzzy
+          - numbers
+          # "read user dot name" -> read user.name, wherever you write
+          # code-ish text. Anywhere else — a mail window, a document — the
+          # sentence is left exactly as spoken.
+          #
+          # `backticks` below would wrap it for chat, and is deliberately not
+          # in this list. Slack's composer converts markdown as you type it
+          # and never re-reads text that arrives by paste, so the backticks
+          # land in your message as characters. Add the step if your chat app
+          # renders pasted markup.
+          - transform: dotted
+            app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
 
       # The spelling you want, and the ways it comes out wrong. Whole words,
       # case-insensitive. A source in /slashes/ is a regular expression, and an
       # empty target deletes rather than substitutes — which is how filler
-      # words go.
+      # words go. With a regex source the target is a template, so $1 writes
+      # back what the pattern captured.
       #
       #   Supabase: [super base, superbees]
       #   "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
+      #   $1.$2: ['/\\b(\\w+) dot (\\w+)\\b/']   # "user dot name" -> user.name
+      #
+      # That last one joins any two words either side of "dot", prose included
+      # — a pattern cannot tell your code from your sentence. Put it in a
+      # pipeline behind `app:` if you only mean it in a terminal.
       replacements: {}
 
 
 
     # The local Ollama model behind spoken commands. Without it dictation still
-    # works and everything under `prompts:` stops.
+    # works and every `prompt:` transform below stops.
     llm:
       enabled: true
       model: gemma4:e4b
@@ -723,7 +972,7 @@ enum ConfigStore {
       # get those seconds back as free RAM.
       keep_loaded: true
 
-    # What the activation phrase can reach: say it, then the instruction.
+    # What the activation phrase can reach, and what a pipeline can name.
     #
     #     "hey parrot, make that a bullet list"
     #
@@ -732,27 +981,41 @@ enum ConfigStore {
     # reaches the prompt, which is why one entry covers "format those dates
     # ISO" and "format those dates with slashes".
     #
+    # An entry has either `prompt:`, which asks the local model and costs about
+    # a second, or `replace:`, a substitution table of its own that costs
+    # nothing:
+    #
+    #   - name: dotted
+    #     description: spoken dotted paths as code
+    #     replace:
+    #       $1.$2: ['/\\b(\\w+) (?:dot|point) (\\w+)\\b/']
+    #
+    # A table is not reached by voice — it runs from a pipeline, which is where
+    # it can be scoped to one app. Two tables with the same pattern and
+    # different output are how "user dot name" becomes user.name in a terminal
+    # and `user.name` in chat. See docs/pipelines.md.
+    #
     # Results are shown before they replace your selection; add
-    # `confirm: false` to a prompt you have come to trust.
+    # `confirm: false` to one you have come to trust.
     #
     # Fixing a misheard name is built in and does not appear here — run
     # --check-config to see everything the phrase reaches.
-    prompts:
+    transforms:
       - name: bullets
         description: turn text into a short bullet list
-        content: |
+        prompt: |
           Rewrite the text as concise bullets, one idea each.
           Keep the speaker's wording. Return only the bullets.
 
       - name: terse
         description: shorten text without losing anything it says
-        content: |
+        prompt: |
           Cut this down. No filler, same facts, same voice.
           Return only the shortened text.
 
       - name: grammar
         description: fix grammar and punctuation mistakes, not formatting or numbers
-        content: |
+        prompt: |
           Correct grammar, spelling and punctuation. Make the smallest change
           that makes the text correct — and make it. Every error is fixed.
           Nothing else is touched.
@@ -773,6 +1036,35 @@ enum ConfigStore {
           please or thanks does not.
 
           Return only the text.
+
+      # The two tables the pipeline above names. Same pattern, different output:
+      # that is the whole reason a table has a name.
+      #
+      # The pattern reads "a word, then dot or point, then a word" — and then
+      # refuses it when either side is a word code does not use there. Without
+      # that, "voilà le point sur les tests" becomes "voilà le.sur les tests":
+      # "point" is an everyday French word and "dot com" is an English one. The
+      # first list is what may not come before, the second what may not come
+      # after — determiners, prepositions, and the heads of set phrases like
+      # "point final" or "dot product".
+      #
+      # 45/45 on tests/dotted-cases.txt, plus two it cannot do: two ordinary
+      # words either side ("réunion point hebdomadaire") is a shape only a
+      # dictionary would tell from code. Both are unlikely in a terminal or a
+      # chat window, which is the only reason this is on by default. Score it
+      # with scripts/check-dotted.sh — it reads the pattern from this file.
+      #
+      # The second word is matched but not consumed, so a chain still works:
+      # "user point profile point name" -> user.profile.name.
+      - name: dotted
+        description: spoken dotted paths as code
+        replace:
+          '$1.': ['/\\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\\b)(\\w+) (?:dot|point) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\\b)(?=\\w)/']
+
+      - name: backticks
+        description: wrap dotted paths in backticks, for chat
+        replace:
+          '`$1`': ['/\\b([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)+)/']
 
     # Do what was asked even when no prompt above matches:
     #

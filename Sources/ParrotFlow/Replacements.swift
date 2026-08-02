@@ -63,7 +63,7 @@ enum Replacements {
             output = pattern.stringByReplacingMatches(
                 in: output,
                 range: NSRange(output.startIndex..., in: output),
-                withTemplate: NSRegularExpression.escapedTemplate(for: rule.replacement)
+                withTemplate: rule.template
             )
             if rule.isDeletion, output != before { deleted = true }
         }

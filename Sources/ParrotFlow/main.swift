@@ -33,6 +33,12 @@ if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
 
+/// `--app <name>`, for the commands that run a pipeline. Shared so the flag
+/// means the same thing to each of them.
+let appArgument: String? = arguments.firstIndex(of: "--app").flatMap { index in
+    arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+}
+
 if let index = arguments.firstIndex(of: "--record") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     exit(RecordTestCommand.run(seconds: seconds ?? 3))
@@ -48,10 +54,10 @@ if let index = arguments.firstIndex(of: "--transcribe") {
 
 if let index = arguments.firstIndex(of: "--replace") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --replace \"<text>\"")
+        print("usage: ParrotFlow --replace \"<text>\" [--app <name>]")
         exit(2)
     }
-    exit(ReplaceCommand.run(text: arguments[index + 1]))
+    exit(ReplaceCommand.run(text: arguments[index + 1], app: appArgument))
 }
 
 if let index = arguments.firstIndex(of: "--numbers") {
@@ -103,17 +109,16 @@ if let index = arguments.firstIndex(of: "--prompt") {
 
 if let index = arguments.firstIndex(of: "--pipeline") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"] [--app <name>] [--quiet]")
+        print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"]"
+            + " [--app <name>] [--no-prompts] [--quiet]")
         exit(2)
     }
     let text = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
         ? arguments[index + 2] : nil
-    let app = arguments.firstIndex(of: "--app").flatMap { index -> String? in
-        arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
-    }
     exit(PipelineCommand.run(
         path: arguments[index + 1], text: text,
-        quiet: arguments.contains("--quiet"), app: app
+        quiet: arguments.contains("--quiet"), app: appArgument,
+        allowPrompts: !arguments.contains("--no-prompts")
     ))
 }
 

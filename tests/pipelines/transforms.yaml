@@ -1,0 +1,26 @@
+# Two named tables, the same pattern, different output, chosen by app.
+#
+# This is the case `transforms:` exists for and the one `transcription.
+# replacements` cannot express: it is a single table applied by a single stage,
+# so it cannot be two tables running in two places under two conditions.
+#
+# `dot` and `point` are alternated in the pattern rather than split across
+# per-language pipelines, because what varies is the word spoken, not the
+# language of the transcript — "user point name" is said in English too.
+languages: [en, fr]
+transforms:
+  - name: dotted
+    description: spoken dotted paths as code
+    replace:
+      $1.$2: ['/\b(\w+) (?:dot|point) (\w+)\b/']
+
+  - name: dotted-chat
+    description: the same, wrapped for a chat window
+    replace:
+      "`$1.$2`": ['/\b(\w+) (?:dot|point) (\w+)\b/']
+
+pipeline:
+  - transform: dotted
+    app: /term|ghostty|iterm|warp/
+  - transform: dotted-chat
+    app: /slack|discord/

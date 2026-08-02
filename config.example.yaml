@@ -45,12 +45,27 @@ transcription:
   #
   # See docs/pipelines.md.
   pipelines:
-    default: [replacements, fuzzy, numbers]
+    default:
+      - replacements
+      - fuzzy
+      - numbers
+      # "read user dot name" -> read user.name, wherever you write code-ish
+      # text. Anywhere else — a mail window, a document — the sentence is left
+      # exactly as spoken.
+      #
+      # `backticks` below would wrap it for chat, and is deliberately not in
+      # this list. Slack's composer converts markdown as you type it and never
+      # re-reads text that arrives by paste, so the backticks land in your
+      # message as characters. Add the step if your chat app renders pasted
+      # markup.
+      - transform: dotted
+        app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
 
   # The spelling you want, and the ways it comes out wrong. Whole words,
   # case-insensitive. A source in /slashes/ is a regular expression, and an
   # empty target deletes rather than substitutes — which is how filler words
-  # go, punctuation and spacing included.
+  # go, punctuation and spacing included. With a regex source the target is a
+  # template, so $1 writes back what the pattern captured.
   #
   # Workflow: dictate, run --transcribe on the clip, map whatever the model
   # wrote to what you meant.
@@ -60,7 +75,7 @@ transcription:
     Supabase: [super base, superbees]
 
 # The local Ollama model behind spoken commands. Without it dictation still
-# works and everything under `prompts:` stops.
+# works and every `prompt:` transform below stops.
 llm:
   enabled: true
   model: gemma4:e4b
@@ -70,7 +85,7 @@ llm:
   # those seconds back as free RAM.
   keep_loaded: true
 
-# What the activation phrase can reach: say it, then the instruction.
+# What the activation phrase can reach, and what a pipeline can name.
 #
 #     "hey parrot, make that a bullet list"
 #
@@ -79,27 +94,40 @@ llm:
 # reaches the prompt, which is why one entry covers "format those dates ISO"
 # and "format those dates with slashes".
 #
+# An entry has either `prompt:`, which asks the local model and costs about a
+# second, or `replace:`, a substitution table of its own that costs nothing:
+#
+#   - name: dotted
+#     description: spoken dotted paths as code
+#     replace:
+#       $1.$2: ['/\b(\w+) (?:dot|point) (\w+)\b/']
+#
+# A table is not reached by voice — it runs from a pipeline, which is where it
+# can be scoped to one app. Two tables with the same pattern and different
+# output are how "user dot name" becomes user.name in a terminal and `user.name`
+# in chat. See docs/pipelines.md.
+#
 # Results are shown before they replace your selection; add `confirm: false`
-# to a prompt you have come to trust.
+# to one you have come to trust.
 #
 # Fixing a misheard name is built in and does not appear here — run
 # --check-config to see everything the phrase reaches.
-prompts:
+transforms:
   - name: bullets
     description: turn text into a short bullet list
-    content: |
+    prompt: |
       Rewrite the text as concise bullets, one idea each.
       Keep the speaker's wording. Return only the bullets.
 
   - name: terse
     description: shorten text without losing anything it says
-    content: |
+    prompt: |
       Cut this down. No filler, same facts, same voice.
       Return only the shortened text.
 
   - name: grammar
     description: fix grammar and punctuation mistakes, not formatting or numbers
-    content: |
+    prompt: |
       Correct grammar, spelling and punctuation. Make the smallest change
       that makes the text correct — and make it. Every error is fixed.
       Nothing else is touched.
@@ -120,6 +148,35 @@ prompts:
       please or thanks does not.
 
       Return only the text.
+
+  # The two tables the pipeline above names. Same pattern, different output:
+  # that is the whole reason a table has a name.
+  #
+  # The pattern reads "a word, then dot or point, then a word" — and then
+  # refuses it when either side is a word code does not use there. Without
+  # that, "voilà le point sur les tests" becomes "voilà le.sur les tests":
+  # "point" is an everyday French word and "dot com" is an English one. The
+  # first list is what may not come before, the second what may not come
+  # after — determiners, prepositions, and the heads of set phrases like
+  # "point final" or "dot product".
+  #
+  # 45/45 on tests/dotted-cases.txt, plus two it cannot do: two ordinary
+  # words either side ("réunion point hebdomadaire") is a shape only a
+  # dictionary would tell from code. Both are unlikely in a terminal or a
+  # chat window, which is the only reason this is on by default. Score it
+  # with scripts/check-dotted.sh — it reads the pattern from this file.
+  #
+  # The second word is matched but not consumed, so a chain still works:
+  # "user point profile point name" -> user.profile.name.
+  - name: dotted
+    description: spoken dotted paths as code
+    replace:
+      '$1.': ['/\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\b)(\w+) (?:dot|point) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\b)(?=\w)/']
+
+  - name: backticks
+    description: wrap dotted paths in backticks, for chat
+    replace:
+      '`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
 
 # Do what was asked even when no prompt above matches:
 #
