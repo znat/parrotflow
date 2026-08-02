@@ -45,6 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
     }
     private var transcriptionLabel: String?
+    /// Bumped by every transcription, so a stage label arriving late from one
+    /// cannot describe the next. Push-to-talk does not wait for the previous
+    /// transcript: hold the key again while a prompt stage is still running and
+    /// two are in flight, with the older one still holding a progress callback.
+    private var transcriptionRun = 0
     /// Bumped by every `setLabel`, so a self-clear armed for one message cannot
     /// wipe a newer one that is still current.
     private var labelToken = 0
@@ -524,6 +529,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func transcribe(_ recording: Recorder.Recording) {
+        transcriptionRun += 1
+        let run = transcriptionRun
         transcriptionLabel = "Transcribing…"
         updateUI()
 
@@ -540,7 +547,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     url: recording.url, config: config, app: app,
                     progress: { label in
                         Task { @MainActor [weak self] in
-                            guard let self, self.transcriptionLabel != nil else { return }
+                            // Still this dictation, and still one that has
+                            // something on screen to replace.
+                            guard let self, self.transcriptionRun == run,
+                                  self.transcriptionLabel != nil else { return }
                             self.transcriptionLabel = label
                             self.updateUI()
                         }
@@ -702,7 +712,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         // the whole specification, so it goes through unsplit,
                         // exactly as it would to a prompt of your own.
                         Log.write("router: \"\(command)\" → \(FreeForm.name)")
-                        self.runTransform(FreeForm.prompt, instruction: command)
+                        self.runTransform(FreeForm.prompt(for: command), instruction: command)
                     case .none:
                         // Nothing fits. Deliberately not falling through to
                         // dictation: the wake phrase means you were not
@@ -1354,7 +1364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.runInlineAction(action, text: text, instruction: instruction)
                     case .anything:
                         Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
-                        run(FreeForm.prompt)
+                        run(FreeForm.prompt(for: instruction))
                     case .none:
                         giveUp("Not something to change in the text: \"\(instruction)\"")
                     }

@@ -89,6 +89,14 @@ every dictation.
 `--check-config` prints every display it found, which is the only way to see
 that one is wrong before the second it was meant to explain has passed.
 
+The catch-all is the one transform that cannot have a display written for it,
+because it does whatever you just said rather than one fixed thing. So its
+label is generated from the instruction: say "hey parrot, sort that list
+alphabetically" and the menu bar reads `Sort that list alphabetically…` while
+it runs. Long instructions are cut at a word boundary. Reading it mid-wait is
+also how you catch the router having heard you wrong, a second before the
+preview would have told you.
+
 ### `command:`, or: the app stops needing new primitives
 
 The transcript arrives on **stdin** and comes back on **stdout**. That is the

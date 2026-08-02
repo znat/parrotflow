@@ -78,4 +78,47 @@ enum FreeForm {
         Return only the text.
         """
     )
+
+    /// The catch-all, carrying a display made from what was actually asked.
+    ///
+    /// Every other transform can name what it is doing before it runs, because
+    /// every other transform does one thing. This one does whatever you just
+    /// said, so there is no fixed label to write — and the two it could fall
+    /// back to are both wrong. Its name yields "anything…", which is the least
+    /// informative word in the app to be watching during a wait; "Thinking…"
+    /// is what the path said before and describes the model rather than the
+    /// request.
+    ///
+    /// So the label is generated: your own instruction, handed back. It is the
+    /// one string guaranteed to describe this particular second, and reading it
+    /// mid-wait is also how you find out the router heard you wrong — the
+    /// preview then confirms it, but the preview comes after the second you
+    /// spent wondering.
+    static func prompt(for instruction: String) -> Config.Prompt {
+        var made = prompt
+        made.display = display(for: instruction)
+        return made
+    }
+
+    /// The instruction as a status line: first letter raised, cut to something
+    /// a menu bar can hold, and never cut mid-word.
+    ///
+    /// Empty when there is nothing to show, which leaves `progressLabel` to
+    /// fall back to the name — the caller does not get to end up with a label
+    /// that is just an ellipsis.
+    static func display(for instruction: String) -> String {
+        let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        var shown = String(trimmed.prefix(maximumDisplay))
+        if shown.count < trimmed.count, let lastSpace = shown.lastIndex(of: " ") {
+            shown = String(shown[..<lastSpace])
+        }
+        return shown.prefix(1).uppercased() + shown.dropFirst()
+    }
+
+    /// Long enough for the instructions people actually say — "sort that list
+    /// alphabetically" is 29 — and short enough that the menu bar does not
+    /// take the whole width of the screen for one dictation.
+    private static let maximumDisplay = 48
 }
