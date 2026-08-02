@@ -130,13 +130,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         warmUpLLM()
 
-        // First run: get the microphone prompt out of the way immediately,
-        // rather than at the moment the user first tries to dictate.
-        if Permissions.microphone == .notDetermined {
-            permissions.show()
-            Permissions.requestMicrophone { [weak self] _ in
-                self?.permissions.model.refresh()
-            }
+        // Anything still missing opens the walk, and nothing is asked for yet.
+        // The prompt used to fire here, the moment the window appeared — a
+        // system dialog on top of the window explaining it, before either had
+        // been read. The window asks when its button is pressed and not before.
+        //
+        // Both permissions, not just the microphone: a launch with the
+        // microphone already answered and accessibility still missing is
+        // exactly the install that fails later, at the moment someone holds the
+        // key and nothing is written.
+        //
+        // Which walk it is turns on whether the microphone has ever been
+        // answered. An unanswered one is a first run and the install is still
+        // happening, so the way out is to cancel it. Once there is an answer on
+        // record the app has been opened before, and offering to cancel an
+        // installation that finished is a threat about something that already
+        // happened — same reasoning as the hotkey path below.
+        if Permissions.microphone != .granted || Permissions.accessibility != .granted {
+            permissions.show(Permissions.microphone == .notDetermined ? .installing : .revisiting)
         }
     }
 
@@ -480,7 +491,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if granted {
                     self.startRecording()
                 } else {
-                    self.permissions.show()
+                    // Not `.installing`: the app has been running for a while
+                    // by the time someone presses the hotkey, and a refusal
+                    // here should not offer to cancel an install that finished
+                    // days ago.
+                    self.permissions.show(.revisiting)
                 }
             }
             return
@@ -1805,7 +1820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openPermissions() {
-        permissions.show()
+        permissions.show(.revisiting)
     }
 
     @objc private func showAbout() {

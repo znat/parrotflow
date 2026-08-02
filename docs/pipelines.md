@@ -298,6 +298,171 @@ Add the step if your chat app renders pasted markup. Getting this to work
 properly means putting rich text on the clipboard rather than markdown
 characters, which is a different feature.
 
+### Writing to people: `email` and `slack`
+
+Two prompts scoped to one kind of window each, and the first stages that ask
+the model from a pipeline rather than from the activation phrase:
+
+```yaml
+- transform: email
+  app: /mail|outlook|thunderbird|superhuman|missive/
+- transform: slack
+  app: /slack/
+```
+
+`grammar` mends a sentence. These two also **lay one out**, which is the part
+no substitution can express: dictated prose arrives as a single block with the
+greeting run into the first sentence, no paragraph breaks, and the hesitations
+still in it. A comma and a newline after "Bonjour Marie" is not a rewrite of
+your words, and it is not something a table can be taught.
+
+`email` puts the greeting on its own line with a blank line under it, breaks
+the body where the subject changes, and treats a name at the end as a
+signature. `slack` does almost none of that — no greeting, no sign-off, one
+paragraph — and is explicitly told to emit no markup at all, for the reason
+`backticks` is not in the shipped pipeline: Slack's composer does not render
+markdown that arrives by paste, so bold or bullets land in the message as
+characters.
+
+Both are told twice not to write anything. That is the failure worth spending
+tokens on: a model handed a dictated email will gladly return a better one, in
+its own voice, and nothing on screen says it happened — a pipeline stage runs
+on a transcript nobody has seen yet, so `confirm` does not apply to it.
+
+**8/10 and 3/3 on gemma4:e4b**, and the versions in between are written into
+config.example.yaml beside each prompt, because what they cost is the useful
+part. Four findings, all of them the prompt making things worse before better:
+
+| Wording | What it did |
+|---|---|
+| "If none was dictated, do not invent one" | invented a greeting anyway — a prohibition read as a topic |
+| "Nothing is ever deleted" | answered with a literal `[Signature]` placeholder |
+| the greeting rule given examples | put the examples in the output: "Hi Tom," and "À toi," |
+| the list rule moved after the short-reply clause | a two-word reply came back as "[No body text]" |
+
+The first is the lesson `tests/grammar-cases.yaml` already records — a rule
+about restraint making the model less restrained. The third is that file's
+other lesson running the opposite way: elsewhere here examples beat rules, and
+in a prompt whose output is the same shape as its examples they get copied.
+
+What fixed the greeting was turning the prohibition around and saying what the
+email starts with when there is no hello. What fixed a dropped `thanks` was
+tying the closing word to the signature instead of listing it among the things
+not to add. And `slack` says "Add nothing" rather than "No greeting, no
+sign-off", because the second wording was read as an instruction to *remove*
+one: "hey uh quick one the build is red" came back as "The build is red".
+
+`email` also sets out lists, which is the one place it adds structure rather
+than removing it. Three or more things in a row take a colon and a dash each.
+The rule has to say that **no number needs to have been spoken** — "three or
+more things in a row" on its own left `here is what I need from you the invoice
+the signed contract and the shipping address` inline, because the model was
+waiting to be told there were three.
+
+**Numbered lists are deliberately absent.** Spoken ordinals — "first we deploy,
+second we run the tests" — stay as sentences. The version that forced them to
+1. 2. 3. dropped an item on the floor, and prose where a list was wanted is a
+better thing to ship than a list missing a line.
+
+The two cases still failing are one shape: a short reply ending in a goodbye
+comes back as the goodbye alone — `yes that works for me see you thursday` →
+`See you Thursday.`, and `ok pour moi, à jeudi` → `À jeudi,`. The same sentence
+with a comma is right. Three framings have bounced off it, so it is recorded
+rather than argued with.
+
+**Neither is in the shipped default pipeline.** Every stage a new install gets
+is free and needs nothing running; these cost about a second and do nothing at
+all without Ollama. Same rule as the `--model` switch on `code_identifiers`,
+which ships off for the same reason. config.example.yaml has them wired up.
+
+**Gmail in a browser tab is not an app.** `app:` reads the window that was in
+front, which is `Google Chrome com.google.Chrome` — so name your browser in the
+pattern if you live in Gmail, and accept that every other tab gets the stage
+too. There is no narrower answer available: the condition is a window, not a
+URL.
+
+**They cost the router something, and it is measured.** Both are prompts, so
+both join the catalogue the activation phrase reaches, and every description
+added is another way for an idle sentence to find a tool.
+`tests/routing-cases.yaml` was rerun and grew: 41/45 on three prompts, 50/54 on
+six. One new failure appeared and it is the expensive class, the one the
+negative half of that set exists for:
+
+```
+I sent her an email yesterday  ->  email
+```
+
+A sentence, not an instruction, sent to a prompt that would rewrite your
+selection. Four descriptions were measured against it and all four routed it
+identically, so it is recorded there rather than tuned away.
+
+### `slack_mentions`, which you have to ask for
+
+Said out loud — "hey parrot, use Slack mentions" — and deliberately in no
+pipeline. A message that names someone is not a message that pings them, and
+nothing in a transcript tells the two apart. So it is the one you ask for.
+
+**`confirm` covers one of the two ways of asking, not both.** Said with text
+selected, the result is shown before it replaces anything and you see who is
+about to be tagged. Said mid-sentence — "by the way parrot, use Slack mentions"
+— there is no preview whatever `confirm` says: nothing is being overwritten
+there, and a dialog in the middle would give back the round trip that path
+exists to remove. That is the rule for every inline transform, not this one —
+see *An instruction inside a dictation* below.
+
+What both produce is text in your composer. ParrotFlow never sends a message,
+so the last look before anyone is notified is yours.
+
+**The mapping lives in the prompt**, which is the opposite of the rule
+everywhere else here, and it was tried the other way round. The tables are
+worth reading about because of what they cost, not because they failed:
+
+```yaml
+- name: slack_handles
+  replace:
+    '@marie.dupont': ['/\bmention(?:ne)? marie\b/']
+```
+
+A table cannot invent. This prompt's first draft answered "the config file is
+here, Sofia already looked at it" with "…@priya already looked at it" — a handle
+made up for a name it had never been given, which in Slack is a message sent to
+the wrong person — and it took four rewrites and three load-bearing sentences to
+reach 6/6. The tables reached **7/7** on the same cases, for free, with nothing
+running. On the mapping alone the table wins outright.
+
+**What it lost on was the trigger.** A table has to fire from inside the
+sentence, and the only natural word for it is one English already uses as a
+verb:
+
+```
+"I should mention here that the deadline changed"
+  ->  "I should @here that the deadline changed"
+"I wanted to mention Marie is off next week"
+  ->  "I wanted to @marie.dupont is off next week"
+```
+
+Anchoring the marker to the start of an utterance or to a `.` `!` `?` `;` or
+comma fixed those — **11/11**, five prose sentences that must not ping and six
+deliberate forms that must — at the price of "can you mention marie about the
+invoice" doing nothing at all. But a pipeline stage has **no preview**: it runs
+on a transcript nobody has seen yet, so `confirm` does not reach it and a false
+positive is a message that has already gone.
+
+Asking out loud has no such failure. It fires when you ask and never otherwise,
+which is worth a second and a prompt that had to be taught not to guess. The
+table is the better mapping; the voice command is the better trigger, and the
+trigger is where the expensive mistakes live.
+
+**One thing is still open, and it decides whether any of this is worth having.**
+`TextInserter` puts the text on the pasteboard and synthesises ⌘V — in both
+insert modes, so everything ParrotFlow writes arrives in Slack by paste. And
+Slack's composer does not re-read what arrives by paste: that is the finding
+that keeps `backticks` out of the shipped pipeline, tested on a real Slack. If a
+pasted `@handle` does not linkify either, this writes something that looks like
+a mention and notifies nobody, which is worse than not having it — you would
+believe you had told someone. Paste one into a Slack composer without sending
+and see whether it turns blue.
+
 ### Order matters, and only one set notices
 
 `numbers` runs before `dotted`, because English says "three point one four" for
