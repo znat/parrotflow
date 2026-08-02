@@ -41,7 +41,8 @@ enum PanelsCommand {
         correction.tokens[0].replacement = "Tasmeen"
 
         let rule = CorrectionModel()
-        rule.loadRule(heard: "Tasmin", corrected: "Tasmeen")
+        rule.loadRules([(heard: "Tasmin", corrected: "Tasmeen"),
+                        (heard: "Mick", corrected: "Mik")])
 
         let preview = PreviewModel()
         preview.load(
@@ -145,7 +146,8 @@ enum PanelsCommand {
         case "vocabulary":
             correction.show(selection: "Tasmin and Mick")
         case "rule":
-            correction.show(rule: (heard: "Tasmin", corrected: "Tasmeen"))
+            correction.show(rules: [(heard: "Tasmin", corrected: "Tasmeen"),
+                                    (heard: "Mick", corrected: "Mik")])
         case "preview":
             preview.show(
                 prompt: "Grammar",

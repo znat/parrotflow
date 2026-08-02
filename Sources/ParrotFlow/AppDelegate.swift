@@ -15,6 +15,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusInfoItem: NSMenuItem!
     private var permissionsItem: NSMenuItem!
 
+    /// The recording state the menu bar icon was last drawn for.
+    private var shownRecording: Bool?
+
+    /// Shown only while `config.problems()` has something in it.
+    private var configProblemsItem: NSMenuItem!
+
+    /// What was last said out loud, so a problem is announced when it appears
+    /// and not on every save of an unrelated setting.
+    private var announcedProblems: [String] = []
+
+    /// Resolved once per config load, never in `updateUI`.
+    ///
+    /// `problems()` re-resolves and re-validates every pipeline for every
+    /// configured language, and `updateUI` runs on a 0.1s timer for as long as
+    /// someone is talking. That is not work to repeat ten times a second to
+    /// draw a menu item whose answer cannot have changed.
+    private var configProblems: [String] = []
+
+    /// Shown only once a release has been found, waited out, and not refused.
+    private var updateItem: NSMenuItem!
+    private var updateAvailable: Updates.Release?
+    private var updatesTimer: Timer?
+    /// So the notice fires when a version first becomes available, and not
+    /// again every day for as long as the user leaves it alone.
+    private var announcedUpdate: String?
+
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
     }
@@ -125,12 +151,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyConfig()
     }
 
+    /// Says a config problem once, at the moment it appears.
+    ///
+    /// The log has carried these since the pipelines landed, and the log is not
+    /// where anyone looks. The case this exists for is an upgrade: `numbers`
+    /// and `fuzzy_matching` became pipeline stages, so a config written for an
+    /// earlier version still holds a line that reads as though it works and
+    /// does nothing. Nothing looks broken — dictation simply stops writing
+    /// digits, which is the kind of loss a person blames on the model.
+    ///
+    /// On change rather than on every load: the file is watched, so saving an
+    /// unrelated line runs this again, and a notice that fires every time you
+    /// edit your own config is one you learn to ignore.
+    private func announceIfNew(_ problems: [String]) {
+        defer { announcedProblems = problems }
+        guard problems != announcedProblems, let first = problems.first else { return }
+        let others = problems.count - 1
+        flash(others > 0 ? "\(first)  (+\(others) more)" : first, tone: .caution)
+    }
+
     private func applyConfig() {
         // Said out loud on the app's own path, not only by --check-config,
         // which the app never runs. A mistyped stage name used to vanish at
         // decode time with no trace anywhere: replacements simply stopped
         // happening, and nothing distinguished that from an empty table.
-        for problem in config.problems() { Log.write("config: \(problem)") }
+        configProblems = config.problems()
+        for problem in configProblems { Log.write("config: \(problem)") }
+        announceIfNew(configProblems)
 
         hotkeyError = nil
         hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
@@ -143,7 +190,152 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         startKeepWarm()
+        startUpdateChecks()
         updateUI()
+    }
+
+    // MARK: - Updates
+
+    /// Once shortly after launch, then daily.
+    ///
+    /// Restarted on every config load, since `after_days` can turn the whole
+    /// thing off — and a setting that only takes effect after a restart is one
+    /// that will be reported as not working.
+    private func startUpdateChecks() {
+        updatesTimer?.invalidate()
+        updatesTimer = nil
+
+        guard config.updates.afterDays >= 0 else {
+            updateAvailable = nil
+            return
+        }
+
+        // Not at launch: the first seconds belong to the hotkey, the mic and
+        // the model. Nothing here is urgent enough to compete with them.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            self?.checkForUpdate()
+        }
+        let timer = Timer(timeInterval: 86_400, repeats: true) { [weak self] _ in
+            self?.checkForUpdate()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        updatesTimer = timer
+    }
+
+    private func checkForUpdate() {
+        let afterDays = config.updates.afterDays
+        guard afterDays >= 0 else { return }
+
+        Task<Void, Never> {
+            let latest = try? await Updates.latest()
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                let decision = Updates.decide(
+                    current: Updates.current, latest: latest, afterDays: afterDays
+                )
+                switch decision {
+                case .available(let release):
+                    self.updateAvailable = release
+                    if self.announcedUpdate != release.version {
+                        self.announcedUpdate = release.version
+                        Log.write("updates: \(release.version) is available")
+                        self.flash("ParrotFlow \(release.version) is available")
+                    }
+                case .waiting(let release, let days):
+                    self.updateAvailable = nil
+                    Log.write("updates: holding \(release.version) for \(days) more day(s)")
+                default:
+                    self.updateAvailable = nil
+                }
+                self.updateUI()
+            }
+        }
+    }
+
+    /// Downloads, checks, and hands over to the swap.
+    ///
+    /// Nothing is replaced until the archive has matched its published
+    /// checksum, verified as signed, and been signed by our certificate —
+    /// the same three the curl installer applies, for the same reason.
+    ///
+    /// Quitting is part of the update rather than a side effect: the swap
+    /// waits for this process to exit before it moves anything, so an update
+    /// that could not close the app would simply hang.
+    private func install(_ release: Updates.Release) {
+        beginProgress("Downloading ParrotFlow \(release.version)…")
+        Task<Void, Never> {
+            do {
+                let app = try await UpdateInstaller.prepare(release)
+                try await MainActor.run {
+                    self.endProgress()
+                    try UpdateInstaller.swapAndRelaunch(newApp: app)
+                    NSApp.terminate(nil)
+                }
+            } catch {
+                await MainActor.run {
+                    self.endProgress()
+                    Log.write("updates: install failed — \(error.localizedDescription)")
+                    self.presentAlert(
+                        title: "Could not install the update",
+                        message: error.localizedDescription
+                            + "\n\nNothing on this Mac has been changed. You can still upgrade with:\n\n"
+                            + Updates.installCommand
+                    )
+                }
+            }
+        }
+    }
+
+    /// The release notes, and the three answers to them.
+    ///
+    /// No download button yet: taking the update in place means replacing a
+    /// running bundle, which is a separate piece of work and a worse thing to
+    /// get wrong than a missing button. Until then the command is the same one
+    /// that installed the app, and it is put on the clipboard rather than
+    /// printed for retyping.
+    @objc private func showUpdate() {
+        guard let release = updateAvailable else { return }
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "ParrotFlow \(release.version) is available"
+        alert.informativeText = (release.notes.isEmpty ? "No release notes." : release.notes)
+            + "\n\nYou are running \(Updates.current ?? "an unknown version")."
+        alert.alertStyle = .informational
+        // Installing in place is only offered when it can actually be done.
+        // An app in a read-only location, or one someone put somewhere odd,
+        // still gets the command it was installed with rather than a button
+        // that fails after downloading 3 MB.
+        let canInstall = UpdateInstaller.canInstallInPlace
+        if canInstall { alert.addButton(withTitle: "Update and restart") }
+        alert.addButton(withTitle: "Copy the upgrade command")
+        alert.addButton(withTitle: "Skip this version")
+        alert.addButton(withTitle: "Later")
+
+        var answer = alert.runModal()
+        if canInstall, answer == .alertFirstButtonReturn {
+            install(release)
+            return
+        }
+        // With the install button present every other answer sits one place
+        // further along, so it is shifted back rather than each case being
+        // written twice.
+        if canInstall { answer = NSApplication.ModalResponse(rawValue: answer.rawValue - 1) }
+
+        switch answer {
+        case .alertFirstButtonReturn:
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(Updates.installCommand, forType: .string)
+            flash("Upgrade command copied — paste it into a terminal", tone: .done)
+        case .alertSecondButtonReturn:
+            Updates.skip(release.version)
+            updateAvailable = nil
+            updateUI()
+        default:
+            Updates.remindLater()
+            updateAvailable = nil
+            updateUI()
+        }
     }
 
     private func watchConfig() {
@@ -414,7 +606,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// spelling is the whole point of the command.
     private func commandAfterWakePhrase(_ text: String) -> String? {
         VoiceCommand.commandAfterWakePhrase(
-            text, phrase: config.transcription.activationPhrase
+            text, phrases: config.transcription.activationPhrases
         )
     }
 
@@ -712,14 +904,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else { continue }
             written += 1
         }
-        if written > 0 {
+        if written == edits.count {
             Log.write("rewrote \(written) occurrence(s) in the focused field")
             return .replaced
         }
 
+        // Some but not all. Reporting success here said the whole batch had
+        // landed while one of the corrections had quietly not been made, and
+        // the clipboard fallback the caller keeps for exactly that never ran —
+        // so a rule you confirmed was neither in the field nor anywhere you
+        // could reach it. Two rules in one breath is what made this reachable;
+        // with one edit there was no partial state to be wrong about.
+        if written > 0 {
+            Log.write("rewrite: \(written) of \(edits.count) landed in the field;"
+                + " retyping the line so the rest do too")
+        }
+
         guard config.transcription.rewriteLine else {
             Log.write("rewrite: rewrite_line is off; not retyping")
-            return .notAttempted
+            // A partial write is not "nothing happened". The caller treats both
+            // the same today, but saying `failed` keeps the log and the return
+            // value telling the same story.
+            return written > 0 ? .failed : .notAttempted
         }
         Log.write("rewrite: retyping the line via keystrokes")
         let retyped = SelectionReader.rewriteCurrentLine(dictated: dictated, in: element) { line in
@@ -822,15 +1028,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch command {
         case .openCorrectionPanel:
             beginCorrection()
-        case .addRule(let heard, let corrected):
-            // Prefilled, not saved: the model proposed it, you confirm it.
-            Log.write("command proposed rule: \(heard) -> \(corrected)")
+        case .addRules(let rules):
+            // Prefilled, not saved: the model proposed them, you confirm them.
+            // One utterance can carry more than one, so the panel opens with a
+            // row per rule and each is confirmed or edited on its own.
+            for rule in rules {
+                Log.write("command proposed rule: \(rule.heard) -> \(rule.corrected)")
+            }
             pendingSelection = nil
             correctionPanel.onSave = { [weak self] rules, text in
                 self?.saveCorrections(rules, correctedText: text)
             }
             correctionPanel.onCancel = { [weak self] in self?.pendingSelection = nil }
-            correctionPanel.show(rule: (heard: heard, corrected: corrected))
+            correctionPanel.show(rules: rules)
         case .unrecognised(let text):
             Log.write("command not understood: \(text)")
             flash("Didn't understand \"\(spoken)\"", tone: .caution)
@@ -987,10 +1197,293 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // An instruction said inside the dictation, about the words in front of
+        // it. Checked after the command case above, which is the same phrase in
+        // the first position and means something else entirely.
+        if let split = VoiceCommand.inlineInstruction(
+            trimmed, phrases: config.transcription.activationPhrases
+        ) {
+            Log.write("inline: \"\(split.instruction)\" over \"\(split.text)\"")
+            lastTranscript = split.text
+            runInline(text: split.text, instruction: split.instruction)
+            return
+        }
+
         Log.write("transcribed: \(trimmed)")
         lastTranscript = trimmed
+        insertDictation(trimmed)
+    }
 
-        switch TextInserter.insert(trimmed, mode: config.transcription.insertMode) {
+    /// An instruction found inside a dictation: route it, run it over the words
+    /// that came before it, and write the result.
+    ///
+    /// Every way this can fail writes the dictated text instead, and says what
+    /// went wrong for long enough to read. That is the opposite of the rule
+    /// elsewhere in the app, where a transform that fails leaves the text
+    /// alone — there the words are already on screen, and here they exist
+    /// nowhere but in this function. Losing the instruction costs you a second
+    /// attempt; losing the sentence costs you the sentence.
+    ///
+    /// No preview panel, whatever the transform's `confirm` says. That setting
+    /// guards text you selected and are about to have overwritten; nothing is
+    /// being overwritten here, and a dialog in the middle would give back the
+    /// second round trip this exists to remove. The rewrite goes to the log
+    /// with its before and after, as pipeline transforms do.
+    private func runInline(text: String, instruction: String) {
+        let catalogue = Catalogue(prompts: config.prompts)
+
+        /// Write what was said, and say why it is not what was asked for.
+        func giveUp(_ why: String, tone: NoticeTone = .caution) {
+            endProgress()
+            Log.write("inline: \(why); wrote the text as dictated")
+            insertDictation(text)
+            notice.show(why, tone: tone, duration: 7)
+            setLabel(why, clearAfter: 7)
+        }
+
+        func run(_ prompt: Config.Prompt) {
+            beginProgress("\(prompt.name)…")
+            let llm = llmConfig()
+            Task { [weak self] in
+                do {
+                    let result = try await PromptRunner.run(
+                        prompt: prompt, instruction: instruction, text: text, config: llm
+                    )
+                    await MainActor.run {
+                        guard let self else { return }
+                        self.endProgress()
+                        let cleaned = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !cleaned.isEmpty else {
+                            giveUp("\(prompt.name) returned nothing", tone: .failure)
+                            return
+                        }
+                        if cleaned != text {
+                            Log.write("inline: \(prompt.name) rewrote the transcript")
+                            Log.write("    before: \(text)")
+                            Log.write("    after:  \(cleaned)")
+                        }
+                        self.lastTranscript = cleaned
+                        self.insertDictation(cleaned)
+                    }
+                } catch {
+                    await MainActor.run {
+                        giveUp(error.localizedDescription, tone: .failure)
+                    }
+                }
+            }
+        }
+
+        if let capability = Router.local(instruction: instruction, catalogue: catalogue) {
+            Log.write("inline router: \"\(instruction)\" named \(capability.name) outright")
+            switch capability {
+            case .transform(let prompt): run(prompt)
+            case .action(let action): runInlineAction(action, text: text, instruction: instruction)
+            }
+            return
+        }
+
+        guard config.llm.enabled else {
+            giveUp("\"\(instruction)\" needs the local model — llm.enabled is false")
+            return
+        }
+
+        beginProgress("Thinking…")
+        let llm = llmConfig()
+        let freeForm = config.freeForm
+        Task { [weak self] in
+            do {
+                let decision = try await Router.route(
+                    instruction: instruction, catalogue: catalogue,
+                    freeForm: freeForm, config: llm
+                )
+                await MainActor.run {
+                    guard let self else { return }
+                    switch decision {
+                    case .matched(.transform(let prompt)):
+                        Log.write("inline router: \"\(instruction)\" → \(prompt.name)")
+                        run(prompt)
+                    case .matched(.action(let action)):
+                        self.runInlineAction(action, text: text, instruction: instruction)
+                    case .anything:
+                        Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
+                        run(FreeForm.prompt)
+                    case .none:
+                        giveUp("Not something to change in the text: \"\(instruction)\"")
+                    }
+                }
+            } catch {
+                await MainActor.run { giveUp(error.localizedDescription, tone: .failure) }
+            }
+        }
+    }
+
+    /// A built-in action asked for inside a dictation.
+    ///
+    /// The command path has to find what the action applies to — a selection,
+    /// or the last thing dictated — and then write into it where it sits, which
+    /// is the ladder in `saveCorrections` and where the risk of this app lives.
+    /// Inline there is nothing to find: the text is the words in front of the
+    /// phrase, and it has not been written yet. The panel opens first, and what
+    /// goes in afterwards is already corrected.
+    ///
+    /// Cancelling writes what was dictated. Refusing the whole utterance
+    /// because a panel was dismissed would lose the sentence over a change of
+    /// mind about a rule.
+    private func runInlineAction(
+        _ action: Capability.Action, text: String, instruction: String
+    ) {
+        switch action {
+        case .vocabulary:
+            // "…by the way parrot, fix vocabulary" — nothing to extract, the
+            // panel opens on the sentence itself and you correct it by hand.
+            endProgress()
+            Log.write("inline: correction panel over \"\(text)\"")
+            showInlineCorrection(over: text, rules: nil)
+
+        case .spelling:
+            // "…by the way parrot, Tasmin spells T A S M E E N" — the rule has
+            // to be read out of the instruction first, which is a model call of
+            // its own and not part of routing.
+            guard config.llm.enabled else {
+                giveUpInline(text, why: "\"\(instruction)\" needs the local model to read the spelling")
+                return
+            }
+            beginProgress("Thinking…")
+            let llm = llmConfig()
+            // From the dictated text, not the instruction: the instruction is a
+            // name plus a run of loose capitals, which reads as English
+            // whatever was actually said.
+            let language = DictationLanguage.forCorrection(
+                transcript: text, allowed: config.transcription.languages
+            )
+            Task { [weak self] in
+                do {
+                    let result = try await VoiceCommand.interpret(
+                        command: instruction, lastTranscript: text,
+                        language: language, config: llm
+                    )
+                    await MainActor.run {
+                        guard let self else { return }
+                        self.endProgress()
+                        switch result {
+                        case .addRules(let rules):
+                            for rule in rules {
+                                Log.write("inline: proposed rule \(rule.heard) -> \(rule.corrected)")
+                            }
+                            self.showInlineCorrection(over: text, rules: rules)
+                        case .openCorrectionPanel:
+                            self.showInlineCorrection(over: text, rules: nil)
+                        case .unrecognised:
+                            self.giveUpInline(text, why: "Didn't understand \"\(instruction)\"")
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard let self else { return }
+                        self.endProgress()
+                        self.giveUpInline(text, why: error.localizedDescription, tone: .failure)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The correction panel, with the dictated text waiting behind it.
+    ///
+    /// `pendingSelection` and `focusAtPress` are deliberately cleared: they are
+    /// how `saveCorrections` decides to write into a field somewhere else, and
+    /// here the only place the text should land is where a dictation would put
+    /// it. Leaving them set would rewrite whatever happened to be selected when
+    /// the hotkey went down.
+    private func showInlineCorrection(
+        over text: String, rules: [(heard: String, corrected: String)]?
+    ) {
+        pendingSelection = nil
+
+        /// Hand focus back before writing anything.
+        ///
+        /// `CorrectionPanel.show` calls `NSApp.activate(ignoringOtherApps:)` to
+        /// put itself in front, so by the time you press Save we are the
+        /// frontmost app and the paste lands in our own window. It leaves no
+        /// trace: the insert reports `.pasted`, which is silent, so the log
+        /// showed a rule proposed and then nothing at all. `applyTransform`
+        /// learned this the same way and does the same thing.
+        func handBack() {
+            guard let owner = focusAtPress?.owner, !owner.isActive else { return }
+            owner.activate()
+            // Let it come forward before the keystroke is posted.
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+        correctionPanel.onSave = { [weak self] rules, correctedText in
+            guard let self else { return }
+            for rule in rules {
+                do {
+                    try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
+                    Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+                } catch {
+                    self.presentAlert(
+                        title: "Could not save the rule", message: error.localizedDescription
+                    )
+                }
+            }
+            // A rule taught about the sentence you just said should be true of
+            // that sentence. Applied here rather than by re-running the
+            // pipeline: the config on disk has only just changed, and the copy
+            // in memory is reloaded by a file watcher that has not fired yet.
+            let corrected = rules.isEmpty ? text : Replacements.applyExact(
+                to: text,
+                rules: rules.map {
+                    Config.Transcription.Rule(source: $0.heard, replacement: $0.corrected)
+                }
+            )
+            if corrected != text {
+                Log.write("inline: applied the new rule(s) to the transcript")
+                Log.write("    before: \(text)")
+                Log.write("    after:  \(corrected)")
+            }
+            // The panel edits words, not the sentence, when it was opened on
+            // proposed rules — so its text is only the target when it was
+            // opened on the sentence itself.
+            let final = rules == nil && !correctedText.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ).isEmpty ? correctedText : corrected
+            self.lastTranscript = final
+            handBack()
+            Log.write("inline: writing into \(self.focusAtPress?.owner?.localizedName ?? "the frontmost app")")
+            self.insertDictation(final)
+        }
+        correctionPanel.onCancel = { [weak self] in
+            guard let self else { return }
+            Log.write("inline: correction dismissed; wrote the text as dictated")
+            handBack()
+            self.insertDictation(text)
+        }
+
+        if let rules {
+            correctionPanel.show(rules: rules)
+        } else {
+            correctionPanel.show(selection: text)
+        }
+    }
+
+    /// Write what was said, and say why it is not what was asked for.
+    private func giveUpInline(_ text: String, why: String, tone: NoticeTone = .caution) {
+        endProgress()
+        Log.write("inline: \(why); wrote the text as dictated")
+        insertDictation(text)
+        notice.show(why, tone: tone, duration: 7)
+        setLabel(why, clearAfter: 7)
+    }
+
+    /// The text, exactly as dictation puts it in.
+    ///
+    /// Its own function because the inline path needs it too: every way that
+    /// path fails has to still write what you said. A transform over a
+    /// selection can fail with nothing but a message, because the words are
+    /// already on screen — here they have never been written, and a toast is
+    /// not somewhere you can copy them back out of.
+    private func insertDictation(_ text: String) {
+        switch TextInserter.insert(text, mode: config.transcription.insertMode) {
         case .pasted:
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
         case .copied:
@@ -1035,6 +1528,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusInfoItem = NSMenuItem(title: "Idle", action: nil, keyEquivalent: "")
         statusInfoItem.isEnabled = false
         menu.addItem(statusInfoItem)
+
+        // Above the separator, so it reads as part of the app's state rather
+        // than as one more thing you can do. Hidden until there is something
+        // to say — a notice at launch is missed, and a setting that quietly
+        // stopped working stays wrong until someone is told.
+        configProblemsItem = NSMenuItem(
+            title: "",
+            action: #selector(showConfigProblems),
+            keyEquivalent: ""
+        )
+        configProblemsItem.target = self
+        configProblemsItem.isHidden = true
+        menu.addItem(configProblemsItem)
+
+        updateItem = NSMenuItem(title: "", action: #selector(showUpdate), keyEquivalent: "")
+        updateItem.target = self
+        updateItem.isHidden = true
+        menu.addItem(updateItem)
+
         menu.addItem(.separator())
 
         let correctItem = NSMenuItem(
@@ -1094,16 +1606,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateUI() {
         let recording = recorder.isRecording
 
-        statusItem.button?.image = NSImage(
-            systemSymbolName: recording
-                ? AppVariant.menuBarSymbolRecording
-                : AppVariant.menuBarSymbol,
-            accessibilityDescription: AppVariant.displayName
-        )
-        // Stays a template image so `contentTintColor` applies — a non-template
-        // symbol ignores the tint and renders black in a dark menu bar.
-        statusItem.button?.image?.isTemplate = true
-        statusItem.button?.contentTintColor = recording ? .systemRed : nil
+        // Only when it actually changes. updateUI runs on a 0.1s timer while
+        // recording, to redraw the elapsed clock, and the icon is the one thing
+        // in here that cannot change between two ticks of the same state —
+        // rebuilding the symbol regardless was ten identical NSImages a second.
+        if shownRecording != recording {
+            shownRecording = recording
+            statusItem.button?.image = NSImage(
+                systemSymbolName: recording
+                    ? AppVariant.menuBarSymbolRecording
+                    : AppVariant.menuBarSymbol,
+                accessibilityDescription: AppVariant.displayName
+            )
+            // Stays a template image so `contentTintColor` applies — a
+            // non-template symbol ignores the tint and renders black in a dark
+            // menu bar.
+            statusItem.button?.image?.isTemplate = true
+            statusItem.button?.contentTintColor = recording ? .systemRed : nil
+        }
 
         let shortcut = hotKeys.binding?.displayName
             ?? KeyCodes.displayString(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
@@ -1117,6 +1637,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             statusInfoItem.title = String(format: "Recording  %d:%02d", elapsed / 60, elapsed % 60)
         } else {
             statusInfoItem.title = "Idle  ·  \(shortcut)"
+        }
+
+        configProblemsItem.isHidden = configProblems.isEmpty
+        configProblemsItem.title = configProblems.count == 1
+            ? "⚠︎ 1 setting in config.yaml does nothing"
+            : "⚠︎ \(configProblems.count) settings in config.yaml do nothing"
+
+        updateItem.isHidden = updateAvailable == nil
+        if let release = updateAvailable {
+            updateItem.title = "↑ ParrotFlow \(release.version) is available"
+        }
+    }
+
+    /// Names them, and offers the file they are in.
+    ///
+    /// An alert rather than a notice: these outlive a notice by definition —
+    /// they are still true after a restart — and each one already carries the
+    /// replacement to write, which is more text than a notice can hold.
+    @objc private func showConfigProblems() {
+        let problems = configProblems
+        guard !problems.isEmpty else { return }
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = problems.count == 1
+            ? "A setting in your config no longer does anything"
+            : "\(problems.count) settings in your config no longer do anything"
+        alert.informativeText = problems.map { "• \($0)" }.joined(separator: "\n\n")
+            + "\n\nThis usually follows an upgrade: a setting was replaced by "
+            + "another way of writing the same thing. Until you change it, that "
+            + "part of your config is ignored."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Edit config.yaml")
+        alert.addButton(withTitle: "Later")
+        if alert.runModal() == .alertFirstButtonReturn {
+            try? ConfigStore.createIfMissing()
+            NSWorkspace.shared.open(ConfigStore.fileURL)
         }
     }
 

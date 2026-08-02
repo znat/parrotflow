@@ -5,22 +5,39 @@ import Foundation
 ///
 /// Voice commands are otherwise only testable by speaking, which makes
 /// iterating on the prompt slow and makes regressions easy to miss.
+///
+/// `--phrases "hey parrot,by the way parrot"` stands in for the configured
+/// list, the same way `--lang` stands in for the configured languages: a case
+/// file can then state the environment it assumes instead of inheriting
+/// whichever phrases happen to be on this machine.
 enum CommandTestCommand {
 
-    static func run(text: String, lastTranscript: String? = nil) -> Int32 {
+    static func run(
+        text: String, lastTranscript: String? = nil, phrases override: [String]? = nil
+    ) -> Int32 {
         let config: Config
         do { config = try ConfigStore.load() } catch {
             print("✗ config: \(CheckConfigCommand.describe(error))")
             return 1
         }
 
-        let phrase = config.transcription.activationPhrase
-        print("wake phrase: \"\(phrase)\"")
+        let phrases = override ?? config.transcription.activationPhrases
+        print("wake phrase: \(phrases.map { "\"\($0)\"" }.joined(separator: ", "))")
         if let lastTranscript {
             print("context:     \"\(lastTranscript)\"")
         }
 
-        guard let command = VoiceCommand.commandAfterWakePhrase(text, phrase: phrase) else {
+        guard let command = VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) else {
+            // A phrase found mid-sentence is an instruction about the words in
+            // front of it, not about the selection — printed here rather than
+            // in a command of its own, because "what would this utterance do"
+            // has one answer and wants one place to ask it.
+            if let split = VoiceCommand.inlineInstruction(text, phrases: phrases) {
+                print("text:        \"\(split.text)\"")
+                print("instruction: \"\(split.instruction)\"")
+                print("→ an instruction inside a dictation; the text above is what it edits")
+                return 0
+            }
             print("→ not a command; this would be dictated as normal text")
             return 0
         }
@@ -43,8 +60,12 @@ enum CommandTestCommand {
             timeout: config.llm.timeoutSeconds,
             keepLoaded: config.llm.keepLoaded
         )
-        if let spelled = VoiceCommand.spelledOutWord(in: command) {
-            print("spelled-out: \"\(spelled)\"  (taken from the text, not the model)")
+        let spelled = VoiceCommand.spellingSegments(in: command)
+        if !spelled.isEmpty {
+            let shown = spelled
+                .map { "\"\($0.letters)\"\($0.letterish ? "" : " (not read out as letters)")" }
+                .joined(separator: ", ")
+            print("spelled-out: \(shown)  (taken from the text, not the model)")
         }
 
         // Resolved the same way the app resolves it, from the transcript. When
@@ -80,8 +101,10 @@ enum CommandTestCommand {
         switch command {
         case .openCorrectionPanel:
             print("   action: open the correction panel")
-        case .addRule(let heard, let corrected):
-            print("   action: add rule   \(heard) → \(corrected)")
+        case .addRules(let rules):
+            for rule in rules {
+                print("   action: add rule   \(rule.heard) → \(rule.corrected)")
+            }
         case .unrecognised(let text):
             print("   action: none — didn't understand \"\(text)\"")
         }

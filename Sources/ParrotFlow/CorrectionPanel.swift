@@ -35,10 +35,14 @@ final class CorrectionPanel {
         panel?.riseIntoView(makeKey: true)
     }
 
-    /// Opens with a rule already filled in — the model proposed it, the user
-    /// confirms it. One keystroke, and nothing is written on a guess.
-    func show(rule: (heard: String, corrected: String)) {
-        model.loadRule(heard: rule.heard, corrected: rule.corrected)
+    /// Opens with the rules already filled in — the model proposed them, the
+    /// user confirms them. One keystroke, and nothing is written on a guess.
+    ///
+    /// More than one row when the utterance carried more than one correction:
+    /// "Tasmeen spells T A S M E E N and Mick spells M I K" is two rules, and
+    /// splitting them across two panels would mean saying it twice.
+    func show(rules: [(heard: String, corrected: String)]) {
+        model.loadRules(rules)
         model.onSubmit = { [weak self] in self?.commit() }
         model.onCancel = { [weak self] in self?.dismiss(cancelled: true) }
 
@@ -184,8 +188,10 @@ final class CorrectionModel: ObservableObject {
         }
     }
 
-    func loadRule(heard: String, corrected: String) {
-        tokens = [CorrectionToken(word: heard, replacement: corrected, isManual: true)]
+    func loadRules(_ rules: [(heard: String, corrected: String)]) {
+        tokens = rules.map {
+            CorrectionToken(word: $0.heard, replacement: $0.corrected, isManual: true)
+        }
     }
 
     func remove(_ id: UUID) {

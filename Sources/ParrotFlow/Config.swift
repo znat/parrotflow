@@ -26,6 +26,7 @@ struct Config: Decodable, Equatable {
     var feedback: Feedback = Feedback()
     var transcription: Transcription = Transcription()
     var llm: LLM = LLM()
+    var updates: UpdatePolicy = UpdatePolicy()
     /// Everything nameable: `transforms:`, plus anything still written under
     /// the older `prompts:`.
     var transforms: [Transform] = []
@@ -57,7 +58,7 @@ struct Config: Decodable, Equatable {
     var freeForm: Bool = true
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, audio, feedback, transcription, llm, transforms, prompts
+        case hotkey, audio, feedback, transcription, llm, transforms, prompts, updates
         case freeForm = "free_form"
     }
 
@@ -255,6 +256,31 @@ struct Config: Decodable, Equatable {
     }
 
     /// A local Ollama model, used to interpret spoken commands.
+    /// How long a release has to have existed before this Mac will take it.
+    ///
+    /// Not a polling interval — the check itself is daily. This is a waiting
+    /// period, and it is the only defence a one-person project has against its
+    /// own release pipeline being taken: a bad release that is noticed and
+    /// pulled inside the window is one nobody's app ever offered. See
+    /// `Updates` for why that is worth a setting.
+    struct UpdatePolicy: Codable, Equatable {
+        /// Negative never asks GitHub at all. Zero takes a release the day it
+        /// is published. Anything else waits that many days.
+        var afterDays: Int = 7
+
+        enum CodingKeys: String, CodingKey {
+            case afterDays = "after_days"
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init()
+            if let v = try c.decodeIfPresent(Int.self, forKey: .afterDays) { afterDays = v }
+        }
+    }
+
     struct LLM: Codable, Equatable {
         var enabled: Bool = true
         var model: String = "gemma4:e4b"
@@ -283,7 +309,10 @@ struct Config: Decodable, Equatable {
         }
     }
 
-    struct Transcription: Codable, Equatable {
+    /// Decodable and not Encodable, like `Config` itself and for the same
+    /// reason: nothing writes a config back out, and `activationPhrase` is a
+    /// view over the list rather than storage.
+    struct Transcription: Decodable, Equatable {
         var enabled: Bool = true
         /// `paste` types the transcript into the frontmost app (needs
         /// Accessibility). `clipboard` just copies it and lets you paste.
@@ -292,9 +321,18 @@ struct Config: Decodable, Equatable {
         /// rather than text. Empty disables it.
         ///
         /// Called `correction_phrase` when the only instruction was fixing a
-        /// spelling; that key still works and is still in configs written
-        /// before prompts existed.
-        var activationPhrase: String = "hey parrot"
+        /// spelling, and `activation_phrase` when there was only ever one.
+        /// Both still read, and either may be written as a single phrase or as
+        /// a list — a config in any of the three shapes decodes the same way.
+        ///
+        /// Several because one phrase cannot be said in every position. "hey
+        /// parrot" opens an utterance and reads as nonsense inside one; "by the
+        /// way parrot" is the reverse. Empty disables the whole thing.
+        var activationPhrases: [String] = ["hey parrot"]
+
+        /// The one to show when a single phrase has to be named — a menu
+        /// label, a first-run message. The first is the one to teach.
+        var activationPhrase: String { activationPhrases.first ?? "" }
         /// Last-resort in-place correction for surfaces the accessibility API
         /// cannot write, such as terminals: clear the input line with readline
         /// keys and retype it.
@@ -322,6 +360,7 @@ struct Config: Decodable, Equatable {
         enum CodingKeys: String, CodingKey {
             case enabled, replacements, pipelines, languages
             case insertMode = "insert_mode"
+            case activationPhrases = "activation_phrases"
             case activationPhrase = "activation_phrase"
             case rewriteLine = "rewrite_line"
         }
@@ -520,14 +559,30 @@ struct Config: Decodable, Equatable {
                 }
                 self.insertMode = mode
             }
-            // The new name wins if both are present, which is what someone
-            // mid-rename would expect.
+            // Three spellings, oldest first, so the newest present wins — which
+            // is what someone mid-rename would expect. Each accepts a phrase or
+            // a list: the shape is not what the rename was about, and refusing
+            // `activation_phrase: [a, b]` would be a rule with no reason.
             let legacy = try decoder.container(keyedBy: LegacyKeys.self)
-            if let phrase = try legacy.decodeIfPresent(String.self, forKey: .correctionPhrase) {
-                self.activationPhrase = phrase
+            func phrases<K: CodingKey>(
+                _ container: KeyedDecodingContainer<K>, _ key: K
+            ) throws -> [String]? {
+                if let one = try? container.decodeIfPresent(String.self, forKey: key) {
+                    return [one]
+                }
+                return try container.decodeIfPresent([String].self, forKey: key)
             }
-            if let phrase = try c.decodeIfPresent(String.self, forKey: .activationPhrase) {
-                self.activationPhrase = phrase
+            for found in [
+                try phrases(legacy, LegacyKeys.correctionPhrase),
+                try phrases(c, CodingKeys.activationPhrase),
+                try phrases(c, CodingKeys.activationPhrases),
+            ] {
+                guard let found else { continue }
+                // Blanks would match nothing and cost a comparison per
+                // transcript; an all-blank list is how you turn this off.
+                activationPhrases = found
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
             }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .rewriteLine) { rewriteLine = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) {
@@ -723,6 +778,9 @@ struct Config: Decodable, Equatable {
             self.transcription = transcription
         }
         if let llm = try c.decodeIfPresent(LLM.self, forKey: .llm) { self.llm = llm }
+        if let updates = try c.decodeIfPresent(UpdatePolicy.self, forKey: .updates) {
+            self.updates = updates
+        }
         // `transforms:` first, then anything still under `prompts:`. Both are
         // read: `prompts:` is what every config written before this existed
         // says, and a rename that silently empties the section is the one
@@ -886,9 +944,19 @@ enum ConfigStore {
       # clipboard -> copied, you press Cmd-V
       insert_mode: paste
 
-      # Say this instead of dictating and what follows is an instruction:
-      # "hey parrot, make that a bullet list". Empty disables it.
-      activation_phrase: hey parrot
+      # Say one of these instead of dictating and what follows is an
+      # instruction: "hey parrot, make that a bullet list". An empty list
+      # disables spoken commands.
+      #
+      # One of them mid-sentence turns the rest into an instruction about the
+      # words before it, in the same breath:
+      #
+      #   "there is a bug in get username by the way parrot format that name"
+      #
+      # which is why there are two: "hey parrot" opens an utterance and reads
+      # as nonsense inside one, and "by the way parrot" is the reverse. The
+      # first is the one to teach someone.
+      activation_phrases: [hey parrot, by the way parrot]
 
       # Last resort for fields Accessibility cannot write, terminals mostly:
       # clear the input line with Ctrl-A Ctrl-K and retype it corrected. It
@@ -971,6 +1039,27 @@ enum ConfigStore {
       # minutes and the next command waits 7-10s for the reload. Turn off to
       # get those seconds back as free RAM.
       keep_loaded: true
+
+    # Checking whether a newer ParrotFlow exists.
+    #
+    # One call a day to GitHub's release API — no account, nothing about you, and
+    # nothing about what you dictate. It is the only request this app makes on its
+    # own; the speech model is fetched once on first use, and the language model
+    # never leaves your Mac.
+    #
+    # The number is a waiting period, not how often it looks:
+    #
+    #   -1   never ask at all
+    #    0   offer a release the day it is published
+    #    7   only offer a release that has existed for a week
+    #
+    # The wait is the point. A release that turns out to be bad — a pipeline taken,
+    # a key stolen — is one that gets noticed and pulled, and a week of distance
+    # means your Mac never saw it. What proves an archive is ours is the pinned
+    # signing certificate in scripts/install.sh; this is the other half, and buys
+    # the time someone needs to notice in the first place.
+    updates:
+      after_days: 7
 
     # What the activation phrase can reach, and what a pipeline can name.
     #

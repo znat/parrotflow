@@ -1,0 +1,71 @@
+# phrases (comma-separated) | what was said | what the command should be
+#
+# Run with: scripts/check-wake.sh
+#
+# NONE means "not a command" — the sentence goes into your document as
+# dictation. EMPTY means the phrase was said on its own, which opens the
+# correction panel.
+#
+# The phrases are stated per case rather than read from the config, the same
+# way tests/pipeline-cases.yaml carries its own fixture: a set that inherits
+# whichever phrases happen to be on the machine only means something on that
+# machine.
+#
+# The clipped and misheard cases are not hypothetical. The wake phrase is the
+# first thing said, which is exactly where the audio engine is still starting
+# up, so "hey parrot, X" arrives as "parrot, X" or "hey parrots X" often
+# enough that an exact prefix match would lose most of them.
+
+# --- one phrase, as it has always worked -------------------------------
+hey parrot|hey parrot fix vocabulary|fix vocabulary
+hey parrot|parrot fix vocabulary|fix vocabulary
+hey parrot|hey parrots fix vocabulary|fix vocabulary
+hey parrot|hey parrot|EMPTY
+hey parrot|there is a bug in the parser|NONE
+
+# --- several, which is what this adds -----------------------------------
+# The two overlap on their distinctive word on purpose: "parrot" is what
+# survives a clipped "hey", and it is also the last word of the other phrase.
+# Each has to keep taking the right number of words off the front, which is
+# why the best-scoring phrase wins rather than the first one over the bar.
+hey parrot,by the way parrot|hey parrot format the function|format the function
+hey parrot,by the way parrot|by the way parrot format the function|format the function
+hey parrot,by the way parrot|by the way parrot, format the function in TypeScript|format the function in TypeScript
+hey parrot,by the way parrot|parrot format the function|format the function
+hey parrot,by the way parrot|there is a bug in get username|NONE
+
+# --- order must not matter ----------------------------------------------
+by the way parrot,hey parrot|hey parrot format the function|format the function
+by the way parrot,hey parrot|by the way parrot format the function|format the function
+
+# --- no phrases at all is how you turn spoken commands off ---------------
+|hey parrot fix vocabulary|NONE
+
+# --- clipped and misheard, which the fuzziness exists for ----------------
+# The wake phrase is the first thing said, and the audio engine is still
+# opening the microphone while it is being said. These are what actually
+# arrives, and an exact prefix match would lose all of them.
+hey parrot|hey parrot, fix vocabulary|fix vocabulary
+hey parrot|ey parrot fix vocabulary|fix vocabulary
+hey parrot|hey parot fix vocabulary|fix vocabulary
+hey parrot|hey parrott fix vocabulary|fix vocabulary
+
+# --- a sentence about a parrot is a sentence -----------------------------
+# These were commands until the matcher started checking each word against the
+# word it stands in for. Comparing the joined strings cannot separate them:
+# "parrot" is most of the characters either way, so the first word was free to
+# be anything and "my parrot escaped this morning" was never written down.
+hey parrot|my parrot escaped this morning|NONE
+hey parrot|the parrot is green|NONE
+hey parrot|a parrot flew past the window|NONE
+hey parrot|our parrot talks too much|NONE
+hey parrot|his parrot died last year|NONE
+hey parrot|that parrot needs water|NONE
+hey parrot,by the way parrot|the parrot by the way is green|NONE
+
+# --- what it costs, stated rather than hidden ----------------------------
+# "hey" misheard as an unrelated short word. There is no rule on the phrase
+# alone that keeps this and drops the six above: "a parrot fix vocabulary" and
+# "a parrot flew past the window" are the same shape, and only what follows
+# tells them apart. Six sentences written down beats one command recovered.
+hey parrot|a parrot fix vocabulary|KNOWN:fix vocabulary

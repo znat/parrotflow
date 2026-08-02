@@ -1,0 +1,52 @@
+# phrases (comma-separated) ~ what was said ~ the text ~ the instruction
+#
+# Run with: scripts/check-split.sh
+#
+# NONE in the third field means no split: the sentence is dictation, or it is a
+# command in its own right and tests/wake-cases.txt covers that instead.
+#
+# `~` separates the fields because the sentences contain commas.
+#
+# This measures only where the instruction begins. What it then resolves to
+# needs a model and belongs to tests/routing-cases.yaml.
+
+# --- the shape this exists for -------------------------------------------
+hey parrot,by the way parrot~there is a bug in get username by the way parrot format the function in TypeScript~there is a bug in get username~format the function in TypeScript
+hey parrot,by the way parrot~the deadline is march third by the way parrot make that date ISO~the deadline is march third~make that date ISO
+
+# A transcript has punctuation where you paused, and it lands in the middle of
+# the phrase as often as around it. The phrase itself is words only — you say
+# words, and where the commas go is the transcriber's guess, not yours.
+hey parrot,by the way parrot~there is a bug in get username, by the way parrot, format the function~there is a bug in get username~format the function
+
+# Case is what the model felt like writing, not what you said.
+hey parrot,by the way parrot~There is a bug in get username By The Way Parrot format the function~There is a bug in get username~format the function
+
+# --- French, because the phrase is configurable and so is the language ----
+coucou perroquet,au fait perroquet~il y a un bug dans get username au fait perroquet formate la fonction~il y a un bug dans get username~formate la fonction
+
+# --- what must not split -------------------------------------------------
+# At the start it is a command about your selection, which is a different thing
+# and already handled. Nothing before it means there is no text to edit.
+hey parrot,by the way parrot~by the way parrot format the function~NONE~
+hey parrot,by the way parrot~hey parrot fix vocabulary~NONE~
+
+# Nothing after it: a phrase said for its own sake. Guessing would rewrite a
+# sentence nobody asked about.
+hey parrot,by the way parrot~there is a bug in get username by the way parrot~NONE~
+
+# Exact, not fuzzy — this is the whole reason the mid-sentence matcher does not
+# reuse the forgiving one. A sentence about parrots is a sentence, and half of
+# it must not go to a model.
+hey parrot,by the way parrot~the parrots are loud today~NONE~
+hey parrot,by the way parrot~he was parroting the answer back at me~NONE~
+hey parrot,by the way parrot~by the way I fixed the parser~NONE~
+hey parrot,by the way parrot~there is a bug in the parrot enclosure~NONE~
+
+# No phrases configured is how spoken commands are turned off.
+~there is a bug by the way parrot format it~NONE~
+
+# --- several occurrences: the earliest wins -------------------------------
+# Everything before the first one is what you said; everything after is the
+# instruction, however many times you say the phrase in it.
+hey parrot,by the way parrot~fix get username by the way parrot format it by the way parrot in TypeScript~fix get username~format it by the way parrot in TypeScript

@@ -3,9 +3,19 @@ transcription:
   # clipboard -> copied, you press Cmd-V
   insert_mode: clipboard
 
-  # Say this instead of dictating and what follows is an instruction:
-  # "hey parrot, make that a bullet list". Empty disables it.
-  activation_phrase: hey parrot
+  # Say one of these instead of dictating and what follows is an
+  # instruction: "hey parrot, make that a bullet list". An empty list
+  # disables spoken commands.
+  #
+  # One of them mid-sentence turns the rest into an instruction about the
+  # words before it, in the same breath:
+  #
+  #   "there is a bug in get username by the way parrot format that name"
+  #
+  # which is why there are two: "hey parrot" opens an utterance and reads
+  # as nonsense inside one, and "by the way parrot" is the reverse. The
+  # first is the one to teach someone.
+  activation_phrases: [hey parrot, by the way parrot]
 
   # Last resort for fields Accessibility cannot write, terminals mostly: clear
   # the input line with Ctrl-A Ctrl-K and retype it corrected. It only fires
@@ -84,6 +94,27 @@ llm:
   # minutes and the next command waits 7-10s for the reload. Turn off to get
   # those seconds back as free RAM.
   keep_loaded: true
+
+# Checking whether a newer ParrotFlow exists.
+#
+# One call a day to GitHub's release API — no account, nothing about you, and
+# nothing about what you dictate. It is the only request this app makes on its
+# own; the speech model is fetched once on first use, and the language model
+# never leaves your Mac.
+#
+# The number is a waiting period, not how often it looks:
+#
+#   -1   never ask at all
+#    0   offer a release the day it is published
+#    7   only offer a release that has existed for a week
+#
+# The wait is the point. A release that turns out to be bad — a pipeline taken,
+# a key stolen — is one that gets noticed and pulled, and a week of distance
+# means your Mac never saw it. What proves an archive is ours is the pinned
+# signing certificate in scripts/install.sh; this is the other half, and buys
+# the time someone needs to notice in the first place.
+updates:
+  after_days: 7
 
 # What the activation phrase can reach, and what a pipeline can name.
 #

@@ -23,37 +23,49 @@ PHRASE="$(python3 -c '
 import yaml, pathlib
 cfg = yaml.safe_load((pathlib.Path.home() / ".config/parrotflow/config.yaml").read_text())
 t = cfg.get("transcription") or {}
-print(t.get("activation_phrase") or t.get("correction_phrase") or "hey parrot")
+phrases = (t.get("activation_phrases") or t.get("activation_phrase")
+           or t.get("correction_phrase") or "hey parrot")
+# One phrase or several, and the set says it the way the app teaches it:
+# the first is the one to use.
+print(phrases if isinstance(phrases, str) else phrases[0])
 ')"
 
 pass=0; total=0; missed=0; wrong=0; invented=0
 started=$(date +%s)
 
-while IFS='|' read -r source correction expect; do
+# One utterance can carry more than one correction, so both the expectation and
+# the answer are lists, joined with "|" and compared sorted — which rule comes
+# out first is not something the app promises.
+while IFS=$'\t' read -r source correction expect; do
   [ -z "$source" ] && continue
   total=$((total + 1))
   out="$("$BIN" --command "$PHRASE, $correction" "$source" 2>/dev/null)"
-  if rule="$(printf '%s' "$out" | sed -n 's/.*action: add rule *//p')"; then :; fi
-  if [ -n "$rule" ]; then
-    got="$(printf '%s' "$rule" | sed 's/ → / => /')"
-  else
-    got="NO MATCH"
-  fi
+  got="$(printf '%s' "$out" \
+    | sed -n 's/.*action: add rule *//p' \
+    | sed 's/ → / => /; s/[[:space:]]*$//' \
+    | sort | paste -sd '|' -)"
+  [ -z "$got" ] && got="NO MATCH"
 
   if [ "$got" = "$expect" ]; then
     pass=$((pass + 1))
     printf '  ✓ %-46s %s\n' "$source" "$got"
   else
-    if   [ "$expect" = "NO MATCH" ]; then invented=$((invented + 1)); mark="invented a rule  ← rewrites every future transcript"
-    elif [ "$got"    = "NO MATCH" ]; then missed=$((missed + 1));     mark="missed it"
-    else wrong=$((wrong + 1));                                        mark="wrong span or spelling"
+    gotn=$(printf '%s' "$got" | tr '|' '\n' | grep -cv '^NO MATCH$')
+    wantn=$(printf '%s' "$expect" | tr '|' '\n' | grep -cv '^NO MATCH$')
+    if   [ "$gotn" -gt "$wantn" ]; then invented=$((invented + 1)); mark="invented a rule  ← rewrites every future transcript"
+    elif [ "$gotn" -lt "$wantn" ]; then missed=$((missed + 1));     mark="missed it"
+    else wrong=$((wrong + 1));                                      mark="wrong span or spelling"
     fi
     printf '  ✗ %-46s got %s, want %s  (%s)\n' "$source" "$got" "$expect" "$mark"
   fi
 done < <(python3 -c '
 import sys, yaml
 for case in yaml.safe_load(open(sys.argv[1]))["cases"]:
-    print("|".join([str(case["source"]), str(case["correction"]), str(case["expect"])]))
+    expect = case["expect"]
+    if not isinstance(expect, list):
+        expect = [expect]
+    print("\t".join([str(case["source"]), str(case["correction"]),
+                     "|".join(sorted(str(rule) for rule in expect))]))
 ' "$ROOT/$CASES")
 
 elapsed=$(( $(date +%s) - started ))

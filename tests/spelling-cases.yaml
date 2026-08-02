@@ -206,3 +206,119 @@ cases:
   - source: I work with Sam
     correction: Sam spells S A M
     expect: Sam => Sam
+
+  # ---- Two corrections in one breath ----
+  #
+  # "Das mean spells T A S M E E N and Mick spells M I K" is one utterance and
+  # two rules. `expect` becomes a list; a case with one rule keeps the old
+  # single-string form, so nothing above this line changed.
+  #
+  # The join is the whole difficulty. Everything after "spells" used to be taken
+  # to the end of the sentence, so the first spelling swallowed the second
+  # clause: "Tasmeenandmickspellsmik". Segments break on a conjunction only when
+  # another trigger follows, which is what keeps "Notion spells Not ion" whole.
+
+  - source: I work with Tasmine and Mick on the platform team
+    correction: Das mean spells T A S M E E N and Mick spells M I K
+    expect:
+      - Tasmine => Tasmeen
+      - Mick => Mik
+
+  - source: Versal and Super base are both down
+    correction: Versoff spells V E R C E L and superbees spells S U P A B A S E
+    expect:
+      - Versal => Vercel
+      - Super base => Supabase
+
+  - source: Locks me and Pree anka reviewed the schema
+    correction: Lakshmi spells L A K S H M I, Priyanka spells P R I Y A N K A
+    expect:
+      - Locks me => Lakshmi
+      - Pree anka => Priyanka
+
+  - source: Ghee yome and Tee bo are on the call
+    correction: Gee ohm spells G U I L L A U M E then T bow spells T H I B A U L T
+    expect:
+      - Ghee yome => Guillaume
+      - Tee bo => Thibault
+
+  # Only one of the two is in the source. A partial answer is the honest one;
+  # inventing a span for the other writes a rule that rewrites every future
+  # transcript, which is the failure that costs.
+  - source: The Coober netties cluster is down again
+    correction: Kuber nettis spells K U B E R N E T E S and Postgres spells P O S T G R E S
+    expect: Coober netties => Kubernetes
+
+  # A spelling that merges into the conjunction. "A L E X and er" is what
+  # recognition does with Alexander, and breaking on "and" would yield "Alex".
+  # Safe here because a lone trigger never applies the conjunction rule; with a
+  # second "spells" later in the sentence this case is not winnable, and that
+  # limit is deliberate rather than overlooked.
+  - source: Alex ander opened the incident
+    correction: Alexander spells A L E X and er
+    expect: Alex ander => Alexander
+
+  # ---- The speaker describes the change instead of spelling it ----
+  #
+  # "with a G at the beginning" has no letters in it, so the regex that has
+  # always built the spelling has nothing to build from. This is the one shape
+  # where the model's right-hand side is all there is.
+  #
+  # The rule is minimal change: apply what was described to the word in the
+  # source, and nothing else. Letting the model produce the name it believes was
+  # meant is not checkable by code, and invites it to rewrite what it was asked
+  # to keep.
+
+  - source: Jerome pushed the fix this morning
+    correction: Jerome with a G at the beginning
+    expect: Jerome => Gerome
+
+  - source: Matthew is joining the call
+    correction: Matthew takes only one t
+    expect: Matthew => Mathew
+
+  - source: Sara is reviewing the design doc
+    correction: Sara with an h at the end
+    expect: Sara => Sarah
+
+  - source: Jon owns that service now
+    correction: Jon is spelled with an h
+    expect: Jon => John
+
+  - source: Elisabeth filed the ticket
+    correction: Elisabeth with a z
+    expect: Elisabeth => Elizabeth
+
+  - source: Phillip approved the design doc
+    correction: Phillip with one l
+    expect: Phillip => Philip
+
+  - source: Nathalie runs the standup
+    correction: Nathalie without the h
+    expect: Nathalie => Natalie
+
+  - source: The Elastic search cluster is slow
+    correction: Elastic search is one word
+    expect: Elastic search => Elasticsearch
+
+  - source: Jean Luc sent the contract
+    correction: Jean Luc with a hyphen
+    expect: Jean Luc => Jean-Luc
+
+  # Recognition renders a dictated letter as the word it sounds like, so "one t"
+  # comes back "one tea" and the description is the only thing left to read.
+  - source: Matthew is joining the call
+    correction: Matthew takes only one tea
+    expect: Matthew => Mathew
+
+  # Described, with nothing in the source to describe.
+  - source: The weather is nice today
+    correction: Jerome with a G at the beginning
+    expect: NO MATCH
+
+  # ---- Spelled and described in the same breath ----
+  - source: Tasmine and Matthew are on the platform team
+    correction: Das mean spells T A S M E E N and Matthew takes one t
+    expect:
+      - Tasmine => Tasmeen
+      - Matthew => Mathew

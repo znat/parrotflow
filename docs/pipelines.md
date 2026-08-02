@@ -283,3 +283,44 @@ written for one subject does when handed a whole sentence.
 `grammar` ships for the opposite reason. It has a validation set of its own and
 beats the built-in on it, 5/5 against 4/5, and the case it wins is the one that
 matters most here: leaving alone a sentence that was already right.
+
+## An instruction inside a dictation
+
+An activation phrase in the *first* position means the whole utterance is a
+command, about your selection or your last dictation. The same phrase in the
+*middle* means something else: the rest is an instruction about the words in
+front of it, in the same breath.
+
+```
+"there is a bug in get username by the way parrot format that name"
+ └─ what gets written, once edited ──┘        └─ what to do to it ─┘
+```
+
+Two phrases ship, because one cannot be said in both positions: "hey parrot"
+opens an utterance and reads as nonsense inside one, and "by the way parrot" is
+the reverse. Configure them with `activation_phrases:`.
+
+**Why it exists.** Saying it afterwards means a second dictation, and a
+transform that then has to find its target again — reading a selection, or
+editing a field in place, which is where the risk is. Here the target is the
+same utterance, and nothing has been written yet.
+
+**The mid-sentence match is exact**, where the first-position one is
+deliberately fuzzy. That one has to survive a clipped or misheard wake phrase,
+because the audio engine is still starting up when you say it. Mid-sentence the
+audio is clean, and there is a whole sentence of ordinary words for a loose
+match to fire on — "the parrots are loud today" must stay a sentence.
+`tests/split-cases.txt` scores this at 14/14, and half of it is sentences that
+must *not* split.
+
+**Every failure still writes what you said.** No model, a router that says this
+is not an edit, a prompt that returns nothing — the dictated text goes in and
+the reason appears for seven seconds. This is the opposite of the rule
+everywhere else, where a failed transform leaves the text alone: there the
+words are already on screen, and here they exist nowhere else. Losing the
+instruction costs a second attempt; losing the sentence costs the sentence.
+
+**No preview**, whatever the transform's `confirm` says. That setting guards
+text you selected and are about to have overwritten, and nothing is being
+overwritten here — a dialog in the middle would give back the round trip this
+removes. The rewrite goes to the log with its before and after.
