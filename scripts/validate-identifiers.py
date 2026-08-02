@@ -27,7 +27,7 @@ instruction, so the prompt is the system message and the transcript is the
 user message — and the cleanup is a port of PromptRunner.clean. A number
 measured any other way describes code the app does not run.
 """
-import argparse, json, re, subprocess, sys, time, unicodedata, urllib.request, pathlib
+import argparse, json, re, shlex, subprocess, sys, time, unicodedata, urllib.request, pathlib
 
 try:
     import yaml
@@ -282,7 +282,8 @@ def main():
                          " declined — which is what makes the model call rare enough to afford")
     ap.add_argument("--script", default=None,
                     help="score a `command:` transform instead — the same way the app runs it,"
-                         " the transcript on stdin and the rewrite on stdout")
+                         " the transcript on stdin and the rewrite on stdout. Takes arguments:"
+                         " --script 'examples/identifiers.py --model gemma4:e4b'")
     args = ap.parse_args()
 
     cases = yaml.safe_load(pathlib.Path(args.cases).read_text())["cases"]
@@ -312,7 +313,8 @@ def main():
             dt = time.time() - started
         elif args.script:
             started = time.time()
-            done = subprocess.run([args.script], input=text, capture_output=True, text=True)
+            done = subprocess.run(shlex.split(args.script), input=text,
+                                  capture_output=True, text=True)
             got, dt = done.stdout.rstrip("\n"), time.time() - started
             if done.returncode != 0:
                 got = text  # the app keeps the transcript when a command fails

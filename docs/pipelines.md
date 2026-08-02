@@ -121,17 +121,35 @@ therapy for that" is three plausible words behind a kind word and a naming
 word, and no surface rule separates it from a name. The other failures are
 namings it declines, which leave the transcript exactly as dictated.
 
-**Why it is not a prompt.** Measured, in `scripts/validate-identifiers.py`. A
-prompt that returns the rewritten sentence scores 68% and fails in the
-expensive direction — it capitalises "python" to "Python", adds articles, and
-translates French names into English. A prompt reduced to the one thing code
-cannot do — naming which words are the identifier when nothing announces them,
-"call it max retries" — scores 8/8 where the script scores 2/8, and it is kept
-in the runner as variant v4 for anyone who wants it. Chaining it behind the
-script scores 100% on the sentences that should change and drops the untouched
-ones from 94% to 81%, because a permissive model then sees exactly the
-sentences a careful rule refused. That is the right trade for someone who
-dictates code all day and the wrong one for a default.
+**The model is in there, switched off.** Add `--model gemma4:e4b` to the
+command and the script asks a local model about the namings its rules cannot
+see — a name given with no marker in front of it, "call it max retries",
+"rename the variable to retry count", "a getter for the user profile name".
+The rules decline all of those by construction; the model gets 8/8 on them
+where the rules get 2/8.
+
+```yaml
+  - name: identifiers
+    description: spoken names as identifiers
+    command: identifiers.py --model gemma4:e4b
+```
+
+It is asked for one thing only — **which words are the name** — and it answers
+with the words. The casing, the convention and putting the name back stay in
+the script. That division is the whole reason it works: asked instead to return
+the rewritten sentence, the same model scores 68% and fails in the expensive
+direction, capitalising "python" to "Python", adding articles, and translating
+French names into English.
+
+And it is off by default because the trade is measured rather than assumed.
+Over 70 cases it takes the sentences that should change from 87% to **100%**,
+and the sentences that must come back untouched from 94% down to **81%** — a
+model asked only about what a careful rule refused sees mostly near-misses, so
+chaining it behind the rules inverts their caution. Turn it on if you dictate
+code all day and would notice a sentence quietly rewritten; leave it off if you
+would not. It also costs about a second, and a model that is cold takes longer
+than the two seconds ParrotFlow waits, in which case the transcript passes
+through untouched.
 
 **It also means config.yaml executes code.** Nothing else in that file does.
 `--check-config` names every command transform out loud, every time, whether or
