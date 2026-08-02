@@ -220,8 +220,10 @@ enum LocalLLM {
 enum VoiceCommand {
     /// Open the correction panel for the current selection.
     case openCorrectionPanel
-    /// A spelling rule the model extracted from speech.
-    case addRule(heard: String, corrected: String)
+    /// The spelling rules the model extracted from speech. One utterance can
+    /// carry more than one: "Tasmeen spells T A S M E E N and Mick spells
+    /// M I K" is two rules, and the panel opens with a row for each.
+    case addRules([(heard: String, corrected: String)])
     /// Understood as nothing actionable.
     case unrecognised(String)
 
@@ -397,30 +399,30 @@ enum VoiceCommand {
         return nil
     }
 
-    /// Asks the model to pull a spelling rule out of something like
-    /// "Tasmin spells T A S M E E N".
-    /// Asks the model which word in the transcript the speaker meant to fix.
+    /// Asks the model which words in the transcript the speaker meant to fix.
     ///
-    /// The model picks the span only; the spelling comes from the letters via
-    /// `spelledOutWord`. Scored against tests/spelling-cases.yaml — 39 names
-    /// across French, Indian, Chinese, Turkish, Vietnamese, Korean, Nigerian,
-    /// Polish, Irish and Arabic, plus split product names and negative cases,
-    /// on gemma4:e4b with prompt v8:
+    /// The model names the span and nothing else. Everything to the right of
+    /// the arrow is built here: the letters when the speaker spelled them out,
+    /// and `describedEdit` when they described the change instead. Scored
+    /// against tests/spelling-cases.yaml (62 cases) and tests/french-cases.yaml
+    /// (45), on gemma4:e4b, end to end as the app runs it:
     ///
-    ///     span only             39/39
-    ///     span + model spelling 37/39
-    ///     what this returns     38/39
+    ///                       English  French
+    ///     shipped before      71%      89%   <- v14 / v13, no multi, no described
+    ///     shipped now         89%      96%   <- v26 / v23
+    ///     granite4:3b         89%      69%
+    ///     no model at all     50%      40%   <- the control
     ///
-    /// The two the model loses are both it mangling letters it was copying —
-    /// "S I O B H A N" came back "Sibhan". That job belongs to the regex.
+    /// The English gain is the two new shapes; the French one is mostly that
+    /// too, since v13 already handled described changes once the code applied
+    /// them. granite matching gemma on English at a sixth of the latency is
+    /// new, and is the repair layer doing the work: its raw spans score 74%.
     ///
-    /// The one this loses is "Sam spells S A M", where the guard below drops a
-    /// rule mapping a word to itself. That is deliberate, so the set's
-    /// expectation for that case is what is wrong.
-    ///
-    /// The fallback matters more than the prompt on a weak model: it repaired
-    /// granite4:3b from 85% to 92%, and it is most of the reason
-    /// qwen3.5:0.8b's 62% is barely above the 59% that no model at all scores.
+    /// Four English cases are known losses. "Sam spells S A M" is deliberate —
+    /// a rule mapping a word to itself is not a rule. "Jon is spelled with an
+    /// h" needs to know that Jon becomes John, which is knowledge rather than
+    /// character surgery, so it falls through to nothing and misses. The other
+    /// two are spans truncated to their first word.
     static func interpret(
         command: String,
         lastTranscript: String?,
@@ -439,63 +441,99 @@ enum VoiceCommand {
         )
         let reply = raw.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        // "I like apples => NO MATCH" is the right decision, clumsily phrased.
-        if reply.range(of: "no match", options: .caseInsensitive) != nil || reply.isEmpty {
-            return .unrecognised(command)
+        let candidates = spellingSegments(in: command)
+        var used = Set<Int>()
+        var rules: [(heard: String, corrected: String)] = []
+
+        for line in replyLines(reply) {
+            // Both shapes are accepted, because the two prompts answer
+            // differently and a missing arrow was once a total loss rather
+            // than a formatting one. English (v26) replies with the span
+            // alone; French (v23) still writes "span => spelling", which is
+            // not decoration there — measured span-only on French and it cost
+            // ten points, the model under-trimming "Say goal enn" to "Say
+            // goal" once it no longer had to write the name out. Spelling the
+            // target out evidently disciplines the span, and French needs the
+            // crutch where English does not.
+            let (heard, proposed) = splitRule(line)
+            guard !heard.isEmpty else { continue }
+
+            // The letters are unambiguous; the model's version of them is not.
+            let letters = chooseSpelling(
+                proposed: proposed, span: heard, candidates: candidates, used: &used
+            )
+
+            // Catch the model naming a word that is not actually in the
+            // transcript — it either copied from the command, where the name
+            // was misheard a second time, or invented one. Nothing close
+            // enough means no rule at all: a half-heard "X spells ... and Y
+            // spells ..." should produce the half it can see, not invent the
+            // other.
+            let resolved: String
+            if let transcript = lastTranscript, !transcript.isEmpty,
+               !containsWord(heard, in: transcript) {
+                Log.write("command: \"\(heard)\" is not in the transcript, matching instead")
+                let matches = [letters ?? proposed, heard]
+                    .filter { !$0.isEmpty }
+                    .compactMap { candidate -> (String, Double)? in
+                        guard let match = closestWord(to: candidate, in: transcript) else { return nil }
+                        return (match, similarity(match, candidate))
+                    }
+                guard let best = matches.max(by: { $0.1 < $1.1 }) else { continue }
+                resolved = best.0
+            } else {
+                resolved = heard
+            }
+
+            // No letters were read out, so the change was described. Applying
+            // it is code's job: a model asked to edit characters loses some,
+            // which is the same reason the letters are read from the text.
+            let corrected = letters
+                ?? describedEdit(in: clause(for: heard, proposed: proposed, in: command),
+                                 word: resolved)
+                ?? proposed
+            guard !corrected.isEmpty,
+                  resolved.lowercased() != corrected.lowercased() else { continue }
+            guard !rules.contains(where: {
+                $0.heard.lowercased() == resolved.lowercased()
+                    && $0.corrected.lowercased() == corrected.lowercased()
+            }) else { continue }
+            rules.append((heard: resolved, corrected: corrected))
         }
 
-        // Both shapes are accepted, because the two prompts answer differently
-        // and a missing arrow was previously a total loss rather than a
-        // formatting one. English (v14) replies with the span alone; French
-        // (v13) still writes "span => spelling", which is not decoration there
-        // — measured span-only on French and it cost ten points, the model
-        // under-trimming "Say goal enn" to "Say goal" once it no longer had to
-        // write the name out. Spelling out the target evidently disciplines
-        // the span. English does not need the crutch and is 61 tokens lighter
-        // without it.
-        let heard: String
-        let modelSpelling: String
-        if let arrow = reply.range(of: "=>") {
-            heard = reply[reply.startIndex..<arrow.lowerBound]
+        return rules.isEmpty ? .unrecognised(command) : .addRules(rules)
+    }
+
+    /// The reply's lines, without the ones that decline.
+    ///
+    /// "I like apples => NO MATCH" is the right decision, clumsily phrased, and
+    /// a model that numbers or bullets its lines has still answered.
+    static func replyLines(_ reply: String) -> [String] {
+        reply.components(separatedBy: .newlines)
+            .map { line -> String in
+                let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmed.replacingOccurrences(
+                    of: "^(?:[-*•]|\\d+[.)])\\s*", with: "", options: .regularExpression
+                )
+            }
+            .filter { line in
+                !line.isEmpty
+                    && line.range(of: "no match", options: .caseInsensitive) == nil
+                    && line.range(of: "\\bnone\\b", options: [.regularExpression, .caseInsensitive]) == nil
+            }
+    }
+
+    /// "span => spelling" as a pair; a line with no arrow is all span.
+    static func splitRule(_ line: String) -> (String, String) {
+        guard let arrow = line.range(of: "=>") else {
+            return (line.trimmingCharacters(in: .whitespacesAndNewlines), "")
+        }
+        return (
+            line[line.startIndex..<arrow.lowerBound]
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            line[arrow.upperBound...]
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            modelSpelling = reply[arrow.upperBound...]
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: .newlines).first?
-                .trimmingCharacters(in: .whitespaces) ?? ""
-        } else {
-            heard = reply
-                .components(separatedBy: .newlines).first?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            modelSpelling = ""
-        }
-
-        guard !heard.isEmpty else { return .unrecognised(command) }
-
-        // The letters are unambiguous; the model's version of them is not.
-        let corrected = spelledOutWord(in: command) ?? modelSpelling
-        guard !corrected.isEmpty else { return .unrecognised(command) }
-
-        // Catch the model naming a word that is not actually in the transcript
-        // — it either copied from the command, where the name was misheard a
-        // second time, or invented one.
-        let resolved: String
-        if let transcript = lastTranscript, !transcript.isEmpty,
-           !containsWord(heard, in: transcript) {
-            Log.write("command: \"\(heard)\" is not in the transcript, matching instead")
-            resolved = [corrected, heard]
-                .compactMap { candidate -> (String, Double)? in
-                    guard let match = closestWord(to: candidate, in: transcript) else { return nil }
-                    return (match, similarity(match, candidate))
-                }
-                .max { $0.1 < $1.1 }?.0 ?? heard
-        } else {
-            resolved = heard
-        }
-
-        guard resolved.lowercased() != corrected.lowercased() else {
-            return .unrecognised(command)
-        }
-        return .addRule(heard: resolved, corrected: corrected)
+        )
     }
 
     /// Prompt v8. Earlier versions and the scores that rejected them are in
@@ -559,16 +597,19 @@ enum VoiceCommand {
     Find the words in the source line that the speaker is correcting.
 
     You get a source transcription, and a correction transcription in which \
-    the speaker says a name then spells it letter by letter.
+    the speaker names a word and then says how it is written — either by \
+    spelling it letter by letter, or by describing what to change about it.
 
-    Reply with those words copied from the source line, and nothing else.
-    Or reply NO MATCH.
+    Reply with those words copied from the source line, and nothing else. \
+    One line per correction. Or reply NO MATCH.
 
     - Copy the words from the SOURCE. The correction transcription mishears \
     the name a second time; ignore how it appears there.
     - The source span is often two or three words, because recognition splits \
     names it does not know. Take the whole name, and only the name.
-    - Reply NO MATCH when nothing in the source sounds like the spelled name.
+    - Never write the corrected spelling. Only the words being corrected.
+    - One utterance can carry two corrections. Give each its own line.
+    - Reply NO MATCH when nothing in the source sounds like the name.
 
     source: I work with Tasmin
     correction: Das mean spells T-A-S-M-E-E-N
@@ -580,6 +621,10 @@ enum VoiceCommand {
 
     source: I like apples
     correction: Oranges spells O-R-A-N-G-E-S
+    NO MATCH
+
+    source: We are shipping on Friday
+    correction: Katia with a C at the beginning
     NO MATCH
 
     source: We deployed to Versal yesterday
@@ -597,6 +642,19 @@ enum VoiceCommand {
     source: Anna ees joined the design team
     correction: Anna east spells A N A I S
     Anna ees
+
+    source: Katia opened the ticket
+    correction: Katia with a C at the beginning
+    Katia
+
+    source: The Rabbit em queue broker is down
+    correction: Rabbit MQ is one word
+    Rabbit em queue
+
+    source: Anna ees and Emmilie are on the call
+    correction: Anna east spells A N A I S and Emmilie takes one m
+    Anna ees
+    Emmilie
     """
 
     /// The English prompt's structure, in French, with French examples.
@@ -625,13 +683,14 @@ enum VoiceCommand {
     /// positive, and a three-word example (v21), aimed at the short span.
     /// Both scored 93% with the same two failures.
     static let frenchExtractionPrompt = """
-    Associe un nom mal transcrit a l'orthographe que la personne vient d'epeler.
+    Associe un nom mal transcrit a l'orthographe que la personne vient d'indiquer.
 
     Tu recois une transcription source, et une transcription de correction dans \
-    laquelle la personne dit un nom puis l'epelle lettre par lettre.
+    laquelle la personne dit un nom puis indique comment il s'ecrit — soit en \
+    l'epelant lettre par lettre, soit en decrivant ce qu'il faut changer.
 
-    Reponds par une seule ligne, et rien d'autre :
-    <les mots exactement comme ils apparaissent dans la source> => <les lettres epelees assemblees>
+    Reponds par une ligne par correction, et rien d'autre :
+    <les mots exactement comme ils apparaissent dans la source> => <l'orthographe corrigee>
     ou
     NO MATCH
 
@@ -641,9 +700,12 @@ enum VoiceCommand {
     - Le nom occupe souvent deux ou trois mots dans la source, parce que la \
     reconnaissance vocale decoupe les noms qu'elle ne connait pas. Prends le \
     nom entier, et rien que le nom.
-    - La partie droite est constituee des lettres epelees, dans l'ordre donne, \
-    assemblees avec une majuscule au debut.
-    - Reponds NO MATCH si rien dans la source ne ressemble au nom epele.
+    - Quand la personne epelle, la partie droite est constituee des lettres \
+    epelees, dans l'ordre donne, assemblees avec une majuscule au debut.
+    - Quand la personne decrit le changement au lieu de l'epeler, applique \
+    exactement ce qui est decrit au mot de la source, et ne change rien d'autre.
+    - Une seule phrase peut porter deux corrections. Donne une ligne a chacune.
+    - Reponds NO MATCH si rien dans la source ne ressemble au nom.
 
     source: J'ai vu Ni cola hier au bureau
     correction: Nicolas s'ecrit N I C O L A S
@@ -672,6 +734,15 @@ enum VoiceCommand {
     source: Cle mence a rejoint l'equipe hier
     correction: Clemence s'ecrit C L E M E N C E
     Cle mence => Clemence
+
+    source: Frederic a relu la maquette
+    correction: Frédéric avec des accents sur les e
+    Frederic => Frédéric
+
+    source: Nathalie et Philipe sont sur l'appel
+    correction: Nathalie sans le h et Philipe avec deux p
+    Nathalie => Natalie
+    Philipe => Philippe
     """
 
     /// Whether `word` actually occurs in `transcript`, ignoring case and
@@ -760,6 +831,48 @@ enum VoiceCommand {
         return 1 - previous[y.count] / Double(Swift.max(x.count, y.count))
     }
 
+    /// The spelling to use for one line of the reply: the letters when they
+    /// were read out, nothing when they were not.
+    ///
+    /// The letters are exact and the model's copy of them is not, so they win
+    /// wherever they exist — that is why the right-hand side has never been
+    /// trusted. But a described change has no letters, and the trigger regex
+    /// happily returns "Avecungaudebut" for "s'écrit avec un G au début".
+    ///
+    /// Rather than a list of description words, which would have to grow
+    /// forever and would misfire on spellings that merge into ordinary words,
+    /// the two are told apart by corroboration. A segment read out as letters
+    /// carries its own evidence. One that was not — recognition merges them,
+    /// so "Tas Meen" is real — has to look like something else in the
+    /// utterance: the span, which is the same name heard once already, or the
+    /// spelling the model proposed. "Withanh" resembles neither Jon nor John.
+    static func chooseSpelling(
+        proposed: String,
+        span: String,
+        candidates: [(letters: String, letterish: Bool)],
+        used: inout Set<Int>,
+        floor: Double = 0.55
+    ) -> String? {
+        var best: Int?
+        var score = 0.0
+        for (index, candidate) in candidates.enumerated() where !used.contains(index) {
+            let agreement = max(
+                proposed.isEmpty ? 0 : similarity(candidate.letters, proposed),
+                span.isEmpty ? 0 : similarity(candidate.letters, span)
+            )
+            // Read out as letters. Only which line it belongs to can be wrong,
+            // so the best available agreement still decides the pairing.
+            let value = candidate.letterish ? max(agreement, floor) : agreement
+            if value > score {
+                best = index
+                score = value
+            }
+        }
+        guard let best, score >= floor else { return nil }
+        used.insert(best)
+        return candidates[best].letters
+    }
+
     /// Words that end the spelling: "spelled S U P A B A S E not super base",
     /// or "s'écrit R E D I S pas Reddis".
     ///
@@ -772,6 +885,44 @@ enum VoiceCommand {
         "not", "instead", "rather", "but", "no",
         "pas", "non", "plutôt", "plutot", "mais",
     ]
+
+    /// What joins two corrections in one breath: "T A S M E E N and Mick spells
+    /// M I K". Without these the first spelling ran to the end of the sentence
+    /// and came back "Tasmeenandmickspellsmik".
+    ///
+    /// The risk is a spelling that merges *into* the conjunction — "Alexander
+    /// spells A L E X and er" is a real rendering — so a conjunction only ends
+    /// a segment when at least two tokens follow it, or when another spelling
+    /// clause follows and everything after it plainly belongs to that one.
+    private static let spellingConjunctions: Set<String> = [
+        "and", "et", "puis", "then", "ensuite", "also", "aussi",
+    ]
+
+    /// Alphanumeric runs, each with whether a comma or semicolon preceded it.
+    ///
+    /// The punctuation flag is what lets ", Priyanka spells" end a segment when
+    /// there is no conjunction to break on.
+    private static func tokensWithBreaks(_ text: Substring) -> [(text: String, punctuated: Bool)] {
+        var out: [(String, Bool)] = []
+        var current = ""
+        var punctuated = false
+        for character in text {
+            if character.isLetter || character.isNumber {
+                current.append(character)
+            } else {
+                if !current.isEmpty {
+                    out.append((current, punctuated))
+                    current = ""
+                    punctuated = false
+                }
+                if character == "," || character == ";" || character == ":" {
+                    punctuated = true
+                }
+            }
+        }
+        if !current.isEmpty { out.append((current, punctuated)) }
+        return out
+    }
 
     /// The spelling the speaker read out.
     ///
@@ -790,37 +941,324 @@ enum VoiceCommand {
     /// did not know and a merged tail, so it fell through to the single-letter
     /// pattern and yielded "Math". Adding them took tests/french-cases.yaml
     /// from 76% to 84% on gemma4:e4b, and left the English set at 97%.
-    static func spelledOutWord(in text: String) -> String? {
-        if let trigger = text.range(
-            of: "(?:\\b(?:spells?|spelled|spelling)\\b"
-                + "|s['’]\\s*(?:é|e)(?:crit|pelle)"
-                + "|\\b(?:é|e)(?:crit|pelle)\\b)",
-            options: [.regularExpression, .caseInsensitive]
+    /// Every spelling read out in the utterance, in order, with whether each
+    /// was actually read out as letters.
+    ///
+    /// A trigger no longer runs to the end of the sentence, because one
+    /// utterance can carry two corrections: a conjunction ends a segment, and
+    /// so does a comma when another clause plainly follows.
+    ///
+    /// A described change ("s'écrit avec un G au début") matches a trigger and
+    /// yields "Avecungaudebut" here, flagged as not read out as letters.
+    /// Nothing tries to detect that; `chooseSpelling` discards it because
+    /// nothing in the utterance corroborates it.
+    static func spellingSegments(in text: String) -> [(letters: String, letterish: Bool)] {
+        let pattern = "(?:\\b(?:spells?|spelled|spelling)\\b"
+            + "|s['’]\\s*(?:é|e)(?:crit|pelle)"
+            + "|\\b(?:é|e)(?:crit|pelle)\\b)"
+        var triggers: [Range<String.Index>] = []
+        var searchFrom = text.startIndex
+        while let found = text.range(
+            of: pattern, options: [.regularExpression, .caseInsensitive],
+            range: searchFrom..<text.endIndex
         ) {
+            triggers.append(found)
+            searchFrom = found.upperBound
+        }
+
+        guard !triggers.isEmpty else {
+            // No trigger word: fall back to a run of single letters anywhere.
+            let letterRun = "\\b(?:[A-Za-z0-9][\\s\\-.]+){2,}[A-Za-z0-9]\\b"
+            guard let range = text.range(of: letterRun, options: .regularExpression) else {
+                return []
+            }
+            let letters = text[range].filter { $0.isLetter || $0.isNumber }
+            guard letters.count >= 3 else { return [] }
+            return [(letters.prefix(1).uppercased() + letters.dropFirst().lowercased(), true)]
+        }
+
+        var out: [(letters: String, letterish: Bool)] = []
+        for (index, trigger) in triggers.enumerated() {
+            let bounded = index + 1 < triggers.count
+            let end = bounded ? triggers[index + 1].lowerBound : text.endIndex
+            let tokens = tokensWithBreaks(text[trigger.upperBound..<end])
+
             var letters = ""
-            for token in text[trigger.upperBound...]
-                .components(separatedBy: CharacterSet.alphanumerics.inverted)
-                .filter({ !$0.isEmpty }) {
+            var taken: [String] = []
+            var broke = false
+            for (position, token) in tokens.enumerated() {
+                let lowered = token.text.lowercased()
+                // A conjunction always ends a bounded segment: whatever follows
+                // it belongs to the next clause. Unbounded, it has to earn the
+                // break with two real tokens after it, or "A L E X and er"
+                // loses its tail.
+                let conjunction = spellingConjunctions.contains(lowered)
+                    && (bounded || tokens.count - position - 1 >= 2)
                 // Never on the first token. Recognition merges letters into
                 // syllables, so "Pascal s'écrit Pas cal" opens on something
                 // that reads as a stop word; breaking there would yield
                 // nothing at all rather than "Pascal".
-                if !letters.isEmpty, spellingStopWords.contains(token.lowercased()) { break }
-                letters += token
+                if !letters.isEmpty,
+                   spellingStopWords.contains(lowered) || conjunction
+                       || (token.punctuated && bounded) {
+                    broke = true
+                    break
+                }
+                letters += token.text
+                taken.append(token.text)
             }
-            if letters.count >= 2 {
-                return letters.prefix(1).uppercased() + letters.dropFirst().lowercased()
+            // Nothing ended it and another clause follows: what is left on the
+            // end is that clause's name ("... M I K" has none, "... and Mick"
+            // does).
+            if bounded, !broke, taken.count > 1 {
+                letters.removeLast(taken.removeLast().count)
             }
+            guard letters.count >= 2 else { continue }
+            // Most of a spelled segment arrives as single characters even when
+            // the tail merges into syllables, and no description of a change
+            // does. It is the cheap half of telling the two apart; the
+            // expensive half is corroboration, in chooseSpelling.
+            let singles = taken.filter { $0.count == 1 }.count
+            let letterish = taken.count >= 2
+                && Double(singles) / Double(taken.count) >= 0.6
+            out.append((letters.prefix(1).uppercased() + letters.dropFirst().lowercased(),
+                        letterish))
         }
-
-        // No trigger word: fall back to a run of single letters anywhere.
-        let pattern = "\\b(?:[A-Za-z0-9][\\s\\-.]+){2,}[A-Za-z0-9]\\b"
-        guard let range = text.range(of: pattern, options: .regularExpression) else {
-            return nil
-        }
-        let letters = text[range].filter { $0.isLetter || $0.isNumber }
-        guard letters.count >= 3 else { return nil }
-        return letters.prefix(1).uppercased() + letters.dropFirst().lowercased()
+        return out
     }
 
+}
+
+// MARK: - Changes the speaker describes instead of spelling out
+
+/// "Mathieu ne prend qu'un seul t" has no letters in it, so the regex that
+/// builds the spelling from what was read out has nothing to read.
+///
+/// The obvious answer is to let the model write the corrected name, and it is
+/// the wrong one. Measured on the ten described cases in the English set,
+/// gemma4:e4b scores 5/10 and gemma4:12b 8/10, and the failures are not
+/// misunderstandings: "Phillip with one l" came back "Phill" and "Philp",
+/// "Elisabeth with a z" came back "Elizabith". It is the same weakness the
+/// spelled path already routes around — a model asked to copy characters loses
+/// some — and the answer is the same. The model finds the span; this applies
+/// the change, and scores 10/10.
+///
+/// What is not recognised here falls through to whatever the model proposed,
+/// which is what "Jon is spelled with an h" would need: knowing that Jon
+/// becomes John is knowledge rather than character surgery.
+extension VoiceCommand {
+
+    /// Letters as recognition renders them when they are dictated on their own
+    /// — "one t" arrives as "one tea", "un seul t" as "un seul thé". Only ever
+    /// consulted in a slot the pattern has already decided is a letter, which
+    /// is what makes it safe to include forms like "en" and "elle".
+    private static let letterWords: [String: Character] = [
+        "tea": "t", "tee": "t", "zed": "z", "zee": "z", "see": "c", "sea": "c",
+        "ex": "x", "why": "y", "are": "r", "ar": "r", "you": "u", "jay": "j",
+        "kay": "k", "el": "l", "em": "m", "en": "n", "oh": "o", "pea": "p",
+        "pee": "p", "cue": "q", "queue": "q", "ess": "s", "vee": "v",
+        "bee": "b", "dee": "d", "eff": "f", "gee": "g", "aitch": "h",
+        "eye": "i",
+        "thé": "t", "the": "t", "té": "t", "cé": "c", "dé": "d", "gé": "g",
+        "jé": "j", "pé": "p", "vé": "v", "bé": "b", "zède": "z", "ixe": "x",
+        "ache": "h", "esse": "s", "èsse": "s", "effe": "f", "elle": "l",
+        "emme": "m", "enne": "n", "erre": "r", "ka": "k", "ku": "q",
+    ]
+
+    /// The letter a slot names, however recognition rendered it.
+    static func asLetter(_ token: String) -> Character? {
+        let cleaned = token
+            .trimmingCharacters(in: CharacterSet(charactersIn: "'’ "))
+            .lowercased()
+        if cleaned.count == 1, let only = cleaned.first, only.isLetter { return only }
+        return letterWords[cleaned]
+    }
+
+    private enum DescribedOp {
+        case join, hyphen, strip, accent, double, single, atStart, atEnd, remove, swap
+    }
+
+    /// Ordered, because the looser patterns would eat the tighter ones:
+    /// "without the h" has to be read before "with ... h", and "one l" before
+    /// "a G at the beginning".
+    private static let describedOps: [(op: DescribedOp, pattern: String)] = {
+        let letter = "([^\\W\\d_]{1,5}['’]?)"
+        let atStart = "(?:at\\s+the\\s+(?:beginning|start)|au\\s+d[ée]but|en\\s+premier)"
+        let atEnd = "(?:at\\s+the\\s+end|[àa]\\s+la\\s+fin|en\\s+dernier)"
+        return [
+            (.join, "\\b(?:in|en)\\s+(?:one|a|un)\\s+(?:single\\s+|seul\\s+)?(?:word|mot)\\b"),
+            (.join, "\\b(?:is|est)\\s+one\\s+word\\b"),
+            (.hyphen, "\\b(?:hyphens?|hyphenated|dash|trait\\s+d['’ ]?union|tiret)\\b"),
+            (.strip, "\\b(?:without|sans)\\s+(?:the\\s+)?accents?\\b"),
+            (.accent, "\\b(?:accents?|tr[ée]ma|c[ée]dille)\\b(?:\\s+\\w+)*?\\s+"
+                + "(?:sur|on)\\s+(?:l[ea]s?|the)?\\s*" + letter),
+            (.double, "\\b(?:two|double|deux)\\s+" + letter + "\\b"),
+            (.single, "\\b(?:only\\s+)?(?:one|a\\s+single|un\\s+seul|une\\s+seule)\\s+"
+                + letter + "\\b"),
+            (.atStart, "\\b(?:with|avec)\\s+(?:an?|un|une)\\s+" + letter + "\\b[^.]*?" + atStart),
+            (.atEnd, "\\b(?:with|avec)\\s+(?:an?|un|une)\\s+" + letter + "\\b[^.]*?" + atEnd),
+            (.remove, "\\b(?:without|sans)\\s+(?:the\\s+|de\\s+|d['’])?" + letter + "\\b"),
+            // Bare "with a z", no position and no count. Which letter it
+            // replaces is left to the confusable table: recognition heard
+            // something for the letter actually written, so the one it can be
+            // swapped for is the one that sounds like it. "Elisabeth with a z"
+            // has exactly one candidate, the s.
+            (.swap, "\\b(?:with|avec)\\s+(?:an?|un|une)\\s+" + letter + "\\b"),
+        ]
+    }()
+
+    private static let accentMarks: [(name: String, mark: Character)] = [
+        ("aigu", "\u{0301}"), ("grave", "\u{0300}"), ("circonflexe", "\u{0302}"),
+        ("chapeau", "\u{0302}"), ("tr[ée]ma", "\u{0308}"), ("c[ée]dille", "\u{0327}"),
+    ]
+
+    /// `word` with the change described in `clause` applied, or nil when
+    /// nothing in the clause describes one this can make.
+    static func describedEdit(in clause: String, word: String) -> String? {
+        for (op, pattern) in describedOps {
+            guard let groups = match(pattern, in: clause) else { continue }
+            let letter = groups.count > 1 ? asLetter(groups[1]) : nil
+            switch op {
+            case .join, .hyphen, .strip:
+                break
+            default:
+                if letter == nil { continue }
+            }
+            if let edited = apply(op, letter: letter, word: word, clause: clause),
+               edited.lowercased() != word.lowercased() {
+                return edited
+            }
+        }
+        return nil
+    }
+
+    private static func apply(
+        _ op: DescribedOp, letter: Character?, word: String, clause: String
+    ) -> String? {
+        switch op {
+        case .join:
+            return word.filter { !$0.isWhitespace && $0 != "-" }
+        case .hyphen:
+            return word.split(separator: " ").joined(separator: "-")
+        case .strip:
+            return word.folding(options: .diacriticInsensitive, locale: nil)
+        case .accent:
+            guard let letter else { return nil }
+            let mark = accentMarks.first {
+                clause.range(of: $0.name, options: [.regularExpression, .caseInsensitive]) != nil
+            }?.mark ?? "\u{0301}"
+            // "des accents sur les e" is every e; "un accent sur le e" the first.
+            let every = clause.range(
+                of: "\\b(?:des|les|tous|all)\\b",
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil
+            var out = ""
+            var done = false
+            for character in word.decomposedStringWithCanonicalMapping {
+                out.append(character)
+                if character.lowercased() == String(letter), every || !done {
+                    out.append(mark)
+                    done = true
+                }
+            }
+            return out.precomposedStringWithCanonicalMapping
+        case .double:
+            guard let letter else { return nil }
+            let lowered = Array(word.lowercased())
+            for index in lowered.indices.dropLast()
+            where lowered[index] == letter && lowered[index + 1] == letter {
+                return word  // already doubled; the change is already made
+            }
+            guard let last = lowered.lastIndex(of: letter) else { return nil }
+            var characters = Array(word)
+            characters.insert(characters[last], at: last)
+            return String(characters)
+        case .single:
+            guard let letter else { return nil }
+            var out = ""
+            for character in word {
+                if character.lowercased() == String(letter),
+                   out.last?.lowercased() == String(letter) { continue }
+                out.append(character)
+            }
+            return out
+        case .atStart:
+            guard let letter, let head = word.first else { return nil }
+            let replacement = head.isUppercase
+                ? Character(String(letter).uppercased()) : letter
+            return String(replacement) + word.dropFirst()
+        case .atEnd:
+            guard let letter else { return nil }
+            return word.lowercased().hasSuffix(String(letter)) ? word : word + String(letter)
+        case .remove:
+            guard let letter else { return nil }
+            return word.filter { $0.lowercased() != String(letter) }
+        case .swap:
+            guard let letter, !word.lowercased().contains(letter) else { return nil }
+            for (offset, character) in word.enumerated()
+            where substitutionCost(Character(character.lowercased()), letter) == 0.5 {
+                let replacement = character.isUppercase
+                    ? Character(String(letter).uppercased()) : letter
+                let index = word.index(word.startIndex, offsetBy: offset)
+                return word.replacingCharacters(in: index...index, with: String(replacement))
+            }
+            return nil
+        }
+    }
+
+    /// The utterance split where one correction ends and the next begins.
+    static func clauses(of correction: String) -> [String] {
+        correction
+            .replacingOccurrences(
+                of: "\\b(?:and|et|puis|then|ensuite)\\b|[,;]", with: "\u{0000}",
+                options: [.regularExpression, .caseInsensitive]
+            )
+            .components(separatedBy: "\u{0000}")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    /// The clause one line of the reply came from, so "Anna east spells A N A
+    /// I S and Emmilie takes one m" applies its "one m" to Emmilie and not to
+    /// Anais.
+    static func clause(for span: String, proposed: String, in correction: String) -> String {
+        let parts = clauses(of: correction)
+        guard parts.count > 1 else { return correction }
+
+        var best = correction
+        var score = 0.0
+        for part in parts {
+            let words = part
+                .components(separatedBy: CharacterSet.alphanumerics
+                    .union(CharacterSet(charactersIn: "'-")).inverted)
+                .filter { !$0.isEmpty }
+            for size in 1...2 where words.count >= size {
+                for start in 0...(words.count - size) {
+                    let window = words[start..<(start + size)].joined(separator: " ")
+                    let value = max(
+                        similarity(window, span),
+                        proposed.isEmpty ? 0 : similarity(window, proposed)
+                    )
+                    if value > score {
+                        best = part
+                        score = value
+                    }
+                }
+            }
+        }
+        return best
+    }
+
+    private static func match(_ pattern: String, in text: String) -> [String]? {
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        else { return nil }
+        let subject = text as NSString
+        guard let found = regex.firstMatch(
+            in: text, range: NSRange(location: 0, length: subject.length)
+        ) else { return nil }
+        return (0..<found.numberOfRanges).map { index in
+            let range = found.range(at: index)
+            return range.location == NSNotFound ? "" : subject.substring(with: range)
+        }
+    }
 }

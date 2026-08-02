@@ -60,8 +60,12 @@ enum CommandTestCommand {
             timeout: config.llm.timeoutSeconds,
             keepLoaded: config.llm.keepLoaded
         )
-        if let spelled = VoiceCommand.spelledOutWord(in: command) {
-            print("spelled-out: \"\(spelled)\"  (taken from the text, not the model)")
+        let spelled = VoiceCommand.spellingSegments(in: command)
+        if !spelled.isEmpty {
+            let shown = spelled
+                .map { "\"\($0.letters)\"\($0.letterish ? "" : " (not read out as letters)")" }
+                .joined(separator: ", ")
+            print("spelled-out: \(shown)  (taken from the text, not the model)")
         }
 
         // Resolved the same way the app resolves it, from the transcript. When
@@ -97,8 +101,10 @@ enum CommandTestCommand {
         switch command {
         case .openCorrectionPanel:
             print("   action: open the correction panel")
-        case .addRule(let heard, let corrected):
-            print("   action: add rule   \(heard) → \(corrected)")
+        case .addRules(let rules):
+            for rule in rules {
+                print("   action: add rule   \(rule.heard) → \(rule.corrected)")
+            }
         case .unrecognised(let text):
             print("   action: none — didn't understand \"\(text)\"")
         }

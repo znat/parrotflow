@@ -1024,15 +1024,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch command {
         case .openCorrectionPanel:
             beginCorrection()
-        case .addRule(let heard, let corrected):
-            // Prefilled, not saved: the model proposed it, you confirm it.
-            Log.write("command proposed rule: \(heard) -> \(corrected)")
+        case .addRules(let rules):
+            // Prefilled, not saved: the model proposed them, you confirm them.
+            // One utterance can carry more than one, so the panel opens with a
+            // row per rule and each is confirmed or edited on its own.
+            for rule in rules {
+                Log.write("command proposed rule: \(rule.heard) -> \(rule.corrected)")
+            }
             pendingSelection = nil
             correctionPanel.onSave = { [weak self] rules, text in
                 self?.saveCorrections(rules, correctedText: text)
             }
             correctionPanel.onCancel = { [weak self] in self?.pendingSelection = nil }
-            correctionPanel.show(rule: (heard: heard, corrected: corrected))
+            correctionPanel.show(rules: rules)
         case .unrecognised(let text):
             Log.write("command not understood: \(text)")
             flash("Didn't understand \"\(spoken)\"", tone: .caution)
@@ -1330,7 +1334,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // panel opens on the sentence itself and you correct it by hand.
             endProgress()
             Log.write("inline: correction panel over \"\(text)\"")
-            showInlineCorrection(over: text, rule: nil)
+            showInlineCorrection(over: text, rules: nil)
 
         case .spelling:
             // "…by the way parrot, Tasmin spells T A S M E E N" — the rule has
@@ -1358,13 +1362,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         guard let self else { return }
                         self.endProgress()
                         switch result {
-                        case .addRule(let heard, let corrected):
-                            Log.write("inline: proposed rule \(heard) -> \(corrected)")
-                            self.showInlineCorrection(
-                                over: text, rule: (heard: heard, corrected: corrected)
-                            )
+                        case .addRules(let rules):
+                            for rule in rules {
+                                Log.write("inline: proposed rule \(rule.heard) -> \(rule.corrected)")
+                            }
+                            self.showInlineCorrection(over: text, rules: rules)
                         case .openCorrectionPanel:
-                            self.showInlineCorrection(over: text, rule: nil)
+                            self.showInlineCorrection(over: text, rules: nil)
                         case .unrecognised:
                             self.giveUpInline(text, why: "Didn't understand \"\(instruction)\"")
                         }
@@ -1388,7 +1392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// it. Leaving them set would rewrite whatever happened to be selected when
     /// the hotkey went down.
     private func showInlineCorrection(
-        over text: String, rule: (heard: String, corrected: String)?
+        over text: String, rules: [(heard: String, corrected: String)]?
     ) {
         pendingSelection = nil
 
@@ -1433,10 +1437,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write("    before: \(text)")
                 Log.write("    after:  \(corrected)")
             }
-            // The panel edits words, not the sentence, when it was opened on a
-            // proposed rule — so its text is only the target when it was opened
-            // on the sentence itself.
-            let final = rule == nil && !correctedText.trimmingCharacters(
+            // The panel edits words, not the sentence, when it was opened on
+            // proposed rules — so its text is only the target when it was
+            // opened on the sentence itself.
+            let final = rules == nil && !correctedText.trimmingCharacters(
                 in: .whitespacesAndNewlines
             ).isEmpty ? correctedText : corrected
             self.settings.model.lastTranscript = final
@@ -1451,8 +1455,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.insertDictation(text)
         }
 
-        if let rule {
-            correctionPanel.show(rule: rule)
+        if let rules {
+            correctionPanel.show(rules: rules)
         } else {
             correctionPanel.show(selection: text)
         }
