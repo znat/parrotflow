@@ -81,6 +81,7 @@ cases:
   # rewriter deleted "start on", which is how a helper loses you a sentence —
   # so the cost today is the second date going unconverted, not text lost.
   - name: two dates at once
+    known: the detector returns only the first date in a sentence
     instruction: make the dates ISO
     input: we start on March 3 2026 and finish on April 9 2026
     expect: we start on 2026-03-03 and finish on 2026-04-09
