@@ -914,14 +914,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             else { continue }
             written += 1
         }
-        if written > 0 {
+        if written == edits.count {
             Log.write("rewrote \(written) occurrence(s) in the focused field")
             return .replaced
         }
 
+        // Some but not all. Reporting success here said the whole batch had
+        // landed while one of the corrections had quietly not been made, and
+        // the clipboard fallback the caller keeps for exactly that never ran —
+        // so a rule you confirmed was neither in the field nor anywhere you
+        // could reach it. Two rules in one breath is what made this reachable;
+        // with one edit there was no partial state to be wrong about.
+        if written > 0 {
+            Log.write("rewrite: \(written) of \(edits.count) landed in the field;"
+                + " retyping the line so the rest do too")
+        }
+
         guard config.transcription.rewriteLine else {
             Log.write("rewrite: rewrite_line is off; not retyping")
-            return .notAttempted
+            // A partial write is not "nothing happened". The caller treats both
+            // the same today, but saying `failed` keeps the log and the return
+            // value telling the same story.
+            return written > 0 ? .failed : .notAttempted
         }
         Log.write("rewrite: retyping the line via keystrokes")
         let retyped = SelectionReader.rewriteCurrentLine(dictated: dictated, in: element) { line in
