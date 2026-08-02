@@ -35,6 +35,10 @@ enum CheckConfigCommand {
             let shortcut = KeyCodes.displayString(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
             print("  ✓ hotkey            \(shortcut)  (\(mode), Carbon)")
         }
+        if config.hotkey.mode == .pushToTalk {
+            let tail = config.hotkey.releaseTailSeconds
+            print("  · release tail      \(tail > 0 ? "\(tail)s after the key comes up" : "off — stops on the release")")
+        }
 
         // Audio
         print("  ✓ sample rate       \(Int(config.audio.sampleRate)) Hz mono")
@@ -118,7 +122,11 @@ enum CheckConfigCommand {
         // prompts only, for now — so it would otherwise be invisible here, and
         // "I wrote it and nothing says it exists" is the wrong way to find out
         // that it runs from a pipeline and not from your voice.
-        let tables = config.transforms.filter { !$0.isPrompt }
+        // Tables only. A `command:` is not one, and counting its rules said
+        // "0 rule(s)" about a transform that has no rules to have — the line
+        // read as a broken table rather than as a program. Programs are named
+        // by `problems()`, which says it of every one of them, every run.
+        let tables = config.transforms.filter(\.isTable)
         if !tables.isEmpty {
             print("  · replace           \(tables.count) transform(s), reachable from a pipeline"
                 + " and not by voice")
@@ -126,6 +134,20 @@ enum CheckConfigCommand {
                 let rules = table.rules.count
                 print("      table     \(table.name) — \(rules) rule(s)"
                     + (table.description.isEmpty ? "" : ", \(table.description)"))
+            }
+        }
+
+        // A `display:` is the one part of a transform that is neither matched
+        // against nor run: it is what the menu bar says while the stage takes
+        // its second. Nothing else can show you that you wrote it, and a
+        // second of silence is exactly the symptom of having forgotten to.
+        let announced = config.transforms.compactMap { transform in
+            transform.displayLabel.map { (transform.name, $0) }
+        }
+        if !announced.isEmpty {
+            print("  · display           \(announced.count) transform(s) say what they are doing")
+            for (name, label) in announced {
+                print("      \(name) — \"\(label)\"")
             }
         }
 

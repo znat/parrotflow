@@ -327,8 +327,14 @@ struct Pipeline: Equatable, Codable {
         return nil
     }
 
+    /// - Parameter progress: Called with a stage's `display:` as that stage
+    ///   starts, for whatever is showing the wait. Only stages that wrote one
+    ///   report, so the caller's own message stands through the rest: the
+    ///   tables finish in microseconds, and a label that changed six times on
+    ///   the way to a transcript would say less than one that never moved.
     func run(
-        _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil
+        _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
+        progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         var output = text
         for step in steps {
@@ -342,6 +348,12 @@ struct Pipeline: Equatable, Codable {
                 let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
                 Log.write("pipeline: skipped \(named) — \(reason)")
                 continue
+            }
+            // After the skip check, not before: a stage that is about to
+            // decline should not put its name on screen first.
+            if let label = step.transform
+                .flatMap({ config.transform(named: $0) })?.displayLabel {
+                progress?(label)
             }
             output = await apply(step, to: output, config: config)
         }

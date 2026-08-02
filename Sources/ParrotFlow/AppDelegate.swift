@@ -66,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
+    /// Running between the hotkey coming up and the recording actually stopping
+    /// — see `stopRecordingAfterTail`.
+    private var releaseTail: Timer?
     private var keepWarmTimer: Timer?
     private var keepWarmInFlight = false
     private var hotkeyError: String?
@@ -364,6 +367,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .toggle:
             toggleRecording()
         case .pushToTalk:
+            // Pressed again inside the tail: one dictation with a stutter in the
+            // key, not two. Keep the recording that is already running — and put
+            // the modifier poll back, since starting the tail took it down.
+            if releaseTail != nil {
+                releaseTail?.invalidate(); releaseTail = nil
+                startPushToTalkPoll()
+                return
+            }
             guard !recorder.isRecording else { return }
             startRecording()
             startPushToTalkPoll()
@@ -372,7 +383,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleHotKeyRelease() {
         guard config.hotkey.mode == .pushToTalk else { return }
-        stopRecording()
+        stopRecordingAfterTail()
+    }
+
+    /// The hand is faster than the mouth: the key comes up while the last
+    /// syllable is still being said, and the clip ends "...max retri". So hold
+    /// the mic open a moment longer — `hotkey.release_tail_seconds`, 0 to stop
+    /// on the release as before.
+    private func stopRecordingAfterTail() {
+        guard recorder.isRecording else { return }
+
+        // The poll would see the key still up 60ms from now and ask again.
+        pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
+
+        let tail = config.hotkey.releaseTailSeconds
+        guard tail > 0 else {
+            stopRecording()
+            return
+        }
+        guard releaseTail == nil else { return }
+
+        let timer = Timer(timeInterval: tail, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.releaseTail = nil
+            self.stopRecording()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        releaseTail = timer
     }
 
     /// Carbon only reports the release of the *character* key. If the user lets
@@ -454,6 +491,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         tickTimer?.invalidate(); tickTimer = nil
         pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
+        releaseTail?.invalidate(); releaseTail = nil
         overlay.hide()
         if config.feedback.sound { NSSound(named: "Pop")?.play() }
 
@@ -495,8 +533,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let app = appAtPress
         Task { [weak self] in
             do {
+                // "Transcribing…" is the truth until the decoder is done, and
+                // a lie for the second a prompt or a script spends after it.
+                // A stage that wrote a `display:` says so itself.
                 let text = try await self?.transcriber.transcribe(
-                    url: recording.url, config: config, app: app
+                    url: recording.url, config: config, app: app,
+                    progress: { label in
+                        Task { @MainActor [weak self] in
+                            guard let self, self.transcriptionLabel != nil else { return }
+                            self.transcriptionLabel = label
+                            self.updateUI()
+                        }
+                    }
                 ) ?? ""
                 await MainActor.run {
                     guard let self else { return }
@@ -772,7 +820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // wrong thing is otherwise indistinguishable in the log from one that
         // worked on the right thing badly.
         Log.write("transform: \(prompt.name) over \(selection == nil ? "the last dictation" : "the selection") — \"\(target.prefix(80))\"")
-        beginProgress("\(prompt.name)…")
+        beginProgress(prompt.progressLabel)
 
         let llmConfig = llmConfig()
         Task { [weak self] in
@@ -1242,7 +1290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         func run(_ prompt: Config.Prompt) {
-            beginProgress("\(prompt.name)…")
+            beginProgress(prompt.progressLabel)
             let llm = llmConfig()
             Task { [weak self] in
                 do {

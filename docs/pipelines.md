@@ -59,6 +59,36 @@ exist. `replace:` is a substitution table of its own, in the same shape as
 yours, which costs a process start — about 30ms for `python3`, 5ms for a shell
 script.
 
+### `display:`, or: what the pause is for
+
+A stage that takes a second is a second in which the menu bar says
+`Transcribing…`, which stopped being true when the decoder finished. `display:`
+is what it should say instead while this transform runs:
+
+```yaml
+  - name: grammar
+    description: fix grammar and punctuation mistakes
+    display: Fixing grammar
+    prompt: |
+      Correct grammar, spelling and punctuation. Return only the text.
+```
+
+The two strings are read by different audiences and are not interchangeable. A
+`description:` is matched — it is what the router compares your spoken
+instruction against, so it reads like the thing you would ask for. A `display:`
+is only ever shown, so it reads like a status: what is happening, not what you
+wanted. The ellipsis is appended for you.
+
+Write one for anything with a wait worth explaining — a `prompt:`, or a
+`command:` that thinks. Leave it off a `replace:` table: it finishes in
+microseconds, and a label that appears and vanishes inside one frame is noise
+where there was none. Stages that write no display leave the current message
+alone, which is why the menu bar does not flicker through the whole pipeline on
+every dictation.
+
+`--check-config` prints every display it found, which is the only way to see
+that one is wrong before the second it was meant to explain has passed.
+
 ### `command:`, or: the app stops needing new primitives
 
 The transcript arrives on **stdin** and comes back on **stdout**. That is the
