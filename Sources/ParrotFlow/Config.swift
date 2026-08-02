@@ -1004,14 +1004,16 @@ scripts/validate-identifiers.py for the scoreboard.
 given without a marker in front of it — "call it max retries", "rename the
 variable to retry count", "a getter for the user profile name". The rules
 cannot see those at all, and the model gets 8/8 on them where the rules get
-2/8. It answers with the words only; the casing, the convention and the
-substitution stay here, which is the whole reason it works — asked to return
-the rewritten sentence instead, the same model scored 68% and capitalised
-words nobody asked it to touch.
+2/8.
 
-It is off by default, and the trade is measured rather than assumed. Over 70
+It extracts rather than rewrites — the language, and the names — and everything
+after that stays here. That division is the whole reason it works: asked to
+return the rewritten sentence instead, the same model scored 68% and
+capitalised words nobody asked it to touch.
+
+It is off by default, and the trade is measured rather than assumed. Over 75
 cases, adding it takes the sentences that should change from 87% to 100% — and
-the sentences that must come back untouched from 94% to 81%, because a model
+the sentences that must come back untouched from 94% to 84%, because a model
 asked only about what a careful rule refused sees mostly near-misses. Turn it
 on if you dictate code all day and will notice; leave it off if a sentence
 quietly rewritten would slip past you. It also costs about a second, and a
@@ -1046,19 +1048,42 @@ TAIL = re.compile(
     r"\b(?:that|which|for|and|so|should|will|when|if|because|"
     r"qui|que|pour|et|dans|sur|avant|apr[èe]s|doit)\b", re.I)
 
-SNAKE_LANGUAGES = re.compile(r"\b(?:python|rust|ruby|elixir)\b", re.I)
+# The convention each language writes identifiers in. A table rather than a
+# pattern, because a pattern has to be edited to learn a language and a table
+# has to be added to — and everything it does not know reads as camelCase,
+# which was silently wrong for zig, julia, erlang and c# until this was a
+# table. Add your own; it is a dict, not a regex.
+BY_LANGUAGE = {
+    "python": "snake", "rust": "snake", "ruby": "snake", "elixir": "snake",
+    "erlang": "snake", "julia": "snake", "perl": "snake", "zig": "snake",
+    "nim": "snake", "crystal": "snake", "lua": "snake", "c": "snake",
+    "javascript": "camel", "typescript": "camel", "java": "camel",
+    "kotlin": "camel", "go": "camel", "swift": "camel", "php": "camel",
+    "scala": "camel", "dart": "camel", "groovy": "camel", "haskell": "camel",
+    "c#": "pascal", "csharp": "pascal", "f#": "pascal",
+}
+# "c#" ends in a character no word boundary follows, so the trailing \b would
+# never match it — the boundary has to be asserted on the left only, plus "not
+# followed by more word characters".
+LANGUAGE = re.compile(
+    r"\b(" + "|".join(re.escape(name) for name in sorted(BY_LANGUAGE, key=len, reverse=True))
+    + r")(?!\w)", re.I)
 PASCAL_KIND = re.compile(r"\b(?:class|classe|type|struct|interface|enum)\b", re.I)
 SCREAMING_KIND = re.compile(r"\b(?:constant|constante)\b", re.I)
 
 
-def style_for(sentence, before):
+def style_for(sentence, before, language=None):
+    """A kind word in front of the name wins — a class is PascalCase in any
+    language — then the language, then camelCase for a sentence that named
+    none."""
     if SCREAMING_KIND.search(before):
         return "screaming"
     if PASCAL_KIND.search(before):
         return "pascal"
-    if SNAKE_LANGUAGES.search(sentence):
-        return "snake"
-    return "camel"
+    if not language:
+        found = LANGUAGE.search(sentence)
+        language = found.group(1) if found else None
+    return BY_LANGUAGE.get((language or "").lower(), "camel")
 
 
 def cased(words, style):
@@ -1096,49 +1121,66 @@ def convert(text):
     return out
 
 
-# The prompt, iterated and scored as v4 in scripts/validate-identifiers.py. It
-# is asked for one thing only — which words are the name — because everything
-# else about this job is a function, a lookup or a string replace.
+# The prompt, iterated and scored as v5 in scripts/validate-identifiers.py.
+#
+# It extracts rather than rewrites: the language once, the names one per line.
+# Everything after that is code — the language becomes a convention through
+# BY_LANGUAGE above, a kind word still overrides it for a class or a constant,
+# and putting the words back is a string replace.
+#
+# Asking for the language rather than pattern-matching it is what makes the
+# table extensible without touching the prompt, and it is why the model is
+# still worth asking once the table exists: a sentence can name a language in a
+# way no scan of it will catch.
 PROMPT = """\
-The text is a dictated sentence. Some of them give a name to a function, a \
-variable, a class or a constant.
+The text is a dictated sentence. Some of them give names to functions, \
+variables, classes or constants.
 
-Reply with just those words, copied from the sentence, and nothing else. \
-Or reply NO NAME.
+Reply in exactly this shape and nothing else:
+
+lang: <the programming language the sentence names, or none>
+name: <the words of one name, copied exactly>
+
+Repeat the name line once per name. Write no name line at all when the \
+sentence names nothing.
 
 - Copy the words exactly as they appear. Do not rewrite them, join them or \
 change their case — that is done elsewhere.
 - A name is two to four words. Take the whole name and only the name.
 - The name may be given without the word "called": "call it X", "rename it to \
 X", "a getter for X".
-- Reply NO NAME when the sentence names nothing — when it merely talks about a \
-function, a class or a variable, or is about something else entirely.
+- Write no name line when the sentence merely talks about a function, a class \
+or a variable, or is about something else entirely.
 
 text: add a rust function called read config file
-read config file
+lang: rust
+name: read config file
 
 text: call it max retries in python
-max retries
+lang: python
+name: max retries
 
-text: rename the typescript variable to retry count
-retry count
+text: a python function called read config and a variable called config path
+lang: python
+name: read config
+name: config path
 
 text: the retry count is too high and it hammers the api
-NO NAME
+lang: none
 
 text: we talked about python packaging for most of the afternoon
-NO NAME
+lang: python
 
 text: there is a method called cognitive behavioural therapy for that
-NO NAME
+lang: none
 """
 
 
 def ask(model, text, endpoint="http://localhost:11434"):
-    """The name the model found, or None. Every failure is None: Ollama not
-    running is an ordinary state, and the transcript is not worth dropping."""
+    """The model's answer, or "" for every way this can fail. Ollama not
+    running is an ordinary state and a transcript is not worth dropping."""
     body = {"model": model, "system": PROMPT, "prompt": text, "stream": False,
-            "think": False, "options": {"temperature": 0, "num_predict": 24}}
+            "think": False, "options": {"temperature": 0, "num_predict": 64}}
     request = urllib.request.Request(
         endpoint + "/api/generate", data=json.dumps(body).encode(),
         headers={"Content-Type": "application/json"})
@@ -1146,27 +1188,33 @@ def ask(model, text, endpoint="http://localhost:11434"):
         with urllib.request.urlopen(request, timeout=10) as response:
             return (json.load(response).get("response") or "").strip()
     except Exception:
-        return None
+        return ""
 
 
-def place(span, text):
-    """`span` cased and put back where it came from — the deterministic half,
-    shared with the rules above so there is one algorithm and not two."""
-    if not span:
-        return text
-    span = span.strip().strip('".')
-    if re.search(r"\bno name\b|\bnone\b", span, re.I):
-        return text
-    words = [word for word in re.split(r"[^\w'’]+", span) if word]
-    if len(words) < 2 or len(words) > 4:
-        return text
-    # Only words that are actually in the sentence. A model that answered with
-    # its own phrasing has not found anything here.
-    if span.lower() not in text.lower():
-        return text
-    start = text.lower().index(span.lower())
-    return (text[:start] + cased(words, style_for(text, text[:start]))
-            + text[start + len(span):])
+def place(reply, text):
+    """The extraction applied — the deterministic half, sharing `cased` and
+    `style_for` with the rules above so there is one algorithm and not two."""
+    language, names = None, []
+    for line in reply.splitlines():
+        line = line.strip()
+        if line.lower().startswith("lang:"):
+            said = line.split(":", 1)[1].strip().lower()
+            language = None if said in ("none", "") else said
+        elif line.lower().startswith("name:"):
+            names.append(line.split(":", 1)[1].strip())
+
+    out = text
+    for span in names:
+        span = span.strip().strip('".')
+        words = [word for word in re.split(r"[^\w'’]+", span) if word]
+        # The same guards the rules use: a name is two to four words, and the
+        # model does not get to invent words that are not in the sentence.
+        if len(words) < 2 or len(words) > 4 or span.lower() not in out.lower():
+            continue
+        start = out.lower().index(span.lower())
+        out = (out[:start] + cased(words, style_for(out, out[:start], language))
+               + out[start + len(span):])
+    return out
 
 
 if __name__ == "__main__":
@@ -1484,7 +1532,7 @@ if __name__ == "__main__":
         # cannot see — "call it max retries", "rename the variable to retry
         # count". Measured over 70 cases: it takes the sentences that should
         # change from 87% to 100%, and the ones that must come back untouched
-        # from 94% to 81%, because a model asked only about what a careful rule
+        # from 94% to 84%, because a model asked only about what a careful rule
         # refused sees mostly near-misses. Off by default for that reason, and it
         # costs about a second.
 

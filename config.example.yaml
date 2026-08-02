@@ -240,7 +240,7 @@ transforms:
     # cannot see — "call it max retries", "rename the variable to retry
     # count". Measured over 70 cases: it takes the sentences that should
     # change from 87% to 100%, and the ones that must come back untouched
-    # from 94% to 81%, because a model asked only about what a careful rule
+    # from 94% to 84%, because a model asked only about what a careful rule
     # refused sees mostly near-misses. Off by default for that reason, and it
     # costs about a second.
 

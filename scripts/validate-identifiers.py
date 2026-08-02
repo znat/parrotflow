@@ -214,6 +214,99 @@ def place(span, text):
     before = text[:start]
     return text[:start] + cased(words, style_for(text, before)) + text[start + len(span):]
 
+# v5 — the model extracts, the script substitutes.
+#
+# v4 answers with one span and leaves the language to a regex in the script:
+# python|rust|ruby|elixir means snake_case, everything else camelCase. That
+# list is a guess that has to be maintained, and it is silently wrong for
+# kotlin, c#, haskell, zig — a language the regex does not know reads as
+# camelCase whatever it actually is.
+#
+# So this asks for both, in a shape a small model can hold: the language once,
+# and the names one per line. Everything after that stays code — the language
+# becomes a convention through a table, the kind word still overrides it for a
+# class or a constant, and putting the words back is a string replace.
+VARIANTS["v5"] = """\
+The text is a dictated sentence. Some of them give names to functions, \
+variables, classes or constants.
+
+Reply in exactly this shape and nothing else:
+
+lang: <the programming language the sentence names, or none>
+name: <the words of one name, copied exactly>
+
+Repeat the name line once per name. Write no name line at all when the \
+sentence names nothing.
+
+- Copy the words exactly as they appear. Do not rewrite them, join them or \
+change their case — that is done elsewhere.
+- A name is two to four words. Take the whole name and only the name.
+- The name may be given without the word "called": "call it X", "rename it to \
+X", "a getter for X".
+- Write no name line when the sentence merely talks about a function, a class \
+or a variable, or is about something else entirely.
+
+text: add a rust function called read config file
+lang: rust
+name: read config file
+
+text: call it max retries in python
+lang: python
+name: max retries
+
+text: a python function called read config and a variable called config path
+lang: python
+name: read config
+name: config path
+
+text: the retry count is too high and it hammers the api
+lang: none
+
+text: we talked about python packaging for most of the afternoon
+lang: python
+
+text: there is a method called cognitive behavioural therapy for that
+lang: none
+"""
+
+# The convention per language: a table, which is the point of asking for the
+# language rather than pattern-matching a fixed list of them.
+BY_LANGUAGE = {
+    "python": "snake", "rust": "snake", "ruby": "snake", "elixir": "snake",
+    "erlang": "snake", "julia": "snake", "r": "snake", "perl": "snake",
+    "c": "snake", "zig": "snake", "nim": "snake", "crystal": "snake",
+    "javascript": "camel", "typescript": "camel", "java": "camel",
+    "kotlin": "camel", "go": "camel", "swift": "camel", "php": "camel",
+    "scala": "camel", "dart": "camel", "groovy": "camel", "haskell": "camel",
+    "c#": "pascal", "csharp": "pascal", "f#": "pascal", "visual basic": "pascal",
+}
+
+def place_extracted(reply, text):
+    """v5's answer applied: the language decides the convention, a kind word
+    still overrides it, and only words actually in the sentence are touched."""
+    language, names = "none", []
+    for line in reply.splitlines():
+        line = line.strip()
+        if line.lower().startswith("lang:"):
+            language = line.split(":", 1)[1].strip().lower()
+        elif line.lower().startswith("name:"):
+            names.append(line.split(":", 1)[1].strip())
+    out = text
+    for span in names:
+        span = span.strip().strip('".')
+        words = [w for w in re.split(r"[^\w'’]+", span) if w]
+        if len(words) < 2 or len(words) > 4 or span.lower() not in out.lower():
+            continue
+        start = out.lower().index(span.lower())
+        before = out[:start]
+        # A class or a constant is decided by the word in front of the name,
+        # not by the language; everything else comes from the table.
+        style = shipped.style_for("", before)
+        if style not in ("pascal", "screaming"):
+            style = BY_LANGUAGE.get(language, "camel")
+        out = out[:start] + cased(words, style) + out[start + len(span):]
+    return out
+
 # --- the control -----------------------------------------------------------
 #
 # No model: examples/identifiers.py, imported rather than reimplemented. It was
@@ -309,7 +402,8 @@ def main():
             # nothing is paid at all.
             if got == text:
                 reply, _ = ask(args.model, system, text, args.predict, meter)
-                got = place(reply, text)
+                got = (place_extracted(reply, text) if args.variant == "v5"
+                       else place(reply, text))
             dt = time.time() - started
         elif args.script:
             started = time.time()
@@ -322,7 +416,9 @@ def main():
             got, dt = control(text), 0.0
         else:
             got, dt = ask(args.model, system, text, args.predict, meter)
-            if args.variant in SPAN_ONLY:
+            if args.variant == "v5":
+                got = place_extracted(got, text)
+            elif args.variant in SPAN_ONLY:
                 got = place(got, text)
         elapsed += dt
 
@@ -343,6 +439,8 @@ def main():
     print(f"\n{args.model}  variant={args.variant}  ({len(cases)} cases)")
     for kind in ("change", "keep"):
         got, n = scores[kind]
+        if not n:
+            continue
         note = "  <- where this design lives or dies" if kind == "keep" else ""
         print(f"  {kind:8} {got}/{n} = {100*got/n:.0f}%{note}")
     print(f"  overall  {passed}/{total} = {100*passed/total:.0f}%")
@@ -362,13 +460,14 @@ main()
 
 # --- Scoreboard, and what it decided ---------------------------------------
 #
-# 70 cases: 38 change, 32 keep. The set grew twice, both times with cases
+# 75 cases: 43 change, 32 keep. The set grew three times, each time with cases
 # written to break what was passing rather than to flatter it.
 #
 #                              change  keep  overall  latency
-#     examples/identifiers.py    87%   94%    90%     0.03s  <- ships, by default
-#     v4, the prompt as a span   97%   88%    93%     1.03s
-#     script then v4 on the rest 100%  81%    91%     0.51s
+#     identifiers.py             88%   94%    91%     0.03s  <- ships, by default
+#     identifiers.py --model    100%   84%    93%     0.66s  <- ships, off
+#     v5, extraction, alone      97%   91%    94%     1.25s
+#     v4, one span, alone        97%   88%    93%     1.03s
 #     v2, the prompt rewriting   58%   83%    68%     1.15s
 #     v3, v2 aimed at no-marker  48%   87%    64%     1.1s
 #
@@ -376,45 +475,42 @@ main()
 # pipeline, so a missed naming costs one rewrite you do by hand and a wrong one
 # costs a sentence you have to notice and undo.
 #
-# THE PROMPT'S JOB, AFTER THE DETERMINISTIC PARTS WERE NAMED. v2 and v3 return
-# the rewritten sentence and are hopeless at it — they answer camelCase where
-# python wants snake, capitalise "python" to "Python", drop articles, translate
-# French names into English. But casing is a function, the convention is a
-# lookup off the language word, and putting the name back is a string replace.
-# All of that is code. What is left is one judgement: which words are the name,
-# when nothing announces them.
+# WHAT THE PROMPT IS ASKED FOR IS THE WHOLE GAME. v2 and v3 return the
+# rewritten sentence and are hopeless — camelCase where python wants snake,
+# "python" capitalised to "Python", articles added, French names translated
+# into English. But casing is a function, the convention is a lookup, and
+# putting the name back is a string replace. All of it code. v4 asks only for
+# the words that are the name: 8/8 on the sentences with no marker in them,
+# where the rules get 2/8 by construction and v2 got 2/8 as well.
 #
-# v4 asks only that, and answers with the words. On the eight cases with no
-# marker — "call it max retries", "rename the variable to retry count", "a
-# getter for the user profile name" — the script scores 2/8 by construction,
-# v2 scored 2/8, v3 5/8, and v4 scores 8/8. Same model, same cases; the
-# difference is entirely what it was asked for.
+# v5 asks for the language too, and that is the version that ships. Not for the
+# point it adds — 94% against 93% — but because the language then becomes a
+# table rather than a pattern. The script had `python|rust|ruby|elixir` meaning
+# snake_case and everything else meaning camel, which was silently wrong for
+# zig, julia, erlang and c#. On five such cases the rules scored 1/5 before the
+# table and 5/5 after, with no model involved: asking the model for the
+# language is what made the table worth writing, and the table then paid off
+# where the model is not even running.
 #
-# WHY THE COMBINATION IS NOT WHAT SHIPS, despite scoring 100% on change. Run
-# the script first and ask the model only about what it declined, and the model
-# sees exactly the sentences a conservative rule refused — which are
-# disproportionately the near-misses. Keep falls from 94% to 81%: chaining a
-# permissive fallback behind a careful rule inverts the care. It is the right
-# option for someone who dictates code all day and will notice; it is the wrong
-# default.
+# WHY THE MODEL IS OFF BY DEFAULT. Chained behind the rules it scores 100% on
+# the sentences that should change and drops keep from 94% to 84%, because a
+# model asked only about what a careful rule refused sees mostly near-misses. A
+# permissive fallback behind a conservative rule inverts the conservatism. That
+# is the right trade for someone who dictates code all day and would notice a
+# sentence quietly rewritten, and the wrong one for a default — so it is one
+# flag away, with the number in the config comment, the doc and the script.
 #
-# So the script ships in the default pipeline, gated twice — `app:` to the
-# editors and terminals, `when:` to a sentence containing a kind word, so no
-# process starts on prose. v4 is kept here, measured, for anyone who wants the
-# other trade.
+# WHAT IT COSTS AS A DEFAULT, stated rather than buried. Two cases in 75 are
+# sentences the rules rewrite and should not, both of the same shape: three
+# plausible words behind a kind word and a naming word, "there is a method
+# called cognitive behavioural therapy for that". No surface rule separates
+# those from a name — a four-word cap already removed the longer ones ("the
+# class called intro to python starts at nine tomorrow"). The other failures
+# are namings it declines, which leave the transcript exactly as dictated.
 #
-# WHAT IT COSTS AS A DEFAULT, stated rather than buried. One case in 70 is a
-# sentence it rewrites and should not: "there is a method called cognitive
-# behavioural therapy for that". Three plausible words after a kind word and a
-# naming word, and no surface rule tells them from a name — a length cap
-# already removed the five others of that shape ("the class called intro to
-# python starts at nine tomorrow"). The other five failures are namings it
-# declines, which leave the transcript exactly as dictated.
-#
-# CAUTIONS. The script's stop lists and its four-word cap were tuned on cases
-# now in this set, so its 90% is not a held-out number; the honest ones were
-# 93% and 88% on the two batches written afterwards. The next change needs new
-# cases again. And the runner imports examples/identifiers.py rather than
-# reimplementing it, so `--code-only` and `--script` score the same file the
-# app writes — scripts/check-example-script.sh is what keeps the shipped copy
-# equal to it.
+# CAUTIONS. The rules were tuned on cases now in this set, so 91% is not a
+# held-out number; the honest ones were 93%, 88% and 100% on the three batches
+# written afterwards. The next change needs new cases again. And the runner
+# imports examples/identifiers.py rather than reimplementing it, so
+# `--code-only` and `--script` score the file the app writes —
+# scripts/check-example-script.sh keeps the shipped copy equal to it.

@@ -448,3 +448,42 @@ cases:
   - name: a method in the medical sense
     kind: keep
     input: there is a method called cognitive behavioural therapy for that
+
+  # ---- Languages the old pattern did not know -----------------------------
+  #
+  # `python|rust|ruby|elixir` meant snake_case and everything else meant camel,
+  # so each of these was silently wrong. Held out while BY_LANGUAGE was written
+  # to replace that pattern: the rules scored 1/5 before it and 5/5 after, with
+  # no model involved. Asking the model for the language is what made the table
+  # worth having — a pattern has to be edited to learn a language, a table has
+  # to be added to.
+
+  - name: zig
+    kind: change
+    category: language-said
+    input: a zig function called read config file
+    expect: a zig function called read_config_file
+
+  - name: c sharp
+    kind: change
+    category: language-said
+    input: a c# method called build request
+    expect: a c# method called BuildRequest
+
+  - name: kotlin
+    kind: change
+    category: language-said
+    input: a kotlin function called retry count
+    expect: a kotlin function called retryCount
+
+  - name: julia
+    kind: change
+    category: language-said
+    input: a julia function called solve system
+    expect: a julia function called solve_system
+
+  - name: erlang
+    kind: change
+    category: language-said
+    input: an erlang function called handle call
+    expect: an erlang function called handle_call

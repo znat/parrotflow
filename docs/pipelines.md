@@ -114,7 +114,7 @@ It is gated twice, and both gates are in the config where you can see them:
 word, so no process is started on prose. Delete either line to widen it, or the
 step to turn it off.
 
-**What it costs, and what it will not do.** Scored on 70 cases, 32 of which
+**What it costs, and what it will not do.** Scored on 75 cases, 32 of which
 must come back untouched: 90% overall, and one of those 70 is a sentence it
 rewrites and should not — "there is a method called cognitive behavioural
 therapy for that" is three plausible words behind a kind word and a naming
@@ -134,16 +134,20 @@ where the rules get 2/8.
     command: identifiers.py --model gemma4:e4b
 ```
 
-It is asked for one thing only — **which words are the name** — and it answers
-with the words. The casing, the convention and putting the name back stay in
-the script. That division is the whole reason it works: asked instead to return
+It **extracts** rather than rewrites: the language the sentence names, and the
+names themselves, one per line. The convention that language writes in, the
+casing, and putting the words back all stay in the script — as a table you can
+add a language to without touching the prompt. That table is worth having on
+its own: it replaced a `python|rust|ruby|elixir` pattern that read zig, julia,
+erlang and c# as camelCase, and the rules alone went from 1/5 to 5/5 on those
+with no model involved. That division is the whole reason it works: asked instead to return
 the rewritten sentence, the same model scores 68% and fails in the expensive
 direction, capitalising "python" to "Python", adding articles, and translating
 French names into English.
 
 And it is off by default because the trade is measured rather than assumed.
-Over 70 cases it takes the sentences that should change from 87% to **100%**,
-and the sentences that must come back untouched from 94% down to **81%** — a
+Over 75 cases it takes the sentences that should change from 87% to **100%**,
+and the sentences that must come back untouched from 94% down to **84%** — a
 model asked only about what a careful rule refused sees mostly near-misses, so
 chaining it behind the rules inverts their caution. Turn it on if you dictate
 code all day and would notice a sentence quietly rewritten; leave it off if you
