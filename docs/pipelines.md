@@ -298,6 +298,130 @@ Add the step if your chat app renders pasted markup. Getting this to work
 properly means putting rich text on the clipboard rather than markdown
 characters, which is a different feature.
 
+### Writing to people: `email` and `slack`
+
+Two prompts scoped to one kind of window each, and the first stages that ask
+the model from a pipeline rather than from the activation phrase:
+
+```yaml
+- transform: email
+  app: /mail|outlook|thunderbird|superhuman|missive/
+- transform: slack
+  app: /slack/
+```
+
+`grammar` mends a sentence. These two also **lay one out**, which is the part
+no substitution can express: dictated prose arrives as a single block with the
+greeting run into the first sentence, no paragraph breaks, and the hesitations
+still in it. A comma and a newline after "Bonjour Marie" is not a rewrite of
+your words, and it is not something a table can be taught.
+
+`email` puts the greeting on its own line with a blank line under it, breaks
+the body where the subject changes, and treats a name at the end as a
+signature. `slack` does almost none of that — no greeting, no sign-off, one
+paragraph — and is explicitly told to emit no markup at all, for the reason
+`backticks` is not in the shipped pipeline: Slack's composer does not render
+markdown that arrives by paste, so bold or bullets land in the message as
+characters.
+
+Both are told twice not to write anything. That is the failure worth spending
+tokens on: a model handed a dictated email will gladly return a better one, in
+its own voice, and nothing on screen says it happened — a pipeline stage runs
+on a transcript nobody has seen yet, so `confirm` does not apply to it.
+
+**6/7 and 3/3 on gemma4:e4b**, and the versions in between are written into
+config.example.yaml beside each prompt, because what they cost is the useful
+part. Three findings, all of them the prompt making things worse before better:
+
+| Wording | What it did |
+|---|---|
+| "If none was dictated, do not invent one" | invented a greeting anyway — a prohibition read as a topic |
+| "Nothing is ever deleted" | answered with a literal `[Signature]` placeholder |
+| the greeting rule given examples | put the examples in the output: "Hi Tom," and "À toi," |
+
+The first is the lesson `tests/grammar-cases.yaml` already records — a rule
+about restraint making the model less restrained. The third is that file's
+other lesson running the opposite way: elsewhere here examples beat rules, and
+in a prompt whose output is the same shape as its examples they get copied.
+
+What fixed the greeting was turning the prohibition around and saying what the
+email starts with when there is no hello. What fixed a dropped `thanks` was
+tying the closing word to the signature instead of listing it among the things
+not to add. And `slack` says "Add nothing" rather than "No greeting, no
+sign-off", because the second wording was read as an instruction to *remove*
+one: "hey uh quick one the build is red" came back as "The build is red".
+
+The case still failing is `yes that works for me see you thursday`, which comes
+back as `See you Thursday.` — two clauses run together with no comma read as
+one goodbye. With the comma it is right. It is left failing rather than argued
+with.
+
+**Neither is in the shipped default pipeline.** Every stage a new install gets
+is free and needs nothing running; these cost about a second and do nothing at
+all without Ollama. Same rule as the `--model` switch on `code_identifiers`,
+which ships off for the same reason. config.example.yaml has them wired up.
+
+**Gmail in a browser tab is not an app.** `app:` reads the window that was in
+front, which is `Google Chrome com.google.Chrome` — so name your browser in the
+pattern if you live in Gmail, and accept that every other tab gets the stage
+too. There is no narrower answer available: the condition is a window, not a
+URL.
+
+**They cost the router something, and it is measured.** Both are prompts, so
+both join the catalogue the activation phrase reaches, and every description
+added is another way for an idle sentence to find a tool. `tests/routing-cases.
+yaml` went from 41/45 on three prompts to 50/54 on six — one old failure
+started passing, and one new one appeared: "I sent her an email yesterday"
+routes to `email`. That is the expensive class, the one the negative half of
+that set exists for. Four descriptions were measured against it and all four
+routed it identically, so it is recorded there rather than tuned away.
+
+### `slack_mentions`, which you have to ask for
+
+```yaml
+- name: slack_mentions
+  description: turn people's names into Slack mentions
+  prompt: |
+    Replace people's names with their Slack handle. Use only this list:
+
+      Marie   -> @marie.dupont
+      ...
+```
+
+Said out loud — "hey parrot, use Slack mentions" — and deliberately in no
+pipeline. A message that names someone is not a message that pings them, and
+nothing in a transcript tells the two apart. So it is the one you ask for, and
+`confirm` shows you who is about to be tagged before anything is replaced.
+
+**The mapping is in the prompt rather than in a `replace:` table**, which is
+the opposite of the rule everywhere else here. Two reasons, and only the first
+is forced: a table is not reachable by voice — it runs from a pipeline only,
+and a pipeline is exactly where this must not be. The second is that it is the
+better half of the trade anyway. Names are a mapping and a table would do them
+exactly; `@here` is a judgement — "let everyone here know" wants it and "the
+file is here" does not, and a pattern cannot see the difference. The generic
+mentions are the part worth a model, and having them in the same place as the
+names is what keeps it one step rather than two.
+
+**6/6, and the first draft was 2/6 in the expensive direction.** It answered
+"the config file is here, Sofia already looked at it" with "…@priya already
+looked at it" — a handle invented for a name it had never been given, which in
+Slack is a message sent to the wrong person. It also ate the words in front of
+the first mention: "heads up to the whole channel" came back as "@channel,".
+
+Three sentences fixed both, and all three are load-bearing:
+
+- a name off the list is left as it was, with one named — "Sofia stays Sofia"
+- a mention replaces the words that name the person or the group, *and not one
+  word more*, with the failing input as the worked example
+- nothing is ever deleted
+
+The second is the interesting one. The model was not substituting, it was
+summarising a span — and telling it where the span ends is a different
+instruction from telling it what to do. Note also that here the worked example
+helped where the same technique hurt `email`: it names an input, not an output
+shape, so there is nothing to copy.
+
 ### Order matters, and only one set notices
 
 `numbers` runs before `dotted`, because English says "three point one four" for

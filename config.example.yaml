@@ -78,6 +78,19 @@ transcription:
       - transform: code_identifiers
         app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
         when: /\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\b/
+      # The two stages that cost a second, and the only two here that ask the
+      # model. Dictated prose arrives as one block: no greeting on its own
+      # line, no paragraph breaks, the hesitations still in it. That is layout,
+      # which is the one thing a substitution cannot do — so it is worth the
+      # second, in the two windows where you write to people and nowhere else.
+      #
+      # Gmail in a browser tab is not an app. `app:` reads the window that was
+      # in front, so put your browser in the pattern if you live in Gmail, and
+      # know that every other tab gets the stage too.
+      - transform: email
+        app: /mail|outlook|thunderbird|superhuman|missive/
+      - transform: slack
+        app: /slack/
 
   # The spelling you want, and the ways it comes out wrong. Whole words,
   # case-insensitive. A source in /slashes/ is a regular expression, and an
@@ -205,6 +218,146 @@ transforms:
 
       A phrase before the main clause takes a comma after it. A trailing
       please or thanks does not.
+
+      Return only the text.
+
+  # Two prompts scoped to one kind of window each, and the pipeline above runs
+  # them there. `grammar` mends a sentence; these two also lay one out — a
+  # greeting on its own line, a blank line where the subject changes — which is
+  # the part no substitution can express and the reason they are prompts.
+  #
+  # Both are told twice not to write anything, because that is the failure that
+  # costs you something: a model handed a dictated email will gladly return a
+  # better one, in its own voice, and you will not notice until it has gone.
+  #
+  # 6/7 on gemma4:e4b, and every version in between is in the failure, not the
+  # number. What the seven cases caught, in the order they were caught:
+  #
+  #   v1  "if none was dictated, do not invent one" -> a "Hi," invented anyway,
+  #       and a spoken "thanks Nathan" reduced to "Nathan". A prohibition read
+  #       as a topic.
+  #   v2  the greeting rule turned around to say what the email starts with
+  #       when there is no hello, and the closing word tied to the signature.
+  #       Both fixed. 5/7.
+  #   v3  "Nothing is ever deleted" added -> the model answered with a literal
+  #       "[Signature]" placeholder and went back to inventing a greeting. A
+  #       rule about restraint made it less restrained, exactly as it did in
+  #       tests/grammar-cases.yaml.
+  #   v4  the greeting rule given examples — "bonjour Marie, hi Tom" -> the
+  #       examples came back in the output as "Hi Tom," and "À toi,". Elsewhere
+  #       here examples beat rules; not here.
+  #   v5  a short reply named as its own case, no line put anywhere. 6/7.
+  #
+  # The one that fails is "yes that works for me see you thursday", which comes
+  # back as "See you Thursday." — two clauses run together with no comma read
+  # as one goodbye. The same sentence with the comma is right. It is left in
+  # the set failing rather than argued with.
+  - name: email
+    description: lay dictated text out as an email
+    prompt: |
+      Lay the text out as an email, in the language it was dictated in.
+      Fix the writing; do not write it.
+
+      Correct grammar, spelling and punctuation, and drop the hesitations
+      — um, uh, euh, well, you know, I mean. Every other word survives:
+      the wording, the order and the tone are the speaker's.
+
+      If the text opens with a greeting, it goes on its own line, with a
+      comma after it and a blank line under it. If it does not, the email
+      starts with the first sentence. Never add a greeting nobody spoke.
+
+      Break the body into paragraphs where the subject changes, a blank
+      line between them. Add no headings, no bullets and no emphasis.
+
+      A name at the end is a signature: a blank line, then the name on
+      its own line, and a closing word said just before it — thanks,
+      merci — on the line above. No name at the end means no signature:
+      the last thing said is the last line of the body, wherever it
+      sounds like a goodbye.
+
+      A short reply is not an email with parts. One or two sentences and
+      no hello in front of them come back as one or two sentences,
+      corrected, with no line put anywhere.
+
+      Return only the email.
+
+  # 3/3. "Add nothing" rather than "no greeting, no sign-off": the second
+  # wording read as an instruction to remove one, and "hey uh quick one the
+  # build is red" came back as "The build is red" — two spoken words gone
+  # because a rule about what not to add was read as a rule about what to
+  # strip. "Remove nothing either" is there for the same reason, and the slang
+  # line because "gonna" was being corrected to "going to", which is the
+  # speaker's voice going out with the hesitations.
+  - name: slack
+    description: tidy dictated text into a chat message
+    prompt: |
+      Tidy the text into a chat message, in the language it was dictated
+      in. Fix the writing; do not write it.
+
+      Correct grammar, spelling and punctuation, and drop the hesitations
+      — um, uh, euh, well, you know, I mean. Every other word survives.
+      Slang and contractions are the speaker's voice rather than
+      mistakes: gonna stays gonna, ouais stays ouais.
+
+      Add nothing: no greeting, no sign-off, no heading, no bullet, no
+      bold, no backtick. Slack's composer renders none of that when text
+      arrives by paste, so it would land in the message as characters.
+      Remove nothing either: a spoken "hey" is part of the message.
+
+      One paragraph, unless the text plainly holds two.
+
+      Return only the message.
+
+  # Asked for out loud — "hey parrot, use Slack mentions" — and deliberately
+  # not in the pipeline above. A message that names someone is not a message
+  # that pings them, and nothing in a transcript tells the two apart. So this
+  # one you say, and `confirm` shows you who is about to be tagged before
+  # anything is replaced.
+  #
+  # The mapping lives in the prompt rather than in a `replace:` table because a
+  # table is not reachable by voice — it runs from a pipeline only, and a
+  # pipeline is where this must not be. It is also the better half of the trade:
+  # names are a lookup a table would do exactly, but "let everyone here know"
+  # -> @here is a judgement, and a pattern that turned every "here" into @here
+  # is one you would switch off after a single message.
+  #
+  # Put your own people in the list. 6/6 as written, and the first draft was
+  # 2/6 in the direction that costs the most — it answered "Sofia already
+  # looked at it" with "@priya already looked at it", inventing a handle for a
+  # name it had never been given, and it swallowed the words in front of the
+  # first mention ("heads up to the whole channel" -> "@channel,"). Three
+  # sentences fixed both and all three are load-bearing: the one naming a name
+  # off the list, the one saying a mention replaces the words that name the
+  # person and not one more, and "nothing is ever deleted".
+  - name: slack_mentions
+    description: turn people's names into Slack mentions
+    prompt: |
+      Return the text word for word, with one kind of change and no
+      other: a name that appears in this list becomes its handle.
+
+        Marie   -> @marie.dupont
+        Thomas  -> @tleroy
+        Priya   -> @priya
+
+      Every occurrence, including where the message is about that person
+      rather than to them.
+
+      A name that is not in the list is left exactly as it was. Sofia
+      stays Sofia. Never give a name a handle that belongs to someone
+      else, and never invent one.
+
+      Two group mentions are a judgement rather than a lookup. "everyone
+      here", "whoever is around" -> @here, which pings the people who are
+      online. "the whole channel", "everyone", "all of them" -> @channel,
+      which pings the ones who are away too. Only where the text means
+      the people: "the file is here" is a place, and stays.
+
+      A mention replaces the words that name the person or the group, and
+      not one word more: "heads up to the whole channel" comes back as
+      "heads up to @channel".
+
+      Nothing is ever deleted. Every other word, the order and the
+      punctuation come back as they went in.
 
       Return only the text.
 
