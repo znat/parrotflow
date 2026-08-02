@@ -9,7 +9,8 @@ import Foundation
 enum DatesCommand {
 
     static func run(
-        instruction: String, text: String, quiet: Bool = false, languages: [String]? = nil
+        instruction: String, text: String, quiet: Bool = false,
+        languages: [String]? = nil, region: String? = nil
     ) -> Int32 {
         // Only for the language a spelled month is written in. `--lang` lets a
         // case file say which languages it assumes rather than inheriting
@@ -20,7 +21,8 @@ enum DatesCommand {
 
         let started = Date()
         let result = DateRewriter.apply(
-            instruction: instruction, to: text, languages: languages
+            instruction: instruction, to: text, languages: languages,
+            region: region.map { Locale(identifier: $0) }
         )
         let elapsed = Date().timeIntervalSince(started)
 

@@ -30,9 +30,12 @@ while IFS='|' read -r name instruction input expect limit; do
   if [ "$MODEL" = 1 ]; then
     got="$("$BIN" --prompt anything "$instruction" "$input" --quiet 2>/dev/null | tail -1)"
   else
-    # Same reason as check-numbers.sh: the month a date is spelled out in
-    # follows the languages this set says it assumes, not the machine's.
-    got="$("$BIN" --dates "$instruction" "$input" --quiet --lang en,fr 2>/dev/null | tail -1)"
+    # Same reason as check-numbers.sh, twice over. The month a date is spelled
+    # out in follows the languages this set assumes, and which field leads in
+    # "3/12" follows the region it assumes — day-first here. On a runner set to
+    # en_US the identical code answers "12/3" and is right to; the set scored
+    # 23/27 there before it said which convention it was asserting.
+    got="$("$BIN" --dates "$instruction" "$input" --quiet --lang en,fr --locale en_GB 2>/dev/null | tail -1)"
   fi
 
   # A case marked `known:` documents a limit rather than asserting a fix. It

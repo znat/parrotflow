@@ -122,7 +122,10 @@ if let index = arguments.firstIndex(of: "--dates") {
         instruction: arguments[index + 1],
         text: arguments[index + 2],
         quiet: arguments.contains("--quiet"),
-        languages: languageList(arguments)
+        languages: languageList(arguments),
+        region: arguments.firstIndex(of: "--locale").flatMap { index in
+            arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+        }
     ))
 }
 
