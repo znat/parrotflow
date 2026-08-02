@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/znat/parrotflow/compare/v0.2.0...v0.3.0) (2026-08-02)
+
+
+### Features
+
+* configure the transcript pipeline per language, instead of flags ([#7](https://github.com/znat/parrotflow/issues/7)) ([e9e038b](https://github.com/znat/parrotflow/commit/e9e038b0bac7218ad548c1468976aeae7803d247))
+
 ## [0.2.0](https://github.com/znat/parrotflow/compare/v0.1.0...v0.2.0) (2026-08-01)
 
 
