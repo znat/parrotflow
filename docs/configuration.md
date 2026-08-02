@@ -44,6 +44,22 @@ feedback:
   overlay: true
 ```
 
+## Where things live
+
+| | |
+|---|---|
+| Config | `~/.config/parrotflow/config.yaml` |
+| Recordings | `~/Recordings/ParrotFlow` |
+| Log | `~/Library/Logs/ParrotFlow.log` |
+| The example script | `~/.config/parrotflow/code_identifiers.py`, written on first launch and never overwritten |
+
+The menu bar item shows the current state and offers *Correct a Word…*, *Open
+Recordings Folder*, *Settings…* — which opens `config.yaml` in your editor —
+and *Permissions…*.
+
+The dev build keeps its own copies of all of these; see
+[development.md](development.md).
+
 ## `hotkey`
 
 **Bare modifiers**, used alone: `right_option`, `left_option`,
