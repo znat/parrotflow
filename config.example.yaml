@@ -49,14 +49,17 @@ transcription:
       - replacements
       - fuzzy
       - numbers
-      # "read user dot name" -> read user.name in a terminal, and `user.name`
-      # in a chat window. Both steps are here and both conditions are read; at
-      # most one matches. Anywhere else — a mail window, a document — the
-      # sentence is left exactly as spoken.
+      # "read user dot name" -> read user.name, wherever you write code-ish
+      # text. Anywhere else — a mail window, a document — the sentence is left
+      # exactly as spoken.
+      #
+      # `backticks` below would wrap it for chat, and is deliberately not in
+      # this list. Slack's composer converts markdown as you type it and never
+      # re-reads text that arrives by paste, so the backticks land in your
+      # message as characters. Add the step if your chat app renders pasted
+      # markup.
       - transform: dotted
         app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
-      - transform: backticks
-        app: /slack|discord/
 
   # The spelling you want, and the ways it comes out wrong. Whole words,
   # case-insensitive. A source in /slashes/ is a regular expression, and an

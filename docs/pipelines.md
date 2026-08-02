@@ -61,22 +61,21 @@ under two conditions. Named ones can:
 pipelines:
   default:
     - replacements
-    - transform: dotted
-      app: /term|ghostty|iterm|warp/
-    - transform: dotted-chat
-      app: /slack|discord/
     - fuzzy
     - numbers
+    - transform: dotted
+      app: /term|ghostty|iterm|warp/
+    - transform: prose
+      app: /^(?!.*(term|ghostty|iterm|warp))/
 ```
 
-Same sentence, two outputs, decided by where it is going — `user.name` in a
-terminal, `` `user.name` `` in chat. Both steps are in the pipeline and both
-conditions are evaluated; at most one matches.
+Two tables, two conditions, at most one matching. A single `replacements:`
+cannot express that: it is one table run by one stage, in one place.
 
-**This pair ships.** A new install is written with `dotted` and `dotted-chat`
-already in the default pipeline, because this is a tool for people who dictate
-identifiers. Delete the two steps and it stops; delete the two transforms and
-`--check-config` tells you the steps name nothing.
+**`dotted` ships.** A new install is written with it already in the default
+pipeline, because this is a tool for people who dictate identifiers. Delete the
+step and it stops; delete the transform and `--check-config` tells you the step
+names nothing.
 
 ### The one rewrite that fires on ordinary language
 
@@ -109,21 +108,31 @@ defensible.
 `scripts/check-dotted.sh` reads the pattern out of `Config.defaultYAML` rather
 than from a fixture, so what is scored is what a new install gets.
 
-### Chat wraps in a second step
+### `backticks`, defined and not used
 
-`backticks` is a separate transform, not a cleverer pattern:
+A second transform wraps a dotted path for a chat window:
 
 ```yaml
-- transform: dotted
-  app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
 - transform: backticks
   app: /slack|discord/
 ```
 
-`dotted` does not consume the word after the dot, so it has nowhere to put a
-closing backtick — the first attempt produced ``lis `config.`port``. Building
-the path and wrapping it are two jobs, and the second only runs where markdown
-means something. It requires a letter to start, so `21.5` is left alone.
+It is a separate transform rather than a cleverer pattern because `dotted` does
+not consume the word after the dot, so it has nowhere to put a closing backtick
+— the first attempt produced ``lis `config.`port``. It requires a letter to
+start, so `21.5` is left alone.
+
+**It is not in the shipped pipeline.** Slack's composer converts markdown as you
+type it and never re-reads text that arrives by paste, which is every way this
+app inserts text — so the backticks land in the message as characters. Tried on
+a real Slack, including with *Format messages with markup* enabled, and it did
+not render either way. A default that depends on a setting in another
+application, and does not work when that setting is on, is not a default: it
+puts noise in your messages and gives you nowhere to look.
+
+Add the step if your chat app renders pasted markup. Getting this to work
+properly means putting rich text on the clipboard rather than markdown
+characters, which is a different feature.
 
 ### Order matters, and only one set notices
 
