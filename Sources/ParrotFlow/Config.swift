@@ -1607,13 +1607,17 @@ if __name__ == "__main__":
       # return a better one, in its own voice, and you will not notice until it
       # has gone.
       #
-      # 6/7 on gemma4:e4b, and the versions in between are written down in
+      # 8/10 on gemma4:e4b, and the six versions before it are written down in
       # config.example.yaml beside the same prompt. The short version: a
       # prohibition ("do not invent a greeting") read as a topic and produced
-      # one; "nothing is ever deleted" produced a literal "[Signature]"; and
-      # giving the greeting rule worked examples put those examples in the
-      # output. The one case still failing runs two clauses together with no
-      # comma and comes back as the second one.
+      # one; "nothing is ever deleted" produced a literal "[Signature]";
+      # worked examples for the greeting came back in the output; and the list
+      # rule has to sit with the paragraph rule, because after the short-reply
+      # clause it turned a two-word reply into "[No body text]".
+      #
+      # The two still failing are one shape — a short reply ending in a goodbye
+      # comes back as the goodbye alone. Numbered lists are deliberately absent:
+      # the version that forced them from spoken ordinals dropped an item.
       - name: email
         description: lay dictated text out as an email
         prompt: |
@@ -1629,7 +1633,15 @@ if __name__ == "__main__":
           starts with the first sentence. Never add a greeting nobody spoke.
 
           Break the body into paragraphs where the subject changes, a blank
-          line between them. Add no headings, no bullets and no emphasis.
+          line between them. Add no headings and no emphasis.
+
+          Three or more things listed in a row never stay inline. Whatever
+          joined them — commas, "and", nothing at all — the words introducing
+          them take a colon and each thing goes on a line of its own behind a
+          dash. No number has to be said for this: "here is what I need from
+          you", "the steps are", "we should" all open a list as surely as
+          "there are three things" does. Two things are a sentence and stay
+          one.
 
           A name at the end is a signature: a blank line, then the name on
           its own line, and a closing word said just before it — thanks,

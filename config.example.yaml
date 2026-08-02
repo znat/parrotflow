@@ -237,28 +237,37 @@ transforms:
   # costs you something: a model handed a dictated email will gladly return a
   # better one, in its own voice, and you will not notice until it has gone.
   #
-  # 6/7 on gemma4:e4b, and every version in between is in the failure, not the
-  # number. What the seven cases caught, in the order they were caught:
+  # 8/10 on gemma4:e4b. Six versions before this one, and what the cases caught:
   #
   #   v1  "if none was dictated, do not invent one" -> a "Hi," invented anyway,
   #       and a spoken "thanks Nathan" reduced to "Nathan". A prohibition read
   #       as a topic.
   #   v2  the greeting rule turned around to say what the email starts with
   #       when there is no hello, and the closing word tied to the signature.
-  #       Both fixed. 5/7.
-  #   v3  "Nothing is ever deleted" added -> the model answered with a literal
-  #       "[Signature]" placeholder and went back to inventing a greeting. A
-  #       rule about restraint made it less restrained, exactly as it did in
-  #       tests/grammar-cases.yaml.
-  #   v4  the greeting rule given examples — "bonjour Marie, hi Tom" -> the
-  #       examples came back in the output as "Hi Tom," and "À toi,". Elsewhere
-  #       here examples beat rules; not here.
-  #   v5  a short reply named as its own case, no line put anywhere. 6/7.
+  #   v3  "Nothing is ever deleted" added -> a literal "[Signature]" in the
+  #       output and a greeting invented again. A rule about restraint made it
+  #       less restrained, exactly as in tests/grammar-cases.yaml.
+  #   v4  the greeting rule given worked examples — "bonjour Marie, hi Tom" ->
+  #       the examples came back in the output as "Hi Tom," and "À toi,".
+  #   v5  a short reply named as its own case. 6/7 on the cases that existed.
+  #   v6  lists. Two lessons: the model needs to be told it may count for
+  #       itself — "three or more things in a row" left "here is what I need
+  #       from you the invoice the signed contract and the shipping address"
+  #       inline until the rule said no number has to be spoken — and the rule
+  #       has to sit with the paragraph rule. Moved after the short-reply
+  #       clause it dominated: a two-word reply came back as "[No body text]".
   #
-  # The one that fails is "yes that works for me see you thursday", which comes
-  # back as "See you Thursday." — two clauses run together with no comma read
-  # as one goodbye. The same sentence with the comma is right. It is left in
-  # the set failing rather than argued with.
+  # Two failures left, and they are one shape: a short reply ending in a
+  # goodbye comes back as the goodbye alone. "yes that works for me see you
+  # thursday" -> "See you Thursday.", and "ok pour moi, à jeudi" -> "À jeudi,".
+  # The same sentence with a comma is right. Three framings have bounced off
+  # it, the third being a clause saying a goodbye is not a signature to lift
+  # out, so it is recorded rather than argued with.
+  #
+  # Numbered lists are not in it. Spoken ordinals — "first we deploy, second we
+  # run the tests" — stay as sentences, and the version that forced them
+  # dropped an item on the floor, which is a worse thing to ship than prose
+  # where a list was wanted. Dashes only.
   - name: email
     description: lay dictated text out as an email
     prompt: |
@@ -274,7 +283,15 @@ transforms:
       starts with the first sentence. Never add a greeting nobody spoke.
 
       Break the body into paragraphs where the subject changes, a blank
-      line between them. Add no headings, no bullets and no emphasis.
+      line between them. Add no headings and no emphasis.
+
+      Three or more things listed in a row never stay inline. Whatever
+      joined them — commas, "and", nothing at all — the words introducing
+      them take a colon and each thing goes on a line of its own behind a
+      dash. No number has to be said for this: "here is what I need from
+      you", "the steps are", "we should" all open a list as surely as
+      "there are three things" does. Two things are a sentence and stay
+      one.
 
       A name at the end is a signature: a blank line, then the name on
       its own line, and a closing word said just before it — thanks,

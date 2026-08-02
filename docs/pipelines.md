@@ -329,15 +329,16 @@ tokens on: a model handed a dictated email will gladly return a better one, in
 its own voice, and nothing on screen says it happened — a pipeline stage runs
 on a transcript nobody has seen yet, so `confirm` does not apply to it.
 
-**6/7 and 3/3 on gemma4:e4b**, and the versions in between are written into
+**8/10 and 3/3 on gemma4:e4b**, and the versions in between are written into
 config.example.yaml beside each prompt, because what they cost is the useful
-part. Three findings, all of them the prompt making things worse before better:
+part. Four findings, all of them the prompt making things worse before better:
 
 | Wording | What it did |
 |---|---|
 | "If none was dictated, do not invent one" | invented a greeting anyway — a prohibition read as a topic |
 | "Nothing is ever deleted" | answered with a literal `[Signature]` placeholder |
 | the greeting rule given examples | put the examples in the output: "Hi Tom," and "À toi," |
+| the list rule moved after the short-reply clause | a two-word reply came back as "[No body text]" |
 
 The first is the lesson `tests/grammar-cases.yaml` already records — a rule
 about restraint making the model less restrained. The third is that file's
@@ -351,10 +352,23 @@ not to add. And `slack` says "Add nothing" rather than "No greeting, no
 sign-off", because the second wording was read as an instruction to *remove*
 one: "hey uh quick one the build is red" came back as "The build is red".
 
-The case still failing is `yes that works for me see you thursday`, which comes
-back as `See you Thursday.` — two clauses run together with no comma read as
-one goodbye. With the comma it is right. It is left failing rather than argued
-with.
+`email` also sets out lists, which is the one place it adds structure rather
+than removing it. Three or more things in a row take a colon and a dash each.
+The rule has to say that **no number needs to have been spoken** — "three or
+more things in a row" on its own left `here is what I need from you the invoice
+the signed contract and the shipping address` inline, because the model was
+waiting to be told there were three.
+
+**Numbered lists are deliberately absent.** Spoken ordinals — "first we deploy,
+second we run the tests" — stay as sentences. The version that forced them to
+1. 2. 3. dropped an item on the floor, and prose where a list was wanted is a
+better thing to ship than a list missing a line.
+
+The two cases still failing are one shape: a short reply ending in a goodbye
+comes back as the goodbye alone — `yes that works for me see you thursday` →
+`See you Thursday.`, and `ok pour moi, à jeudi` → `À jeudi,`. The same sentence
+with a comma is right. Three framings have bounced off it, so it is recorded
+rather than argued with.
 
 **Neither is in the shipped default pipeline.** Every stage a new install gets
 is free and needs nothing running; these cost about a second and do nothing at
