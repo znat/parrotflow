@@ -460,10 +460,21 @@ private struct StepPane: View {
 
                 Spacer()
 
-                Button(asked ? "Ask again" : step.actionTitle, action: onAsk)
+                Button(actionTitle, action: onAsk)
                     .keyboardShortcut(.defaultAction)
             }
         }
+    }
+
+    /// Named for where pressing it lands, which a refusal changes.
+    ///
+    /// macOS prompts once. After that `requestMicrophone` opens the pane
+    /// instead, so a button still offering to ask is a button that does
+    /// something else than it says — and it would say it directly under the
+    /// line explaining that Settings is now the only way back.
+    private var actionTitle: String {
+        if status == .denied { return "Open System Settings" }
+        return asked ? "Ask again" : step.actionTitle
     }
 
     /// Three states, three words for them, in the order they happen.
