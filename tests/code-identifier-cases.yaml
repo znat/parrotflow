@@ -1,6 +1,6 @@
 # Validation set for spoken identifiers — a transform that turns a name said
 # out loud into the identifier a language would spell it as. Run with
-# scripts/validate-identifiers.py.
+# scripts/validate-code-identifiers.py.
 #
 # The question it exists to answer: can one prompt, on a small local model, do
 # this on its own? If it can, the whole feature is a `transforms:` entry and a

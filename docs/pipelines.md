@@ -48,9 +48,9 @@ transforms:
     replace:
       $1.$2: ['/\b(\w+) (?:dot|point) (\w+)\b/']
 
-  - name: identifiers
+  - name: code_identifiers
     description: spoken names as identifiers
-    command: identifiers.py
+    command: code_identifiers.py
 ```
 
 `prompt:` asks the local model — about a second, and the reason conditions
@@ -95,7 +95,7 @@ not found", which would send you looking for a file that is sitting right where
 you put it.
 
 A relative path is relative to **the file that named it**: `command:
-identifiers.py` is the script sitting beside your config.yaml. It runs with
+code_identifiers.py` is the script sitting beside your config.yaml. It runs with
 that directory as its working directory, so it can read its neighbours. A bare
 name that is not a file there — `sed`, `python3` — is left to the shell to find
 on PATH, so a command can be a one-liner with its own arguments:
@@ -113,16 +113,16 @@ whatever came next would have needed something else. A command needs nothing
 added ever again — which is the point, and the reason it is worth the process
 start.
 
-### `identifiers`, which ships
+### `code_identifiers`, which ships
 
-`examples/identifiers.py` is the first one, and it is in the default pipeline.
+`examples/code_identifiers.py` is the first one, and it is in the default pipeline.
 It turns "a python function called max retries" into "…called max_retries", in
 English and French, with the convention taken from the language named in the
 sentence — snake_case for python and rust, camelCase for typescript and go,
 PascalCase for a class or a type, SCREAMING_SNAKE for a constant, camelCase
 when no language was said.
 
-A copy is written to `~/.config/parrotflow/identifiers.py` on first launch and
+A copy is written to `~/.config/parrotflow/code_identifiers.py` on first launch and
 never overwritten afterwards: once it exists it is yours. The stop lists in it
 decide where a name ends, which is a judgement about how you speak rather than
 a fact, and they are meant to be edited.
@@ -147,9 +147,9 @@ The rules decline all of those by construction; the model gets 8/8 on them
 where the rules get 2/8.
 
 ```yaml
-  - name: identifiers
+  - name: code_identifiers
     description: spoken names as identifiers
-    command: identifiers.py --model gemma4:e4b
+    command: code_code_identifiers.py --model gemma4:e4b
 ```
 
 It **extracts** rather than rewrites: the language the sentence names, and the

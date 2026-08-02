@@ -947,10 +947,10 @@ enum ConfigStore {
         directory.appendingPathComponent("config.yaml")
     }
 
-    /// Where the `identifiers` transform's program lives — beside the config
-    /// that names it, which is what makes `command: identifiers.py` resolve.
-    static var identifiersURL: URL {
-        directory.appendingPathComponent("identifiers.py")
+    /// Where the `code_identifiers` transform's program lives — beside the config
+    /// that names it, which is what makes `command: code_identifiers.py` resolve.
+    static var codeIdentifiersURL: URL {
+        directory.appendingPathComponent("code_identifiers.py")
     }
 
     /// Creates the config file, and the one program it ships with, if they are
@@ -964,38 +964,39 @@ enum ConfigStore {
     /// something it gave you.
     static func createIfMissing() throws {
         let fm = FileManager.default
-        if !fm.fileExists(atPath: identifiersURL.path) {
+        if !fm.fileExists(atPath: codeIdentifiersURL.path) {
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-            try defaultIdentifiersScript.write(to: identifiersURL, atomically: true, encoding: .utf8)
+            try defaultCodeIdentifiersScript.write(to: codeIdentifiersURL, atomically: true, encoding: .utf8)
             // A shebang does nothing without this.
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: identifiersURL.path)
-            Log.write("config: wrote \(identifiersURL.lastPathComponent)")
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: codeIdentifiersURL.path)
+            Log.write("config: wrote \(codeIdentifiersURL.lastPathComponent)")
         }
         guard !fm.fileExists(atPath: fileURL.path) else { return }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try defaultYAML.write(to: fileURL, atomically: true, encoding: .utf8)
     }
 
-    /// The shipped copy of examples/identifiers.py.
+    /// The shipped copy of examples/code_identifiers.py.
     ///
     /// Two copies of one file, which is a thing this repo has been bitten by
     /// twice — so scripts/check-example-script.sh fails when they differ. The
     /// example is the one to edit; this is the one that ships.
-    static let defaultIdentifiersScript = #"""
+    static let defaultCodeIdentifiersScript = #"""
 #!/usr/bin/env python3
 """Spoken names as identifiers. A transcript on stdin, the rewrite on stdout.
 
     transforms:
-      - name: identifiers
+      - name: code_identifiers
         description: spoken names as identifiers
-        command: identifiers.py                        # rules only, 0.03s
-      # command: identifiers.py --model gemma4:e4b     # + the model, see below        # next to config.yaml
+        command: code_identifiers.py                       # rules only, 0.03s
+      # command: code_identifiers.py --model gemma4:e4b     # + the model, below
+        timeout_seconds: 12                                 # only with --model
 
     transcription:
       pipelines:
-        default: [replacements, fuzzy, numbers]
-        # add it yourself:
-        #   - transform: identifiers
+        default:
+          - transform: code_identifiers
+            when: /\b(?:function|variable|class|constant|fonction|classe)\b/
 
 "a python function called max retries"  ->  "a python function called max_retries"
 
@@ -1003,14 +1004,16 @@ The convention comes from the language if one was said, and is camelCase when
 none was. A class or a type takes PascalCase whatever the language; a constant
 takes SCREAMING_SNAKE_CASE.
 
-This is not in the default pipeline and is not installed anywhere. Copy it to
-~/.config/parrotflow/, make it executable, and add the two lines above.
+A copy of this file is written to ~/.config/parrotflow/code_identifiers.py on
+first launch and never overwritten afterwards, and the step above is in the
+default pipeline. This one, in examples/, is the copy you read and edit; see
+scripts/check-example-script.sh, which keeps the two equal.
 
-Why a script and not a prompt: measured. On tests/identifier-cases.yaml, 56
+Why a script and not a prompt: measured. On tests/code-code-identifier-cases.yaml, 56
 cases, this scores 100% and costs a process start; gemma4:e4b scores 68% and
 costs a second — and its errors are the expensive kind, capitalising words it
 was not asked to touch and translating French names into English. See
-scripts/validate-identifiers.py for the scoreboard.
+scripts/validate-code-identifiers.py for the scoreboard.
 
 --model asks a local model, and only about what the rules declined: a name
 given without a marker in front of it — "call it max retries", "rename the
@@ -1133,7 +1136,7 @@ def convert(text):
     return out
 
 
-# The prompt, iterated and scored as v5 in scripts/validate-identifiers.py.
+# The prompt, iterated and scored as v5 in scripts/validate-code-identifiers.py.
 #
 # It extracts rather than rewrites: the language once, the names one per line.
 # Everything after that is code — the language becomes a convention through
@@ -1373,9 +1376,9 @@ if __name__ == "__main__":
           # "a python function called max retries" -> ...called max_retries, in
           # the convention of the language you named. Same places as `dotted`,
           # and `when:` keeps it from starting a process on a sentence that
-          # names nothing — which is most of them. See examples/identifiers.py,
+          # names nothing — which is most of them. See examples/code_identifiers.py,
           # written beside this file on first launch and yours to edit.
-          - transform: identifiers
+          - transform: code_identifiers
             app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
             when: /\\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\\b/
 
@@ -1447,9 +1450,9 @@ if __name__ == "__main__":
     #     replace:
     #       $1.$2: ['/\\b(\\w+) (?:dot|point) (\\w+)\\b/']
     #
-    #   - name: identifiers
+    #   - name: code_identifiers
     #     description: spoken names as identifiers
-    #     command: identifiers.py          # beside this file; see examples/
+    #     command: code_identifiers.py          # beside this file; see examples/
     #
     # A `command:` is the one thing in this file that runs code rather than
     # describing a rewrite. --check-config names every one of them out loud. A
@@ -1537,9 +1540,9 @@ if __name__ == "__main__":
       # back on stdout; a relative path is beside this file. Written there on
       # first launch, and yours — the stop lists in it decide where a name
       # ends, which is a judgement about how you speak.
-      - name: identifiers
+      - name: code_identifiers
         description: spoken names as identifiers
-        command: identifiers.py
+        command: code_identifiers.py
         # Add `--model gemma4:e4b` to have a model handle the namings the rules
         # cannot see — "call it max retries", "rename the variable to retry
         # count". Measured over 75 cases: it takes the sentences that should

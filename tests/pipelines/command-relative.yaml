@@ -6,8 +6,8 @@
 # instead would have made this case score differently on every machine.
 languages: [en]
 transforms:
-  - name: identifiers
+  - name: code_identifiers
     description: spoken names as identifiers
-    command: ../../examples/identifiers.py
+    command: ../../examples/code_identifiers.py
 pipeline:
-  - transform: identifiers
+  - transform: code_identifiers

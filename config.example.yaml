@@ -73,9 +73,9 @@ transcription:
       # "a python function called max retries" -> ...called max_retries, in the
       # convention of the language you named. Same places as `dotted`, and
       # `when:` keeps it from starting a process on a sentence that names
-      # nothing — which is most of them. See examples/identifiers.py, which is
+      # nothing — which is most of them. See examples/code_identifiers.py, which is
       # written beside this file on first launch and is yours to edit.
-      - transform: identifiers
+      - transform: code_identifiers
         app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
         when: /\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\b/
 
@@ -143,9 +143,9 @@ updates:
 #     replace:
 #       $1.$2: ['/\b(\w+) (?:dot|point) (\w+)\b/']
 #
-#   - name: identifiers
+#   - name: code_identifiers
 #     description: spoken names as identifiers
-#     command: identifiers.py          # beside this file; see examples/
+#     command: code_identifiers.py          # beside this file; see examples/
 #
 # A `command:` is the one thing in this file that runs code rather than
 # describing a rewrite. --check-config names every one of them out loud. A
@@ -233,9 +233,9 @@ transforms:
   # on stdout; a relative path is beside this file. Written there on first
   # launch, and yours — the stop lists in it decide where a name ends, which is
   # a judgement about how you speak.
-  - name: identifiers
+  - name: code_identifiers
     description: spoken names as identifiers
-    command: identifiers.py
+    command: code_identifiers.py
     # Add `--model gemma4:e4b` to have a model handle the namings the rules
     # cannot see — "call it max retries", "rename the variable to retry
     # count". Measured over 75 cases: it takes the sentences that should

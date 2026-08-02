@@ -62,7 +62,7 @@ enum CommandRunner {
 
         let process = Process()
         // Through a shell, so a command can carry its arguments and its
-        // redirections the way it would in a terminal — `identifiers.py --lang
+        // redirections the way it would in a terminal — `code_identifiers.py --lang
         // python`. The shell is also what resolves a bare name against PATH,
         // which is why the rewriting below only touches a first word that
         // turns out to name a real file next to the config.
@@ -208,7 +208,7 @@ enum CommandRunner {
     /// applies to a bare `sed` or a pipeline.
     ///
     /// It is **quoted**, because a path is not something the shell should be
-    /// reading for syntax. `~/My Configs/parrotflow/identifiers.py` was being
+    /// reading for syntax. `~/My Configs/parrotflow/code_identifiers.py` was being
     /// split on the space and half of it run as a program.
     ///
     /// And it is **`exec`ed**, which replaces the shell with the program, so

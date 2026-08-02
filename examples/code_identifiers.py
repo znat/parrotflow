@@ -2,16 +2,17 @@
 """Spoken names as identifiers. A transcript on stdin, the rewrite on stdout.
 
     transforms:
-      - name: identifiers
+      - name: code_identifiers
         description: spoken names as identifiers
-        command: identifiers.py                        # rules only, 0.03s
-      # command: identifiers.py --model gemma4:e4b     # + the model, see below        # next to config.yaml
+        command: code_identifiers.py                       # rules only, 0.03s
+      # command: code_identifiers.py --model gemma4:e4b     # + the model, below
+        timeout_seconds: 12                                 # only with --model
 
     transcription:
       pipelines:
-        default: [replacements, fuzzy, numbers]
-        # add it yourself:
-        #   - transform: identifiers
+        default:
+          - transform: code_identifiers
+            when: /\b(?:function|variable|class|constant|fonction|classe)\b/
 
 "a python function called max retries"  ->  "a python function called max_retries"
 
@@ -19,14 +20,16 @@ The convention comes from the language if one was said, and is camelCase when
 none was. A class or a type takes PascalCase whatever the language; a constant
 takes SCREAMING_SNAKE_CASE.
 
-This is not in the default pipeline and is not installed anywhere. Copy it to
-~/.config/parrotflow/, make it executable, and add the two lines above.
+A copy of this file is written to ~/.config/parrotflow/code_identifiers.py on
+first launch and never overwritten afterwards, and the step above is in the
+default pipeline. This one, in examples/, is the copy you read and edit; see
+scripts/check-example-script.sh, which keeps the two equal.
 
-Why a script and not a prompt: measured. On tests/identifier-cases.yaml, 56
+Why a script and not a prompt: measured. On tests/code-code-identifier-cases.yaml, 56
 cases, this scores 100% and costs a process start; gemma4:e4b scores 68% and
 costs a second — and its errors are the expensive kind, capitalising words it
 was not asked to touch and translating French names into English. See
-scripts/validate-identifiers.py for the scoreboard.
+scripts/validate-code-identifiers.py for the scoreboard.
 
 --model asks a local model, and only about what the rules declined: a name
 given without a marker in front of it — "call it max retries", "rename the
@@ -149,7 +152,7 @@ def convert(text):
     return out
 
 
-# The prompt, iterated and scored as v5 in scripts/validate-identifiers.py.
+# The prompt, iterated and scored as v5 in scripts/validate-code-identifiers.py.
 #
 # It extracts rather than rewrites: the language once, the names one per line.
 # Everything after that is code — the language becomes a convention through

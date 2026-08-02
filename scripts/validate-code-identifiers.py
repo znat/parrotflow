@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Score an identifier transform against tests/identifier-cases.yaml.
+"""Score an identifier transform against tests/code-code-identifier-cases.yaml.
 
-    scripts/validate-identifiers.py gemma4:e4b
-    scripts/validate-identifiers.py gemma4:e4b --variant v2 --verbose
-    scripts/validate-identifiers.py none --code-only    # the no-model control
+    scripts/validate-code-identifiers.py gemma4:e4b
+    scripts/validate-code-identifiers.py gemma4:e4b --variant v2 --verbose
+    scripts/validate-code-identifiers.py none --code-only    # the no-model control
 
 The question: can one prompt turn a name said out loud into the identifier a
 language spells it as, well enough to leave switched on? If it can, the whole
@@ -35,11 +35,11 @@ except ImportError:
     sys.exit("pip install pyyaml")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CASES = ROOT / "tests" / "identifier-cases.yaml"
+CASES = ROOT / "tests" / "code-identifier-cases.yaml"
 
 # --- prompt variants -------------------------------------------------------
 #
-# Each is what would go in `transforms: - name: identifiers / prompt: |`.
+# Each is what would go in `transforms: - name: code_identifiers / prompt: |`.
 
 VARIANTS = {}
 
@@ -200,7 +200,7 @@ SPAN_ONLY = {"v4"}
 
 def place(span, text):
     """The sentence with `span` cased and put back — the deterministic half,
-    shared with examples/identifiers.py so both are scored on one algorithm."""
+    shared with examples/code_identifiers.py so both are scored on one algorithm."""
     span = span.strip().strip('".')
     if not span or re.search(r"\bno name\b|\bnone\b", span, re.I):
         return text
@@ -309,11 +309,11 @@ def place_extracted(reply, text):
 
 # --- the control -----------------------------------------------------------
 #
-# No model: examples/identifiers.py, imported rather than reimplemented. It was
+# No model: examples/code_identifiers.py, imported rather than reimplemented. It was
 # a copy of these rules until the copies could disagree — and a runner scoring
 # its own version of an algorithm answers a question about code nobody runs.
 sys.path.insert(0, str(ROOT / "examples"))
-import identifiers as shipped  # noqa: E402
+import code_identifiers as shipped  # noqa: E402
 
 cased = shipped.cased
 style_for = shipped.style_for
@@ -376,7 +376,7 @@ def main():
     ap.add_argument("--script", default=None,
                     help="score a `command:` transform instead — the same way the app runs it,"
                          " the transcript on stdin and the rewrite on stdout. Takes arguments:"
-                         " --script 'examples/identifiers.py --model gemma4:e4b'")
+                         " --script 'examples/code_code_identifiers.py --model gemma4:e4b'")
     args = ap.parse_args()
 
     cases = yaml.safe_load(pathlib.Path(args.cases).read_text())["cases"]
@@ -465,7 +465,7 @@ main()
 #
 #                              change  keep  overall  latency
 #     identifiers.py             88%   94%    91%     0.03s  <- ships, by default
-#     identifiers.py --model    100%   84%    93%     0.66s  <- ships, off
+#     code_identifiers.py --model    100%   84%    93%     0.66s  <- ships, off
 #     v5, extraction, alone      97%   91%    94%     1.25s
 #     v4, one span, alone        97%   88%    93%     1.03s
 #     v2, the prompt rewriting   58%   83%    68%     1.15s
@@ -511,6 +511,6 @@ main()
 # CAUTIONS. The rules were tuned on cases now in this set, so 91% is not a
 # held-out number; the honest ones were 93%, 88% and 100% on the three batches
 # written afterwards. The next change needs new cases again. And the runner
-# imports examples/identifiers.py rather than reimplementing it, so
+# imports examples/code_identifiers.py rather than reimplementing it, so
 # `--code-only` and `--script` score the file the app writes —
 # scripts/check-example-script.sh keeps the shipped copy equal to it.
