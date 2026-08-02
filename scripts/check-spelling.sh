@@ -23,7 +23,11 @@ PHRASE="$(python3 -c '
 import yaml, pathlib
 cfg = yaml.safe_load((pathlib.Path.home() / ".config/parrotflow/config.yaml").read_text())
 t = cfg.get("transcription") or {}
-print(t.get("activation_phrase") or t.get("correction_phrase") or "hey parrot")
+phrases = (t.get("activation_phrases") or t.get("activation_phrase")
+           or t.get("correction_phrase") or "hey parrot")
+# One phrase or several, and the set says it the way the app teaches it:
+# the first is the one to use.
+print(phrases if isinstance(phrases, str) else phrases[0])
 ')"
 
 pass=0; total=0; missed=0; wrong=0; invented=0

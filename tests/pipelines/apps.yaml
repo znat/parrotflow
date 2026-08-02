@@ -1,0 +1,15 @@
+# App conditions, on a stage cheap enough to score deterministically. What is
+# tested is that `app:` decides, not what the stage does — `numbers` stands in
+# for whatever you would really scope to a terminal.
+#
+# Both directions from one key: inclusion is a plain pattern, exclusion is a
+# negative lookahead. There is no `not_app:`, so the second one is the whole
+# case for that decision — if a lookahead cannot express exclusion here, the
+# key was needed after all.
+languages: [en, fr]
+replacements:
+  Supabase: [super base]
+pipeline:
+  - replacements
+  - stage: numbers
+    app: /term|ghostty|iterm/

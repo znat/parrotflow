@@ -38,17 +38,43 @@ struct Pipeline: Equatable, Codable {
         case fuzzy
         /// Spoken numbers as digits, in the language its own pass resolves.
         case numbers
-        /// One of the prompts in `prompts:`, run over the whole transcript.
-        /// The only stage that calls a model, and the only one that names
-        /// something outside itself — see `Step.prompt`.
-        case prompt
+        /// One of the entries in `transforms:`, run over the whole
+        /// transcript. The only stage that names something outside itself, and
+        /// the only one that might call a model — see `Step.transform`.
+        case transform
 
         var name: String { rawValue }
 
-        /// Whether it can be in a default nobody wrote. `prompt` cannot: it
-        /// needs a name, and there is no prompt every install is guaranteed to
-        /// have. Everything else is in the default the moment it exists.
-        var isAutomatic: Bool { self != .prompt }
+        /// Whether it can be in a default nobody wrote. `transform` cannot: it
+        /// needs a name, and there is no transform every install is guaranteed
+        /// to have. Everything else is in the default the moment it exists.
+        var isAutomatic: Bool { self != .transform }
+    }
+
+    /// The app a transcript is on its way into, for `Step.app`.
+    ///
+    /// Captured when the hotkey goes down, never read at stage time. Between
+    /// the two there is a transcription and possibly a model call, and the
+    /// window you were dictating into is not reliably the one still in front
+    /// when the text comes back. `SelectionReader.snapshot()` takes the owner
+    /// at press for the same reason, and this rides along with it.
+    ///
+    /// Name and bundle identifier are matched as **one string**, not either-or.
+    /// The name is what you know an app by and the identifier is what stays
+    /// put, so both have to be reachable — but two haystacks and a negative
+    /// pattern do not mix: `/^(?!.*microsoft)/` matches "Code" while failing
+    /// `com.microsoft.VSCode`, and "one of the two matched" would then run the
+    /// stage in the app it was written to exclude. Joined, the question has one
+    /// answer.
+    struct App: Equatable {
+        let name: String
+        let bundleID: String
+
+        /// What a pattern is matched against.
+        var searchable: String { "\(name) \(bundleID)" }
+
+        /// How it reads in a log line.
+        var described: String { name.isEmpty ? bundleID : name }
     }
 
     /// A stage plus when it runs. The condition is the whole reason a pipeline
@@ -56,10 +82,11 @@ struct Pipeline: Equatable, Codable {
     /// can be skipped on the transcripts that do not need it.
     struct Step: Equatable, Codable {
         let stage: Stage
-        /// Which prompt, for a `prompt` stage. Meaningless on any other, and
-        /// required on that one — a prompt stage with nothing to run is a
-        /// config error rather than a stage that does nothing.
-        var prompt: String?
+        /// Which entry of `transforms:`, for a `transform` stage. Meaningless
+        /// on any other, and required on that one — a transform stage with
+        /// nothing to run is a config error rather than a stage that quietly
+        /// does nothing.
+        var transform: String?
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -68,6 +95,14 @@ struct Pipeline: Equatable, Codable {
         /// Skip when this matches. Both may be set; `unless` wins, because a
         /// reason not to run is a stronger statement than a reason to.
         var unless: String?
+        /// Run only in apps this matches — see `App`.
+        ///
+        /// There is no `not_app`, deliberately: the pattern is a regular
+        /// expression like every other one here, so exclusion is a negative
+        /// lookahead, `/^(?!.*term)/`. That keeps one key instead of two, at
+        /// the cost of an anchor people forget — which `validate` refuses
+        /// rather than leaving to run everywhere in silence.
+        var app: String?
 
         /// Same convention as `replacements`, so there is one thing to learn:
         /// between slashes it is a regular expression, otherwise it is a word,
@@ -165,8 +200,14 @@ struct Pipeline: Equatable, Codable {
     }
 
     /// The stage a config line names, or nil if it names nothing.
+    ///
+    /// "prompt" still resolves, because `- prompt: grammar` is what every
+    /// pipeline written before `transforms:` says and there is no reading of it
+    /// that has become ambiguous — a prompt is a transform with a prompt body.
     static func stage(named name: String) -> Stage? {
-        Stage(rawValue: name.trimmingCharacters(in: .whitespaces).lowercased())
+        let key = name.trimmingCharacters(in: .whitespaces).lowercased()
+        if key == "prompt" { return .transform }
+        return Stage(rawValue: key)
     }
 
     static var stageNames: [String] { Stage.allCases.map(\.rawValue) }
@@ -181,16 +222,31 @@ struct Pipeline: Equatable, Codable {
     /// enough against "Supabase" to swallow the preceding word.
     func validate() -> [String] {
         var problems: [String] = []
-        for step in steps where step.stage == .prompt && (step.prompt ?? "").isEmpty {
+        for step in steps where step.stage == .transform && (step.transform ?? "").isEmpty {
             problems.append("a prompt stage names no prompt — write `- prompt: <name>`")
         }
         for step in steps {
-            for (label, condition) in [("when", step.when), ("unless", step.unless)] {
+            for (label, condition) in [
+                ("when", step.when), ("unless", step.unless), ("app", step.app)
+            ] {
                 guard let condition else { continue }
                 if Step.expression(for: condition) == nil {
                     // Otherwise the stage simply never runs, which looks
                     // exactly like the stage being broken.
                     problems.append("\(step.stage.name): \(label) \"\(condition)\" is not a valid pattern")
+                    continue
+                }
+                // A negative lookahead is how exclusion is written here, and
+                // unanchored it is a lie: patterns are matched with
+                // `firstMatch`, so `/(?!.*term)/` succeeds one character into
+                // "Terminal" and the stage runs everywhere it was meant to be
+                // kept out of. Nothing about that failure is visible — the
+                // stage does not error, it just runs — so it is refused here.
+                if Step.pattern(for: condition).hasPrefix("(?!") {
+                    problems.append(
+                        "\(step.stage.name): \(label) \"\(condition)\" is an unanchored negative"
+                            + " lookahead — it matches almost anything. Anchor it: /^(?!.*…)/"
+                    )
                 }
             }
         }
@@ -220,14 +276,46 @@ struct Pipeline: Equatable, Codable {
     /// skipped was reported as having "ran, changed nothing". A diagnostic that
     /// disagrees with the thing it is diagnosing is worse than none.
     static func skipReason(
-        for step: Step, text: String, config: Config, allowPrompts: Bool
+        for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil
     ) -> String? {
-        if step.stage == .prompt {
-            if !allowPrompts { return "prompts are off on this path" }
-            if VoiceCommand.commandAfterWakePhrase(
-                text, phrase: config.transcription.activationPhrase
-            ) != nil {
+        if step.stage == .transform {
+            // Only the prompt-bodied ones. `allowPrompts` is there to keep
+            // `--replace` off the network, and a `replace:` transform is a
+            // table — blocking it would make the flag mean "no transforms",
+            // which is not what any caller asked for.
+            //
+            // A name that resolves to nothing counts as a prompt, which is the
+            // conservative reading: the stage is about to be skipped anyway,
+            // and the one thing this must not do is let an unresolved name
+            // become a way onto the network.
+            let named = step.transform.flatMap { config.transform(named: $0) }
+            if !allowPrompts, named?.isPrompt ?? true {
+                return "prompts are off on this path"
+            }
+            // Either position. A phrase at the front means the whole utterance
+            // is an instruction; one in the middle means the instruction is
+            // about the words before it. Both are read after this runs, and a
+            // transform that rewrote the sentence first could eat the phrase
+            // and leave what should have been a command to be typed into the
+            // document.
+            let phrases = config.transcription.activationPhrases
+            if VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) != nil {
                 return "this is a spoken command"
+            }
+            if VoiceCommand.inlineInstruction(text, phrases: phrases) != nil {
+                return "this carries an instruction of its own"
+            }
+        }
+        if let wanted = step.app {
+            // Fails closed. Without Accessibility, or on a path that never had
+            // a window to read, there is no app — and "run it anyway" would run
+            // a terminal-only stage in your editor, which is the one outcome
+            // asking for `app:` was meant to prevent.
+            guard let app else {
+                return "app \(wanted) cannot be checked — nothing was in front"
+            }
+            if !step.matches(app.searchable, wanted) {
+                return "app \(wanted) did not match \(app.described)"
             }
         }
         if let unless = step.unless, step.matches(text, unless) {
@@ -239,16 +327,19 @@ struct Pipeline: Equatable, Codable {
         return nil
     }
 
-    func run(_ text: String, config: Config, allowPrompts: Bool = true) async -> String {
+    func run(
+        _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil
+    ) async -> String {
         var output = text
         for step in steps {
             if let reason = Pipeline.skipReason(
-                for: step, text: output, config: config, allowPrompts: allowPrompts
+                for: step, text: output, config: config,
+                allowPrompts: allowPrompts, app: app
             ) {
                 // Said out loud: a stage that silently does not run is
                 // indistinguishable from one that ran and found nothing, and
                 // only one of those is answerable by editing a condition.
-                let named = step.prompt.map { "\(step.stage.name) \($0)" } ?? step.stage.name
+                let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
                 Log.write("pipeline: skipped \(named) — \(reason)")
                 continue
             }
@@ -262,12 +353,51 @@ struct Pipeline: Equatable, Codable {
         case .replacements:
             return Replacements.applyExact(to: text, rules: config.transcription.rules)
         case .fuzzy:
-            let targets = config.transcription.replacements.keys.filter { !$0.isEmpty }
+            // From the rules, not from the table's keys. Fuzzy matching
+            // compares spellings, so a target is only a candidate if it is one
+            // — `$1.$2` is a template, not a word anything could sound like,
+            // and offering it as one puts a string in the list that every
+            // comparison has to lose to. `isFuzzyCandidate` was written for
+            // this and had never been wired to anything.
+            let targets = Set(
+                config.transcription.rules.filter(\.isFuzzyCandidate).map(\.replacement)
+            )
             return Replacements.applyFuzzy(to: text, targets: Array(targets))
         case .numbers:
             return Numbers.apply(to: text, languages: config.transcription.languages)
+        case .transform:
+            return await runTransform(step, on: text, config: config)
+        }
+    }
+
+    /// Whichever kind of transform the step named.
+    ///
+    /// A missing one returns the transcript rather than emptying it, same as
+    /// every other way this stage declines — the name may be a typo, and
+    /// `--check-config` is where that gets said.
+    private func runTransform(_ step: Step, on text: String, config: Config) async -> String {
+        guard let name = step.transform else {
+            Log.write("pipeline: a transform stage names no transform; skipped")
+            return text
+        }
+        guard let transform = config.transform(named: name) else {
+            Log.write("pipeline: no transform named \"\(name)\"; skipped")
+            return text
+        }
+        switch transform.body {
         case .prompt:
-            return await runPrompt(step, on: text, config: config)
+            return await runPrompt(step, named: name, on: text, config: config)
+        case .replace:
+            // Exact and free, so there is nothing to guard and nothing to
+            // report beyond what the table did — the log line is the same one
+            // `replacements` writes, with the name that asked for it.
+            let result = Replacements.applyExact(to: text, rules: transform.rules)
+            if result != text {
+                Log.write("pipeline: transform \(name) rewrote the transcript")
+                Log.write("    before: \(text)")
+                Log.write("    after:  \(result)")
+            }
+            return result
         }
     }
 
@@ -279,18 +409,14 @@ struct Pipeline: Equatable, Codable {
     /// quiet — a model rewriting your words is the one stage whose before and
     /// after belong in the log whether or not anything went wrong, because
     /// nothing on screen will ever show you it happened.
-    private func runPrompt(_ step: Step, on text: String, config: Config) async -> String {
-        guard let name = step.prompt else {
-            Log.write("pipeline: a prompt stage names no prompt; skipped")
-            return text
-        }
+    private func runPrompt(
+        _ step: Step, named name: String, on text: String, config: Config
+    ) async -> String {
         guard config.llm.enabled else {
             Log.write("pipeline: skipped prompt \(name) — llm.enabled is false")
             return text
         }
-        guard let prompt = config.prompts.first(where: {
-            $0.name.caseInsensitiveCompare(name) == .orderedSame
-        }) else {
+        guard let prompt = config.transform(named: name)?.asPrompt else {
             Log.write("pipeline: no prompt named \"\(name)\"; skipped")
             return text
         }

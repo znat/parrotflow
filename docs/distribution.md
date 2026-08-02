@@ -97,6 +97,30 @@ The certificate is therefore a durable asset, not a build artefact. Regenerating
 it breaks every existing install. It lives outside the repo and its `.p12` is a
 repository secret.
 
+It also does a second job, once `install.sh` pins it. `codesign --verify` proves
+a signature matches the bundle it covers and says nothing about who produced it:
+a self-signed certificate is free to make, can carry any common name — including
+this one — and passes that check. So the installer compares the SHA-256 of the
+leaf certificate against a pinned value, which is what turns "this archive is
+internally consistent" into "this archive is ours". A swapped release fails
+before anything is copied into `/Applications`.
+
+Pinning inside a script is usually how a project strands itself on a key it
+later has to rotate. It is safe here for the reason the file already relies on:
+`install.sh` is read from `main` on every run, so the pin travels in the same
+commit as the new certificate. And it fails in the right direction anyway — a
+release signed with a different certificate is one TCC would refuse the user's
+existing grants to, so refusing it in the installer converts a silent loss of
+Microphone and Accessibility into a stop with a reason.
+
+The fingerprint is derivable from the certificate itself, which is what makes
+rotating it a one-line change rather than an archaeology exercise:
+
+```sh
+openssl x509 -in ~/.parrotflow-release/cert.pem -outform DER | shasum -a 256
+codesign -d --extract-certificates=/tmp/c ParrotFlow.app && shasum -a 256 /tmp/c0
+```
+
 ## Gatekeeper without notarization is now genuinely bad
 
 This used to be a shrug — right-click, Open, done. Not since macOS 15:

@@ -225,12 +225,103 @@ enum VoiceCommand {
     /// Understood as nothing actionable.
     case unrecognised(String)
 
-    /// Everything said after the wake phrase, or nil for plain dictation.
+    /// Everything said after a wake phrase, or nil for plain dictation.
     /// Empty string means the phrase was said on its own.
     ///
     /// Shared by the app and by `--command`; when these were two copies, the
     /// test harness silently exercised different logic from the app.
-    static func commandAfterWakePhrase(_ text: String, phrase rawPhrase: String) -> String? {
+    ///
+    /// Several phrases are tried and the best-scoring one wins, rather than the
+    /// first that clears the bar. They overlap on purpose — "hey parrot" and
+    /// "by the way parrot" share their distinctive word — so first-past-the-post
+    /// would let a poor match on one phrase beat a good match on another and
+    /// swallow a different number of words.
+    static func commandAfterWakePhrase(_ text: String, phrases: [String]) -> String? {
+        var best: (score: Double, command: String)?
+        for phrase in phrases {
+            guard let found = match(text, phrase: phrase) else { continue }
+            if best == nil || found.score > best!.score { best = found }
+        }
+        return best?.command
+    }
+
+    /// An instruction said *inside* a dictation, and the text it applies to.
+    ///
+    ///     "there is a bug in get username by the way parrot format it"
+    ///      └─ text ────────────────────┘        └─ instruction ─────┘
+    ///
+    /// The point is one breath instead of two. Saying it afterwards means a
+    /// second dictation, and a transform that has to find its target again —
+    /// reading a selection, or editing a field in place, which is where the
+    /// risk lives. Here the target is the same utterance and nothing has been
+    /// written yet.
+    ///
+    /// Exact, unlike the prefix matcher. That one is fuzzy because the wake
+    /// phrase is the first thing said and the audio engine is still starting
+    /// up, so "hey parrot" arrives clipped or misheard. Mid-sentence the audio
+    /// is clean, and there is a whole sentence of ordinary words for a fuzzy
+    /// match to fire on — "…the parrots are loud…" would split a sentence in
+    /// two and send half of it to a model.
+    ///
+    /// Nil when no phrase is found, or when one is found at the very start:
+    /// that is the whole utterance being a command, which is a different thing
+    /// and already handled.
+    static func inlineInstruction(
+        _ text: String, phrases: [String]
+    ) -> (text: String, instruction: String)? {
+        var best: (range: NSRange, length: Int)?
+        let whole = NSRange(text.startIndex..., in: text)
+
+        for phrase in phrases {
+            let words = phrase
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(separator: " ")
+                .map { NSRegularExpression.escapedPattern(for: String($0)) }
+            guard !words.isEmpty else { continue }
+            // Punctuation between the words because a transcript has it —
+            // "by the way, parrot" is what gets written down when you pause.
+            let pattern = "\\b" + words.joined(separator: "[\\s,]+") + "\\b"
+            guard let expression = try? NSRegularExpression(
+                pattern: pattern, options: [.caseInsensitive]
+            ) else { continue }
+
+            for match in expression.matches(in: text, range: whole) {
+                guard match.range.location > 0 else { continue }
+                // Earliest wins, so the text is everything you said before
+                // changing your mind. On a tie the longer phrase wins: "by the
+                // way parrot" and "parrot" start in different places, but two
+                // phrases sharing a start would otherwise be decided by the
+                // order they happen to sit in the config.
+                if let found = best,
+                   match.range.location > found.range.location
+                    || (match.range.location == found.range.location
+                        && match.range.length <= found.length) {
+                    continue
+                }
+                best = (match.range, match.range.length)
+            }
+        }
+
+        guard let best, let split = Range(best.range, in: text) else { return nil }
+        let before = String(text[..<split.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ",;:—-"))
+            .trimmingCharacters(in: .whitespaces)
+        let after = String(text[split.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ",;:—-"))
+            .trimmingCharacters(in: .whitespaces)
+
+        // Nothing before it is the command case wearing a disguise, and nothing
+        // after it is a phrase said for its own sake — neither has an edit in
+        // it, and guessing would rewrite a sentence nobody asked about.
+        guard !before.isEmpty, !after.isEmpty else { return nil }
+        return (before, after)
+    }
+
+    /// One phrase, and how well it matched — the score is what lets the caller
+    /// choose between phrases.
+    private static func match(_ text: String, phrase rawPhrase: String) -> (score: Double, command: String)? {
         let phrase = rawPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !phrase.isEmpty else { return nil }
 
@@ -266,20 +357,25 @@ enum VoiceCommand {
         }
 
         // Last chance: the distinctive word survived on its own ("parrot"),
-        // which is what a clipped "hey" leaves behind.
-        if matchedWords == nil, let keyword = phraseWords.last, keyword.count >= 4,
-           similarity(normalised[0], keyword) >= 0.8 {
-            matchedWords = 1
+        // which is what a clipped "hey" leaves behind. Scored below any real
+        // match, so a phrase that matched properly always wins over one that
+        // only recognised its own last word.
+        if matchedWords == nil, let keyword = phraseWords.last, keyword.count >= 4 {
+            let score = similarity(normalised[0], keyword)
+            if score >= 0.8 {
+                matchedWords = 1
+                bestScore = score * 0.5
+            }
         }
 
         guard let matchedWords else { return nil }
 
         guard spokenWords.count == normalised.count else {
-            return normalised.dropFirst(matchedWords).joined(separator: " ")
+            return (bestScore, normalised.dropFirst(matchedWords).joined(separator: " "))
         }
-        return spokenWords.dropFirst(matchedWords)
+        return (bestScore, spokenWords.dropFirst(matchedWords)
             .joined(separator: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
     /// Phrases handled without troubling the LLM. Cheap, deterministic, and

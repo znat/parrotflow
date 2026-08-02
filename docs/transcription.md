@@ -44,6 +44,32 @@ Word boundaries do the rest of the work: "umbrella" and "hummingbird" contain
 fillers and are left alone. Fuzzy matching skips regex and deletion rules
 entirely — they are exact by construction.
 
+A regex source can also write back what it captured. `$1` in the target refers
+to the first group, and that is the only way to express a rule whose output
+depends on its input:
+
+```yaml
+replacements:
+  $1.$2: ['/\b(\w+) dot (\w+)\b/']    # "user dot name" -> user.name
+```
+
+The slashes switch the target into a template the same way they switch the
+source into a pattern. A **literal** source keeps a literal target: a name is a
+word you want written exactly, so `$` in one survives and "AT$T" comes out as
+typed. That escaping is why a template needs the regex form to be reachable at
+all.
+
+A template naming a group its pattern never captures is refused by
+`--check-config` and by `--pipeline`, rather than being written as nothing —
+the rule would fire, the output would be quietly short, and the log would show
+a substitution that looked like it worked.
+
+A rule like this generalises, which is the thing the map otherwise cannot do.
+It cuts both ways: `\b(\w+) dot (\w+)\b` joins any two words either side of
+"dot", ordinary prose included, and no pattern tells "user dot name" from "the
+word dot on" — they are the same sentence to a regex. Scope it to where you
+mean it with `app:`, which is in docs/pipelines.md.
+
 FluidAudio's acoustic context biasing was tried and removed. It is real and
 their Earnings22 numbers are real — 91.7% vocabulary F-score — but it is built
 for hour-long audio with hundreds of domain terms, where 15% WER is an
@@ -63,9 +89,11 @@ well past the 0.70 their comments call too conservative. Damage throughout.
 Worth knowing that `rescorerConfig(forVocabSize:)` gives *small* vocabularies
 the most permissive threshold, which is backwards for this use.
 
-Substitution cannot generalise to a mishearing you have not seen, so the map
-grows one entry at a time. It also cannot corrupt a transcript that was
-already right, which turned out to matter more.
+A literal substitution cannot generalise to a mishearing you have not seen, so
+that half of the map grows one entry at a time. It also cannot corrupt a
+transcript that was already right, which turned out to matter more — and a
+pattern rule gives that property up in exchange for reach, which is the trade
+`app:` exists to bound.
 
 ### 2. A local LLM pass — for everything else
 

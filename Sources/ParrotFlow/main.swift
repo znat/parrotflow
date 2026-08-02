@@ -33,6 +33,12 @@ if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
 
+/// `--app <name>`, for the commands that run a pipeline. Shared so the flag
+/// means the same thing to each of them.
+let appArgument: String? = arguments.firstIndex(of: "--app").flatMap { index in
+    arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+}
+
 if let index = arguments.firstIndex(of: "--record") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     exit(RecordTestCommand.run(seconds: seconds ?? 3))
@@ -48,10 +54,10 @@ if let index = arguments.firstIndex(of: "--transcribe") {
 
 if let index = arguments.firstIndex(of: "--replace") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --replace \"<text>\"")
+        print("usage: ParrotFlow --replace \"<text>\" [--app <name>]")
         exit(2)
     }
-    exit(ReplaceCommand.run(text: arguments[index + 1]))
+    exit(ReplaceCommand.run(text: arguments[index + 1], app: appArgument))
 }
 
 if let index = arguments.firstIndex(of: "--numbers") {
@@ -70,12 +76,24 @@ if let index = arguments.firstIndex(of: "--normalize") {
 
 if let index = arguments.firstIndex(of: "--command") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --command \"hey parrot, Tasmin spells T A S M E E N\"")
+        print("usage: ParrotFlow --command \"hey parrot, Tasmin spells T A S M E E N\""
+            + " [--phrases \"a,b\"]")
         exit(2)
     }
     let context = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
         ? arguments[index + 2] : nil
-    exit(CommandTestCommand.run(text: arguments[index + 1], lastTranscript: context))
+    // An empty list is a case of its own — spoken commands turned off — so it
+    // has to survive as [] rather than collapse back to the configured list.
+    let phrases = arguments.firstIndex(of: "--phrases").flatMap { at -> [String]? in
+        guard arguments.indices.contains(at + 1) else { return nil }
+        return arguments[at + 1]
+            .split(separator: ",", omittingEmptySubsequences: true)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+    exit(CommandTestCommand.run(
+        text: arguments[index + 1], lastTranscript: context, phrases: phrases
+    ))
 }
 
 if let index = arguments.firstIndex(of: "--route") {
@@ -103,13 +121,16 @@ if let index = arguments.firstIndex(of: "--prompt") {
 
 if let index = arguments.firstIndex(of: "--pipeline") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"] [--quiet]")
+        print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"]"
+            + " [--app <name>] [--no-prompts] [--quiet]")
         exit(2)
     }
     let text = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
         ? arguments[index + 2] : nil
     exit(PipelineCommand.run(
-        path: arguments[index + 1], text: text, quiet: arguments.contains("--quiet")
+        path: arguments[index + 1], text: text,
+        quiet: arguments.contains("--quiet"), app: appArgument,
+        allowPrompts: !arguments.contains("--no-prompts")
     ))
 }
 
