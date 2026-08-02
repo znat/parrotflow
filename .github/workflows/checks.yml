@@ -34,7 +34,11 @@ concurrency:
 
 jobs:
   checks:
-    runs-on: macos-14
+    # macos-15, not 14: FluidAudio 0.15.5 declares swift-tools-version 6.0, and
+    # the macos-14 image ships Swift 5.10, so resolution fails before a line is
+    # compiled. Our own Package.swift still says 5.10 — that is the floor this
+    # package needs, not the toolchain a dependency needs to be read.
+    runs-on: macos-15
     timeout-minutes: 20
 
     steps:
