@@ -69,6 +69,7 @@ struct Config: Decodable, Equatable {
     private struct TransformEntry: Decodable {
         var name = ""
         var description = ""
+        var display = ""
         var confirm = true
         var body: Transform.Body?
         var directory: URL?
@@ -77,7 +78,7 @@ struct Config: Decodable, Equatable {
         var namesBoth = false
 
         enum CodingKeys: String, CodingKey {
-            case name, description, confirm, prompt, content, replace, command
+            case name, description, display, confirm, prompt, content, replace, command
             case timeout = "timeout_seconds"
         }
 
@@ -89,6 +90,7 @@ struct Config: Decodable, Equatable {
             }
             name = try trimmed(.name)
             description = try trimmed(.description)
+            display = try trimmed(.display)
             directory = decoder.userInfo[.configDirectory] as? URL
             confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
             timeout = try c.decodeIfPresent(Double.self, forKey: .timeout)
@@ -159,6 +161,7 @@ struct Config: Decodable, Equatable {
             }
             kept.append(Transform(
                 name: entry.name, description: entry.description,
+                display: entry.display,
                 directory: entry.directory, timeout: entry.timeout,
                 confirm: entry.confirm, body: body
             ))
@@ -186,6 +189,19 @@ struct Config: Decodable, Equatable {
     struct Transform: Equatable {
         var name: String
         var description: String
+        /// What goes on screen while this runs — "Formatting functions…",
+        /// "Fixing grammar…".
+        ///
+        /// Not the description. The description is written for the router, in
+        /// the words you would say to ask for this; a display is written for
+        /// you, in the words that make a paused menu bar legible. A pipeline
+        /// stage is the case that needs it: nothing on screen ever said which
+        /// of them the second you are waiting on belongs to.
+        ///
+        /// Empty means say nothing, which is right for a table — it finishes
+        /// before the label could be read, and a flash nobody can read is
+        /// worse than no flash at all.
+        var display: String = ""
         /// The directory of the file that declared this transform, which is
         /// what a relative `command:` is relative to. Nil when it was not
         /// decoded from a file — a default, or a test.
@@ -230,12 +246,33 @@ struct Config: Decodable, Equatable {
             return false
         }
 
+        var isTable: Bool {
+            if case .replace = body { return true }
+            return false
+        }
+
+        /// The display as it goes on screen, or nil when none was written.
+        ///
+        /// The ellipsis is added rather than asked for. Every other waiting
+        /// message in the app ends in one — "Transcribing…", "Thinking…" —
+        /// and a config that has to remember the punctuation is one where
+        /// half the entries eventually do not.
+        var displayLabel: String? { Self.label(display) }
+
+        static func label(_ display: String) -> String? {
+            let trimmed = display.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            return trimmed.hasSuffix("…") || trimmed.hasSuffix("...")
+                ? trimmed : trimmed + "…"
+        }
+
         /// The prompt-shaped view of this transform, for everything that
         /// already speaks `Prompt` — the router, `PromptRunner`, the panels.
         var asPrompt: Prompt? {
             guard case .prompt(let content) = body else { return nil }
             return Prompt(
-                name: name, description: description, content: content, confirm: confirm
+                name: name, description: description, content: content,
+                display: display, confirm: confirm
             )
         }
 
@@ -259,6 +296,8 @@ struct Config: Decodable, Equatable {
         var name: String
         var description: String
         var content: String
+        /// What goes on screen while this runs — see `Transform.display`.
+        var display: String = ""
         /// Show the result and wait for you before replacing anything.
         ///
         /// On by default: a transform overwrites text you selected, triggered
@@ -267,13 +306,17 @@ struct Config: Decodable, Equatable {
         var confirm: Bool = true
 
         enum CodingKeys: String, CodingKey {
-            case name, description, content, confirm
+            case name, description, content, display, confirm
         }
 
-        init(name: String, description: String, content: String, confirm: Bool = true) {
+        init(
+            name: String, description: String, content: String,
+            display: String = "", confirm: Bool = true
+        ) {
             self.name = name
             self.description = description
             self.content = content
+            self.display = display
             self.confirm = confirm
         }
 
@@ -285,7 +328,16 @@ struct Config: Decodable, Equatable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             content = (try c.decodeIfPresent(String.self, forKey: .content) ?? "")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
+            display = (try c.decodeIfPresent(String.self, forKey: .display) ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
+        }
+
+        /// The display as it goes on screen, or the prompt's own name when
+        /// nothing was written — which is what this path showed before
+        /// `display:` existed, so a config that says nothing loses nothing.
+        var progressLabel: String {
+            Transform.label(display) ?? "\(name)…"
         }
 
         /// Where the spoken instruction goes if the prompt asks for it inline.
@@ -714,6 +766,14 @@ struct Config: Decodable, Equatable {
         /// `toggle` — press once to start, once to stop.
         /// `push_to_talk` — record only while held down.
         var mode: Mode = .pushToTalk
+        /// How long the mic stays open after the key comes up, in push-to-talk.
+        /// The hand beats the mouth: the last syllable lands after the release.
+        var releaseTailSeconds: Double = 0.3
+
+        enum CodingKeys: String, CodingKey {
+            case key, modifiers, mode
+            case releaseTailSeconds = "release_tail_seconds"
+        }
 
         enum Mode: String, Codable, Equatable {
             case toggle
@@ -742,6 +802,16 @@ struct Config: Decodable, Equatable {
             if let mods = try c.decodeIfPresent([String].self, forKey: .modifiers) { self.modifiers = mods }
             if let mode = try c.decodeIfPresent(String.self, forKey: .mode) {
                 self.mode = try Mode(parsing: mode)
+            }
+            if let tail = try c.decodeIfPresent(Double.self, forKey: .releaseTailSeconds) {
+                guard tail >= 0, tail <= 5 else {
+                    throw ConfigError.invalidValue(
+                        key: "hotkey.release_tail_seconds",
+                        value: String(tail),
+                        expected: "a delay between 0 and 5 seconds"
+                    )
+                }
+                self.releaseTailSeconds = tail
             }
         }
     }
@@ -988,6 +1058,7 @@ enum ConfigStore {
     transforms:
       - name: code_identifiers
         description: spoken names as identifiers
+        display: Formatting identifiers
         command: code_identifiers.py                       # rules only, 0.03s
       # command: code_identifiers.py --model gemma4:e4b     # + the model, below
         timeout_seconds: 12                                 # only with --model
@@ -1288,6 +1359,11 @@ if __name__ == "__main__":
       # recording every time you typed an accented character with it.
       mode: push_to_talk
 
+      # How long the mic stays open after you let go, in push_to_talk. The hand
+      # is faster than the mouth and the last syllable arrives after the key is
+      # up; without this it is cut off. 0 turns it off.
+      release_tail_seconds: 0.3
+
     audio:
       # Where the recordings pile up.
       output_dir: \(AppVariant.defaultOutputDir)
@@ -1464,6 +1540,12 @@ if __name__ == "__main__":
     # different output are how "user dot name" becomes user.name in a terminal
     # and `user.name` in chat. See docs/pipelines.md.
     #
+    # `display:` is what the menu bar says while an entry runs — "Fixing
+    # grammar…", "Formatting identifiers…". The description is written for the
+    # router, in the words you would say; a display is written for you, for the
+    # second you spend watching nothing happen. The ellipsis is added for you.
+    # Leave it off a table, which finishes before the label could be read.
+    #
     # Results are shown before they replace your selection; add
     # `confirm: false` to one you have come to trust.
     #
@@ -1472,18 +1554,21 @@ if __name__ == "__main__":
     transforms:
       - name: bullets
         description: turn text into a short bullet list
+        display: Making bullets
         prompt: |
           Rewrite the text as concise bullets, one idea each.
           Keep the speaker's wording. Return only the bullets.
 
       - name: terse
         description: shorten text without losing anything it says
+        display: Cutting it down
         prompt: |
           Cut this down. No filler, same facts, same voice.
           Return only the shortened text.
 
       - name: grammar
         description: fix grammar and punctuation mistakes, not formatting or numbers
+        display: Fixing grammar
         prompt: |
           Correct grammar, spelling and punctuation. Make the smallest change
           that makes the text correct — and make it. Every error is fixed.
@@ -1542,6 +1627,7 @@ if __name__ == "__main__":
       # ends, which is a judgement about how you speak.
       - name: code_identifiers
         description: spoken names as identifiers
+        display: Formatting identifiers
         command: code_identifiers.py
         # Add `--model gemma4:e4b` to have a model handle the namings the rules
         # cannot see — "call it max retries", "rename the variable to retry

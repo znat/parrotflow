@@ -157,6 +157,12 @@ updates:
 # output are how "user dot name" becomes user.name in a terminal and `user.name`
 # in chat. See docs/pipelines.md.
 #
+# `display:` is what the menu bar says while an entry runs — "Fixing grammar…",
+# "Formatting identifiers…". The description is written for the router, in the
+# words you would say; a display is written for you, for the second you spend
+# watching nothing happen. The ellipsis is added for you. Leave it off a table,
+# which finishes long before the label could be read.
+#
 # Results are shown before they replace your selection; add `confirm: false`
 # to one you have come to trust.
 #
@@ -165,18 +171,21 @@ updates:
 transforms:
   - name: bullets
     description: turn text into a short bullet list
+    display: Making bullets
     prompt: |
       Rewrite the text as concise bullets, one idea each.
       Keep the speaker's wording. Return only the bullets.
 
   - name: terse
     description: shorten text without losing anything it says
+    display: Cutting it down
     prompt: |
       Cut this down. No filler, same facts, same voice.
       Return only the shortened text.
 
   - name: grammar
     description: fix grammar and punctuation mistakes, not formatting or numbers
+    display: Fixing grammar
     prompt: |
       Correct grammar, spelling and punctuation. Make the smallest change
       that makes the text correct — and make it. Every error is fixed.
@@ -235,6 +244,7 @@ transforms:
   # a judgement about how you speak.
   - name: code_identifiers
     description: spoken names as identifiers
+    display: Formatting identifiers
     command: code_identifiers.py
     # Add `--model gemma4:e4b` to have a model handle the namings the rules
     # cannot see — "call it max retries", "rename the variable to retry

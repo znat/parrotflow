@@ -4,6 +4,7 @@
     transforms:
       - name: code_identifiers
         description: spoken names as identifiers
+        display: Formatting identifiers
         command: code_identifiers.py                       # rules only, 0.03s
       # command: code_identifiers.py --model gemma4:e4b     # + the model, below
         timeout_seconds: 12                                 # only with --model

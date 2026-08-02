@@ -110,7 +110,10 @@ actor Transcriber {
     // MARK: - Transcription
 
     /// Transcribes a finished recording. Returns the cleaned-up text.
-    func transcribe(url: URL, config: Config, app: Pipeline.App? = nil) async throws -> String {
+    func transcribe(
+        url: URL, config: Config, app: Pipeline.App? = nil,
+        progress: (@Sendable (String) -> Void)? = nil
+    ) async throws -> String {
         try await prepare(config: config)
         let manager = try await makeManager()
 
@@ -137,7 +140,9 @@ actor Transcriber {
         }
 
         let raw = try await manager.finish()
-        return await Self.applyReplacements(to: raw, config: config, app: app)
+        return await Self.applyReplacements(
+            to: raw, config: config, app: app, progress: progress
+        )
     }
 
     /// True when the clip holds no speech worth transcribing.
@@ -189,9 +194,10 @@ actor Transcriber {
     /// "mick" and "Mick" both land, but "Mickey" is left alone.
     /// How names get fixed — see `Replacements`.
     nonisolated static func applyReplacements(
-        to text: String, config: Config, app: Pipeline.App? = nil
+        to text: String, config: Config, app: Pipeline.App? = nil,
+        progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
-        await Replacements.apply(to: text, config: config, app: app)
+        await Replacements.apply(to: text, config: config, app: app, progress: progress)
     }
 }
 

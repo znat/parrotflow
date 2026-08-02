@@ -183,6 +183,7 @@ hotkey:
   key: right_option     # a bare modifier, or a character key + modifiers
   modifiers: []         # required for a character key, ignored for a modifier
   mode: push_to_talk    # or toggle
+  release_tail_seconds: 0.3   # keep recording this long after you let go
 
 audio:
   output_dir: ~/Recordings/ParrotFlow
@@ -211,6 +212,11 @@ one modifier from `command`, `control`, `option`, `shift` (aliases `cmd`,
 
 If a combo is already owned by another app, registration fails and the menu bar
 item says so. Pick another one.
+
+**`release_tail_seconds`** keeps the mic open after you let go, because the hand
+is faster than the mouth and the last syllable lands after the key is up.
+Push-to-talk only. Raise it if endings still get clipped, `0` to stop the moment
+you release.
 
 **`languages`** is not passed to the speech model — Parakeet transcribes
 multilingually by itself and reports no language back. The list is what

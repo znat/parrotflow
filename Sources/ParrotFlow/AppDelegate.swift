@@ -45,6 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
     }
     private var transcriptionLabel: String?
+    /// Bumped by every transcription, so a stage label arriving late from one
+    /// cannot describe the next. Push-to-talk does not wait for the previous
+    /// transcript: hold the key again while a prompt stage is still running and
+    /// two are in flight, with the older one still holding a progress callback.
+    private var transcriptionRun = 0
     /// Bumped by every `setLabel`, so a self-clear armed for one message cannot
     /// wipe a newer one that is still current.
     private var labelToken = 0
@@ -66,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
+    /// Running between the hotkey coming up and the recording actually stopping
+    /// — see `stopRecordingAfterTail`.
+    private var releaseTail: Timer?
     private var keepWarmTimer: Timer?
     private var keepWarmInFlight = false
     private var hotkeyError: String?
@@ -364,6 +372,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .toggle:
             toggleRecording()
         case .pushToTalk:
+            // Pressed again inside the tail: one dictation with a stutter in the
+            // key, not two. Keep the recording that is already running — and put
+            // the modifier poll back, since starting the tail took it down.
+            if releaseTail != nil {
+                releaseTail?.invalidate(); releaseTail = nil
+                startPushToTalkPoll()
+                return
+            }
             guard !recorder.isRecording else { return }
             startRecording()
             startPushToTalkPoll()
@@ -372,7 +388,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleHotKeyRelease() {
         guard config.hotkey.mode == .pushToTalk else { return }
-        stopRecording()
+        stopRecordingAfterTail()
+    }
+
+    /// The hand is faster than the mouth: the key comes up while the last
+    /// syllable is still being said, and the clip ends "...max retri". So hold
+    /// the mic open a moment longer — `hotkey.release_tail_seconds`, 0 to stop
+    /// on the release as before.
+    private func stopRecordingAfterTail() {
+        guard recorder.isRecording else { return }
+
+        // The poll would see the key still up 60ms from now and ask again.
+        pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
+
+        let tail = config.hotkey.releaseTailSeconds
+        guard tail > 0 else {
+            stopRecording()
+            return
+        }
+        guard releaseTail == nil else { return }
+
+        let timer = Timer(timeInterval: tail, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.releaseTail = nil
+            self.stopRecording()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        releaseTail = timer
     }
 
     /// Carbon only reports the release of the *character* key. If the user lets
@@ -454,6 +496,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         tickTimer?.invalidate(); tickTimer = nil
         pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
+        releaseTail?.invalidate(); releaseTail = nil
         overlay.hide()
         if config.feedback.sound { NSSound(named: "Pop")?.play() }
 
@@ -486,6 +529,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func transcribe(_ recording: Recorder.Recording) {
+        transcriptionRun += 1
+        let run = transcriptionRun
         transcriptionLabel = "Transcribing…"
         updateUI()
 
@@ -495,8 +540,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let app = appAtPress
         Task { [weak self] in
             do {
+                // "Transcribing…" is the truth until the decoder is done, and
+                // a lie for the second a prompt or a script spends after it.
+                // A stage that wrote a `display:` says so itself.
                 let text = try await self?.transcriber.transcribe(
-                    url: recording.url, config: config, app: app
+                    url: recording.url, config: config, app: app,
+                    progress: { label in
+                        Task { @MainActor [weak self] in
+                            // Still this dictation, and still one that has
+                            // something on screen to replace.
+                            guard let self, self.transcriptionRun == run,
+                                  self.transcriptionLabel != nil else { return }
+                            self.transcriptionLabel = label
+                            self.updateUI()
+                        }
+                    }
                 ) ?? ""
                 await MainActor.run {
                     guard let self else { return }
@@ -654,7 +712,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         // the whole specification, so it goes through unsplit,
                         // exactly as it would to a prompt of your own.
                         Log.write("router: \"\(command)\" → \(FreeForm.name)")
-                        self.runTransform(FreeForm.prompt, instruction: command)
+                        self.runTransform(FreeForm.prompt(for: command), instruction: command)
                     case .none:
                         // Nothing fits. Deliberately not falling through to
                         // dictation: the wake phrase means you were not
@@ -772,7 +830,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // wrong thing is otherwise indistinguishable in the log from one that
         // worked on the right thing badly.
         Log.write("transform: \(prompt.name) over \(selection == nil ? "the last dictation" : "the selection") — \"\(target.prefix(80))\"")
-        beginProgress("\(prompt.name)…")
+        beginProgress(prompt.progressLabel)
 
         let llmConfig = llmConfig()
         Task { [weak self] in
@@ -1242,7 +1300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         func run(_ prompt: Config.Prompt) {
-            beginProgress("\(prompt.name)…")
+            beginProgress(prompt.progressLabel)
             let llm = llmConfig()
             Task { [weak self] in
                 do {
@@ -1306,7 +1364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.runInlineAction(action, text: text, instruction: instruction)
                     case .anything:
                         Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
-                        run(FreeForm.prompt)
+                        run(FreeForm.prompt(for: instruction))
                     case .none:
                         giveUp("Not something to change in the text: \"\(instruction)\"")
                     }
