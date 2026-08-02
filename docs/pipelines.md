@@ -67,6 +67,15 @@ than two seconds leaves the transcript exactly as it arrived, and says so in
 the log — a script you are halfway through writing is an ordinary state to be
 in, and a dictation tool cannot answer it by dropping your words.
 
+The script is run **directly**, so its first line picks the interpreter — the
+shebang, `#!/usr/bin/env python3` or `#!/bin/bash` or whatever you write it in.
+The app never needs to know the language. What it does need is the execute bit:
+a shebang does nothing without one, and a script that is there but not
+`chmod +x` is the likeliest thing to be wrong with a `command:` transform. Both
+the log and `--check-config` name that case as itself rather than as "command
+not found", which would send you looking for a file that is sitting right where
+you put it.
+
 A relative path is relative to **the file that named it**: `command:
 identifiers.py` is the script sitting beside your config.yaml. It runs with
 that directory as its working directory, so it can read its neighbours. A bare

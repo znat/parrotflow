@@ -33,6 +33,11 @@ enum CommandRunner {
     /// is "/" and means nothing.
     static func run(_ command: String, on text: String, base: URL?) -> String? {
         let base = base ?? ConfigStore.directory
+        if let complaint = complaint(about: command, base: base) {
+            Log.write("command: \(complaint); kept the transcript")
+            return nil
+        }
+
         let process = Process()
         // Through a shell, so a command can carry its arguments and its
         // redirections the way it would in a terminal — `identifiers.py --lang
@@ -103,22 +108,45 @@ enum CommandRunner {
     }
 
     /// The command with `~` expanded and, if its first word names a file next
-    /// to config.yaml, that word made absolute.
+    /// to the config, that word made absolute.
     ///
     /// Setting the working directory alone would not be enough: a shell looks a
     /// bare `identifiers.py` up in PATH, not in the directory it is standing
     /// in, so it would report "command not found" while the file sat right
     /// there. `./identifiers.py` would have worked, and requiring the `./` is
     /// the kind of detail that costs someone twenty minutes once.
+    ///
+    /// Existing is enough to be resolved — being executable is not required
+    /// here, deliberately. A script that is there but not `chmod +x` is the
+    /// single most likely thing to be wrong, and it deserves to be told about
+    /// as itself rather than as "command not found", which sends you looking
+    /// in the wrong place. `complaint` is what says it.
     static func resolved(_ command: String, base: URL?) -> String {
         let base = base ?? ConfigStore.directory
         let expanded = (command as NSString).expandingTildeInPath
         guard let first = expanded.split(separator: " ", maxSplits: 1).first,
               !first.hasPrefix("/") else { return expanded }
         let candidate = base.appendingPathComponent(String(first)).standardized
-        guard FileManager.default.isExecutableFile(atPath: candidate.path) else {
+        guard FileManager.default.fileExists(atPath: candidate.path) else {
             return expanded
         }
         return candidate.path + expanded.dropFirst(first.count)
+    }
+
+    /// What is wrong with this command before it is even run, in words, or nil
+    /// if nothing obvious is.
+    ///
+    /// Only the case that is worth naming: the file is where it should be and
+    /// the system will refuse to run it. Everything else — a typo in the name,
+    /// an interpreter that is not installed — is the shell's to report, and it
+    /// reports those well.
+    static func complaint(about command: String, base: URL?) -> String? {
+        let path = String(
+            resolved(command, base: base).split(separator: " ", maxSplits: 1).first ?? ""
+        )
+        let fm = FileManager.default
+        guard path.hasPrefix("/"), fm.fileExists(atPath: path),
+              !fm.isExecutableFile(atPath: path) else { return nil }
+        return "\(path) is not executable — chmod +x it"
     }
 }

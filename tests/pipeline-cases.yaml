@@ -215,3 +215,10 @@ cases:
     pipeline: command-relative
     input: add a python function called max retries that returns the count
     expect: add a python function called max_retries that returns the count
+
+  # The shebang picks the interpreter, and it does nothing without an execute
+  # bit. Committed without one, so this stays true.
+  - name: a command that cannot be executed leaves the transcript alone
+    pipeline: command-unrunnable
+    input: read user dot name
+    expect: unchanged

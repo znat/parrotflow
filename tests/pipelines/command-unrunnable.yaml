@@ -1,0 +1,11 @@
+# A script that is there, has a shebang, and has no execute bit. The transcript
+# has to come through untouched, and the log has to say `chmod +x` rather than
+# "command not found" — the file is right where the config says it is, and
+# being sent to look for it elsewhere is how twenty minutes go missing.
+languages: [en]
+transforms:
+  - name: unrunnable
+    description: a script nobody chmod'd
+    command: not-executable.py
+pipeline:
+  - transform: unrunnable

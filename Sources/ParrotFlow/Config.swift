@@ -884,16 +884,14 @@ struct Config: Decodable, Equatable {
         // copied — should not be able to stay quiet about it.
         for transform in transforms {
             guard case .command(let command) = transform.body else { continue }
-            let path = (CommandRunner.resolved(command, base: transform.directory) as NSString)
-                .components(separatedBy: " ").first ?? command
             // A first word that is still relative after resolution is a bare
             // command name for the shell to find on PATH — `python3`, `sed` —
-            // and this cannot say whether that will work.
-            let runnable = FileManager.default.isExecutableFile(atPath: path)
-                || !path.hasPrefix("/")
+            // and this cannot say whether that will work. What it can say is
+            // that a script sitting right there will not run.
+            let wrong = CommandRunner.complaint(about: command, base: transform.directory)
             found.append(
                 "transforms: \"\(transform.name)\" runs a program — \(command)"
-                + (runnable ? "" : " — which is not executable, so the transcript passes through")
+                + (wrong.map { " — \($0)" } ?? "")
             )
         }
         for language in transcription.languages {
