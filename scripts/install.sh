@@ -84,9 +84,10 @@ fetch "$BASE/$APP_NAME.zip.sha256" "$TMP/$APP_NAME.zip.sha256" \
     || die "the app downloaded but its checksum did not. Not installing an
        archive that cannot be verified."
 
-# Integrity, not authenticity: the checksum travels with the archive, so it
-# catches a truncated or corrupted download and nothing more. Verifying the
-# publisher needs a signature, which arrives with Developer ID.
+# The checksum travels with the archive, so on its own it catches a truncated
+# or corrupted download and nothing more: whoever could replace the archive
+# could replace the checksum beside it. Authenticity comes from the certificate
+# check further down.
 say "Checking the download"
 EXPECTED="$(cut -d' ' -f1 < "$TMP/$APP_NAME.zip.sha256")"
 ACTUAL="$(shasum -a 256 "$TMP/$APP_NAME.zip" | cut -d' ' -f1)"
@@ -102,6 +103,45 @@ ditto -x -k "$TMP/$APP_NAME.zip" "$TMP/unpacked" || die "could not unpack the do
 
 codesign --verify --deep --strict "$TMP/unpacked/$APP_NAME.app" 2>/dev/null \
     || die "the downloaded app failed signature verification; not installing it"
+
+# And then: signed by whom.
+#
+# The check above proves the signature matches the bundle. It does not prove
+# whose signature it is — anyone can make a self-signed certificate, sign an
+# app with it, and pass. Without the line below, an archive swapped for
+# somebody else's would install without a word, on a machine that is then asked
+# for the microphone and for permission to type into every window.
+#
+# So the leaf certificate's SHA-256 is pinned. The name is not enough: a
+# certificate can be issued to any common name, "ParrotFlow Release" included.
+#
+# Pinning a value inside a script is normally how you strand yourself on a
+# rotated key. Not here: this file is read from main on every run, so the day
+# the certificate changes, the pin changes with it in the same commit. And a
+# release signed with a different certificate is one macOS would refuse the
+# user's existing Microphone and Accessibility grants to anyway — refusing it
+# here turns a silent loss of permissions into a stop with a reason.
+CERT_SHA256="1fe06cb4b110d3f60ddb0a4d54e2694528b50ca1f40e939994306c8b068d2689"
+
+if [ -n "${PARROTFLOW_BASE_URL:-}" ]; then
+    # A local rehearsal (make try-install) builds and signs with whatever
+    # identity is on that machine, which is the dev certificate for anyone who
+    # is not cutting releases. Say the check was skipped rather than let a
+    # rehearsal look like it proved more than it did.
+    say "Local install — skipping the certificate check"
+else
+    codesign -d --extract-certificates="$TMP/cert" "$TMP/unpacked/$APP_NAME.app" 2>/dev/null \
+        || die "could not read the signing certificate of the downloaded app"
+    SIGNER="$(shasum -a 256 "$TMP/cert0" | cut -d' ' -f1)"
+    [ "$SIGNER" = "$CERT_SHA256" ] || die "this app was signed by someone else — not installing it.
+       expected certificate $CERT_SHA256
+       found                $SIGNER
+
+       Nothing on this Mac has been changed. If you did not expect this,
+       do not install ParrotFlow from anywhere else either — report it at
+       https://github.com/$REPO/issues"
+    say "Signed by the ParrotFlow release certificate"
+fi
 
 # --- Install -----------------------------------------------------------------
 

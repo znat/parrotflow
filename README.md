@@ -3,10 +3,14 @@
 Dictation for people who type for a living. Hold a key, talk, and the text
 lands in whatever you are in — editor, terminal, browser, chat.
 
-Everything runs on your Mac. No account, no API key, no network call. The
-audio never leaves the machine, which is the whole point: most of what a
-developer dictates is a bug report, a customer name, or a half-finished idea
-about their own product.
+Everything runs on your Mac. No account, no API key, and nothing you say is
+ever sent anywhere — which is the whole point: most of what a developer
+dictates is a bug report, a customer name, or a half-finished idea about their
+own product.
+
+Two things do use the network, and neither carries your audio or your text: the
+speech model downloads once, on first use, and once a day the app asks GitHub
+whether a newer version exists. `updates.after_days: -1` stops the second one.
 
 It also learns the words you actually use. Say a library name once, tell it
 how the name is spelled, and it gets it right from then on.
@@ -142,7 +146,7 @@ without one.
 `--command "<what you'd say>"` shows how a phrase would be routed.
 
 Needs the Accessibility permission — reading your selection is exactly what
-that permission governs. Change the trigger with `transcription.correction_phrase`.
+that permission governs. Change the trigger with `transcription.activation_phrase`.
 
 **In a terminal**, selections are fragile: they get dropped on a keystroke or
 when focus moves, often before the transcript comes back. ParrotFlow snapshots
@@ -163,14 +167,12 @@ hotkey:
   mode: push_to_talk    # or toggle
 
 audio:
-  sample_rate: 16000    # Parakeet wants 16 kHz mono; leave it
   output_dir: ~/Recordings/ParrotFlow
-  min_duration_seconds: 0.3
   speech_gate: true     # skip clips with no speech in them
 
 transcription:
   insert_mode: paste    # or clipboard
-  correction_phrase: hey parrot
+  activation_phrase: hey parrot
   languages: [en]       # en and fr are the supported values
 
 feedback:

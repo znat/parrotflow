@@ -24,3 +24,15 @@ So um I was thinking, uh, that we could ship it|So I was thinking that we could 
 It was mostly something related to Um AI search|It was mostly something related to AI search
 The hummingbird is umbrella shaped|The hummingbird is umbrella shaped
 I said mm-hmm to the summary|I said to the summary
+# A template rule: the source is a pattern, so $1 and $2 are what it captured.
+Read config dot port from user dot name|Read config.port from user.name
+# It composes with the passes around it — the filler goes, the name is fixed,
+# and the dotted path is built from the corrected word. The capital is `tidy`
+# putting one back after a leading filler was removed, as everywhere else.
+Um call super base dot query|Call Supabase.query
+# And the limitation, recorded rather than wished away: a rule this shape joins
+# any two words either side of "dot", ordinary prose included. There is no
+# pattern that separates "user dot name" from "the word dot on" — they are the
+# same sentence to a regex. That is what `app:` is for: scope it to a terminal
+# and the sentence below never meets it.
+The word dot on its own is a phrase|The word.on its own is a phrase

@@ -1,0 +1,65 @@
+import Foundation
+
+/// Downloads and checks a release without installing it.
+///
+///     ParrotFlow --update-install --dry-run     # everything but the swap
+///     ParrotFlow --update-install               # and the swap
+///
+/// The dry run exists because every interesting failure happens before the
+/// swap — a checksum that does not match, an archive signed by someone else, a
+/// release whose asset was built from the wrong tag. Those are the paths worth
+/// exercising, and none of them should require replacing the app on the
+/// machine doing the exercising.
+enum UpdateInstallCommand {
+
+    static func run(dryRun: Bool) -> Int32 {
+        guard let current = Updates.current else {
+            print("✗ this binary is running outside its app bundle, so there is nothing to replace")
+            return 1
+        }
+
+        var code: Int32 = 0
+        let done = DispatchSemaphore(value: 0)
+        Task<Void, Never> {
+            do {
+                let release = try await Updates.latest()
+                print("current            \(current)")
+                print("latest             \(release.version)")
+
+                guard Updates.isNewer(release.version, than: current) else {
+                    print("decision           nothing to install")
+                    done.signal()
+                    return
+                }
+
+                print("downloading        \(release.zip.lastPathComponent)")
+                let app = try await UpdateInstaller.prepare(release)
+                print("checksum           matches the published one")
+                print("signature          valid")
+                print("certificate        \(try UpdateInstaller.certificateFingerprint(of: app))")
+                print("identity           \(Bundle.main.bundleIdentifier ?? "?")")
+                print("verified           \(app.path)")
+
+                guard !dryRun else {
+                    print("dry run            not installing")
+                    done.signal()
+                    return
+                }
+                guard UpdateInstaller.canInstallInPlace else {
+                    print("✗ \(UpdateInstaller.destination.path) cannot be replaced from here")
+                    code = 1
+                    done.signal()
+                    return
+                }
+                try UpdateInstaller.swapAndRelaunch(newApp: app)
+                print("installing         after this process exits")
+            } catch {
+                print("✗ \(error.localizedDescription)")
+                code = 1
+            }
+            done.signal()
+        }
+        done.wait()
+        return code
+    }
+}

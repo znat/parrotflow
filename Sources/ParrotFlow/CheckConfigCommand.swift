@@ -52,7 +52,9 @@ enum CheckConfigCommand {
                 ? "paste into frontmost app (needs Accessibility)"
                 : "copy to clipboard"
             print("  · insert mode       \(mode)")
-            print("  · wake phrase       \"\(transcription.activationPhrase)\"")
+            let listed = transcription.activationPhrases
+                .map { "\"\($0)\"" }.joined(separator: ", ")
+            print("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
             print("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
             // The pipeline, per language, because "why was this not
             // converted" is a question about the order and not about a
@@ -72,9 +74,10 @@ enum CheckConfigCommand {
                     ? "nothing — the list is empty"
                     : pipeline.steps.map { step -> String in
                         var described = step.stage.name
-                        if let prompt = step.prompt { described += " \(prompt)" }
+                        if let transform = step.transform { described += " \(transform)" }
                         if let when = step.when { described += " when \(when)" }
                         if let unless = step.unless { described += " unless \(unless)" }
+                        if let app = step.app { described += " in \(app)" }
                         return described
                     }.joined(separator: " → ")
                 print("  · pipeline \(language)        \(stages)  (\(source))")
@@ -111,6 +114,21 @@ enum CheckConfigCommand {
             print("  · free_form         off — an instruction no prompt covers is refused")
         }
 
+        // A `replace:` transform is not in the catalogue — the router reaches
+        // prompts only, for now — so it would otherwise be invisible here, and
+        // "I wrote it and nothing says it exists" is the wrong way to find out
+        // that it runs from a pipeline and not from your voice.
+        let tables = config.transforms.filter { !$0.isPrompt }
+        if !tables.isEmpty {
+            print("  · replace           \(tables.count) transform(s), reachable from a pipeline"
+                + " and not by voice")
+            for table in tables {
+                let rules = table.rules.count
+                print("      table     \(table.name) — \(rules) rule(s)"
+                    + (table.description.isEmpty ? "" : ", \(table.description)"))
+            }
+        }
+
         for prompt in config.prompts where prompt.description.isEmpty {
             print("  ✗ prompt \"\(prompt.name)\" has no description; the router cannot pick it")
             ok = false
@@ -122,6 +140,15 @@ enum CheckConfigCommand {
             print("  · keep loaded       \(config.llm.keepLoaded ? "on (pinned in RAM)" : "off (Ollama unloads after 5 min; +7-10s on a cold call)")")
         } else {
             print("  · llm               disabled — no free-form spoken commands")
+        }
+
+        switch config.updates.afterDays {
+        case ..<0:
+            print("  · updates           never checked")
+        case 0:
+            print("  · updates           checked daily, offered as soon as published")
+        case let days:
+            print("  · updates           checked daily, offered after \(days) day\(days == 1 ? "" : "s")")
         }
 
         // Environment
@@ -146,7 +173,7 @@ enum CheckConfigCommand {
         // bundle run from a terminal reported Not granted. A check that says no
         // when the answer is yes is worse than no check, so it reports where the
         // real answer lives instead — the app tests it at launch and logs it.
-        if transcription.insertMode == .paste || !transcription.activationPhrase.isEmpty {
+        if transcription.insertMode == .paste || !transcription.activationPhrases.isEmpty {
             print("  · accessibility     needed, but not checkable from a terminal")
             print("      macOS credits this check to the shell, not to ParrotFlow.")
             print("      The app records the true value each time it starts:")
