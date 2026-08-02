@@ -31,8 +31,13 @@ enum PipelineCommand {
         var languages: [String] = ["en"]
         var replacements: [String: [String]] = [:]
         var pipeline: [Config.Transcription.PipelineEntry] = []
+        /// Its own `transforms:`, decoded by `Config` rather than re-read here,
+        /// so a fixture cannot disagree with a config about what a transform is.
+        var transforms: [Config.Transform] = []
 
-        enum CodingKeys: String, CodingKey { case languages, replacements, pipeline }
+        enum CodingKeys: String, CodingKey {
+            case languages, replacements, pipeline, transforms
+        }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -43,6 +48,12 @@ enum PipelineCommand {
             pipeline = try c.decodeIfPresent(
                 [Config.Transcription.PipelineEntry].self, forKey: .pipeline
             ) ?? []
+            if c.contains(.transforms) {
+                // Round-tripped through Config's own decoder: the fixture's
+                // section is handed back to the type that reads the real one.
+                let nested = try c.superDecoder(forKey: .transforms)
+                transforms = try Config.transforms(from: nested)
+            }
         }
     }
 
@@ -80,7 +91,7 @@ enum PipelineCommand {
                 return nil
             }
             return Pipeline.Step(
-                stage: stage, prompt: entry.prompt, when: entry.when,
+                stage: stage, transform: entry.transform, when: entry.when,
                 unless: entry.unless, app: entry.app
             )
         }
@@ -94,6 +105,7 @@ enum PipelineCommand {
         config.transcription.languages = fixture.languages
         config.transcription.replacements = fixture.replacements
         config.transcription.pipelines = ["default": pipeline]
+        config.transforms = fixture.transforms
 
         // The fixture's own table is checked too, not just its stage list — a
         // template naming a group the pattern never captures is refused here
@@ -111,7 +123,7 @@ enum PipelineCommand {
             print("languages:  \(fixture.languages.joined(separator: ", "))")
             for step in steps {
                 var line = "  \(step.stage.name)"
-                if let prompt = step.prompt { line += " \(prompt)" }
+                if let transform = step.transform { line += " \(transform)" }
                 if let when = step.when { line += "  when \(when)" }
                 if let unless = step.unless { line += "  unless \(unless)" }
                 if let app = step.app { line += "  app \(app)" }

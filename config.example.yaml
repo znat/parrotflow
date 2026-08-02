@@ -61,7 +61,7 @@ transcription:
     Supabase: [super base, superbees]
 
 # The local Ollama model behind spoken commands. Without it dictation still
-# works and everything under `prompts:` stops.
+# works and every `prompt:` transform below stops.
 llm:
   enabled: true
   model: gemma4:e4b
@@ -71,7 +71,7 @@ llm:
   # those seconds back as free RAM.
   keep_loaded: true
 
-# What the activation phrase can reach: say it, then the instruction.
+# What the activation phrase can reach, and what a pipeline can name.
 #
 #     "hey parrot, make that a bullet list"
 #
@@ -80,27 +80,40 @@ llm:
 # reaches the prompt, which is why one entry covers "format those dates ISO"
 # and "format those dates with slashes".
 #
+# An entry has either `prompt:`, which asks the local model and costs about a
+# second, or `replace:`, a substitution table of its own that costs nothing:
+#
+#   - name: dotted
+#     description: spoken dotted paths as code
+#     replace:
+#       $1.$2: ['/\b(\w+) (?:dot|point) (\w+)\b/']
+#
+# A table is not reached by voice — it runs from a pipeline, which is where it
+# can be scoped to one app. Two tables with the same pattern and different
+# output are how "user dot name" becomes user.name in a terminal and `user.name`
+# in chat. See docs/pipelines.md.
+#
 # Results are shown before they replace your selection; add `confirm: false`
-# to a prompt you have come to trust.
+# to one you have come to trust.
 #
 # Fixing a misheard name is built in and does not appear here — run
 # --check-config to see everything the phrase reaches.
-prompts:
+transforms:
   - name: bullets
     description: turn text into a short bullet list
-    content: |
+    prompt: |
       Rewrite the text as concise bullets, one idea each.
       Keep the speaker's wording. Return only the bullets.
 
   - name: terse
     description: shorten text without losing anything it says
-    content: |
+    prompt: |
       Cut this down. No filler, same facts, same voice.
       Return only the shortened text.
 
   - name: grammar
     description: fix grammar and punctuation mistakes, not formatting or numbers
-    content: |
+    prompt: |
       Correct grammar, spelling and punctuation. Make the smallest change
       that makes the text correct — and make it. Every error is fixed.
       Nothing else is touched.

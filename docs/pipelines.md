@@ -26,9 +26,62 @@ get every stage back — a missing section is silence, not a choice. Write
 | `replacements` | The substitutions in `replacements:` — literal, word-boundary, case-insensitive, or a regex between slashes. |
 | `fuzzy` | The same table against renderings you have not taught, so "super bays" reaches Supabase. Only words the spell checker does not know are eligible, which is what keeps "Excel" from becoming "Vercel". Needs `replacements` before it and says so if it does not have one, because on its own it swallows the preceding word. |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
+| `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
 `numbers` rewrites transcripts that were already correct, so run `--numbers` on
 a line to see exactly what it would do before leaving it in.
+
+## Transforms
+
+The three stages above are fixed. A **transform** is one you write, named in
+`transforms:` and run with `- transform: <name>`. It has one of two bodies:
+
+```yaml
+transforms:
+  - name: prose
+    description: tidy up dictated prose
+    prompt: |
+      Fix grammar and punctuation. Return only the text.
+
+  - name: dotted
+    description: spoken dotted paths as code
+    replace:
+      $1.$2: ['/\b(\w+) (?:dot|point) (\w+)\b/']
+```
+
+`prompt:` asks the local model — about a second, and the reason conditions
+exist. `replace:` is a substitution table of its own, in the same shape as
+`transcription.replacements`, and costs nothing.
+
+**Why a table needs a name.** `transcription.replacements` is a single table
+applied by a single stage, so it cannot be two tables running in two places
+under two conditions. Named ones can:
+
+```yaml
+pipelines:
+  default:
+    - replacements
+    - transform: dotted
+      app: /term|ghostty|iterm|warp/
+    - transform: dotted-chat
+      app: /slack|discord/
+    - fuzzy
+    - numbers
+```
+
+Same sentence, two outputs, decided by where it is going — `user.name` in a
+terminal, `` `user.name` `` in chat. Both steps are in the pipeline and both
+conditions are evaluated; at most one matches.
+
+Transforms with a `prompt:` body are also what the activation phrase reaches:
+"hey parrot, tidy that up" routes on the same `description`. A `replace:`
+transform is not routable by voice today — it runs from a pipeline only, and
+`--check-config` lists it apart from the catalogue so that is visible rather
+than surprising.
+
+`prompts:` is the older name for this section and still reads, `content:`
+alongside `prompt:` with it. `- prompt: <name>` still works as a pipeline step.
+An entry defined in both sections is taken from `transforms:`.
 
 ## Conditions
 
@@ -131,15 +184,14 @@ before you go looking for `not_app:` — it is not there and will not be.
 It cannot hand the stage a different table or a different prompt per app; two
 behaviours mean two steps, each with its own condition.
 
-## Prompt stages
+## Prompt transforms
 
-A prompt from `prompts:` can be a stage too, and it is the reason conditions
-exist: it calls the local model, so it costs about a second where every other
-stage costs nothing. Measured on one line, 3.2s with the prompt running against
-0.035s with it skipped.
+A `prompt:` transform is the reason conditions exist: it calls the local model,
+so it costs about a second where every other stage costs nothing. Measured on
+one line, 3.2s with the prompt running against 0.035s with it skipped.
 
 ```yaml
-- prompt: hesitation
+- transform: hesitation
   when: /\b(genre|du coup|en fait)\b/
 ```
 

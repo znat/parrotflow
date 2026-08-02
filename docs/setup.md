@@ -495,7 +495,7 @@ it. Do not read them a list of commands to memorise.
 
 **3. Optional — add the tuned prompts.**
 
-A new config has no `prompts:` section, so every command goes through
+A new config has no `transforms:` section, so every command goes through
 `free_form`. That is fine, but three prompts in the example config score better
 on their own test sets than free-form does. Offer them:
 
@@ -503,7 +503,7 @@ on their own test sets than free-form does. Offer them:
 > They are more accurate than the general one for those three jobs. Shall I add
 > them?
 
-If yes, take the `prompts:` block from the published example and append it to
+If yes, take the `transforms:` block from the published example and append it to
 their config — the block only, not the whole file:
 
 ```sh

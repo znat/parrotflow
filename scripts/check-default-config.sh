@@ -64,15 +64,18 @@ if extra:
     print(f"  · {len(extra)} keys are written on install and not documented in the example"
           f" ({', '.join(sorted({k.split('.')[0] for k in extra}))})")
 
-# Prompts are a list, so the key check above says nothing about which ones.
+# Transforms are a list, so the key check above says nothing about which ones.
+# `prompts:` is read too: it is the older name for the same section, still
+# accepted, and a config written before the rename must not read as empty here.
 def names(doc):
-    return {p.get("name") for p in (doc.get("prompts") or [])}
+    entries = (doc.get("transforms") or []) + (doc.get("prompts") or [])
+    return {e.get("name") for e in entries}
 for name in sorted(names(example) - names(template)):
-    print(f"  ✗ prompt \"{name}\" is documented but not written on install")
+    print(f"  ✗ transform \"{name}\" is documented but not written on install")
     ok = False
 
 if ok:
     print(f"  ✓ a new install gets every key config.example.yaml documents"
-          f"  ({len(keys(template))} keys, {len(names(template))} prompts)")
+          f"  ({len(keys(template))} keys, {len(names(template))} transforms)")
 sys.exit(0 if ok else 1)
 PY
