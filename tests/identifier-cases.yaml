@@ -384,3 +384,67 @@ cases:
     kind: keep
     category: near-miss
     input: on a une variable qui change tout le temps sur ce serveur
+
+  # ---- Held out a second time: a kind word and a naming word, in prose ----
+  #
+  # Written to break the script rather than to flatter it, and they did: 2/8
+  # before a length cap, because "the class called intro to python starts at
+  # nine tomorrow" has every marker a naming has. Nobody dictates a five-word
+  # identifier, and declining beyond four is what tells them apart. The
+  # remaining one — "a method called cognitive behavioural therapy" — is three
+  # plausible words and no surface rule separates it from a name.
+  - name: a class with a name, in the school sense
+    kind: keep
+    input: the class called intro to python starts at nine tomorrow
+  - name: a method in the medical sense
+    kind: keep
+    input: there is a method called cognitive behavioural therapy for that
+  - name: naming after someone
+    kind: keep
+    input: he named the variable after his cat which i think is unwise
+  - name: a function in the event sense
+    kind: keep
+    input: the function called the annual review is on friday afternoon
+  - name: a type of person
+    kind: keep
+    input: she is the type called on whenever something breaks at night
+  - name: a constant complaint
+    kind: keep
+    input: the constant called for by the spec is not what we shipped
+  - name: une classe au sens scolaire
+    kind: keep
+    input: la classe qui s'appelle initiation au python commence à neuf heures
+  - name: a variable in the statistical sense
+    kind: keep
+    input: the variable called into question was the sample size all along
+  # And two that must still work, so a fix cannot just switch everything off.
+
+  # ---- No marker at all: the only job left for a model ---------------------
+  #
+  # A name given without "called": "call it X", "rename it to X", "a getter for
+  # X". The script declines every one of these by construction, and they are
+  # the cases that decide whether a prompt earns its second here.
+  - name: call it, no kind word
+    kind: change
+    input: call it max retries in python
+    expect: call it max_retries in python
+  - name: a helper, said as prose
+    kind: change
+    input: write a python helper that reads the config file and call it load config
+    expect: write a python helper that reads the config file and call it load_config
+  - name: naming by apposition
+    kind: change
+    input: i need a typescript getter for the user profile name
+    expect: i need a typescript getter for the userProfileName
+  - name: rename
+    kind: change
+    input: rename the python variable to retry count
+    expect: rename the python variable to retry_count
+  - name: French, no kind word
+    kind: change
+    input: appelle ça nombre de tentatives en python
+    expect: appelle ça nombre_de_tentatives en python
+  # The hard keep the script still fails, so a prompt gets a chance at it too.
+  - name: a method in the medical sense
+    kind: keep
+    input: there is a method called cognitive behavioural therapy for that

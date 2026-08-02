@@ -935,13 +935,149 @@ enum ConfigStore {
         directory.appendingPathComponent("config.yaml")
     }
 
-    /// Creates the config file from the template if it does not exist yet.
+    /// Where the `identifiers` transform's program lives — beside the config
+    /// that names it, which is what makes `command: identifiers.py` resolve.
+    static var identifiersURL: URL {
+        directory.appendingPathComponent("identifiers.py")
+    }
+
+    /// Creates the config file, and the one program it ships with, if they are
+    /// not there yet.
+    ///
+    /// The script is written rather than bundled because this app has no
+    /// resources — `defaultYAML` is a string in the binary for the same reason
+    /// — and because a script you can open and edit beside your config is the
+    /// point of it. It is never overwritten: once it exists it is yours, and an
+    /// update that reverted your stop lists would be the app taking back
+    /// something it gave you.
     static func createIfMissing() throws {
         let fm = FileManager.default
+        if !fm.fileExists(atPath: identifiersURL.path) {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            try defaultIdentifiersScript.write(to: identifiersURL, atomically: true, encoding: .utf8)
+            // A shebang does nothing without this.
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: identifiersURL.path)
+            Log.write("config: wrote \(identifiersURL.lastPathComponent)")
+        }
         guard !fm.fileExists(atPath: fileURL.path) else { return }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try defaultYAML.write(to: fileURL, atomically: true, encoding: .utf8)
     }
+
+    /// The shipped copy of examples/identifiers.py.
+    ///
+    /// Two copies of one file, which is a thing this repo has been bitten by
+    /// twice — so scripts/check-example-script.sh fails when they differ. The
+    /// example is the one to edit; this is the one that ships.
+    static let defaultIdentifiersScript = #"""
+#!/usr/bin/env python3
+"""Spoken names as identifiers. A transcript on stdin, the rewrite on stdout.
+
+    transforms:
+      - name: identifiers
+        description: spoken names as identifiers
+        command: identifiers.py        # next to config.yaml
+
+    transcription:
+      pipelines:
+        default: [replacements, fuzzy, numbers]
+        # add it yourself:
+        #   - transform: identifiers
+
+"a python function called max retries"  ->  "a python function called max_retries"
+
+The convention comes from the language if one was said, and is camelCase when
+none was. A class or a type takes PascalCase whatever the language; a constant
+takes SCREAMING_SNAKE_CASE.
+
+This is not in the default pipeline and is not installed anywhere. Copy it to
+~/.config/parrotflow/, make it executable, and add the two lines above.
+
+Why a script and not a prompt: measured. On tests/identifier-cases.yaml, 56
+cases, this scores 100% and costs a process start; gemma4:e4b scores 68% and
+costs a second — and its errors are the expensive kind, capitalising words it
+was not asked to touch and translating French names into English. See
+scripts/validate-identifiers.py for the scoreboard.
+
+It is yours now. The stop lists below are the part that will want editing:
+they say where a name ends, and that boundary is a judgement about how you
+speak, not a fact.
+"""
+import re
+import sys
+
+# A name has to be introduced as one. Without this, "i called max yesterday"
+# is a naming and the transform renames a person.
+KIND = re.compile(
+    r"\b(?:function|method|variable|class|constant|type|struct|interface|enum|"
+    r"fonction|m[ée]thode|variable|classe|constante)\b", re.I)
+
+# "called by the scheduler" is a passive and never a naming.
+TRIGGER = re.compile(
+    r"\b(?:called|named|call it|nomm[ée]e?|qui s['’]appelle|appel[ée]e?)\s+"
+    r"(?!by\b|par\b)", re.I)
+
+# Where the name stops and the sentence resumes. "in", "from", "on" and "to"
+# were here and had to come out — they are ordinary parts of identifiers
+# ("is logged in", "build request from config") and stopping there truncated
+# the name.
+TAIL = re.compile(
+    r"\b(?:that|which|for|and|so|should|will|when|if|because|"
+    r"qui|que|pour|et|dans|sur|avant|apr[èe]s|doit)\b", re.I)
+
+SNAKE_LANGUAGES = re.compile(r"\b(?:python|rust|ruby|elixir)\b", re.I)
+PASCAL_KIND = re.compile(r"\b(?:class|classe|type|struct|interface|enum)\b", re.I)
+SCREAMING_KIND = re.compile(r"\b(?:constant|constante)\b", re.I)
+
+
+def style_for(sentence, before):
+    if SCREAMING_KIND.search(before):
+        return "screaming"
+    if PASCAL_KIND.search(before):
+        return "pascal"
+    if SNAKE_LANGUAGES.search(sentence):
+        return "snake"
+    return "camel"
+
+
+def cased(words, style):
+    if style == "snake":
+        return "_".join(word.lower() for word in words)
+    if style == "screaming":
+        return "_".join(word.upper() for word in words)
+    if style == "pascal":
+        return "".join(word.capitalize() for word in words)
+    return words[0].lower() + "".join(word.capitalize() for word in words[1:])
+
+
+def convert(text):
+    out = text
+    # Right to left, so an earlier rewrite cannot move a later match.
+    for match in list(TRIGGER.finditer(text))[::-1]:
+        if not KIND.search(text[:match.start()]):
+            continue
+        rest = text[match.end():]
+        stop = TAIL.search(rest)
+        span = (rest[:stop.start()] if stop else rest).strip()
+        words = [word for word in re.split(r"[^\w'’]+", span) if word]
+        # One word is already an identifier, whatever its case.
+        if len(words) < 2:
+            continue
+        # Nobody dictates a five-word identifier, and prose runs on: "the class
+        # called intro to python starts at nine tomorrow" is not a naming, and
+        # the length is what says so. Declining rather than truncating — a
+        # shortened guess is a wrong rewrite, and this is a stage that runs on
+        # sentences nobody asked it to touch.
+        if len(words) > 4:
+            continue
+        if span in out:
+            out = out.replace(span, cased(words, style_for(text, text[:match.start()])), 1)
+    return out
+
+
+if __name__ == "__main__":
+    sys.stdout.write(convert(sys.stdin.read().rstrip("\n")))
+"""#
 
     /// Reads and decodes the config. Missing keys fall back to the struct defaults.
     static func load() throws -> Config {
@@ -1069,6 +1205,14 @@ enum ConfigStore {
           # renders pasted markup.
           - transform: dotted
             app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
+          # "a python function called max retries" -> ...called max_retries, in
+          # the convention of the language you named. Same places as `dotted`,
+          # and `when:` keeps it from starting a process on a sentence that
+          # names nothing — which is most of them. See examples/identifiers.py,
+          # written beside this file on first launch and yours to edit.
+          - transform: identifiers
+            app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
+            when: /\\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\\b/
 
       # The spelling you want, and the ways it comes out wrong. Whole words,
       # case-insensitive. A source in /slashes/ is a regular expression, and an
@@ -1222,6 +1366,15 @@ enum ConfigStore {
         description: wrap dotted paths in backticks, for chat
         replace:
           '`$1`': ['/\\b([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)+)/']
+
+      # A program rather than a table, because casing words is not something a
+      # substitution can express. The transcript reaches it on stdin and comes
+      # back on stdout; a relative path is beside this file. Written there on
+      # first launch, and yours — the stop lists in it decide where a name
+      # ends, which is a judgement about how you speak.
+      - name: identifiers
+        description: spoken names as identifiers
+        command: identifiers.py
 
     # Do what was asked even when no prompt above matches:
     #

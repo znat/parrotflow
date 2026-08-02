@@ -95,14 +95,43 @@ whatever came next would have needed something else. A command needs nothing
 added ever again — which is the point, and the reason it is worth the process
 start.
 
-`examples/identifiers.py` is the first one: it turns "a python function called
-max retries" into "a python function called max_retries", in English and
-French, with the convention taken from the language named in the sentence.
-Copy it next to your config, make it executable, and add the two lines. It is
-not in any default pipeline. Its measurements are in
-`scripts/validate-identifiers.py`, and they are the reason it is a script and
-not a prompt: 100% against a model's 68%, and the model's failures were
-capitalising words it was not asked to touch.
+### `identifiers`, which ships
+
+`examples/identifiers.py` is the first one, and it is in the default pipeline.
+It turns "a python function called max retries" into "…called max_retries", in
+English and French, with the convention taken from the language named in the
+sentence — snake_case for python and rust, camelCase for typescript and go,
+PascalCase for a class or a type, SCREAMING_SNAKE for a constant, camelCase
+when no language was said.
+
+A copy is written to `~/.config/parrotflow/identifiers.py` on first launch and
+never overwritten afterwards: once it exists it is yours. The stop lists in it
+decide where a name ends, which is a judgement about how you speak rather than
+a fact, and they are meant to be edited.
+
+It is gated twice, and both gates are in the config where you can see them:
+`app:` to editors and terminals, and `when:` to a sentence containing a kind
+word, so no process is started on prose. Delete either line to widen it, or the
+step to turn it off.
+
+**What it costs, and what it will not do.** Scored on 70 cases, 32 of which
+must come back untouched: 90% overall, and one of those 70 is a sentence it
+rewrites and should not — "there is a method called cognitive behavioural
+therapy for that" is three plausible words behind a kind word and a naming
+word, and no surface rule separates it from a name. The other failures are
+namings it declines, which leave the transcript exactly as dictated.
+
+**Why it is not a prompt.** Measured, in `scripts/validate-identifiers.py`. A
+prompt that returns the rewritten sentence scores 68% and fails in the
+expensive direction — it capitalises "python" to "Python", adds articles, and
+translates French names into English. A prompt reduced to the one thing code
+cannot do — naming which words are the identifier when nothing announces them,
+"call it max retries" — scores 8/8 where the script scores 2/8, and it is kept
+in the runner as variant v4 for anyone who wants it. Chaining it behind the
+script scores 100% on the sentences that should change and drops the untouched
+ones from 94% to 81%, because a permissive model then sees exactly the
+sentences a careful rule refused. That is the right trade for someone who
+dictates code all day and the wrong one for a default.
 
 **It also means config.yaml executes code.** Nothing else in that file does.
 `--check-config` names every command transform out loud, every time, whether or

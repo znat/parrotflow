@@ -91,6 +91,13 @@ def convert(text):
         # One word is already an identifier, whatever its case.
         if len(words) < 2:
             continue
+        # Nobody dictates a five-word identifier, and prose runs on: "the class
+        # called intro to python starts at nine tomorrow" is not a naming, and
+        # the length is what says so. Declining rather than truncating — a
+        # shortened guess is a wrong rewrite, and this is a stage that runs on
+        # sentences nobody asked it to touch.
+        if len(words) > 4:
+            continue
         if span in out:
             out = out.replace(span, cased(words, style_for(text, text[:match.start()])), 1)
     return out
