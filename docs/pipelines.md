@@ -34,7 +34,7 @@ a line to see exactly what it would do before leaving it in.
 ## Transforms
 
 The three stages above are fixed. A **transform** is one you write, named in
-`transforms:` and run with `- transform: <name>`. It has one of two bodies:
+`transforms:` and run with `- transform: <name>`. It has one of three bodies:
 
 ```yaml
 transforms:
@@ -47,11 +47,59 @@ transforms:
     description: spoken dotted paths as code
     replace:
       $1.$2: ['/\b(\w+) (?:dot|point) (\w+)\b/']
+
+  - name: identifiers
+    description: spoken names as identifiers
+    command: identifiers.py
 ```
 
 `prompt:` asks the local model — about a second, and the reason conditions
 exist. `replace:` is a substitution table of its own, in the same shape as
-`transcription.replacements`, and costs nothing.
+`transcription.replacements`, and costs nothing. `command:` runs a program of
+yours, which costs a process start — about 30ms for `python3`, 5ms for a shell
+script.
+
+### `command:`, or: the app stops needing new primitives
+
+The transcript arrives on **stdin** and comes back on **stdout**. That is the
+whole contract. A command that exits non-zero, says nothing, or takes longer
+than two seconds leaves the transcript exactly as it arrived, and says so in
+the log — a script you are halfway through writing is an ordinary state to be
+in, and a dictation tool cannot answer it by dropping your words.
+
+A relative path is relative to **the file that named it**: `command:
+identifiers.py` is the script sitting beside your config.yaml. It runs with
+that directory as its working directory, so it can read its neighbours. A bare
+name that is not a file there — `sed`, `python3` — is left to the shell to find
+on PATH, so a command can be a one-liner with its own arguments:
+
+```yaml
+  - name: shout
+    description: everything in capitals, for no good reason
+    command: tr '[:lower:]' '[:upper:]'
+```
+
+This exists because the other two bodies can only do what the app already knows
+how to do. `replace:` cannot change the case of what it captured, so spoken
+identifiers were going to need a case operator in the substitution engine, and
+whatever came next would have needed something else. A command needs nothing
+added ever again — which is the point, and the reason it is worth the process
+start.
+
+`examples/identifiers.py` is the first one: it turns "a python function called
+max retries" into "a python function called max_retries", in English and
+French, with the convention taken from the language named in the sentence.
+Copy it next to your config, make it executable, and add the two lines. It is
+not in any default pipeline. Its measurements are in
+`scripts/validate-identifiers.py`, and they are the reason it is a script and
+not a prompt: 100% against a model's 68%, and the model's failures were
+capitalising words it was not asked to touch.
+
+**It also means config.yaml executes code.** Nothing else in that file does.
+`--check-config` names every command transform out loud, every time, whether or
+not anything is wrong with it — a config that runs something you have forgotten
+about, or that arrived in a config you copied from somewhere, should not be
+able to stay quiet about it.
 
 **Why a table needs a name.** `transcription.replacements` is a single table
 applied by a single stage, so it cannot be two tables running in two places

@@ -1,0 +1,13 @@
+# A `command:` naming a script by a relative path — the shipped example, not a
+# copy of it, because two copies of a script drift and only one of them is the
+# one the docs point at. It resolves against the
+# directory of the file that declared it — this one — which is the same rule a
+# real config follows with config.yaml. Anchoring at ~/.config/parrotflow
+# instead would have made this case score differently on every machine.
+languages: [en]
+transforms:
+  - name: identifiers
+    description: spoken names as identifiers
+    command: ../../examples/identifiers.py
+pipeline:
+  - transform: identifiers

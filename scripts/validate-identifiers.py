@@ -27,7 +27,7 @@ instruction, so the prompt is the system message and the transcript is the
 user message — and the cleanup is a port of PromptRunner.clean. A number
 measured any other way describes code the app does not run.
 """
-import argparse, json, re, sys, time, unicodedata, urllib.request, pathlib
+import argparse, json, re, subprocess, sys, time, unicodedata, urllib.request, pathlib
 
 try:
     import yaml
@@ -218,12 +218,15 @@ def main():
     ap.add_argument("--cases", default=str(CASES))
     ap.add_argument("--code-only", action="store_true",
                     help="no model at all: a regex for the naming phrase, cased in code")
+    ap.add_argument("--script", default=None,
+                    help="score a `command:` transform instead — the same way the app runs it,"
+                         " the transcript on stdin and the rewrite on stdout")
     args = ap.parse_args()
 
     cases = yaml.safe_load(pathlib.Path(args.cases).read_text())["cases"]
     system = VARIANTS[args.variant]
     meter = {}
-    if not args.code_only:
+    if not args.code_only and not args.script:
         ask(args.model, system, "warm up", args.predict)
 
     scores = {"change": [0, 0], "keep": [0, 0]}
@@ -235,7 +238,13 @@ def main():
         want = str(case.get("expect", text))
         kind = case["kind"]
 
-        if args.code_only:
+        if args.script:
+            started = time.time()
+            done = subprocess.run([args.script], input=text, capture_output=True, text=True)
+            got, dt = done.stdout.rstrip("\n"), time.time() - started
+            if done.returncode != 0:
+                got = text  # the app keeps the transcript when a command fails
+        elif args.code_only:
             got, dt = control(text), 0.0
         else:
             got, dt = ask(args.model, system, text, args.predict, meter)
@@ -280,6 +289,7 @@ main()
 # 56 cases: 33 change, 23 keep.
 #
 #                          change  keep  overall  latency
+#     examples/identifiers.py 100%  100%   100%    0.03s   <- what ships
 #     no model at all       100%   100%   100%      —
 #     gemma4:e4b  v1         58%    83%    68%    0.97s
 #     gemma4:e4b  v2         58%    83%    68%    1.15s
@@ -311,11 +321,15 @@ main()
 # called ..."), so there is nothing to find. The model was never needed for
 # either half.
 #
-# What that leaves is a `replace:` table, which is config, plus the one thing
-# the substitution engine cannot do: change the case of a captured group. A
-# `$1|snake` / `$1|camel` / `$1|pascal` / `$1|screaming` operator is generic —
-# every transform anyone writes gets it — and it is the only code this feature
-# needs. The rest is lines in config.yaml, out of the default pipeline.
+# What that left was a `replace:` table plus a case operator the substitution
+# engine does not have. What shipped instead is smaller and more general: a
+# third transform body, `command:`, which pipes the transcript through a
+# program of yours. The feature is then examples/identifiers.py — the control
+# in this file, thirty lines of Python, scored the same way at 0.03s a call —
+# and the app never needs another primitive for the next idea either.
+#
+# `--script examples/identifiers.py` scores that file the way the app runs it.
+# The two numbers agree, which is the only reason to trust either.
 #
 # Two cautions for whoever picks this up. The control's stop list and its
 # "a kind word must precede the naming phrase" rule were tuned on the first 41

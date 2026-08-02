@@ -188,3 +188,30 @@ cases:
     pipeline: prompt
     input: hey parrot, make that a bullet list
     expect: unchanged
+
+  # --- a transform that is somebody else's program -------------------------
+  # The third body kind. `shout` proves the transcript reaches stdin and comes
+  # back from stdout; `broken` (exits 3) and `silent` (says nothing) run
+  # straight after it and must leave what it produced alone. A command that
+  # fails is an ordinary state — a script half-written, an interpreter missing
+  # — and a dictation tool cannot answer it by dropping the transcript.
+  - name: a command transform rewrites through stdin and stdout
+    pipeline: command
+    input: read user dot name
+    expect: READ USER DOT NAME
+
+  # Same path with accents, because the transcript crosses a pipe as bytes and
+  # `tr` is the stage most likely to mangle them.
+  - name: a command transform keeps what it was given intact
+    pipeline: command
+    input: la réunion a duré très longtemps
+    expect: LA RÉUNION A DURÉ TRÈS LONGTEMPS
+
+  # A bare relative path, resolved against the directory of the file that
+  # declared it — the fixture here, config.yaml in a real install. The script
+  # is examples/identifiers.py, whose own set is tests/identifier-cases.yaml;
+  # what this case adds is that the app finds it and hands it the transcript.
+  - name: a command transform finds a script beside the file that names it
+    pipeline: command-relative
+    input: add a python function called max retries that returns the count
+    expect: add a python function called max_retries that returns the count

@@ -71,11 +71,12 @@ struct Config: Decodable, Equatable {
         var description = ""
         var confirm = true
         var body: Transform.Body?
-        /// `prompt:` and `replace:` on the same entry.
+        var directory: URL?
+        /// More than one of `prompt:`, `replace:` and `command:` on one entry.
         var namesBoth = false
 
         enum CodingKeys: String, CodingKey {
-            case name, description, confirm, prompt, content, replace
+            case name, description, confirm, prompt, content, replace, command
         }
 
         init(from decoder: Decoder) throws {
@@ -86,12 +87,17 @@ struct Config: Decodable, Equatable {
             }
             name = try trimmed(.name)
             description = try trimmed(.description)
+            directory = decoder.userInfo[.configDirectory] as? URL
             confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
 
             let instructions = try trimmed(.prompt).isEmpty ? trimmed(.content) : trimmed(.prompt)
             let table = try c.decodeIfPresent([String: [String]].self, forKey: .replace)
-            namesBoth = !instructions.isEmpty && table != nil
-            if let table {
+            let command = try trimmed(.command)
+            namesBoth = [!instructions.isEmpty, table != nil, !command.isEmpty]
+                .filter { $0 }.count > 1
+            if !command.isEmpty {
+                body = .command(command)
+            } else if let table {
                 body = .replace(table)
             } else if !instructions.isEmpty {
                 body = .prompt(instructions)
@@ -123,11 +129,17 @@ struct Config: Decodable, Equatable {
             if entry.namesBoth {
                 // Preferring one would run something the config did not ask
                 // for, on text nobody sees beforehand.
-                Log.write("transforms: \"\(entry.name)\" names both `prompt:` and `replace:`; skipped")
+                Log.write(
+                    "transforms: \"\(entry.name)\" names more than one of "
+                    + "`prompt:`, `replace:` and `command:`; skipped"
+                )
                 continue
             }
             guard let body = entry.body else {
-                Log.write("transforms: \"\(entry.name)\" has neither `prompt:` nor `replace:`; skipped")
+                Log.write(
+                    "transforms: \"\(entry.name)\" has none of "
+                    + "`prompt:`, `replace:` or `command:`; skipped"
+                )
                 continue
             }
             guard !kept.contains(where: {
@@ -144,6 +156,7 @@ struct Config: Decodable, Equatable {
             }
             kept.append(Transform(
                 name: entry.name, description: entry.description,
+                directory: entry.directory,
                 confirm: entry.confirm, body: body
             ))
         }
@@ -170,6 +183,10 @@ struct Config: Decodable, Equatable {
     struct Transform: Equatable {
         var name: String
         var description: String
+        /// The directory of the file that declared this transform, which is
+        /// what a relative `command:` is relative to. Nil when it was not
+        /// decoded from a file — a default, or a test.
+        var directory: URL?
         /// Show the result and wait before replacing anything. Only consulted
         /// when a transform is run over your selection — a pipeline stage runs
         /// on a transcript nobody has seen yet, so there is nothing to confirm.
@@ -182,6 +199,18 @@ struct Config: Decodable, Equatable {
             /// A table of its own, in the shape of `transcription.replacements`
             /// — the spelling you want, and the ways it comes out wrong.
             case replace([String: [String]])
+            /// A program to pipe the transcript through: it arrives on stdin
+            /// and comes back on stdout.
+            ///
+            /// The other two bodies can only do what this app already knows
+            /// how to do, and every new kind of rewrite meant a new primitive.
+            /// Spoken identifiers were going to need case conversion in the
+            /// substitution engine; the next thing would need something else.
+            /// A command needs nothing: whatever you can write, you can run.
+            ///
+            /// The cost is that config.yaml now executes code, which
+            /// `--check-config` says out loud.
+            case command(String)
         }
 
         var isPrompt: Bool {
@@ -848,6 +877,25 @@ struct Config: Decodable, Equatable {
                 + " — configured: \(transcription.languages.joined(separator: ", "))")
         }
         found += replacementProblems()
+        // Said out loud, every time, and not only when something is wrong with
+        // it. A `command:` transform is the one thing in this file that runs
+        // code rather than describing a rewrite, and a config that executes
+        // something you have forgotten about — or that arrived in a config you
+        // copied — should not be able to stay quiet about it.
+        for transform in transforms {
+            guard case .command(let command) = transform.body else { continue }
+            let path = (CommandRunner.resolved(command, base: transform.directory) as NSString)
+                .components(separatedBy: " ").first ?? command
+            // A first word that is still relative after resolution is a bare
+            // command name for the shell to find on PATH — `python3`, `sed` —
+            // and this cannot say whether that will work.
+            let runnable = FileManager.default.isExecutableFile(atPath: path)
+                || !path.hasPrefix("/")
+            found.append(
+                "transforms: \"\(transform.name)\" runs a program — \(command)"
+                + (runnable ? "" : " — which is not executable, so the transcript passes through")
+            )
+        }
         for language in transcription.languages {
             let pipeline = Pipeline.resolved(config: self, language: language)
             for problem in pipeline.validate() {
@@ -871,6 +919,13 @@ struct Config: Decodable, Equatable {
 }
 
 // MARK: - Loading
+
+extension CodingUserInfoKey {
+    // The directory of the file being decoded — see `Transform.directory`.
+    // The initialiser only fails on an empty raw value.
+    // swiftlint:disable:next force_unwrapping
+    static let configDirectory = CodingUserInfoKey(rawValue: "parrotflow.configDirectory")!
+}
 
 enum ConfigStore {
     static var directory: URL {
@@ -897,7 +952,12 @@ enum ConfigStore {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return Config()
         }
-        return try YAMLDecoder().decode(Config.self, from: text)
+        // A relative `command:` is relative to the file that declared it, so a
+        // config carries its scripts beside it and a `--pipeline` fixture
+        // carries its own.
+        return try YAMLDecoder().decode(
+            Config.self, from: text, userInfo: [.configDirectory: directory]
+        )
     }
 
     /// Computed rather than a constant because the dev build seeds a different
@@ -1070,14 +1130,24 @@ enum ConfigStore {
     # reaches the prompt, which is why one entry covers "format those dates
     # ISO" and "format those dates with slashes".
     #
-    # An entry has either `prompt:`, which asks the local model and costs about
-    # a second, or `replace:`, a substitution table of its own that costs
-    # nothing:
+    # An entry has one of three bodies. `prompt:` asks the local model and
+    # costs about a second. `replace:` is a substitution table of its own and
+    # costs nothing. `command:` runs a program of yours — the transcript on
+    # stdin, the rewrite on stdout — and costs a process start:
     #
     #   - name: dotted
     #     description: spoken dotted paths as code
     #     replace:
     #       $1.$2: ['/\\b(\\w+) (?:dot|point) (\\w+)\\b/']
+    #
+    #   - name: identifiers
+    #     description: spoken names as identifiers
+    #     command: identifiers.py          # beside this file; see examples/
+    #
+    # A `command:` is the one thing in this file that runs code rather than
+    # describing a rewrite. --check-config names every one of them out loud. A
+    # command that fails, says nothing, or takes more than two seconds leaves
+    # the transcript exactly as it arrived.
     #
     # A table is not reached by voice — it runs from a pipeline, which is where
     # it can be scoped to one app. Two tables with the same pattern and

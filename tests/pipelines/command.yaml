@@ -1,0 +1,29 @@
+# A `command:` transform, and the two ways one goes wrong.
+#
+# What is tested here is the plumbing: the transcript reaches stdin, stdout
+# comes back, and a command that fails or says nothing leaves the transcript
+# exactly as it arrived.
+#
+# A relative path is covered by command-relative.yaml; these three are shell
+# one-liners, so nothing here depends on a file being anywhere.
+#
+# All three run in order, so one case sees all three behaviours: `shout` must
+# fire, and the other two must not be able to blank the transcript between them.
+languages: [en, fr]
+transforms:
+  - name: shout
+    description: upper-case the transcript
+    command: tr '[:lower:]' '[:upper:]'
+
+  - name: broken
+    description: a command that fails
+    command: exit 3
+
+  - name: silent
+    description: a command that says nothing
+    command: true
+
+pipeline:
+  - transform: shout
+  - transform: broken
+  - transform: silent
