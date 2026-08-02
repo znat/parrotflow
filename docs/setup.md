@@ -553,7 +553,7 @@ Keep this short. Three things they need, and where to look.
 > Your settings are in `~/.config/parrotflow/config.yaml`. Save the file and the
 > app reloads it immediately.
 >
-> The menu bar icon has *Settings & Permissions* and *Correct a Word…*.
+> The menu bar icon has *Correct a Word…*, *Settings…* and *Permissions…*.
 
 ---
 
