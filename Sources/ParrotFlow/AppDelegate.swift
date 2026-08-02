@@ -1264,13 +1264,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let capability = Router.local(instruction: instruction, catalogue: catalogue) {
             Log.write("inline router: \"\(instruction)\" named \(capability.name) outright")
-            // An action opens a panel or writes a rule — neither is a rewrite of
-            // the words in front of it, so there is nothing to apply here.
-            guard case .transform(let prompt) = capability else {
-                giveUp("\"\(instruction)\" is not something to change in the text")
-                return
+            switch capability {
+            case .transform(let prompt): run(prompt)
+            case .action(let action): runInlineAction(action, text: text, instruction: instruction)
             }
-            run(prompt)
             return
         }
 
@@ -1294,8 +1291,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     case .matched(.transform(let prompt)):
                         Log.write("inline router: \"\(instruction)\" → \(prompt.name)")
                         run(prompt)
-                    case .matched(let capability):
-                        giveUp("\(capability.name) is not something to change in the text")
+                    case .matched(.action(let action)):
+                        self.runInlineAction(action, text: text, instruction: instruction)
                     case .anything:
                         Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
                         run(FreeForm.prompt)
@@ -1307,6 +1304,164 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run { giveUp(error.localizedDescription, tone: .failure) }
             }
         }
+    }
+
+    /// A built-in action asked for inside a dictation.
+    ///
+    /// The command path has to find what the action applies to — a selection,
+    /// or the last thing dictated — and then write into it where it sits, which
+    /// is the ladder in `saveCorrections` and where the risk of this app lives.
+    /// Inline there is nothing to find: the text is the words in front of the
+    /// phrase, and it has not been written yet. The panel opens first, and what
+    /// goes in afterwards is already corrected.
+    ///
+    /// Cancelling writes what was dictated. Refusing the whole utterance
+    /// because a panel was dismissed would lose the sentence over a change of
+    /// mind about a rule.
+    private func runInlineAction(
+        _ action: Capability.Action, text: String, instruction: String
+    ) {
+        switch action {
+        case .vocabulary:
+            // "…by the way parrot, fix vocabulary" — nothing to extract, the
+            // panel opens on the sentence itself and you correct it by hand.
+            endProgress()
+            Log.write("inline: correction panel over \"\(text)\"")
+            showInlineCorrection(over: text, rule: nil)
+
+        case .spelling:
+            // "…by the way parrot, Tasmin spells T A S M E E N" — the rule has
+            // to be read out of the instruction first, which is a model call of
+            // its own and not part of routing.
+            guard config.llm.enabled else {
+                giveUpInline(text, why: "\"\(instruction)\" needs the local model to read the spelling")
+                return
+            }
+            beginProgress("Thinking…")
+            let llm = llmConfig()
+            // From the dictated text, not the instruction: the instruction is a
+            // name plus a run of loose capitals, which reads as English
+            // whatever was actually said.
+            let language = DictationLanguage.forCorrection(
+                transcript: text, allowed: config.transcription.languages
+            )
+            Task { [weak self] in
+                do {
+                    let result = try await VoiceCommand.interpret(
+                        command: instruction, lastTranscript: text,
+                        language: language, config: llm
+                    )
+                    await MainActor.run {
+                        guard let self else { return }
+                        self.endProgress()
+                        switch result {
+                        case .addRule(let heard, let corrected):
+                            Log.write("inline: proposed rule \(heard) -> \(corrected)")
+                            self.showInlineCorrection(
+                                over: text, rule: (heard: heard, corrected: corrected)
+                            )
+                        case .openCorrectionPanel:
+                            self.showInlineCorrection(over: text, rule: nil)
+                        case .unrecognised:
+                            self.giveUpInline(text, why: "Didn't understand \"\(instruction)\"")
+                        }
+                    }
+                } catch {
+                    await MainActor.run {
+                        guard let self else { return }
+                        self.endProgress()
+                        self.giveUpInline(text, why: error.localizedDescription, tone: .failure)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The correction panel, with the dictated text waiting behind it.
+    ///
+    /// `pendingSelection` and `focusAtPress` are deliberately cleared: they are
+    /// how `saveCorrections` decides to write into a field somewhere else, and
+    /// here the only place the text should land is where a dictation would put
+    /// it. Leaving them set would rewrite whatever happened to be selected when
+    /// the hotkey went down.
+    private func showInlineCorrection(
+        over text: String, rule: (heard: String, corrected: String)?
+    ) {
+        pendingSelection = nil
+
+        /// Hand focus back before writing anything.
+        ///
+        /// `CorrectionPanel.show` calls `NSApp.activate(ignoringOtherApps:)` to
+        /// put itself in front, so by the time you press Save we are the
+        /// frontmost app and the paste lands in our own window. It leaves no
+        /// trace: the insert reports `.pasted`, which is silent, so the log
+        /// showed a rule proposed and then nothing at all. `applyTransform`
+        /// learned this the same way and does the same thing.
+        func handBack() {
+            guard let owner = focusAtPress?.owner, !owner.isActive else { return }
+            owner.activate()
+            // Let it come forward before the keystroke is posted.
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+        correctionPanel.onSave = { [weak self] rules, correctedText in
+            guard let self else { return }
+            for rule in rules {
+                do {
+                    try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
+                    Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+                } catch {
+                    self.presentAlert(
+                        title: "Could not save the rule", message: error.localizedDescription
+                    )
+                }
+            }
+            // A rule taught about the sentence you just said should be true of
+            // that sentence. Applied here rather than by re-running the
+            // pipeline: the config on disk has only just changed, and the copy
+            // in memory is reloaded by a file watcher that has not fired yet.
+            let corrected = rules.isEmpty ? text : Replacements.applyExact(
+                to: text,
+                rules: rules.map {
+                    Config.Transcription.Rule(source: $0.heard, replacement: $0.corrected)
+                }
+            )
+            if corrected != text {
+                Log.write("inline: applied the new rule(s) to the transcript")
+                Log.write("    before: \(text)")
+                Log.write("    after:  \(corrected)")
+            }
+            // The panel edits words, not the sentence, when it was opened on a
+            // proposed rule — so its text is only the target when it was opened
+            // on the sentence itself.
+            let final = rule == nil && !correctedText.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            ).isEmpty ? correctedText : corrected
+            self.settings.model.lastTranscript = final
+            handBack()
+            Log.write("inline: writing into \(self.focusAtPress?.owner?.localizedName ?? "the frontmost app")")
+            self.insertDictation(final)
+        }
+        correctionPanel.onCancel = { [weak self] in
+            guard let self else { return }
+            Log.write("inline: correction dismissed; wrote the text as dictated")
+            handBack()
+            self.insertDictation(text)
+        }
+
+        if let rule {
+            correctionPanel.show(rule: rule)
+        } else {
+            correctionPanel.show(selection: text)
+        }
+    }
+
+    /// Write what was said, and say why it is not what was asked for.
+    private func giveUpInline(_ text: String, why: String, tone: NoticeTone = .caution) {
+        endProgress()
+        Log.write("inline: \(why); wrote the text as dictated")
+        insertDictation(text)
+        notice.show(why, tone: tone, duration: 7)
+        setLabel(why, clearAfter: 7)
     }
 
     /// The text, exactly as dictation puts it in.

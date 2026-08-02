@@ -14,11 +14,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
 [ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 
-pass=0; total=0; failed=""
+pass=0; total=0; known=0; failed=""
 while IFS='|' read -r phrases input want; do
   case "$phrases" in \#*) continue;; esac
   [ -z "$input" ] && continue
-  total=$((total + 1))
 
   out="$("$BIN" --command "$input" --phrases "$phrases" 2>/dev/null)"
   if printf '%s' "$out" | grep -q "not a command"; then
@@ -28,6 +27,17 @@ while IFS='|' read -r phrases input want; do
     [ -z "$got" ] && got="EMPTY"
   fi
 
+  # KNOWN: the right answer, not yet given. Counted apart so the number means
+  # "what works", and so a fix announces itself instead of sitting unnoticed.
+  case "$want" in
+    KNOWN:*)
+      known=$((known + 1))
+      [ "$got" = "${want#KNOWN:}" ] \
+        && printf '  ! %s\n      now passes — drop the KNOWN: marker\n' "$input"
+      continue;;
+  esac
+
+  total=$((total + 1))
   if [ "$got" = "$want" ]; then
     pass=$((pass + 1))
     printf '  ✓ %-52s [%s]\n' "$input" "${phrases:-no phrases}"
@@ -40,5 +50,5 @@ while IFS='|' read -r phrases input want; do
 done < "$ROOT/tests/wake-cases.txt"
 
 echo
-echo "  $pass/$total$failed"
+echo "  $pass/$total   plus $known known-unfixed$failed"
 [ "$pass" = "$total" ]
