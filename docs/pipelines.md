@@ -78,13 +78,59 @@ already in the default pipeline, because this is a tool for people who dictate
 identifiers. Delete the two steps and it stops; delete the two transforms and
 `--check-config` tells you the steps name nothing.
 
-**`dot` only, not `point`.** The pattern joins whatever surrounds the word, and
-"point" is ordinary French: "voilà le point sur les tests" would become "voilà
-le.sur les tests". Add the alternation — `(?:dot|point)` — if you never dictate
-French into a terminal. English is not entirely safe either, only luckier: "the
-dot com era" is the same shape. Scoping to terminals and chat is what makes the
-odds acceptable, and it is why this is not in `replacements:` where it would
-run everywhere.
+### The one rewrite that fires on ordinary language
+
+Every other substitution waits for a name you taught it. This one reads "a
+word, then dot or point, then a word", and that shape occurs in prose: "voilà le
+point sur les tests" would become "voilà le.sur les tests", and "the dot com
+era" would become "the.com era". `point` is an everyday French word.
+
+What keeps them apart is two stop lists, one for what may not come *before* and
+one for what may not come *after*. In code both sides are identifiers; in prose
+at least one side is nearly always a determiner, a preposition, or the head of a
+set phrase — `le point de vue`, `un bon point pour`, `a dot product`.
+
+```
+\b(?!(?:le|la|les|…|the|a|an)\b)(\w+) (?:dot|point) (?!(?:de|du|…|product)\b)(?=\w)
+```
+
+The second word is matched but not consumed, which is what lets a chain work:
+`user point profile point name` → `user.profile.name`. Consuming it would leave
+the middle token unavailable to the next match.
+
+**54/54 on `tests/dotted-cases.txt`, plus two it cannot do.** Two ordinary words
+either side — "réunion point hebdomadaire" — is a shape only a dictionary would
+tell from code, and both residual cases are kept in the set, failing, rather
+than dropped to make the number look better. They are unlikely in a terminal or
+a chat window, which together with the `app:` scoping is the only reason this is
+on by default; in `replacements:` it would run everywhere and would not be
+defensible.
+
+`scripts/check-dotted.sh` reads the pattern out of `Config.defaultYAML` rather
+than from a fixture, so what is scored is what a new install gets.
+
+### Chat wraps in a second step
+
+`backticks` is a separate transform, not a cleverer pattern:
+
+```yaml
+- transform: dotted
+  app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
+- transform: backticks
+  app: /slack|discord/
+```
+
+`dotted` does not consume the word after the dot, so it has nowhere to put a
+closing backtick — the first attempt produced ``lis `config.`port``. Building
+the path and wrapping it are two jobs, and the second only runs where markdown
+means something. It requires a letter to start, so `21.5` is left alone.
+
+### Order matters, and only one set notices
+
+`numbers` runs before `dotted`, because English says "three point one four" for
+a decimal and it is `numbers` that consumes that word. Swap the two and `dotted`
+gets there first: "three one.four". The `DECIMAL` cases in the set exist to fail
+if anyone reorders them.
 
 Transforms with a `prompt:` body are also what the activation phrase reaches:
 "hey parrot, tidy that up" routes on the same `description`. A `replace:`

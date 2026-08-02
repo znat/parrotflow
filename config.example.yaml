@@ -146,24 +146,34 @@ transforms:
 
       Return only the text.
 
-  # The two tables the pipeline above names. Same pattern, different
-  # output: that is the whole reason a table has a name.
+  # The two tables the pipeline above names. Same pattern, different output:
+  # that is the whole reason a table has a name.
   #
-  # `dot` only, not `point`. "point" is an ordinary French word and this
-  # pattern joins whatever surrounds it — "voilà le point sur les tests"
-  # becomes "voilà le.sur les tests". Add it if you never dictate French
-  # into a terminal:
+  # The pattern reads "a word, then dot or point, then a word" — and then
+  # refuses it when either side is a word code does not use there. Without
+  # that, "voilà le point sur les tests" becomes "voilà le.sur les tests":
+  # "point" is an everyday French word and "dot com" is an English one. The
+  # first list is what may not come before, the second what may not come
+  # after — determiners, prepositions, and the heads of set phrases like
+  # "point final" or "dot product".
   #
-  #   ['/\b(\w+) (?:dot|point) (\w+)\b/']
+  # 45/45 on tests/dotted-cases.txt, plus two it cannot do: two ordinary
+  # words either side ("réunion point hebdomadaire") is a shape only a
+  # dictionary would tell from code. Both are unlikely in a terminal or a
+  # chat window, which is the only reason this is on by default. Score it
+  # with scripts/check-dotted.sh — it reads the pattern from this file.
+  #
+  # The second word is matched but not consumed, so a chain still works:
+  # "user point profile point name" -> user.profile.name.
   - name: dotted
     description: spoken dotted paths as code
     replace:
-      $1.$2: ['/\b(\w+) dot (\w+)\b/']
+      '$1.': ['/\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\b)(\w+) (?:dot|point) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\b)(?=\w)/']
 
-  - name: dotted-chat
-    description: the same, wrapped for a chat window
+  - name: backticks
+    description: wrap dotted paths in backticks, for chat
     replace:
-      "`$1.$2`": ['/\b(\w+) dot (\w+)\b/']
+      '`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
 
 # Do what was asked even when no prompt above matches:
 #
