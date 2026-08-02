@@ -89,6 +89,13 @@ transcription:
       # know that every other tab gets the stage too.
       - transform: email
         app: /mail|outlook|thunderbird|superhuman|missive/
+      # Free and exact, and ahead of the prompt on purpose: a handle is a token
+      # a model leaves alone, where "mention marie" is a phrase it might tidy
+      # away. Measured — the handles come through `slack` untouched.
+      - transform: slack_handles
+        app: /slack/
+      - transform: slack_mentions
+        app: /slack/
       - transform: slack
         app: /slack/
 
@@ -308,58 +315,41 @@ transforms:
 
       Return only the message.
 
-  # Asked for out loud — "hey parrot, use Slack mentions" — and deliberately
-  # not in the pipeline above. A message that names someone is not a message
-  # that pings them, and nothing in a transcript tells the two apart. So this
-  # one you say, and `confirm` shows you who is about to be tagged before
-  # anything is replaced.
+  # Two tables rather than one prompt, and the marker word is why they can be.
   #
-  # The mapping lives in the prompt rather than in a `replace:` table because a
-  # table is not reachable by voice — it runs from a pipeline only, and a
-  # pipeline is where this must not be. It is also the better half of the trade:
-  # names are a lookup a table would do exactly, but "let everyone here know"
-  # -> @here is a judgement, and a pattern that turned every "here" into @here
-  # is one you would switch off after a single message.
+  # A name is a lookup. The prompt that used to do this got to 6/6 after four
+  # rewrites, and its first draft answered "Sofia already looked at it" with
+  # "@priya already looked at it" — a handle invented for a name it had never
+  # been given, which in Slack is a message sent to the wrong person. A table
+  # cannot do that. It substitutes what is in it, leaves the rest alone, costs
+  # nothing, and needs no model running.
   #
-  # Put your own people in the list. 6/6 as written, and the first draft was
-  # 2/6 in the direction that costs the most — it answered "Sofia already
-  # looked at it" with "@priya already looked at it", inventing a handle for a
-  # name it had never been given, and it swallowed the words in front of the
-  # first mention ("heads up to the whole channel" -> "@channel,"). Three
-  # sentences fixed both and all three are load-bearing: the one naming a name
-  # off the list, the one saying a mention replaces the words that name the
-  # person and not one more, and "nothing is ever deleted".
+  # `mention` is the safety, not the syntax. Without a marker the table would
+  # turn every "Marie" into a ping, and a message that names someone is not a
+  # message that pings them. It is said in the same breath, so unlike the voice
+  # command this replaces it costs no round trip:
+  #
+  #     "mention marie can you look at this"
+  #     -> "@marie.dupont can you look at this"
+  #
+  # Two tables and not one, so the group pings can go without the handles going
+  # with them: those are the two that wake people up, and @channel reaches the
+  # ones who are away.
+  #
+  # To fill this in, hand Claude Code your team's names and handles and ask it
+  # to update this table. The shape is regular and the names are yours.
+  - name: slack_handles
+    description: spoken names as Slack handles
+    replace:
+      '@marie.dupont': ['/\bmention(?:ne)? marie\b/']
+      '@tleroy': ['/\bmention(?:ne)? thomas\b/']
+      '@priya': ['/\bmention(?:ne)? priya\b/']
+
   - name: slack_mentions
-    description: turn people's names into Slack mentions
-    prompt: |
-      Return the text word for word, with one kind of change and no
-      other: a name that appears in this list becomes its handle.
-
-        Marie   -> @marie.dupont
-        Thomas  -> @tleroy
-        Priya   -> @priya
-
-      Every occurrence, including where the message is about that person
-      rather than to them.
-
-      A name that is not in the list is left exactly as it was. Sofia
-      stays Sofia. Never give a name a handle that belongs to someone
-      else, and never invent one.
-
-      Two group mentions are a judgement rather than a lookup. "everyone
-      here", "whoever is around" -> @here, which pings the people who are
-      online. "the whole channel", "everyone", "all of them" -> @channel,
-      which pings the ones who are away too. Only where the text means
-      the people: "the file is here" is a place, and stays.
-
-      A mention replaces the words that name the person or the group, and
-      not one word more: "heads up to the whole channel" comes back as
-      "heads up to @channel".
-
-      Nothing is ever deleted. Every other word, the order and the
-      punctuation come back as they went in.
-
-      Return only the text.
+    description: spoken group mentions as @here and @channel
+    replace:
+      '@here': ['/\bmention(?:ne)? (?:everyone here|here)\b/']
+      '@channel': ['/\bmention(?:ne)? (?:the )?(?:whole )?channel\b/']
 
   # The two tables the pipeline above names. Same pattern, different output:
   # that is the whole reason a table has a name.

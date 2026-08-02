@@ -5,8 +5,13 @@
 # longer request, because that is the case the router has to get right.
 #
 # The expectations assume the catalogue in config.example.yaml: bullets, terse,
-# grammar, email, slack, slack_mentions, and the built-ins. `--route` reads your
-# own config, so a machine with a different list will disagree with this set,
+# grammar, email, slack, and the built-ins. `slack_handles` and `slack_mentions`
+# are tables, so they reach the router not at all — what selects them is the
+# word "mention" inside a sentence, which is a substitution, not a routing
+# decision.
+#
+# `--route` reads your own config, so a machine with a different list will
+# disagree with this set,
 # and rightly — it is scoring a router against a list, and the list is part of
 # the question.
 #
@@ -21,15 +26,13 @@
 # to a prompt that rewrites your selection. That risk went up when ANY arrived,
 # not down, which is why there are more of them now than tools.
 #
-# 50/54 on gemma4:e4b. It was 41/45 on a catalogue of three prompts; adding
-# email, slack and slack_mentions took the same 45 cases to 42 — one of the
-# four known failures, "use the 24 hour clock", started passing — and the nine
-# cases added with them cost one.
+# 47/52 on gemma4:e4b, on a catalogue of five prompts. It was 41/45 on three.
 #
-# Three of the four that fail fail cheaply, which is why they are left standing
+# Four of the five that fail fail cheaply, which is why they are left standing
 # rather than argued with:
 #
 #     format those dates ISO                     -> grammar
+#     format those dates with slashes            -> grammar
 #     fix the numbers                            -> grammar
 #     fix the numbers but leave the years alone  -> grammar
 #
@@ -38,6 +41,12 @@
 # whose every rule is against touching a number, so the cost is a no-op you can
 # see in the preview, not a rewrite. Five descriptions and a second ANY example
 # were measured against these; the notes are in Router.swift.
+#
+# This family moves with the size of the list rather than with any one entry in
+# it. "format those dates with slashes" passed with six prompts in the
+# catalogue and fails with five, and nothing about dates changed in between —
+# worth knowing before reading a one-case swing here as a regression in
+# whatever was added or removed that day.
 #
 # The fourth is the expensive kind and is new:
 #
@@ -187,9 +196,11 @@ cases:
 
   # --- the three prompts scoped to a window --------------------------------
   # `email` and `slack` run from a pipeline behind `app:`, but they are prompts,
-  # so the phrase reaches them too. `slack_mentions` is only ever reached this
-  # way. The two neighbours worth watching are terse and slack — "shorten this"
-  # against "tidy that up for chat" — and they hold.
+  # so the phrase reaches them too. `slack_handles` and `slack_mentions` are
+  # tables and are reachable no way but a pipeline, so they are not in here —
+  # what routes them is the word "mention" inside the sentence, which is not a
+  # routing question at all. The two neighbours worth watching are terse and
+  # slack — "shorten this" against "tidy that up for chat" — and they hold.
   - instruction: write an email
     expect: email
   - instruction: make that an email
@@ -198,7 +209,3 @@ cases:
     expect: slack
   - instruction: tidy that up for chat
     expect: slack
-  - instruction: use Slack mentions
-    expect: slack_mentions
-  - instruction: turn the names into mentions
-    expect: slack_mentions
