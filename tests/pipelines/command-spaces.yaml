@@ -1,0 +1,13 @@
+# A relative command whose path contains a space, in a directory whose name
+# contains one, *with an argument after it* — which is what decides where the
+# path ends. The whole value naming a file is not enough on its own: with an
+# argument it never does. The path reaches the shell quoted, and the whole value is tried
+# as one path before anything is split on a space — YAML quoting cannot express
+# this, because the parser removes the quotes long before the app sees them.
+languages: [en]
+transforms:
+  - name: shout
+    description: upper-case, from a path with a space in it
+    command: with space/shout.sh --upper
+pipeline:
+  - transform: shout

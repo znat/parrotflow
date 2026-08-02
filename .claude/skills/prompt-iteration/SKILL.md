@@ -1,18 +1,23 @@
 ---
 name: prompt-iteration
-description: Iterate on a prompt against a validation set instead of by eye. Use when tuning a prompt for a narrow, repeatable task — extraction, classification, rewriting — especially with a small local model, or when a prompt "works" but fails unpredictably. Covers building the set, splitting model work from deterministic work, and the failure patterns that measurement exposes.
+description: Decide what should do a narrow text job — a prompt, a regex, a script, or a combination of them — by measuring against a validation set instead of judging by eye. Use when tuning a prompt for extraction, classification or rewriting, especially with a small local model; when a prompt "works" but fails unpredictably; or when deciding whether a model is needed at all. Covers building the set, splitting model work from code, proposing the combination, and the failure patterns measurement exposes.
 ---
 
-# Iterating on a prompt with a validation set
+# Deciding what does the job, and proving it
 
-Prompt tuning by eye does not converge. Each change fixes the example in front
-of you and silently breaks one you are not looking at. You cannot see the
-regression because you are only ever testing the case that prompted the edit.
+Two questions, and they are usually asked in the wrong order.
 
-The fix is unglamorous: build a set of cases first, then change one thing at a
-time and re-measure. Everything below is downstream of that.
+The one people start with is "how do I make this prompt better". The one that
+decides the outcome is **"what should be doing this at all"** — a model, a
+substitution table, a script, or some combination where each does the part it
+is good at. Tuning by eye cannot answer either: each change fixes the example
+in front of you and silently breaks one you are not looking at.
 
-## Build the set before touching the prompt
+The fix is unglamorous. Build a set of cases first. Measure every candidate
+implementation against it, including one with no model in it. Then change one
+thing at a time. Everything below is downstream of that.
+
+## Build the set before touching anything
 
 Twenty to forty cases is enough. Fewer and you cannot tell a real change from
 noise; more and you stop running it.
@@ -25,10 +30,12 @@ recognition, OCR, or a user typing quickly, the test inputs must be mangled
 the same way. A set built from tidy examples measures nothing, because tidy
 inputs were never the problem.
 
-**Include negative cases.** Roughly one in five should have no valid answer.
-Models are strongly biased toward producing output, and a set without
-negatives will not show you that. This is usually where the worst failures
-hide — a confident wrong answer beats a refusal on any set that lacks them.
+**Include negative cases.** Roughly one in five should have no valid answer —
+and if the thing you are building runs on *everything* rather than on demand,
+make it closer to half. Models are strongly biased toward producing output, and
+a set without negatives will not show you that. This is usually where the worst
+failures hide: a confident wrong answer beats a refusal on any set that lacks
+them.
 
 **Include the boundary you keep arguing with yourself about.** If you are
 unsure whether a multi-word span counts, put three of them in. The set turns
@@ -38,19 +45,64 @@ an argument into a number.
 "all the two-word ones broke" rather than an unattributable drop of four
 points.
 
+**Write the contract down in the file.** What counts as a case for this
+feature, and what is deliberately out of scope, belongs at the top of the set
+in prose. It is the thing you will disagree with yourself about in a week.
+
 Store it as data, not code — YAML or JSON — so cases can be added without
 touching the runner.
 
+## Three tools, and how to tell which one
+
+Before writing a prompt, work out which of these the job actually wants. Most
+features end up using more than one.
+
+**A substitution table or regex.** The answer is already in the input, marked
+by something literal — a phrase like "called X", a run of separated letters, a
+word that always precedes what you want. Exact, free, and it never invents.
+Cheapest thing that can work; try it first.
+
+**A script.** The answer is a mechanical function of the input, but not one a
+pattern can express — joining words with capitalisation, arithmetic, a lookup,
+anything with a branch in it. Costs a process start, roughly 30ms for `python3`
+and 5ms for a shell script. Deterministic, testable, and yours to change.
+
+**A prompt.** The answer needs world knowledge or a judgement about what a
+human meant — which of these words is the name, is this an instruction at all,
+what does this abbreviation stand for. Costs about a second, varies between
+runs and between models, and is the only tool of the three that can be
+confidently wrong.
+
+Three tests that decide it quickly:
+
+- **Is the answer present verbatim in the input?** Then copying it is the job,
+  and a model is the worst available copier. Take the letters from the text,
+  not from the model.
+- **Is it character-level editing?** Removing a letter, doubling one, changing
+  case, adding an accent. Always code. Measured: asked to apply "Phillip with
+  one l", a 4B answered "Phill" and a 12B "Philp" — 5/10 and 8/10 on ten
+  cases, where a function scored 10/10 on both. Bigger models fail this the
+  same way, which is the tell that no prompt fixes it.
+- **Does the thing announce itself with a literal marker?** "a python function
+  called…", "spells T A S M E E N". Then there is nothing for a model to
+  *find*, and the marker is the implementation.
+
+**The combination is usually the answer, and it is usually model-narrow.** The
+strongest shape found repeatedly: the model does one judgement call it is
+uniquely good at, and code does everything on either side of it. For spoken
+spelling corrections the model names which words in the transcript the speaker
+meant — a genuine judgement, since recognition mangled the name twice over —
+and code reads the letters, applies described changes, snaps the span to the
+transcript and refuses a rule that maps a word to itself. Every job moved out
+of the model raised the score.
+
+**How to ship each one here.** A `transforms:` entry in `config.yaml` takes
+`prompt:`, `replace:` (a substitution table) or `command:` (a program, the
+transcript on stdin and the rewrite on stdout). A pipeline step runs it. That
+means the choice between the three tools is a configuration choice, not an
+architecture change, and a proposal can name the body it would use.
+
 ## Split what the model must do from what code should do
-
-This is the highest-leverage step and it is easy to skip.
-
-Before optimising anything, ask which parts of the output a model is
-genuinely needed for. Anything mechanical — extracting a substring that is
-present verbatim, joining characters, formatting, arithmetic — should be code.
-Models are unreliable at exactly this kind of copying, in ways that get worse
-under quantisation, and every such job you hand them is a source of error you
-cannot prompt away.
 
 Then score the model on its part alone, and score the whole pipeline
 separately. The two numbers answer different questions:
@@ -59,7 +111,11 @@ separately. The two numbers answer different questions:
 - Pipeline accuracy tells you whether the feature is working.
 
 A large gap between them means you are asking the model to do something your
-code should be doing. Move it and the gap closes.
+code should be doing. Move it and the gap closes. In one case the gap ran the
+other way and was worth 15 points: the model's raw spans scored 74% while the
+finished feature scored 89%, because the repair layer was doing the work — the
+more of an answer that is built from the text, the less the model has to be
+good at, and the smaller a model you can ship.
 
 ## Score the code you actually ship
 
@@ -74,16 +130,34 @@ because it did not model the app's repair step at all. The second gap was worth
 — repairs it, validates it, falls back — the runner has to do the same thing,
 and the honest move is to port that code rather than approximate it.
 
-## Keep a control with no model in it
+When the implementation is a script, score *that file*, not a copy of its logic
+inside the runner. Two copies of an algorithm drift, and only one of them ships.
 
-Add a mode that runs the pipeline with the model removed and something trivial
-in its place. It costs a few lines and it is the only thing that answers the
-question you actually care about: is the model earning its place?
+## Keep a control with no model in it, and give it the same discipline
 
-Here the control — take the spelled letters, snap them to the nearest phrase in
-the transcript — scored 59%. The 0.8B model scored 62%. Four prompt variants
-and a day of tuning had been spent on three points of noise, and without the
-control the 62% would have read like progress.
+Add a mode that runs the pipeline with the model removed and something
+plausible in its place. It costs a few lines and it is the only thing that
+answers the question you actually care about: is the model earning its place?
+
+Make it a real candidate, not a strawman. If a regex for the marker plus a
+casing function could implement the whole feature, that is the control, and it
+should be written as well as you would write the shipped thing. Then iterate on
+it as you iterate on prompts — tune the stop lists, fix the false positives,
+one change at a time.
+
+Two controls, two outcomes, both from this repo:
+
+- Spelling corrections: the control scored 59% and the 0.8B model 62%. Four
+  prompt variants and a day of tuning had been spent on three points of noise.
+- Spoken identifiers: the control scored 100% and the best model 68%. The
+  feature shipped as a thirty-line script and the model was dropped entirely.
+
+**A control you tuned on the set is not a measurement.** Tuning the identifier
+control against its own failures took it from 93% to 100%, which proves
+nothing. Write fresh cases afterwards, ones that were used to fix nothing, and
+score on those — that is where its real 93% came from, and where the one
+genuine bug left in it turned up. Fold them into the set when you are done, and
+note that the next change needs new ones.
 
 ## The loop
 
@@ -103,6 +177,12 @@ what has been tried, and they stop you re-proposing a change that was already
 measured and rejected. A comment saying "v3 scored lower, it over-trimmed" is
 worth more than the diff that removed it.
 
+**Re-open the tool choice at every new shape.** The decision is not made once.
+A feature that was correctly a prompt can stop being one when a second kind of
+input arrives — described spelling changes re-opened a settled design, and
+moving that half into code then paid for a shorter prompt on the original half
+as well.
+
 ## Failure patterns that show up repeatedly
 
 **"Output nothing" does not work.** Asking for empty output on the negative
@@ -118,6 +198,19 @@ stopped an over-long span and started truncating legitimate ones. Two examples
 — one showing the trim, one showing the keep — taught the distinction with no
 rule to over-apply. Reach for an example whenever the correct behaviour depends
 on context.
+
+**Examples teach the shape you did not mean to teach.** Every added example is
+also a claim about what answers look like. Three new examples with a one-word
+span were enough to start truncating two-word spans that had been right for
+months. If the examples all share an incidental property, the model learns that
+property.
+
+**A rewriting prompt rewrites more than you asked.** Anything that returns the
+whole text will also capitalise a word, add an article, or translate a name it
+found foreign. On a stage that runs on every input rather than on demand, that
+is disqualifying however well it does the actual job — the user would have to
+proof-read everything. Half the set should be inputs that must come back byte
+for byte.
 
 **Procedural sections invite narration.** A `# Steps` block with numbered
 instructions is read as an instruction to *show* the steps. On a thinking model
@@ -135,9 +228,11 @@ tokens. A low limit costs nothing and bounds the damage when the model starts
 rambling.
 
 **Cold start is not latency.** Time a warm run. First-call timings include
-loading weights and will send you optimising the wrong thing.
+loading weights and will send you optimising the wrong thing. Back-to-back runs
+of the same prompt are also not a measurement — a cached prompt reads in a
+sixth of the time, and the second number is the one that flatters.
 
-## Choosing a model
+## Choosing a model, and knowing when not to
 
 Run the same set across candidates. Three things regularly surprise:
 
@@ -151,34 +246,48 @@ Run the same set across candidates. Three things regularly surprise:
   the failures stop being instruction-following and start being the model
   producing garbage — echoing the format placeholder instead of filling it in,
   answering `YES MATCH`, shouting the input line back in capitals. No wording
-  fixes that. Recognising the floor early saves the day you would spend
-  re-rolling variants against it.
+  fixes that.
 
-The tell is where the variants land. If several genuinely different prompts all
-score about the same, you are measuring the model, not the prompt.
+Two tells worth knowing by heart:
+
+**If several genuinely different prompts score the same, you are measuring the
+model, not the prompt.** Stop writing variants.
+
+**A larger model is the cheap capability check.** When it fails the same way as
+the small one, the job is wrong for models and belongs in code. When it
+succeeds, the small model's failures are a prompt problem after all. One run of
+ten cases answers a question that three prompt variants cannot.
 
 ## The runner
 
-Keep it in the repo, next to the set. It should take a model and a variant, and
-print per-case results, the score, and the failures. If it takes more than a
-few seconds to invoke you will stop using it, and then you are back to guessing.
+Keep it in the repo, next to the set. It should take an implementation — a
+model and a variant, a script, or nothing at all — and print per-case results,
+the score, and the failures. If it takes more than a few seconds to invoke you
+will stop using it, and then you are back to guessing.
 
 Worth including:
 
 - Variants side by side in one file, so they can be diffed and compared.
+- A mode per candidate implementation: `--variant` for prompts, `--script` for
+  a program, `--code-only` for the control. One set, one comparison.
 - A verbose mode showing every case, and a default that shows only failures.
 - Separate scoring for the model's part and the pipeline's, as above.
+- Scores split by the halves that fail differently — the cases that must change
+  and the cases that must not.
 - Deterministic settings — temperature 0 — so a re-run is a re-run.
+- The scoreboard and what it decided, in a comment at the top or bottom. It is
+  the memory of the whole exercise and it outlives everyone's recollection.
 
-## Worked example in this repo
+## Worked example 1: a combination
 
-`tests/spelling-cases.yaml` and `scripts/validate-prompt.py` are a working
-instance. The task: map a misheard name to a spelling the user read out aloud.
+`tests/spelling-cases.yaml` and `scripts/validate-prompt.py`. The task: map a
+misheard name to the spelling the user read out, or to the change they
+described.
 
-The set is 39 cases — names from ten language backgrounds, product names that
-recognition splits into English words, three negatives, one already-correct.
-Inputs are real recogniser output, mangled twice over, because that
-double-mishearing is the actual difficulty.
+The set is 62 cases — names from ten language backgrounds, product names that
+recognition splits into English words, negatives, two corrections in one
+breath, described changes. Inputs are real recogniser output, mangled twice
+over, because that double-mishearing is the actual difficulty.
 
 Scores across the prompt versions, on gemma4:e4b:
 
@@ -206,28 +315,43 @@ Then the same set across models, scored end-to-end as the app runs it:
 
 | | | |
 | --- | --- | --- |
-| gemma4:e4b, 9.6GB | 97% | 1.4s |
-| granite4:3b, 2.1GB | 92% | 0.3s |
+| gemma4:e4b, 9.6GB | 89% | 1.4s |
+| granite4:3b, 2.1GB | 89% | 0.2s |
 | qwen3.5:0.8b, 1.0GB | 62% | 0.4s |
-| no model at all | 59% | — |
+| no model at all | 50% | — |
 
 The 0.8B is the floor: four variants, an output format designed around its
-weakness, and thinking mode all left it level with the control. The 3B is the
-actual answer — a fifth of the disk and five times the speed for five points.
+weakness, and thinking mode all left it level with the control. The 3B matching
+the 9.6GB model at a sixth of the latency is not the 3B being clever — its raw
+spans score 74% — it is how much of the answer code builds.
 
-Later the set grew to cover two shapes it had never had: two corrections in one
-breath, and a speaker who describes the change instead of spelling it
-("Mathieu ne prend qu'un seul t"). The described shape is the same lesson as
-the letters, arriving in a disguise good enough to be missed. There is nothing
-to read, so the obvious answer is to let the model write the corrected name —
-and it scores 5/10 on the 4B and 8/10 on the 12B, failing by dropping and
-transposing characters: "Phillip with one l" came back "Phill" and "Philp".
-Applying the described change in code instead scores 10/10 on both. A bigger
-model bought three points; taking the job away from the model bought five and
-cost nothing.
+## Worked example 2: no model at all
 
-Two things follow that are worth generalising. Ask what the model is *for* at
-every new shape, not once at the start — the second shape re-opened a decision
-the first had settled. And a capability check on a larger model is the cheap
-way to tell "the prompt is wrong" from "no prompt will fix this": here the 12B
-failing the same way as the 4B is what said the answer was code.
+`tests/code-identifier-cases.yaml` and `scripts/validate-code-identifiers.py`. The task:
+turn a name said out loud into the identifier a language spells it as — "a
+python function called max retries" into `max_retries`.
+
+56 cases, 23 of which must come back byte for byte, because this runs on every
+transcript rather than on demand.
+
+| | change | keep | overall | latency |
+| --- | --- | --- | --- | --- |
+| a 30-line script | 100% | 100% | 100% | 0.03s |
+| gemma4:e4b, v1 | 58% | 83% | 68% | 0.97s |
+| gemma4:e4b, v2 | 58% | 83% | 68% | 1.15s |
+| granite4:3b, v2 | 39% | 78% | 55% | 0.49s |
+
+Two prompts a rewrite apart scored identically, which said the model was being
+measured rather than the prompt. And the model's failures were the wrong kind:
+it capitalised "python" to "Python", added articles, and translated French
+names into English — words it was told not to touch.
+
+The design that had been sketched before measuring was a two-stage one, where a
+prompt marks the names and a table cases them. The set killed that too: a
+spoken name announces itself with a literal marker, so there was nothing for a
+model to find. Both halves were code, and the honest total was a script.
+
+What that decided in the app was smaller and more general than the feature: the
+missing piece had looked like a case operator for the substitution engine, and
+what shipped instead was a `command:` transform body — any program, stdin to
+stdout — so the next idea needs no new primitive either.

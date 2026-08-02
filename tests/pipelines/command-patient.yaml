@@ -1,0 +1,12 @@
+# A command slower than the default two seconds, given `timeout_seconds` to
+# match. Without it the transcript comes back untouched — which is what happened
+# to the first correction after a pause once a command started asking Ollama,
+# whose weights take 7-10s to come back off disk.
+languages: [en]
+transforms:
+  - name: patient
+    description: slower than two seconds, and allowed to be
+    command: slow-shout.sh
+    timeout_seconds: 8
+pipeline:
+  - transform: patient

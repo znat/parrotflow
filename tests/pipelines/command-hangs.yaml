@@ -1,0 +1,10 @@
+# A command that closes stdout and keeps running. The transcript has to come
+# back untouched after the two-second wait rather than waiting for the sleep,
+# and the script must not be left behind.
+languages: [en]
+transforms:
+  - name: hangs
+    description: closes stdout, then keeps running
+    command: hangs.sh
+pipeline:
+  - transform: hangs

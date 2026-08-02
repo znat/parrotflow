@@ -34,7 +34,7 @@ a line to see exactly what it would do before leaving it in.
 ## Transforms
 
 The three stages above are fixed. A **transform** is one you write, named in
-`transforms:` and run with `- transform: <name>`. It has one of two bodies:
+`transforms:` and run with `- transform: <name>`. It has one of three bodies:
 
 ```yaml
 transforms:
@@ -47,11 +47,137 @@ transforms:
     description: spoken dotted paths as code
     replace:
       $1.$2: ['/\b(\w+) (?:dot|point) (\w+)\b/']
+
+  - name: code_identifiers
+    description: spoken names as identifiers
+    command: code_identifiers.py
 ```
 
 `prompt:` asks the local model — about a second, and the reason conditions
 exist. `replace:` is a substitution table of its own, in the same shape as
-`transcription.replacements`, and costs nothing.
+`transcription.replacements`, and costs nothing. `command:` runs a program of
+yours, which costs a process start — about 30ms for `python3`, 5ms for a shell
+script.
+
+### `command:`, or: the app stops needing new primitives
+
+The transcript arrives on **stdin** and comes back on **stdout**. That is the
+whole contract. A command that exits non-zero, says nothing, or takes longer
+than two seconds leaves the transcript exactly as it arrived, and says so in
+the log — a script you are halfway through writing is an ordinary state to be
+in, and a dictation tool cannot answer it by dropping your words.
+
+The two seconds are `timeout_seconds` on the transform, and they are counted to
+the process **exiting**, not to its output ending: a command that closes stdout and keeps working is over time like any
+other, and is killed rather than waited for. What a script starts and leaves
+behind is its own business — a plain command is `exec`ed, so the process
+ParrotFlow holds is your program itself and not a shell wrapping it, but a
+script that backgrounds something of its own outlives the timeout.
+
+Two seconds is right for a script and wrong for one that asks a model — Ollama
+takes 7–10s when the weights have gone back to disk — so a `command:` that ends
+in `--model something` wants `timeout_seconds: 12` beside it. Per transform,
+because a `tr` one-liner and a model call live in the same pipeline and want
+different answers.
+
+Paths with spaces work, in the directory and in the command: `command: my
+scripts/rewrite.py` is one path, not a program and an argument. The whole value
+is tried as a file before anything is split, because YAML quoting cannot help
+here — the parser removes the quotes long before the app sees them.
+
+The script is run **directly**, so its first line picks the interpreter — the
+shebang, `#!/usr/bin/env python3` or `#!/bin/bash` or whatever you write it in.
+The app never needs to know the language. What it does need is the execute bit:
+a shebang does nothing without one, and a script that is there but not
+`chmod +x` is the likeliest thing to be wrong with a `command:` transform. Both
+the log and `--check-config` name that case as itself rather than as "command
+not found", which would send you looking for a file that is sitting right where
+you put it.
+
+A relative path is relative to **the file that named it**: `command:
+code_identifiers.py` is the script sitting beside your config.yaml. It runs with
+that directory as its working directory, so it can read its neighbours. A bare
+name that is not a file there — `sed`, `python3` — is left to the shell to find
+on PATH, so a command can be a one-liner with its own arguments:
+
+```yaml
+  - name: shout
+    description: everything in capitals, for no good reason
+    command: tr '[:lower:]' '[:upper:]'
+```
+
+This exists because the other two bodies can only do what the app already knows
+how to do. `replace:` cannot change the case of what it captured, so spoken
+identifiers were going to need a case operator in the substitution engine, and
+whatever came next would have needed something else. A command needs nothing
+added ever again — which is the point, and the reason it is worth the process
+start.
+
+### `code_identifiers`, which ships
+
+`examples/code_identifiers.py` is the first one, and it is in the default pipeline.
+It turns "a python function called max retries" into "…called max_retries", in
+English and French, with the convention taken from the language named in the
+sentence — snake_case for python and rust, camelCase for typescript and go,
+PascalCase for a class or a type, SCREAMING_SNAKE for a constant, camelCase
+when no language was said.
+
+A copy is written to `~/.config/parrotflow/code_identifiers.py` on first launch and
+never overwritten afterwards: once it exists it is yours. The stop lists in it
+decide where a name ends, which is a judgement about how you speak rather than
+a fact, and they are meant to be edited.
+
+It is gated twice, and both gates are in the config where you can see them:
+`app:` to editors and terminals, and `when:` to a sentence containing a kind
+word, so no process is started on prose. Delete either line to widen it, or the
+step to turn it off.
+
+**What it costs, and what it will not do.** Scored on 75 cases, 32 of which
+must come back untouched: 90% overall, and one of those 70 is a sentence it
+rewrites and should not — "there is a method called cognitive behavioural
+therapy for that" is three plausible words behind a kind word and a naming
+word, and no surface rule separates it from a name. The other failures are
+namings it declines, which leave the transcript exactly as dictated.
+
+**The model is in there, switched off.** Add `--model gemma4:e4b` to the
+command and the script asks a local model about the namings its rules cannot
+see — a name given with no marker in front of it, "call it max retries",
+"rename the variable to retry count", "a getter for the user profile name".
+The rules decline all of those by construction; the model gets 8/8 on them
+where the rules get 2/8.
+
+```yaml
+  - name: code_identifiers
+    description: spoken names as identifiers
+    command: code_code_identifiers.py --model gemma4:e4b
+```
+
+It **extracts** rather than rewrites: the language the sentence names, and the
+names themselves, one per line. The convention that language writes in, the
+casing, and putting the words back all stay in the script — as a table you can
+add a language to without touching the prompt. That table is worth having on
+its own: it replaced a `python|rust|ruby|elixir` pattern that read zig, julia,
+erlang and c# as camelCase, and the rules alone went from 1/5 to 5/5 on those
+with no model involved. That division is the whole reason it works: asked instead to return
+the rewritten sentence, the same model scores 68% and fails in the expensive
+direction, capitalising "python" to "Python", adding articles, and translating
+French names into English.
+
+And it is off by default because the trade is measured rather than assumed.
+Over 75 cases it takes the sentences that should change from 87% to **100%**,
+and the sentences that must come back untouched from 94% down to **84%** — a
+model asked only about what a careful rule refused sees mostly near-misses, so
+chaining it behind the rules inverts their caution. Turn it on if you dictate
+code all day and would notice a sentence quietly rewritten; leave it off if you
+would not. It also costs about a second, and a model that is cold takes longer
+than the two seconds ParrotFlow waits, in which case the transcript passes
+through untouched.
+
+**It also means config.yaml executes code.** Nothing else in that file does.
+`--check-config` names every command transform out loud, every time, whether or
+not anything is wrong with it — a config that runs something you have forgotten
+about, or that arrived in a config you copied from somewhere, should not be
+able to stay quiet about it.
 
 **Why a table needs a name.** `transcription.replacements` is a single table
 applied by a single stage, so it cannot be two tables running in two places

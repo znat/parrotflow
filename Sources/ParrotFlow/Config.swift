@@ -71,11 +71,14 @@ struct Config: Decodable, Equatable {
         var description = ""
         var confirm = true
         var body: Transform.Body?
-        /// `prompt:` and `replace:` on the same entry.
+        var directory: URL?
+        var timeout: Double?
+        /// More than one of `prompt:`, `replace:` and `command:` on one entry.
         var namesBoth = false
 
         enum CodingKeys: String, CodingKey {
-            case name, description, confirm, prompt, content, replace
+            case name, description, confirm, prompt, content, replace, command
+            case timeout = "timeout_seconds"
         }
 
         init(from decoder: Decoder) throws {
@@ -86,12 +89,18 @@ struct Config: Decodable, Equatable {
             }
             name = try trimmed(.name)
             description = try trimmed(.description)
+            directory = decoder.userInfo[.configDirectory] as? URL
             confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
+            timeout = try c.decodeIfPresent(Double.self, forKey: .timeout)
 
             let instructions = try trimmed(.prompt).isEmpty ? trimmed(.content) : trimmed(.prompt)
             let table = try c.decodeIfPresent([String: [String]].self, forKey: .replace)
-            namesBoth = !instructions.isEmpty && table != nil
-            if let table {
+            let command = try trimmed(.command)
+            namesBoth = [!instructions.isEmpty, table != nil, !command.isEmpty]
+                .filter { $0 }.count > 1
+            if !command.isEmpty {
+                body = .command(command)
+            } else if let table {
                 body = .replace(table)
             } else if !instructions.isEmpty {
                 body = .prompt(instructions)
@@ -123,11 +132,17 @@ struct Config: Decodable, Equatable {
             if entry.namesBoth {
                 // Preferring one would run something the config did not ask
                 // for, on text nobody sees beforehand.
-                Log.write("transforms: \"\(entry.name)\" names both `prompt:` and `replace:`; skipped")
+                Log.write(
+                    "transforms: \"\(entry.name)\" names more than one of "
+                    + "`prompt:`, `replace:` and `command:`; skipped"
+                )
                 continue
             }
             guard let body = entry.body else {
-                Log.write("transforms: \"\(entry.name)\" has neither `prompt:` nor `replace:`; skipped")
+                Log.write(
+                    "transforms: \"\(entry.name)\" has none of "
+                    + "`prompt:`, `replace:` or `command:`; skipped"
+                )
                 continue
             }
             guard !kept.contains(where: {
@@ -144,6 +159,7 @@ struct Config: Decodable, Equatable {
             }
             kept.append(Transform(
                 name: entry.name, description: entry.description,
+                directory: entry.directory, timeout: entry.timeout,
                 confirm: entry.confirm, body: body
             ))
         }
@@ -170,6 +186,19 @@ struct Config: Decodable, Equatable {
     struct Transform: Equatable {
         var name: String
         var description: String
+        /// The directory of the file that declared this transform, which is
+        /// what a relative `command:` is relative to. Nil when it was not
+        /// decoded from a file — a default, or a test.
+        var directory: URL?
+        /// How long a `command:` may take before the transcript is let through
+        /// untouched. Nil means `CommandRunner.timeout`, which is two seconds.
+        ///
+        /// Two seconds is right for a script and wrong for one that asks a
+        /// model: Ollama takes 7–10s when the weights have to come back off
+        /// disk, so the first correction after a pause silently did nothing.
+        /// Per transform rather than global, because the two live in the same
+        /// pipeline and want different answers.
+        var timeout: Double?
         /// Show the result and wait before replacing anything. Only consulted
         /// when a transform is run over your selection — a pipeline stage runs
         /// on a transcript nobody has seen yet, so there is nothing to confirm.
@@ -182,6 +211,18 @@ struct Config: Decodable, Equatable {
             /// A table of its own, in the shape of `transcription.replacements`
             /// — the spelling you want, and the ways it comes out wrong.
             case replace([String: [String]])
+            /// A program to pipe the transcript through: it arrives on stdin
+            /// and comes back on stdout.
+            ///
+            /// The other two bodies can only do what this app already knows
+            /// how to do, and every new kind of rewrite meant a new primitive.
+            /// Spoken identifiers were going to need case conversion in the
+            /// substitution engine; the next thing would need something else.
+            /// A command needs nothing: whatever you can write, you can run.
+            ///
+            /// The cost is that config.yaml now executes code, which
+            /// `--check-config` says out loud.
+            case command(String)
         }
 
         var isPrompt: Bool {
@@ -848,6 +889,23 @@ struct Config: Decodable, Equatable {
                 + " — configured: \(transcription.languages.joined(separator: ", "))")
         }
         found += replacementProblems()
+        // Said out loud, every time, and not only when something is wrong with
+        // it. A `command:` transform is the one thing in this file that runs
+        // code rather than describing a rewrite, and a config that executes
+        // something you have forgotten about — or that arrived in a config you
+        // copied — should not be able to stay quiet about it.
+        for transform in transforms {
+            guard case .command(let command) = transform.body else { continue }
+            // A first word that is still relative after resolution is a bare
+            // command name for the shell to find on PATH — `python3`, `sed` —
+            // and this cannot say whether that will work. What it can say is
+            // that a script sitting right there will not run.
+            let wrong = CommandRunner.complaint(about: command, base: transform.directory)
+            found.append(
+                "transforms: \"\(transform.name)\" runs a program — \(command)"
+                + (wrong.map { " — \($0)" } ?? "")
+            )
+        }
         for language in transcription.languages {
             let pipeline = Pipeline.resolved(config: self, language: language)
             for problem in pipeline.validate() {
@@ -872,6 +930,13 @@ struct Config: Decodable, Equatable {
 
 // MARK: - Loading
 
+extension CodingUserInfoKey {
+    // The directory of the file being decoded — see `Transform.directory`.
+    // The initialiser only fails on an empty raw value.
+    // swiftlint:disable:next force_unwrapping
+    static let configDirectory = CodingUserInfoKey(rawValue: "parrotflow.configDirectory")!
+}
+
 enum ConfigStore {
     static var directory: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -882,13 +947,305 @@ enum ConfigStore {
         directory.appendingPathComponent("config.yaml")
     }
 
-    /// Creates the config file from the template if it does not exist yet.
+    /// Where the `code_identifiers` transform's program lives — beside the config
+    /// that names it, which is what makes `command: code_identifiers.py` resolve.
+    static var codeIdentifiersURL: URL {
+        directory.appendingPathComponent("code_identifiers.py")
+    }
+
+    /// Creates the config file, and the one program it ships with, if they are
+    /// not there yet.
+    ///
+    /// The script is written rather than bundled because this app has no
+    /// resources — `defaultYAML` is a string in the binary for the same reason
+    /// — and because a script you can open and edit beside your config is the
+    /// point of it. It is never overwritten: once it exists it is yours, and an
+    /// update that reverted your stop lists would be the app taking back
+    /// something it gave you.
     static func createIfMissing() throws {
         let fm = FileManager.default
+        if !fm.fileExists(atPath: codeIdentifiersURL.path) {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            try defaultCodeIdentifiersScript.write(to: codeIdentifiersURL, atomically: true, encoding: .utf8)
+            // A shebang does nothing without this.
+            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: codeIdentifiersURL.path)
+            Log.write("config: wrote \(codeIdentifiersURL.lastPathComponent)")
+        }
         guard !fm.fileExists(atPath: fileURL.path) else { return }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try defaultYAML.write(to: fileURL, atomically: true, encoding: .utf8)
     }
+
+    /// The shipped copy of examples/code_identifiers.py.
+    ///
+    /// Two copies of one file, which is a thing this repo has been bitten by
+    /// twice — so scripts/check-example-script.sh fails when they differ. The
+    /// example is the one to edit; this is the one that ships.
+    static let defaultCodeIdentifiersScript = #"""
+#!/usr/bin/env python3
+"""Spoken names as identifiers. A transcript on stdin, the rewrite on stdout.
+
+    transforms:
+      - name: code_identifiers
+        description: spoken names as identifiers
+        command: code_identifiers.py                       # rules only, 0.03s
+      # command: code_identifiers.py --model gemma4:e4b     # + the model, below
+        timeout_seconds: 12                                 # only with --model
+
+    transcription:
+      pipelines:
+        default:
+          - transform: code_identifiers
+            when: /\b(?:function|variable|class|constant|fonction|classe)\b/
+
+"a python function called max retries"  ->  "a python function called max_retries"
+
+The convention comes from the language if one was said, and is camelCase when
+none was. A class or a type takes PascalCase whatever the language; a constant
+takes SCREAMING_SNAKE_CASE.
+
+A copy of this file is written to ~/.config/parrotflow/code_identifiers.py on
+first launch and never overwritten afterwards, and the step above is in the
+default pipeline. This one, in examples/, is the copy you read and edit; see
+scripts/check-example-script.sh, which keeps the two equal.
+
+Why a script and not a prompt: measured. On tests/code-code-identifier-cases.yaml, 56
+cases, this scores 100% and costs a process start; gemma4:e4b scores 68% and
+costs a second — and its errors are the expensive kind, capitalising words it
+was not asked to touch and translating French names into English. See
+scripts/validate-code-identifiers.py for the scoreboard.
+
+--model asks a local model, and only about what the rules declined: a name
+given without a marker in front of it — "call it max retries", "rename the
+variable to retry count", "a getter for the user profile name". The rules
+cannot see those at all, and the model gets 8/8 on them where the rules get
+2/8.
+
+It extracts rather than rewrites — the language, and the names — and everything
+after that stays here. That division is the whole reason it works: asked to
+return the rewritten sentence instead, the same model scored 68% and
+capitalised words nobody asked it to touch.
+
+It is off by default, and the trade is measured rather than assumed. Over 75
+cases, adding it takes the sentences that should change from 87% to 100% — and
+the sentences that must come back untouched from 94% to 84%, because a model
+asked only about what a careful rule refused sees mostly near-misses. Turn it
+on if you dictate code all day and will notice; leave it off if a sentence
+quietly rewritten would slip past you. It also costs about a second, and a
+model that is cold takes longer than the two seconds ParrotFlow waits, in which
+case your transcript passes through untouched.
+
+It is yours now. The stop lists below are the part that will want editing:
+they say where a name ends, and that boundary is a judgement about how you
+speak, not a fact.
+"""
+import json
+import re
+import sys
+import urllib.request
+
+# A name has to be introduced as one. Without this, "i called max yesterday"
+# is a naming and the transform renames a person.
+KIND = re.compile(
+    r"\b(?:function|method|variable|class|constant|type|struct|interface|enum|"
+    r"fonction|m[ée]thode|variable|classe|constante)\b", re.I)
+
+# "called by the scheduler" is a passive and never a naming.
+TRIGGER = re.compile(
+    r"\b(?:called|named|call it|nomm[ée]e?|qui s['’]appelle|appel[ée]e?)\s+"
+    r"(?!by\b|par\b)", re.I)
+
+# Where the name stops and the sentence resumes. "in", "from", "on" and "to"
+# were here and had to come out — they are ordinary parts of identifiers
+# ("is logged in", "build request from config") and stopping there truncated
+# the name.
+TAIL = re.compile(
+    r"\b(?:that|which|for|and|so|should|will|when|if|because|"
+    r"qui|que|pour|et|dans|sur|avant|apr[èe]s|doit)\b", re.I)
+
+# The convention each language writes identifiers in. A table rather than a
+# pattern, because a pattern has to be edited to learn a language and a table
+# has to be added to — and everything it does not know reads as camelCase,
+# which was silently wrong for zig, julia, erlang and c# until this was a
+# table. Add your own; it is a dict, not a regex.
+BY_LANGUAGE = {
+    "python": "snake", "rust": "snake", "ruby": "snake", "elixir": "snake",
+    "erlang": "snake", "julia": "snake", "perl": "snake", "zig": "snake",
+    "nim": "snake", "crystal": "snake", "lua": "snake", "c": "snake",
+    "javascript": "camel", "typescript": "camel", "java": "camel",
+    "kotlin": "camel", "go": "camel", "swift": "camel", "php": "camel",
+    "scala": "camel", "dart": "camel", "groovy": "camel", "haskell": "camel",
+    "c#": "pascal", "csharp": "pascal", "f#": "pascal",
+}
+# "c#" ends in a character no word boundary follows, so the trailing \b would
+# never match it — the boundary has to be asserted on the left only, plus "not
+# followed by more word characters".
+LANGUAGE = re.compile(
+    r"\b(" + "|".join(re.escape(name) for name in sorted(BY_LANGUAGE, key=len, reverse=True))
+    + r")(?!\w)", re.I)
+PASCAL_KIND = re.compile(r"\b(?:class|classe|type|struct|interface|enum)\b", re.I)
+SCREAMING_KIND = re.compile(r"\b(?:constant|constante)\b", re.I)
+
+
+def style_for(sentence, before, language=None):
+    """A kind word in front of the name wins — a class is PascalCase in any
+    language — then the language, then camelCase for a sentence that named
+    none."""
+    if SCREAMING_KIND.search(before):
+        return "screaming"
+    if PASCAL_KIND.search(before):
+        return "pascal"
+    if not language:
+        found = LANGUAGE.search(sentence)
+        language = found.group(1) if found else None
+    return BY_LANGUAGE.get((language or "").lower(), "camel")
+
+
+def cased(words, style):
+    if style == "snake":
+        return "_".join(word.lower() for word in words)
+    if style == "screaming":
+        return "_".join(word.upper() for word in words)
+    if style == "pascal":
+        return "".join(word.capitalize() for word in words)
+    return words[0].lower() + "".join(word.capitalize() for word in words[1:])
+
+
+def convert(text):
+    out = text
+    # Right to left, so an earlier rewrite cannot move a later match.
+    for match in list(TRIGGER.finditer(text))[::-1]:
+        if not KIND.search(text[:match.start()]):
+            continue
+        rest = text[match.end():]
+        stop = TAIL.search(rest)
+        span = (rest[:stop.start()] if stop else rest).strip()
+        words = [word for word in re.split(r"[^\w'’]+", span) if word]
+        # One word is already an identifier, whatever its case.
+        if len(words) < 2:
+            continue
+        # Nobody dictates a five-word identifier, and prose runs on: "the class
+        # called intro to python starts at nine tomorrow" is not a naming, and
+        # the length is what says so. Declining rather than truncating — a
+        # shortened guess is a wrong rewrite, and this is a stage that runs on
+        # sentences nobody asked it to touch.
+        if len(words) > 4:
+            continue
+        if span in out:
+            out = out.replace(span, cased(words, style_for(text, text[:match.start()])), 1)
+    return out
+
+
+# The prompt, iterated and scored as v5 in scripts/validate-code-identifiers.py.
+#
+# It extracts rather than rewrites: the language once, the names one per line.
+# Everything after that is code — the language becomes a convention through
+# BY_LANGUAGE above, a kind word still overrides it for a class or a constant,
+# and putting the words back is a string replace.
+#
+# Asking for the language rather than pattern-matching it is what makes the
+# table extensible without touching the prompt, and it is why the model is
+# still worth asking once the table exists: a sentence can name a language in a
+# way no scan of it will catch.
+PROMPT = """\
+The text is a dictated sentence. Some of them give names to functions, \
+variables, classes or constants.
+
+Reply in exactly this shape and nothing else:
+
+lang: <the programming language the sentence names, or none>
+name: <the words of one name, copied exactly>
+
+Repeat the name line once per name. Write no name line at all when the \
+sentence names nothing.
+
+- Copy the words exactly as they appear. Do not rewrite them, join them or \
+change their case — that is done elsewhere.
+- A name is two to four words. Take the whole name and only the name.
+- The name may be given without the word "called": "call it X", "rename it to \
+X", "a getter for X".
+- Write no name line when the sentence merely talks about a function, a class \
+or a variable, or is about something else entirely.
+
+text: add a rust function called read config file
+lang: rust
+name: read config file
+
+text: call it max retries in python
+lang: python
+name: max retries
+
+text: a python function called read config and a variable called config path
+lang: python
+name: read config
+name: config path
+
+text: the retry count is too high and it hammers the api
+lang: none
+
+text: we talked about python packaging for most of the afternoon
+lang: python
+
+text: there is a method called cognitive behavioural therapy for that
+lang: none
+"""
+
+
+def ask(model, text, endpoint="http://localhost:11434"):
+    """The model's answer, or "" for every way this can fail. Ollama not
+    running is an ordinary state and a transcript is not worth dropping."""
+    body = {"model": model, "system": PROMPT, "prompt": text, "stream": False,
+            "think": False, "options": {"temperature": 0, "num_predict": 64}}
+    request = urllib.request.Request(
+        endpoint + "/api/generate", data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return (json.load(response).get("response") or "").strip()
+    except Exception:
+        return ""
+
+
+def place(reply, text):
+    """The extraction applied — the deterministic half, sharing `cased` and
+    `style_for` with the rules above so there is one algorithm and not two."""
+    language, names = None, []
+    for line in reply.splitlines():
+        line = line.strip()
+        if line.lower().startswith("lang:"):
+            said = line.split(":", 1)[1].strip().lower()
+            language = None if said in ("none", "") else said
+        elif line.lower().startswith("name:"):
+            names.append(line.split(":", 1)[1].strip())
+
+    out = text
+    for span in names:
+        span = span.strip().strip('".')
+        words = [word for word in re.split(r"[^\w'’]+", span) if word]
+        # The same guards the rules use: a name is two to four words, and the
+        # model does not get to invent words that are not in the sentence.
+        if len(words) < 2 or len(words) > 4 or span.lower() not in out.lower():
+            continue
+        start = out.lower().index(span.lower())
+        out = (out[:start] + cased(words, style_for(out, out[:start], language))
+               + out[start + len(span):])
+    return out
+
+
+if __name__ == "__main__":
+    model = None
+    if "--model" in sys.argv:
+        index = sys.argv.index("--model")
+        model = sys.argv[index + 1] if len(sys.argv) > index + 1 else None
+
+    text = sys.stdin.read().rstrip("\n")
+    out = convert(text)
+    # The model is asked only about what the rules declined. On a sentence with
+    # a marker in it — the common case — nothing is paid at all.
+    if model and out == text:
+        out = place(ask(model, text), text)
+    sys.stdout.write(out)
+"""#
 
     /// Reads and decodes the config. Missing keys fall back to the struct defaults.
     static func load() throws -> Config {
@@ -897,7 +1254,12 @@ enum ConfigStore {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return Config()
         }
-        return try YAMLDecoder().decode(Config.self, from: text)
+        // A relative `command:` is relative to the file that declared it, so a
+        // config carries its scripts beside it and a `--pipeline` fixture
+        // carries its own.
+        return try YAMLDecoder().decode(
+            Config.self, from: text, userInfo: [.configDirectory: directory]
+        )
     }
 
     /// Computed rather than a constant because the dev build seeds a different
@@ -1011,6 +1373,14 @@ enum ConfigStore {
           # renders pasted markup.
           - transform: dotted
             app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
+          # "a python function called max retries" -> ...called max_retries, in
+          # the convention of the language you named. Same places as `dotted`,
+          # and `when:` keeps it from starting a process on a sentence that
+          # names nothing — which is most of them. See examples/code_identifiers.py,
+          # written beside this file on first launch and yours to edit.
+          - transform: code_identifiers
+            app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
+            when: /\\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\\b/
 
       # The spelling you want, and the ways it comes out wrong. Whole words,
       # case-insensitive. A source in /slashes/ is a regular expression, and an
@@ -1070,14 +1440,24 @@ enum ConfigStore {
     # reaches the prompt, which is why one entry covers "format those dates
     # ISO" and "format those dates with slashes".
     #
-    # An entry has either `prompt:`, which asks the local model and costs about
-    # a second, or `replace:`, a substitution table of its own that costs
-    # nothing:
+    # An entry has one of three bodies. `prompt:` asks the local model and
+    # costs about a second. `replace:` is a substitution table of its own and
+    # costs nothing. `command:` runs a program of yours — the transcript on
+    # stdin, the rewrite on stdout — and costs a process start:
     #
     #   - name: dotted
     #     description: spoken dotted paths as code
     #     replace:
     #       $1.$2: ['/\\b(\\w+) (?:dot|point) (\\w+)\\b/']
+    #
+    #   - name: code_identifiers
+    #     description: spoken names as identifiers
+    #     command: code_identifiers.py          # beside this file; see examples/
+    #
+    # A `command:` is the one thing in this file that runs code rather than
+    # describing a rewrite. --check-config names every one of them out loud. A
+    # command that fails, says nothing, or takes more than two seconds leaves
+    # the transcript exactly as it arrived.
     #
     # A table is not reached by voice — it runs from a pipeline, which is where
     # it can be scoped to one app. Two tables with the same pattern and
@@ -1154,6 +1534,29 @@ enum ConfigStore {
         description: wrap dotted paths in backticks, for chat
         replace:
           '`$1`': ['/\\b([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)+)/']
+
+      # A program rather than a table, because casing words is not something a
+      # substitution can express. The transcript reaches it on stdin and comes
+      # back on stdout; a relative path is beside this file. Written there on
+      # first launch, and yours — the stop lists in it decide where a name
+      # ends, which is a judgement about how you speak.
+      - name: code_identifiers
+        description: spoken names as identifiers
+        command: code_identifiers.py
+        # Add `--model gemma4:e4b` to have a model handle the namings the rules
+        # cannot see — "call it max retries", "rename the variable to retry
+        # count". Measured over 75 cases: it takes the sentences that should
+        # change from 88% to 100%, and the ones that must come back untouched
+        # from 94% to 84%, because a model asked only about what a careful rule
+        # refused sees mostly near-misses. Off by default for that reason, and it
+        # costs about a second.
+        #
+        # Raise `timeout_seconds` with it. A command has two seconds before the
+        # transcript is let through untouched, which is right for a script and
+        # wrong for one that asks Ollama: a model whose weights have gone back to
+        # disk takes 7-10s, so the first correction after a pause would silently
+        # do nothing.
+        # timeout_seconds: 12
 
     # Do what was asked even when no prompt above matches:
     #

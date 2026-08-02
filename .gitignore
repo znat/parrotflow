@@ -4,3 +4,6 @@
 *.xcworkspace
 .DS_Store
 dist/
+
+# The runner imports examples/code_identifiers.py, which leaves this behind.
+__pycache__/

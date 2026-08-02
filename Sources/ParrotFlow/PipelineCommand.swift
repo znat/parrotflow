@@ -82,7 +82,8 @@ enum PipelineCommand {
         let fixture: Fixture
         do {
             fixture = try YAMLDecoder().decode(
-                Fixture.self, from: String(contentsOf: url, encoding: .utf8)
+                Fixture.self, from: String(contentsOf: url, encoding: .utf8),
+                userInfo: [.configDirectory: url.deletingLastPathComponent()]
             )
         } catch {
             print("✗ \(path): \(CheckConfigCommand.describe(error))")

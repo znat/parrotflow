@@ -398,6 +398,21 @@ struct Pipeline: Equatable, Codable {
                 Log.write("    after:  \(result)")
             }
             return result
+        case .command(let command):
+            // Someone else's program, so this is the second stage that can
+            // fail and the second that must not fail loudly. `run` returns nil
+            // for every way it can go wrong, and nil means keep the
+            // transcript. Logged either way: a stage you wrote yourself is
+            // exactly the one whose before and after you want on the record.
+            guard let result = CommandRunner.run(
+                command, on: text, base: transform.directory, seconds: transform.timeout
+            ) else { return text }
+            if result != text {
+                Log.write("pipeline: transform \(name) rewrote the transcript")
+                Log.write("    before: \(text)")
+                Log.write("    after:  \(result)")
+            }
+            return result
         }
     }
 
