@@ -39,9 +39,9 @@ enum PanelsCommand {
 
         // The pill has two states now and the difference is the whole point of
         // the slot: with an app in front it holds that app, without one it
-        // holds nothing and stays exactly as wide. Both are on the sheet
-        // because "the ring looks wrong empty" is the kind of thing that is
-        // obvious side by side and invisible a week apart.
+        // holds nothing and is simply narrower. Both are on the sheet because
+        // "it looks wrong with no icon" is the kind of thing that is obvious
+        // side by side and invisible a week apart.
         let overlayBlind = OverlayModel()
         overlayBlind.level = 0.75
 
