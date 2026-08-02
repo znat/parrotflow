@@ -435,7 +435,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.recorder.isRecording else { return }
             let held = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if !held.isSuperset(of: required) {
-                self.stopRecording()
+                // The same event as a release, found a different way, so it
+                // ends the recording the same way — through the tail.
+                self.stopRecordingAfterTail()
             }
         }
         RunLoop.main.add(timer, forMode: .common)
