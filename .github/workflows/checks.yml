@@ -99,3 +99,8 @@ jobs:
       # drifted twice, both times silently.
       - name: The config a new install gets
         run: scripts/check-default-config.sh
+
+      # Two ways in, one certificate. A pin that is only right in the script or
+      # only right in the app is a door that checks less than the other one.
+      - name: Both install paths pin the same certificate
+        run: scripts/check-pinned-certificate.sh

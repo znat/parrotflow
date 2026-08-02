@@ -21,6 +21,19 @@ enum Updates {
 
     static let repo = "znat/parrotflow"
 
+    /// SHA-256 of the leaf certificate every release is signed with.
+    ///
+    /// The same value `scripts/install.sh` pins, and it has to stay the same
+    /// value — scripts/check-pinned-certificate.sh fails the build if the two
+    /// drift apart, because a pin that is only correct in one of the two ways
+    /// in is worth very little.
+    ///
+    /// Derived, never typed from memory:
+    ///
+    ///     openssl x509 -in ~/.parrotflow-release/cert.pem -outform DER | shasum -a 256
+    static let expectedCertificateSHA256 =
+        "1fe06cb4b110d3f60ddb0a4d54e2694528b50ca1f40e939994306c8b068d2689"
+
     /// What is published, as the API describes it.
     struct Release: Equatable {
         let version: String
