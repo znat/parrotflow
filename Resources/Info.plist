@@ -15,9 +15,9 @@
 	<!-- Both versions are rewritten by release-please on the release PR; the
 	     annotation is what it looks for, so keep it on the same line. -->
 	<key>CFBundleShortVersionString</key>
-	<string>0.2.0</string> <!-- x-release-please-version -->
+	<string>0.3.0</string> <!-- x-release-please-version -->
 	<key>CFBundleVersion</key>
-	<string>0.2.0</string> <!-- x-release-please-version -->
+	<string>0.3.0</string> <!-- x-release-please-version -->
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>LSMinimumSystemVersion</key>
