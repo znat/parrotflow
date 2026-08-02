@@ -68,6 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// without Accessibility — an app condition has no business needing a
     /// permission that gating a stage by app does not otherwise require.
     private var appAtPress: Pipeline.App?
+    /// That same app's icon, for the pill. Held apart from `appAtPress` because
+    /// `Pipeline.App` is what the pipeline matches on and has no business
+    /// carrying an image around.
+    private var appIconAtPress: NSImage?
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -362,7 +366,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let snapshotStart = Date()
         selectionAtPress = SelectionReader.snapshot()
         focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
-        appAtPress = Self.appInFront()
+        let front = Self.appInFront()
+        appAtPress = front?.app
+        appIconAtPress = front?.icon
         let elapsed = Date().timeIntervalSince(snapshotStart)
         if elapsed > 0.15 {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
@@ -491,6 +497,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if config.feedback.overlay {
             overlay.model.elapsed = 0
             overlay.model.level = 0
+            overlay.model.appIcon = appIconAtPress
             overlay.show()
         }
 
@@ -534,14 +541,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Transcription
 
     /// The app in front right now, or nil if there isn't one to name.
-    private static func appInFront() -> Pipeline.App? {
+    ///
+    /// The icon rides along rather than being fetched when the pill is built,
+    /// because those are two different questions asked a moment apart: this one
+    /// is "who was in front when the key went down", and the pill has to show
+    /// the same answer the pipeline will be conditioned on. Reading NSWorkspace
+    /// twice would let them disagree, and the one time they disagree is exactly
+    /// the time the pill is worth having.
+    private static func appInFront() -> (app: Pipeline.App, icon: NSImage?)? {
         guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
         let app = Pipeline.App(
             name: front.localizedName ?? "", bundleID: front.bundleIdentifier ?? ""
         )
         // Both empty is not an app you could write a condition against, and
         // saying so is what makes `app:` fail closed instead of matching "  ".
-        return app.searchable.trimmingCharacters(in: .whitespaces).isEmpty ? nil : app
+        guard !app.searchable.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        return (app, front.icon)
     }
 
     private func transcribe(_ recording: Recorder.Recording) {

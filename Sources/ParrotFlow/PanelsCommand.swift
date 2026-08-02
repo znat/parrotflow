@@ -35,6 +35,15 @@ enum PanelsCommand {
 
         let overlay = OverlayModel()
         overlay.level = 0.75
+        overlay.appIcon = sampleIcon()
+
+        // The pill has two states now and the difference is the whole point of
+        // the slot: with an app in front it holds that app, without one it
+        // holds nothing and is simply narrower. Both are on the sheet because
+        // "it looks wrong with no icon" is the kind of thing that is obvious
+        // side by side and invisible a week apart.
+        let overlayBlind = OverlayModel()
+        overlayBlind.level = 0.75
 
         let correction = CorrectionModel()
         correction.load(selection: "Tasmin and Mick")
@@ -53,7 +62,11 @@ enum PanelsCommand {
 
         let surfaces: [(NSView, NSSize)] = [
             (NSHostingView(rootView: RecordingPill().environmentObject(overlay)),
-             NSSize(width: RecordingMetrics.width, height: RecordingMetrics.height)),
+             NSSize(width: RecordingMetrics.width(hasIcon: overlay.appIcon != nil),
+                    height: RecordingMetrics.height)),
+            (NSHostingView(rootView: RecordingPill().environmentObject(overlayBlind)),
+             NSSize(width: RecordingMetrics.width(hasIcon: false),
+                    height: RecordingMetrics.height)),
             (NSHostingView(rootView: NoticeView().environmentObject(notice)),
              NSSize(width: NoticeMetrics.width(for: notice.message), height: NoticeMetrics.height)),
             (NSHostingView(rootView: NoticeView().environmentObject(thinking)),
@@ -122,6 +135,15 @@ enum PanelsCommand {
         }
     }
 
+    /// Something recognisable to sit in the pill's slot. Mail because that is
+    /// the window the `email` transform was written for, and any Mac has it.
+    private static func sampleIcon() -> NSImage? {
+        guard let url = NSWorkspace.shared.urlForApplication(
+            withBundleIdentifier: "com.apple.mail"
+        ) else { return nil }
+        return NSWorkspace.shared.icon(forFile: url.path)
+    }
+
     static func run(surface: String, seconds: Double) -> Int32 {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -155,6 +177,7 @@ enum PanelsCommand {
                 after: "I think we should have asked them first — they're going to be annoyed."
             )
         case "pill":
+            overlay.model.appIcon = sampleIcon()
             overlay.show()
             // A meter frozen at zero says nothing about how the meter looks.
             var phase = 0.0
