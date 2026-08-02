@@ -51,6 +51,32 @@ struct Pipeline: Equatable, Codable {
         var isAutomatic: Bool { self != .prompt }
     }
 
+    /// The app a transcript is on its way into, for `Step.app`.
+    ///
+    /// Captured when the hotkey goes down, never read at stage time. Between
+    /// the two there is a transcription and possibly a model call, and the
+    /// window you were dictating into is not reliably the one still in front
+    /// when the text comes back. `SelectionReader.snapshot()` takes the owner
+    /// at press for the same reason, and this rides along with it.
+    ///
+    /// Name and bundle identifier are matched as **one string**, not either-or.
+    /// The name is what you know an app by and the identifier is what stays
+    /// put, so both have to be reachable — but two haystacks and a negative
+    /// pattern do not mix: `/^(?!.*microsoft)/` matches "Code" while failing
+    /// `com.microsoft.VSCode`, and "one of the two matched" would then run the
+    /// stage in the app it was written to exclude. Joined, the question has one
+    /// answer.
+    struct App: Equatable {
+        let name: String
+        let bundleID: String
+
+        /// What a pattern is matched against.
+        var searchable: String { "\(name) \(bundleID)" }
+
+        /// How it reads in a log line.
+        var described: String { name.isEmpty ? bundleID : name }
+    }
+
     /// A stage plus when it runs. The condition is the whole reason a pipeline
     /// beats a list: a stage that costs a second is affordable exactly when it
     /// can be skipped on the transcripts that do not need it.
@@ -68,6 +94,14 @@ struct Pipeline: Equatable, Codable {
         /// Skip when this matches. Both may be set; `unless` wins, because a
         /// reason not to run is a stronger statement than a reason to.
         var unless: String?
+        /// Run only in apps this matches — see `App`.
+        ///
+        /// There is no `not_app`, deliberately: the pattern is a regular
+        /// expression like every other one here, so exclusion is a negative
+        /// lookahead, `/^(?!.*term)/`. That keeps one key instead of two, at
+        /// the cost of an anchor people forget — which `validate` refuses
+        /// rather than leaving to run everywhere in silence.
+        var app: String?
 
         /// Same convention as `replacements`, so there is one thing to learn:
         /// between slashes it is a regular expression, otherwise it is a word,
@@ -185,12 +219,27 @@ struct Pipeline: Equatable, Codable {
             problems.append("a prompt stage names no prompt — write `- prompt: <name>`")
         }
         for step in steps {
-            for (label, condition) in [("when", step.when), ("unless", step.unless)] {
+            for (label, condition) in [
+                ("when", step.when), ("unless", step.unless), ("app", step.app)
+            ] {
                 guard let condition else { continue }
                 if Step.expression(for: condition) == nil {
                     // Otherwise the stage simply never runs, which looks
                     // exactly like the stage being broken.
                     problems.append("\(step.stage.name): \(label) \"\(condition)\" is not a valid pattern")
+                    continue
+                }
+                // A negative lookahead is how exclusion is written here, and
+                // unanchored it is a lie: patterns are matched with
+                // `firstMatch`, so `/(?!.*term)/` succeeds one character into
+                // "Terminal" and the stage runs everywhere it was meant to be
+                // kept out of. Nothing about that failure is visible — the
+                // stage does not error, it just runs — so it is refused here.
+                if Step.pattern(for: condition).hasPrefix("(?!") {
+                    problems.append(
+                        "\(step.stage.name): \(label) \"\(condition)\" is an unanchored negative"
+                            + " lookahead — it matches almost anything. Anchor it: /^(?!.*…)/"
+                    )
                 }
             }
         }
@@ -220,7 +269,7 @@ struct Pipeline: Equatable, Codable {
     /// skipped was reported as having "ran, changed nothing". A diagnostic that
     /// disagrees with the thing it is diagnosing is worse than none.
     static func skipReason(
-        for step: Step, text: String, config: Config, allowPrompts: Bool
+        for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil
     ) -> String? {
         if step.stage == .prompt {
             if !allowPrompts { return "prompts are off on this path" }
@@ -228,6 +277,18 @@ struct Pipeline: Equatable, Codable {
                 text, phrase: config.transcription.activationPhrase
             ) != nil {
                 return "this is a spoken command"
+            }
+        }
+        if let wanted = step.app {
+            // Fails closed. Without Accessibility, or on a path that never had
+            // a window to read, there is no app — and "run it anyway" would run
+            // a terminal-only stage in your editor, which is the one outcome
+            // asking for `app:` was meant to prevent.
+            guard let app else {
+                return "app \(wanted) cannot be checked — nothing was in front"
+            }
+            if !step.matches(app.searchable, wanted) {
+                return "app \(wanted) did not match \(app.described)"
             }
         }
         if let unless = step.unless, step.matches(text, unless) {
@@ -239,11 +300,14 @@ struct Pipeline: Equatable, Codable {
         return nil
     }
 
-    func run(_ text: String, config: Config, allowPrompts: Bool = true) async -> String {
+    func run(
+        _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil
+    ) async -> String {
         var output = text
         for step in steps {
             if let reason = Pipeline.skipReason(
-                for: step, text: output, config: config, allowPrompts: allowPrompts
+                for: step, text: output, config: config,
+                allowPrompts: allowPrompts, app: app
             ) {
                 // Said out loud: a stage that silently does not run is
                 // indistinguishable from one that ran and found nothing, and

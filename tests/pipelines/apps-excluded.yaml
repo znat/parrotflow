@@ -1,0 +1,14 @@
+# The other direction: everywhere *except* a terminal, written as a negative
+# lookahead because there is no `not_app:`.
+#
+# The anchor is the point. Unanchored, `/(?!.*term)/` succeeds one character
+# into "Terminal" and the stage runs in the app it was written to avoid —
+# `Pipeline.validate` refuses that shape, and this fixture is what proves the
+# anchored one actually excludes.
+languages: [en, fr]
+replacements:
+  Supabase: [super base]
+pipeline:
+  - replacements
+  - stage: numbers
+    app: /^(?!.*(term|ghostty|iterm))/

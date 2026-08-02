@@ -103,13 +103,17 @@ if let index = arguments.firstIndex(of: "--prompt") {
 
 if let index = arguments.firstIndex(of: "--pipeline") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"] [--quiet]")
+        print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"] [--app <name>] [--quiet]")
         exit(2)
     }
     let text = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
         ? arguments[index + 2] : nil
+    let app = arguments.firstIndex(of: "--app").flatMap { index -> String? in
+        arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+    }
     exit(PipelineCommand.run(
-        path: arguments[index + 1], text: text, quiet: arguments.contains("--quiet")
+        path: arguments[index + 1], text: text,
+        quiet: arguments.contains("--quiet"), app: app
     ))
 }
 

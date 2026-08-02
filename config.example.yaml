@@ -1,136 +1,89 @@
 transcription:
-  enabled: true
-
-  # paste     -> type it straight into the app you're in (needs Accessibility)
-  # clipboard -> just copy it, you press Cmd-V
+  # paste     -> typed into the app you're in (needs Accessibility)
+  # clipboard -> copied, you press Cmd-V
   insert_mode: clipboard
 
-  # Select a wrong word anywhere, hold the hotkey and say this, and a panel
-  # opens to teach ParrotFlow the right spelling. Needs Accessibility.
-  correction_phrase: hey parrot
+  # Say this instead of dictating and what follows is an instruction:
+  # "hey parrot, make that a bullet list". Empty disables it.
+  activation_phrase: hey parrot
 
-  # When a field refuses accessibility writes — terminals, mostly — clear the
-  # input line with Ctrl-A Ctrl-K and retype it corrected. Destructive by
-  # nature, so it only fires when the line still contains what you dictated.
+  # Last resort for fields Accessibility cannot write, terminals mostly: clear
+  # the input line with Ctrl-A Ctrl-K and retype it corrected. It only fires
+  # when the line still holds what you dictated.
   rewrite_line: true
 
-  # Languages you dictate in, most common first. Not sent to Parakeet — it
-  # transcribes multilingually by itself and reports no language back. This
-  # list is what ParrotFlow uses to work out which language a transcript was
-  # in, so listing only what you actually speak makes that more accurate, and
-  # it picks the correction prompt written for that language.
+  # Languages you dictate in, most spoken first — the first one is the
+  # fallback for transcripts too short to judge, under four words.
+  # Supported: en, fr. A single entry means no detection runs at all.
   #
-  # One entry means no detection runs at all. Supported: en, fr.
+  # Not sent to Parakeet, which transcribes multilingually by itself and
+  # reports no language back. This is the list ParrotFlow chooses between, so
+  # naming only what you actually speak makes it more accurate.
   languages: [en, fr]
 
-  # Everything a finished transcript goes through, in order, per language.
-  # A language's own list wins over `default`.
+  # What a finished transcript runs through, in order. Listed in full because
+  # a stage runs only if it is here: switching one off is deleting a line you
+  # can see.
   #
-  # Being in a pipeline is the only way a stage runs, so this list is written
-  # out with all of them: turning one off means deleting a line you can see,
-  # not finding a setting you cannot. Delete `pipelines:` entirely and you get
-  # every stage back; write `default: []` and you get none, which is a choice
-  # rather than silence.
+  #   replacements  the table below
+  #   fuzzy         the same table against words the spell checker does not
+  #                 know, so "super bays" still reaches Supabase without
+  #                 "Excel" becoming "Vercel". Needs replacements before it
+  #   numbers       "two hundred forty-three" -> 243, plus ordinals, decimals
+  #                 and years, English and French
   #
-  # A stage can carry a condition, which is what makes an expensive one
-  # affordable — it is skipped on the transcripts that do not need it:
+  # Per language, which wins over `default`: fr: [replacements, numbers]
+  #
+  # A prompt can be a stage, and any stage can carry a condition — on the text
+  # with `when:` / `unless:`, or on the app you dictated into:
   #
   #   - stage: numbers
-  #     when: /\b(vingt|cent|mille)\b/     # only if a number word is left
-  #   - stage: fuzzy
-  #     unless: /```/                      # never inside a code fence
+  #     app: /term|ghostty/          # only in a terminal
+  #   - prompt: prose
+  #     app: /^(?!.*term)/           # everywhere but; no not_app, the negation
+  #                                  # goes in the pattern
   #
-  # `when` and `unless` read the text as it stands *at that point*, after the
-  # stages above — so a cheap stage can make an expensive one unnecessary
-  # rather than merely earlier. Both may be set; `unless` wins. The pattern is
-  # written like a replacement source: between slashes it is a regular
-  # expression, otherwise a word matched on word boundaries. Case-insensitive
-  # either way. A skipped stage says so in the log, because a stage that
-  # silently does not run looks exactly like one that ran and found nothing.
-  #
-  # A prompt from `prompts:` can be a stage too, which is the reason conditions
-  # exist: it calls the local model, so it costs about a second where every
-  # other stage costs nothing. Measured on one line, 3.2s with the prompt
-  # running against 0.035s with it skipped.
-  #
-  #   - prompt: hesitation
-  #     when: /\b(genre|du coup|en fait)\b/
-  #
-  # It is the only stage that rewrites your words without you asking, and
-  # nothing on screen shows it happened — so every rewrite is written to the
-  # log with the text before and after. If the model is not running, the prompt
-  # does not exist, or the call fails, the transcript comes back exactly as it
-  # arrived; a dictation tool can afford to skip a stage and cannot afford to
-  # lose a sentence.
-  #
-  # Written out in full on purpose. The stages are few enough to read at a
-  # glance, and deleting a line you can see beats discovering a setting you
-  # cannot.
-  #
-  #   replacements  the substitutions below: literal, word-boundary,
-  #                 case-insensitive, or a regex between slashes
-  #   fuzzy         the same table, used to catch renderings you have not
-  #                 taught — "super bays" reaches Supabase. Only words the
-  #                 spell checker does not know are eligible, which is what
-  #                 keeps "Excel" from becoming "Vercel". It needs
-  #                 `replacements` before it and says so if it does not have
-  #                 one, because on its own it swallows the preceding word.
-  #   numbers       spoken numbers as digits: "two hundred forty-three" -> 243,
-  #                 plus ordinals, decimals, years and spoken digits. English
-  #                 and French, septante/huitante/nonante included, chosen per
-  #                 transcript. A number word on its own stays a word below
-  #                 ten, so "chapter three" and "on est deux" are left alone.
-  #                 It does rewrite transcripts that were already correct — run
-  #                 --numbers on a line to see exactly what it would do.
-  #
-  # Per language, when they should differ:
-  #
-  #   pipelines:
-  #     default: [replacements, fuzzy]
-  #     fr: [replacements, fuzzy, numbers]
+  # See docs/pipelines.md.
   pipelines:
     default: [replacements, fuzzy, numbers]
 
-
-  # How names get fixed: literal, word-boundary, case-insensitive swaps on
-  # the finished transcript.
+  # The spelling you want, and the ways it comes out wrong. Whole words,
+  # case-insensitive. A source in /slashes/ is a regular expression, and an
+  # empty target deletes rather than substitutes — which is how filler words
+  # go, punctuation and spacing included.
   #
   # Workflow: dictate, run --transcribe on the clip, map whatever the model
   # wrote to what you meant.
   replacements:
-    # Removed from every transcript. A source in /slashes/ is a regular
-    # expression; an empty target means delete. The pattern takes any comma
-    # and spacing with it, so nothing is left behind.
     "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
     Tasmeen: [Tasmid, Tasmin, Tasmine]
     Supabase: [super base, superbees]
 
-# A local Ollama model, used to interpret what you say after the wake phrase.
-# Everything else works without it — you just lose free-form spoken commands.
+# The local Ollama model behind spoken commands. Without it dictation still
+# works and everything under `prompts:` stops.
 llm:
   enabled: true
   model: gemma4:e4b
   endpoint: http://localhost:11434
-  timeout_seconds: 20
-  # Load the model at launch and keep it there. Ollama otherwise drops it
-  # after five minutes, and reloading costs 7-10s on the next correction.
-  # Turn off to get those seconds back as free RAM.
+  # Pin the model in RAM at launch. Ollama otherwise drops it after five
+  # minutes and the next command waits 7-10s for the reload. Turn off to get
+  # those seconds back as free RAM.
   keep_loaded: true
 
-# Things you can ask for by voice: say the wake phrase, then the instruction.
+# What the activation phrase can reach: say it, then the instruction.
 #
 #     "hey parrot, make that a bullet list"
 #
-# A router picks which one you meant, reading the descriptions below — so a
-# description is not a comment, it is the thing being matched against. Write it
-# the way you would say it.
+# A description is not a comment — it is what the router matches your words
+# against, so write it the way you would say it. The whole instruction then
+# reaches the prompt, which is why one entry covers "format those dates ISO"
+# and "format those dates with slashes".
 #
-# The whole instruction is then passed to the prompt, not just the part that
-# chose it. That is what lets one prompt serve "format those dates ISO" and
-# "format those dates with slashes" without needing two entries.
+# Results are shown before they replace your selection; add `confirm: false`
+# to a prompt you have come to trust.
 #
 # Fixing a misheard name is built in and does not appear here — run
-# --check-config to see everything the wake phrase reaches.
+# --check-config to see everything the phrase reaches.
 prompts:
   - name: bullets
     description: turn text into a short bullet list
@@ -143,19 +96,6 @@ prompts:
     content: |
       Cut this down. No filler, same facts, same voice.
       Return only the shortened text.
-
-  # There used to be a `dates` prompt and a `digits` prompt here. Both are gone,
-  # because free_form does their job and the measurement said so: on the sixteen
-  # cases they covered in tests/generic-cases.yaml they scored 12/16 against the
-  # built-in's 14/16. `digits` was a straight tie, five cases to five. `dates`
-  # was worse — asked to make "the deadline is March 3 2026" ISO it answered
-  # "2026-03-03", dropping the sentence around the date, which is what a prompt
-  # written for one subject does when handed a whole sentence.
-  #
-  # `grammar` below stays for the opposite reason. It has a validation set of
-  # its own and it beats the built-in on it, 5/5 against 4/5, and the case it
-  # wins is the one that matters most here: leaving alone a sentence that was
-  # already right.
 
   - name: grammar
     description: fix grammar and punctuation mistakes, not formatting or numbers
@@ -181,30 +121,12 @@ prompts:
 
       Return only the text.
 
-  # Show the result before it replaces anything. On by default — a transform
-  # overwrites text you selected, and it is triggered by voice, so there is no
-  # dialog in the way. Set false per prompt once you trust it.
-  #
-  #   confirm: false
-
-# Do what was asked even when nothing above matches.
+# Do what was asked even when no prompt above matches:
 #
 #     "hey parrot, use the 24 hour clock"
-#     "hey parrot, make sure fifty dollars is formatted as money"
 #     "hey parrot, sort that list alphabetically"
 #
-# No prompt covers those and no list ever would, so the whole instruction goes
-# to a built-in transform instead. It is the difference between a fixed menu and
-# saying what you want.
-#
-# What it costs, stated plainly. The router now answers three ways instead of
-# two: a prompt name, ANY for "an edit nothing above handles", or NONE for "that
-# was not an edit at all". NONE is what keeps a passing remark — "what is the
-# weather tomorrow", said with text selected — away from a prompt whose one job
-# is to rewrite your selection. Measured at 18/19; the miss was a prompt name
-# used as an ordinary noun. The transform itself scores 32/38 on
-# tests/generic-cases.yaml, against 11/38 for changing nothing at all, and
-# `confirm` shows you the result before it lands.
-#
-# Turn it off and an instruction nothing matches is refused, as it was before.
+# A remark that was never an instruction is still refused, and you see every
+# result before it replaces anything. Turn off to go back to a fixed menu of
+# prompts.
 free_form: true
