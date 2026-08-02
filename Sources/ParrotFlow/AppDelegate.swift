@@ -31,6 +31,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Where the text was being typed when the hotkey went down, so a rule
     /// learned by voice can fix the word already in the field.
     private var focusAtPress: SelectionReader.Selection?
+    /// Which app you were dictating into, for pipeline `app:` conditions.
+    ///
+    /// Read from NSWorkspace rather than off `focusAtPress`, which is nil
+    /// without Accessibility — an app condition has no business needing a
+    /// permission that gating a stage by app does not otherwise require.
+    private var appAtPress: Pipeline.App?
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -161,6 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let snapshotStart = Date()
         selectionAtPress = SelectionReader.snapshot()
         focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
+        appAtPress = Self.appInFront()
         let elapsed = Date().timeIntervalSince(snapshotStart)
         if elapsed > 0.15 {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
@@ -285,14 +292,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Transcription
 
+    /// The app in front right now, or nil if there isn't one to name.
+    private static func appInFront() -> Pipeline.App? {
+        guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
+        let app = Pipeline.App(
+            name: front.localizedName ?? "", bundleID: front.bundleIdentifier ?? ""
+        )
+        // Both empty is not an app you could write a condition against, and
+        // saying so is what makes `app:` fail closed instead of matching "  ".
+        return app.searchable.trimmingCharacters(in: .whitespaces).isEmpty ? nil : app
+    }
+
     private func transcribe(_ recording: Recorder.Recording) {
         transcriptionLabel = "Transcribing…"
         updateUI()
 
         let config = self.config
+        // Taken at the press, not here: a transcript arrives seconds later and
+        // the window you dictated into may not be the one in front by then.
+        let app = appAtPress
         Task { [weak self] in
             do {
-                let text = try await self?.transcriber.transcribe(url: recording.url, config: config) ?? ""
+                let text = try await self?.transcriber.transcribe(
+                    url: recording.url, config: config, app: app
+                ) ?? ""
                 await MainActor.run {
                     guard let self else { return }
                     self.transcriptionLabel = nil

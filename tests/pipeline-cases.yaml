@@ -63,6 +63,54 @@ cases:
     input: on en a genre vingt et un
     expect: On en a vingt et un
 
+  # --- app conditions -----------------------------------------------------
+  # `app:` is matched against the name and bundle identifier joined into one
+  # string, and the app is the one that was in front when the hotkey went down.
+  # `--app` is how a case gets to say who that was; without it there is no app
+  # at all, which is its own case below.
+  - name: the app matches, so the stage runs
+    pipeline: apps
+    app: Ghostty
+    input: on en a vingt et un
+    expect: on en a 21
+
+  - name: another app, so the stage is skipped
+    pipeline: apps
+    app: TextEdit
+    input: on en a vingt et un
+    expect: unchanged
+
+  # The identifier is half the haystack, so a pattern can name an app by the
+  # thing that does not change when someone renames the binary.
+  - name: the bundle identifier is matched too
+    pipeline: apps
+    app: com.mitchellh.ghostty
+    input: on en a vingt et un
+    expect: on en a 21
+
+  # Fails closed. No Accessibility, no window, a path that never had an app —
+  # running anyway would put a terminal-only stage everywhere else, which is
+  # the opposite of what asking for `app:` means.
+  - name: no app at all, so an app-conditioned stage does not run
+    pipeline: apps
+    input: on en a vingt et un
+    expect: unchanged
+
+  # --- exclusion, with no not_app --------------------------------------
+  # The negative lookahead is the whole reason `not_app:` does not exist. These
+  # two are what says it works in both directions.
+  - name: a negative lookahead keeps the stage out of a terminal
+    pipeline: apps-excluded
+    app: Ghostty
+    input: on en a vingt et un
+    expect: unchanged
+
+  - name: and lets it run everywhere else
+    pipeline: apps-excluded
+    app: TextEdit
+    input: on en a vingt et un
+    expect: on en a 21
+
   # --- an empty pipeline is a choice --------------------------------------
   - name: nothing listed, so nothing runs
     pipeline: empty

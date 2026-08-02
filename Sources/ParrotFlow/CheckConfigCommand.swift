@@ -75,6 +75,7 @@ enum CheckConfigCommand {
                         if let prompt = step.prompt { described += " \(prompt)" }
                         if let when = step.when { described += " when \(when)" }
                         if let unless = step.unless { described += " unless \(unless)" }
+                        if let app = step.app { described += " in \(app)" }
                         return described
                     }.joined(separator: " → ")
                 print("  · pipeline \(language)        \(stages)  (\(source))")

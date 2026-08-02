@@ -37,10 +37,10 @@ enum Replacements {
     /// Kept as the entry point everything already calls, so moving the order
     /// out of this function did not move the call sites too.
     static func apply(
-        to text: String, config: Config, allowPrompts: Bool = true
+        to text: String, config: Config, allowPrompts: Bool = true, app: Pipeline.App? = nil
     ) async -> String {
         await Pipeline.forText(text, config: config).0.run(
-            text, config: config, allowPrompts: allowPrompts
+            text, config: config, allowPrompts: allowPrompts, app: app
         )
     }
 

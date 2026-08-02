@@ -46,7 +46,22 @@ enum PipelineCommand {
         }
     }
 
-    static func run(path: String, text: String?, quiet: Bool = false) -> Int32 {
+    /// `--app "Ghostty com.mitchellh.ghostty"` — who to pretend is in front.
+    ///
+    /// Without it an `app:` condition is only reachable by speaking into the
+    /// right window, which is not a thing a validation set can do. The string
+    /// is matched exactly as the real one is: name and bundle identifier
+    /// joined, so a fixture can name either or both.
+    ///
+    /// Empty is "nothing in front", not "no flag given" — the two mean the same
+    /// thing here, and saying so lets a caller pass the flag unconditionally.
+    /// scripts/check-pipeline.sh does exactly that, because the alternative in
+    /// bash 3.2 is an empty array under `set -u`, which is an error.
+    static func run(
+        path: String, text: String?, quiet: Bool = false, app: String? = nil
+    ) -> Int32 {
+        let named = (app ?? "").trimmingCharacters(in: .whitespaces)
+        let front = named.isEmpty ? nil : Pipeline.App(name: named, bundleID: "")
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         let fixture: Fixture
         do {
@@ -65,7 +80,8 @@ enum PipelineCommand {
                 return nil
             }
             return Pipeline.Step(
-                stage: stage, prompt: entry.prompt, when: entry.when, unless: entry.unless
+                stage: stage, prompt: entry.prompt, when: entry.when,
+                unless: entry.unless, app: entry.app
             )
         }
         for name in unknown {
@@ -94,6 +110,7 @@ enum PipelineCommand {
                 if let prompt = step.prompt { line += " \(prompt)" }
                 if let when = step.when { line += "  when \(when)" }
                 if let unless = step.unless { line += "  unless \(unless)" }
+                if let app = step.app { line += "  app \(app)" }
                 print(line)
             }
             return 0
@@ -102,7 +119,7 @@ enum PipelineCommand {
         let done = DispatchSemaphore(value: 0)
         if quiet {
             Task {
-                print(await pipeline.run(text, config: config))
+                print(await pipeline.run(text, config: config, app: front))
                 done.signal()
             }
             done.wait()
@@ -114,10 +131,11 @@ enum PipelineCommand {
         // say. Re-run one stage at a time rather than instrumenting `run`: the
         // scored path stays the one the app uses, and this stays a viewer.
         print("in:   \(text)")
+        if let front { print("app:  \(front.described)") }
         var current = text
         for step in steps {
             if let reason = Pipeline.skipReason(
-                for: step, text: current, config: config, allowPrompts: true
+                for: step, text: current, config: config, allowPrompts: true, app: front
             ) {
                 print("  ⊘ \(step.stage.name)  — skipped, \(reason)")
                 continue
@@ -125,7 +143,7 @@ enum PipelineCommand {
             var after = current
             let stepDone = DispatchSemaphore(value: 0)
             Task {
-                after = await Pipeline(steps: [step]).run(current, config: config)
+                after = await Pipeline(steps: [step]).run(current, config: config, app: front)
                 stepDone.signal()
             }
             stepDone.wait()
