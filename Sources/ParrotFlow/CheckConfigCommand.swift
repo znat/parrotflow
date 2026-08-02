@@ -142,6 +142,15 @@ enum CheckConfigCommand {
             print("  · llm               disabled — no free-form spoken commands")
         }
 
+        switch config.updates.afterDays {
+        case ..<0:
+            print("  · updates           never checked")
+        case 0:
+            print("  · updates           checked daily, offered as soon as published")
+        case let days:
+            print("  · updates           checked daily, offered after \(days) day\(days == 1 ? "" : "s")")
+        }
+
         // Environment
         let mic = Permissions.microphone
         print("  \(mic == .granted ? "✓" : "✗") microphone        \(mic.label)")

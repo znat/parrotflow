@@ -15,6 +15,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusInfoItem: NSMenuItem!
     private var toggleItem: NSMenuItem!
 
+    /// Shown only once a release has been found, waited out, and not refused.
+    private var updateItem: NSMenuItem!
+    private var updateAvailable: Updates.Release?
+    private var updatesTimer: Timer?
+    /// So the notice fires when a version first becomes available, and not
+    /// again every day for as long as the user leaves it alone.
+    private var announcedUpdate: String?
+
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
     }
@@ -148,7 +156,102 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.model.outputDir = config.audio.outputDir
 
         startKeepWarm()
+        startUpdateChecks()
         updateUI()
+    }
+
+    // MARK: - Updates
+
+    /// Once shortly after launch, then daily.
+    ///
+    /// Restarted on every config load, since `after_days` can turn the whole
+    /// thing off — and a setting that only takes effect after a restart is one
+    /// that will be reported as not working.
+    private func startUpdateChecks() {
+        updatesTimer?.invalidate()
+        updatesTimer = nil
+
+        guard config.updates.afterDays >= 0 else {
+            updateAvailable = nil
+            return
+        }
+
+        // Not at launch: the first seconds belong to the hotkey, the mic and
+        // the model. Nothing here is urgent enough to compete with them.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+            self?.checkForUpdate()
+        }
+        let timer = Timer(timeInterval: 86_400, repeats: true) { [weak self] _ in
+            self?.checkForUpdate()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        updatesTimer = timer
+    }
+
+    private func checkForUpdate() {
+        let afterDays = config.updates.afterDays
+        guard afterDays >= 0 else { return }
+
+        Task<Void, Never> {
+            let latest = try? await Updates.latest()
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                let decision = Updates.decide(
+                    current: Updates.current, latest: latest, afterDays: afterDays
+                )
+                switch decision {
+                case .available(let release):
+                    self.updateAvailable = release
+                    if self.announcedUpdate != release.version {
+                        self.announcedUpdate = release.version
+                        Log.write("updates: \(release.version) is available")
+                        self.flash("ParrotFlow \(release.version) is available")
+                    }
+                case .waiting(let release, let days):
+                    self.updateAvailable = nil
+                    Log.write("updates: holding \(release.version) for \(days) more day(s)")
+                default:
+                    self.updateAvailable = nil
+                }
+                self.updateUI()
+            }
+        }
+    }
+
+    /// The release notes, and the three answers to them.
+    ///
+    /// No download button yet: taking the update in place means replacing a
+    /// running bundle, which is a separate piece of work and a worse thing to
+    /// get wrong than a missing button. Until then the command is the same one
+    /// that installed the app, and it is put on the clipboard rather than
+    /// printed for retyping.
+    @objc private func showUpdate() {
+        guard let release = updateAvailable else { return }
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "ParrotFlow \(release.version) is available"
+        alert.informativeText = (release.notes.isEmpty ? "No release notes." : release.notes)
+            + "\n\nYou are running \(Updates.current ?? "an unknown version")."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Copy the upgrade command")
+        alert.addButton(withTitle: "Skip this version")
+        alert.addButton(withTitle: "Later")
+
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(Updates.installCommand, forType: .string)
+            flash("Upgrade command copied — paste it into a terminal", tone: .done)
+        case .alertSecondButtonReturn:
+            Updates.skip(release.version)
+            updateAvailable = nil
+            updateUI()
+        default:
+            Updates.remindLater()
+            updateAvailable = nil
+            updateUI()
+        }
     }
 
     private func watchConfig() {
@@ -1173,6 +1276,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusInfoItem = NSMenuItem(title: "Idle", action: nil, keyEquivalent: "")
         statusInfoItem.isEnabled = false
         menu.addItem(statusInfoItem)
+
+        updateItem = NSMenuItem(title: "", action: #selector(showUpdate), keyEquivalent: "")
+        updateItem.target = self
+        updateItem.isHidden = true
+        menu.addItem(updateItem)
+
         menu.addItem(.separator())
 
         toggleItem = NSMenuItem(
@@ -1251,6 +1360,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         toggleItem.title = recording ? "Stop Dictation" : "Start Dictation"
+
+        updateItem.isHidden = updateAvailable == nil
+        if let release = updateAvailable {
+            updateItem.title = "↑ ParrotFlow \(release.version) is available"
+        }
     }
 
     // MARK: - Menu actions

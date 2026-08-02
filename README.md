@@ -3,10 +3,14 @@
 Dictation for people who type for a living. Hold a key, talk, and the text
 lands in whatever you are in — editor, terminal, browser, chat.
 
-Everything runs on your Mac. No account, no API key, no network call. The
-audio never leaves the machine, which is the whole point: most of what a
-developer dictates is a bug report, a customer name, or a half-finished idea
-about their own product.
+Everything runs on your Mac. No account, no API key, and nothing you say is
+ever sent anywhere — which is the whole point: most of what a developer
+dictates is a bug report, a customer name, or a half-finished idea about their
+own product.
+
+Two things do use the network, and neither carries your audio or your text: the
+speech model downloads once, on first use, and once a day the app asks GitHub
+whether a newer version exists. `updates.after_days: -1` stops the second one.
 
 It also learns the words you actually use. Say a library name once, tell it
 how the name is spelled, and it gets it right from then on.
