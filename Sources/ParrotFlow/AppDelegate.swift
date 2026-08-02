@@ -130,13 +130,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         warmUpLLM()
 
-        // First run: get the microphone prompt out of the way immediately,
-        // rather than at the moment the user first tries to dictate.
+        // First run: open the walk, and ask for nothing yet. The prompt used to
+        // fire here, the moment the window appeared — a system dialog on top of
+        // the window explaining it, before either had been read. The window
+        // asks when its button is pressed and not before.
         if Permissions.microphone == .notDetermined {
-            permissions.show()
-            Permissions.requestMicrophone { [weak self] _ in
-                self?.permissions.model.refresh()
-            }
+            permissions.show(.installing)
         }
     }
 
@@ -480,7 +479,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if granted {
                     self.startRecording()
                 } else {
-                    self.permissions.show()
+                    // Not `.installing`: the app has been running for a while
+                    // by the time someone presses the hotkey, and a refusal
+                    // here should not offer to cancel an install that finished
+                    // days ago.
+                    self.permissions.show(.revisiting)
                 }
             }
             return
@@ -1805,7 +1808,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openPermissions() {
-        permissions.show()
+        permissions.show(.revisiting)
     }
 
     @objc private func showAbout() {
