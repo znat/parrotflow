@@ -254,6 +254,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Downloads, checks, and hands over to the swap.
+    ///
+    /// Nothing is replaced until the archive has matched its published
+    /// checksum, verified as signed, and been signed by our certificate —
+    /// the same three the curl installer applies, for the same reason.
+    ///
+    /// Quitting is part of the update rather than a side effect: the swap
+    /// waits for this process to exit before it moves anything, so an update
+    /// that could not close the app would simply hang.
+    private func install(_ release: Updates.Release) {
+        beginProgress("Downloading ParrotFlow \(release.version)…")
+        Task<Void, Never> {
+            do {
+                let app = try await UpdateInstaller.prepare(release)
+                try await MainActor.run {
+                    self.endProgress()
+                    try UpdateInstaller.swapAndRelaunch(newApp: app)
+                    NSApp.terminate(nil)
+                }
+            } catch {
+                await MainActor.run {
+                    self.endProgress()
+                    Log.write("updates: install failed — \(error.localizedDescription)")
+                    self.presentAlert(
+                        title: "Could not install the update",
+                        message: error.localizedDescription
+                            + "\n\nNothing on this Mac has been changed. You can still upgrade with:\n\n"
+                            + Updates.installCommand
+                    )
+                }
+            }
+        }
+    }
+
     /// The release notes, and the three answers to them.
     ///
     /// No download button yet: taking the update in place means replacing a
@@ -270,11 +304,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = (release.notes.isEmpty ? "No release notes." : release.notes)
             + "\n\nYou are running \(Updates.current ?? "an unknown version")."
         alert.alertStyle = .informational
+        // Installing in place is only offered when it can actually be done.
+        // An app in a read-only location, or one someone put somewhere odd,
+        // still gets the command it was installed with rather than a button
+        // that fails after downloading 3 MB.
+        let canInstall = UpdateInstaller.canInstallInPlace
+        if canInstall { alert.addButton(withTitle: "Update and restart") }
         alert.addButton(withTitle: "Copy the upgrade command")
         alert.addButton(withTitle: "Skip this version")
         alert.addButton(withTitle: "Later")
 
-        switch alert.runModal() {
+        var answer = alert.runModal()
+        if canInstall, answer == .alertFirstButtonReturn {
+            install(release)
+            return
+        }
+        // With the install button present every other answer sits one place
+        // further along, so it is shifted back rather than each case being
+        // written twice.
+        if canInstall { answer = NSApplication.ModalResponse(rawValue: answer.rawValue - 1) }
+
+        switch answer {
         case .alertFirstButtonReturn:
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(Updates.installCommand, forType: .string)
