@@ -39,9 +39,9 @@ enum PanelsCommand {
 
         // The pill has two states now and the difference is the whole point of
         // the slot: with an app in front it holds that app, without one it
-        // holds nothing and is simply narrower. Both are on the sheet because
-        // "it looks wrong with no icon" is the kind of thing that is obvious
-        // side by side and invisible a week apart.
+        // holds nothing and stays exactly as wide. Both are on the sheet
+        // because "the ring looks wrong empty" is the kind of thing that is
+        // obvious side by side and invisible a week apart.
         let overlayBlind = OverlayModel()
         overlayBlind.level = 0.75
 
@@ -60,25 +60,46 @@ enum PanelsCommand {
             after: "I think we should have asked them first — they're going to be annoyed."
         )
 
-        let surfaces: [(NSView, NSSize)] = [
+        // The third element is the appearance to draw in. Every floating
+        // surface is dark whatever the system is set to — that is decided in
+        // `adoptParrotAppearance` and is not a preference. The permissions
+        // window is the exception and the reason this is a column at all: it is
+        // an ordinary titled window, it follows the system, and it has to be
+        // legible both ways. So it appears twice, once each.
+        let surfaces: [(NSView, NSSize, NSAppearance.Name)] = [
             (NSHostingView(rootView: RecordingPill().environmentObject(overlay)),
              NSSize(width: RecordingMetrics.width(hasIcon: overlay.appIcon != nil),
-                    height: RecordingMetrics.height)),
+                    height: RecordingMetrics.height), .darkAqua),
             (NSHostingView(rootView: RecordingPill().environmentObject(overlayBlind)),
              NSSize(width: RecordingMetrics.width(hasIcon: false),
-                    height: RecordingMetrics.height)),
+                    height: RecordingMetrics.height), .darkAqua),
+            // The one real window the app has, and the first thing anyone sees.
+            // On the sheet for the same reason as the rest: it is looked at,
+            // not asserted on, and two screens that drift apart are obvious
+            // side by side and invisible a week apart.
+            //
+            // One of each context, because the second button is the difference
+            // between them and it is the part worth being able to see: setting
+            // up says "Cancel installation", revisiting says "Not now".
+            (NSHostingView(rootView: PermissionsView()
+                .environmentObject(PermissionsModel.showing(.microphone))),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .aqua),
+            (NSHostingView(rootView: PermissionsView()
+                .environmentObject(PermissionsModel.showing(
+                    .accessibility, asked: true, context: .revisiting))),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .darkAqua),
             (NSHostingView(rootView: NoticeView().environmentObject(notice)),
-             NSSize(width: NoticeMetrics.width(for: notice.message), height: NoticeMetrics.height)),
+             NSSize(width: NoticeMetrics.width(for: notice.message), height: NoticeMetrics.height), .darkAqua),
             (NSHostingView(rootView: NoticeView().environmentObject(thinking)),
-             NSSize(width: NoticeMetrics.width(for: thinking.message), height: NoticeMetrics.height)),
+             NSSize(width: NoticeMetrics.width(for: thinking.message), height: NoticeMetrics.height), .darkAqua),
             (NSHostingView(rootView: NoticeView().environmentObject(caution)),
-             NSSize(width: NoticeMetrics.width(for: caution.message), height: NoticeMetrics.height)),
+             NSSize(width: NoticeMetrics.width(for: caution.message), height: NoticeMetrics.height), .darkAqua),
             (NSHostingView(rootView: CorrectionView().environmentObject(correction)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 2))),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 2)), .darkAqua),
             (NSHostingView(rootView: CorrectionView().environmentObject(rule)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 1))),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 1)), .darkAqua),
             (NSHostingView(rootView: PreviewView().environmentObject(preview)),
-             NSSize(width: PreviewMetrics.width, height: PreviewMetrics.height(forCharacters: 70))),
+             NSSize(width: PreviewMetrics.width, height: PreviewMetrics.height(forCharacters: 70)), .darkAqua),
         ]
 
         let margin: CGFloat = 36
@@ -106,8 +127,8 @@ enum PanelsCommand {
             NSRect(x: left, y: 0, width: column, height: size.height).fill()
 
             var top = size.height - margin
-            for (view, natural) in surfaces {
-                view.appearance = NSAppearance(named: .darkAqua)
+            for (view, natural, appearance) in surfaces {
+                view.appearance = NSAppearance(named: appearance)
                 view.frame = NSRect(origin: .zero, size: natural)
                 view.layoutSubtreeIfNeeded()
                 guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
