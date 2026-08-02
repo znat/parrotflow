@@ -8,37 +8,75 @@
 Prompt variants live in this file so they can be compared directly; the
 winner gets copied into LocalLLM.swift.
 
-Three numbers, because they answer different questions. "pipeline" is the
-model's span plus the regex spelling. "APP" adds interpret()'s snap-to-
-transcript repair, and is the only one that says what a user would see.
+Two numbers, because they answer different questions. "spans" is what the model
+alone got right. "APP" adds the letters, described_edit and interpret()'s
+snap-to-transcript repair, and is the only one that says what a user would see.
 
-Scoreboard (APP). English is tests/spelling-cases.yaml, 44 cases; French is
-tests/french-cases.yaml, 30 cases, where the dictated sentence is French.
-Only the gemma v8/v13/v14 rows below were re-measured after the sets grew and
-spelledOutWord learned the French spelling verbs and stop words; the rest are
-from the 39/25-case sets and are indicative, not comparable.
+Scoreboard (APP). English is tests/spelling-cases.yaml, French is
+tests/french-cases.yaml, where the dictated sentence is French. The sets grew
+twice: the rows marked 62/45 are on the current sets, which added two-in-a-
+breath corrections and described changes; the 44/30 rows are the sets before
+that; anything older is indicative, not comparable.
 
                         English  French  latency  size
-    gemma4:e4b   v14      98%     -       1.15s   9.6GB  <- shipped, English
-    gemma4:e4b   v13       -      93%     1.5s    9.6GB  <- shipped, French
-    gemma4:e4b   v8       98%     87%     1.33s   9.6GB  <- what v14 replaced
+    -- 62 / 45 cases
+    gemma4:e4b   v26      89%      -      1.41s   9.6GB  <- shipped, English
+    gemma4:e4b   v23       -      96%     1.5s    9.6GB  <- shipped, French
+    granite4:3b  v26      89%      -      0.22s   2.1GB  <- level, six times faster
+    granite4:3b  v23       -      69%     0.41s   2.1GB
+    gemma4:e4b   v24      87%      -      1.5s           arrow back on: -2 on spans
+    gemma4:e4b   v28      87%      -      1.4s           v26 + one prose clause
+    gemma4:e4b   v27      85%      -      1.4s           v26 + an extra example
+    gemma4:e4b   v25      85%      -      1.31s          v26 without the described NO MATCH
+    gemma4:e4b   v22      81%      -      1.51s          first attempt at both shapes
+    gemma4:e4b   v14      71%      -      1.17s          what shipped before
+    gemma4:e4b   v13       -      89%     1.46s          what shipped before
+    (no model)            50%     40%       -     <- the control to beat
+    -- 44 / 30 cases
+    gemma4:e4b   v14      98%     -       1.15s   9.6GB
+    gemma4:e4b   v13       -      93%     1.5s    9.6GB
+    gemma4:e4b   v8       98%     87%     1.33s   9.6GB
     gemma4:12b   v8       98%      -      2.96s   7.6GB  <- twice the wait
     gemma4:12b   v13       -      97%     3.29s   7.6GB
     gemma4:e2b   v13       -      80%     1.0s    7.2GB
     gemma4:e2b   v8       86%     60%     0.9s    7.2GB
+    granite4:3b  v8       92%     68%     0.3s    2.1GB
+    granite4:3b  v13       -      48%     0.3s    French prompt HURTS it
+    (no model)            59%     48%       -
+    -- older sets, indicative only
     gemma4:e4b   v4       97%      -      1.4s
     gemma4:e4b   v9       95%      -      1.5s    over-took spans
-    granite4:3b  v8       92%     68%     0.3s    2.1GB  <- best small model
     granite4:3b  v4       90%      -      0.3s
     granite4:3b  v9       87%      -      0.3s
-    granite4:3b  v13       -      48%     0.3s    French prompt HURTS it
     qwen3.5:0.8b v5       62%      -      0.4s    1.0GB
-    (no model)            59%     48%       -     <- the control to beat
     qwen3.5:2b   v8       49%     12%     0.7s    2.7GB
     qwen3.5:0.8b v4       46%      -      0.5s
     qwen3.5:0.8b v7       36%      -      0.4s    correction-first, worse
     qwen3.5:0.8b v6        8%      -      0.4s    by word number: all NONE
     qwen3.5:0.8b v5        8%      -      5.3s    --think: 11x slower, worse
+
+The described changes are the clearest instance yet of the rule that anything
+mechanical belongs in code. "Mathieu ne prend qu'un seul t" has no letters to
+read, so the obvious move is to let the model write the corrected name. On the
+ten described cases in the English set that scores 5/10 on gemma4:e4b and 8/10
+on gemma4:12b, and the failures are not misunderstandings — "Phillip with one
+l" came back "Phill" and "Philp", "Elisabeth with a z" came back "Elizabith".
+described_edit applies the change instead and scores 10/10 on both. A bigger
+model was worth three points here; moving the job out of the model was worth
+five, and it is free.
+
+That change also paid for the prompt. With no spelling for the model to write,
+v25/v26 could go back to answering with the span alone, and the span is where
+the accuracy is: v22 and v24, which restore the arrow, truncate two-word spans
+that v14 got right ("Locks me" to "Locks", "Oluwa shane" to "Oluwa"). Writing
+the name out evidently pulls the model toward the shortest span it can spell.
+French still keeps the arrow, because there it pulls the other way — v19
+measured span-only French and lost ten points to under-trimming.
+
+granite4:3b reaching gemma's English score at a sixth of the latency is new,
+and it is the repair layer doing the work: granite's raw spans score 74%
+against gemma's 89%. The more of the answer that is built from the text, the
+less the model has to be good at.
 
 Latency here is prefill, not generation, and that is the single most useful
 thing on this page. Measured on e4b with v8: 420 prompt tokens in against 6
@@ -987,6 +1025,482 @@ marche => Marc
 source: Cle mence a rejoint l'equipe hier
 correction: Clemence s'ecrit C L E M E N C E
 Cle mence => Clemence""",
+
+# --- Two corrections at once, and corrections that are described ------------
+#
+# v22 is v14 with the right-hand side put back and two capabilities added: an
+# utterance can carry more than one correction, and a correction can describe
+# the change ("with a G at the beginning") instead of spelling it.
+#
+# The right side has to come back. v14 dropped it because the regex rebuilt the
+# spelling from the letters and the model's version was thrown away — but a
+# described change has no letters in it, so for that shape the model's right
+# side is the only spelling there is. It also gives the code something to match
+# the regex candidate against, which is how the two are told apart now:
+# see spelling_segments/choose_spelling below.
+"v22": """Find the words in the source line that the speaker is correcting.
+
+You get a source transcription, and a correction transcription in which the \
+speaker names a word and then says how it is written — either by spelling it \
+letter by letter, or by describing what to change.
+
+Reply with one line per correction, and nothing else:
+<the words exactly as they appear in the source> => <the corrected spelling>
+Or reply NO MATCH.
+
+- Copy the left side from the SOURCE. The correction transcription mishears \
+the name a second time; ignore how it appears there.
+- The source span is often two or three words, because recognition splits \
+names it does not know. Take the whole name, and only the name.
+- When the change is described rather than spelled, apply exactly what was \
+described to the source word and change nothing else about it.
+- One utterance can carry two corrections. Give each its own line.
+- Reply NO MATCH when nothing in the source sounds like the name.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin => Tasmeen
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: I like apples
+correction: Oranges spells O-R-A-N-G-E-S
+NO MATCH
+
+source: We deployed to Versal yesterday
+correction: Versoff spells V E R C E L
+Versal => Vercel
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties => Kubernetes
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When => Nguyen
+
+source: Anna ees joined the design team
+correction: Anna east spells A N A I S
+Anna ees => Anais
+
+source: Steven is reviewing the doc
+correction: Steven with a p h
+Steven => Stephen
+
+source: Matthew and Jon are on the call
+correction: Matthew takes only one t and Jon is spelled with an h
+Matthew => Mathew
+Jon => John""",
+
+# v22's three added examples all had a one-word span, and the model learned
+# exactly that: seven two-word spans that v14 got right came back as their
+# first word ("Say goal enn" as "Say goal", "Locks me" as "Locks"). The
+# examples teach the boundary, and v22's taught the wrong one.
+#
+# So v24 keeps v22's rules and rebuilds the three: a described change over a
+# two-word span, a described change that replaces the first letter, and a
+# two-correction line whose first span is two words. It also gives the removal
+# shape somewhere to be learnt — v22 answered "Phillip with one l" with
+# "Phill", truncating rather than applying the change — and stops "with a G at
+# the beginning" being read as "the name that starts with G", which is how
+# Jerome came back George.
+"v24": """Find the words in the source line that the speaker is correcting.
+
+You get a source transcription, and a correction transcription in which the \
+speaker names a word and then says how it is written — either by spelling it \
+letter by letter, or by describing what to change.
+
+Reply with one line per correction, and nothing else:
+<the words exactly as they appear in the source> => <the corrected spelling>
+Or reply NO MATCH.
+
+- Copy the left side from the SOURCE. The correction transcription mishears \
+the name a second time; ignore how it appears there.
+- The source span is often two or three words, because recognition splits \
+names it does not know. Take the whole name, and only the name.
+- When the change is described rather than spelled, apply exactly what was \
+described to the source word and change nothing else about it.
+- One utterance can carry two corrections. Give each its own line.
+- Reply NO MATCH when nothing in the source sounds like the name.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin => Tasmeen
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: I like apples
+correction: Oranges spells O-R-A-N-G-E-S
+NO MATCH
+
+source: We deployed to Versal yesterday
+correction: Versoff spells V E R C E L
+Versal => Vercel
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties => Kubernetes
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When => Nguyen
+
+source: Anna ees joined the design team
+correction: Anna east spells A N A I S
+Anna ees => Anais
+
+source: The Rabbit em queue broker is down
+correction: Rabbit MQ is one word
+Rabbit em queue => Rabbitmq
+
+source: Katia opened the ticket
+correction: Katia with a C at the beginning
+Katia => Catia
+
+source: Anna ees and Emmilie are on the call
+correction: Anna east spells A N A I S and Emmilie takes one m
+Anna ees => Anais
+Emmilie => Emilie""",
+
+# The right-hand side, deleted again.
+#
+# v14 dropped it and it had to come back for v22, because a described change
+# has no letters and only the model could write the corrected name. Now that
+# described_edit applies the change in code, that reason is gone — and with it
+# the cost, which was measurable: v22 and v24 both truncate two-word spans that
+# v14 got right ("Locks me" to "Locks", "Oluwa shane" to "Oluwa"). Writing the
+# name out evidently pulls the model toward the shortest span it can spell.
+#
+# So v25 is v14's span-only reply, told about the two new shapes. The model
+# names the words; everything to the right of the arrow is now code.
+"v25": """Find the words in the source line that the speaker is correcting.
+
+You get a source transcription, and a correction transcription in which the \
+speaker names a word and then says how it is written — either by spelling it \
+letter by letter, or by describing what to change about it.
+
+Reply with those words copied from the source line, and nothing else. \
+One line per correction. Or reply NO MATCH.
+
+- Copy the words from the SOURCE. The correction transcription mishears the \
+name a second time; ignore how it appears there.
+- The source span is often two or three words, because recognition splits \
+names it does not know. Take the whole name, and only the name.
+- Never write the corrected spelling. Only the words being corrected.
+- One utterance can carry two corrections. Give each its own line.
+- Reply NO MATCH when nothing in the source sounds like the name.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: I like apples
+correction: Oranges spells O-R-A-N-G-E-S
+NO MATCH
+
+source: We deployed to Versal yesterday
+correction: Versoff spells V E R C E L
+Versal
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When
+
+source: Anna ees joined the design team
+correction: Anna east spells A N A I S
+Anna ees
+
+source: The Rabbit em queue broker is down
+correction: Rabbit MQ is one word
+Rabbit em queue
+
+source: Anna ees and Emmilie are on the call
+correction: Anna east spells A N A I S and Emmilie takes one m
+Anna ees
+Emmilie""",
+
+# v25 plus a NO MATCH whose correction describes a change rather than spelling
+# one. Both negative examples in v25 are spelled, and v22/v24/v25 all answer
+# "apples => Oranges" to a case that is in the prompt verbatim as NO MATCH —
+# teaching the described shape evidently made the model readier to find a
+# match in general, and the boundary has to be taught in that shape too. It
+# pairs with the Katia example: same words, opposite answer.
+"v26": """Find the words in the source line that the speaker is correcting.
+
+You get a source transcription, and a correction transcription in which the \
+speaker names a word and then says how it is written — either by spelling it \
+letter by letter, or by describing what to change about it.
+
+Reply with those words copied from the source line, and nothing else. \
+One line per correction. Or reply NO MATCH.
+
+- Copy the words from the SOURCE. The correction transcription mishears the \
+name a second time; ignore how it appears there.
+- The source span is often two or three words, because recognition splits \
+names it does not know. Take the whole name, and only the name.
+- Never write the corrected spelling. Only the words being corrected.
+- One utterance can carry two corrections. Give each its own line.
+- Reply NO MATCH when nothing in the source sounds like the name.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: I like apples
+correction: Oranges spells O-R-A-N-G-E-S
+NO MATCH
+
+source: We are shipping on Friday
+correction: Katia with a C at the beginning
+NO MATCH
+
+source: We deployed to Versal yesterday
+correction: Versoff spells V E R C E L
+Versal
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When
+
+source: Anna ees joined the design team
+correction: Anna east spells A N A I S
+Anna ees
+
+source: Katia opened the ticket
+correction: Katia with a C at the beginning
+Katia
+
+source: The Rabbit em queue broker is down
+correction: Rabbit MQ is one word
+Rabbit em queue
+
+source: Anna ees and Emmilie are on the call
+correction: Anna east spells A N A I S and Emmilie takes one m
+Anna ees
+Emmilie""",
+
+# v26 with one clause added to the span rule, and nothing else. v27 tried
+# teaching the same thing with an extra example and scored two points lower;
+# this is the cheaper half of that change, measured on its own.
+"v28": """Find the words in the source line that the speaker is correcting.
+
+You get a source transcription, and a correction transcription in which the \
+speaker names a word and then says how it is written — either by spelling it \
+letter by letter, or by describing what to change about it.
+
+Reply with those words copied from the source line, and nothing else. \
+One line per correction. Or reply NO MATCH.
+
+- Copy the words from the SOURCE. The correction transcription mishears the \
+name a second time; ignore how it appears there.
+- The source span is often two or three words, because recognition splits \
+names it does not know. Take the whole name, and only the name, even when \
+part of it is an ordinary word.
+- Never write the corrected spelling. Only the words being corrected.
+- One utterance can carry two corrections. Give each its own line.
+- Reply NO MATCH when nothing in the source sounds like the name.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: I like apples
+correction: Oranges spells O-R-A-N-G-E-S
+NO MATCH
+
+source: We are shipping on Friday
+correction: Katia with a C at the beginning
+NO MATCH
+
+source: We deployed to Versal yesterday
+correction: Versoff spells V E R C E L
+Versal
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When
+
+source: Anna ees joined the design team
+correction: Anna east spells A N A I S
+Anna ees
+
+source: Katia opened the ticket
+correction: Katia with a C at the beginning
+Katia
+
+source: The Rabbit em queue broker is down
+correction: Rabbit MQ is one word
+Rabbit em queue
+
+source: Anna ees and Emmilie are on the call
+correction: Anna east spells A N A I S and Emmilie takes one m
+Anna ees
+Emmilie""",
+
+# v26 plus a span whose second word is an ordinary English word. Every
+# multi-word example ends in something that is not a word — "Anna ees", "Coober
+# netties" — and the spans that come back short all end in one that is: "Jang
+# way" as "Jang", "Koval chick" as "Koval", "Graph on a" as "Graph". The model
+# stops where the examples stop.
+"v27": """Find the words in the source line that the speaker is correcting.
+
+You get a source transcription, and a correction transcription in which the \
+speaker names a word and then says how it is written — either by spelling it \
+letter by letter, or by describing what to change about it.
+
+Reply with those words copied from the source line, and nothing else. \
+One line per correction. Or reply NO MATCH.
+
+- Copy the words from the SOURCE. The correction transcription mishears the \
+name a second time; ignore how it appears there.
+- The source span is often two or three words, because recognition splits \
+names it does not know. Take the whole name, and only the name, even when part \
+of it is an ordinary word.
+- Never write the corrected spelling. Only the words being corrected.
+- One utterance can carry two corrections. Give each its own line.
+- Reply NO MATCH when nothing in the source sounds like the name.
+
+source: I work with Tasmin
+correction: Das mean spells T-A-S-M-E-E-N
+Tasmin
+
+source: I work with Sarah
+correction: Tasmin spells T-A-S-M-E-E-N
+NO MATCH
+
+source: I like apples
+correction: Oranges spells O-R-A-N-G-E-S
+NO MATCH
+
+source: We are shipping on Friday
+correction: Katia with a C at the beginning
+NO MATCH
+
+source: We deployed to Versal yesterday
+correction: Versoff spells V E R C E L
+Versal
+
+source: The Coober netties cluster is down
+correction: Kuber nettis spells K U B E R N E T E S
+Coober netties
+
+source: When is handling the deploy
+correction: New yen spells N G U Y E N
+When
+
+source: The Data dog agent is noisy
+correction: Datadog spells D A T A D O G
+Data dog
+
+source: Anna ees joined the design team
+correction: Anna east spells A N A I S
+Anna ees
+
+source: Katia opened the ticket
+correction: Katia with a C at the beginning
+Katia
+
+source: The Rabbit em queue broker is down
+correction: Rabbit MQ is one word
+Rabbit em queue
+
+source: Anna ees and Emmilie are on the call
+correction: Anna east spells A N A I S and Emmilie takes one m
+Anna ees
+Emmilie""",
+
+# v13 with the same two additions, in French. The described-change example
+# carries accents where the rest of the prompt does not: preserving the source
+# word's accents while applying only what was described is exactly the
+# behaviour being taught, and it cannot be taught in an unaccented example.
+"v23": """Associe un nom mal transcrit a l'orthographe que la personne vient d'indiquer.
+
+Tu recois une transcription source, et une transcription de correction dans \
+laquelle la personne dit un nom puis indique comment il s'ecrit — soit en \
+l'epelant lettre par lettre, soit en decrivant ce qu'il faut changer.
+
+Reponds par une ligne par correction, et rien d'autre :
+<les mots exactement comme ils apparaissent dans la source> => <l'orthographe corrigee>
+ou
+NO MATCH
+
+- La partie gauche doit etre copiee caractere par caractere depuis la SOURCE. \
+La transcription de correction se trompe une seconde fois sur le nom ; ignore \
+la facon dont il y apparait.
+- Le nom occupe souvent deux ou trois mots dans la source, parce que la \
+reconnaissance vocale decoupe les noms qu'elle ne connait pas. Prends le nom \
+entier, et rien que le nom.
+- Quand la personne epelle, la partie droite est constituee des lettres \
+epelees, dans l'ordre donne, assemblees avec une majuscule au debut.
+- Quand la personne decrit le changement au lieu de l'epeler, applique \
+exactement ce qui est decrit au mot de la source, et ne change rien d'autre.
+- Une seule phrase peut porter deux corrections. Donne une ligne a chacune.
+- Reponds NO MATCH si rien dans la source ne ressemble au nom.
+
+source: J'ai vu Ni cola hier au bureau
+correction: Nicolas s'ecrit N I C O L A S
+Ni cola => Nicolas
+
+source: J'ai vu Sophie hier au bureau
+correction: Nicolas s'ecrit N I C O L A S
+NO MATCH
+
+source: Il pleut beaucoup en ce moment
+correction: Oranges s'ecrit O R A N G E S
+NO MATCH
+
+source: On utilise Post gres pour les donnees
+correction: Postgresse s'ecrit P O S T G R E S
+Post gres => Postgres
+
+source: Le cluster Elastic serge est lent
+correction: Elastic search s'ecrit E L A S T I C S E A R C H
+Elastic serge => Elasticsearch
+
+source: Il faut que ca marche demain
+correction: Marc s'ecrit M A R C
+marche => Marc
+
+source: Cle mence a rejoint l'equipe hier
+correction: Clemence s'ecrit C L E M E N C E
+Cle mence => Clemence
+
+source: Frederic a relu la maquette
+correction: Frédéric avec des accents sur les e
+Frederic => Frédéric
+
+source: Nathalie et Philipe sont sur l'appel
+correction: Nathalie sans le h et Philipe avec deux p
+Nathalie => Natalie
+Philipe => Philippe""",
 }
 
 # Prompts to use per detected language, English falling back to itself. This is
@@ -994,7 +1508,7 @@ Cle mence => Clemence""",
 BY_LANGUAGE = {"en": "v8", "fr": "v13"}
 
 # Variants whose reply is the span alone, so there is no full line to score.
-SPAN_ONLY = {"v5", "v6", "v7", "v14", "v15", "v16", "v17", "v18", "v19"}
+SPAN_ONLY = {"v5", "v6", "v7", "v14", "v15", "v16", "v17", "v18", "v19", "v25", "v26", "v27", "v28"}
 # Variants that answer with word numbers; the span is rebuilt from the source.
 INDEXED = {"v6"}
 # Variants that read the correction first, so the source is nearest the answer.
@@ -1017,7 +1531,7 @@ def decode(variant, reply, src):
     same outcome the app gives for NO MATCH.
     """
     if variant not in INDEXED:
-        return normalise(reply)
+        return reply
     if re.search(r"\bnone\b|\bno match\b", reply, re.I):
         return "NO MATCH"
     words = src.split()
@@ -1052,12 +1566,36 @@ def ask(model, system, prompt, think, predict, num_ctx=None, meter=None):
         meter["calls"] = meter.get("calls", 0) + 1
     return (d.get("response") or "").strip(), time.time() - t
 
-def normalise(text):
-    text = " ".join(text.split())
-    # "I like apples => NO MATCH" is the right decision, clumsily formatted.
-    if not text or re.search(r"\bno match\b|\bnone\b|\[nothing\]", text, re.I):
-        return "NO MATCH"
-    return text
+NO_MATCH = re.compile(r"\bno match\b|\bnone\b|\[nothing\]", re.I)
+
+def rules_of(value):
+    """A case's `expect`, or a model's reply, as a list of "span => spelling".
+
+    One utterance can now carry more than one correction, so an expectation is
+    a list and NO MATCH is the empty list. A single-rule case keeps the plain
+    string form it always had, which is why nothing above the new groups in the
+    case files had to change.
+    """
+    if isinstance(value, str):
+        value = [line for line in value.splitlines()]
+    out = []
+    for line in value:
+        line = " ".join(str(line).split())
+        if not line or NO_MATCH.search(line):
+            continue
+        # Bullets and numbering, which small models add unasked.
+        line = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", line)
+        if line:
+            out.append(line)
+    return out
+
+def split_rule(rule):
+    """"span => spelling" as a pair. A reply with no arrow is all span, which
+    is what the span-only variants answer with."""
+    if "=>" in rule:
+        span, spelling = rule.split("=>", 1)
+        return span.strip(), spelling.strip()
+    return rule.strip(), ""
 
 LETTERS = re.compile(r"\b(?:[A-Za-z0-9][\s\-.]+){2,}[A-Za-z0-9]\b")
 # "spells" in English, "ça s'écrit" / "s'épelle" in French. The French forms
@@ -1074,47 +1612,282 @@ TRIGGER = re.compile(
 # stop word, and breaking there would return no spelling at all.
 STOP_WORDS = {"not", "instead", "rather", "but", "no",
               "pas", "non", "plutôt", "plutot", "mais"}
+# What joins two corrections in one breath: "T A S M E E N and Mick spells
+# M I K". Without these the first spelling ran to the end of the sentence and
+# came back "Tasmeenandmickspellsmik".
+#
+# The risk is a spelling that merges INTO the conjunction — "Alexander spells
+# A L E X and er" is a real rendering — so a conjunction only ends a segment
+# when at least two tokens follow it. "and er" does not end one; "and Mick
+# spells M I K" does.
+CONJUNCTIONS = {"and", "et", "puis", "then", "ensuite", "also", "aussi"}
 
-def alnum_tokens(text):
-    """Runs of Unicode alphanumerics, matching Swift's
-    CharacterSet.alphanumerics.inverted. An ASCII-only split turned "plutôt"
-    into "plut", which is how a stop word goes missing on accented input."""
-    out, cur = [], []
+def tokens_with_breaks(text):
+    """(token, punctuation before it), Unicode-alphanumeric runs.
+
+    The punctuation flag is what lets ", Priyanka spells" end a segment when
+    there is no conjunction to break on. An ASCII-only split turned "plutôt"
+    into "plut", which is how a stop word goes missing on accented input.
+    """
+    out, cur, punct = [], [], False
     for ch in text:
         if ch.isalnum():
             cur.append(ch)
-        elif cur:
-            out.append("".join(cur))
-            cur = []
+        else:
+            if cur:
+                out.append(("".join(cur), punct))
+                cur, punct = [], False
+            if ch in ",;:":
+                punct = True
     if cur:
-        out.append("".join(cur))
+        out.append(("".join(cur), punct))
     return out
 
-def spelled_out(correction):
-    """The spelling, taken from the text rather than the model — this is what
-    LocalLLM.swift does, and it is why the model's right side does not matter.
+def spelling_segments(correction):
+    """Every spelling read out in the utterance, in order, as (letters, read
+    out as letters?) — taken from the text rather than from the model.
 
-    Mirrors LocalLLM.spelledOutWord: everything after "spells" is the spelling,
-    however the recogniser chunked it. Matching only runs of single letters
-    loses the tail, because recognition stops treating them as letters partway
-    through — "T A S M Een" gave "Tasm" and "Tas Meen" gave nothing at all.
+    Mirrors LocalLLM.spellingSegments. Everything after a trigger is the
+    spelling, however the recogniser chunked it — matching only runs of single
+    letters loses the tail, because recognition stops treating them as letters
+    partway through ("T A S M Een" gave "Tasm", "Tas Meen" gave nothing).
+
+    What is new is that a trigger no longer runs to the end of the sentence: a
+    second trigger later in the text lets a comma end the segment too, and a
+    conjunction ends it whenever real words follow.
+
+    A described change ("s'écrit avec un G au début") matches a trigger and
+    yields "Avecungaudebut" here. Nothing tries to detect that; choose_spelling
+    below throws it away because it looks nothing like what the model answered.
     """
-    trigger = TRIGGER.search(correction)
-    if trigger:
-        letters = ""
-        for token in alnum_tokens(correction[trigger.end():]):
-            if letters and token.lower() in STOP_WORDS:
+    triggers = list(TRIGGER.finditer(correction))
+    if not triggers:
+        m = LETTERS.search(correction)
+        if not m:
+            return []
+        joined = re.sub(r"[^A-Za-z0-9]", "", m.group(0))
+        if len(joined) < 3:
+            return []
+        return [(joined[:1].upper() + joined[1:].lower(), True)]
+
+    out = []
+    for i, trigger in enumerate(triggers):
+        end = triggers[i + 1].start() if i + 1 < len(triggers) else len(correction)
+        bounded = i + 1 < len(triggers)
+        toks = tokens_with_breaks(correction[trigger.end():end])
+        letters, taken, broke = "", [], False
+        for pos, (token, punct) in enumerate(toks):
+            low = token.lower()
+            # A conjunction always ends a bounded segment: whatever follows it
+            # belongs to the next clause. Unbounded, it has to earn the break
+            # with two real tokens after it, or "A L E X and er" loses its tail.
+            conjunction = low in CONJUNCTIONS and (bounded or len(toks) - pos - 1 >= 2)
+            if letters and (low in STOP_WORDS or conjunction or (punct and bounded)):
+                broke = True
                 break
             letters += token
+            taken.append(token)
+        # Nothing ended it and another clause follows: what is left on the end
+        # is that clause's name ("... M I K" has none, "... and Mick" does).
+        if bounded and not broke and len(taken) > 1:
+            letters = letters[:len(letters) - len(taken[-1])]
+            taken.pop()
         if len(letters) >= 2:
-            return letters[:1].upper() + letters[1:].lower()
+            # Most of a spelled segment arrives as single characters even when
+            # the tail merges into syllables, and no description of a change
+            # does. It is the cheap half of telling the two apart; the
+            # expensive half is agreement with the model, in choose_spelling.
+            singles = sum(1 for t in taken if len(t) == 1)
+            letterish = len(taken) >= 2 and singles / len(taken) >= 0.6
+            out.append((letters[:1].upper() + letters[1:].lower(), letterish))
+    return out
 
-    # No trigger word: fall back to a run of single letters anywhere.
-    m = LETTERS.search(correction)
-    if not m:
+# ---- Changes the speaker describes instead of spelling ---------------------
+#
+# "Mathieu ne prend qu'un seul t" has no letters in it, so the regex that has
+# always built the spelling has nothing to read. The obvious answer is to let
+# the model write the corrected name — and it is the wrong one. Measured on the
+# ten described cases in the English set, gemma4:e4b scores 50% and gemma4:12b
+# 80%, and the failures are not misunderstandings: "Phillip with one l" came
+# back "Phill" and "Philp", "Elisabeth with a z" came back "Elizabith". It is
+# the same weakness the spelled path already routes around — a model asked to
+# copy characters loses some — and the answer is the same. The model finds the
+# span; code applies the change.
+#
+# What is not recognised here falls back to the model, so "Jon is spelled with
+# an h" still works: it needs to know that Jon becomes John, which is knowledge
+# rather than character surgery.
+
+# Letters as recognition renders them when they are dictated on their own —
+# "one t" arrives as "one tea", "un seul t" as "un seul thé". Only ever
+# consulted in a slot the pattern has already decided is a letter, which is
+# what makes it safe to include forms like "en" and "el".
+LETTER_WORDS = {
+    "tea": "t", "tee": "t", "zed": "z", "zee": "z", "see": "c", "sea": "c",
+    "ex": "x", "why": "y", "are": "r", "ar": "r", "you": "u", "jay": "j",
+    "kay": "k", "el": "l", "em": "m", "en": "n", "oh": "o", "pea": "p",
+    "pee": "p", "cue": "q", "queue": "q", "ess": "s", "vee": "v", "bee": "b",
+    "dee": "d", "eff": "f", "gee": "g", "aitch": "h", "eye": "i",
+    "thé": "t", "the": "t", "té": "t", "cé": "c", "dé": "d", "gé": "g",
+    "jé": "j", "pé": "p", "vé": "v", "bé": "b", "zède": "z", "ixe": "x",
+    "ache": "h", "esse": "s", "èsse": "s", "effe": "f", "elle": "l",
+    "emme": "m", "enne": "n", "erre": "r", "ka": "k", "ku": "q",
+}
+
+def as_letter(token):
+    """The letter a slot names, however recognition rendered it."""
+    token = token.strip("'’ ").lower()
+    if len(token) == 1 and token.isalpha():
+        return token
+    return LETTER_WORDS.get(token)
+
+L = r"([^\W\d_]{1,5}['’]?)"          # a letter, or the word for one
+POSITION_FIRST = r"(?:at\s+the\s+(?:beginning|start)|au\s+d[ée]but|en\s+premier)"
+POSITION_LAST = r"(?:at\s+the\s+end|[àa]\s+la\s+fin|en\s+dernier)"
+ACCENTS = {"aigu": "́", "grave": "̀", "circonflexe": "̂",
+           "chapeau": "̂", "tréma": "̈", "trema": "̈",
+           "cédille": "̧", "cedille": "̧"}
+
+# Ordered: "without the h" has to be read before "with ... h", and "one l"
+# before "a G at the beginning", or the looser pattern eats the tighter one.
+DESCRIBED = [
+    ("join",   r"\b(?:in|en)\s+(?:one|a|un)\s+(?:single\s+|seul\s+)?(?:word|mot)\b"),
+    ("join",   r"\b(?:is|est)\s+one\s+word\b"),
+    ("hyphen", r"\b(?:hyphens?|hyphenated|dash|trait\s+d['’ ]?union|tiret)\b"),
+    ("strip",  r"\b(?:without|sans)\s+(?:the\s+)?accents?\b"),
+    ("accent", r"\b(?:accents?|tr[ée]ma|c[ée]dille)\b(?:\s+\w+)*?\s+"
+               r"(?:sur|on)\s+(?:l[ea]s?|the)?\s*" + L),
+    ("double", r"\b(?:two|double|deux)\s+" + L + r"\b"),
+    ("single", r"\b(?:only\s+)?(?:one|a\s+single|un\s+seul|une\s+seule)\s+" + L + r"\b"),
+    ("first",  r"\b(?:with|avec)\s+(?:an?|un|une)\s+" + L + r"\b[^.]*?" + POSITION_FIRST),
+    ("last",   r"\b(?:with|avec)\s+(?:an?|un|une)\s+" + L + r"\b[^.]*?" + POSITION_LAST),
+    ("remove", r"\b(?:without|sans)\s+(?:the\s+|de\s+|d['’])?" + L + r"\b"),
+    # Bare "with a z", no position and no count. Which letter it replaces is
+    # left to the confusable table: recognition heard something for the letter
+    # actually written, so the one it can be swapped for is the one that sounds
+    # like it. "Elisabeth with a z" has exactly one candidate, the s.
+    ("swap",   r"\b(?:with|avec)\s+(?:an?|un|une)\s+" + L + r"\b"),
+]
+
+def described_edit(clause, word):
+    """The word with the described change applied, or None if nothing in the
+    clause describes one this code knows how to make."""
+    for op, pattern in DESCRIBED:
+        m = re.search(pattern, clause, re.I)
+        if not m:
+            continue
+        letter = as_letter(m.group(1)) if m.groups() else None
+        if op in ("accent", "double", "single", "first",
+                  "last", "remove", "swap") and not letter:
+            continue
+        out = apply_described(op, letter, word, clause)
+        if out and out.lower() != word.lower():
+            return out
+    return None
+
+def apply_described(op, letter, word, clause):
+    import unicodedata
+    if op == "join":
+        return re.sub(r"[\s\-]+", "", word)
+    if op == "hyphen":
+        return re.sub(r"\s+", "-", word)
+    if op == "strip":
+        return "".join(c for c in unicodedata.normalize("NFD", word)
+                       if not unicodedata.combining(c))
+    if op == "accent":
+        mark = next((v for k, v in ACCENTS.items() if re.search(k, clause, re.I)), "́")
+        # "des accents sur les e" is every e; "un accent sur le e" is the first.
+        every = re.search(r"\b(?:des|les|tous|all)\b", clause, re.I) is not None
+        out, done = [], False
+        for ch in unicodedata.normalize("NFD", word):
+            out.append(ch)
+            if ch.lower() == letter and (every or not done):
+                out.append(mark)
+                done = True
+        return unicodedata.normalize("NFC", "".join(out))
+    if op == "double":
+        if re.search(letter + letter, word, re.I):
+            return word
+        i = word.lower().rfind(letter)
+        return word[:i] + word[i] + word[i:] if i >= 0 else None
+    if op == "single":
+        return re.sub("(" + letter + ")\\1+", r"\1", word, flags=re.I)
+    if op == "first":
+        if not word:
+            return None
+        head = letter.upper() if word[0].isupper() else letter
+        return head + word[1:]
+    if op == "last":
+        return word if word.lower().endswith(letter) else word + letter
+    if op == "remove":
+        return re.sub(letter, "", word, flags=re.I)
+    if op == "swap":
+        if letter in word.lower():
+            return None
+        for i, ch in enumerate(word):
+            if sub_cost(ch.lower(), letter) == 0.5:
+                swapped = letter.upper() if ch.isupper() else letter
+                return word[:i] + swapped + word[i + 1:]
         return None
-    joined = re.sub(r"[^A-Za-z0-9]", "", m.group(0))
-    return joined[:1].upper() + joined[1:].lower() if len(joined) >= 3 else None
+    return None
+
+def clauses_of(correction):
+    """The utterance split where one correction ends and the next begins."""
+    parts = re.split(r"\b(?:and|et|puis|then|ensuite)\b|[,;]", correction, flags=re.I)
+    return [p.strip() for p in parts if p and p.strip()]
+
+def clause_for(span, proposed, correction):
+    """The clause a given output line came from, so "Anna east spells A N A I S
+    and Emmilie takes one m" applies its "one m" to Emmilie and not to Anais."""
+    parts = clauses_of(correction)
+    if len(parts) < 2:
+        return correction
+    best, score = correction, 0.0
+    for part in parts:
+        words = words_of(part)
+        for size in (1, 2):
+            for start in range(0, len(words) - size + 1):
+                window = " ".join(words[start:start + size])
+                s = max(similarity(window, span),
+                        similarity(window, proposed) if proposed else 0.0)
+                if s > score:
+                    best, score = part, s
+    return best
+
+def choose_spelling(proposed, span, candidates, used, floor=0.55):
+    """The spelling to actually use: the letters when they were read out, the
+    model's own answer when they were not.
+
+    The letters are exact and the model's copy of them is not, so the letters
+    win wherever they exist — that is the whole reason interpret() has never
+    trusted the model's right-hand side. But a described change has no letters,
+    and the trigger regex happily returns "Avecungaudebut" for it. Rather than
+    a list of description words, which would have to grow forever and would
+    misfire on spellings that merge into ordinary words, the two are told apart
+    by agreement: a candidate nothing else corroborates, and that does not read
+    as letters on its own, is not a spelling.
+
+    Corroboration is not only the model's answer. The span is the same name
+    heard once already, so a real spelling resembles it — "Tasmin" against
+    "Tasmeen" — and a description does not: "Jon is spelled with an h" yields
+    "Withanh", which looks nothing like Jon. That matters because the reply may
+    carry no spelling at all to compare against.
+    """
+    best, score = None, 0.0
+    for i, (cand, letterish) in enumerate(candidates):
+        if i in used:
+            continue
+        agreement = max(similarity(cand, proposed) if proposed else 0.0,
+                        similarity(cand, span) if span else 0.0)
+        # Read out as letters. Only which line it belongs to can be wrong, so
+        # the best available agreement still decides the pairing.
+        s = max(agreement, floor) if letterish else agreement
+        if s > score:
+            best, score = i, s
+    if best is not None and score >= floor:
+        used.add(best)
+        return candidates[best][0]
+    return None
 
 # ---- The repair step in LocalLLM.swift, ported so the score reflects it ----
 #
@@ -1183,31 +1956,71 @@ def closest_word(target, transcript):
                 best = (cand, score)
     return best[0] if best and best[1] >= 0.6 else None
 
-def app_outcome(span, correction, source):
-    """The rule VoiceCommand.interpret would actually add, or NO MATCH."""
-    if span == "NO MATCH":
-        return "NO MATCH"
-    corrected = spelled_out(correction)
-    if not corrected:
-        return "NO MATCH"
-    if source and not contains_word(span, source):
-        scored = [(m, similarity(m, cand))
-                  for cand in (corrected, span)
-                  for m in [closest_word(cand, source)] if m]
-        resolved = max(scored, key=lambda t: t[1])[0] if scored else span
-    else:
-        resolved = span
-    # A rule mapping a word to itself is not a rule.
-    if resolved.lower() == corrected.lower():
-        return "NO MATCH"
-    return f"{resolved} => {corrected}"
+def app_rules(reply, correction, source):
+    """The rules VoiceCommand.interpret would actually add, in order.
+
+    A line whose span is neither in the source nor close to anything in it is
+    dropped rather than kept. That is what makes a half-heard utterance —
+    "Kubernetes spells ... and Postgres spells ..." against a source with only
+    Kubernetes in it — produce one rule instead of one rule and one invention.
+    """
+    candidates = spelling_segments(correction)
+    used, rules = set(), []
+    for rule in rules_of(reply):
+        span, proposed = split_rule(rule)
+        if not span:
+            continue
+        # The letters, when they were read out. Nothing else is trusted ahead
+        # of them, because they are the only exact thing in the utterance.
+        letters = choose_spelling(proposed, span, candidates, used)
+        if source and not contains_word(span, source):
+            scored = [(m, similarity(m, cand))
+                      for cand in (letters or proposed, span) if cand
+                      for m in [closest_word(cand, source)] if m]
+            if not scored:
+                continue
+            resolved = max(scored, key=lambda t: t[1])[0]
+        else:
+            resolved = span
+        # No letters: the change was described, so apply it to the source word.
+        # Only if nothing recognisable was described does the model's own
+        # spelling get used.
+        spelling = letters or described_edit(
+            clause_for(span, proposed, correction), resolved) or proposed
+        if not spelling:
+            continue
+        # A rule mapping a word to itself is not a rule.
+        if resolved.lower() == spelling.lower():
+            continue
+        candidate = f"{resolved} => {spelling}"
+        if candidate.lower() not in {r.lower() for r in rules}:
+            rules.append(candidate)
+    return rules
+
+def control_rules(correction, source):
+    """The control: no model at all. Every spelling read out, snapped onto the
+    nearest thing in the transcript. A model that does not beat this line is
+    not earning its place — and it now has to beat it on multi-rule utterances
+    too, where the letters alone carry further than they used to."""
+    rules = []
+    for spelling, _ in spelling_segments(correction):
+        match = closest_word(spelling, source) if source else None
+        if match and match.lower() != spelling.lower():
+            rules.append(f"{match} => {spelling}")
+    return rules
+
+def same(got, want):
+    return sorted(r.lower() for r in got) == sorted(r.lower() for r in want)
+
+def show(rules):
+    return " | ".join(rules) if rules else "NO MATCH"
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("model")
-    ap.add_argument("--variant", default="v2", choices=sorted(VARIANTS))
+    ap.add_argument("--variant", default="v22", choices=sorted(VARIANTS))
     ap.add_argument("--think", action="store_true")
-    ap.add_argument("--predict", type=int, default=24)
+    ap.add_argument("--predict", type=int, default=48)
     ap.add_argument("--num-ctx", type=int, default=None,
                     help="KV cache size; unset lets Ollama use the model's own 32k")
     ap.add_argument("--verbose", action="store_true")
@@ -1229,77 +2042,61 @@ def main():
             user_prompt(args.variant, "warm up", "warm up spells W A R M"),
             args.think, args.predict, args.num_ctx)
 
-    passed, total_time, failures = 0, 0.0, []
-    left_passed = [0]
-    pipe_passed = [0]
-    pipe_failures = []
-    app_passed = [0]
-    app_failures = []
+    spans_ok = app_ok = 0
+    invented = missed = wrong = 0
+    total_time = 0.0
+    failures = []
     for case in cases:
+        source, correction = str(case["source"]), str(case["correction"])
+        want = rules_of(case["expect"])
+
         if args.code_only:
-            # The control: what the app gets with no model in the loop, i.e.
-            # the spelled word snapped onto the transcript. A model that does
-            # not beat this line is not earning its place.
-            got_n, dt = spelled_out(case["correction"]) or "NO MATCH", 0.0
+            got, dt = control_rules(correction, source), 0.0
+            model_spans = [split_rule(r)[0] for r in got]
         else:
-            got, dt = ask(args.model, system,
-                          user_prompt(args.variant, case["source"], case["correction"]),
-                          args.think, args.predict, args.num_ctx, meter)
-            got_n = decode(args.variant, got, case["source"])
+            reply, dt = ask(args.model, system,
+                            user_prompt(args.variant, source, correction),
+                            args.think, args.predict, args.num_ctx, meter)
+            reply = decode(args.variant, reply, source)
+            model_spans = [split_rule(r)[0] for r in rules_of(reply)]
+            got = app_rules(reply, correction, source)
         total_time += dt
-        want_n = normalise(case["expect"])
-        ok = got_n.lower() == want_n.lower()
-        passed += ok
-        left_ok = (got_n.split("=>")[0].strip().lower()
-                   == want_n.split("=>")[0].strip().lower())
-        left_passed[0] += left_ok
 
-        # The real pipeline: model picks the span, regex builds the spelling.
-        if got_n == "NO MATCH":
-            span = "NO MATCH"
-            pipeline = "NO MATCH"
-        else:
-            span = got_n.split("=>")[0].strip()
-            spelling = spelled_out(case["correction"])
-            pipeline = f"{span} => {spelling}" if spelling else got_n
-        pipe_ok = pipeline.lower() == want_n.lower()
-        pipe_passed[0] += pipe_ok
-
-        # And what the app would end up doing, repair step included. The span
-        # only — interpret() never sees the model's right side.
-        app = app_outcome(span, case["correction"], case["source"])
-        app_ok = app.lower() == want_n.lower()
-        app_passed[0] += app_ok
-        if not app_ok:
-            app_failures.append((case["source"], app, want_n))
-        if not pipe_ok:
-            pipe_failures.append((case["source"], pipeline, want_n))
+        spans_ok += same(model_spans, [split_rule(r)[0] for r in want])
+        ok = same(got, want)
+        app_ok += ok
         if not ok:
-            failures.append((case["source"], got_n, want_n))
+            # Split by cost. A miss loses one correction; an invented rule is
+            # written into transcription.replacements and rewrites every
+            # transcript from then on.
+            if len(got) > len(want):
+                invented += 1
+            elif len(got) < len(want):
+                missed += 1
+            else:
+                wrong += 1
+            failures.append((source, show(got), show(want)))
         if args.verbose:
-            print(f"  {'✓' if ok else '✗'} {dt:5.2f}s {got_n[:44]!r:46} want {want_n[:34]!r}")
+            print(f"  {'✓' if ok else '✗'} {dt:5.2f}s {show(got)[:46]!r:48} want {show(want)[:36]!r}")
 
-    print(f"\n{args.model}  variant={args.variant}  think={args.think}")
     n = len(cases)
-    if args.variant in SPAN_ONLY:
-        print(f"  full line   n/a — this variant replies with the span alone")
-    else:
-        print(f"  full line   {passed}/{n} = {100*passed/n:.0f}%")
-    print(f"  left side   {left_passed[0]}/{n} = {100*left_passed[0]/n:.0f}%  <- what the model must get right")
-    print(f"  pipeline    {pipe_passed[0]}/{n} = {100*pipe_passed[0]/n:.0f}%  <- model span + regex spelling")
-    print(f"  APP         {app_passed[0]}/{n} = {100*app_passed[0]/n:.0f}%  <- + interpret()'s snap-to-transcript")
+    print(f"\n{args.model}  variant={args.variant}  think={args.think}  ({path.name}, {n} cases)")
+    print(f"  spans       {spans_ok}/{n} = {100*spans_ok/n:.0f}%  <- what the model must get right")
+    print(f"  APP         {app_ok}/{n} = {100*app_ok/n:.0f}%  <- + the letters and interpret()'s repair")
     print(f"  {total_time/n:.2f}s avg")
     if meter.get("calls"):
         c = meter["calls"]
         print(f"  tokens      {meter['prompt_eval_count']/c:.0f} in, {meter['eval_count']/c:.0f} out per call"
               f"  |  prefill {meter['prompt_eval_duration']/c/1e9:.2f}s, generate {meter['eval_duration']/c/1e9:.2f}s")
-    if app_failures:
-        print("  app failures:")
-        for src, got, want in app_failures:
-            print(f"    {src[:40]!r}  got {got!r}  want {want!r}")
-    if failures and not args.verbose:
+    if invented:
+        print(f"  {invented} invented a rule  <- the expensive direction")
+    if wrong:
+        print(f"  {wrong} wrong span or spelling")
+    if missed:
+        print(f"  {missed} missed")
+    if failures:
         print("  failures:")
         for src, got, want in failures:
-            print(f"    {src[:40]!r}\n      got  {got!r}\n      want {want!r}")
+            print(f"    {src[:44]!r}\n      got  {got!r}\n      want {want!r}")
 
 main()

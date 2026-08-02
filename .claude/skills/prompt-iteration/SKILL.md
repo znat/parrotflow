@@ -214,3 +214,20 @@ Then the same set across models, scored end-to-end as the app runs it:
 The 0.8B is the floor: four variants, an output format designed around its
 weakness, and thinking mode all left it level with the control. The 3B is the
 actual answer — a fifth of the disk and five times the speed for five points.
+
+Later the set grew to cover two shapes it had never had: two corrections in one
+breath, and a speaker who describes the change instead of spelling it
+("Mathieu ne prend qu'un seul t"). The described shape is the same lesson as
+the letters, arriving in a disguise good enough to be missed. There is nothing
+to read, so the obvious answer is to let the model write the corrected name —
+and it scores 5/10 on the 4B and 8/10 on the 12B, failing by dropping and
+transposing characters: "Phillip with one l" came back "Phill" and "Philp".
+Applying the described change in code instead scores 10/10 on both. A bigger
+model bought three points; taking the job away from the model bought five and
+cost nothing.
+
+Two things follow that are worth generalising. Ask what the model is *for* at
+every new shape, not once at the start — the second shape re-opened a decision
+the first had settled. And a capability check on a larger model is the cheap
+way to tell "the prompt is wrong" from "no prompt will fix this": here the 12B
+failing the same way as the 4B is what said the answer was code.

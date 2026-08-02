@@ -113,9 +113,25 @@ You can skip the panel entirely and just say the correction:
 A local model works out which word was wrong; the panel opens prefilled so you
 confirm with one keystroke rather than trusting it blindly.
 
+You do not have to spell it. Describing the change works too, in either
+language:
+
+    "hey parrot, Jerome with a G at the beginning"
+    "hey parrot, Mathieu ne prend qu'un seul t"
+    "hey parrot, Elastic search is one word"
+    "hey parrot, Jean Luc avec un trait d'union"
+
+And one breath can carry two corrections, which open as two rows in the panel:
+
+    "hey parrot, Tasmin spells T A S M E E N and Mick spells M I K"
+    "hey parrot, Nathalie sans le h et Philipe avec deux p"
+
 The spelled-out letters are read from the text, not the model — a run of single
 letters can only be the target spelling, and relying on the model for that got
 the direction backwards on "X spells Y" phrasing in three of seven test cases.
+Described changes are applied by code for the same reason: asked to write
+"Phillip with one l", the models answered "Phill" and "Philp". The model's only
+job is finding which words in your transcript you meant.
 
 The word being corrected is found in your **previous transcript**, not in the
 command. The command is dictated too, so the name gets misheard a second time:
@@ -134,10 +150,12 @@ long as the app runs — 9.6 GB for `gemma4:e4b`. Set `llm.keep_loaded: false` t
 have the RAM back and the wait with it. On a 16 GB Mac that is the right
 setting; on 32 GB it is not.
 
-`tests/spelling-cases.yaml` holds 35 names — French, Indian, Chinese, Turkish,
-Vietnamese, Korean, Nigerian, Polish, Irish, Arabic — plus product names
-recognition splits, and negative cases. Score a model or a prompt against it
-with `scripts/validate-prompt.py gemma4:e4b`. Without a model, `"hey parrot"`
+`tests/spelling-cases.yaml` holds 62 cases — French, Indian, Chinese, Turkish,
+Vietnamese, Korean, Nigerian, Polish, Irish, Arabic names, plus product names
+recognition splits, described changes, two-in-a-breath corrections, and
+negative cases; `tests/french-cases.yaml` holds 45 more where the dictated
+sentence is French. Score a model or a prompt against them with
+`scripts/validate-prompt.py gemma4:e4b`. Without a model, `"hey parrot"`
 and `"hey parrot, fix vocabulary"` still open the panel — those are matched
 without one.
 

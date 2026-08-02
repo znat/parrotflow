@@ -191,13 +191,22 @@ a resumable transfer, and a working app (record-only) until it lands.
 ## Voice corrections
 
 Saying "hey parrot, <name> spells T A S M E E N" adds a replacement rule. A
-local model picks which word in the previous transcript was meant; the spelling
-comes from the letters by regex, never from the model.
+local model picks which words in the previous transcript were meant; the
+spelling comes from the letters by regex, never from the model.
 
 That split is deliberate and measured. Given the whole job the model returns
 the right span but mangles the letters it is copying — "S I O B H A N" came
 back "Sibhan". Given only the span it scores 35/35 on
 `tests/spelling-cases.yaml`.
+
+Two shapes were added later and both stayed on the same side of that split.
+A speaker can describe the change rather than spell it ("Mathieu ne prend
+qu'un seul t", "Jerome with a G at the beginning"), and `describedEdit`
+applies it in code: gemma4:e4b scored 5/10 writing those names itself and
+gemma4:12b 8/10, against 10/10 when the model only names the span. And one
+utterance can carry two corrections joined by "and" or "et", which the panel
+opens as two rows. End to end, English went from 71% to 89% and French from
+89% to 96% on the extended sets.
 
 `scripts/validate-prompt.py <model>` reruns that set in about a minute, and
 `.claude/skills/prompt-iteration/SKILL.md` documents how the prompt was

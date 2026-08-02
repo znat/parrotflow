@@ -150,3 +150,93 @@ cases:
   - source: Pass cal a ouvert le ticket
     correction: Pascal s'écrit Pas cal
     expect: Pass cal => Pascal
+
+  # ---- Deux corrections d'un seul souffle ----
+  #
+  # Même forme que dans le jeu anglais : `expect` devient une liste. La jointure
+  # française est "et" ou "puis", et elle doit couper la première épellation,
+  # sinon "T A S M E E N et Mick s'écrit M I K" revient collé en un seul mot.
+
+  - source: Je travaille avec Tasmine et Mick sur la plateforme
+    correction: Das mean s'écrit T A S M E E N et Mick s'écrit M I K
+    expect:
+      - Tasmine => Tasmeen
+      - Mick => Mik
+
+  - source: Versal et Super base sont tombés hier soir
+    correction: Versoff s'écrit V E R C E L et superbees s'écrit S U P A B A S E
+    expect:
+      - Versal => Vercel
+      - Super base => Supabase
+
+  - source: Ghee yome et Tee bo sont sur l'appel
+    correction: Gee ohm s'écrit G U I L L A U M E puis T bow s'écrit T H I B A U L T
+    expect:
+      - Ghee yome => Guillaume
+      - Tee bo => Thibault
+
+  # Un seul des deux noms est dans la source. Inventer un span pour l'autre
+  # écrit une règle qui réécrira toutes les transcriptions suivantes.
+  - source: Le cluster Coober netties est encore en panne
+    correction: Kuber nettis s'écrit K U B E R N E T E S et Postgres s'écrit P O S T G R E S
+    expect: Coober netties => Kubernetes
+
+  # ---- La personne décrit le changement au lieu de l'épeler ----
+  #
+  # "s'écrit avec un G au début" déclenche le même mot-clé qu'une épellation,
+  # mais ce qui suit n'est pas des lettres : la regex en tire "Avecungaudebut".
+  # C'est la seule forme où la partie droite du modèle est tout ce qu'on a.
+  #
+  # Règle : changement minimal. On applique ce qui est décrit au mot de la
+  # source, et rien d'autre. Les accents de la source se conservent, sauf quand
+  # c'est précisément l'accent qu'on décrit.
+
+  - source: Jérôme a poussé le correctif ce matin
+    correction: Jérôme s'écrit avec un G au début
+    expect: Jérôme => Gérôme
+
+  - source: Matthieu s'occupe du déploiement
+    correction: Mathieu ne prend qu'un seul t
+    expect: Matthieu => Mathieu
+
+  - source: Michele a relu la maquette
+    correction: Michele avec deux l
+    expect: Michele => Michelle
+
+  - source: Anais a rejoint l'équipe design
+    correction: Anais avec un tréma sur le i
+    expect: Anais => Anaïs
+
+  - source: Cécile travaille sur le rapport
+    correction: Cécile sans accent
+    expect: Cécile => Cecile
+
+  - source: Philipe a validé le budget
+    correction: Philipe avec deux p
+    expect: Philipe => Philippe
+
+  - source: Jean Luc a envoyé le contrat
+    correction: Jean Luc avec un trait d'union
+    expect: Jean Luc => Jean-Luc
+
+  - source: Le cluster Elastic search est lent
+    correction: Elastic search en un seul mot
+    expect: Elastic search => Elasticsearch
+
+  # La reconnaissance rend la lettre dictée par le mot qui lui ressemble :
+  # "un seul t" revient "un seul thé".
+  - source: Matthieu s'occupe du déploiement
+    correction: Mathieu ne prend qu'un seul thé
+    expect: Matthieu => Mathieu
+
+  # Décrit, et rien à décrire dans la source.
+  - source: Il pleut beaucoup en ce moment
+    correction: Jérôme s'écrit avec un G au début
+    expect: NO MATCH
+
+  # ---- Épelé et décrit dans la même phrase ----
+  - source: Tasmine et Matthieu sont sur la plateforme
+    correction: Das mean s'écrit T A S M E E N et Mathieu ne prend qu'un seul t
+    expect:
+      - Tasmine => Tasmeen
+      - Matthieu => Mathieu
