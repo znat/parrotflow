@@ -141,7 +141,10 @@ struct RecordingPill: View {
             height: RecordingMetrics.height
         )
         .parrotSurface(Capsule())
-        .onAppear { pulse = !reduceMotion }
+        // `initial: true` covers what `onAppear` did; the view stays alive
+        // across recordings, so a Reduce Motion toggle mid-session needs the
+        // same assignment again, not just on the first appearance.
+        .onChange(of: reduceMotion, initial: true) { _, newValue in pulse = !newValue }
     }
 }
 
