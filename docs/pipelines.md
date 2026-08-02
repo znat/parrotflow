@@ -400,8 +400,18 @@ identically, so it is recorded there rather than tuned away.
 
 Said out loud — "hey parrot, use Slack mentions" — and deliberately in no
 pipeline. A message that names someone is not a message that pings them, and
-nothing in a transcript tells the two apart. So it is the one you ask for, and
-`confirm` shows you who is about to be tagged before anything is replaced.
+nothing in a transcript tells the two apart. So it is the one you ask for.
+
+**`confirm` covers one of the two ways of asking, not both.** Said with text
+selected, the result is shown before it replaces anything and you see who is
+about to be tagged. Said mid-sentence — "by the way parrot, use Slack mentions"
+— there is no preview whatever `confirm` says: nothing is being overwritten
+there, and a dialog in the middle would give back the round trip that path
+exists to remove. That is the rule for every inline transform, not this one —
+see *An instruction inside a dictation* below.
+
+What both produce is text in your composer. ParrotFlow never sends a message,
+so the last look before anyone is notified is yours.
 
 **The mapping lives in the prompt**, which is the opposite of the rule
 everywhere else here, and it was tried the other way round. The tables are

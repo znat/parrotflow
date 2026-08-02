@@ -1685,8 +1685,12 @@ if __name__ == "__main__":
       # Said out loud — "hey parrot, use Slack mentions" — and deliberately in
       # no pipeline. A message that names someone is not a message that pings
       # them, and nothing in a transcript tells the two apart. So this is the
-      # one you ask for, and `confirm` shows you who is about to be tagged
-      # before anything is replaced.
+      # one you ask for.
+      #
+      # `confirm` covers one of the two ways of asking. With text selected the
+      # result is shown first; mid-sentence there is no preview whatever
+      # `confirm` says. Either way what lands is text in your composer, and
+      # ParrotFlow sends nothing.
       #
       # It was two `replace:` tables for a while — a table cannot invent a
       # handle, where this prompt's first draft answered "Sofia already looked

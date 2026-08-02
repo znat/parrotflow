@@ -330,8 +330,15 @@ transforms:
   # Said out loud — "hey parrot, use Slack mentions" — and deliberately in no
   # pipeline. A message that names someone is not a message that pings them,
   # and nothing in a transcript tells the two apart. So this is the one you ask
-  # for, and `confirm` shows you who is about to be tagged before anything is
-  # replaced.
+  # for.
+  #
+  # `confirm` covers one of the two ways of asking, not both. Said with text
+  # selected, the result is shown before it replaces anything, so you see who
+  # is about to be tagged. Said mid-sentence — "by the way parrot, use Slack
+  # mentions" — there is no preview whatever `confirm` says, because nothing is
+  # being overwritten there and a dialog would cost the round trip that path
+  # exists to save. What both produce is text in your composer; ParrotFlow
+  # sends nothing, so the last look is yours before you press Enter.
   #
   # It was two `replace:` tables for a while, which is the shape a mapping
   # wants. A table cannot invent a handle, where this prompt's first draft
