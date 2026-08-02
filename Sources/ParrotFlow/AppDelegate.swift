@@ -15,6 +15,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusInfoItem: NSMenuItem!
     private var toggleItem: NSMenuItem!
 
+    /// Shown only while `config.problems()` has something in it.
+    private var configProblemsItem: NSMenuItem!
+
+    /// What was last said out loud, so a problem is announced when it appears
+    /// and not on every save of an unrelated setting.
+    private var announcedProblems: [String] = []
+
+    /// Resolved once per config load, never in `updateUI`.
+    ///
+    /// `problems()` re-resolves and re-validates every pipeline for every
+    /// configured language, and `updateUI` runs on a 0.1s timer for as long as
+    /// someone is talking. That is not work to repeat ten times a second to
+    /// draw a menu item whose answer cannot have changed.
+    private var configProblems: [String] = []
+
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
     }
@@ -116,12 +131,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyConfig()
     }
 
+    /// Says a config problem once, at the moment it appears.
+    ///
+    /// The log has carried these since the pipelines landed, and the log is not
+    /// where anyone looks. The case this exists for is an upgrade: `numbers`
+    /// and `fuzzy_matching` became pipeline stages, so a config written for an
+    /// earlier version still holds a line that reads as though it works and
+    /// does nothing. Nothing looks broken — dictation simply stops writing
+    /// digits, which is the kind of loss a person blames on the model.
+    ///
+    /// On change rather than on every load: the file is watched, so saving an
+    /// unrelated line runs this again, and a notice that fires every time you
+    /// edit your own config is one you learn to ignore.
+    private func announceIfNew(_ problems: [String]) {
+        defer { announcedProblems = problems }
+        guard problems != announcedProblems, let first = problems.first else { return }
+        let others = problems.count - 1
+        flash(others > 0 ? "\(first)  (+\(others) more)" : first, tone: .caution)
+    }
+
     private func applyConfig() {
         // Said out loud on the app's own path, not only by --check-config,
         // which the app never runs. A mistyped stage name used to vanish at
         // decode time with no trace anywhere: replacements simply stopped
         // happening, and nothing distinguished that from an empty table.
-        for problem in config.problems() { Log.write("config: \(problem)") }
+        configProblems = config.problems()
+        for problem in configProblems { Log.write("config: \(problem)") }
+        announceIfNew(configProblems)
 
         hotkeyError = nil
         hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
@@ -1022,6 +1058,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusInfoItem = NSMenuItem(title: "Idle", action: nil, keyEquivalent: "")
         statusInfoItem.isEnabled = false
         menu.addItem(statusInfoItem)
+
+        // Above the separator, so it reads as part of the app's state rather
+        // than as one more thing you can do. Hidden until there is something
+        // to say — a notice at launch is missed, and a setting that quietly
+        // stopped working stays wrong until someone is told.
+        configProblemsItem = NSMenuItem(
+            title: "",
+            action: #selector(showConfigProblems),
+            keyEquivalent: ""
+        )
+        configProblemsItem.target = self
+        configProblemsItem.isHidden = true
+        menu.addItem(configProblemsItem)
+
         menu.addItem(.separator())
 
         toggleItem = NSMenuItem(
@@ -1100,6 +1150,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         toggleItem.title = recording ? "Stop Dictation" : "Start Dictation"
+
+        configProblemsItem.isHidden = configProblems.isEmpty
+        configProblemsItem.title = configProblems.count == 1
+            ? "⚠︎ 1 setting in config.yaml does nothing"
+            : "⚠︎ \(configProblems.count) settings in config.yaml do nothing"
+    }
+
+    /// Names them, and offers the file they are in.
+    ///
+    /// An alert rather than a notice: these outlive a notice by definition —
+    /// they are still true after a restart — and each one already carries the
+    /// replacement to write, which is more text than a notice can hold.
+    @objc private func showConfigProblems() {
+        let problems = configProblems
+        guard !problems.isEmpty else { return }
+
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = problems.count == 1
+            ? "A setting in your config no longer does anything"
+            : "\(problems.count) settings in your config no longer do anything"
+        alert.informativeText = problems.map { "• \($0)" }.joined(separator: "\n\n")
+            + "\n\nThis usually follows an upgrade: a setting was replaced by "
+            + "another way of writing the same thing. Until you change it, that "
+            + "part of your config is ignored."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Edit config.yaml")
+        alert.addButton(withTitle: "Later")
+        if alert.runModal() == .alertFirstButtonReturn {
+            try? ConfigStore.createIfMissing()
+            NSWorkspace.shared.open(ConfigStore.fileURL)
+        }
     }
 
     // MARK: - Menu actions
