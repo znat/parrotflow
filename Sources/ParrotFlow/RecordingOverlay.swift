@@ -44,6 +44,7 @@ final class RecordingOverlay {
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.adoptParrotAppearance()
         self.panel = panel
     }
 

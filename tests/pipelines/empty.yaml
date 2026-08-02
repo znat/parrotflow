@@ -1,0 +1,6 @@
+# An empty pipeline is a choice: nothing runs, and the text comes back as it
+# arrived even though every stage would have had something to do.
+languages: [en, fr]
+replacements:
+  Supabase: [super base]
+pipeline: []

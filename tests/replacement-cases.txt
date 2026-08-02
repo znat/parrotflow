@@ -1,9 +1,9 @@
 # input | expected output
 #
 # Run with: scripts/check-replacements.sh
-# Targets come from your own config, so these assume Tasmeen, Supabase,
-# Vercel, Matthieu. The last six must never change — they are the guard
-# against fuzzy matching touching ordinary language.
+# Targets come from tests/pipelines/replacements.yaml, not from your config, so
+# this scores the same on any machine. The last six must never change — they are
+# the guard against fuzzy matching touching ordinary language.
 I deployed it to Versel yesterday|I deployed it to Vercel yesterday
 We shipped on Ver Sal last week|We shipped on Vercel last week
 I love working on Superbase|I love working on Supabase

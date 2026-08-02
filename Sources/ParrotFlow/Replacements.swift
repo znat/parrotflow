@@ -31,20 +31,17 @@ enum Replacements {
     /// Names first, digits last. Both name passes match on words, and a
     /// mishearing that happens to contain a number word — "Ver Sal two" — has
     /// to still look like words while they run.
-    static func apply(to text: String, config: Config) -> String {
-        let exact = applyExact(to: text, rules: config.transcription.rules)
-        var output = exact
-        if config.transcription.fuzzyMatching {
-            let targets = config.transcription.replacements.keys.filter { !$0.isEmpty }
-            output = applyFuzzy(to: exact, targets: Array(targets))
-        }
-        guard config.transcription.numbers else { return output }
-        // Which grammar reads the numbers is the transcript's own question, not
-        // the system's: `NumberGrammar.french` on an English sentence finds
-        // nothing, and the English one turns "quatre-vingts" into no number at
-        // all. Same recogniser the correction prompts use, constrained to the
-        // configured list, so a one-language config never pays for detection.
-        return Numbers.apply(to: output, languages: config.transcription.languages)
+    /// Every pass a finished transcript goes through, in the order the
+    /// pipeline names — see `Pipeline`.
+    ///
+    /// Kept as the entry point everything already calls, so moving the order
+    /// out of this function did not move the call sites too.
+    static func apply(
+        to text: String, config: Config, allowPrompts: Bool = true
+    ) async -> String {
+        await Pipeline.forText(text, config: config).0.run(
+            text, config: config, allowPrompts: allowPrompts
+        )
     }
 
     // MARK: - Exact
@@ -181,6 +178,20 @@ enum Replacements {
     /// and a name split by the recogniser was filtered out for the wrong reason.
     ///
     /// Cached because a transcript produces one query per candidate window.
+    ///
+    /// The service behind it is not always there. `NSSpellServer
+    /// findMisspelledWordInString timed out` has been seen four calls in a row
+    /// on a warm machine, and there is no way to tell a timeout from an answer:
+    /// `checkSpelling` returns a range, and a failed lookup returns the same
+    /// `NSNotFound` a known word does. So a timeout reads as "this is a real
+    /// word", fuzzy declines to touch it, and a name that should have been
+    /// corrected is not.
+    ///
+    /// That is the safe direction — a missed correction rather than an invented
+    /// one — and it is why tests/replacement-cases.txt has twice come back
+    /// 19/20 and then refused to reproduce. Worth knowing before treating an
+    /// odd fuzzy result as a scoring bug: this pass is not deterministic, and
+    /// no amount of threshold tuning makes it so.
     private static var wordCache: [String: Bool] = [:]
     private static let cacheLock = NSLock()
 

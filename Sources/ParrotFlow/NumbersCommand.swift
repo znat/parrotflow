@@ -9,22 +9,44 @@ import Foundation
 /// what it does before deciding. Whether dictation gets it is printed first, so
 /// the two are not confused.
 enum NumbersCommand {
-    static func run(text: String?, quiet: Bool = false, language: String? = nil) -> Int32 {
+    /// `--lang` carries a list, not a language: one entry pins that grammar,
+    /// several stand in for the configured list so detection and its fallback
+    /// run exactly as the app would. Without it a case file silently describes
+    /// whichever languages the machine happens to have configured — which is
+    /// how this set scored 91/97 on a config listing only English, for a reason
+    /// that had nothing to do with the numbers.
+    static func run(text: String?, quiet: Bool = false, languages: [String]? = nil) -> Int32 {
+        func convert(_ input: String) -> String {
+            guard let languages, !languages.isEmpty else {
+                return Numbers.apply(to: input, languages: configuredLanguages())
+            }
+            return languages.count == 1
+                ? Numbers.apply(to: input, language: languages[0])
+                : Numbers.apply(to: input, languages: languages)
+        }
+
         // `--quiet` prints the rewritten line and nothing else, which is what
         // scripts/check-numbers.sh reads. `--lang` pins the grammar instead of
         // detecting it, so a two-word case can be scored without being a
         // sentence long enough for the language recogniser.
         if quiet, let text {
-            print(language.map { Numbers.apply(to: text, language: $0) }
-                ?? Numbers.apply(to: text, languages: configuredLanguages()))
+            print(convert(text))
             return 0
         }
 
-        let enabled = (try? ConfigStore.load())?.transcription.numbers
-        switch enabled {
-        case true?: print("transcription.numbers: on — dictation gets this")
-        case false?: print("transcription.numbers: off — dictation is unaffected by what follows")
-        case nil: print("transcription.numbers: unknown — the config could not be read")
+        // Whether dictation actually gets this is now a question about the
+        // pipeline, and the answer differs per language — so say which.
+        if let config = try? ConfigStore.load() {
+            let carrying = config.transcription.languages.filter { language in
+                Pipeline.resolved(config: config, language: language).stages.contains(.numbers)
+            }
+            if carrying.isEmpty {
+                print("no pipeline runs numbers — dictation is unaffected by what follows")
+            } else {
+                print("pipeline: numbers runs for \(carrying.joined(separator: ", "))")
+            }
+        } else {
+            print("the config could not be read; what follows is the pass on its own")
         }
         print("")
 
@@ -55,8 +77,7 @@ enum NumbersCommand {
 
         var changed = 0
         for sample in samples {
-            let out = language.map { Numbers.apply(to: sample, language: $0) }
-                ?? Numbers.apply(to: sample, languages: configuredLanguages())
+            let out = convert(sample)
             if out == sample {
                 print("  · \(sample)")
             } else {

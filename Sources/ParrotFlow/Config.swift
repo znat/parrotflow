@@ -155,8 +155,7 @@ struct Config: Codable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, replacements, numbers
-            case fuzzyMatching = "fuzzy_matching", languages
+            case enabled, replacements, pipelines, languages
             case insertMode = "insert_mode"
             case activationPhrase = "activation_phrase"
             case rewriteLine = "rewrite_line"
@@ -167,6 +166,10 @@ struct Config: Codable, Equatable {
         /// longer use.
         private enum LegacyKeys: String, CodingKey {
             case correctionPhrase = "correction_phrase"
+            // Retired into `pipelines:`. Still read, only so that a config
+            // carrying them can be told so — see `retired`.
+            case numbers
+            case fuzzyMatching = "fuzzy_matching"
         }
         /// Grouped by the word you want written, since one name accumulates
         /// several mishearings — eleven rules had built up for four names
@@ -175,17 +178,37 @@ struct Config: Codable, Equatable {
         ///     replacements:
         ///       Tasmeen: [Tasmid, Tasmin, Tasmine]
         var replacements: [String: [String]] = [:]
-        /// Also catch renderings you have not taught, by matching against the
-        /// spellings you want. Only a word the spell checker does not know can
-        /// be replaced, which is what keeps "Excel" from becoming "Vercel".
-        var fuzzyMatching: Bool = true
-        /// Write spoken numbers as digits — "two hundred forty-three" => 243.
-        /// See `Numbers` for what it will and will not touch.
+        /// What a finished transcript goes through, in order, per language —
+        /// see `Pipeline`. A language's own list wins over `default`.
         ///
-        /// Off unless asked for. Unlike the name passes it changes transcripts
-        /// the model got right, and whether "chapter three" wants a 3 is a
-        /// house-style question rather than a correctness one.
-        var numbers: Bool = false
+        /// Empty here means the config said nothing, not that nothing should
+        /// run: `Pipeline.unconfigured` decides that. A new install is written
+        /// with every stage listed, so the answer to "what else could go here"
+        /// is in the file rather than in the documentation.
+        var pipelines: [String: Pipeline] = [:]
+
+        /// Keys this config still carries that no longer do anything.
+        ///
+        /// `numbers` and `fuzzy_matching` became stages. The decoder ignores
+        /// keys it does not know, so a config still setting them would lose
+        /// two passes without a word — which is the one outcome a rename must
+        /// not have. They are read here purely so `--check-config` can refuse
+        /// them and say what to write instead.
+        var retired: [String] = []
+
+        /// Stage names in `pipelines:` that are not stages. Dropped from the
+        /// pipeline, kept here: a line silently doing nothing is the same
+        /// failure as a retired key, and the log is not where anyone looks.
+        var unknownStages: [String] = []
+
+        /// `pipelines:` keys that are neither `default` nor a configured
+        /// language. Stored and never used otherwise — the pipeline someone
+        /// wrote for `french:` or `de:` would simply never run.
+        var unknownPipelineLanguages: [String] = []
+
+        /// Entries naming both `stage:` and `prompt:`. Their own list, because
+        /// "grammar is not a stage" is not what went wrong.
+        var contradictoryEntries: [String] = []
 
         /// One rule per mishearing, flattened for the substitution pass.
         var rules: [Rule] {
@@ -200,6 +223,52 @@ struct Config: Codable, Equatable {
         /// filler words are removed — they need alternation and have to take
         /// their surrounding punctuation with them. Everything else is matched
         /// literally on word boundaries.
+        /// One line of a pipeline. Written either way:
+        ///
+        ///     - numbers
+        ///     - stage: numbers
+        ///       when: /\\d/
+        ///     - prompt: hesitation
+        ///       when: /genre/
+        ///
+        /// A prompt names itself with `prompt:` rather than `stage: prompt`
+        /// plus a second key, because every prompt stage would need both and a
+        /// form that repeats itself is a form people mistype.
+        ///
+        /// The short form is the one almost every line wants, and a format that
+        /// makes the common case verbose is a format people work around.
+        struct PipelineEntry: Decodable {
+            let name: String
+            var prompt: String?
+            var when: String?
+            var unless: String?
+            /// `stage:` and `prompt:` on the same entry.
+            var namesBoth = false
+
+            private enum CodingKeys: String, CodingKey { case stage, prompt, when, unless }
+
+            init(from decoder: Decoder) throws {
+                if let bare = try? decoder.singleValueContainer().decode(String.self) {
+                    name = bare
+                    return
+                }
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                let stage = try c.decodeIfPresent(String.self, forKey: .stage)
+                if let named = try c.decodeIfPresent(String.self, forKey: .prompt) {
+                    name = "prompt"
+                    prompt = named
+                    // Both keys on one entry is a contradiction, not a
+                    // preference to resolve — recorded so the caller refuses it
+                    // rather than dropping whichever it liked less.
+                    namesBoth = stage != nil
+                } else {
+                    name = stage ?? ""
+                }
+                when = try c.decodeIfPresent(String.self, forKey: .when)
+                unless = try c.decodeIfPresent(String.self, forKey: .unless)
+            }
+        }
+
         struct Rule {
             let source: String
             let replacement: String
@@ -259,10 +328,59 @@ struct Config: Codable, Equatable {
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
             }
-            if let v = try c.decodeIfPresent(Bool.self, forKey: .fuzzyMatching) {
-                fuzzyMatching = v
+            // Wrapped, as `replacements:` is below and for the same reason.
+            // Anything thrown here leaves `ConfigStore.load()` entirely, and at
+            // launch `loadConfig(announceErrors: false)` swallows it — so one
+            // mis-shaped key would drop the whole config back to stock defaults:
+            // no replacements, the built-in wake phrase, the default hotkey, in
+            // silence. The shape most people will get wrong is writing a bare
+            // list where a map per language belongs, because `languages:` two
+            // lines above is a bare list.
+            do {
+                if let raw = try c.decodeIfPresent(
+                    [String: [PipelineEntry]].self, forKey: .pipelines
+                ) {
+                    for (language, entries) in raw {
+                        let steps = entries.compactMap { entry -> Pipeline.Step? in
+                            guard let stage = Pipeline.stage(named: entry.name) else {
+                                unknownStages.append(entry.name)
+                                return nil
+                            }
+                            if entry.namesBoth {
+                                // Silently preferring one would delete a stage
+                                // the config asked for.
+                                contradictoryEntries.append(entry.prompt ?? "prompt")
+                                return nil
+                            }
+                            return Pipeline.Step(
+                                stage: stage, prompt: entry.prompt,
+                                when: entry.when, unless: entry.unless
+                            )
+                        }
+                        let key = language.lowercased()
+                        if key != "default", !languages.contains(key) {
+                            unknownPipelineLanguages.append(language)
+                        }
+                        pipelines[key] = Pipeline(steps: steps)
+                    }
+                }
+            } catch {
+                throw ConfigError.invalidValue(
+                    key: "transcription.pipelines",
+                    value: "a bare list, or a language with nothing under it",
+                    expected: "a language, then its stages — `default: [replacements, fuzzy]`, "
+                        + "or `fr:` with `- replacements` under it"
+                )
             }
-            if let v = try c.decodeIfPresent(Bool.self, forKey: .numbers) { numbers = v }
+            // `try?` on an optional decode gives Bool??, and both layers mean
+            // "absent" — flattened here so the condition reads as the question
+            // being asked: is the key in the file at all.
+            func present(_ key: LegacyKeys) -> Bool {
+                ((try? legacy.decodeIfPresent(Bool.self, forKey: key)) ?? nil) != nil
+            }
+            for key in [LegacyKeys.numbers, .fuzzyMatching] where present(key) {
+                retired.append(key.stringValue)
+            }
             do {
                 if let grouped = try c.decodeIfPresent(
                     [String: [String]].self, forKey: .replacements
@@ -415,6 +533,45 @@ struct Config: Codable, Equatable {
         }
     }
 
+    /// Everything the config says that will not do what it looks like it does.
+    ///
+    /// One list rather than two, because the version `--check-config` printed
+    /// and the version the running app knew about had already drifted: a
+    /// mistyped stage name was reported by the command and nowhere else, so an
+    /// app running with `replacements` silently missing looked exactly like an
+    /// app whose replacement table was empty. The command prints these; the app
+    /// logs them at every load.
+    func problems() -> [String] {
+        var found: [String] = []
+        for key in transcription.retired {
+            found.append("transcription.\(key) no longer does anything — it is a pipeline stage now")
+        }
+        for name in Set(transcription.unknownStages).sorted() {
+            found.append("pipelines: \"\(name)\" is not a stage — have: "
+                + Pipeline.stageNames.joined(separator: ", "))
+        }
+        for name in Set(transcription.contradictoryEntries).sorted() {
+            found.append("pipelines: an entry names both `stage:` and `prompt: \(name)`"
+                + " — it can be one or the other")
+        }
+        for name in Set(transcription.unknownPipelineLanguages).sorted() {
+            found.append("pipelines: \"\(name)\" is not a configured language, so that pipeline never runs"
+                + " — configured: \(transcription.languages.joined(separator: ", "))")
+        }
+        for language in transcription.languages {
+            let pipeline = Pipeline.resolved(config: self, language: language)
+            for problem in pipeline.validate() {
+                found.append("pipeline \(language): \(problem)")
+            }
+            for step in pipeline.steps where step.stage == .prompt {
+                guard let name = step.prompt, !name.isEmpty else { continue }
+                let known = prompts.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+                if !known { found.append("pipeline \(language): no prompt named \"\(name)\"") }
+            }
+        }
+        return found
+    }
+
     var resolvedOutputDir: URL {
         URL(fileURLWithPath: (audio.outputDir as NSString).expandingTildeInPath)
     }
@@ -505,6 +662,83 @@ enum ConfigStore {
       # opens to teach ParrotFlow the right spelling. Needs Accessibility.
       correction_phrase: hey parrot
 
+      # When a field refuses accessibility writes — terminals, mostly — clear the
+      # input line with Ctrl-A Ctrl-K and retype it corrected. Destructive by
+      # nature, so it only fires when the line still contains what you dictated.
+      rewrite_line: true
+
+      # Languages you dictate in, most common first. Not sent to Parakeet — it
+      # transcribes multilingually by itself and reports no language back. This
+      # is the list ParrotFlow chooses between when working out which language a
+      # transcript was in, so naming only what you actually speak makes that
+      # more accurate. It picks the correction prompt and the number grammar.
+      #
+      # The first entry is the fallback, used when a transcript is too short to
+      # judge — under four words. Supported: en, fr.
+      languages: [en]
+
+      # Everything a finished transcript goes through, in order, per language.
+      # A language's own list wins over `default`.
+      #
+      # Being in a pipeline is the only way a stage runs, so this list is written
+      # out with all of them: turning one off means deleting a line you can see,
+      # not finding a setting you cannot. Delete `pipelines:` entirely and you get
+      # every stage back; write `default: []` and you get none, which is a choice
+      # rather than silence.
+      #
+      # A stage can carry a condition, which is what makes an expensive one
+      # affordable — it is skipped on the transcripts that do not need it:
+      #
+      #   - stage: numbers
+      #     when: /\\b(vingt|cent|mille)\\b/     # only if a number word is left
+      #   - stage: fuzzy
+      #     unless: /```/                      # never inside a code fence
+      #
+      # `when` and `unless` read the text as it stands *at that point*, after the
+      # stages above — so a cheap stage can make an expensive one unnecessary
+      # rather than merely earlier. Both may be set; `unless` wins. The pattern is
+      # written like a replacement source: between slashes it is a regular
+      # expression, otherwise a word matched on word boundaries. Case-insensitive
+      # either way. A skipped stage says so in the log, because a stage that
+      # silently does not run looks exactly like one that ran and found nothing.
+      #
+      # A prompt from `prompts:` can be a stage too, which is the reason conditions
+      # exist: it calls the local model, so it costs about a second where every
+      # other stage costs nothing. Measured on one line, 3.2s with the prompt
+      # running against 0.035s with it skipped.
+      #
+      #   - prompt: hesitation
+      #     when: /\\b(genre|du coup|en fait)\\b/
+      #
+      # It is the only stage that rewrites your words without you asking, and
+      # nothing on screen shows it happened — so every rewrite is written to the
+      # log with the text before and after. If the model is not running, the prompt
+      # does not exist, or the call fails, the transcript comes back exactly as it
+      # arrived; a dictation tool can afford to skip a stage and cannot afford to
+      # lose a sentence.
+      #
+      # This is written out in full on purpose. The stages are few enough to
+      # read at a glance, and deleting a line you can see beats discovering a
+      # setting you cannot.
+      #
+      #   replacements  the substitutions below: literal, word-boundary,
+      #                 case-insensitive, or a regex between slashes
+      #   fuzzy         the same table, used to catch renderings you have not
+      #                 taught — "super bays" reaches Supabase. Only words the
+      #                 spell checker does not know are eligible, which is what
+      #                 keeps "Excel" from becoming "Vercel". Needs
+      #                 `replacements` before it, and says so if it does not
+      #                 have one.
+      #   numbers       spoken numbers as digits: "two hundred forty-three"
+      #                 -> 243, ordinals, decimals, years, spoken digits.
+      #                 English and French, chosen per transcript. A number
+      #                 word on its own stays a word below ten, so "chapter
+      #                 three" is left alone. It does rewrite transcripts that
+      #                 were already correct — run --numbers on a line to see
+      #                 exactly what it would do before leaving it in.
+      pipelines:
+        default: [replacements, fuzzy, numbers]
+
       # Grouped by the spelling you want, listing the ways it gets misheard.
       # Word-boundary matched and case-insensitive.
       #
@@ -517,23 +751,7 @@ enum ConfigStore {
       #     "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
       replacements: {}
 
-      # Also catch renderings you have not taught, by matching against the
-      # spellings above. Only words the spell checker does not recognise can
-      # be replaced, so ordinary language is never touched.
-      fuzzy_matching: true
 
-      # Write spoken numbers as digits: "two hundred forty-three" -> 243.
-      # Also ordinals (twenty third -> 23rd), decimals (three point one four
-      # -> 3.14), years (nineteen eighty-four -> 1984) and spoken digits
-      # (five five one two -> 5512).
-      #
-      # A number word on its own stays a word below ten, so "chapter three"
-      # and "no one knows" are left as they are. Anything longer converts.
-      #
-      # Off by default. It rewrites transcripts that were already correct, and
-      # whether you want digits at all is a matter of taste. Run --numbers to
-      # see exactly what turning it on would do.
-      numbers: false
 
     # A local Ollama model, used to interpret what you say after the wake
     # phrase. Everything still works without it — you just lose spoken
@@ -547,6 +765,77 @@ enum ConfigStore {
       # after five minutes, and reloading costs 7-10s on the next correction.
       # Turn off to get those seconds back as free RAM.
       keep_loaded: true
+
+    # Things you can ask for by voice: say the wake phrase, then the instruction.
+    #
+    #     "hey parrot, make that a bullet list"
+    #
+    # A router picks which one you meant, reading the descriptions below — so a
+    # description is not a comment, it is the thing being matched against. Write it
+    # the way you would say it.
+    #
+    # The whole instruction is then passed to the prompt, not just the part that
+    # chose it. That is what lets one prompt serve "format those dates ISO" and
+    # "format those dates with slashes" without needing two entries.
+    #
+    # Fixing a misheard name is built in and does not appear here — run
+    # --check-config to see everything the wake phrase reaches.
+    prompts:
+      - name: bullets
+        description: turn text into a short bullet list
+        content: |
+          Rewrite the text as concise bullets, one idea each.
+          Keep the speaker's wording. Return only the bullets.
+
+      - name: terse
+        description: shorten text without losing anything it says
+        content: |
+          Cut this down. No filler, same facts, same voice.
+          Return only the shortened text.
+
+      # There used to be a `dates` prompt and a `digits` prompt here. Both are gone,
+      # because free_form does their job and the measurement said so: on the sixteen
+      # cases they covered in tests/generic-cases.yaml they scored 12/16 against the
+      # built-in's 14/16. `digits` was a straight tie, five cases to five. `dates`
+      # was worse — asked to make "the deadline is March 3 2026" ISO it answered
+      # "2026-03-03", dropping the sentence around the date, which is what a prompt
+      # written for one subject does when handed a whole sentence.
+      #
+      # `grammar` below stays for the opposite reason. It has a validation set of
+      # its own and it beats the built-in on it, 5/5 against 4/5, and the case it
+      # wins is the one that matters most here: leaving alone a sentence that was
+      # already right.
+
+      - name: grammar
+        description: fix grammar and punctuation mistakes, not formatting or numbers
+        content: |
+          Correct grammar, spelling and punctuation. Make the smallest change
+          that makes the text correct — and make it. Every error is fixed.
+          Nothing else is touched.
+
+          Fix: subject-verb agreement, verb forms, confused homophones
+          (its/it's, their/they're, weather/whether), missing or wrong
+          punctuation, a missing capital at the start of a sentence, and a
+          missing full stop at the end.
+
+          Never reword, reorder, shorten, expand, or improve. Never add or
+          remove words except where grammar requires it. Never add quotation
+          marks, emphasis, or punctuation the sentence does not need. Keep the
+          speaker's own vocabulary, register and phrasing, including informal,
+          blunt or repetitive wording. A sentence that is already correct comes
+          back exactly as it was.
+
+          A phrase before the main clause takes a comma after it. A trailing
+          please or thanks does not.
+
+          Return only the text.
+
+      # Show the result before it replaces anything. On by default — a transform
+      # overwrites text you selected, and it is triggered by voice, so there is no
+      # dialog in the way. Set false per prompt once you trust it.
+      #
+      #   confirm: false
+
 
     # Do what was asked even when no prompt matches — which, with no `prompts:`
     # section yet, is everything:

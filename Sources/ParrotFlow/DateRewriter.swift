@@ -151,20 +151,32 @@ enum DateRewriter {
     /// `languages` is the configured dictation list, used only to pick which
     /// language a spelled-out month is written in — the detector needs no such
     /// hint to *find* the date.
-    static func apply(instruction: String, to text: String, languages: [String] = ["en"]) -> String {
+    static func apply(
+        instruction: String, to text: String, languages: [String] = ["en"],
+        region: Locale? = nil
+    ) -> String {
         switch request(for: instruction) {
         case .none: return text
-        case .dates(let format): return rewriteDates(in: text, as: format, languages: languages)
+        case .dates(let format):
+            return rewriteDates(in: text, as: format, languages: languages, region: region)
         case .times(let clock): return rewriteTimes(in: text, as: clock)
         }
     }
 
-    static func rewriteDates(in text: String, as format: Format, languages: [String]) -> String {
+    /// `region` overrides where the field order and the calendar come from.
+    ///
+    /// Only tests pass it. Which field leads in `3/12` is the user's convention
+    /// and must stay so at runtime — but a case file asserting "3/12" is
+    /// asserting the logic, not this machine's settings, and scored 23/27 on a
+    /// runner set to en_US where the same code is right to answer "12/3".
+    static func rewriteDates(
+        in text: String, as format: Format, languages: [String], region: Locale? = nil
+    ) -> String {
         guard let detector = try? NSDataDetector(
             types: NSTextCheckingResult.CheckingType.date.rawValue
         ) else { return text }
 
-        let locale = monthLocale(for: text, languages: languages)
+        let locale = monthLocale(for: text, languages: languages, region: region)
         let formatter = DateFormatter()
         formatter.locale = locale
 
@@ -222,10 +234,10 @@ enum DateRewriter {
         guard let pattern = timePattern else { return text }
         var output = text
 
-        for match in pattern
+        let matches = pattern
             .matches(in: text, range: NSRange(text.startIndex..., in: text))
             .reversed()
-        {
+        for match in matches {
             guard let range = Range(match.range, in: text) else { continue }
             func group(_ index: Int) -> String? {
                 guard let r = Range(match.range(at: index), in: text) else { return nil }
@@ -346,15 +358,18 @@ enum DateRewriter {
     /// on an English Mac. Reuses the recogniser the correction prompts use, so
     /// the same 52/53 measurement covers it, and falls back to the current
     /// locale when there is not enough text to tell.
-    private static func monthLocale(for text: String, languages: [String]) -> Locale {
+    private static func monthLocale(
+        for text: String, languages: [String], region: Locale? = nil
+    ) -> Locale {
         let code = DictationLanguage.detect(
             text, allowed: languages, fallback: languages.first ?? "en"
         )
         // Region matters for field order, so keep the user's rather than
         // inventing one: their language for the month name, their region for
         // everything else.
-        guard let region = Locale.current.region?.identifier else { return Locale(identifier: code) }
-        return Locale(identifier: "\(code)_\(region)")
+        let source = region ?? Locale.current
+        guard let identifier = source.region?.identifier else { return Locale(identifier: code) }
+        return Locale(identifier: "\(code)_\(identifier)")
     }
 
     private static let timeMarker = try? NSRegularExpression(

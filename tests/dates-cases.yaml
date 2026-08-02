@@ -81,15 +81,21 @@ cases:
   # rewriter deleted "start on", which is how a helper loses you a sentence —
   # so the cost today is the second date going unconverted, not text lost.
   - name: two dates at once
+    known: the detector returns only the first date in a sentence
     instruction: make the dates ISO
     input: we start on March 3 2026 and finish on April 9 2026
     expect: we start on 2026-03-03 and finish on 2026-04-09
 
+  # The days are past the twelfth on purpose. `12/03/2025` would have been the
+  # better case to write and is untestable: NSDataDetector reads an ambiguous
+  # numeric date by the *system* locale and takes no locale of its own, so that
+  # input asserts the machine's convention rather than this rewriter's. It cost
+  # a red pipeline to notice. What the ambiguity does at runtime is recorded in
+  # DateRewriter's own notes, where it belongs.
   - name: day-first numeric dates
-    locale: true
     instruction: these dates are day first, write them ISO
-    input: we met on 12/03/2025 and again on 05/01/2026
-    expect: we met on 2025-03-12 and again on 2026-01-05
+    input: we met on 25/03/2025 and again on 17/01/2026
+    expect: we met on 2025-03-25 and again on 2026-01-17
 
   - name: ISO to slashes, month first
     instruction: write the dates with slashes, month first

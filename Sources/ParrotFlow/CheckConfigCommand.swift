@@ -54,30 +54,43 @@ enum CheckConfigCommand {
             print("  · insert mode       \(mode)")
             print("  · wake phrase       \"\(transcription.activationPhrase)\"")
             print("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
-            print("  · numbers           \(transcription.numbers ? "written as digits" : "left as words")")
-            let languages = transcription.languages.joined(separator: ", ")
-            print("  · languages         \(languages)"
-                + (transcription.languages.count > 1
-                   ? " (detected per transcript, picks the prompt)"
-                   : " (no detection; always the \(languages) prompt)"))
-        }
-        if transcription.enabled {
-            if !transcription.replacements.isEmpty {
-                print("  · fuzzy matching    \(transcription.fuzzyMatching ? "on" : "off")")
-                let total = transcription.rules.count
-                print("  ✓ replacements      \(total) across \(transcription.replacements.count) entries")
-                for (target, sources) in transcription.replacements.sorted(by: { $0.key < $1.key }) {
-                    let name = target.isEmpty ? "(removed)" : target
-                    print("      \(name) ← \(sources.sorted().joined(separator: ", "))")
-                }
-                let bad = transcription.rules.filter {
-                    $0.isRegex && (try? NSRegularExpression(pattern: $0.pattern)) == nil
-                }
-                for rule in bad {
-                    print("  ✗ not a valid pattern: \(rule.source)")
-                    ok = false
-                }
+            // The pipeline, per language, because "why was this not
+            // converted" is a question about the order and not about a
+            // setting any more.
+            for language in transcription.languages {
+                let pipeline = Pipeline.resolved(config: config, language: language)
+                let source = transcription.pipelines[language] != nil ? language
+                    : (transcription.pipelines["default"] != nil
+                        ? "default" : "nothing configured, so every stage")
+                // An empty pipeline is a choice, not a blank: printing
+                // nothing there reads as a display fault rather than as the
+                // answer to "why did none of this run".
+                // Conditions are printed with the stage they gate. A pipeline
+                // that reads as three stages when one of them almost never
+                // runs is a pipeline that explains nothing.
+                let stages = pipeline.steps.isEmpty
+                    ? "nothing — the list is empty"
+                    : pipeline.steps.map { step -> String in
+                        var described = step.stage.name
+                        if let prompt = step.prompt { described += " \(prompt)" }
+                        if let when = step.when { described += " when \(when)" }
+                        if let unless = step.unless { described += " unless \(unless)" }
+                        return described
+                    }.joined(separator: " → ")
+                print("  · pipeline \(language)        \(stages)  (\(source))")
             }
+        }
+
+        // A key that no longer does anything is worse than a key that is
+        // wrong: nothing fails, and two passes quietly stop running. So it is
+        // an error, with the replacement spelled out.
+        for problem in config.problems() {
+            print("  ✗ \(problem)")
+            ok = false
+        }
+        if !transcription.retired.isEmpty {
+            print("      pipelines:")
+            print("        default: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
         }
 
         // What "hey parrot" can reach. Printed even when `prompts:` is empty,

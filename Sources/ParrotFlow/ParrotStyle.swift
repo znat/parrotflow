@@ -42,27 +42,23 @@ enum Parrot {
 
 extension View {
 
-    /// Material, a wash of colour, and the plumage rim: the family look.
+    /// Dark glass and the plumage rim: the family look.
+    ///
+    /// The colour lives on the edge and nowhere else. A surface washed in a
+    /// feather is a surface you have to read text off, and these appear over
+    /// documents, terminals and dark editors without knowing which — dark glass
+    /// is the one background that stays legible over all of them, and the rim
+    /// carries the identity without asking anything of the text.
     ///
     /// `alive` is for work of unknown length. The rim turns and brightens, which
     /// is the only motion any of these surfaces make — it means the app is busy,
     /// so nothing else may borrow it for decoration.
-    ///
-    /// `tint` washes the whole surface in one feather, for the notices, where
-    /// the colour is the message. Without one the wash walks the plumage.
-    func parrotSurface<S: InsettableShape>(
-        _ shape: S, alive: Bool = false, tint: Color? = nil
-    ) -> some View {
+    func parrotSurface<S: InsettableShape>(_ shape: S, alive: Bool = false) -> some View {
         background {
             shape.fill(.regularMaterial)
-            shape.fill(
-                LinearGradient(
-                    colors: tint.map { [$0.opacity(0.22), $0.opacity(0.07)] }
-                        ?? [Parrot.sky.opacity(0.13), .clear, Parrot.scarlet.opacity(0.09)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
+            // The material alone takes the shade of whatever is behind it, which
+            // over a white page is a white panel. The scrim holds it dark.
+            shape.fill(Color.black.opacity(0.34))
         }
         .overlay { PlumageRim(shape: shape, alive: alive) }
     }
@@ -272,6 +268,16 @@ extension View {
 // MARK: - Panels
 
 extension NSPanel {
+
+    /// These surfaces are dark whatever the system is set to.
+    ///
+    /// Not a preference: they are read for a second or two on top of an app
+    /// that is already lit however it is lit, and a panel that changes shade
+    /// with the system is a panel you have to find twice. Dark also keeps the
+    /// plumage rim the brightest thing on it, which is the point of the rim.
+    func adoptParrotAppearance() {
+        appearance = NSAppearance(named: .darkAqua)
+    }
 
     /// Brings a floating surface up with a short rise and fade.
     ///

@@ -89,6 +89,7 @@ final class NoticeHUD {
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
+        panel.adoptParrotAppearance()
         self.panel = panel
     }
 
@@ -142,15 +143,15 @@ struct NoticeView: View {
         }
         .padding(.horizontal, 17)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .parrotSurface(
-            Capsule(),
-            alive: model.tone == .thinking,
-            tint: model.tone == .thinking ? nil : model.tone.color
-        )
+        .parrotSurface(Capsule(), alive: model.tone == .thinking)
     }
 }
 
-/// The whole of the notice's colour, in seven points.
+/// The whole of the notice's colour, in nine points.
+///
+/// It carries the tone alone, now that the surface behind it stays dark — so it
+/// is lit rather than filled: the glow is what makes green and amber tell each
+/// other apart at the edge of vision.
 ///
 /// While thinking it walks the plumage rather than pulsing one colour: pulsing
 /// is what the recording pill's red dot does, and the two appear in the same
@@ -166,8 +167,9 @@ struct ToneDot: View {
     var body: some View {
         Circle()
             .fill(color)
-            .frame(width: 8, height: 8)
-            .shadow(color: color.opacity(0.8), radius: 5)
+            .frame(width: 9, height: 9)
+            .shadow(color: color, radius: 4)
+            .shadow(color: color.opacity(0.6), radius: 9)
             .animation(.easeInOut(duration: 0.5), value: step)
             .onReceive(clock) { _ in
                 guard tone == .thinking, !reduceMotion else { return }

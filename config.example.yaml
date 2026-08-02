@@ -23,6 +23,75 @@ transcription:
   # One entry means no detection runs at all. Supported: en, fr.
   languages: [en, fr]
 
+  # Everything a finished transcript goes through, in order, per language.
+  # A language's own list wins over `default`.
+  #
+  # Being in a pipeline is the only way a stage runs, so this list is written
+  # out with all of them: turning one off means deleting a line you can see,
+  # not finding a setting you cannot. Delete `pipelines:` entirely and you get
+  # every stage back; write `default: []` and you get none, which is a choice
+  # rather than silence.
+  #
+  # A stage can carry a condition, which is what makes an expensive one
+  # affordable — it is skipped on the transcripts that do not need it:
+  #
+  #   - stage: numbers
+  #     when: /\b(vingt|cent|mille)\b/     # only if a number word is left
+  #   - stage: fuzzy
+  #     unless: /```/                      # never inside a code fence
+  #
+  # `when` and `unless` read the text as it stands *at that point*, after the
+  # stages above — so a cheap stage can make an expensive one unnecessary
+  # rather than merely earlier. Both may be set; `unless` wins. The pattern is
+  # written like a replacement source: between slashes it is a regular
+  # expression, otherwise a word matched on word boundaries. Case-insensitive
+  # either way. A skipped stage says so in the log, because a stage that
+  # silently does not run looks exactly like one that ran and found nothing.
+  #
+  # A prompt from `prompts:` can be a stage too, which is the reason conditions
+  # exist: it calls the local model, so it costs about a second where every
+  # other stage costs nothing. Measured on one line, 3.2s with the prompt
+  # running against 0.035s with it skipped.
+  #
+  #   - prompt: hesitation
+  #     when: /\b(genre|du coup|en fait)\b/
+  #
+  # It is the only stage that rewrites your words without you asking, and
+  # nothing on screen shows it happened — so every rewrite is written to the
+  # log with the text before and after. If the model is not running, the prompt
+  # does not exist, or the call fails, the transcript comes back exactly as it
+  # arrived; a dictation tool can afford to skip a stage and cannot afford to
+  # lose a sentence.
+  #
+  # Written out in full on purpose. The stages are few enough to read at a
+  # glance, and deleting a line you can see beats discovering a setting you
+  # cannot.
+  #
+  #   replacements  the substitutions below: literal, word-boundary,
+  #                 case-insensitive, or a regex between slashes
+  #   fuzzy         the same table, used to catch renderings you have not
+  #                 taught — "super bays" reaches Supabase. Only words the
+  #                 spell checker does not know are eligible, which is what
+  #                 keeps "Excel" from becoming "Vercel". It needs
+  #                 `replacements` before it and says so if it does not have
+  #                 one, because on its own it swallows the preceding word.
+  #   numbers       spoken numbers as digits: "two hundred forty-three" -> 243,
+  #                 plus ordinals, decimals, years and spoken digits. English
+  #                 and French, septante/huitante/nonante included, chosen per
+  #                 transcript. A number word on its own stays a word below
+  #                 ten, so "chapter three" and "on est deux" are left alone.
+  #                 It does rewrite transcripts that were already correct — run
+  #                 --numbers on a line to see exactly what it would do.
+  #
+  # Per language, when they should differ:
+  #
+  #   pipelines:
+  #     default: [replacements, fuzzy]
+  #     fr: [replacements, fuzzy, numbers]
+  pipelines:
+    default: [replacements, fuzzy, numbers]
+
+
   # How names get fixed: literal, word-boundary, case-insensitive swaps on
   # the finished transcript.
   #
@@ -35,25 +104,6 @@ transcription:
     "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
     Tasmeen: [Tasmid, Tasmin, Tasmine]
     Supabase: [super base, superbees]
-
-  # Write spoken numbers as digits: "two hundred forty-three" -> 243. Also
-  # ordinals (twenty third -> 23rd), decimals (three point one four -> 3.14),
-  # years (nineteen eighty-four -> 1984) and spoken digits (five five one two
-  # -> 5512).
-  #
-  # English and French, picked per transcript from the `languages` list above.
-  # French gets its own grammar because its numbers are arithmetic —
-  # quatre-vingt-dix-sept is 4 x 20 + 10 + 7 — and its own decimal comma:
-  # "trois virgule un quatre" -> 3,14.
-  #
-  # A number word on its own stays a word below ten, so "chapter three", "on
-  # est deux" and "no one knows" are left alone. That threshold is the whole
-  # judgement: it is what writes "a deux, on a depense deux cents euros" as
-  # "a deux, on a depense 200 euros" rather than "a 2".
-  #
-  # Off by default — it rewrites transcripts that were already correct, and
-  # digits are a matter of taste. Run --numbers to see what it would do.
-  numbers: false
 
 # A local Ollama model, used to interpret what you say after the wake phrase.
 # Everything else works without it — you just lose free-form spoken commands.

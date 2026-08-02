@@ -1,0 +1,10 @@
+# Every stage, no conditions — the default a new install gets.
+languages: [en, fr]
+replacements:
+  Supabase: [super base, superbees]
+  Tasmeen: [Tasmin]
+  "": ['/[,]?\s*\b(?:u+m+|u+h+|erm+)\b[,]?/']
+pipeline:
+  - replacements
+  - fuzzy
+  - numbers

@@ -137,7 +137,7 @@ actor Transcriber {
         }
 
         let raw = try await manager.finish()
-        return Self.applyReplacements(to: raw, config: config)
+        return await Self.applyReplacements(to: raw, config: config)
     }
 
     /// True when the clip holds no speech worth transcribing.
@@ -188,8 +188,8 @@ actor Transcriber {
     /// that boosting missed. Word-boundary matched and case-insensitive so
     /// "mick" and "Mick" both land, but "Mickey" is left alone.
     /// How names get fixed — see `Replacements`.
-    nonisolated static func applyReplacements(to text: String, config: Config) -> String {
-        Replacements.apply(to: text, config: config)
+    nonisolated static func applyReplacements(to text: String, config: Config) async -> String {
+        await Replacements.apply(to: text, config: config)
     }
 }
 

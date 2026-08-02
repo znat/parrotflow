@@ -8,6 +8,27 @@ import AppKit
 //
 let arguments = CommandLine.arguments
 
+// Log writes are asynchronous, which is right for a menu bar app and wrong for
+// a command that exits the moment it has printed: the process is gone before
+// the queue drains and the lines are silently lost. Two commands remembered to
+// flush and the rest did not, so `--replace` was dropping the very lines that
+// explain what the pipeline did — a stage saying it skipped, and why. Doing it
+// here covers every path, including the ones added later.
+atexit { Log.flush() }
+
+/// `--lang fr` or `--lang en,fr`. One entry pins a grammar; several stand in
+/// for the configured list, so a case file can state the environment it assumes
+/// instead of inheriting this machine's.
+func languageList(_ arguments: [String]) -> [String]? {
+    guard let index = arguments.firstIndex(of: "--lang"),
+          arguments.indices.contains(index + 1) else { return nil }
+    let listed = arguments[index + 1]
+        .split(separator: ",")
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+    return listed.isEmpty ? nil : listed
+}
+
 if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
@@ -36,11 +57,8 @@ if let index = arguments.firstIndex(of: "--replace") {
 if let index = arguments.firstIndex(of: "--numbers") {
     let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
         ? arguments[index + 1] : nil
-    let language = arguments.firstIndex(of: "--lang").flatMap { index in
-        arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
-    }
     exit(NumbersCommand.run(
-        text: text, quiet: arguments.contains("--quiet"), language: language
+        text: text, quiet: arguments.contains("--quiet"), languages: languageList(arguments)
     ))
 }
 
@@ -83,6 +101,18 @@ if let index = arguments.firstIndex(of: "--prompt") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--pipeline") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"] [--quiet]")
+        exit(2)
+    }
+    let text = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
+        ? arguments[index + 2] : nil
+    exit(PipelineCommand.run(
+        path: arguments[index + 1], text: text, quiet: arguments.contains("--quiet")
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--dates") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --dates \"<instruction>\" \"<text>\" [--quiet]")
@@ -91,7 +121,11 @@ if let index = arguments.firstIndex(of: "--dates") {
     exit(DatesCommand.run(
         instruction: arguments[index + 1],
         text: arguments[index + 2],
-        quiet: arguments.contains("--quiet")
+        quiet: arguments.contains("--quiet"),
+        languages: languageList(arguments),
+        region: arguments.firstIndex(of: "--locale").flatMap { index in
+            arguments.indices.contains(index + 1) ? arguments[index + 1] : nil
+        }
     ))
 }
 
