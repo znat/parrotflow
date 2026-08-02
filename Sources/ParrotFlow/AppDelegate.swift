@@ -388,6 +388,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleHotKeyRelease() {
         guard config.hotkey.mode == .pushToTalk else { return }
+        // The character key is actually up now, so there is nothing left for
+        // the modifier poll to catch — unlike the poll's own call below, where
+        // the character key is still down and a flicked-back modifier means
+        // the chord never really broke.
+        pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
         stopRecordingAfterTail()
     }
 
@@ -397,9 +402,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// on the release as before.
     private func stopRecordingAfterTail() {
         guard recorder.isRecording else { return }
-
-        // The poll would see the key still up 60ms from now and ask again.
-        pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
 
         let tail = config.hotkey.releaseTailSeconds
         guard tail > 0 else {
@@ -434,9 +436,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let timer = Timer(timeInterval: 0.06, repeats: true) { [weak self] _ in
             guard let self, self.recorder.isRecording else { return }
             let held = NSEvent.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            if !held.isSuperset(of: required) {
+            if held.isSuperset(of: required) {
+                // The modifier is back and the character key never came up —
+                // Carbon has no press event for that, since it only edge-
+                // detects the character key, so the poll is what has to
+                // notice the chord is whole again and call off the tail it
+                // started.
+                if self.releaseTail != nil {
+                    self.releaseTail?.invalidate(); self.releaseTail = nil
+                }
+            } else if self.releaseTail == nil {
                 // The same event as a release, found a different way, so it
-                // ends the recording the same way — through the tail.
+                // ends the recording the same way — through the tail. Keep
+                // polling through the tail itself: this is the one path where
+                // the modifier can still come back before the character key
+                // does.
                 self.stopRecordingAfterTail()
             }
         }
