@@ -997,10 +997,138 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // An instruction said inside the dictation, about the words in front of
+        // it. Checked after the command case above, which is the same phrase in
+        // the first position and means something else entirely.
+        if let split = VoiceCommand.inlineInstruction(
+            trimmed, phrases: config.transcription.activationPhrases
+        ) {
+            Log.write("inline: \"\(split.instruction)\" over \"\(split.text)\"")
+            settings.model.lastTranscript = split.text
+            runInline(text: split.text, instruction: split.instruction)
+            return
+        }
+
         Log.write("transcribed: \(trimmed)")
         settings.model.lastTranscript = trimmed
+        insertDictation(trimmed)
+    }
 
-        switch TextInserter.insert(trimmed, mode: config.transcription.insertMode) {
+    /// An instruction found inside a dictation: route it, run it over the words
+    /// that came before it, and write the result.
+    ///
+    /// Every way this can fail writes the dictated text instead, and says what
+    /// went wrong for long enough to read. That is the opposite of the rule
+    /// elsewhere in the app, where a transform that fails leaves the text
+    /// alone — there the words are already on screen, and here they exist
+    /// nowhere but in this function. Losing the instruction costs you a second
+    /// attempt; losing the sentence costs you the sentence.
+    ///
+    /// No preview panel, whatever the transform's `confirm` says. That setting
+    /// guards text you selected and are about to have overwritten; nothing is
+    /// being overwritten here, and a dialog in the middle would give back the
+    /// second round trip this exists to remove. The rewrite goes to the log
+    /// with its before and after, as pipeline transforms do.
+    private func runInline(text: String, instruction: String) {
+        let catalogue = Catalogue(prompts: config.prompts)
+
+        /// Write what was said, and say why it is not what was asked for.
+        func giveUp(_ why: String, tone: NoticeTone = .caution) {
+            endProgress()
+            Log.write("inline: \(why); wrote the text as dictated")
+            insertDictation(text)
+            notice.show(why, tone: tone, duration: 7)
+            setLabel(why, clearAfter: 7)
+        }
+
+        func run(_ prompt: Config.Prompt) {
+            beginProgress("\(prompt.name)…")
+            let llm = llmConfig()
+            Task { [weak self] in
+                do {
+                    let result = try await PromptRunner.run(
+                        prompt: prompt, instruction: instruction, text: text, config: llm
+                    )
+                    await MainActor.run {
+                        guard let self else { return }
+                        self.endProgress()
+                        let cleaned = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !cleaned.isEmpty else {
+                            giveUp("\(prompt.name) returned nothing", tone: .failure)
+                            return
+                        }
+                        if cleaned != text {
+                            Log.write("inline: \(prompt.name) rewrote the transcript")
+                            Log.write("    before: \(text)")
+                            Log.write("    after:  \(cleaned)")
+                        }
+                        self.settings.model.lastTranscript = cleaned
+                        self.insertDictation(cleaned)
+                    }
+                } catch {
+                    await MainActor.run {
+                        giveUp(error.localizedDescription, tone: .failure)
+                    }
+                }
+            }
+        }
+
+        if let capability = Router.local(instruction: instruction, catalogue: catalogue) {
+            Log.write("inline router: \"\(instruction)\" named \(capability.name) outright")
+            // An action opens a panel or writes a rule — neither is a rewrite of
+            // the words in front of it, so there is nothing to apply here.
+            guard case .transform(let prompt) = capability else {
+                giveUp("\"\(instruction)\" is not something to change in the text")
+                return
+            }
+            run(prompt)
+            return
+        }
+
+        guard config.llm.enabled else {
+            giveUp("\"\(instruction)\" needs the local model — llm.enabled is false")
+            return
+        }
+
+        beginProgress("Thinking…")
+        let llm = llmConfig()
+        let freeForm = config.freeForm
+        Task { [weak self] in
+            do {
+                let decision = try await Router.route(
+                    instruction: instruction, catalogue: catalogue,
+                    freeForm: freeForm, config: llm
+                )
+                await MainActor.run {
+                    guard let self else { return }
+                    switch decision {
+                    case .matched(.transform(let prompt)):
+                        Log.write("inline router: \"\(instruction)\" → \(prompt.name)")
+                        run(prompt)
+                    case .matched(let capability):
+                        giveUp("\(capability.name) is not something to change in the text")
+                    case .anything:
+                        Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
+                        run(FreeForm.prompt)
+                    case .none:
+                        giveUp("Not something to change in the text: \"\(instruction)\"")
+                    }
+                }
+            } catch {
+                await MainActor.run { giveUp(error.localizedDescription, tone: .failure) }
+            }
+        }
+    }
+
+    /// The text, exactly as dictation puts it in.
+    ///
+    /// Its own function because the inline path needs it too: every way that
+    /// path fails has to still write what you said. A transform over a
+    /// selection can fail with nothing but a message, because the words are
+    /// already on screen — here they have never been written, and a toast is
+    /// not somewhere you can copy them back out of.
+    private func insertDictation(_ text: String) {
+        switch TextInserter.insert(text, mode: config.transcription.insertMode) {
         case .pasted:
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
         case .copied:

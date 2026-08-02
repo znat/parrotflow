@@ -292,10 +292,18 @@ struct Pipeline: Equatable, Codable {
             if !allowPrompts, named?.isPrompt ?? true {
                 return "prompts are off on this path"
             }
-            if VoiceCommand.commandAfterWakePhrase(
-                text, phrases: config.transcription.activationPhrases
-            ) != nil {
+            // Either position. A phrase at the front means the whole utterance
+            // is an instruction; one in the middle means the instruction is
+            // about the words before it. Both are read after this runs, and a
+            // transform that rewrote the sentence first could eat the phrase
+            // and leave what should have been a command to be typed into the
+            // document.
+            let phrases = config.transcription.activationPhrases
+            if VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) != nil {
                 return "this is a spoken command"
+            }
+            if VoiceCommand.inlineInstruction(text, phrases: phrases) != nil {
+                return "this carries an instruction of its own"
             }
         }
         if let wanted = step.app {

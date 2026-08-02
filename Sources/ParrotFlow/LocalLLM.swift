@@ -245,6 +245,80 @@ enum VoiceCommand {
         return best?.command
     }
 
+    /// An instruction said *inside* a dictation, and the text it applies to.
+    ///
+    ///     "there is a bug in get username by the way parrot format it"
+    ///      └─ text ────────────────────┘        └─ instruction ─────┘
+    ///
+    /// The point is one breath instead of two. Saying it afterwards means a
+    /// second dictation, and a transform that has to find its target again —
+    /// reading a selection, or editing a field in place, which is where the
+    /// risk lives. Here the target is the same utterance and nothing has been
+    /// written yet.
+    ///
+    /// Exact, unlike the prefix matcher. That one is fuzzy because the wake
+    /// phrase is the first thing said and the audio engine is still starting
+    /// up, so "hey parrot" arrives clipped or misheard. Mid-sentence the audio
+    /// is clean, and there is a whole sentence of ordinary words for a fuzzy
+    /// match to fire on — "…the parrots are loud…" would split a sentence in
+    /// two and send half of it to a model.
+    ///
+    /// Nil when no phrase is found, or when one is found at the very start:
+    /// that is the whole utterance being a command, which is a different thing
+    /// and already handled.
+    static func inlineInstruction(
+        _ text: String, phrases: [String]
+    ) -> (text: String, instruction: String)? {
+        var best: (range: NSRange, length: Int)?
+        let whole = NSRange(text.startIndex..., in: text)
+
+        for phrase in phrases {
+            let words = phrase
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .split(separator: " ")
+                .map { NSRegularExpression.escapedPattern(for: String($0)) }
+            guard !words.isEmpty else { continue }
+            // Punctuation between the words because a transcript has it —
+            // "by the way, parrot" is what gets written down when you pause.
+            let pattern = "\\b" + words.joined(separator: "[\\s,]+") + "\\b"
+            guard let expression = try? NSRegularExpression(
+                pattern: pattern, options: [.caseInsensitive]
+            ) else { continue }
+
+            for match in expression.matches(in: text, range: whole) {
+                guard match.range.location > 0 else { continue }
+                // Earliest wins, so the text is everything you said before
+                // changing your mind. On a tie the longer phrase wins: "by the
+                // way parrot" and "parrot" start in different places, but two
+                // phrases sharing a start would otherwise be decided by the
+                // order they happen to sit in the config.
+                if let found = best,
+                   match.range.location > found.range.location
+                    || (match.range.location == found.range.location
+                        && match.range.length <= found.length) {
+                    continue
+                }
+                best = (match.range, match.range.length)
+            }
+        }
+
+        guard let best, let split = Range(best.range, in: text) else { return nil }
+        let before = String(text[..<split.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ",;:—-"))
+            .trimmingCharacters(in: .whitespaces)
+        let after = String(text[split.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: ",;:—-"))
+            .trimmingCharacters(in: .whitespaces)
+
+        // Nothing before it is the command case wearing a disguise, and nothing
+        // after it is a phrase said for its own sake — neither has an edit in
+        // it, and guessing would rewrite a sentence nobody asked about.
+        guard !before.isEmpty, !after.isEmpty else { return nil }
+        return (before, after)
+    }
+
     /// One phrase, and how well it matched — the score is what lets the caller
     /// choose between phrases.
     private static func match(_ text: String, phrase rawPhrase: String) -> (score: Double, command: String)? {

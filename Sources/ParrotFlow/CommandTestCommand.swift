@@ -28,6 +28,16 @@ enum CommandTestCommand {
         }
 
         guard let command = VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) else {
+            // A phrase found mid-sentence is an instruction about the words in
+            // front of it, not about the selection — printed here rather than
+            // in a command of its own, because "what would this utterance do"
+            // has one answer and wants one place to ask it.
+            if let split = VoiceCommand.inlineInstruction(text, phrases: phrases) {
+                print("text:        \"\(split.text)\"")
+                print("instruction: \"\(split.instruction)\"")
+                print("→ an instruction inside a dictation; the text above is what it edits")
+                return 0
+            }
             print("→ not a command; this would be dictated as normal text")
             return 0
         }

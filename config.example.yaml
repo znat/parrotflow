@@ -7,9 +7,15 @@ transcription:
   # instruction: "hey parrot, make that a bullet list". An empty list
   # disables spoken commands.
   #
-  # Several, because one phrase cannot be said in every position — and the
+  # One of them mid-sentence turns the rest into an instruction about the
+  # words before it, in the same breath:
+  #
+  #   "there is a bug in get username by the way parrot format that name"
+  #
+  # which is why there are two: "hey parrot" opens an utterance and reads
+  # as nonsense inside one, and "by the way parrot" is the reverse. The
   # first is the one to teach someone.
-  activation_phrases: [hey parrot]
+  activation_phrases: [hey parrot, by the way parrot]
 
   # Last resort for fields Accessibility cannot write, terminals mostly: clear
   # the input line with Ctrl-A Ctrl-K and retype it corrected. It only fires
