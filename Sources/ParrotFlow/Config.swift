@@ -136,9 +136,13 @@ struct Config: Codable, Equatable {
         var activationPhrase: String = "hey parrot"
         /// Last-resort in-place correction for surfaces the accessibility API
         /// cannot write, such as terminals: clear the input line with readline
-        /// keys and retype it. Destructive if the guesses are wrong, so it is
-        /// opt-in and only fires when the line is recognisably one we wrote.
-        var rewriteLine: Bool = false
+        /// keys and retype it.
+        ///
+        /// On by default, because a terminal is where a developer dictates and
+        /// without this a correction there does nothing. It clears the line to
+        /// do it, so it only fires when the line is recognisably one we wrote —
+        /// that guard is what makes the default defensible.
+        var rewriteLine: Bool = true
         /// Languages you dictate in, most common first.
         ///
         /// Not passed to Parakeet — it transcribes multilingually on its own
@@ -242,10 +246,11 @@ struct Config: Codable, Equatable {
             var prompt: String?
             var when: String?
             var unless: String?
+            var app: String?
             /// `stage:` and `prompt:` on the same entry.
             var namesBoth = false
 
-            private enum CodingKeys: String, CodingKey { case stage, prompt, when, unless }
+            private enum CodingKeys: String, CodingKey { case stage, prompt, when, unless, app }
 
             init(from decoder: Decoder) throws {
                 if let bare = try? decoder.singleValueContainer().decode(String.self) {
@@ -266,6 +271,7 @@ struct Config: Codable, Equatable {
                 }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
+                app = try c.decodeIfPresent(String.self, forKey: .app)
             }
         }
 
@@ -354,7 +360,7 @@ struct Config: Codable, Equatable {
                             }
                             return Pipeline.Step(
                                 stage: stage, prompt: entry.prompt,
-                                when: entry.when, unless: entry.unless
+                                when: entry.when, unless: entry.unless, app: entry.app
                             )
                         }
                         let key = language.lowercased()
@@ -612,35 +618,30 @@ enum ConfigStore {
     static var defaultYAML: String {
         """
     # \(AppVariant.displayName) configuration
-    # Edit and save — changes are picked up automatically.
+    # Edit and save — changes are picked up automatically. Delete any line to
+    # get its default back. `--check-config` says what the file adds up to.
 
     hotkey:
-      # Either a bare modifier used on its own:
+      # A bare modifier used on its own:
       #   right_option, left_option, right_command, left_command,
       #   right_control, left_control, right_shift, left_shift, fn
-      # ...or a character key plus modifiers:
+      # ...or a character key, which needs modifiers below:
       #   a-z, 0-9, space, return, tab, escape, f1-f20, arrows,
       #   comma, period, slash, semicolon, quote, backslash,
       #   leftbracket, rightbracket, minus, equal, grave, delete
       key: \(AppVariant.defaultHotkey)
 
       # Any of: command, control, option, shift (aliases: cmd, ctrl, alt, opt).
-      # Required for a character key; ignored for a bare modifier.
       modifiers: []
 
-      # toggle       -> tap to start, tap again to stop
-      # push_to_talk -> record only while the key is held
-      #
-      # Bare modifiers want push_to_talk: on toggle, Right Option would start
+      # push_to_talk records while the key is held; toggle taps on and off.
+      # Bare modifiers want push_to_talk — on toggle, Right Option would start
       # recording every time you typed an accented character with it.
       mode: push_to_talk
 
     audio:
-      # 16 kHz mono is what Parakeet wants. Leave this alone.
-      sample_rate: 16000
+      # Where the recordings pile up.
       output_dir: \(AppVariant.defaultOutputDir)
-      # Discard anything shorter than this (seconds)
-      min_duration_seconds: 0.3
 
       # Check for speech before transcribing, and skip clips that have none.
       # Without it a stray hotkey press decodes room tone into "Yeah." or
@@ -648,138 +649,94 @@ enum ConfigStore {
       speech_gate: true
 
     feedback:
-      sound: true
-      overlay: true
+      sound: true     # a click when recording starts and stops
+      overlay: true   # the floating pill while you speak
 
     transcription:
-      enabled: true
-
-      # paste     -> type it straight into the app you're in (needs Accessibility)
-      # clipboard -> just copy it, you press Cmd-V
+      # paste     -> typed into the app you're in (needs Accessibility)
+      # clipboard -> copied, you press Cmd-V
       insert_mode: paste
 
-      # Select a wrong word anywhere, hold the hotkey and say this, and a panel
-      # opens to teach ParrotFlow the right spelling. Needs Accessibility.
-      correction_phrase: hey parrot
+      # Say this instead of dictating and what follows is an instruction:
+      # "hey parrot, make that a bullet list". Empty disables it.
+      activation_phrase: hey parrot
 
-      # When a field refuses accessibility writes — terminals, mostly — clear the
-      # input line with Ctrl-A Ctrl-K and retype it corrected. Destructive by
-      # nature, so it only fires when the line still contains what you dictated.
+      # Last resort for fields Accessibility cannot write, terminals mostly:
+      # clear the input line with Ctrl-A Ctrl-K and retype it corrected. It
+      # only fires when the line still holds what you dictated.
       rewrite_line: true
 
-      # Languages you dictate in, most common first. Not sent to Parakeet — it
-      # transcribes multilingually by itself and reports no language back. This
-      # is the list ParrotFlow chooses between when working out which language a
-      # transcript was in, so naming only what you actually speak makes that
-      # more accurate. It picks the correction prompt and the number grammar.
+      # Languages you dictate in, most spoken first — the first one is the
+      # fallback for transcripts too short to judge, under four words.
+      # Supported: en, fr. A single entry means no detection runs at all.
       #
-      # The first entry is the fallback, used when a transcript is too short to
-      # judge — under four words. Supported: en, fr.
+      # Not sent to Parakeet, which transcribes multilingually by itself and
+      # reports no language back. This is the list ParrotFlow chooses between,
+      # so naming only what you actually speak makes it more accurate.
       languages: [en]
 
-      # Everything a finished transcript goes through, in order, per language.
-      # A language's own list wins over `default`.
+      # What a finished transcript runs through, in order. Listed in full
+      # because a stage runs only if it is here: switching one off is deleting
+      # a line you can see.
       #
-      # Being in a pipeline is the only way a stage runs, so this list is written
-      # out with all of them: turning one off means deleting a line you can see,
-      # not finding a setting you cannot. Delete `pipelines:` entirely and you get
-      # every stage back; write `default: []` and you get none, which is a choice
-      # rather than silence.
+      #   replacements  the table below
+      #   fuzzy         the same table against words the spell checker does not
+      #                 know, so "super bays" still reaches Supabase without
+      #                 "Excel" becoming "Vercel". Needs replacements before it
+      #   numbers       "two hundred forty-three" -> 243, plus ordinals,
+      #                 decimals and years, English and French
       #
-      # A stage can carry a condition, which is what makes an expensive one
-      # affordable — it is skipped on the transcripts that do not need it:
+      # Per language, which wins over `default`: fr: [replacements, numbers]
+      #
+      # A prompt can be a stage, and any stage can carry a condition — on the
+      # text with `when:` / `unless:`, or on the app you dictated into:
       #
       #   - stage: numbers
-      #     when: /\\b(vingt|cent|mille)\\b/     # only if a number word is left
-      #   - stage: fuzzy
-      #     unless: /```/                      # never inside a code fence
+      #     app: /term|ghostty/          # only in a terminal
+      #   - prompt: prose
+      #     app: /^(?!.*term)/           # everywhere but; no not_app, the
+      #                                  # negation goes in the pattern
       #
-      # `when` and `unless` read the text as it stands *at that point*, after the
-      # stages above — so a cheap stage can make an expensive one unnecessary
-      # rather than merely earlier. Both may be set; `unless` wins. The pattern is
-      # written like a replacement source: between slashes it is a regular
-      # expression, otherwise a word matched on word boundaries. Case-insensitive
-      # either way. A skipped stage says so in the log, because a stage that
-      # silently does not run looks exactly like one that ran and found nothing.
-      #
-      # A prompt from `prompts:` can be a stage too, which is the reason conditions
-      # exist: it calls the local model, so it costs about a second where every
-      # other stage costs nothing. Measured on one line, 3.2s with the prompt
-      # running against 0.035s with it skipped.
-      #
-      #   - prompt: hesitation
-      #     when: /\\b(genre|du coup|en fait)\\b/
-      #
-      # It is the only stage that rewrites your words without you asking, and
-      # nothing on screen shows it happened — so every rewrite is written to the
-      # log with the text before and after. If the model is not running, the prompt
-      # does not exist, or the call fails, the transcript comes back exactly as it
-      # arrived; a dictation tool can afford to skip a stage and cannot afford to
-      # lose a sentence.
-      #
-      # This is written out in full on purpose. The stages are few enough to
-      # read at a glance, and deleting a line you can see beats discovering a
-      # setting you cannot.
-      #
-      #   replacements  the substitutions below: literal, word-boundary,
-      #                 case-insensitive, or a regex between slashes
-      #   fuzzy         the same table, used to catch renderings you have not
-      #                 taught — "super bays" reaches Supabase. Only words the
-      #                 spell checker does not know are eligible, which is what
-      #                 keeps "Excel" from becoming "Vercel". Needs
-      #                 `replacements` before it, and says so if it does not
-      #                 have one.
-      #   numbers       spoken numbers as digits: "two hundred forty-three"
-      #                 -> 243, ordinals, decimals, years, spoken digits.
-      #                 English and French, chosen per transcript. A number
-      #                 word on its own stays a word below ten, so "chapter
-      #                 three" is left alone. It does rewrite transcripts that
-      #                 were already correct — run --numbers on a line to see
-      #                 exactly what it would do before leaving it in.
+      # See docs/pipelines.md.
       pipelines:
         default: [replacements, fuzzy, numbers]
 
-      # Grouped by the spelling you want, listing the ways it gets misheard.
-      # Word-boundary matched and case-insensitive.
+      # The spelling you want, and the ways it comes out wrong. Whole words,
+      # case-insensitive. A source in /slashes/ is a regular expression, and an
+      # empty target deletes rather than substitutes — which is how filler
+      # words go.
       #
-      #   replacements:
-      #     Tasmeen: [Tasmid, Tasmin, Tasmine]
-      #
-      # A source in /slashes/ is a regular expression, and an empty target
-      # deletes rather than substitutes — which is how filler words go:
-      #
-      #     "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
+      #   Supabase: [super base, superbees]
+      #   "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
       replacements: {}
 
 
 
-    # A local Ollama model, used to interpret what you say after the wake
-    # phrase. Everything still works without it — you just lose spoken
-    # commands like "hey parrot, Tasmin spells T A S M E E N".
+    # The local Ollama model behind spoken commands. Without it dictation still
+    # works and everything under `prompts:` stops.
     llm:
       enabled: true
       model: gemma4:e4b
       endpoint: http://localhost:11434
-      timeout_seconds: 20
-      # Load the model at launch and keep it there. Ollama otherwise drops it
-      # after five minutes, and reloading costs 7-10s on the next correction.
-      # Turn off to get those seconds back as free RAM.
+      # Pin the model in RAM at launch. Ollama otherwise drops it after five
+      # minutes and the next command waits 7-10s for the reload. Turn off to
+      # get those seconds back as free RAM.
       keep_loaded: true
 
-    # Things you can ask for by voice: say the wake phrase, then the instruction.
+    # What the activation phrase can reach: say it, then the instruction.
     #
     #     "hey parrot, make that a bullet list"
     #
-    # A router picks which one you meant, reading the descriptions below — so a
-    # description is not a comment, it is the thing being matched against. Write it
-    # the way you would say it.
+    # A description is not a comment — it is what the router matches your words
+    # against, so write it the way you would say it. The whole instruction then
+    # reaches the prompt, which is why one entry covers "format those dates
+    # ISO" and "format those dates with slashes".
     #
-    # The whole instruction is then passed to the prompt, not just the part that
-    # chose it. That is what lets one prompt serve "format those dates ISO" and
-    # "format those dates with slashes" without needing two entries.
+    # Results are shown before they replace your selection; add
+    # `confirm: false` to a prompt you have come to trust.
     #
     # Fixing a misheard name is built in and does not appear here — run
-    # --check-config to see everything the wake phrase reaches.
+    # --check-config to see everything the phrase reaches.
     prompts:
       - name: bullets
         description: turn text into a short bullet list
@@ -792,19 +749,6 @@ enum ConfigStore {
         content: |
           Cut this down. No filler, same facts, same voice.
           Return only the shortened text.
-
-      # There used to be a `dates` prompt and a `digits` prompt here. Both are gone,
-      # because free_form does their job and the measurement said so: on the sixteen
-      # cases they covered in tests/generic-cases.yaml they scored 12/16 against the
-      # built-in's 14/16. `digits` was a straight tie, five cases to five. `dates`
-      # was worse — asked to make "the deadline is March 3 2026" ISO it answered
-      # "2026-03-03", dropping the sentence around the date, which is what a prompt
-      # written for one subject does when handed a whole sentence.
-      #
-      # `grammar` below stays for the opposite reason. It has a validation set of
-      # its own and it beats the built-in on it, 5/5 against 4/5, and the case it
-      # wins is the one that matters most here: leaving alone a sentence that was
-      # already right.
 
       - name: grammar
         description: fix grammar and punctuation mistakes, not formatting or numbers
@@ -830,26 +774,14 @@ enum ConfigStore {
 
           Return only the text.
 
-      # Show the result before it replaces anything. On by default — a transform
-      # overwrites text you selected, and it is triggered by voice, so there is no
-      # dialog in the way. Set false per prompt once you trust it.
-      #
-      #   confirm: false
-
-
-    # Do what was asked even when no prompt matches — which, with no `prompts:`
-    # section yet, is everything:
+    # Do what was asked even when no prompt above matches:
     #
     #     "hey parrot, use the 24 hour clock"
-    #     "hey parrot, make sure fifty dollars is formatted as money"
     #     "hey parrot, sort that list alphabetically"
     #
-    # A remark that was never an instruction is still refused: the router
-    # answers three ways, and separating "an edit nothing covers" from "not an
-    # edit at all" is what keeps a passing question away from your selection.
-    # You see every result before it replaces anything.
-    #
-    # Turn it off to go back to a fixed menu of prompts.
+    # A remark that was never an instruction is still refused, and you see
+    # every result before it replaces anything. Turn off to go back to a fixed
+    # menu of prompts.
     free_form: true
     """
     }

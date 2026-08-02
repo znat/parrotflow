@@ -142,7 +142,7 @@ without one.
 `--command "<what you'd say>"` shows how a phrase would be routed.
 
 Needs the Accessibility permission — reading your selection is exactly what
-that permission governs. Change the trigger with `transcription.correction_phrase`.
+that permission governs. Change the trigger with `transcription.activation_phrase`.
 
 **In a terminal**, selections are fragile: they get dropped on a keystroke or
 when focus moves, often before the transcript comes back. ParrotFlow snapshots
@@ -163,14 +163,12 @@ hotkey:
   mode: push_to_talk    # or toggle
 
 audio:
-  sample_rate: 16000    # Parakeet wants 16 kHz mono; leave it
   output_dir: ~/Recordings/ParrotFlow
-  min_duration_seconds: 0.3
   speech_gate: true     # skip clips with no speech in them
 
 transcription:
   insert_mode: paste    # or clipboard
-  correction_phrase: hey parrot
+  activation_phrase: hey parrot
   languages: [en]       # en and fr are the supported values
 
 feedback:
