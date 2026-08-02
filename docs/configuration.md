@@ -1,0 +1,170 @@
+# Configuration
+
+Every setting, what it does, and what happens when it is wrong.
+
+`~/.config/parrotflow/config.yaml`, created on first launch. Save the file and
+the app picks it up immediately — no restart. `config.example.yaml` in the repo
+is the same file with every comment kept.
+
+**Validate before you trust it:** `--check-config` prints what the app would
+actually use, and names anything it had to ignore. See [cli.md](cli.md).
+
+```yaml
+hotkey:
+  key: right_option     # a bare modifier, or a character key + modifiers
+  modifiers: []         # required for a character key, ignored for a modifier
+  mode: push_to_talk    # or toggle
+
+audio:
+  output_dir: ~/Recordings/ParrotFlow
+  speech_gate: true     # skip clips with no speech in them
+
+transcription:
+  insert_mode: paste    # or clipboard
+  activation_phrases: [hey parrot, by the way parrot]
+  languages: [en]       # en and fr are the supported values
+  rewrite_line: true
+  pipelines: …          # see pipelines.md
+  replacements: …       # see below
+  transforms: …         # see pipelines.md
+
+llm:
+  enabled: true
+  model: gemma4:e4b
+  endpoint: http://localhost:11434
+  keep_loaded: true
+
+updates:
+  after_days: 7
+
+free_form: true
+
+feedback:
+  sound: true
+  overlay: true
+```
+
+## `hotkey`
+
+**Bare modifiers**, used alone: `right_option`, `left_option`,
+`right_command`, `left_command`, `right_control`, `left_control`,
+`right_shift`, `left_shift`, `fn`. `modifiers` is ignored for these.
+
+**Character keys:** `a`–`z`, `0`–`9`, `f1`–`f20`, `space`, `return`, `tab`,
+`escape`, `delete`, arrows, `home`, `end`, `pageup`, `pagedown`, and
+punctuation (`comma`, `period`, `slash`, `semicolon`, `quote`, `backslash`,
+`leftbracket`, `rightbracket`, `minus`, `equal`, `grave`). These need at least
+one modifier from `command`, `control`, `option`, `shift` (aliases `cmd`,
+`ctrl`, `alt`, `opt`) — macOS won't hand out a bare character key system-wide.
+
+If a combo is already owned by another app, registration fails and the menu bar
+item says so. Pick another one.
+
+### Bare modifiers want push-to-talk
+
+On `toggle`, right ⌥ would start recording every time you used it to type an
+accented character. Hold-to-talk is the mode that makes sense for these; it's
+also why apps in this category gravitate to `fn` or a right-hand modifier.
+
+## `transcription.insert_mode`
+
+`paste` types the transcript into the app you are in and needs the
+Accessibility permission. `clipboard` copies it and needs no permission at all;
+you press ⌘V. See [permissions.md](permissions.md).
+
+## `transcription.languages`
+
+Not passed to the speech model — Parakeet transcribes multilingually by itself
+and reports no language back. The list is what ParrotFlow uses to work out
+which language a transcript was in, so naming only what you actually speak
+makes that more accurate, and it selects the correction prompt written for that
+language. One entry means no detection runs at all.
+
+Most spoken first: the first entry is the fallback for transcripts too short to
+judge, under four words. Supported values are `en` and `fr`.
+
+## `transcription.activation_phrases`
+
+Say one of these instead of dictating and what follows is an instruction:
+"hey parrot, make that a bullet list". An empty list disables spoken commands.
+
+One of them **mid-sentence** turns the rest into an instruction about the words
+before it, in the same breath — which is why there are two. See
+[corrections.md](corrections.md).
+
+## `transcription.rewrite_line`
+
+Last resort for fields Accessibility cannot write, terminals mostly: clear the
+input line with ⌃A ⌃K and retype it corrected. Destructive by nature, so it only
+fires when the line still holds what you dictated.
+
+## `transcription.replacements`
+
+The spelling you want, and the ways it comes out wrong. Whole words,
+case-insensitive.
+
+```yaml
+replacements:
+  Tasmeen: [Tasmid, Tasmin, Tasmine]
+  Supabase: [super base, superbees]
+  "": ['/[,]?\s*\b(?:u+m+|u+h+|erm+|hmm+)\b[,]?/']
+```
+
+A source in `/slashes/` is a regular expression, and with one the target is a
+template, so `$1` writes back what the pattern captured. An **empty target
+deletes** rather than substitutes, which is how filler words go, punctuation
+and spacing included.
+
+Grouped by the spelling you want rather than one line per mistake, because the
+same name comes out wrong a dozen ways and they all mean one thing.
+
+The table runs as the `replacements` stage; the `fuzzy` stage runs the same
+table against renderings you never taught it. Both are pipeline stages, so
+whether they run at all is [pipelines.md](pipelines.md).
+
+## `llm`
+
+The local Ollama model behind spoken commands and every `prompt:` transform.
+Without it dictation still works and those stages stop.
+
+`keep_loaded: true` pins the model in RAM at launch. Ollama otherwise drops it
+after five minutes idle and the next command waits for a reload — measured
+**6.7 s cold against 1.5 s warm**, so in practice almost every correction paid
+for one. The cost is the model sitting in memory for as long as the app runs:
+9.6 GB for `gemma4:e4b`. On a 16 GB Mac, turn it off. On 32 GB, do not.
+
+## `updates`
+
+One call a day to GitHub's release API — no account, nothing about you, nothing
+about what you dictate.
+
+The number is a waiting period, not a frequency: `-1` never asks, `0` offers a
+release the day it is published, `7` only offers one that has existed for a
+week. The wait is the point — a bad release is one that gets noticed and
+pulled, and a week of distance means your Mac never saw it.
+
+## `free_form`
+
+Do what was asked even when no transform description matches: "hey parrot, use
+the 24 hour clock". A remark that was never an instruction is still refused,
+and you see every result before it replaces anything. Turn it off to go back to
+a fixed menu of transforms.
+
+## `audio.speech_gate`
+
+Skips clips with no speech in them, so a key pressed by accident costs nothing.
+Gated on speech being *present*, not on how much — a one-word dictation is a
+real one.
+
+## `feedback`
+
+`sound` is the chime when a transcript lands. `overlay` is the floating pill
+that shows the mic is hot. Both on by default; the pill is the only thing on
+screen that says recording is happening, so turning it off is a real choice.
+
+## See also
+
+- [pipelines.md](pipelines.md) — `pipelines:`, `transforms:`, conditions, apps
+- [corrections.md](corrections.md) — teaching it a word, spoken corrections
+- [cli.md](cli.md) — validating a config, and testing a change without speaking
+- [permissions.md](permissions.md) — what needs Accessibility and what does not
