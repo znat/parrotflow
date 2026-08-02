@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Which build this is — the one you are working on, or the one people install.
@@ -51,4 +52,29 @@ enum AppVariant {
     /// no way to tell them apart is worse than one.
     static var menuBarSymbol: String { isDev ? "mic.circle" : "mic" }
     static var menuBarSymbolRecording: String { isDev ? "mic.circle.fill" : "mic.fill" }
+
+    // MARK: About
+
+    static let repository = "https://github.com/znat/parrotflow"
+
+    /// Read from the bundle rather than from `version.txt`, so the number in the
+    /// About panel is the one this build was stamped with by `release.sh`.
+    static var version: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+    }
+
+    /// The repository as a clickable line for the standard About panel, which
+    /// takes its credits as an attributed string.
+    static var repositoryLink: NSAttributedString {
+        let centred = NSMutableParagraphStyle()
+        centred.alignment = .center
+
+        var attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11),
+            .paragraphStyle: centred,
+        ]
+        if let url = URL(string: repository) { attributes[.link] = url }
+
+        return NSAttributedString(string: "github.com/znat/parrotflow", attributes: attributes)
+    }
 }

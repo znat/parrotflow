@@ -9,11 +9,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotKeys = HotKeyManager()
     private let recorder = Recorder()
     private let overlay = RecordingOverlay()
-    private let settings = SettingsWindowController()
+    private let permissions = PermissionsWindowController()
 
     private var statusItem: NSStatusItem!
     private var statusInfoItem: NSMenuItem!
-    private var toggleItem: NSMenuItem!
+    private var permissionsItem: NSMenuItem!
 
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
@@ -44,6 +44,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keepWarmInFlight = false
     private var hotkeyError: String?
     private var lastRecording: Recorder.Recording?
+    /// What was last dictated — the context a correction or a free-form command
+    /// works against when there is no selection to work against instead.
+    private var lastTranscript: String?
 
     // MARK: - Lifecycle
 
@@ -92,9 +95,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // First run: get the microphone prompt out of the way immediately,
         // rather than at the moment the user first tries to dictate.
         if Permissions.microphone == .notDetermined {
-            settings.show()
+            permissions.show()
             Permissions.requestMicrophone { [weak self] _ in
-                self?.settings.model.refreshPermissions()
+                self?.permissions.model.refresh()
             }
         }
     }
@@ -138,14 +141,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hotkeyError = error.localizedDescription
             Log.write("hotkey registration FAILED: \(error.localizedDescription)")
         }
-
-        settings.model.hotkeyDisplay = hotKeys.binding?.displayName
-            ?? KeyCodes.displayString(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
-        settings.model.hotkeyMode = config.hotkey.mode == .toggle
-            ? "Tap to start, tap again to stop"
-            : "Hold to record"
-        settings.model.hotkeyError = hotkeyError
-        settings.model.outputDir = config.audio.outputDir
 
         startKeepWarm()
         updateUI()
@@ -215,7 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Recording
 
-    @objc private func toggleRecording() {
+    private func toggleRecording() {
         recorder.isRecording ? stopRecording() : startRecording()
     }
 
@@ -225,11 +220,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard Permissions.microphone == .granted else {
             Permissions.requestMicrophone { [weak self] granted in
                 guard let self else { return }
-                self.settings.model.refreshPermissions()
+                self.permissions.model.refresh()
                 if granted {
                     self.startRecording()
                 } else {
-                    self.settings.show()
+                    self.permissions.show()
                 }
             }
             return
@@ -272,11 +267,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let recording {
             lastRecording = recording
-            settings.model.lastRecording = String(
-                format: "%@ (%.1fs)",
-                recording.url.lastPathComponent,
-                recording.duration
-            )
             Log.write(String(format: "wrote %@ (%.2fs)", recording.url.lastPathComponent, recording.duration))
             if config.transcription.enabled {
                 transcribe(recording)
@@ -525,7 +515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         beginProgress("Thinking…")
         let llmConfig = llmConfig()
-        let context = settings.model.lastTranscript
+        let context = lastTranscript
         // From the transcript, never the command: the command is short and its
         // trigger word plus a run of loose capitals reads as English whatever
         // was actually said.
@@ -578,7 +568,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Falling back to the last dictation is what makes "hey parrot, fix the
         // grammar" work immediately after speaking, with nothing selected.
-        let target = selection?.text ?? settings.model.lastTranscript ?? ""
+        let target = selection?.text ?? lastTranscript ?? ""
         guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             endProgress()
             Log.write("transform: nothing selected and nothing dictated yet")
@@ -800,14 +790,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .replaced:
                     if config.feedback.sound { NSSound(named: "Glass")?.play() }
                     flash("\(prompt.name) applied", tone: .done)
-                    settings.model.lastTranscript = text
+                    lastTranscript = text
                     return
                 case .failed:
                     Log.write("transform: the line would not take the rewrite; left on the clipboard")
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
                     flash("\(prompt.name) copied — this app won't let me edit it", tone: .caution)
-                    settings.model.lastTranscript = text
+                    lastTranscript = text
                     return
                 case .notAttempted:
                     break
@@ -822,7 +812,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 flash("\(prompt.name) copied — grant Accessibility to paste", tone: .caution)
             }
         }
-        settings.model.lastTranscript = text
+        lastTranscript = text
     }
 
     private func apply(_ command: VoiceCommand, command spoken: String) {
@@ -898,7 +888,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // that was not read off a screen.
             switch applyInPlace(
                 rules.map { Edit(find: $0.heard, replace: $0.corrected, fuzzy: true) },
-                dictated: settings.model.lastTranscript,
+                dictated: lastTranscript,
                 in: element
             ) {
             case .replaced:
@@ -998,7 +988,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Log.write("transcribed: \(trimmed)")
-        settings.model.lastTranscript = trimmed
+        lastTranscript = trimmed
 
         switch TextInserter.insert(trimmed, mode: config.transcription.insertMode) {
         case .pasted:
@@ -1047,14 +1037,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(statusInfoItem)
         menu.addItem(.separator())
 
-        toggleItem = NSMenuItem(
-            title: "Start Dictation",
-            action: #selector(toggleRecording),
-            keyEquivalent: ""
-        )
-        toggleItem.target = self
-        menu.addItem(toggleItem)
-
         let correctItem = NSMenuItem(
             title: "Correct a Word…",
             action: #selector(correctWord),
@@ -1073,24 +1055,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let editItem = NSMenuItem(title: "Edit Config…", action: #selector(editConfig), keyEquivalent: "")
-        editItem.target = self
-        menu.addItem(editItem)
-
-        let settingsItem = NSMenuItem(
-            title: "Settings & Permissions…",
-            action: #selector(openSettings),
-            keyEquivalent: ","
-        )
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        permissionsItem = NSMenuItem(
+            title: "Permissions…",
+            action: #selector(openPermissions),
+            keyEquivalent: ""
+        )
+        permissionsItem.target = self
+        menu.addItem(permissionsItem)
+
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit ParrotFlow", action: #selector(quit), keyEquivalent: "q")
+        let aboutItem = NSMenuItem(
+            title: "About \(AppVariant.displayName)",
+            action: #selector(showAbout),
+            keyEquivalent: ""
+        )
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+
+        let quitItem = NSMenuItem(
+            title: "Quit \(AppVariant.displayName)",
+            action: #selector(quit),
+            keyEquivalent: "q"
+        )
         quitItem.target = self
         menu.addItem(quitItem)
 
+        for item in menu.items { Self.hideAutomaticImage(item) }
+
+        menu.delegate = self
         statusItem.menu = menu
     }
 
@@ -1121,8 +1118,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             statusInfoItem.title = "Idle  ·  \(shortcut)"
         }
-
-        toggleItem.title = recording ? "Stop Dictation" : "Start Dictation"
     }
 
     // MARK: - Menu actions
@@ -1156,13 +1151,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func editConfig() {
+    /// Settings are the config file — there is no second copy of them in a
+    /// window to drift out of sync with it.
+    @objc private func openSettings() {
         try? ConfigStore.createIfMissing()
         NSWorkspace.shared.open(ConfigStore.fileURL)
     }
 
-    @objc private func openSettings() {
-        settings.show()
+    @objc private func openPermissions() {
+        permissions.show()
+    }
+
+    @objc private func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: AppVariant.displayName,
+            .applicationVersion: AppVariant.version,
+            .credits: AppVariant.repositoryLink,
+        ])
     }
 
     @objc private func quit() {
@@ -1170,6 +1176,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Helpers
+
+    /// Stops the system from decorating a menu item it recognises — the gear it
+    /// puts beside "Settings…" — with a glyph this menu never asked for. One
+    /// icon among plain rows reads as a mistake rather than as emphasis.
+    ///
+    /// Set by name because `preferredImageVisibility` arrived in the macOS 27
+    /// SDK and this builds against 26. `2` is `.hidden`; the check makes it a
+    /// no-op on any system that predates the property.
+    private static func hideAutomaticImage(_ item: NSMenuItem) {
+        guard item.responds(to: Selector(("setPreferredImageVisibility:"))) else { return }
+        item.setValue(2, forKey: "preferredImageVisibility")
+    }
 
     private func presentAlert(title: String, message: String) {
         NSApp.activate(ignoringOtherApps: true)
@@ -1179,5 +1197,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+}
+
+// MARK: - Menu delegate
+
+extension AppDelegate: NSMenuDelegate {
+
+    /// Granting permissions is a chore, not a feature. The item is there while
+    /// one of them still needs doing and gone once they are done — checked as
+    /// the menu opens, because the answer changes in System Settings rather
+    /// than in this app.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        permissionsItem.isHidden = !hasPermissionProblem
+    }
+
+    private var hasPermissionProblem: Bool {
+        if Permissions.microphone != .granted { return true }
+        // Accessibility is only a problem when the transcript is meant to be
+        // typed. In clipboard mode nothing needs it, and an item nagging about
+        // a permission the configuration never uses is noise.
+        return config.transcription.insertMode == .paste && Permissions.accessibility != .granted
     }
 }

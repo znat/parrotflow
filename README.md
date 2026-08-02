@@ -74,8 +74,8 @@ that mode needs no Accessibility permission, but you press ⌘V yourself.
 Audio is kept in `~/Recordings/ParrotFlow` and every transcript is logged to
 `~/Library/Logs/ParrotFlow.log`.
 
-The menu bar item shows the current state and offers *Open Recordings Folder*,
-*Edit Config…*, *Correct a Word…* and *Settings & Permissions…*.
+The menu bar item shows the current state and offers *Correct a Word…*, *Open
+Recordings Folder*, *Settings…* — which opens `config.yaml` — and *Permissions…*.
 
 ## Teaching it a word
 
