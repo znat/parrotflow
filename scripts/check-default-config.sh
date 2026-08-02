@@ -74,8 +74,27 @@ for name in sorted(names(example) - names(template)):
     print(f"  ✗ transform \"{name}\" is documented but not written on install")
     ok = False
 
+# A pipeline step naming a transform the file does not define is a config the
+# app refuses on first launch. It happened: `dotted-chat` was renamed to
+# `backticks` and the steps were not brought along, and nothing here noticed
+# because the key check and the name check both looked only at what exists,
+# never at whether the two halves agree.
+def steps(doc):
+    named = []
+    for entries in ((doc.get("transcription") or {}).get("pipelines") or {}).values():
+        for entry in entries or []:
+            if isinstance(entry, dict) and entry.get("transform"):
+                named.append(entry["transform"])
+    return named
+
+for doc, where in ((template, "a new install"), (example, "config.example.yaml")):
+    for step in sorted(set(steps(doc)) - {n for n in names(doc) if n}):
+        print(f"  ✗ {where} runs `transform: {step}`, which it never defines")
+        ok = False
+
 if ok:
     print(f"  ✓ a new install gets every key config.example.yaml documents"
-          f"  ({len(keys(template))} keys, {len(names(template))} transforms)")
+          f"  ({len(keys(template))} keys, {len(names(template))} transforms,"
+          f" {len(steps(template))} transform step(s))")
 sys.exit(0 if ok else 1)
 PY

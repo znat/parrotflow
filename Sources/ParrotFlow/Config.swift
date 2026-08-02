@@ -937,8 +937,8 @@ enum ConfigStore {
           # conditions are read; at most one matches. Anywhere else — a mail
           # window, a document — the sentence is left as spoken.
           - transform: dotted
-            app: /term|ghostty|warp|kitty|alacritty|hyper/
-          - transform: dotted-chat
+            app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
+          - transform: backticks
             app: /slack|discord/
 
       # The spelling you want, and the ways it comes out wrong. Whole words,
