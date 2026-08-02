@@ -1,0 +1,386 @@
+# Validation set for spoken identifiers — a transform that turns a name said
+# out loud into the identifier a language would spell it as. Run with
+# scripts/validate-identifiers.py.
+#
+# The question it exists to answer: can one prompt, on a small local model, do
+# this on its own? If it can, the whole feature is a `transforms:` entry and a
+# pipeline line in config.yaml, and nothing enters the app at all. If it cannot,
+# the fallback is a prompt that only *marks* the names and a `replace:` table
+# that cases them — which needs a case operator the substitution engine does
+# not have. This set is what decides between the two, and it judges both the
+# same way.
+#
+# Two halves, and the second is the important one.
+#
+#   change  a name is introduced as a function, variable, class or constant.
+#           The right answer is that name in the language's convention, with
+#           every other word of the transcript untouched.
+#   keep    nothing is being named. The right answer is the transcript, byte
+#           for byte.
+#
+# `keep` is nearly half the set on purpose. This transform runs on *every*
+# transcript in the pipeline it is added to, so the failure it invites is not
+# getting a name wrong — it is quietly rewriting a sentence that needed
+# nothing. A model that scores well on `change` and poorly on `keep` has made
+# the feature unusable, because you would have to proof-read every dictation.
+#
+# The contract, which is the boundary the set argues about on purpose: convert
+# only what the speaker introduces as a name — "a function called X", "une
+# variable qui s'appelle X", "the class X". A noun phrase that merely describes
+# something ("the retry count is too high") is prose. Both sides are here.
+#
+# The convention comes from the language if one was said, and is camelCase when
+# none was:
+#
+#   python, rust, ruby, elixir   snake_case
+#   javascript, typescript, java, go, swift, php   camelCase
+#   a class or a type            PascalCase
+#   a constant                   SCREAMING_SNAKE_CASE
+#   nothing said                 camelCase
+#
+# Inputs are dictated, so they are lowercase and unpunctuated where a speaker
+# would be, and they mix French and English the way this app is used.
+
+cases:
+  # ---- A language was said ------------------------------------------------
+  - name: python function
+    kind: change
+    category: language-said
+    input: add a python function called max retries
+    expect: add a python function called max_retries
+
+  - name: python variable, three words
+    kind: change
+    category: language-said
+    input: in python a variable called user profile name
+    expect: in python a variable called user_profile_name
+
+  - name: rust variable
+    kind: change
+    category: language-said
+    input: rust variable called retry count
+    expect: rust variable called retry_count
+
+  - name: typescript function
+    kind: change
+    category: language-said
+    input: a typescript function named get user profile
+    expect: a typescript function named getUserProfile
+
+  - name: javascript variable
+    kind: change
+    category: language-said
+    input: javascript variable called is logged in
+    expect: javascript variable called isLoggedIn
+
+  - name: java function, five words
+    kind: change
+    category: language-said
+    input: a java method called build request from config
+    expect: a java method called buildRequestFromConfig
+
+  - name: go function
+    kind: change
+    category: language-said
+    input: a go function called parse config file
+    expect: a go function called parseConfigFile
+
+  - name: swift function
+    kind: change
+    category: language-said
+    input: swift function named reload dictation model
+    expect: swift function named reloadDictationModel
+
+  # ---- A class or a type takes PascalCase whatever the language ------------
+  - name: python class
+    kind: change
+    category: class
+    input: a python class called user service
+    expect: a python class called UserService
+
+  - name: typescript type
+    kind: change
+    category: class
+    input: a typescript type called retry policy
+    expect: a typescript type called RetryPolicy
+
+  - name: class, no language
+    kind: change
+    category: class
+    input: create a class called audio recorder
+    expect: create a class called AudioRecorder
+
+  # ---- A constant takes screaming snake ------------------------------------
+  - name: python constant
+    kind: change
+    category: constant
+    input: a python constant called max retry count
+    expect: a python constant called MAX_RETRY_COUNT
+
+  - name: constant, no language
+    kind: change
+    category: constant
+    input: a constant called default timeout seconds
+    expect: a constant called DEFAULT_TIMEOUT_SECONDS
+
+  # ---- No language said: camelCase ----------------------------------------
+  - name: bare function
+    kind: change
+    category: default-camel
+    input: a function called user profile name
+    expect: a function called userProfileName
+
+  - name: bare variable
+    kind: change
+    category: default-camel
+    input: a variable named retry count
+    expect: a variable named retryCount
+
+  - name: bare function, two words
+    kind: change
+    category: default-camel
+    input: write a function called send email
+    expect: write a function called sendEmail
+
+  # ---- French ---------------------------------------------------------------
+  - name: fonction python
+    kind: change
+    category: french
+    input: une fonction python qui s'appelle calculer le total
+    expect: une fonction python qui s'appelle calculer_le_total
+
+  - name: variable typescript
+    kind: change
+    category: french
+    input: en typescript une variable qui s'appelle nom utilisateur
+    expect: en typescript une variable qui s'appelle nomUtilisateur
+
+  - name: fonction sans langage
+    kind: change
+    category: french
+    input: crée une fonction qui s'appelle envoyer le rapport
+    expect: crée une fonction qui s'appelle envoyerLeRapport
+
+  - name: classe française
+    kind: change
+    category: french
+    input: une classe qui s'appelle lecteur audio
+    expect: une classe qui s'appelle LecteurAudio
+
+  # ---- Where does the name end --------------------------------------------
+  # The sentence continues after the name, and everything after it is prose.
+  # This is the same span problem the spelling correction has, and it is where
+  # a model that is doing the job by feel will over-reach.
+  - name: name then a relative clause
+    kind: change
+    category: boundary
+    input: add a python function called max retries that returns the count
+    expect: add a python function called max_retries that returns the count
+
+  - name: name then a purpose
+    kind: change
+    category: boundary
+    input: a typescript function named get user profile for the settings page
+    expect: a typescript function named getUserProfile for the settings page
+
+  - name: name in the middle
+    kind: change
+    category: boundary
+    input: the function called reload config should run on save
+    expect: the function called reloadConfig should run on save
+
+  - name: two names in one sentence
+    kind: change
+    category: boundary
+    input: a python function called read config and a variable called config path
+    expect: a python function called read_config and a variable called config_path
+
+  # ---- keep: ordinary prose -------------------------------------------------
+  - name: plain sentence
+    kind: keep
+    category: prose
+    input: we should ship it on friday if the tests are green
+
+  - name: meeting note
+    kind: keep
+    category: prose
+    input: i told them we would look at it again after the release
+
+  - name: prose with a number
+    kind: keep
+    category: prose
+    input: it took about forty minutes and we still did not finish
+
+  - name: email sentence
+    kind: keep
+    category: prose
+    input: thanks for the quick turnaround on this one really appreciated
+
+  - name: phrase française
+    kind: keep
+    category: prose
+    input: on en reparle demain matin avant la réunion
+
+  # ---- keep: the words are there, the naming is not -------------------------
+  # "function", "variable", a language name — every trigger word this transform
+  # keys on, in a sentence that names nothing. These are the ones that decide
+  # whether it can be left on.
+  - name: function as an English word
+    kind: keep
+    category: near-miss
+    input: that function of the business was outsourced years ago
+
+  - name: python as a topic
+    kind: keep
+    category: near-miss
+    input: we talked about python packaging for most of the afternoon
+
+  - name: describing a variable, not naming one
+    kind: keep
+    category: near-miss
+    input: the retry count is too high and it hammers the api
+
+  - name: a person called Max
+    kind: keep
+    category: near-miss
+    input: i called max yesterday and he had not seen the ticket
+
+  - name: variable en français, sans nom
+    kind: keep
+    category: near-miss
+    input: la variable dépend de la charge du serveur ce jour là
+
+  - name: a class in the school sense
+    kind: keep
+    category: near-miss
+    input: she has a class at nine so we moved the standup
+
+  # ---- keep: already an identifier -----------------------------------------
+  # Nothing to do, and the invitation to re-case something that is already
+  # right — or to "fix" a convention the speaker meant.
+  - name: already camel
+    kind: keep
+    category: already-done
+    input: call getUserProfile before the render happens
+
+  - name: already snake
+    kind: keep
+    category: already-done
+    input: max_retries is set to three in the config file
+
+  - name: deliberately mixed conventions
+    kind: keep
+    category: already-done
+    input: the python side uses max_retries and the client sends maxRetries
+
+  - name: a dotted path
+    kind: keep
+    category: already-done
+    input: read config.port from user.name before anything else
+
+  # ---- keep: it is a question or an aside ----------------------------------
+  - name: a question about code
+    kind: keep
+    category: near-miss
+    input: what does the parser do when the header is missing
+
+  - name: an aside about naming
+    kind: keep
+    category: near-miss
+    input: honestly the naming in that module has never made any sense
+
+  # ---- Held out while the code-only control was being tuned ----------------
+  #
+  # The control reached 100% on everything above, which is worth nothing on its
+  # own: the stop list and the "a kind word must precede the naming phrase"
+  # rule were both written *because* of failures in that half. These fifteen
+  # were written afterwards and used to tune nothing. They cost the control one
+  # case — the passive "called by the scheduler", which every cheap rule fires
+  # on — and the model five.
+  #
+  # They are part of the set now, so the next change needs new ones.
+  - name: ruby method
+    kind: change
+    category: language-said
+    input: a ruby method called fetch remote config
+    expect: a ruby method called fetch_remote_config
+
+  - name: go variable
+    kind: change
+    category: language-said
+    input: declare a go variable named http client timeout
+    expect: declare a go variable named httpClientTimeout
+
+  - name: elixir function containing to
+    kind: change
+    category: boundary
+    input: an elixir function called broadcast message to room
+    expect: an elixir function called broadcast_message_to_room
+
+  - name: php variable
+    kind: change
+    category: language-said
+    input: a php variable called current user id
+    expect: a php variable called currentUserId
+
+  - name: constante française
+    kind: change
+    category: french
+    input: une constante python qui s'appelle taille maximale
+    expect: une constante python qui s'appelle TAILLE_MAXIMALE
+
+  - name: struct
+    kind: change
+    category: class
+    input: a struct called connection pool
+    expect: a struct called ConnectionPool
+
+  - name: typescript interface
+    kind: change
+    category: class
+    input: a typescript interface named payment method
+    expect: a typescript interface named PaymentMethod
+
+  - name: name then modal
+    kind: change
+    category: boundary
+    input: the variable called last seen at should be nullable
+    expect: the variable called lastSeenAt should be nullable
+
+  - name: rust constant
+    kind: change
+    category: constant
+    input: add a rust constant called default buffer size
+    expect: add a rust constant called DEFAULT_BUFFER_SIZE
+
+  # "called" that introduces nothing — the passive. A kind word sits right in
+  # front of it, so every cheap rule fires here.
+  - name: called by, not called X
+    kind: keep
+    category: near-miss
+    input: a python function called by the scheduler every hour
+
+  - name: called it useless
+    kind: keep
+    category: near-miss
+    input: he called the function useless in the review yesterday
+
+  - name: class in the school sense again
+    kind: keep
+    category: near-miss
+    input: the class was late so we started the demo without her
+
+  - name: named a cat
+    kind: keep
+    category: near-miss
+    input: i named my cat after a rust crate honestly
+
+  - name: type as a verb
+    kind: keep
+    category: near-miss
+    input: we should type the config properly before shipping it
+
+  - name: variable qui change
+    kind: keep
+    category: near-miss
+    input: on a une variable qui change tout le temps sur ce serveur
