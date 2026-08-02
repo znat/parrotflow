@@ -75,6 +75,14 @@ your cursor is.
 Set `transcription.insert_mode: clipboard` to have it copied instead of typed —
 that mode needs no Accessibility permission, but you press ⌘V yourself.
 
+**With no cursor in a field, nothing is typed.** A Finder window, a video, a
+page you are reading — they are frontmost and they have nowhere to put a
+sentence, and a ⌘V sent there does whatever that window makes of it. So the
+pill leaves the app icon out while you talk, which is the warning, and when the
+transcript arrives it goes to your clipboard with a notice saying where it went.
+Terminals are the exception: what they show macOS is a screen rather than a
+field, so they are recognised by name and always counted as somewhere to write.
+
 Audio is kept in `~/Recordings/ParrotFlow` and every transcript is logged to
 `~/Library/Logs/ParrotFlow.log`.
 
@@ -352,6 +360,7 @@ entry in place, which is why re-ticking it never helps.
 | Menu bar & wiring | `AppDelegate.swift` | |
 | Logging | `Log.swift` | `~/Library/Logs/ParrotFlow.log` — a menu bar app has no console |
 | Recording pill | `RecordingOverlay.swift` | Borderless non-activating `NSPanel` |
+| Where the words go | `Destination.swift` | Asks the focused element whether it takes text, at the press — decides the pill's icon and whether the transcript is typed or copied |
 
 Two wrinkles worth knowing about push-to-talk:
 

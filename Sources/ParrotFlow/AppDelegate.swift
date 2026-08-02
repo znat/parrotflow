@@ -72,6 +72,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `Pipeline.App` is what the pipeline matches on and has no business
     /// carrying an image around.
     private var appIconAtPress: NSImage?
+    /// Whether there was anywhere to type when the hotkey went down — see
+    /// `Destination`. Decides both whether the pill shows the icon and, a few
+    /// seconds later, whether the transcript is typed or copied.
+    ///
+    /// Starts at nothing, which is only read if a transcript ever arrives
+    /// without a press behind it — and one that did not come from a press has
+    /// no window it was aimed at either, so the clipboard is the honest answer.
+    private var destinationAtPress: Destination = .nowhere(.nothingFocused)
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -368,7 +376,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
         let front = Self.appInFront()
         appAtPress = front?.app
-        appIconAtPress = front?.icon
+        // The icon is a promise that the words are going to land in that app,
+        // so it is only made when they will. Off the element the snapshot above
+        // already fetched — the answer costs two more attribute reads on a
+        // reference we are holding, not another walk of the tree.
+        destinationAtPress = Destination.at(app: front?.app, focus: focusAtPress?.element)
+        appIconAtPress = destinationAtPress.acceptsText ? front?.icon : nil
+        Log.write("destination: \(destinationAtPress.described)")
         let elapsed = Date().timeIntervalSince(snapshotStart)
         if elapsed > 0.15 {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
@@ -1572,6 +1586,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// already on screen — here they have never been written, and a toast is
     /// not somewhere you can copy them back out of.
     private func insertDictation(_ text: String) {
+        // Nowhere to type: the pill said so by leaving its icon out, and this is
+        // the other half of that. Pasting anyway is the bad outcome — a ⌘V into
+        // a Finder window or a video player does whatever that window makes of
+        // it, and the sentence is gone, because a dictation exists nowhere but
+        // here until it is written down.
+        //
+        // The clipboard is the one destination that always exists, so this one
+        // is said out loud rather than logged. "It went to the clipboard" is
+        // only true if you know it: unsaid, it is indistinguishable from the
+        // dictation having failed, and you say the whole thing again.
+        //
+        // Two cases are deliberately not this one. `insert_mode: clipboard` is
+        // someone who has already decided every transcript is copied, and a
+        // notice each time would be telling them what they configured. A
+        // missing Accessibility grant lands on the clipboard too, but it is a
+        // permission to grant rather than a window to click into, and it has
+        // been saying so in the menu bar for as long as it has existed — see the
+        // `.clipboardOnly` branch below.
+        if config.transcription.insertMode == .paste,
+           case .nowhere(let reason) = destinationAtPress, reason != .noAccessibility {
+            TextInserter.insert(text, mode: .clipboard)
+            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            Log.write("nothing to type into (\(reason.described)); copied instead")
+            flash("Nowhere to type — the transcription is on your clipboard", tone: .done)
+            updateUI()
+            return
+        }
+
         switch TextInserter.insert(text, mode: config.transcription.insertMode) {
         case .pasted:
             if config.feedback.sound { NSSound(named: "Glass")?.play() }

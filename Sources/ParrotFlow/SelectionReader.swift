@@ -639,6 +639,60 @@ enum SelectionReader {
         return (element as! AXUIElement)
     }
 
+    /// The accessibility role of an element — `AXTextArea`, `AXWebArea`, and so
+    /// on — or nil when it will not say.
+    static func role(of element: AXUIElement) -> String? {
+        AXUIElementSetMessagingTimeout(element, 0.25)
+        var role: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXRoleAttribute as CFString, &role
+        ) == .success else { return nil }
+        return role as? String
+    }
+
+    /// Whether an element would take text typed into it.
+    ///
+    /// Settability first, role second, and that order is the point. A role is
+    /// what an app calls its own view, and the apps that matter call theirs
+    /// whatever the page said — an Electron composer and a browser field are
+    /// `AXTextArea` on a good day and something invented on the others. What
+    /// every real input has in common is that its text can be written, and
+    /// `AXUIElementIsAttributeSettable` answers that about a custom role as
+    /// readily as about a stock one.
+    ///
+    /// The role check stays as a fallback rather than as the test, because the
+    /// two mistakes are not the same size. A field wrongly called uneditable
+    /// sends the dictation to the clipboard, which is the sentence not landing;
+    /// a read-only text area wrongly called editable gets a ⌘V it ignores,
+    /// which is what already happens today.
+    static func acceptsTypedText(_ element: AXUIElement) -> Bool {
+        AXUIElementSetMessagingTimeout(element, 0.25)
+        if isSettable(kAXValueAttribute as CFString, of: element) { return true }
+        if isSettable(kAXSelectedTextAttribute as CFString, of: element) { return true }
+        guard let role = role(of: element) else { return false }
+        return editableRoles.contains(role)
+    }
+
+    /// Roles that are a text input whatever they answer about settability.
+    ///
+    /// `AXWebArea` is deliberately absent: it is the page itself, which is what
+    /// a browser reports when you are reading rather than typing — the case
+    /// this whole check exists to catch.
+    private static let editableRoles: Set<String> = [
+        kAXTextFieldRole as String,
+        kAXTextAreaRole as String,
+        kAXComboBoxRole as String,
+        "AXSearchField",
+    ]
+
+    private static func isSettable(_ attribute: CFString, of element: AXUIElement) -> Bool {
+        var settable: DarwinBoolean = false
+        guard AXUIElementIsAttributeSettable(
+            element, attribute, &settable
+        ) == .success else { return false }
+        return settable.boolValue
+    }
+
     static func selectedText(of element: AXUIElement) -> String? {
         AXUIElementSetMessagingTimeout(element, 0.25)
         var selected: CFTypeRef?
