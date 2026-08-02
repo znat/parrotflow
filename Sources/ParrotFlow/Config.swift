@@ -1620,6 +1620,7 @@ if __name__ == "__main__":
       # the version that forced them from spoken ordinals dropped an item.
       - name: email
         description: lay dictated text out as an email
+        display: Laying out the email
         prompt: |
           Lay the text out as an email, in the language it was dictated in.
           Fix the writing; do not write it.
@@ -1662,6 +1663,7 @@ if __name__ == "__main__":
       # speaker's voice going out with the hesitations.
       - name: slack
         description: tidy dictated text into a chat message
+        display: Tidying for chat
         prompt: |
           Tidy the text into a chat message, in the language it was dictated
           in. Fix the writing; do not write it.
@@ -1699,6 +1701,7 @@ if __name__ == "__main__":
       # Put your own people in the list.
       - name: slack_mentions
         description: turn people's names into Slack mentions
+        display: Adding mentions
         prompt: |
           Return the text word for word, with one kind of change and no
           other: a name that appears in this list becomes its handle.
