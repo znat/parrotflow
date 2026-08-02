@@ -91,9 +91,11 @@ final class RecordingOverlay {
 
 // MARK: - View
 
-/// A red light, where the words are going, and a live meter.
+/// A red light, a live meter, and where the words are going.
 ///
-/// Left to right that is a sentence: recording, into this, hearing this. The
+/// Left to right that is a sentence: recording, hearing this, into this. The
+/// destination sits at the end because it is the one part you read once and
+/// stop watching — the meter is what moves, and it wants the middle. The
 /// elapsed time was here once to prove the recorder was running, which is the
 /// meter's job — it moves when you speak, which a clock does not. A clock next
 /// to a hot mic only ever reads as pressure to hurry up.
@@ -122,18 +124,17 @@ struct RecordingPill: View {
                 .opacity(pulse ? 0.35 : 1)
                 .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: pulse)
 
+            Meter(level: model.level)
+                .frame(width: RecordingMetrics.meter, height: 16)
+                .padding(.leading, RecordingMetrics.gap)
+
             if let icon = model.appIcon {
                 Image(nsImage: icon)
                     .resizable()
                     .interpolation(.high)
                     .frame(width: RecordingMetrics.icon, height: RecordingMetrics.icon)
-                    .padding(.leading, RecordingMetrics.gap)
-                    .padding(.trailing, RecordingMetrics.tuck)
+                    .padding(.leading, RecordingMetrics.tuck)
             }
-
-            Meter(level: model.level)
-                .frame(width: RecordingMetrics.meter, height: 16)
-                .padding(.leading, model.appIcon == nil ? RecordingMetrics.gap : 0)
         }
         .padding(.horizontal, RecordingMetrics.padding)
         .frame(
@@ -151,21 +152,21 @@ struct RecordingPill: View {
 enum RecordingMetrics {
     static let padding: CGFloat = 17
     static let gap: CGFloat = 11
-    /// The gap on the icon's right, 2pt tighter than the one on its left.
+    /// The gap on the meter's right, 2pt tighter than the one on its left.
     ///
     /// Both were 11 and did not look it. The dot is small, round and spills a
-    /// little glow into its gap; the icon has a hard edge, and the meter opens
-    /// with its shortest, dimmest bar — so the eye measures from the icon's
-    /// edge to the first bar it can actually see, and reads that side as wider.
-    /// Equal numbers, unequal gaps. These two are equal to look at.
+    /// little glow into its gap; the meter closes on its shortest, dimmest bar
+    /// and the icon has a hard edge — so the eye measures from the last bar it
+    /// can actually see to that edge, and reads that side as wider. Equal
+    /// numbers, unequal gaps. These two are equal to look at.
     static let tuck: CGFloat = 9
     static let dot: CGFloat = 9
-    static let icon: CGFloat = 20
+    static let icon: CGFloat = 24
     static let meter: CGFloat = 72
     static let height: CGFloat = 46
 
-    /// 17 + 9 + 11 + 72 + 17, and the icon between the last two when there is
-    /// one to show.
+    /// 17 + 9 + 11 + 72 + 17, and the icon after the meter when there is one
+    /// to show.
     static func width(hasIcon: Bool) -> CGFloat {
         let base = padding * 2 + dot + gap + meter
         return hasIcon ? base + icon + tuck : base
@@ -174,6 +175,10 @@ enum RecordingMetrics {
 
 /// The bars walk the plumage as they light up, left to right, so a loud sound
 /// fills the pill with the same four colours that ring every other surface.
+///
+/// Against the wheel's direction: sky at the quiet end, scarlet at the loud
+/// one. The last bars are the ones a shout reaches, and the colour arriving
+/// there should be the one that means loud.
 struct Meter: View {
     let level: Float
     private let bars = 12
@@ -193,7 +198,7 @@ struct Meter: View {
     }
 
     private func feather(_ index: Int) -> Color {
-        Parrot.wheel[min(3, index * 4 / bars)]
+        Parrot.wheel[3 - min(3, index * 4 / bars)]
     }
 
     private func height(for index: Int) -> CGFloat {
