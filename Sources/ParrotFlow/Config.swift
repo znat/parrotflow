@@ -928,7 +928,18 @@ enum ConfigStore {
       #
       # See docs/pipelines.md.
       pipelines:
-        default: [replacements, fuzzy, numbers]
+        default:
+          - replacements
+          - fuzzy
+          - numbers
+          # "read user dot name" -> read user.name in a terminal, and
+          # `user.name` in a chat window. Both steps are here and both
+          # conditions are read; at most one matches. Anywhere else — a mail
+          # window, a document — the sentence is left as spoken.
+          - transform: dotted
+            app: /term|ghostty|warp|kitty|alacritty|hyper/
+          - transform: dotted-chat
+            app: /slack|discord/
 
       # The spelling you want, and the ways it comes out wrong. Whole words,
       # case-insensitive. A source in /slashes/ is a regular expression, and an
@@ -1022,6 +1033,25 @@ enum ConfigStore {
           please or thanks does not.
 
           Return only the text.
+
+      # The two tables the pipeline above names. Same pattern, different
+      # output: that is the whole reason a table has a name.
+      #
+      # `dot` only, not `point`. "point" is an ordinary French word and this
+      # pattern joins whatever surrounds it — "voilà le point sur les tests"
+      # becomes "voilà le.sur les tests". Add it if you never dictate French
+      # into a terminal:
+      #
+      #   ['/\\b(\\w+) (?:dot|point) (\\w+)\\b/']
+      - name: dotted
+        description: spoken dotted paths as code
+        replace:
+          $1.$2: ['/\\b(\\w+) dot (\\w+)\\b/']
+
+      - name: dotted-chat
+        description: the same, wrapped for a chat window
+        replace:
+          "`$1.$2`": ['/\\b(\\w+) dot (\\w+)\\b/']
 
     # Do what was asked even when no prompt above matches:
     #

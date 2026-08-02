@@ -73,6 +73,19 @@ Same sentence, two outputs, decided by where it is going — `user.name` in a
 terminal, `` `user.name` `` in chat. Both steps are in the pipeline and both
 conditions are evaluated; at most one matches.
 
+**This pair ships.** A new install is written with `dotted` and `dotted-chat`
+already in the default pipeline, because this is a tool for people who dictate
+identifiers. Delete the two steps and it stops; delete the two transforms and
+`--check-config` tells you the steps name nothing.
+
+**`dot` only, not `point`.** The pattern joins whatever surrounds the word, and
+"point" is ordinary French: "voilà le point sur les tests" would become "voilà
+le.sur les tests". Add the alternation — `(?:dot|point)` — if you never dictate
+French into a terminal. English is not entirely safe either, only luckier: "the
+dot com era" is the same shape. Scoping to terminals and chat is what makes the
+odds acceptable, and it is why this is not in `replacements:` where it would
+run everywhere.
+
 Transforms with a `prompt:` body are also what the activation phrase reaches:
 "hey parrot, tidy that up" routes on the same `description`. A `replace:`
 transform is not routable by voice today — it runs from a pipeline only, and

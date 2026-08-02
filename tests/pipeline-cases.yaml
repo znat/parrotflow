@@ -140,6 +140,16 @@ cases:
     input: lis user point name
     expect: lis user.name
 
+  # `--replace` turns prompts off so it cannot reach the network. A table is
+  # not a prompt, and holding it back would make the flag mean "no transforms".
+  # It did mean that, until this was run against a real config.
+  - name: a table still runs when prompts are off
+    pipeline: transforms
+    app: Ghostty
+    no_prompts: true
+    input: read user dot name
+    expect: read user.name
+
   # --- an empty pipeline is a choice --------------------------------------
   - name: nothing listed, so nothing runs
     pipeline: empty

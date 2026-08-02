@@ -68,8 +68,13 @@ enum PipelineCommand {
     /// thing here, and saying so lets a caller pass the flag unconditionally.
     /// scripts/check-pipeline.sh does exactly that, because the alternative in
     /// bash 3.2 is an empty array under `set -u`, which is an error.
+    ///
+    /// `--no-prompts` mirrors what `--replace` does, the only other caller that
+    /// turns them off. Without it, "a table still runs when prompts are off" is
+    /// a claim no fixture can make — and it was wrong until something ran it.
     static func run(
-        path: String, text: String?, quiet: Bool = false, app: String? = nil
+        path: String, text: String?, quiet: Bool = false, app: String? = nil,
+        allowPrompts: Bool = true
     ) -> Int32 {
         let named = (app ?? "").trimmingCharacters(in: .whitespaces)
         let front = named.isEmpty ? nil : Pipeline.App(name: named, bundleID: "")
@@ -135,7 +140,9 @@ enum PipelineCommand {
         let done = DispatchSemaphore(value: 0)
         if quiet {
             Task {
-                print(await pipeline.run(text, config: config, app: front))
+                print(await pipeline.run(
+                    text, config: config, allowPrompts: allowPrompts, app: front
+                ))
                 done.signal()
             }
             done.wait()
@@ -151,7 +158,8 @@ enum PipelineCommand {
         var current = text
         for step in steps {
             if let reason = Pipeline.skipReason(
-                for: step, text: current, config: config, allowPrompts: true, app: front
+                for: step, text: current, config: config,
+                allowPrompts: allowPrompts, app: front
             ) {
                 print("  ⊘ \(step.stage.name)  — skipped, \(reason)")
                 continue
@@ -159,7 +167,9 @@ enum PipelineCommand {
             var after = current
             let stepDone = DispatchSemaphore(value: 0)
             Task {
-                after = await Pipeline(steps: [step]).run(current, config: config, app: front)
+                after = await Pipeline(steps: [step]).run(
+                    current, config: config, allowPrompts: allowPrompts, app: front
+                )
                 stepDone.signal()
             }
             stepDone.wait()

@@ -279,7 +279,19 @@ struct Pipeline: Equatable, Codable {
         for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil
     ) -> String? {
         if step.stage == .transform {
-            if !allowPrompts { return "prompts are off on this path" }
+            // Only the prompt-bodied ones. `allowPrompts` is there to keep
+            // `--replace` off the network, and a `replace:` transform is a
+            // table — blocking it would make the flag mean "no transforms",
+            // which is not what any caller asked for.
+            //
+            // A name that resolves to nothing counts as a prompt, which is the
+            // conservative reading: the stage is about to be skipped anyway,
+            // and the one thing this must not do is let an unresolved name
+            // become a way onto the network.
+            let named = step.transform.flatMap { config.transform(named: $0) }
+            if !allowPrompts, named?.isPrompt ?? true {
+                return "prompts are off on this path"
+            }
             if VoiceCommand.commandAfterWakePhrase(
                 text, phrase: config.transcription.activationPhrase
             ) != nil {
