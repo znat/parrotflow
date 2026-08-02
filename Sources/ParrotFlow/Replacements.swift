@@ -37,10 +37,10 @@ enum Replacements {
     /// Kept as the entry point everything already calls, so moving the order
     /// out of this function did not move the call sites too.
     static func apply(
-        to text: String, config: Config, allowPrompts: Bool = true
+        to text: String, config: Config, allowPrompts: Bool = true, app: Pipeline.App? = nil
     ) async -> String {
         await Pipeline.forText(text, config: config).0.run(
-            text, config: config, allowPrompts: allowPrompts
+            text, config: config, allowPrompts: allowPrompts, app: app
         )
     }
 
@@ -63,7 +63,7 @@ enum Replacements {
             output = pattern.stringByReplacingMatches(
                 in: output,
                 range: NSRange(output.startIndex..., in: output),
-                withTemplate: NSRegularExpression.escapedTemplate(for: rule.replacement)
+                withTemplate: rule.template
             )
             if rule.isDeletion, output != before { deleted = true }
         }

@@ -16,6 +16,10 @@ replacements:
   Matthieu: [Mathieu]
   Mik: [Meek, Mick]
   "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
+  # A template, not a word: the source is a pattern, so `$1` and `$2` are what
+  # it captured. Also the case that keeps `$1.$2` out of the fuzzy target list,
+  # where it would be a spelling nothing can sound like.
+  $1.$2: ['/\b(\w+) dot (\w+)\b/']
 pipeline:
   - replacements
   - fuzzy

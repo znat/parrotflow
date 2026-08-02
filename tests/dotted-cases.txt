@@ -1,0 +1,95 @@
+# kind | what was dictated | what should come out
+#
+# Run with: scripts/check-dotted.sh
+#
+# The `dotted` transform is the one rewrite this app ships that fires on
+# ordinary language rather than on a name you taught it. "user point name"
+# should become user.name; "voilà le point sur les tests" must not become
+# "voilà le.sur les tests", and "point" is an everyday French word.
+#
+# What keeps them apart is two stop lists — the word before "dot"/"point" and
+# the word after. In code both sides are identifiers; in prose at least one
+# side is almost always a determiner, a preposition, or the head of a set
+# phrase ("point final", "point de vue", "dot com").
+#
+# Almost always, not always: the last two cases below are the residue, and they
+# fail. Two content words either side is a shape no stop list distinguishes —
+# only a dictionary would. They are kept here failing on purpose, because a set
+# that scores 100% by leaving out what it cannot do is worse than a number.
+#
+# The pattern is not written here. scripts/check-dotted.sh reads it out of
+# Config.defaultYAML, so this scores what a new install actually gets rather
+# than a copy of it that is free to drift.
+
+CODE|read user dot name|read user.name
+CODE|lis config point port|lis config.port
+CODE|ouvre server point js|ouvre server.js
+CODE|dans user point profile point name|dans user.profile.name
+CODE|package point json|package.json
+CODE|il faut modifier config point yaml|il faut modifier config.yaml
+CODE|window point location point href|window.location.href
+CODE|regarde app point swift|regarde app.swift
+CODE|cat readme point md|cat readme.md
+CODE|npm run build point sh|npm run build.sh
+CODE|edit dockerfile point dev|edit dockerfile.dev
+
+FR|voilà le point sur les tests|voilà le point sur les tests
+FR|à ce point que je doute|à ce point que je doute
+FR|un point de détail|un point de détail
+FR|le point d orgue de la soirée|le point d orgue de la soirée
+FR|au point où j en suis|au point où j en suis
+FR|mettre au point le système|mettre au point le système
+FR|de ce point de vue|de ce point de vue
+FR|il faut faire le point rapidement|il faut faire le point rapidement
+FR|chaque point compte vraiment|chaque point compte vraiment
+FR|mon point de vue diffère|mon point de vue diffère
+FR|à quel point tu veux|à quel point tu veux
+FR|il n y a point de doute|il n y a point de doute
+FR|le premier point concerne les tests|le premier point concerne les tests
+FR|le deuxième point est simple|le deuxième point est simple
+FR|un bon point pour toi|un bon point pour toi
+FR|sur ce point précis je cède|sur ce point précis je cède
+FR|nous marquons un point important|nous marquons un point important
+FR|ce point mérite discussion|ce point mérite discussion
+FR|le dernier point avant de partir|le dernier point avant de partir
+FR|arrivé à point nommé|arrivé à point nommé
+FR|c est cuit à point parfait|c est cuit à point parfait
+FR|le rapport point par point|le rapport point par point
+FR|quinze heures point final|quinze heures point final
+FR|son point faible reste évident|son point faible reste évident
+FR|le point culminant du récit|le point culminant du récit
+FR|ils ont un point commun|ils ont un point commun
+FR|j ai marqué trois points importants|j ai marqué trois points importants
+FR|revenons au point crucial maintenant|revenons au point crucial maintenant
+FR|voici mon point principal ici|voici mon point principal ici
+FR|elle marque un point décisif|elle marque un point décisif
+
+EN|the dot com era was wild|the dot com era was wild
+EN|a dot product of two vectors|a dot product of two vectors
+EN|the dot matrix printer|the dot matrix printer
+EN|a dot file in home|a dot file in home
+
+# The residue. Two content words either side, so nothing in the sentence says
+# which one it is. Both are unlikely in a terminal or a chat window, which is
+# the only reason this ships.
+RESIDUE|réunion point hebdomadaire demain|réunion point hebdomadaire demain
+RESIDUE|polka dot dress today|polka dot dress today
+
+# A chat window runs the wrapping table after the path-building one. It is a
+# second table and not a cleverer pattern: the first does not consume the word
+# after it, so it has nowhere to put a closing backtick. Trying it locally
+# produced `lis `config.`port` before this was split in two.
+CHAT|read user dot name|read `user.name`
+CHAT|lis config point port|lis `config.port`
+CHAT|user point profile point name|`user.profile.name`
+CHAT|voilà le point sur les tests|voilà le point sur les tests
+CHAT|il faut modifier config point yaml|il faut modifier `config.yaml`
+
+# `numbers` runs before `dotted` in the shipped pipeline, and English says
+# "three point one four" for a decimal. It is `numbers` that consumes the word;
+# swap the two stages and dotted gets there first, turning it into
+# "three one.four". Nothing else in any set would notice.
+DECIMAL|three point one four|3.14
+DECIMAL|twenty one point five|21.5
+DECIMAL|version two point one|version 2.1
+DECIMAL|it costs ninety nine point five percent|it costs 99.5 percent

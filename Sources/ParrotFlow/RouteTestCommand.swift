@@ -16,12 +16,12 @@ enum RouteTestCommand {
         }
 
         let catalogue = Catalogue(prompts: config.prompts)
-        let phrase = config.transcription.activationPhrase
+        let phrases = config.transcription.activationPhrases
 
         // The wake phrase is stripped first, exactly as the app does it, so a
         // case written the way you'd actually say it still exercises the
         // router rather than silently testing the wrong string.
-        let instruction = VoiceCommand.commandAfterWakePhrase(text, phrase: phrase) ?? text
+        let instruction = VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) ?? text
 
         if !quiet {
             print("catalogue:   \(catalogue.names.joined(separator: ", "))")
