@@ -384,8 +384,8 @@ URL.
 **They cost the router something, and it is measured.** Both are prompts, so
 both join the catalogue the activation phrase reaches, and every description
 added is another way for an idle sentence to find a tool.
-`tests/routing-cases.yaml` was rerun and grew: 41/45 on three prompts, 47/52 on
-five. One new failure appeared and it is the expensive class, the one the
+`tests/routing-cases.yaml` was rerun and grew: 41/45 on three prompts, 50/54 on
+six. One new failure appeared and it is the expensive class, the one the
 negative half of that set exists for:
 
 ```
@@ -396,49 +396,33 @@ A sentence, not an instruction, sent to a prompt that would rewrite your
 selection. Four descriptions were measured against it and all four routed it
 identically, so it is recorded there rather than tuned away.
 
-### `slack_handles` and `slack_mentions`, which are tables
+### `slack_mentions`, which you have to ask for
+
+Said out loud — "hey parrot, use Slack mentions" — and deliberately in no
+pipeline. A message that names someone is not a message that pings them, and
+nothing in a transcript tells the two apart. So it is the one you ask for, and
+`confirm` shows you who is about to be tagged before anything is replaced.
+
+**The mapping lives in the prompt**, which is the opposite of the rule
+everywhere else here, and it was tried the other way round. The tables are
+worth reading about because of what they cost, not because they failed:
 
 ```yaml
 - name: slack_handles
-  description: spoken names as Slack handles
   replace:
     '@marie.dupont': ['/\bmention(?:ne)? marie\b/']
-
-- name: slack_mentions
-  description: spoken group mentions as @here and @channel
-  replace:
-    '@here': ['/\bmention(?:ne)? (?:everyone here|here)\b/']
 ```
 
-Both run from the Slack pipeline, ahead of the `slack` prompt.
+A table cannot invent. This prompt's first draft answered "the config file is
+here, Sofia already looked at it" with "…@priya already looked at it" — a handle
+made up for a name it had never been given, which in Slack is a message sent to
+the wrong person — and it took four rewrites and three load-bearing sentences to
+reach 6/6. The tables reached **7/7** on the same cases, for free, with nothing
+running. On the mapping alone the table wins outright.
 
-**This was a prompt first, and it was the wrong tool.** A name is a lookup, and
-the thing a lookup must never do is answer with something that was not in it.
-The prompt did exactly that: its first draft turned "the config file is here,
-Sofia already looked at it" into "…@priya already looked at it" — a handle
-invented for a name it had never been given, which in Slack is a message sent
-to the wrong person. It took four rewrites and three load-bearing sentences to
-reach 6/6, and it still cost a second per message and a model being up.
-
-A table cannot invent. It substitutes what is in it and leaves everything else,
-in microseconds, with nothing running. **7/7 on the same cases, and the two that
-mattered — "Sofia" and a bare "Marie" — are not failures it passes but shapes it
-has no way to produce.**
-
-**The marker is the safety, and it is what makes a table possible here.** The
-prompt was reachable only by voice — "hey parrot, use Slack mentions" — because
-a table in a pipeline would have turned every "Marie" into a ping, and a message
-that names someone is not a message that pings them. `mention` in front of the
-name is the same opt-in, said in the same breath, and it costs no round trip:
-
-```
-"mention marie can you look at this"  ->  "@marie.dupont can you look at this"
-"mention everyone here"               ->  "@here"
-```
-
-**It has to open the message or follow a pause**, and the first version of this
-table did not say so. `mention` is an ordinary English verb, and it read as an
-instruction wherever it appeared:
+**What it lost on was the trigger.** A table has to fire from inside the
+sentence, and the only natural word for it is one English already uses as a
+verb:
 
 ```
 "I should mention here that the deadline changed"
@@ -447,36 +431,27 @@ instruction wherever it appeared:
   ->  "I wanted to @marie.dupont is off next week"
 ```
 
-Neither is a message anyone meant to send, and a pipeline stage has no preview
-to catch it — it runs on a transcript nobody has seen yet, so `confirm` does not
-apply. The pattern therefore counts the word only at the start of the utterance
-or straight after `.` `!` `?` `;` or a comma:
+Anchoring the marker to the start of an utterance or to a `.` `!` `?` `;` or
+comma fixed those — **11/11**, five prose sentences that must not ping and six
+deliberate forms that must — at the price of "can you mention marie about the
+invoice" doing nothing at all. But a pipeline stage has **no preview**: it runs
+on a transcript nobody has seen yet, so `confirm` does not reach it and a false
+positive is a message that has already gone.
 
-```
-/(^|[.!?;,]\s*)mention(?:ne)? marie\b/  ->  $1@marie.dupont
-```
+Asking out loud has no such failure. It fires when you ask and never otherwise,
+which is worth a second and a prompt that had to be taught not to guess. The
+table is the better mapping; the voice command is the better trigger, and the
+trigger is where the expensive mistakes live.
 
-Which is the same shape as the stop lists on `dotted`, for the same reason: that
-pattern has to tell code from prose, and this one has to tell an instruction
-from a verb. **11/11** — five prose sentences that must not ping, six deliberate
-forms that must. The cost is that "can you mention marie about the invoice" does
-nothing, which is the direction to fail in: a ping you did not get rather than
-one you did not mean.
-
-That also removes the argument for keeping a mapping inside a prompt, which was
-the one place in this file where a lookup was not a table.
-
-**Two tables rather than one**, so the group pings can be deleted without the
-handles going with them: `@here` and `@channel` are the two that wake people up.
-
-**They run before the `slack` prompt** because a handle is a token a model
-leaves alone, where "mention marie" is a phrase it might tidy away. Measured
-rather than assumed — the handles come through the prompt untouched, 3/3.
-
-**Filling it in.** The shape is regular and the contents are your colleagues, so
-hand your team's names and handles to Claude Code and ask it to update the
-table. That is the maintenance path, the same way `replacements:` is filled from
-`--transcribe` output.
+**One thing is still open, and it decides whether any of this is worth having.**
+`TextInserter` puts the text on the pasteboard and synthesises ⌘V — in both
+insert modes, so everything ParrotFlow writes arrives in Slack by paste. And
+Slack's composer does not re-read what arrives by paste: that is the finding
+that keeps `backticks` out of the shipped pipeline, tested on a real Slack. If a
+pasted `@handle` does not linkify either, this writes something that looks like
+a mention and notifies nobody, which is worse than not having it — you would
+believe you had told someone. Paste one into a Slack composer without sending
+and see whether it turns blue.
 
 ### Order matters, and only one set notices
 
