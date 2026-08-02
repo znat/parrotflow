@@ -40,3 +40,21 @@ by the way parrot,hey parrot|by the way parrot format the function|format the fu
 
 # --- no phrases at all is how you turn spoken commands off ---------------
 |hey parrot fix vocabulary|NONE
+
+# --- known, and not fixed here -------------------------------------------
+# The prefix matcher is fuzzy on purpose: the wake phrase is the first thing
+# said and the audio engine is still starting up, so "hey parrot, X" arrives as
+# "parrot, X" or "hey parrots X". The cost is that any sentence beginning with
+# something that sounds like "<word> parrot" is taken as a command and never
+# written down.
+#
+# Found by throwing sentences at it, not by a user losing one. Left failing and
+# counted apart rather than quietly dropped: the fix is a judgement about the
+# 0.7 threshold, which trades these against the clipped audio the fuzziness
+# exists to recover, and that trade wants its own change and its own numbers.
+#
+# `KNOWN:` means "this is the right answer and we do not give it yet". If one
+# starts passing, the runner says so — that is the signal to promote it.
+hey parrot|my parrot escaped this morning|KNOWN:NONE
+hey parrot|the parrot is green|KNOWN:NONE
+hey parrot|a parrot flew past the window|KNOWN:NONE
