@@ -5,9 +5,12 @@
 # longer request, because that is the case the router has to get right.
 #
 # The expectations assume the catalogue in config.example.yaml: bullets, terse,
-# grammar, and the built-ins. `--route` reads your own config, so a machine with
-# extra prompts will disagree with this set, and rightly — it is scoring a
-# router against a list, and the list is part of the question.
+# grammar, email, slack, slack_mentions, and the built-ins.
+#
+# `--route` reads your own config, so a machine with a different list will
+# disagree with this set,
+# and rightly — it is scoring a router against a list, and the list is part of
+# the question.
 #
 # Three answers since free_form, and the third is what made the first two
 # honest. NONE used to carry two meanings, "no tool does this" and "that was
@@ -20,26 +23,39 @@
 # to a prompt that rewrites your selection. That risk went up when ANY arrived,
 # not down, which is why there are more of them now than tools.
 #
-# 41/45 on gemma4:e4b, and the shape matters more than the number: nothing
-# routed something idle. Both cases that used to — "I bought a box of bullets"
-# and "her grammar is better than mine", the two Router.swift recorded as the
-# model's floor — pass with the third answer present. Splitting "not an edit"
-# off from "no tool for it" turned out to help the question it did not ask.
+# 50/54 on gemma4:e4b, on a catalogue of six prompts. It was 41/45 on three.
 #
-# The four that fail all fail cheaply, which is the only reason they are left
-# standing rather than argued with:
+# Three of the four that fail fail cheaply, which is why they are left standing
+# rather than argued with:
 #
 #     format those dates ISO                     -> grammar
 #     fix the numbers                            -> grammar
 #     fix the numbers but leave the years alone  -> grammar
-#     use the 24 hour clock                      -> NONE
 #
-# The first three are the residue of removing `dates` and `digits`: grammar is
-# now the only entry that mends anything, so "fix the ..." lands on it. It runs
-# a prompt whose every rule is against touching a number, so the cost is a
-# no-op you can see in the preview, not a rewrite. The fourth is a refusal —
-# you say it again. Five descriptions and a second ANY example were measured
-# against these; the notes are in Router.swift.
+# They are the residue of removing `dates` and `digits`: grammar is now the
+# only entry that mends anything, so "fix the ..." lands on it. It runs a prompt
+# whose every rule is against touching a number, so the cost is a no-op you can
+# see in the preview, not a rewrite. Five descriptions and a second ANY example
+# were measured against these; the notes are in Router.swift.
+#
+# This family moves with the size of the list rather than with any one entry in
+# it. "format those dates with slashes" passes with six prompts in the
+# catalogue and failed with five, twice measured in both directions, and
+# nothing about dates changed in between — worth knowing before reading a
+# one-case swing here as a regression in whatever was added or removed that
+# day.
+#
+# The fourth is the expensive kind and is new:
+#
+#     I sent her an email yesterday              -> email
+#
+# A sentence, not an instruction, routed to a prompt that would rewrite your
+# selection. It is the trap "I bought a box of bullets" and "her grammar is
+# better than mine" set for the older entries, and those two pass — so this is
+# a gap this catalogue opened, not a floor the model always had. Four
+# descriptions were measured against it and every one routed it the same way,
+# which says the description is not what decides it. The preview is what stands
+# between this and a lost selection.
 
 cases:
   # --- named outright: should never reach the model -----------------------
@@ -162,3 +178,33 @@ cases:
     expect: NONE
   - instruction: her grammar is better than mine
     expect: NONE
+  # Same trap, for the three window-scoped prompts. The first one fails: it is
+  # routed to `email`, and it is a sentence, not an instruction. Four
+  # descriptions were tried against it — "lay dictated text out as an email",
+  # "format the selected text as an email", "lay this out as an email, greeting
+  # and paragraphs", "put this into email shape" — and all four routed it
+  # identically, so the description is not what decides this one. Left failing.
+  - instruction: I sent her an email yesterday
+    expect: NONE
+  - instruction: did you see my slack message
+    expect: NONE
+  - instruction: he never mentions it
+    expect: NONE
+
+  # --- the three prompts scoped to a window --------------------------------
+  # `email` and `slack` run from a pipeline behind `app:`, but they are prompts,
+  # so the phrase reaches them too. `slack_mentions` is only ever reached this
+  # way. The two neighbours worth watching are terse and slack — "shorten this"
+  # against "tidy that up for chat" — and they hold.
+  - instruction: write an email
+    expect: email
+  - instruction: make that an email
+    expect: email
+  - instruction: make that a slack message
+    expect: slack
+  - instruction: tidy that up for chat
+    expect: slack
+  - instruction: use Slack mentions
+    expect: slack_mentions
+  - instruction: turn the names into mentions
+    expect: slack_mentions
