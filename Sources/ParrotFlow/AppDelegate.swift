@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusInfoItem: NSMenuItem!
     private var toggleItem: NSMenuItem!
 
+    /// The recording state the menu bar icon was last drawn for.
+    private var shownRecording: Bool?
+
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
     }
@@ -1074,16 +1077,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateUI() {
         let recording = recorder.isRecording
 
-        statusItem.button?.image = NSImage(
-            systemSymbolName: recording
-                ? AppVariant.menuBarSymbolRecording
-                : AppVariant.menuBarSymbol,
-            accessibilityDescription: AppVariant.displayName
-        )
-        // Stays a template image so `contentTintColor` applies — a non-template
-        // symbol ignores the tint and renders black in a dark menu bar.
-        statusItem.button?.image?.isTemplate = true
-        statusItem.button?.contentTintColor = recording ? .systemRed : nil
+        // Only when it actually changes. updateUI runs on a 0.1s timer while
+        // recording, to redraw the elapsed clock, and the icon is the one thing
+        // in here that cannot change between two ticks of the same state —
+        // rebuilding the symbol regardless was ten identical NSImages a second.
+        if shownRecording != recording {
+            shownRecording = recording
+            statusItem.button?.image = NSImage(
+                systemSymbolName: recording
+                    ? AppVariant.menuBarSymbolRecording
+                    : AppVariant.menuBarSymbol,
+                accessibilityDescription: AppVariant.displayName
+            )
+            // Stays a template image so `contentTintColor` applies — a
+            // non-template symbol ignores the tint and renders black in a dark
+            // menu bar.
+            statusItem.button?.image?.isTemplate = true
+            statusItem.button?.contentTintColor = recording ? .systemRed : nil
+        }
 
         let shortcut = hotKeys.binding?.displayName
             ?? KeyCodes.displayString(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
