@@ -95,6 +95,12 @@ enum CheckConfigCommand {
             print("  ✗ \(problem)")
             ok = false
         }
+        // Said, not complained about. These are true of a config that works —
+        // a ✗ here used to fail the whole command over a `command:` transform
+        // doing exactly what it was written to do.
+        for notice in config.notices() {
+            print("  · \(notice)")
+        }
         if !transcription.retired.isEmpty {
             print("      pipelines:")
             print("        default: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
@@ -125,7 +131,7 @@ enum CheckConfigCommand {
         // Tables only. A `command:` is not one, and counting its rules said
         // "0 rule(s)" about a transform that has no rules to have — the line
         // read as a broken table rather than as a program. Programs are named
-        // by `problems()`, which says it of every one of them, every run.
+        // by `notices()`, which says it of every one of them, every run.
         let tables = config.transforms.filter(\.isTable)
         if !tables.isEmpty {
             print("  · replace           \(tables.count) transform(s), reachable from a pipeline"
