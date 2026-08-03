@@ -36,6 +36,40 @@ paragraph and no markup it cannot render. The mail window gets a greeting on
 its own line and a signature on theirs. **That is the config it ships with**,
 not one you have to write.
 
+## Fast, and none of it leaves your Mac
+
+Text at your cursor a second after you let go. Small models on hardware you own
+— Parakeet on the Neural Engine, a Gemma 4B through your own
+[Ollama](https://ollama.com). No account, no key, no bill.
+
+## It gets your words right
+
+*"read user dot name"* → `read user.name`. *"two hundred forty-three"* → `243`.
+It mishears a name? Fix it out loud, once.
+
+## There is no ceiling
+
+Every stage is yours — a regex, a prompt, or a script in any language. This is
+the whole of what produced the table above:
+
+```yaml
+pipelines:
+  default:
+    - replacements                       # the names you taught it
+    - numbers                            # "two hundred forty-three" -> 243
+    - transform: dotted                  # "user point name" -> user.name
+      app: /term|ghostty|warp|slack/     #   but never in an email
+    - transform: email                   # greeting, paragraphs, signature
+      app: /mail|outlook|superhuman/
+    - transform: slack                   # one paragraph, no markup
+      app: /slack/
+```
+
+Or skip the file and just say it: *"hey parrot, use Slack mentions"*.
+
+[Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
+[Where the time goes](docs/architecture.md#where-the-time-goes)
+
 ## Install
 
 **Requires** an Apple Silicon Mac on macOS 14 or later.
@@ -57,63 +91,6 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 Your first dictation downloads the speech model, about 1.2 GB. Everything after
 that is immediate.
-
-## What else it does
-
-**It writes code the way you say it.** *"read user dot name"* → `read user.name`,
-*"a python constant called max retry count"* → `MAX_RETRY_COUNT`. In terminals
-and editors only — *"point"* is an ordinary word in an email.
-
-**It learns your vocabulary.** Say *"hey parrot, elastic search is one word and
-takes a capital E"* and it is right from then on. A fuzzy pass catches spellings
-you never taught it, so *"super bays"* still reaches `Supabase`.
-
-**Slack mentions, when you ask for them.** *"hey parrot, use Slack mentions"* →
-`tell @marie.dupont the deadline moved`. Never automatic: a wrong handle pings
-the wrong person.
-
-**Spoken numbers and dates, English or French.** *"two hundred forty-three"* →
-`243`. *"on a dépensé deux cents euros"* → `on a dépensé 200 euros`.
-
-**Nothing leaves your Mac.** Parakeet TDT v3 on the Neural Engine, about a
-second for a sentence. The stages that need judgement ask a Gemma 4B on your own
-[Ollama](https://ollama.com); dictation works without it.
-
-Every rewrite here has a scored case set in [`tests/`](tests/) — including the
-cases it still fails, which stay in rather than being dropped to flatter a
-number.
-
-## Program it
-
-Other dictation tools let you configure what someone else decided to expose.
-Here it is a list you own. This is the whole of what produced the table above,
-with the app patterns shortened:
-
-```yaml
-pipelines:
-  default:
-    - replacements                       # the names you taught it
-    - numbers                            # "two hundred forty-three" -> 243
-    - transform: dotted                  # "user point name" -> user.name
-      app: /term|ghostty|warp|slack/     #   but never in an email
-    - transform: email                   # greeting, paragraphs, signature
-      app: /mail|outlook|superhuman/
-    - transform: slack                   # one paragraph, no markup
-      app: /slack/
-```
-
-Reorder it, delete a line, scope a stage to one app. A stage is a regex, a
-prompt to the local model, or **a script of yours** — transcript on stdin,
-rewrite on stdout, in any language. If one fails, times out, or the model is not
-running, your sentence comes through exactly as you said it.
-
-It is a text file, not a settings pane: `~/.config/parrotflow/config.yaml`,
-reloaded on save, commentable, diffable, committable. No paid tier, no
-telemetry.
-
-Pipelines: [docs/pipelines.md](docs/pipelines.md) · Writing a transform:
-[docs/authoring.md](docs/authoring.md) · Where the time goes:
-[docs/architecture.md](docs/architecture.md#where-the-time-goes)
 
 ## Documentation
 
