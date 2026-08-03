@@ -18,30 +18,30 @@ your audio never leaves your Mac.
 
 ---
 
-Hold <kbd>right ⌥</kbd>, say the words on the left, let go. What lands at your
-cursor is on the right.
+You say it once, holding <kbd>right ⌥</kbd>:
 
-| You say | You get |
+> *"hi marie um the staging deploy is broken again can you take a look when you
+> get a chance thanks nathan"*
+
+What gets typed depends on the window it lands in.
+
+| Where you were | What got typed |
 | --- | --- |
-| *"read user dot name"* | `read user.name` |
-| *"lis config point port"* | `lis config.port` |
-| *"the meeting is December 3rd"* | `the meeting is 3/12` |
-| *"on a dépensé deux cents euros"* | `on a dépensé 200 euros` |
-| *"a typescript function named get user profile"* | `a typescript function named getUserProfile` |
-| *"a python constant called max retry count"* | `a python constant called MAX_RETRY_COUNT` |
+| **A terminal**<br><sub>Ghostty, Warp, Claude Code</sub> | Hi marie the staging deploy is broken again can you take a look when you get a chance thanks nathan |
+| **Slack** | Hi Marie, the staging deploy is broken again. Can you take a look when you get a chance? Thanks, Nathan. |
+| **Outlook**<br><sub>Mail, Superhuman, Missive</sub> | Hi Marie,<br><br>The staging deploy is broken again. Can you take a look when you get a chance?<br><br>Thanks,<br>Nathan |
 
-Every row is a case in [`tests/`](tests/), scored on each change rather than
-checked by eye — including the ones that still fail, which stay in the sets.
+The terminal keeps your words and drops the *um*. Slack gets one clean
+paragraph and no markup it cannot render. The mail window gets a greeting on
+its own line and a signature on theirs. **That is the config it ships with**,
+not one you have to write.
 
 ## Install
 
 **Requires** an Apple Silicon Mac on macOS 14 or later.
 
 > [!TIP]
-> **Let an agent do it.** Paste the block below into Claude Code, or anything
-> else that can run shell commands. It installs the app, walks you through the
-> two macOS permissions, and confirms transcription works before it hands over.
-> About five minutes.
+> **Let an agent do it.** Paste the block below into Claude Code, or any other agent.
 
 ```text
 Set up ParrotFlow on my Mac by following
@@ -58,41 +58,54 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 Your first dictation downloads the speech model, about 1.2 GB. Everything after
 that is immediate.
 
-## Talk to it
+## What else it does
 
-**Teach it a word.** Say *"hey parrot, elastic search is one word and takes a
-capital E"* and it is right from then on. A fuzzy pass catches the spellings you
-never taught it, so *"super bays"* still reaches `Supabase`.
+**It writes code the way you say it.** *"read user dot name"* → `read user.name`,
+*"a python constant called max retry count"* → `MAX_RETRY_COUNT`. In terminals
+and editors only — *"point"* is an ordinary word in an email.
 
-**Give it an instruction.** Select some text and say *"hey parrot, use Slack
-handles"* or *"hey parrot, format the function names for TypeScript"*. You see
-the result before it replaces anything.
+**It learns your vocabulary.** Say *"hey parrot, elastic search is one word and
+takes a capital E"* and it is right from then on. A fuzzy pass catches spellings
+you never taught it, so *"super bays"* still reaches `Supabase`.
 
-**It runs on your own hardware.** Parakeet TDT v3 on the Neural Engine turns
-speech into text — that part needs nothing else, and a normal sentence lands
-about a second after you let go. Teaching it words and giving it instructions
-ask a Gemma 4B through your own [Ollama](https://ollama.com); dictation works
-without it.
+**Slack mentions, when you ask for them.** *"hey parrot, use Slack mentions"* →
+`tell @marie.dupont the deadline moved`. Never automatic: a wrong handle pings
+the wrong person.
+
+**Spoken numbers and dates, English or French.** *"two hundred forty-three"* →
+`243`. *"on a dépensé deux cents euros"* → `on a dépensé 200 euros`.
+
+**Nothing leaves your Mac.** Parakeet TDT v3 on the Neural Engine, about a
+second for a sentence. The stages that need judgement ask a Gemma 4B on your own
+[Ollama](https://ollama.com); dictation works without it.
+
+Every rewrite here has a scored case set in [`tests/`](tests/) — including the
+cases it still fails, which stay in rather than being dropped to flatter a
+number.
 
 ## Program it
 
 Other dictation tools let you configure what someone else decided to expose.
-Here the transcript runs through stages you wrote, in the order you chose, each
-one conditional on the text, the language, or the app you dictated into:
+Here it is a list you own. This is the whole of what produced the table above,
+with the app patterns shortened:
 
 ```yaml
 pipelines:
   default:
-    - replacements                      # the names you taught it
-    - numbers                           # "two hundred forty-three" -> 243
-    - transform: dotted                 # "user point name" -> user.name
-      app: /term|ghostty|code|cursor/   #   but only where you write code
+    - replacements                       # the names you taught it
+    - numbers                            # "two hundred forty-three" -> 243
+    - transform: dotted                  # "user point name" -> user.name
+      app: /term|ghostty|warp|slack/     #   but never in an email
+    - transform: email                   # greeting, paragraphs, signature
+      app: /mail|outlook|superhuman/
+    - transform: slack                   # one paragraph, no markup
+      app: /slack/
 ```
 
-A stage is a regex, a prompt to the local model, or **a script of yours** —
-transcript on stdin, rewrite on stdout, in any language. If one fails, times
-out, or the model is not running, your sentence comes through exactly as you
-said it.
+Reorder it, delete a line, scope a stage to one app. A stage is a regex, a
+prompt to the local model, or **a script of yours** — transcript on stdin,
+rewrite on stdout, in any language. If one fails, times out, or the model is not
+running, your sentence comes through exactly as you said it.
 
 It is a text file, not a settings pane: `~/.config/parrotflow/config.yaml`,
 reloaded on save, commentable, diffable, committable. No paid tier, no
