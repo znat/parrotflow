@@ -72,6 +72,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `Pipeline.App` is what the pipeline matches on and has no business
     /// carrying an image around.
     private var appIconAtPress: NSImage?
+    /// Whether there was anywhere to type when the hotkey went down — see
+    /// `Destination`. Decides whether the pill shows the icon, and is handed to
+    /// the transcription it belongs to so that the same press decides, a few
+    /// seconds later, whether the words are typed or copied.
+    ///
+    /// Read exactly once after the press, in `transcribe`, for the same reason
+    /// `appAtPress` is: two dictations can be in flight at once, and this field
+    /// only ever holds the newest.
+    ///
+    /// Starts at nothing, which is only read if a transcript ever arrives
+    /// without a press behind it — and one that did not come from a press has
+    /// no window it was aimed at either, so the clipboard is the honest answer.
+    private var destinationAtPress: Destination = .nowhere(.nothingFocused)
 
     private var tickTimer: Timer?
     private var pushToTalkPoll: Timer?
@@ -379,7 +392,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
         let front = Self.appInFront()
         appAtPress = front?.app
-        appIconAtPress = front?.icon
+        // The icon is a promise that the words are going to land in that app,
+        // so it is only made when they will. Off the element the snapshot above
+        // already fetched — the answer costs two more attribute reads on a
+        // reference we are holding, not another walk of the tree.
+        destinationAtPress = Destination.at(app: front?.app, focus: focusAtPress?.element)
+        appIconAtPress = destinationAtPress.acceptsText ? front?.icon : nil
+        Log.write("destination: \(destinationAtPress.described)")
         let elapsed = Date().timeIntervalSince(snapshotStart)
         if elapsed > 0.15 {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
@@ -584,6 +603,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Taken at the press, not here: a transcript arrives seconds later and
         // the window you dictated into may not be the one in front by then.
         let app = appAtPress
+        // Carried down the chain from here for the same reason, plus one of its
+        // own. Push-to-talk does not wait for the previous transcript — hold the
+        // key again while a prompt stage is still running and two are in flight,
+        // which is what `transcriptionRun` exists to survive. Read off `self` at
+        // the end instead, the older dictation would be delivered by the newer
+        // press's verdict: copied when it had a field to go in, or pasted into a
+        // window that has nothing to put it in.
+        let destination = destinationAtPress
+        // And where it was being typed, for the same reason. The inline
+        // correction panel hands focus back to this app before writing, and it
+        // can be left open for as long as it takes to think about a spelling —
+        // longer than any other wait in the app, and long enough to start
+        // another dictation somewhere else while it sits there.
+        let focus = focusAtPress
         Task { [weak self] in
             do {
                 // "Transcribing…" is the truth until the decoder is done, and
@@ -605,7 +638,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     guard let self else { return }
                     self.transcriptionLabel = nil
-                    self.finishTranscription(text: text)
+                    self.finishTranscription(
+                        text: text, destination: destination, focus: focus
+                    )
                 }
             } catch {
                 await MainActor.run {
@@ -1286,7 +1321,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func finishTranscription(text: String) {
+    /// `destination` is where this dictation was aimed when its hotkey went
+    /// down — passed along rather than looked up, so a second press landing
+    /// mid-transcription cannot redirect this one. See `transcribe`.
+    private func finishTranscription(
+        text: String, destination: Destination, focus: SelectionReader.Selection?
+    ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let command = commandAfterWakePhrase(trimmed) {
@@ -1309,13 +1349,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) {
             Log.write("inline: \"\(split.instruction)\" over \"\(split.text)\"")
             lastTranscript = split.text
-            runInline(text: split.text, instruction: split.instruction)
+            runInline(
+                text: split.text, instruction: split.instruction,
+                destination: destination, focus: focus
+            )
             return
         }
 
         Log.write("transcribed: \(trimmed)")
         lastTranscript = trimmed
-        insertDictation(trimmed)
+        insertDictation(trimmed, to: destination)
     }
 
     /// An instruction found inside a dictation: route it, run it over the words
@@ -1333,14 +1376,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// being overwritten here, and a dialog in the middle would give back the
     /// second round trip this exists to remove. The rewrite goes to the log
     /// with its before and after, as pipeline transforms do.
-    private func runInline(text: String, instruction: String) {
+    private func runInline(
+        text: String, instruction: String, destination: Destination,
+        focus: SelectionReader.Selection?
+    ) {
         let catalogue = Catalogue(prompts: config.prompts)
 
         /// Write what was said, and say why it is not what was asked for.
         func giveUp(_ why: String, tone: NoticeTone = .caution) {
             endProgress()
             Log.write("inline: \(why); wrote the text as dictated")
-            insertDictation(text)
+            insertDictation(text, to: destination)
             notice.show(why, tone: tone, duration: 7)
             setLabel(why, clearAfter: 7)
         }
@@ -1367,7 +1413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             Log.write("    after:  \(cleaned)")
                         }
                         self.lastTranscript = cleaned
-                        self.insertDictation(cleaned)
+                        self.insertDictation(cleaned, to: destination)
                     }
                 } catch {
                     await MainActor.run {
@@ -1381,7 +1427,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("inline router: \"\(instruction)\" named \(capability.name) outright")
             switch capability {
             case .transform(let prompt): run(prompt)
-            case .action(let action): runInlineAction(action, text: text, instruction: instruction)
+            case .action(let action):
+                runInlineAction(
+                    action, text: text, instruction: instruction,
+                    destination: destination, focus: focus
+                )
             }
             return
         }
@@ -1407,7 +1457,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("inline router: \"\(instruction)\" → \(prompt.name)")
                         run(prompt)
                     case .matched(.action(let action)):
-                        self.runInlineAction(action, text: text, instruction: instruction)
+                        self.runInlineAction(
+                            action, text: text, instruction: instruction,
+                            destination: destination, focus: focus
+                        )
                     case .anything:
                         Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
                         run(FreeForm.prompt(for: instruction))
@@ -1434,7 +1487,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// because a panel was dismissed would lose the sentence over a change of
     /// mind about a rule.
     private func runInlineAction(
-        _ action: Capability.Action, text: String, instruction: String
+        _ action: Capability.Action, text: String, instruction: String,
+        destination: Destination, focus: SelectionReader.Selection?
     ) {
         switch action {
         case .vocabulary:
@@ -1442,14 +1496,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // panel opens on the sentence itself and you correct it by hand.
             endProgress()
             Log.write("inline: correction panel over \"\(text)\"")
-            showInlineCorrection(over: text, rules: nil)
+            showInlineCorrection(
+                over: text, rules: nil, destination: destination, focus: focus
+            )
 
         case .spelling:
             // "…by the way parrot, Tasmin spells T A S M E E N" — the rule has
             // to be read out of the instruction first, which is a model call of
             // its own and not part of routing.
             guard config.llm.enabled else {
-                giveUpInline(text, why: "\"\(instruction)\" needs the local model to read the spelling")
+                giveUpInline(
+                    text,
+                    why: "\"\(instruction)\" needs the local model to read the spelling",
+                    destination: destination
+                )
                 return
             }
             beginProgress("Thinking…")
@@ -1474,18 +1534,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             for rule in rules {
                                 Log.write("inline: proposed rule \(rule.heard) -> \(rule.corrected)")
                             }
-                            self.showInlineCorrection(over: text, rules: rules)
+                            self.showInlineCorrection(
+                                over: text, rules: rules,
+                                destination: destination, focus: focus
+                            )
                         case .openCorrectionPanel:
-                            self.showInlineCorrection(over: text, rules: nil)
+                            self.showInlineCorrection(
+                                over: text, rules: nil,
+                                destination: destination, focus: focus
+                            )
                         case .unrecognised:
-                            self.giveUpInline(text, why: "Didn't understand \"\(instruction)\"")
+                            self.giveUpInline(
+                                text, why: "Didn't understand \"\(instruction)\"",
+                                destination: destination
+                            )
                         }
                     }
                 } catch {
                     await MainActor.run {
                         guard let self else { return }
                         self.endProgress()
-                        self.giveUpInline(text, why: error.localizedDescription, tone: .failure)
+                        self.giveUpInline(
+                            text, why: error.localizedDescription, tone: .failure,
+                            destination: destination
+                        )
                     }
                 }
             }
@@ -1494,13 +1566,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The correction panel, with the dictated text waiting behind it.
     ///
-    /// `pendingSelection` and `focusAtPress` are deliberately cleared: they are
-    /// how `saveCorrections` decides to write into a field somewhere else, and
-    /// here the only place the text should land is where a dictation would put
-    /// it. Leaving them set would rewrite whatever happened to be selected when
-    /// the hotkey went down.
+    /// `pendingSelection` is deliberately cleared: it is how `saveCorrections`
+    /// decides to write into a field somewhere else, and here the only place
+    /// the text should land is where a dictation would put it. Leaving it set
+    /// would rewrite whatever happened to be selected when the hotkey went down.
+    ///
+    /// `focus` is passed in rather than read off `focusAtPress` when the panel
+    /// closes. This panel is the longest wait in the app — it is open for as
+    /// long as someone takes to think about a spelling — and a dictation
+    /// started somewhere else in the meantime moves that field. Reading it late
+    /// would hand focus to the newer app and paste this sentence into it.
     private func showInlineCorrection(
-        over text: String, rules: [(heard: String, corrected: String)]?
+        over text: String, rules: [(heard: String, corrected: String)]?,
+        destination: Destination, focus: SelectionReader.Selection?
     ) {
         pendingSelection = nil
 
@@ -1513,7 +1591,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// showed a rule proposed and then nothing at all. `applyTransform`
         /// learned this the same way and does the same thing.
         func handBack() {
-            guard let owner = focusAtPress?.owner, !owner.isActive else { return }
+            guard let owner = focus?.owner, !owner.isActive else { return }
             owner.activate()
             // Let it come forward before the keystroke is posted.
             Thread.sleep(forTimeInterval: 0.15)
@@ -1553,14 +1631,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ).isEmpty ? correctedText : corrected
             self.lastTranscript = final
             handBack()
-            Log.write("inline: writing into \(self.focusAtPress?.owner?.localizedName ?? "the frontmost app")")
-            self.insertDictation(final)
+            Log.write("inline: writing into \(focus?.owner?.localizedName ?? "the frontmost app")")
+            self.insertDictation(final, to: destination)
         }
         correctionPanel.onCancel = { [weak self] in
             guard let self else { return }
             Log.write("inline: correction dismissed; wrote the text as dictated")
             handBack()
-            self.insertDictation(text)
+            self.insertDictation(text, to: destination)
         }
 
         if let rules {
@@ -1571,10 +1649,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Write what was said, and say why it is not what was asked for.
-    private func giveUpInline(_ text: String, why: String, tone: NoticeTone = .caution) {
+    private func giveUpInline(
+        _ text: String, why: String, tone: NoticeTone = .caution,
+        destination: Destination
+    ) {
         endProgress()
         Log.write("inline: \(why); wrote the text as dictated")
-        insertDictation(text)
+        insertDictation(text, to: destination)
         notice.show(why, tone: tone, duration: 7)
         setLabel(why, clearAfter: 7)
     }
@@ -1586,7 +1667,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// selection can fail with nothing but a message, because the words are
     /// already on screen — here they have never been written, and a toast is
     /// not somewhere you can copy them back out of.
-    private func insertDictation(_ text: String) {
+    ///
+    /// `destination` is where *this* text was aimed when its hotkey went down,
+    /// carried in rather than read off `self` — by the time an inline prompt
+    /// and a correction panel have both had their turn, the field may be
+    /// holding a newer press's answer.
+    private func insertDictation(_ text: String, to destination: Destination) {
+        // Nowhere to type: the pill said so by leaving its icon out, and this is
+        // the other half of that. Pasting anyway is the bad outcome — a ⌘V into
+        // a Finder window or a video player does whatever that window makes of
+        // it, and the sentence is gone, because a dictation exists nowhere but
+        // here until it is written down.
+        //
+        // The clipboard is the one destination that always exists, so this one
+        // is said out loud rather than logged. "It went to the clipboard" is
+        // only true if you know it: unsaid, it is indistinguishable from the
+        // dictation having failed, and you say the whole thing again.
+        //
+        // Two cases are deliberately not this one. `insert_mode: clipboard` is
+        // someone who has already decided every transcript is copied, and a
+        // notice each time would be telling them what they configured. A
+        // missing Accessibility grant lands on the clipboard too, but it is a
+        // permission to grant rather than a window to click into, and it has
+        // been saying so in the menu bar for as long as it has existed — see the
+        // `.clipboardOnly` branch below.
+        if config.transcription.insertMode == .paste,
+           case .nowhere(let reason) = destination, reason != .noAccessibility {
+            TextInserter.insert(text, mode: .clipboard)
+            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            Log.write("nothing to type into (\(reason.described)); copied instead")
+            flash("Nowhere to type — the transcription is on your clipboard", tone: .done)
+            updateUI()
+            return
+        }
+
         switch TextInserter.insert(text, mode: config.transcription.insertMode) {
         case .pasted:
             if config.feedback.sound { NSSound(named: "Glass")?.play() }

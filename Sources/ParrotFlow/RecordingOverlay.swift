@@ -5,9 +5,13 @@ import SwiftUI
 final class OverlayModel: ObservableObject {
     @Published var level: Float = 0
     @Published var elapsed: TimeInterval = 0
-    /// The icon of the app that was in front when the hotkey went down — the
-    /// one an `app:` condition will be matched against and the one the text
-    /// will land in. Nil when nothing was in front, or when the app has none.
+    /// The icon of the app the text is going to land in — the one an `app:`
+    /// condition will be matched against.
+    ///
+    /// Nil when nothing was in front, when the app has no icon, and when there
+    /// was nothing in it to type into: the icon is a promise about where the
+    /// words are going, and a window with no caret in it is not somewhere they
+    /// can go. See `Destination`.
     @Published var appIcon: NSImage?
 }
 
@@ -109,6 +113,14 @@ final class RecordingOverlay {
 /// it has always been. An empty slot held open is a hole you have to explain;
 /// the two widths are set in `RecordingMetrics` and applied at `show()`, which
 /// is the only moment either can change.
+///
+/// The narrow pill is also the warning. The icon appears when there is a field
+/// with keyboard focus to write into — not merely when an app is in front — so
+/// its absence says the words have nowhere to go and will be copied instead.
+/// That is a thing worth knowing while you are still talking, and it is told by
+/// the shape of the pill rather than by a second word on it: the pill is read in
+/// peripheral vision, and something being missing is the one difference that
+/// registers there.
 struct RecordingPill: View {
     @EnvironmentObject private var model: OverlayModel
 

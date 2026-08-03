@@ -80,6 +80,19 @@ enum PeekCommand {
         AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &role)
         report("role      \((role as? String) ?? "unknown")")
 
+        // What a dictation would do with this window before a single word of it
+        // is transcribed: `nowhere` is the pill with no icon in it and a
+        // transcript that ends up on the clipboard. Reported here because this
+        // is where a verdict that looks wrong gets checked — an app that plainly
+        // has a caret in it and reads as `nowhere` is a role this does not know.
+        let destination = Destination.at(
+            app: front.map {
+                Pipeline.App(name: $0.localizedName ?? "", bundleID: $0.bundleIdentifier ?? "")
+            },
+            focus: element
+        )
+        report("dictation \(destination.described)")
+
         let value = SelectionReader.visibleText(of: element)
         if let value {
             let lines = value.components(separatedBy: "\n").count
