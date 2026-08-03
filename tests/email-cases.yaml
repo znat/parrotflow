@@ -1,0 +1,419 @@
+# Validation set for the `email` prompt — the pipeline step that lays dictated
+# text out as an email. Run with scripts/validate-email.py.
+#
+# Why this file exists: the prompt was tuned by eye through six versions, and
+# the score in config.example.yaml ("8/10") was never backed by anything in the
+# repo. The failure that finally forced the issue was one the prompt's own
+# comments record as fixed in v3 — a bracketed placeholder signature:
+#
+#   in    Hi Peter, two things. One I still owe you the SDLC report. And two,
+#         can we move our one on one to six pm?
+#   out   ... Thanks,
+#         [Your Name]
+#
+# Neither the closing word nor the name was ever spoken. That is the whole
+# shape of the risk here: a model handed a dictated email will return a better
+# one, in its own voice, and the parts it invents are the parts you do not
+# read before sending.
+#
+# --- the inputs are real, and this matters more than it looks ---------------
+#
+# Every input below is written the way the transcriber actually hands text to
+# this stage: capitalised, punctuated, with the stutters and mishearings left
+# in. It is the last stage in the pipeline, so what reaches it has already been
+# through replacements, fuzzy and numbers — it never sees a raw lowercase run.
+#
+# The first version of this file got that wrong, and the mistake was not
+# cosmetic. Hand-writing the cases as unpunctuated lowercase made the ordinal
+# cases *pass*:
+#
+#   "one I still owe you the report two I didn't hear from supabase"  -> list
+#   "One, I still owe you the report. Two, I didn't hear from Supabase."  -> prose
+#
+# Same words, opposite behaviour, because sentence punctuation is exactly the
+# signal the model uses to decide these are sentences rather than items. A set
+# built from tidier inputs than production measures a pipeline nobody runs.
+# When adding a case, copy the `before:` line out of ~/Library/Logs — that is
+# this stage's real input, verbatim.
+#
+# --- how a case is scored --------------------------------------------------
+#
+# Not by exact match. The right output for "lay this out as an email" is not a
+# single string — "One, ... And two, ..." may legitimately come back as "First,
+# ... Second, ..." — and a set that demanded one spelling would fail on wording
+# nobody cares about and hide the failures that matter. So each case asserts
+# *properties* of the output, as regexes over the whole (multiline) text:
+#
+#   require   every pattern must match
+#   forbid    no pattern may match
+#
+# Both are applied with re.MULTILINE, so ^ and $ anchor to lines — which is the
+# unit an email layout is actually made of.
+#
+# --- the two halves --------------------------------------------------------
+#
+#   layout    the prompt must do something: a greeting onto its own line, three
+#             things onto three dashed lines, a signature block.
+#   restraint the prompt must not: no greeting nobody spoke, no closing word
+#             nobody spoke, no name, and above all no placeholder standing in
+#             for one.
+#
+# `restraint` is half the set on purpose, and it is the half that regressed.
+# Every restraint case also carries the blanket forbid list below, because an
+# invented "Best regards" is the same bug as an invented "[Your Name]" and
+# there is no reason to catch only the one that bit us.
+#
+# `known_failure: true` marks a case the shipped prompt is documented as
+# getting wrong and that no wording has yet fixed (see the prompt's comments:
+# a short reply ending in a goodbye comes back as the goodbye alone). It is
+# scored and reported separately so it neither flatters a variant nor reads as
+# a regression someone just caused.
+
+# Patterns no output may ever contain, added to every case's `forbid`. A
+# bracketed placeholder is the bug this set was written for; the sign-offs are
+# the same bug wearing different words.
+forbid_always:
+  - '\[[^\]]*\]'
+  - '(?im)^\s*(best regards|kind regards|warm regards|sincerely|regards|best|cheers|yours truly|cordialement|bien à vous)\s*,?\s*$'
+  - '(?im)^\s*(your name|sender|name here|nom)\s*$'
+
+cases:
+  # --- restraint: the signature ---------------------------------------------
+  #
+  # The reported failure, verbatim from the log. No name is spoken and the text
+  # ends on a question, so the last line of the output is that question.
+  - name: no name spoken, nothing invented
+    half: restraint
+    category: signature
+    input: >-
+      Hi Peter, two things. One I still owe you the SDLC report. And two, can
+      we move our one on one to six pm?
+    require:
+      - '(?m)^Hi Peter,$'
+      - '(?ms)\?\s*\Z'
+    forbid:
+      - '(?im)^\s*thanks\s*,?\s*$'
+      - '(?im)^\s*(nathan|peter)\s*$'
+
+  # No greeting either, so there is nothing at all for the model to pattern-
+  # match an email onto. This is where an invented "Hi," showed up in v1, and
+  # where "Quick update" is currently deleted.
+  - name: no greeting and no name
+    half: restraint
+    category: signature
+    input: >-
+      Quick update. The migration finished at two am and nothing broke. I will
+      write it up properly tomorrow.
+    require:
+      - '(?im)\A\s*Quick update'
+    forbid:
+      - '(?im)^\s*(hi|hello|hey|dear)\b'
+      - '(?im)^\s*thanks\s*,?\s*$'
+
+  # A closing word spoken with no name behind it. The prompt ties the two
+  # together — "a closing word said just before it" — which is exactly the
+  # pressure that reaches for a placeholder when the name is missing.
+  - name: closing word spoken, no name
+    half: restraint
+    category: signature
+    input: Can you review the draft when you get a chance? Thanks.
+    require:
+      - '(?i)thanks'
+    forbid:
+      - '(?im)^\s*(nathan|your name|name)\s*$'
+
+  # Two names appear *in* the body. Neither is a signature, and lifting one out
+  # would be an invention of a different kind.
+  - name: a name in the body is not a signature
+    half: restraint
+    category: signature
+    input: >-
+      Hi team, Sarah is covering the release on Friday and Tom has the runbook,
+      so nobody needs to be online at midnight.
+    forbid:
+      - '(?im)^\s*(sarah|tom)\s*$'
+
+  # The shipped prompt used to answer this one — it came back as "The new
+  # pricing page goes live before the announcement", which is not a layout
+  # decision but a claim the speaker never made. A question dictated is a
+  # question sent.
+  - name: question only, no sign-off
+    half: restraint
+    category: signature
+    input: Does the new pricing page go live before or after the announcement?
+    require:
+      - '\?'
+    forbid:
+      - '(?im)^\s*thanks\s*,?\s*$'
+      - '(?im)^\s*(hi|hello|dear)\b'
+
+  # --- restraint: the greeting ----------------------------------------------
+  #
+  # A spoken "hey" is the speaker's, not a hesitation and not a formality to
+  # upgrade. The slack prompt lost two words exactly here.
+  - name: spoken hey survives
+    half: restraint
+    category: greeting
+    input: Hey, uh, quick one. The build is red on main since about ten minutes ago.
+    require:
+      - '(?im)^hey\b'
+    forbid:
+      - '(?im)^\s*(hi|hello|dear)\b'
+
+  - name: no greeting invented before a bare statement
+    half: restraint
+    category: greeting
+    input: >-
+      The contract came back from legal with two changes, both of them in the
+      liability section.
+    forbid:
+      - '(?im)^\s*(hi|hello|hey|dear)\b'
+
+  # --- restraint: the words themselves --------------------------------------
+  - name: hesitations go, wording stays
+    half: restraint
+    category: words
+    input: >-
+      Um, so I think we should probably, you know, push the launch by a week. I
+      mean, the docs are not ready.
+    require:
+      - '(?i)push the launch by a week'
+    forbid:
+      - '(?i)\b(um|uh|you know|I mean)\b'
+
+  - name: a short reply is not an email with parts
+    half: restraint
+    category: short-reply
+    input: Ok, that works for me.
+    require:
+      - '(?s)\A[^\n]*\Z'
+
+  - name: two-word reply stays two words
+    half: restraint
+    category: short-reply
+    input: Sounds good.
+    require:
+      - '(?s)\A[^\n]*\Z'
+      - '(?i)sounds good'
+
+  # Documented open failure: the goodbye is lifted out as if it were a
+  # signature and the "yes that works for me" is dropped.
+  - name: short reply ending in a goodbye
+    half: restraint
+    category: short-reply
+    known_failure: true
+    input: Yes that works for me see you Thursday.
+    require:
+      - '(?i)works for me'
+      - '(?i)see you thursday'
+
+  - name: slang is the speaker's voice
+    half: restraint
+    category: words
+    input: >-
+      I'm gonna be ten minutes late to the standup tomorrow. Nothing is on
+      fire, just a school run.
+    require:
+      - '(?i)\bgonna\b'
+
+  # --- layout: the greeting -------------------------------------------------
+  - name: spoken greeting goes on its own line
+    half: layout
+    category: greeting
+    input: >-
+      Hi Marie, the numbers for Q3 are in the shared folder now. I pulled them
+      this morning so they are current.
+    require:
+      - '(?m)^Hi Marie,$'
+      - '(?m)^Hi Marie,\n\n'
+
+  # --- layout: the signature ------------------------------------------------
+  - name: name spoken with a closing word
+    half: layout
+    category: signature
+    input: >-
+      Hi Marie, can you send me the deck before Friday? I want to read it over
+      the weekend. Thanks, Nathan.
+    require:
+      - '(?im)^thanks,?$'
+      - '(?m)^Nathan$'
+      - '(?im)^thanks,?\nNathan$'
+
+  - name: name spoken with no closing word
+    half: layout
+    category: signature
+    input: >-
+      Peter, the invoice is attached. Let me know if anything looks off before
+      I send it to accounting. Nathan.
+    require:
+      - '(?m)^Nathan$'
+      - '(?m)\n\nNathan$'
+
+  # --- layout: lists --------------------------------------------------------
+  - name: three things introduced by a colon phrase
+    half: layout
+    category: lists
+    input: >-
+      Hi Tom, here is what I need from you, the invoice, the signed contract
+      and the shipping address.
+    require:
+      - '(?m)^- .*invoice'
+      - '(?m)^- .*contract'
+      - '(?m)^- .*address'
+
+  - name: three things with no number spoken
+    half: layout
+    category: lists
+    input: >-
+      Before we ship we should run the migration on staging, check the error
+      budget and tell support.
+    require:
+      - '(?m)^- '
+      - '(?ms)(^- .*$\n?){3}'
+
+  - name: two things stay a sentence
+    half: layout
+    category: lists
+    input: I need the invoice and the signed contract before Friday.
+    forbid:
+      - '(?m)^- '
+
+  # --- layout: spoken ordinals ----------------------------------------------
+  #
+  # The shape v6 and v7 both miss, and the one that arrives most often in
+  # practice: the speaker counts out loud, in separate sentences, rather than
+  # running the items together in one. The list rule is about things "listed in
+  # a row" joined by commas or "and", and its examples are all noun phrases
+  # inside a single sentence, so none of it fires here.
+  #
+  # Worse than not listing them: the ordinals are deleted on the way past.
+  # "One, I still owe you the SLT report. Two, I didn't hear yet from
+  # Supabase." came back with both numbers gone and no list in their place —
+  # spoken words dropped, which the prompt's second paragraph forbids outright.
+  #
+  # The prompt's comments record a version that forced ordinals and "dropped an
+  # item on the floor". That is what the item assertions are for: every case
+  # here names all of its items, so a variant that loses one cannot pass.
+  #
+  # Both list inputs are verbatim log lines. Punctuation is the whole game in
+  # this category — see the note at the top of the file.
+  - name: ordinals across separate sentences
+    half: layout
+    category: ordinals
+    input: >-
+      Hey Peter, three things for you today. One, I still owe you the SLT
+      report. Two, I didn't hear yet from Supabase. Three. Can we move our one
+      on one to later? Thanks, Nathan.
+    require:
+      - '(?m)^Hey Peter,$'
+      - '(?ms)(^- .*$\n?){3}'
+      - '(?im)^- .*SLT report'
+      - '(?im)^- .*supabase'
+      - '(?im)^- .*one-on-one'
+      - '(?m)^Nathan$'
+
+  - name: two spoken ordinals still open a list
+    half: layout
+    category: ordinals
+    input: >-
+      Hi Peter, two things. One I still owe you the SDLC report. And two, can
+      we move our one on one to six pm?
+    require:
+      - '(?ms)(^- .*$\n?){2}'
+      - '(?im)^- .*SDLC report'
+      - '(?im)^- .*one-on-one'
+
+  - name: first and second as ordinals
+    half: layout
+    category: ordinals
+    input: >-
+      The plan is, first we deploy to staging, second we run the smoke tests,
+      third we flip the flag.
+    require:
+      - '(?ms)(^- .*$\n?){3}'
+      - '(?im)^- .*staging'
+      - '(?im)^- .*smoke tests'
+      - '(?im)^- .*flag'
+
+  # Negatives. "first" is an ordinary adverb far more often than it is an
+  # enumeration, and a rule that opens a list on the word rather than on the
+  # counting is a rule that will bullet half your mail.
+  - name: first as an adverb is not a list
+    half: restraint
+    category: ordinals
+    input: >-
+      First thing in the morning I will call the supplier and see where the
+      order actually is.
+    forbid:
+      - '(?m)^- '
+
+  - name: one as a pronoun is not a list
+    half: restraint
+    category: ordinals
+    input: >-
+      That is the one I meant. The other one was the draft from last week and I
+      have deleted it.
+    forbid:
+      - '(?m)^- '
+
+  # --- layout: paragraphs ---------------------------------------------------
+  #
+  # The blank line has to fall *between the two subjects*. An earlier version
+  # of this case asked only for two blank lines anywhere, which the greeting
+  # and an invented signature block supplied for free — it passed while the
+  # body stayed one paragraph.
+  - name: subject change breaks the paragraph
+    half: layout
+    category: paragraphs
+    input: >-
+      Hi Anna, the redesign is done and staging looks right on mobile now.
+      Separately, I will be out next Thursday and Friday so the review will
+      have to move.
+    require:
+      - '(?m)^Hi Anna,$'
+      - '(?ms)redesign.*?\n\n.*Thursday'
+
+  - name: no heading and no emphasis
+    half: layout
+    category: paragraphs
+    input: >-
+      Hi Sam, status on the parser. It is passing on all the fixtures now and I
+      have started on the error messages.
+    forbid:
+      - '(?m)^#'
+      - '\*\*'
+
+  # --- french ---------------------------------------------------------------
+  - name: french email, name spoken
+    half: layout
+    category: french
+    input: >-
+      Bonjour Marie, est-ce que tu peux m'envoyer le devis avant vendredi ?
+      Merci, Nathan.
+    require:
+      - '(?m)^Bonjour Marie,$'
+      - '(?m)^Nathan$'
+      - '(?i)merci'
+    forbid:
+      - '(?i)\b(hi|hello|thanks|regards)\b'
+
+  - name: french, no name spoken
+    half: restraint
+    category: french
+    input: >-
+      Bonjour Pierre, le rapport est en pièce jointe. Dis-moi si quelque chose
+      ne va pas.
+    require:
+      - '(?m)^Bonjour Pierre,$'
+    forbid:
+      - '(?im)^\s*(nathan|merci)\s*,?\s*$'
+      - '(?i)\b(hi|hello|thanks|regards)\b'
+
+  - name: french short reply
+    half: restraint
+    category: french
+    known_failure: true
+    input: Ok pour moi, à jeudi.
+    require:
+      - '(?i)ok pour moi'
+      - '(?i)à jeudi'
