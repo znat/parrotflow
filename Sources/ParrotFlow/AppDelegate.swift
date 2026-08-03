@@ -610,8 +610,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func transcribe(_ recording: Recorder.Recording) {
         transcriptionRun += 1
         let run = transcriptionRun
-        transcriptionLabel = "Transcribing…"
-        updateUI()
+        // On the HUD and not just in the menu. Releasing the key hides the
+        // recording pill, and everything after it — the decoder, then any
+        // prompt stage the pipeline runs — used to report itself only into
+        // `statusInfoItem.title`, a row you have to open the menu bar to read.
+        // A dictation into a mail window spends a second in the `email` prompt
+        // with nothing on screen at all, which reads as the app having dropped
+        // it. Same pair the spoken-command path has used all along.
+        beginProgress("Transcribing…")
 
         let config = self.config
         // Taken at the press, not here: a transcript arrives seconds later and
@@ -644,14 +650,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             // something on screen to replace.
                             guard let self, self.transcriptionRun == run,
                                   self.transcriptionLabel != nil else { return }
-                            self.transcriptionLabel = label
-                            self.updateUI()
+                            self.beginProgress(label)
                         }
                     }
                 ) ?? ""
                 await MainActor.run {
                     guard let self else { return }
-                    self.transcriptionLabel = nil
+                    // Only if the screen is still ours. Push-to-talk does not
+                    // wait, so a second press while this one was in flight has
+                    // already put its own "Transcribing…" up, and clearing it
+                    // here would leave that dictation running behind a blank
+                    // screen — the bug this is meant to fix, one press later.
+                    // The text is delivered either way: `destination` was
+                    // captured at the press for exactly that reason.
+                    if self.transcriptionRun == run { self.endProgress() }
                     self.finishTranscription(
                         text: text, destination: destination, focus: focus
                     )
@@ -659,7 +671,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await MainActor.run {
                     guard let self else { return }
-                    self.transcriptionLabel = nil
+                    if self.transcriptionRun == run { self.endProgress() }
                     Log.write("transcription failed: \(error.localizedDescription)")
                     self.presentAlert(title: "Transcription failed", message: error.localizedDescription)
                     self.updateUI()
