@@ -4,71 +4,81 @@
 
 ### Local dictation for people who type for a living
 
-Open source Wispr Flow alternative. No need to create an account or subscribe. Install, hold a key, talk, and get work done.
+An open source alternative to Wispr Flow. No account, no subscription, no cloud —
+your audio never leaves your Mac.
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
 ![License Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-0c8c7c)
 ![No cloud](https://img.shields.io/badge/audio-never%20leaves%20your%20Mac-39cdb6)
 
-**[Install](#install) · [Documentation](docs/README.md) · [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md)**
+**[Install](#install)** · [Documentation](docs/README.md)
 
 </div>
 
 ---
 
-A fully featured open source alternative to Wispr Flow:
+Hold <kbd>right ⌥</kbd>, say the words on the left, let go. What lands at your
+cursor is on the right.
 
+| You say | You get |
+| --- | --- |
+| *"read user dot name"* | `read user.name` |
+| *"lis config point port"* | `lis config.port` |
+| *"the meeting is December 3rd"* | `the meeting is 3/12` |
+| *"on a dépensé deux cents euros"* | `on a dépensé 200 euros` |
+| *"a typescript function named get user profile"* | `a typescript function named getUserProfile` |
+| *"a python constant called max retry count"* | `a python constant called MAX_RETRY_COUNT` |
 
-- **Dictate anywhere** — hold a key, talk, and the text lands at your cursor:
-  editor, terminal, browser, chat.
-- **Small, efficient local models** — Parakeet TDT v3 runs on the Neural Engine,
-  and anything needing judgement asks a Gemma 4B model through Ollama. Both fit in
-  RAM you already have.
-- **Really Fast** — a normal sentence is text about a second after you let go of the
-  key. Follow ups are conditional or activated with voice commands, so you pay for it where you want it.
-- **Your vocabulary, taught out loud** — say "hey parrot, elastic search is one
-  word and takes a capital E" and it is right from then on, with a fuzzy pass for the spellings you
-  never taught it.
-- **Spoken numbers, paths and identifiers** — "two hundred forty-three" → `243`,
-  "user point name" → `user.name`, "a function called max retries" →
-  `max_retries`.
-- **Spoken commands** — select some text and say "hey parrot, use Slack handles"
-  or "hey parrot, format the function names for TypeScript". A transform that
-  describes the job runs; otherwise the model does what was asked, and you see
-  the result before it replaces anything.
-- **A programmable pipeline** — every stage of your own pipeline is a `transform`. A `transform` can be a regex, a prompt, or a script in any language running on your Mac. No limits.
-- **A prompt tuner** — so a 4B model on your Mac get a chance to approximate frontier accuracy
-  on a narrow text transform. Need a new prompt? Ask Claude to tune it with ParrotFlow's prompt tuner.
-
-No account, no API key, no server. It uses local models and your audio or text
-never leaves your Mac.
+Every row is a case in [`tests/`](tests/), scored on each change rather than
+checked by eye — including the ones that still fail, which stay in the sets.
 
 ## Install
 
 **Requires** an Apple Silicon Mac on macOS 14 or later.
 
-Paste this into Claude Code, or any agent that can run shell commands:
+> [!TIP]
+> **Let an agent do it.** Paste the block below into Claude Code, or anything
+> else that can run shell commands. It installs the app, walks you through the
+> two macOS permissions, and confirms transcription works before it hands over.
+> About five minutes.
 
 ```text
 Set up ParrotFlow on my Mac by following
 https://raw.githubusercontent.com/znat/parrotflow/main/docs/setup.md
 ```
 
-It installs the app, walks you through the two macOS permissions, and confirms
-transcription works. About five minutes.
-
-By hand, the app itself is one command — the rest is in
-[docs/setup.md](docs/setup.md):
+Or install it yourself. The app is one command; the permissions that follow are
+in [docs/setup.md](docs/setup.md).
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
 
-## Why ParrotFlow
+Your first dictation downloads the speech model, about 1.2 GB. Everything after
+that is immediate.
+
+## Talk to it
+
+**Teach it a word.** Say *"hey parrot, elastic search is one word and takes a
+capital E"* and it is right from then on. A fuzzy pass catches the spellings you
+never taught it, so *"super bays"* still reaches `Supabase`.
+
+**Give it an instruction.** Select some text and say *"hey parrot, use Slack
+handles"* or *"hey parrot, format the function names for TypeScript"*. You see
+the result before it replaces anything.
+
+**It runs on your own hardware.** Parakeet TDT v3 on the Neural Engine turns
+speech into text — that part needs nothing else, and a normal sentence lands
+about a second after you let go. Teaching it words and giving it instructions
+ask a Gemma 4B through your own [Ollama](https://ollama.com); dictation works
+without it.
+
+## Program it
 
 Other dictation tools let you configure what someone else decided to expose.
-Here your transcript runs through stages you wrote, in the order you chose:
+Here the transcript runs through stages you wrote, in the order you chose, each
+one conditional on the text, the language, or the app you dictated into:
 
 ```yaml
 pipelines:
@@ -79,9 +89,14 @@ pipelines:
       app: /term|ghostty|code|cursor/   #   but only where you write code
 ```
 
-It is a text file, not a settings pane. `~/.config/parrotflow/config.yaml`,
-reloaded on save, commentable, diffable, committable. Apache 2.0, no paid tier,
-no telemetry.
+A stage is a regex, a prompt to the local model, or **a script of yours** —
+transcript on stdin, rewrite on stdout, in any language. If one fails, times
+out, or the model is not running, your sentence comes through exactly as you
+said it.
+
+It is a text file, not a settings pane: `~/.config/parrotflow/config.yaml`,
+reloaded on save, commentable, diffable, committable. No paid tier, no
+telemetry.
 
 Pipelines: [docs/pipelines.md](docs/pipelines.md) · Writing a transform:
 [docs/authoring.md](docs/authoring.md) · Where the time goes:
