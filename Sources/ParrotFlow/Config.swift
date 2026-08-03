@@ -912,6 +912,10 @@ struct Config: Decodable, Equatable {
     /// app running with `replacements` silently missing looked exactly like an
     /// app whose replacement table was empty. The command prints these; the app
     /// logs them at every load.
+    ///
+    /// Only faults. What is merely worth knowing goes in `notices()` — see
+    /// there for why that had to be a second list after all.
+
     /// What is wrong with the replacement table alone.
     ///
     /// Split out of `problems()` so a pipeline fixture can be checked against
@@ -959,22 +963,16 @@ struct Config: Decodable, Equatable {
                 + " — configured: \(transcription.languages.joined(separator: ", "))")
         }
         found += replacementProblems()
-        // Said out loud, every time, and not only when something is wrong with
-        // it. A `command:` transform is the one thing in this file that runs
-        // code rather than describing a rewrite, and a config that executes
-        // something you have forgotten about — or that arrived in a config you
-        // copied — should not be able to stay quiet about it.
+        // A first word that is still relative after resolution is a bare
+        // command name for the shell to find on PATH — `python3`, `sed` — and
+        // this cannot say whether that will work. What it can say is that a
+        // script sitting right there will not run, which is a fault: the stage
+        // is in the pipeline and the transcript comes out untouched.
         for transform in transforms {
-            guard case .command(let command) = transform.body else { continue }
-            // A first word that is still relative after resolution is a bare
-            // command name for the shell to find on PATH — `python3`, `sed` —
-            // and this cannot say whether that will work. What it can say is
-            // that a script sitting right there will not run.
-            let wrong = CommandRunner.complaint(about: command, base: transform.directory)
-            found.append(
-                "transforms: \"\(transform.name)\" runs a program — \(command)"
-                + (wrong.map { " — \($0)" } ?? "")
-            )
+            guard case .command(let command) = transform.body,
+                  let wrong = CommandRunner.complaint(about: command, base: transform.directory)
+            else { continue }
+            found.append("transforms: \"\(transform.name)\" cannot run \(command) — \(wrong)")
         }
         for language in transcription.languages {
             let pipeline = Pipeline.resolved(config: self, language: language)
@@ -991,6 +989,29 @@ struct Config: Decodable, Equatable {
             }
         }
         return found
+    }
+
+    /// True things about the config that are worth saying and are not faults.
+    ///
+    /// A `command:` transform is the one thing in this file that runs code
+    /// rather than describing a rewrite, and a config that executes something
+    /// you have forgotten about — or that arrived in a config you copied —
+    /// should not be able to stay quiet about it. So it is announced on every
+    /// load, working or not.
+    ///
+    /// It was announced through `problems()`, which is where the one list above
+    /// stopped being right: `--check-config` prints that list with a ✗ and
+    /// exits 1, and the app puts it behind "⚠︎ 1 setting in config.yaml does
+    /// nothing" and an alert saying that part of your config is ignored. A
+    /// working transform was reported as a broken setting on every launch, and
+    /// the answer to "why does it say my config is not working" was that it
+    /// wasn't. Announcing is not complaining, and the two cannot share a list
+    /// that one end of the app treats as failure.
+    func notices() -> [String] {
+        transforms.compactMap { transform in
+            guard case .command(let command) = transform.body else { return nil }
+            return "transforms: \"\(transform.name)\" runs a program — \(command)"
+        }
     }
 
     var resolvedOutputDir: URL {

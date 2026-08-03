@@ -213,6 +213,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // happening, and nothing distinguished that from an empty table.
         configProblems = config.problems()
         for problem in configProblems { Log.write("config: \(problem)") }
+        // Logged and not flashed. A `command:` transform is announced on every
+        // load — see `Config.notices()` — and it went through `problems()` for
+        // a while, which put "⚠︎ 1 setting in config.yaml does nothing" in the
+        // menu of every config that had one. The log is where a standing fact
+        // about your config belongs; the notice is for what changed.
+        for notice in config.notices() { Log.write("config: \(notice)") }
         announceIfNew(configProblems)
 
         hotkeyError = nil
