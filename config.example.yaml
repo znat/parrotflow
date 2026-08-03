@@ -3,103 +3,55 @@ transcription:
   # clipboard -> copied, you press Cmd-V
   insert_mode: clipboard
 
-  # Say one of these instead of dictating and what follows is an
-  # instruction: "hey parrot, make that a bullet list". An empty list
-  # disables spoken commands.
-  #
-  # One of them mid-sentence turns the rest into an instruction about the
-  # words before it, in the same breath:
-  #
-  #   "there is a bug in get username by the way parrot format that name"
-  #
-  # which is why there are two: "hey parrot" opens an utterance and reads
-  # as nonsense inside one, and "by the way parrot" is the reverse. The
-  # first is the one to teach someone.
+  # Say one of these and what follows is an instruction, not dictation: "hey
+  # parrot, make that a bullet list". Mid-sentence, the rest of the breath is an
+  # instruction about the words before it. An empty list turns this off.
   activation_phrases: [hey parrot, by the way parrot]
 
-  # Last resort for fields Accessibility cannot write, terminals mostly: clear
-  # the input line with Ctrl-A Ctrl-K and retype it corrected. It only fires
-  # when the line still holds what you dictated.
+  # For fields Accessibility cannot write, terminals mostly: clear the line with
+  # Ctrl-A Ctrl-K and retype it corrected, if it still holds what you dictated.
   rewrite_line: true
 
-  # Languages you dictate in, most spoken first — the first one is the
-  # fallback for transcripts too short to judge, under four words.
-  # Supported: en, fr. A single entry means no detection runs at all.
-  #
-  # Not sent to Parakeet, which transcribes multilingually by itself and
-  # reports no language back. This is the list ParrotFlow chooses between, so
-  # naming only what you actually speak makes it more accurate.
+  # Languages you dictate in, most spoken first — the first is the fallback for
+  # transcripts too short to judge, under four words. Supported: en, fr. A
+  # single entry means no detection runs. List only what you actually speak.
   languages: [en, fr]
 
-  # What a finished transcript runs through, in order. Listed in full because
-  # a stage runs only if it is here: switching one off is deleting a line you
-  # can see.
+  # What a finished transcript runs through, in order. A stage runs only if it
+  # is listed, so switching one off is deleting a line you can see.
   #
   #   replacements  the table below
-  #   fuzzy         the same table against words the spell checker does not
-  #                 know, so "super bays" still reaches Supabase without
-  #                 "Excel" becoming "Vercel". Needs replacements before it
-  #   numbers       "two hundred forty-three" -> 243, plus ordinals, decimals
-  #                 and years, English and French
+  #   fuzzy         the same table against words the spell checker does not know
+  #   numbers       "two hundred forty-three" -> 243, ordinals, decimals, years
   #
-  # Per language, which wins over `default`: fr: [replacements, numbers]
-  #
-  # A prompt can be a stage, and any stage can carry a condition — on the text
-  # with `when:` / `unless:`, or on the app you dictated into:
-  #
-  #   - stage: numbers
-  #     app: /term|ghostty/          # only in a terminal
-  #   - prompt: prose
-  #     app: /^(?!.*term)/           # everywhere but; no not_app, the negation
-  #                                  # goes in the pattern
-  #
-  # See docs/pipelines.md.
+  # A list under a language name wins over `default`. A transform can be a stage
+  # too, and any stage takes a condition — see below, and docs/pipelines.md.
   pipelines:
     default:
       - replacements
       - fuzzy
       - numbers
-      # "read user dot name" -> read user.name, wherever you write code-ish
-      # text. Anywhere else — a mail window, a document — the sentence is left
-      # exactly as spoken.
-      #
-      # `backticks` below would wrap it for chat, and is deliberately not in
-      # this list. Slack's composer converts markdown as you type it and never
-      # re-reads text that arrives by paste, so the backticks land in your
-      # message as characters. Add the step if your chat app renders pasted
-      # markup.
+      # "read user dot name" -> read user.name, in code-ish windows only.
+      # `backticks` does the same for chat, where markup pasted in stays literal.
       - transform: dotted
         app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
-      # "a python function called max retries" -> ...called max_retries, in the
-      # convention of the language you named. Same places as `dotted`, and
-      # `when:` keeps it from starting a process on a sentence that names
-      # nothing — which is most of them. See examples/code_identifiers.py, which is
-      # written beside this file on first launch and is yours to edit.
+      # "a python function called max retries" -> ...max_retries. `when:` keeps
+      # it from starting a process on the many sentences that name nothing.
       - transform: code_identifiers
         app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
         when: /\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\b/
-      # The two stages that cost a second, and the only two here that ask the
-      # model. Dictated prose arrives as one block: no greeting on its own
-      # line, no paragraph breaks, the hesitations still in it. That is layout,
-      # which is the one thing a substitution cannot do — so it is worth the
-      # second, in the two windows where you write to people and nowhere else.
-      #
-      # Gmail in a browser tab is not an app. `app:` reads the window that was
-      # in front, so put your browser in the pattern if you live in Gmail, and
-      # know that every other tab gets the stage too.
+      # The two stages that ask the model, and the only two costing a second.
+      # `app:` reads the window that was in front, and a browser tab is not an
+      # app: add your browser to the pattern if you live in Gmail, knowing every
+      # other tab gets the stage too.
       - transform: email
         app: /mail|outlook|thunderbird|superhuman|missive/
       - transform: slack
         app: /slack/
 
   # The spelling you want, and the ways it comes out wrong. Whole words,
-  # case-insensitive. A source in /slashes/ is a regular expression, and an
-  # empty target deletes rather than substitutes — which is how filler words
-  # go, punctuation and spacing included. With a regex source the target is a
-  # template, so $1 writes back what the pattern captured.
-  #
-  # Workflow: dictate, run --transcribe on the clip, map whatever the model
-  # wrote to what you meant.
+  # case-insensitive. A /slashed/ source is a regex and the target is then a
+  # template ($1 writes back a capture); an empty target deletes instead.
   replacements:
     "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
     Tasmeen: [Tasmid, Tasmin, Tasmine]
@@ -111,76 +63,35 @@ llm:
   enabled: true
   model: gemma4:e4b
   endpoint: http://localhost:11434
-  # Pin the model in RAM at launch. Ollama otherwise drops it after five
-  # minutes and the next command waits 7-10s for the reload. Turn off to get
-  # those seconds back as free RAM.
+  # Pin the model in RAM at launch. Otherwise Ollama drops it after five minutes
+  # and the next command waits 7-10s for the reload.
   keep_loaded: true
 
-# Checking whether a newer ParrotFlow exists.
-#
-# One call a day to GitHub's release API — no account, nothing about you, and
-# nothing about what you dictate. It is the only request this app makes on its
-# own; the speech model is fetched once on first use, and the language model
-# never leaves your Mac.
-#
-# The number is a waiting period, not how often it looks:
-#
-#   -1   never ask at all
-#    0   offer a release the day it is published
-#    7   only offer a release that has existed for a week
-#
-# The wait is the point. A release that turns out to be bad — a pipeline taken,
-# a key stolen — is one that gets noticed and pulled, and a week of distance
-# means your Mac never saw it. What proves an archive is ours is the pinned
-# signing certificate in scripts/install.sh; this is the other half, and buys
-# the time someone needs to notice in the first place.
+# One call a day to GitHub's release API, and the only request this app makes on
+# its own. The number is a waiting period, not how often it looks: -1 never
+# asks, 0 offers a release the day it is published, 7 only offers one that has
+# existed for a week — long enough for a bad release to be noticed and pulled
+# before your Mac ever sees it.
 updates:
   after_days: 7
 
-# What the activation phrase can reach, and what a pipeline can name.
+# What the activation phrase can reach, and what a pipeline can name. The
+# description is what the router matches your words against, so write it the way
+# you would say it; the whole instruction reaches the body, which is why one
+# entry covers "format those dates ISO" and "format those dates with slashes".
 #
-#     "hey parrot, make that a bullet list"
+# `prompt:` asks the local model, about a second. `replace:` is a substitution
+# table, free, and reachable only from a pipeline, where it can be scoped to one
+# app — two tables with the same pattern are how "user dot name" becomes
+# user.name in a terminal and `user.name` in chat. `command:` runs a program of
+# yours — transcript on stdin, rewrite on stdout — and one that fails or takes
+# over two seconds changes nothing. See docs/pipelines.md.
 #
-# A description is not a comment — it is what the router matches your words
-# against, so write it the way you would say it. The whole instruction then
-# reaches the prompt, which is why one entry covers "format those dates ISO"
-# and "format those dates with slashes".
+# `display:` is what the menu bar says while an entry runs, ellipsis added for
+# you. Leave it off a table, which finishes before the label could be read.
 #
-# An entry has one of three bodies. `prompt:` asks the local model and costs
-# about a second. `replace:` is a substitution table of its own and costs
-# nothing. `command:` runs a program of yours — the transcript on stdin, the
-# rewrite on stdout — and costs a process start:
-#
-#   - name: dotted
-#     description: spoken dotted paths as code
-#     replace:
-#       $1.$2: ['/\b(\w+) (?:dot|point) (\w+)\b/']
-#
-#   - name: code_identifiers
-#     description: spoken names as identifiers
-#     command: code_identifiers.py          # beside this file; see examples/
-#
-# A `command:` is the one thing in this file that runs code rather than
-# describing a rewrite. --check-config names every one of them out loud. A
-# command that fails, says nothing, or takes more than two seconds leaves the
-# transcript exactly as it arrived.
-#
-# A table is not reached by voice — it runs from a pipeline, which is where it
-# can be scoped to one app. Two tables with the same pattern and different
-# output are how "user dot name" becomes user.name in a terminal and `user.name`
-# in chat. See docs/pipelines.md.
-#
-# `display:` is what the menu bar says while an entry runs — "Fixing grammar…",
-# "Formatting identifiers…". The description is written for the router, in the
-# words you would say; a display is written for you, for the second you spend
-# watching nothing happen. The ellipsis is added for you. Leave it off a table,
-# which finishes long before the label could be read.
-#
-# Results are shown before they replace your selection; add `confirm: false`
-# to one you have come to trust.
-#
-# Fixing a misheard name is built in and does not appear here — run
-# --check-config to see everything the phrase reaches.
+# Results are shown before they replace your selection; `confirm: false` skips
+# that, and --check-config lists everything the phrase reaches.
 transforms:
   - name: bullets
     description: turn text into a short bullet list
@@ -221,46 +132,12 @@ transforms:
 
       Return only the text.
 
-  # Two prompts scoped to one kind of window each, and the pipeline above runs
-  # them there. `grammar` mends a sentence; these two also lay one out — a
-  # greeting on its own line, a blank line where the subject changes — which is
-  # the part no substitution can express and the reason they are prompts.
-  #
-  # Both are told twice not to write anything, because that is the failure that
-  # costs you something: a model handed a dictated email will gladly return a
-  # better one, in its own voice, and you will not notice until it has gone.
-  #
-  # 8/10 on gemma4:e4b. Six versions before this one, and what the cases caught:
-  #
-  #   v1  "if none was dictated, do not invent one" -> a "Hi," invented anyway,
-  #       and a spoken "thanks Nathan" reduced to "Nathan". A prohibition read
-  #       as a topic.
-  #   v2  the greeting rule turned around to say what the email starts with
-  #       when there is no hello, and the closing word tied to the signature.
-  #   v3  "Nothing is ever deleted" added -> a literal "[Signature]" in the
-  #       output and a greeting invented again. A rule about restraint made it
-  #       less restrained, exactly as in tests/grammar-cases.yaml.
-  #   v4  the greeting rule given worked examples — "bonjour Marie, hi Tom" ->
-  #       the examples came back in the output as "Hi Tom," and "À toi,".
-  #   v5  a short reply named as its own case. 6/7 on the cases that existed.
-  #   v6  lists. Two lessons: the model needs to be told it may count for
-  #       itself — "three or more things in a row" left "here is what I need
-  #       from you the invoice the signed contract and the shipping address"
-  #       inline until the rule said no number has to be spoken — and the rule
-  #       has to sit with the paragraph rule. Moved after the short-reply
-  #       clause it dominated: a two-word reply came back as "[No body text]".
-  #
-  # Two failures left, and they are one shape: a short reply ending in a
-  # goodbye comes back as the goodbye alone. "yes that works for me see you
-  # thursday" -> "See you Thursday.", and "ok pour moi, à jeudi" -> "À jeudi,".
-  # The same sentence with a comma is right. Three framings have bounced off
-  # it, the third being a clause saying a goodbye is not a signature to lift
-  # out, so it is recorded rather than argued with.
-  #
-  # Numbered lists are not in it. Spoken ordinals — "first we deploy, second we
-  # run the tests" — stay as sentences, and the version that forced them
-  # dropped an item on the floor, which is a worse thing to ship than prose
-  # where a list was wanted. Dashes only.
+  # Scoped to mail windows by the pipeline above. `grammar` mends a sentence;
+  # this also lays one out — a greeting on its own line, a blank line where the
+  # subject changes — which is the part no substitution can express and the
+  # reason it is a prompt. It is told twice not to write anything, because a
+  # model handed a dictated email will gladly return a better one in its own
+  # voice and you will not notice until it has gone.
   - name: email
     description: lay dictated text out as an email
     display: Laying out the email
@@ -299,13 +176,10 @@ transforms:
 
       Return only the email.
 
-  # 3/3. "Add nothing" rather than "no greeting, no sign-off": the second
-  # wording read as an instruction to remove one, and "hey uh quick one the
-  # build is red" came back as "The build is red" — two spoken words gone
-  # because a rule about what not to add was read as a rule about what to
-  # strip. "Remove nothing either" is there for the same reason, and the slang
-  # line because "gonna" was being corrected to "going to", which is the
-  # speaker's voice going out with the hesitations.
+  # "Add nothing" rather than "no greeting, no sign-off": the second wording
+  # read as an instruction to remove one, and spoken words went missing. The
+  # slang line is there for the same reason — "gonna" was becoming "going to",
+  # which is the speaker's voice going out with the hesitations.
   - name: slack
     description: tidy dictated text into a chat message
     display: Tidying for chat
@@ -328,47 +202,11 @@ transforms:
       Return only the message.
 
   # Said out loud — "hey parrot, use Slack mentions" — and deliberately in no
-  # pipeline. A message that names someone is not a message that pings them,
-  # and nothing in a transcript tells the two apart. So this is the one you ask
-  # for.
-  #
-  # `confirm` covers one of the two ways of asking, not both. Said with text
-  # selected, the result is shown before it replaces anything, so you see who
-  # is about to be tagged. Said mid-sentence — "by the way parrot, use Slack
-  # mentions" — there is no preview whatever `confirm` says, because nothing is
-  # being overwritten there and a dialog would cost the round trip that path
-  # exists to save. What both produce is text in your composer; ParrotFlow
-  # sends nothing, so the last look is yours before you press Enter.
-  #
-  # It was two `replace:` tables for a while, which is the shape a mapping
-  # wants. A table cannot invent a handle, where this prompt's first draft
-  # answered "Sofia already looked at it" with "@priya already looked at it"
-  # and took four rewrites to reach 6/6. The tables scored 7/7 and cost
-  # nothing.
-  #
-  # They came back out because a table has to be triggered from inside the
-  # sentence, and the only word for the job is one English already uses:
-  #
-  #     "I should mention here that the deadline changed"
-  #       -> "I should @here that the deadline changed"
-  #     "I wanted to mention Marie is off next week"
-  #       -> "I wanted to @marie.dupont is off next week"
-  #
-  # Anchoring the marker to the start of an utterance fixed those, 11/11, at
-  # the price of "can you mention marie about the invoice" doing nothing. And a
-  # pipeline stage has no preview — it runs on a transcript nobody has seen
-  # yet, so a false positive there is a message already sent. Asking out loud
-  # has no such failure: it fires when you ask and never otherwise, which is
-  # worth a second and a prompt that had to be taught not to guess.
-  #
-  # Still open, and it decides whether any of this is worth having: ParrotFlow
-  # inserts by Cmd-V in both insert modes, and Slack's composer does not re-read
-  # what arrives by paste — the finding that keeps `backticks` out of the
-  # shipped pipeline. If a pasted @handle does not linkify, this writes
-  # something that looks like a mention and notifies nobody. Paste one into a
-  # Slack composer without sending, and see whether it turns blue.
-  #
-  # Put your own people in the list.
+  # pipeline: a message that names someone is not a message that pings them, and
+  # a pipeline stage runs on a transcript nobody has seen yet. Said mid-sentence
+  # there is no preview whatever `confirm` says, since nothing is being
+  # overwritten; either way what you get is text in your composer, and the last
+  # look before Enter is yours. Put your own people in the list.
   - name: slack_mentions
     description: turn people's names into Slack mentions
     display: Adding mentions
@@ -402,25 +240,10 @@ transforms:
 
       Return only the text.
 
-  # The two tables the pipeline above names. Same pattern, different output:
-  # that is the whole reason a table has a name.
-  #
-  # The pattern reads "a word, then dot or point, then a word" — and then
-  # refuses it when either side is a word code does not use there. Without
-  # that, "voilà le point sur les tests" becomes "voilà le.sur les tests":
-  # "point" is an everyday French word and "dot com" is an English one. The
-  # first list is what may not come before, the second what may not come
-  # after — determiners, prepositions, and the heads of set phrases like
-  # "point final" or "dot product".
-  #
-  # 45/45 on tests/dotted-cases.txt, plus two it cannot do: two ordinary
-  # words either side ("réunion point hebdomadaire") is a shape only a
-  # dictionary would tell from code. Both are unlikely in a terminal or a
-  # chat window, which is the only reason this is on by default. Score it
-  # with scripts/check-dotted.sh — it reads the pattern from this file.
-  #
-  # The second word is matched but not consumed, so a chain still works:
-  # "user point profile point name" -> user.profile.name.
+  # Same pattern as `backticks`, different output: that is what a table's name
+  # is for. "A word, dot or point, a word", refused when either side is a word
+  # code does not use there — else "voilà le point sur les tests" becomes
+  # "voilà le.sur les tests". First list: what may not precede; second: follow.
   - name: dotted
     description: spoken dotted paths as code
     replace:
@@ -432,35 +255,18 @@ transforms:
       '`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
 
   # A program rather than a table, because casing words is not something a
-  # substitution can express. The transcript reaches it on stdin and comes back
-  # on stdout; a relative path is beside this file. Written there on first
-  # launch, and yours — the stop lists in it decide where a name ends, which is
-  # a judgement about how you speak.
+  # substitution can express. Relative to this file, written there on first run.
   - name: code_identifiers
     description: spoken names as identifiers
     display: Formatting identifiers
     command: code_identifiers.py
     # Add `--model gemma4:e4b` to have a model handle the namings the rules
-    # cannot see — "call it max retries", "rename the variable to retry
-    # count". Measured over 75 cases: it takes the sentences that should
-    # change from 88% to 100%, and the ones that must come back untouched
-    # from 94% to 84%, because a model asked only about what a careful rule
-    # refused sees mostly near-misses. Off by default for that reason, and it
-    # costs about a second.
-    #
-    # Raise `timeout_seconds` with it. A command has two seconds before the
-    # transcript is let through untouched, which is right for a script and
-    # wrong for one that asks Ollama: a model whose weights have gone back to
-    # disk takes 7-10s, so the first correction after a pause would silently
-    # do nothing.
+    # cannot see — "call it max retries". Costs a second and loses accuracy on
+    # sentences that should not change, so it is off. Raise `timeout_seconds`
+    # with it: two seconds suits a script, not a cold Ollama (7-10s).
     # timeout_seconds: 12
 
-# Do what was asked even when no prompt above matches:
-#
-#     "hey parrot, use the 24 hour clock"
-#     "hey parrot, sort that list alphabetically"
-#
-# A remark that was never an instruction is still refused, and you see every
-# result before it replaces anything. Turn off to go back to a fixed menu of
-# prompts.
+# Do what was asked even when no transform above matches: "hey parrot, use the
+# 24 hour clock". A remark that was never an instruction is still refused, and
+# you see every result before it replaces anything. Off means a fixed menu.
 free_form: true
