@@ -1,7 +1,7 @@
 transcription:
   # paste     -> typed into the app you're in (needs Accessibility)
   # clipboard -> copied, you press Cmd-V
-  insert_mode: clipboard
+  insert_mode: paste
 
   # Say one of these instead of dictating and what follows is an
   # instruction: "hey parrot, make that a bullet list". An empty list
