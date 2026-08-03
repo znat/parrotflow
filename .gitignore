@@ -7,3 +7,8 @@ dist/
 
 # The runner imports examples/code_identifiers.py, which leaves this behind.
 __pycache__/
+
+# Where Claude Code puts a git worktree it makes: a checkout of this repository,
+# inside this repository. Untracked it turns every `git status` into a warning
+# about a directory that is already under version control by another route.
+.claude/worktrees/
