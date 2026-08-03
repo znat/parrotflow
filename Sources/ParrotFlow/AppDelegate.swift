@@ -118,7 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             "launched — hotkey=\(hotKeys.binding?.displayName ?? "NONE (\(hotkeyError ?? "?"))") "
             + "mode=\(config.hotkey.mode == .toggle ? "toggle" : "push-to-talk") "
             + "mic=\(Permissions.microphone.label) "
-            + "accessibility=\(Permissions.accessibility.label)"
+            + "accessibility=\(Permissions.accessibility.label) "
+            + "input=\(Recorder.inputDeviceName ?? "none")"
         )
 
         if CommandLine.arguments.contains("--preview-panel") {
@@ -529,7 +530,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try recorder.start(config: config)
         } catch {
-            presentAlert(title: "Could not start recording", message: error.localizedDescription)
+            // A notice, not an alert. `runModal` holds the main run loop, and
+            // the hotkey is delivered on it: one failed press behind a modal
+            // and every press after it does nothing, which is indistinguishable
+            // from the app having died — and is what happened whenever the
+            // microphone changed underneath it. Logged as well, because this
+            // path used to leave the log showing a press and then silence.
+            Log.write("could not start recording: \(error.localizedDescription)")
+            flash(error.localizedDescription, tone: .failure)
             return
         }
 
