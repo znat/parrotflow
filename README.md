@@ -4,12 +4,11 @@
 
 ### Local dictation for people who type for a living
 
-Hold a key, talk, and the text lands where your cursor is — editor, terminal,
-browser, chat. Nothing you say leaves your Mac.
+Open source Wispr Flow alternative. No need to create an account or subscribe. Install, hold a key, talk, and get work done.
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
-![License MIT](https://img.shields.io/badge/license-MIT-0c8c7c)
+![License Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-0c8c7c)
 ![No cloud](https://img.shields.io/badge/audio-never%20leaves%20your%20Mac-39cdb6)
 
 **[Install](#install) · [Documentation](docs/README.md) · [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md)**
@@ -18,147 +17,85 @@ browser, chat. Nothing you say leaves your Mac.
 
 ---
 
-An **open source, programmable** alternative to Wispr Flow, for developers and
-anyone else who would rather configure a tool than be configured by it.
+A fully featured open source alternative to Wispr Flow:
 
-Speech recognition runs on the Neural Engine. Everything the app then does to
-your words — fixing the names it mishears, turning spoken numbers into digits,
-writing `user.name` when you say "user dot name" — is a line in a config file
-you own, in an order you choose, and you can add your own in a substitution
-table, a prompt, or a script in any language. There is no account, no API key
-and no server, which is the whole point: most of what a developer dictates is a
-bug report, a customer name, or a half-finished idea about their own product.
 
-Two things use the network, and neither carries your audio or your text: the
-speech model downloads once on first use, and once a day the app asks GitHub
-whether a newer version exists. `updates.after_days: -1` stops the second one.
+- **Dictate anywhere** — hold a key, talk, and the text lands at your cursor:
+  editor, terminal, browser, chat.
+- **Small, efficient local models** — Parakeet TDT v3 runs on the Neural Engine,
+  and anything needing judgement asks a Gemma 4B model through Ollama. Both fit in
+  RAM you already have.
+- **Really Fast** — a normal sentence is text about a second after you let go of the
+  key. Follow ups are conditional or activated with voice commands, so you pay for it where you want it.
+- **Your vocabulary, taught out loud** — say "hey parrot, elastic search is one
+  word and takes a capital E" and it is right from then on, with a fuzzy pass for the spellings you
+  never taught it.
+- **Spoken numbers, paths and identifiers** — "two hundred forty-three" → `243`,
+  "user point name" → `user.name`, "a function called max retries" →
+  `max_retries`.
+- **Spoken commands** — select some text and say "hey parrot, use Slack handles"
+  or "hey parrot, format the function names for TypeScript". A transform that
+  describes the job runs; otherwise the model does what was asked, and you see
+  the result before it replaces anything.
+- **A programmable pipeline** — every stage of your own pipeline is a `transform`. A `transform` can be a regex, a prompt, or a script in any language running on your Mac. No limits.
+- **A prompt tuner** — so a 4B model on your Mac get a chance to approximate frontier accuracy
+  on a narrow text transform. Need a new prompt? Ask Claude to tune it with ParrotFlow's prompt tuner.
+
+No account, no API key, no server. It uses local models and your audio or text
+never leaves your Mac.
 
 ## Install
 
 **Requires** an Apple Silicon Mac on macOS 14 or later.
 
-### Let Claude Code do it
-
 Paste this into Claude Code, or any agent that can run shell commands:
 
-```
+```text
 Set up ParrotFlow on my Mac by following
 https://raw.githubusercontent.com/znat/parrotflow/main/docs/setup.md
 ```
 
-It installs the app, walks you through the two macOS permissions, checks your
-Ollama version, sizes the model settings to your RAM, and confirms transcription
-works before it hands over. About five minutes of attention. The instructions it
-follows are [docs/setup.md](docs/setup.md) — worth reading first if you would
-rather know what is about to run.
+It installs the app, walks you through the two macOS permissions, and confirms
+transcription works. About five minutes.
 
-### Or by hand
+By hand, the app itself is one command — the rest is in
+[docs/setup.md](docs/setup.md):
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
 
-Downloads the latest release, checks it against its published SHA-256, and puts
-`ParrotFlow.app` in `/Applications`. Then:
+## Why ParrotFlow
 
-1. Say yes to the microphone prompt.
-2. Grant **Accessibility** in System Settings — that is what lets it type into
-   other apps. `transcription.insert_mode: clipboard` needs no permission at
-   all, and you press ⌘V yourself.
-3. Hold **right ⌥**, say something, let go.
-
-The first dictation downloads the speech model (about 1.2 GB) and takes a
-couple of minutes. Everything after that is immediate.
-
-Spoken corrections and `prompt:` transforms need [Ollama](https://ollama.com)
-0.22 or later with `ollama pull gemma4:e4b`. Optional — dictation works without
-it.
-
-Building from source: [docs/development.md](docs/development.md).
-
-## Why this one
-
-### It is fast
-
-A normal sentence is text about a second after you let go of the key, and the
-rewrites that fix your vocabulary cost nothing measurable on top. Only a stage
-that asks the local model costs real time, which is why any stage can be made
-conditional — see [where the time goes](docs/architecture.md#where-the-time-goes).
-
-### It gets your vocabulary right
-
-Speech models mishear exactly the words you use most: library names, CLI tools,
-your teammates' names. Teach it one and it is right from then on — select the
-word, hold the hotkey, and say:
-
-```
-"hey parrot, Tasmin spells T A S M E E N"
-"hey parrot, Elastic search is one word"
-"hey parrot, Mathieu ne prend qu'un seul t"
-```
-
-The rule is written to your `config.yaml`, and a fuzzy pass catches renderings
-you never taught it, so "super bays" still reaches Supabase.
-
-Nothing here is tuned by eye. Every rewrite the app ships has a scored case set
-in `tests/` — 62 spelling corrections, 97 number cases, 56 dotted paths, 75
-spoken identifiers — and the cases it *cannot* do are kept in the sets, failing,
-rather than dropped to make a number look better.
-
-### It is programmable, which is the actual difference
-
-A transcript runs through a pipeline you define. Stages can be conditional on
-the text, on the language, or on the app you dictated into:
+Other dictation tools let you configure what someone else decided to expose.
+Here your transcript runs through stages you wrote, in the order you chose:
 
 ```yaml
 pipelines:
   default:
     - replacements                      # the names you taught it
-    - fuzzy                             # and the ways they come out wrong
     - numbers                           # "two hundred forty-three" -> 243
     - transform: dotted                 # "user point name" -> user.name
       app: /term|ghostty|code|cursor/   #   but only where you write code
-    - transform: prose                  # a local model tidies the sentence
-      when: /\b(genre|du coup|basically)\b/   #   only when it needs it
 ```
 
-A transform is a substitution table, a prompt to the local model, **or a
-program of yours** — transcript on stdin, rewrite on stdout, in whatever
-language you like. That contract is why the app stops needing new features:
+It is a text file, not a settings pane. `~/.config/parrotflow/config.yaml`,
+reloaded on save, commentable, diffable, committable. Apache 2.0, no paid tier,
+no telemetry.
 
-```yaml
-transforms:
-  - name: code_identifiers
-    description: spoken names as identifiers
-    command: code_identifiers.py    # ships as an example; it is yours to edit
-```
-
-"a python function called max retries" comes out as
-`…called max_retries`, in the convention of the language you named. If a
-transform fails, times out, or the model is not running, your sentence comes
-through exactly as you said it — a dictation tool can afford to skip a stage
-and cannot afford to lose a sentence.
-
-Full reference: [docs/pipelines.md](docs/pipelines.md). Writing your own, with
-the measurement loop: [docs/authoring.md](docs/authoring.md).
-
-### It is a text file, not a settings pane
-
-`~/.config/parrotflow/config.yaml`, reloaded on save, commentable, diffable,
-committable. `--check-config` tells you what the app would actually run before
-you trust it. MIT, no paid tier, no telemetry.
+Pipelines: [docs/pipelines.md](docs/pipelines.md) · Writing a transform:
+[docs/authoring.md](docs/authoring.md) · Where the time goes:
+[docs/architecture.md](docs/architecture.md#where-the-time-goes)
 
 ## Documentation
 
-**[docs/README.md](docs/README.md)** — configuration, pipelines, writing a
-transform, the command line, permissions, architecture, and why it is built
-this way.
-
-Working on this with an agent? [AGENTS.md](AGENTS.md) is the entry point.
+**[docs/README.md](docs/README.md)** — configuration, pipelines, transforms, the
+command line, permissions, architecture. Working on this with an agent?
+[AGENTS.md](AGENTS.md).
 
 ## License
 
-MIT.
+[Apache 2.0](LICENSE).
 
 <div align="center">
 
