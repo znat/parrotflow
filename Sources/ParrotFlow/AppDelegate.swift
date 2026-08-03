@@ -596,6 +596,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // press's verdict: copied when it had a field to go in, or pasted into a
         // window that has nothing to put it in.
         let destination = destinationAtPress
+        // And where it was being typed, for the same reason. The inline
+        // correction panel hands focus back to this app before writing, and it
+        // can be left open for as long as it takes to think about a spelling —
+        // longer than any other wait in the app, and long enough to start
+        // another dictation somewhere else while it sits there.
+        let focus = focusAtPress
         Task { [weak self] in
             do {
                 // "Transcribing…" is the truth until the decoder is done, and
@@ -617,7 +623,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     guard let self else { return }
                     self.transcriptionLabel = nil
-                    self.finishTranscription(text: text, destination: destination)
+                    self.finishTranscription(
+                        text: text, destination: destination, focus: focus
+                    )
                 }
             } catch {
                 await MainActor.run {
@@ -1301,7 +1309,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `destination` is where this dictation was aimed when its hotkey went
     /// down — passed along rather than looked up, so a second press landing
     /// mid-transcription cannot redirect this one. See `transcribe`.
-    private func finishTranscription(text: String, destination: Destination) {
+    private func finishTranscription(
+        text: String, destination: Destination, focus: SelectionReader.Selection?
+    ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if let command = commandAfterWakePhrase(trimmed) {
@@ -1325,7 +1335,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("inline: \"\(split.instruction)\" over \"\(split.text)\"")
             lastTranscript = split.text
             runInline(
-                text: split.text, instruction: split.instruction, destination: destination
+                text: split.text, instruction: split.instruction,
+                destination: destination, focus: focus
             )
             return
         }
@@ -1350,7 +1361,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// being overwritten here, and a dialog in the middle would give back the
     /// second round trip this exists to remove. The rewrite goes to the log
     /// with its before and after, as pipeline transforms do.
-    private func runInline(text: String, instruction: String, destination: Destination) {
+    private func runInline(
+        text: String, instruction: String, destination: Destination,
+        focus: SelectionReader.Selection?
+    ) {
         let catalogue = Catalogue(prompts: config.prompts)
 
         /// Write what was said, and say why it is not what was asked for.
@@ -1400,7 +1414,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .transform(let prompt): run(prompt)
             case .action(let action):
                 runInlineAction(
-                    action, text: text, instruction: instruction, destination: destination
+                    action, text: text, instruction: instruction,
+                    destination: destination, focus: focus
                 )
             }
             return
@@ -1429,7 +1444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     case .matched(.action(let action)):
                         self.runInlineAction(
                             action, text: text, instruction: instruction,
-                            destination: destination
+                            destination: destination, focus: focus
                         )
                     case .anything:
                         Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
@@ -1458,7 +1473,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// mind about a rule.
     private func runInlineAction(
         _ action: Capability.Action, text: String, instruction: String,
-        destination: Destination
+        destination: Destination, focus: SelectionReader.Selection?
     ) {
         switch action {
         case .vocabulary:
@@ -1466,7 +1481,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // panel opens on the sentence itself and you correct it by hand.
             endProgress()
             Log.write("inline: correction panel over \"\(text)\"")
-            showInlineCorrection(over: text, rules: nil, destination: destination)
+            showInlineCorrection(
+                over: text, rules: nil, destination: destination, focus: focus
+            )
 
         case .spelling:
             // "…by the way parrot, Tasmin spells T A S M E E N" — the rule has
@@ -1503,11 +1520,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 Log.write("inline: proposed rule \(rule.heard) -> \(rule.corrected)")
                             }
                             self.showInlineCorrection(
-                                over: text, rules: rules, destination: destination
+                                over: text, rules: rules,
+                                destination: destination, focus: focus
                             )
                         case .openCorrectionPanel:
                             self.showInlineCorrection(
-                                over: text, rules: nil, destination: destination
+                                over: text, rules: nil,
+                                destination: destination, focus: focus
                             )
                         case .unrecognised:
                             self.giveUpInline(
@@ -1532,14 +1551,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The correction panel, with the dictated text waiting behind it.
     ///
-    /// `pendingSelection` and `focusAtPress` are deliberately cleared: they are
-    /// how `saveCorrections` decides to write into a field somewhere else, and
-    /// here the only place the text should land is where a dictation would put
-    /// it. Leaving them set would rewrite whatever happened to be selected when
-    /// the hotkey went down.
+    /// `pendingSelection` is deliberately cleared: it is how `saveCorrections`
+    /// decides to write into a field somewhere else, and here the only place
+    /// the text should land is where a dictation would put it. Leaving it set
+    /// would rewrite whatever happened to be selected when the hotkey went down.
+    ///
+    /// `focus` is passed in rather than read off `focusAtPress` when the panel
+    /// closes. This panel is the longest wait in the app — it is open for as
+    /// long as someone takes to think about a spelling — and a dictation
+    /// started somewhere else in the meantime moves that field. Reading it late
+    /// would hand focus to the newer app and paste this sentence into it.
     private func showInlineCorrection(
         over text: String, rules: [(heard: String, corrected: String)]?,
-        destination: Destination
+        destination: Destination, focus: SelectionReader.Selection?
     ) {
         pendingSelection = nil
 
@@ -1552,7 +1576,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// showed a rule proposed and then nothing at all. `applyTransform`
         /// learned this the same way and does the same thing.
         func handBack() {
-            guard let owner = focusAtPress?.owner, !owner.isActive else { return }
+            guard let owner = focus?.owner, !owner.isActive else { return }
             owner.activate()
             // Let it come forward before the keystroke is posted.
             Thread.sleep(forTimeInterval: 0.15)
@@ -1592,7 +1616,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ).isEmpty ? correctedText : corrected
             self.lastTranscript = final
             handBack()
-            Log.write("inline: writing into \(self.focusAtPress?.owner?.localizedName ?? "the frontmost app")")
+            Log.write("inline: writing into \(focus?.owner?.localizedName ?? "the frontmost app")")
             self.insertDictation(final, to: destination)
         }
         correctionPanel.onCancel = { [weak self] in
