@@ -15,6 +15,7 @@
 | Config | `Config.swift` | Yams + a `DispatchSource` file watcher for live reload |
 | Permissions | `Permissions.swift` | `AVCaptureDevice` for mic, `AXIsProcessTrusted` for Accessibility |
 | Text insertion | `TextInserter.swift`, `SelectionReader.swift` | Paste-via-clipboard, then the pasteboard is put back |
+| Where the words go | `Destination.swift` | Asks the focused element whether it takes text, at the press — decides the pill's icon and whether the transcript is typed or copied |
 | Menu bar & wiring | `AppDelegate.swift` | |
 | Logging | `Log.swift` | `~/Library/Logs/ParrotFlow.log` — a menu bar app has no console |
 | Floating surfaces | `RecordingOverlay.swift`, `PreviewPanel.swift`, `NoticeHUD.swift`, `ParrotStyle.swift` | Borderless non-activating `NSPanel`s, one look between them |

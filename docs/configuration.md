@@ -14,6 +14,7 @@ hotkey:
   key: right_option     # a bare modifier, or a character key + modifiers
   modifiers: []         # required for a character key, ignored for a modifier
   mode: push_to_talk    # or toggle
+  release_tail_seconds: 0.3   # keep recording this long after you let go
 
 audio:
   output_dir: ~/Recordings/ParrotFlow
@@ -76,6 +77,12 @@ one modifier from `command`, `control`, `option`, `shift` (aliases `cmd`,
 If a combo is already owned by another app, registration fails and the menu bar
 item says so. Pick another one.
 
+### `release_tail_seconds`
+
+Keeps the mic open after you let go, because the hand is faster than the mouth
+and the last syllable lands after the key is up. Push-to-talk only. Raise it if
+endings still get clipped, `0` to stop the moment you release.
+
 ### Bare modifiers want push-to-talk
 
 On `toggle`, right ⌥ would start recording every time you used it to type an
@@ -87,6 +94,14 @@ also why apps in this category gravitate to `fn` or a right-hand modifier.
 `paste` types the transcript into the app you are in and needs the
 Accessibility permission. `clipboard` copies it and needs no permission at all;
 you press ⌘V. See [permissions.md](permissions.md).
+
+**With no cursor in a field, neither one types.** A Finder window, a video, a
+page you are reading — they are frontmost and they have nowhere to put a
+sentence, and a ⌘V sent there does whatever that window makes of it. So the
+pill leaves the app icon out while you talk, which is the warning, and when the
+transcript arrives it goes to your clipboard with a notice saying where it went.
+Terminals are the exception: what they show macOS is a screen rather than a
+field, so they are recognised by name and always counted as somewhere to write.
 
 ## `transcription.languages`
 
