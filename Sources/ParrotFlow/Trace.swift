@@ -170,18 +170,30 @@ enum Trace {
     ///
     /// Writes the line whether or not the body threw: a dictation that failed
     /// halfway is the one you most want the decoder's numbers for.
+    /// - Parameter beside: the directory to write the line into. Pass the one
+    ///   holding the clip; the global is only a fallback for callers that have
+    ///   no clip on disk to point at.
     static func record<T>(
-        wav: String, source: Source, app: App? = nil,
+        wav: String, source: Source, app: App? = nil, beside: URL? = nil,
         body: () async throws -> T
     ) async rethrows -> T {
         let collector = Collector(wav: wav, source: source)
-        // The destination is fixed when the dictation starts, not when it ends.
+        // Taken from where the clip actually is, not from the global, and not
+        // snapshotted at a moment chosen for being early.
+        //
         // `output_dir` can change on any save of config.yaml — the file is
-        // watched and reloaded live — and a save while a prompt stage is
-        // running would otherwise file the record in the new directory while
-        // the clip it names sits in the old one. `wav` is a bare filename, so
-        // the two being separated is the one thing that breaks the join.
-        let directory = Self.directory
+        // watched and reloaded live — so any read of the global is a read at
+        // some particular instant, and there is no instant late enough to be
+        // right and early enough to be safe. Reading it when the record is
+        // finished loses to a save during a prompt stage. Reading it when the
+        // dictation starts loses to a save between the clip being written and
+        // this task being scheduled. Both file the line in one directory while
+        // the clip it names sits in the other, and `wav` is a bare filename, so
+        // that separation is the one thing that breaks the join.
+        //
+        // The clip's own URL has no such instant: it is where the file went,
+        // whatever the config said at the time or says now.
+        let directory = beside ?? Self.directory
         defer { append(collector.record(at: stamp(), app: app), to: directory) }
         return try await $current.withValue(collector) { try await body() }
     }

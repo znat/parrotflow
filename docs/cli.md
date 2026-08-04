@@ -257,7 +257,9 @@ jq -r '.asr.words[]? | select(.confidence < 0.5) | .word' trace.jsonl |
   sort | uniq -c | sort -rn | head -20
 
 # A dictation whose ending went missing: did the decoder stop, or the gate?
-jq -r 'select(.asr.words|length > 0) |
+# Both halves are guarded: `vad` is absent whenever the speech gate is off or
+# its detector would not load, and a record can have every word and no segments.
+jq -r 'select((.asr.words|length > 0) and (.vad.segments|length > 0)) |
        [.wav, (.vad.segments[-1][1]), (.asr.words[-1].end), .vad.total] | @tsv' trace.jsonl
 
 # What each stage really costs on your own sentences.

@@ -652,7 +652,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // and the line is appended even if one of them throws.
                 let text = try await Trace.record(
                     wav: recording.url.lastPathComponent, source: .live,
-                    app: app.map { Trace.App(name: $0.name, bundleID: $0.bundleID) }
+                    app: app.map { Trace.App(name: $0.name, bundleID: $0.bundleID) },
+                    beside: recording.url.deletingLastPathComponent()
                 ) {
                     let text = try await self?.transcriber.transcribe(
                         url: recording.url, config: config, app: app,

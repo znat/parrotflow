@@ -50,10 +50,21 @@ enum TranscribeCommand {
                 // This is the path that makes the trace worth having: re-run
                 // the recordings after a change and the two sets of numbers sit
                 // in the same file, joined to the same clips.
-                Trace.directory = config.resolvedOutputDir
+                //
+                // The line goes to the recordings directory even when the clip
+                // does not live there, because one corpus in one place is the
+                // point and a `--transcribe /tmp/t.wav` should not leave a
+                // `trace.jsonl` behind in /tmp. That costs the bare-filename
+                // join, so a clip from anywhere else is named by its full path
+                // instead — the join stays exact either way.
+                let directory = config.resolvedOutputDir
+                Trace.directory = directory
+                let isInCorpus = url.deletingLastPathComponent().standardizedFileURL.path
+                    == directory.standardizedFileURL.path
                 let started = Date()
                 let text = try await Trace.record(
-                    wav: url.lastPathComponent, source: .cli
+                    wav: isInCorpus ? url.lastPathComponent : url.standardizedFileURL.path,
+                    source: .cli, beside: directory
                 ) {
                     let text = try await transcriber.transcribe(url: url, config: config)
                     Trace.current?.recordFinal(text)
