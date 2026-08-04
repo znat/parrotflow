@@ -85,9 +85,13 @@ actor Transcriber {
     ) async throws -> String {
         try await prepare(config: config)
 
-        if config.audio.speechGate, try await isSilent(url: url) {
-            Log.write("speech gate: no speech detected; not transcribing")
-            return ""
+        var gated: SpeechGate?
+        if config.audio.speechGate {
+            gated = try await runSpeechGate(url: url)
+            if let gated, gated.segments.isEmpty {
+                Log.write("speech gate: no speech detected; not transcribing")
+                return ""
+            }
         }
 
         guard let models else { throw TranscriberError.notReady }
@@ -116,7 +120,45 @@ actor Transcriber {
         // next. The models are the expensive part and those are cached.
         let asr = AsrManager(models: models)
         var decoderState = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
-        let result = try await asr.transcribe(url, decoderState: &decoderState)
+
+        // Above 15s that batch path still chunks — 14.88s windows on a 12.88s
+        // stride — so the seam is only gone for clips that fit one window. A
+        // long pause mid-dictation can leave a whole window holding nothing
+        // but room tone and the last second of speech, and such a window
+        // decodes to nothing: measured on a 37.3s clip whose speaker paused
+        // 13.9s, where windows 1 and 2 alone returned exactly the text that
+        // was delivered and window 3 — the one holding "view transforms" —
+        // returned empty.
+        var result = try await asr.transcribe(url, decoderState: &decoderState)
+
+        // Closing the pause up and decoding again puts those words in a window
+        // with speech either side of them. It is a retry rather than the first
+        // thing tried, because moving the windows is not free: done to every
+        // long-pause clip it changed 32 of 1219 in the archive, and one of
+        // those changes was a *new* dropped ending — the same bug, moved. So
+        // it runs only when the gate can see that this clip lost its tail, and
+        // only sticks when it recovers speech that the first pass missed.
+        // Every clip that decoded to the end is left exactly as it was.
+        if let gated, Self.droppedTail(result, gate: gated), let closed = Self.closeLongPauses(gated) {
+            var retryState = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
+            let raw = try await asr.transcribe(closed.samples, decoderState: &retryState)
+            let retried = Self.restoreTimings(raw, closed: closed, seconds: gated.seconds)
+            if Self.lastWordEnd(retried) > Self.lastWordEnd(result), Self.extends(result, by: retried) {
+                Log.write(String(
+                    format: "decoder stopped %.2fs before the speech did; "
+                        + "closed %d long pause(s) and recovered to %.2fs",
+                    Self.lastSpeechEnd(gated) - Self.lastWordEnd(result),
+                    closed.pauses, Self.lastWordEnd(retried)
+                ))
+                result = retried
+            } else if Self.lastWordEnd(retried) > Self.lastWordEnd(result) {
+                Log.write(String(
+                    format: "closed %d long pause(s) and reached %.2fs, but the retry "
+                        + "rewrote text the first pass had already decoded; keeping the first pass",
+                    closed.pauses, Self.lastWordEnd(retried)
+                ))
+            }
+        }
         Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
         return await Self.applyReplacements(
@@ -124,7 +166,23 @@ actor Transcriber {
         )
     }
 
-    /// True when the clip holds no speech worth transcribing.
+    /// What the speech gate found: the clip's samples and its speech
+    /// boundaries, kept rather than reduced to a yes/no. The decoder wants
+    /// both — see `closeLongPauses`.
+    struct SpeechGate {
+        let samples: [Float]
+        let segments: [(start: Double, end: Double)]
+        /// False when the clip is not the 16 kHz mono the recorder writes, in
+        /// which case `samples` must not be handed to the decoder directly:
+        /// the URL path resamples and this one cannot.
+        let decodable: Bool
+
+        var seconds: Double { Double(samples.count) / Transcriber.sampleRate }
+    }
+
+    /// Runs the speech gate, or returns nil when there is no detector to run —
+    /// which is the fail-open case, and leaves the clip to be decoded whole.
+    /// No segments means no speech worth transcribing.
     ///
     /// An acoustic model asked to decode silence decodes *something* — five
     /// clips in one session of real use, all under 0.51s of stray hotkey
@@ -142,22 +200,26 @@ actor Transcriber {
     ///
     /// Fails open: if the detector is unavailable the clip is transcribed.
     /// Losing real speech is far worse than an occasional stray "Yeah."
-    private func isSilent(url: URL) async throws -> Bool {
-        guard let vad else { return false }
+    private func runSpeechGate(url: URL) async throws -> SpeechGate? {
+        guard let vad else { return nil }
 
         let file = try AVAudioFile(forReading: url)
+        let format = file.processingFormat
         guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: file.processingFormat,
+            pcmFormat: format,
             frameCapacity: AVAudioFrameCount(file.length)
-        ) else { return false }
+        ) else { return nil }
         try file.read(into: buffer)
-        guard let channel = buffer.floatChannelData?[0] else { return false }
+        guard let channel = buffer.floatChannelData?[0] else { return nil }
         let samples = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
-        guard !samples.isEmpty else { return true }
+        let decodable = format.sampleRate == Self.sampleRate && format.channelCount == 1
+        guard !samples.isEmpty else {
+            return SpeechGate(samples: samples, segments: [], decodable: decodable)
+        }
 
         let segments = try await vad.segmentSpeech(samples)
         let speech = segments.reduce(0.0) { $0 + ($1.endTime - $1.startTime) }
-        let total = Double(samples.count) / 16000
+        let total = Double(samples.count) / Self.sampleRate
 
         Log.write(String(
             format: "speech gate: %.2fs speech in %.2fs (%d segment(s))",
@@ -170,7 +232,184 @@ actor Transcriber {
             speech: speech, total: total,
             segments: segments.map { ($0.startTime, $0.endTime) }
         )
-        return segments.isEmpty
+        return SpeechGate(
+            samples: samples,
+            segments: segments.map { ($0.startTime, $0.endTime) },
+            decodable: decodable
+        )
+    }
+
+    // MARK: - Closing long pauses
+
+    static let sampleRate = 16_000.0
+
+    /// How far the decoder may stop short of the last speech the gate heard
+    /// before the ending counts as dropped rather than trimmed.
+    ///
+    /// The two are not close together, which is what makes this checkable
+    /// rather than tunable. Across the archive the ordinary distance between
+    /// the last word and the last segment is under 2s — VAD pads a boundary,
+    /// and a final consonant is not a word — while the clip that lost its
+    /// ending sat at 15.6s. Nothing lives in between.
+    static let droppedTailSeconds = 3.0
+
+    /// Where the decoder stopped, and where the gate heard speech stop.
+    nonisolated static func lastWordEnd(_ result: ASRResult) -> Double {
+        result.tokenTimings?.last?.endTime ?? 0
+    }
+
+    nonisolated static func lastSpeechEnd(_ gate: SpeechGate) -> Double {
+        gate.segments.last?.end ?? 0
+    }
+
+    /// True when the retry says everything the first pass said, in the same
+    /// order, before it says anything new.
+    ///
+    /// Reaching further into the clip is not on its own a reason to take the
+    /// retry. It decodes the *whole* clip, not just the tail, and closing the
+    /// pauses moves every window boundary after the first pause — so its
+    /// version of the opening is a different decode of audio the first pass
+    /// may already have got right. Swapping wholesale on the strength of a
+    /// later ending would trade a recovered tail for a silently rewritten
+    /// beginning, which is a worse bug than the one being fixed: nobody
+    /// re-reads the part that was already correct.
+    ///
+    /// Prefix rather than equality, because what makes the retry worth having
+    /// is precisely the words it adds at the end. Compared on letters and
+    /// digits alone so that a different token split, a comma, or a capital at
+    /// a moved window boundary is not read as rewritten speech.
+    nonisolated static func extends(_ result: ASRResult, by retried: ASRResult) -> Bool {
+        let first = comparable(result.text)
+        guard !first.isEmpty else { return false }
+        return comparable(retried.text).hasPrefix(first)
+    }
+
+    private nonisolated static func comparable(_ text: String) -> String {
+        text.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    /// True when the decoder stopped well before the speech did — the symptom
+    /// this whole retry exists for, and the only thing that triggers it.
+    nonisolated static func droppedTail(_ result: ASRResult, gate: SpeechGate) -> Bool {
+        guard !gate.segments.isEmpty, result.tokenTimings?.isEmpty == false else { return false }
+        return lastSpeechEnd(gate) - lastWordEnd(result) > droppedTailSeconds
+    }
+
+    /// Only a pause approaching the decoder's own 14.88s window can starve one
+    /// of speech, and only a starved window decodes to nothing. Below this a
+    /// pause is just someone thinking mid-sentence, the windows either side of
+    /// it still hold plenty of speech, and touching the audio would be all risk
+    /// and no benefit — a sweep of the archive with this at 2s changed 166 of
+    /// 1219 clips, most of which were never at risk. At 8s it is 33.
+    static let minPauseToClose = 8.0
+
+    /// What a closed pause is cut down to, half kept on each side so a sentence
+    /// boundary still sounds like one.
+    ///
+    /// Measured on the clip that prompted this: the tail came back at every
+    /// residual pause from 0s to 4s and was lost at the original 13.9s, so the
+    /// value is picked from the middle of a wide plateau rather than tuned to
+    /// an edge.
+    static let maxPauseSeconds = 2.0
+
+    /// A clip with its long internal pauses cut out, and the map back to where
+    /// its audio came from.
+    struct ClosedClip {
+        let samples: [Float]
+        /// One per surviving run, in seconds: where it sits now, where it sat
+        /// in the recording, and how long it is.
+        let pieces: [(now: Double, was: Double, length: Double)]
+        let pauses: Int
+
+        var seconds: Double { Double(samples.count) / Transcriber.sampleRate }
+    }
+
+    /// Cuts the middle out of any pause longer than `minPauseToClose`, leaving
+    /// `maxPauseSeconds` of it behind.
+    ///
+    /// Returns nil — meaning "decode the clip as it is" — for everything that
+    /// cannot hit the seam: clips that fit a single decoder window, clips whose
+    /// pauses are all short, and clips not in the recorder's own format. That
+    /// nil is most of them, and it is what keeps this off the common path.
+    nonisolated static func closeLongPauses(_ gate: SpeechGate) -> ClosedClip? {
+        guard gate.decodable else { return nil }
+        // One window, no seam, nothing to fix.
+        guard gate.samples.count > ASRConstants.maxModelSamples else { return nil }
+        guard gate.segments.count > 1 else { return nil }
+
+        let keep = maxPauseSeconds / 2
+        let count = gate.samples.count
+        func index(_ seconds: Double) -> Int {
+            min(max(Int((seconds * sampleRate).rounded()), 0), count)
+        }
+
+        var runs: [Range<Int>] = []
+        var cursor = 0
+        var pauses = 0
+        for i in 1..<gate.segments.count {
+            let pause = gate.segments[i].start - gate.segments[i - 1].end
+            guard pause > minPauseToClose else { continue }
+            let cut = index(gate.segments[i - 1].end + keep)
+            let resume = index(gate.segments[i].start - keep)
+            guard cut > cursor, resume > cut else { continue }
+            runs.append(cursor..<cut)
+            cursor = resume
+            pauses += 1
+        }
+        guard pauses > 0 else { return nil }
+        if cursor < count { runs.append(cursor..<count) }
+
+        var samples: [Float] = []
+        samples.reserveCapacity(runs.reduce(0) { $0 + $1.count })
+        var pieces: [(now: Double, was: Double, length: Double)] = []
+        for run in runs {
+            pieces.append((
+                now: Double(samples.count) / sampleRate,
+                was: Double(run.lowerBound) / sampleRate,
+                length: Double(run.count) / sampleRate
+            ))
+            samples.append(contentsOf: gate.samples[run])
+        }
+        return ClosedClip(samples: samples, pieces: pieces, pauses: pauses)
+    }
+
+    /// Puts the word timings back on the recording's own clock.
+    ///
+    /// Without this every timestamp in the trace would refer to a clip that
+    /// exists only inside this function, and `docs/cli.md`'s "did the decoder
+    /// stop, or the gate?" query — which reads `asr.words` against
+    /// `vad.segments` — would compare two different timelines.
+    nonisolated static func restoreTimings(
+        _ result: ASRResult, closed: ClosedClip, seconds: Double
+    ) -> ASRResult {
+        func was(_ now: Double) -> Double {
+            for piece in closed.pieces where now < piece.now + piece.length {
+                return piece.was + max(0, now - piece.now)
+            }
+            guard let last = closed.pieces.last else { return now }
+            return last.was + last.length
+        }
+
+        return ASRResult(
+            text: result.text,
+            confidence: result.confidence,
+            duration: seconds,
+            processingTime: result.processingTime,
+            tokenTimings: result.tokenTimings.map { timings in
+                timings.map {
+                    TokenTiming(
+                        token: $0.token,
+                        tokenId: $0.tokenId,
+                        startTime: was($0.startTime),
+                        endTime: was($0.endTime),
+                        confidence: $0.confidence
+                    )
+                }
+            },
+            performanceMetrics: result.performanceMetrics,
+            ctcDetectedTerms: result.ctcDetectedTerms,
+            ctcAppliedTerms: result.ctcAppliedTerms
+        )
     }
 
     /// The last, blunt pass: literal substitutions from the config.
