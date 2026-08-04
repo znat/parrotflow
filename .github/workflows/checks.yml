@@ -110,11 +110,25 @@ jobs:
       - name: Dates
         run: scripts/check-dates.sh
 
+      # Where a transform's files are found, and where its command runs. Builds
+      # whole config directories in /tmp and runs the real binary against them
+      # with PARROTFLOW_CONFIG_DIR, so it needs no config on the machine and
+      # says nothing about the one that is there.
+      - name: A folder per transform
+        run: scripts/check-transform-folders.sh
+
       # Not a validation set: it checks that the file a new install is written
       # with still teaches everything config.example.yaml documents. That has
       # drifted twice, both times silently.
       - name: The config a new install gets
         run: scripts/check-default-config.sh
+
+      # The same trap, one directory over: the transform folder a first launch
+      # is seeded with against the copy in examples/ that people read and
+      # score. It has always been able to drift and has never been checked
+      # here — the rename that came with folders is the moment to fix that.
+      - name: The transform a new install gets
+        run: scripts/check-seeded-transform.sh
 
       # Two ways in, one certificate. A pin that is only right in the script or
       # only right in the app is a door that checks less than the other one.

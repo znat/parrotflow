@@ -1,7 +1,8 @@
 # Proposal: a folder per transform, and one harness for everyone
 
-**Status.** Specified, not built. Decisions below are settled — implement them
-rather than reopening them.
+**Status.** Phase 1 is built — this change. Phase 2 is specified below and
+built in the change that follows it. Kept as the record of what was decided and
+why, which the code cannot hold.
 
 **Goal.** A transform is a directory. Everything belonging to it — the prompt
 or script, its case set, its data — lives inside, so it can be written, tested
