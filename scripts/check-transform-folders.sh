@@ -192,6 +192,39 @@ check "a path: naming nothing leaves the rest of the config working" \
   "$("$BIN" --pipeline "$WORK/missing.yaml" "the rest still runs" --quiet 2>/dev/null | tail -1)" \
   "the rest still runs"
 
+# --- prompt: { path: }, through a whole config ------------------------------
+#
+# A prompt body cannot be scored without a model, so what is checked here is
+# everything up to the call: that the file is read, that --check-config prints
+# the resolved path, and that a sibling naming a file which is not there is
+# reported as itself and takes nothing else with it.
+BODIES="$WORK/bodies"
+mkdir -p "$BODIES/transforms/shouty"
+printf 'Return the text in capital letters. Return only the text.\n' \
+  > "$BODIES/transforms/shouty/shouty.md"
+cat > "$BODIES/config.yaml" <<'YAML'
+transforms:
+  - name: shouty
+    description: everything in capitals
+    prompt: { path: shouty.md }
+  - name: broken
+    description: points at a file that is not there
+    prompt: { path: nowhere.md }
+YAML
+bodies="$(PARROTFLOW_CONFIG_DIR="$BODIES" "$BIN" --check-config 2>/dev/null)"
+
+check "prompt: { path: } resolves, and its path is printed" \
+  "$(printf '%s\n' "$bodies" | grep -c 'shouty *prompt.*transforms/shouty/shouty.md')" \
+  "1"
+
+check "a prompt file that is not there is reported as itself" \
+  "$(printf '%s\n' "$bodies" | grep -c '✗ transforms: "broken" prompt: no file at nowhere.md')" \
+  "1"
+
+check "and takes only its own transform with it" \
+  "$(printf '%s\n' "$bodies" | grep -E '^  · transforms ' | grep -c '1 defined')" \
+  "1"
+
 # --- what a first launch writes --------------------------------------------
 #
 # Against a config directory of its own, so this says nothing about — and does
