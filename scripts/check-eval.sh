@@ -185,6 +185,26 @@ check "a case with no expect: is detected as must-not-change" \
      | grep -E '^  keep' | sed 's/ <-.*//;s/  */ /g;s/^ //;s/ $//')" \
   "keep 1/1 = 100%"
 
+# --- `tests:` on the transform ----------------------------------------------
+#
+# A transform whose default set is not cases.yaml says so once, in the config,
+# rather than in every command anyone runs against it.
+cp "$WORK/transforms/shout/cases.yaml" "$WORK/transforms/shout/heldout.yaml"
+cat >> "$WORK/config.yaml" <<'YAML'
+  - name: shout_heldout
+    description: the same transform, scored against a set of its own
+    command: shout.py
+    tests: { path: heldout.yaml }
+YAML
+mkdir -p "$WORK/transforms/shout_heldout"
+ln -s ../shout/heldout.yaml "$WORK/transforms/shout_heldout/heldout.yaml"
+ln -s ../shout/shout.py "$WORK/transforms/shout_heldout/shout.py"
+ln -s ../shout/roster.json "$WORK/transforms/shout_heldout/roster.json"
+
+check "tests: names the set --eval scores by default" \
+  "$("$BIN" --eval shout_heldout 2>/dev/null | grep -c 'heldout.yaml')" \
+  "1"
+
 # --- a set that names a file that is not there ------------------------------
 check "a missing set names where it looked" \
   "$("$BIN" --eval shout --cases nowhere.yaml 2>&1 | grep -c 'no nowhere.yaml')" \

@@ -82,6 +82,7 @@ transforms:
   - name: slack_mentions
     description: turn people's names into Slack mentions
     command: slack_mentions.py          # transforms/slack_mentions/…
+    tests: { path: heldout.yaml }       # what --eval scores; default cases.yaml
 ```
 
 A scalar stays a scalar: an inline `prompt: |` is unchanged, and a three-line

@@ -111,9 +111,12 @@ enum EvalCommand {
                         : " — have: \(config.transforms.map(\.name).joined(separator: ", "))"))
                 return nil
             }
-            guard let found = transform.folder?.resolve(override ?? "cases.yaml") else {
+            // `--cases` wins over the transform's own `tests:`, which wins over
+            // the `cases.yaml` every folder has by convention.
+            let wanted = override ?? transform.tests ?? "cases.yaml"
+            guard let found = transform.folder?.resolve(wanted) else {
                 let folder = transform.folder?.url?.path ?? ConfigStore.directory.path
-                print("✗ no \(override ?? "cases.yaml") for \"\(transform.name)\""
+                print("✗ no \(wanted) for \"\(transform.name)\""
                     + " — expected it in \(short(folder))")
                 print("    a transform's case set lives in its own folder;"
                     + " see docs/authoring.md")
