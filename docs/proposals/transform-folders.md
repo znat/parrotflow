@@ -1,8 +1,8 @@
 # Proposal: a folder per transform, and one harness for everyone
 
-**Status.** Phase 1 is built — this change. Phase 2 is specified below and
-built in the change that follows it. Kept as the record of what was decided and
-why, which the code cannot hold.
+**Status.** Built, both phases. Kept as the record of what was decided and why,
+which the code cannot hold. Where the implementation departed from the text
+below it is noted inline as **[built]**.
 
 **Goal.** A transform is a directory. Everything belonging to it — the prompt
 or script, its case set, its data — lives inside, so it can be written, tested
@@ -196,8 +196,25 @@ it — a shipped example that comes with its own set is the whole argument of
 | `config.example.yaml`, `docs/configuration.md`, `docs/pipelines.md`, `docs/authoring.md` | the layout, the rule, the `path:` form |
 | `scripts/check-default-config.sh` | reads the real file; will need the new shape |
 
-**Note:** `Config.swift` had uncommitted changes from another session on
-2026-08-04. Check `git status` and coordinate before starting.
+**[built]** Two things were added that the text above does not ask for, both
+because they are what makes the acceptance below checkable rather than
+assertable:
+
+- `PARROTFLOW_CONFIG_DIR` points any command at a config directory of its own,
+  so `scripts/check-transform-folders.sh` and `scripts/check-eval.sh` score the
+  real binary against a config in `/tmp` instead of inheriting this machine's.
+- `--seed-config` runs `createIfMissing` and reports what it wrote and what it
+  left alone. What a first launch gets was otherwise only answerable by
+  deleting your own config.
+
+And one bug came out on the way: `expandingTildeInPath` also standardises, so
+`command: sed -e s/quick/slow/` lost its trailing slash before the shell saw it.
+It is expanded only when there is a tilde now.
+
+The repository moved too, which the text above does not cover: the sets
+belonging to a shipped transform live in `examples/transforms/<name>/`, a
+byte-for-byte mirror of what is seeded. The sets belonging to a built-in stage
+or to the router have no folder to own them and stay in `tests/`.
 
 ### Acceptance
 
@@ -247,6 +264,16 @@ from the app is worth 31 points of measured error.
 
 ### Case file format
 
+**[built]** with two additions: `instruction:`, because a prompt asked for by
+voice is given what the speaker said and the same prompt as a pipeline stage is
+given nothing — `grammar` scores 16/17 and 15/17 under the two, and a set that
+cannot say which one it means reports a number for a use nobody has. And
+`transforms:`, so a set can carry the transform it assumes the way a
+`--pipeline` fixture does, which is what lets `scripts/check-eval.sh` mean the
+same thing on any machine. `category:` is read as an alias for `probe:`, and a
+case with no `expect:` is the must-not-change half — both so the sets that
+predate this need no editing.
+
 ```yaml
 # Contract prose at the top: what counts as a case here, what is deliberately
 # out of scope. It is what you will disagree with yourself about in a week.
@@ -272,11 +299,16 @@ something real.
    behind eleven healthy ones.
 3. **Report latency per case**, warm. Cold-start timings send you optimising
    the wrong thing.
-4. **A no-model control**, when the transform can run without one. On this task
+4. **A no-model control**, when the transform can run without one. **[built]**
+   as `control:` in the case file, naming a command: the app cannot infer how
+   to run someone's script without its model, and inferring it would be
+   guessing at the one number that exists to be trusted. On this task
    it scored the same as the model and the model was dropped; on spoken
    identifiers the control won outright. It is the only thing that answers
    "is the model earning its place".
-5. **Optional intermediate gold** for two-stage transforms — a second field
+5. **Optional intermediate gold** for two-stage transforms. **[built]** as
+   `intermediate:` with `field:`, `resolve:` and an optional `produce:` —
+   `resolve:` is what requirement 6 needs and is therefore not optional. — a second field
    holding what the model alone should return. Scoring it separately says
    whether the prompt or the code is at fault. The gap ran 25 points on this
    task.
