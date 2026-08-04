@@ -173,15 +173,57 @@ enum CommandRunner {
         let (_, arguments, resolved) = parts(of: command, in: folder)
         if let resolved { return resolved.url.deletingLastPathComponent() }
 
-        for token in arguments.split(separator: " ") {
-            // A flag is not a path, and quoting is the shell's business — by
-            // the time this sees `'[:lower:]'` the quotes are still on it.
-            let bare = token.trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
-            guard !bare.isEmpty, !bare.hasPrefix("-"),
-                  let found = folder.resolve(bare) else { continue }
-            return found.url.deletingLastPathComponent()
+        for token in words(of: arguments) {
+            // A flag is not a path.
+            guard !token.hasPrefix("-"), let found = folder.resolve(token) else { continue }
+            // The directory it was found *under*, not the one it lives in.
+            //
+            // The program is rewritten to an absolute path before the shell
+            // sees it, so moving the working directory cannot disturb it. An
+            // argument is not: it reaches the shell exactly as written, and
+            // the shell resolves it against the working directory we set. Set
+            // that to the file's own directory and the relative path is
+            // counted twice — `python3 'my scripts/rewrite.py'` looked for
+            // `my scripts/my scripts/rewrite.py`, which is a directory nobody
+            // has. What the argument is relative *to* is the answer, and that
+            // is also what the command ran in before folders existed.
+            return found.base ?? found.url.deletingLastPathComponent()
         }
         return folder.workingDirectory
+    }
+
+    /// An argument list split the way the shell will split it: on spaces that
+    /// are not inside quotes, with the quotes removed.
+    ///
+    /// Splitting on every space instead is wrong for the one case that most
+    /// needs to work — `python3 'my scripts/rewrite.py'`, where the quotes are
+    /// there precisely because the path has a space in it. That is the same
+    /// problem `parts` solves for the program, and it has the same answer:
+    /// a space is an ordinary character in a path, so something has to say
+    /// which spaces are separators. On the program side the file system says;
+    /// here the quoting does, because by the time this runs the quotes are
+    /// still on the string — YAML gave it to us verbatim.
+    ///
+    /// Not a shell parser. Escapes, `$(…)` and word splitting are the shell's,
+    /// and a command that needs them is one whose working directory is not
+    /// going to be decided by reading it.
+    static func words(of arguments: String) -> [String] {
+        var words: [String] = []
+        var current = ""
+        var quote: Character?
+        for character in arguments {
+            if let open = quote {
+                if character == open { quote = nil } else { current.append(character) }
+            } else if character == "'" || character == "\"" {
+                quote = character
+            } else if character == " " {
+                if !current.isEmpty { words.append(current); current = "" }
+            } else {
+                current.append(character)
+            }
+        }
+        if !current.isEmpty { words.append(current) }
+        return words
     }
 
     /// SIGTERM, then SIGKILL if that was not enough.

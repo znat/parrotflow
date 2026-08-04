@@ -192,6 +192,34 @@ check "an interpreter-wrapped script in the folder reads its own neighbours" \
   "$("$BIN" --pipeline "$WORK/wrapped-new.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
   "KEEP IT DOWN!"
 
+# 4d — and the same again with a space in the path.
+#
+# The quotes are there because the path has a space in it, so splitting the
+# arguments on every space is exactly wrong here: quoting is the only thing
+# that says where the path ends. Same failure if it is missed — the
+# interpreter never finds the script.
+#
+# `suffix.txt` sits beside config.yaml and not beside the script, deliberately.
+# An argument reaches the shell exactly as written, so the working directory
+# has to be what that path is relative *to* — which is also what the command
+# ran in before folders existed. Aiming at the script's own directory instead
+# counts `my scripts/` twice and finds nothing.
+mkdir -p "$WORK/my scripts" "$WORK/transforms/spaced"
+printf 'cases go here\n' > "$WORK/transforms/spaced/cases.yaml"
+cat > "$WORK/my scripts/spaced.py" <<'PY'
+#!/usr/bin/env python3
+import pathlib, sys
+print(sys.stdin.read().strip().upper() + pathlib.Path("suffix.txt").read_text().strip())
+PY
+printf ';\n' > "$WORK/suffix.txt"
+fixture spaced.yaml "  - name: spaced
+    description: an interpreter and a path with a space in it
+    command: python3 'my scripts/spaced.py'" spaced
+
+check "an interpreter-wrapped path with a space runs where it always did" \
+  "$("$BIN" --pipeline "$WORK/spaced.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
+  "KEEP IT DOWN;"
+
 # 5 — a folder file wins over one of the same name at the old location. This is
 # the case `--check-config` prints resolved paths for: with a copy in both
 # places, nothing else can tell you which one ran.

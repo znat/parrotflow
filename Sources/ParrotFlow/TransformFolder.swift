@@ -76,6 +76,16 @@ struct TransformFolder: Equatable {
         /// folder. A notice and never a fault: it runs, and `--check-config`
         /// says where it should move to.
         var atOldLocation: Bool
+        /// The directory the search found it under — the folder or the config
+        /// directory — and so the directory the path as written is relative
+        /// *to*. Nil for an absolute path, which is relative to nothing.
+        ///
+        /// Distinct from `url.deletingLastPathComponent()`, and the difference
+        /// decides where a command runs: `transforms/x/x.py` was found under
+        /// the config directory and *lives* in `transforms/x/`. Which of the
+        /// two is wanted depends on whether the path survives into the command
+        /// — see `CommandRunner.workingDirectory`.
+        var base: URL?
 
         var path: String { url.path }
     }
@@ -95,14 +105,15 @@ struct TransformFolder: Equatable {
         if expanded.hasPrefix("/") {
             let url = URL(fileURLWithPath: expanded).standardizedFileURL
             guard fm.fileExists(atPath: url.path) else { return nil }
-            // Deliberate, wherever it points. Nothing to move.
-            return Resolved(url: url, atOldLocation: false)
+            // Deliberate, wherever it points. Nothing to move, and nothing it
+            // is relative to.
+            return Resolved(url: url, atOldLocation: false, base: nil)
         }
 
         for base in searchPath {
             let candidate = base.appendingPathComponent(expanded).standardizedFileURL
             guard fm.fileExists(atPath: candidate.path) else { continue }
-            return Resolved(url: candidate, atOldLocation: !contains(candidate))
+            return Resolved(url: candidate, atOldLocation: !contains(candidate), base: base)
         }
         return nil
     }
