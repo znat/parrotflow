@@ -85,9 +85,12 @@ struct Config: Decodable, Equatable {
         var namesBoth = false
         /// A `path:` that named a file this could not read, in words.
         var unreadable: String?
+        /// `tests: { path: heldout.yaml }` — the set `--eval` scores by default.
+        var tests: String?
 
         enum CodingKeys: String, CodingKey {
             case name, description, display, confirm, prompt, content, replace, command
+            case tests
             case timeout = "timeout_seconds"
         }
 
@@ -123,6 +126,20 @@ struct Config: Decodable, Equatable {
             }
             confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
             timeout = try c.decodeIfPresent(Double.self, forKey: .timeout)
+            // Written either way — `tests: heldout.yaml` and
+            // `tests: { path: heldout.yaml }` mean the same thing — and
+            // refused when it is neither. A mapping
+            // that is not `{ path: … }` — `tests: { file: heldout.yaml }` —
+            // used to decode as nothing at all, and the transform then scored
+            // `cases.yaml` while the config said otherwise. A key that does
+            // not do what it says is worse than one that fails.
+            if let written = path(.tests) {
+                tests = written
+            } else if let scalar = try? trimmed(.tests) {
+                tests = scalar.isEmpty ? nil : scalar
+            } else {
+                unreadable = "`tests:` is neither a filename nor `{ path: <filename> }`"
+            }
 
             // A body written either way. The mapping is tried first and only
             // succeeds on `{ path: <string> }`, so nothing that decoded before
@@ -146,6 +163,14 @@ struct Config: Decodable, Equatable {
                 !command.isEmpty
             ].filter { $0 }.count > 1
 
+            // Assigned through a local rather than into `unreadable` directly.
+            // The tuple form overwrote whatever was already there, so a
+            // malformed `tests:` was erased the moment the body happened to
+            // read successfully — and the entry was then kept, scoring
+            // `cases.yaml` while the config said otherwise. The first reason
+            // an entry cannot be used is the one worth reporting; a body that
+            // is fine has nothing to say about a key that is not.
+            var bodyProblem: String?
             if !command.isEmpty {
                 body = .command(command)
             } else if let table {
@@ -153,10 +178,11 @@ struct Config: Decodable, Equatable {
             } else if !instructions.isEmpty {
                 body = .prompt(instructions)
             } else if let promptPath {
-                (body, source, unreadable) = readPrompt(promptPath)
+                (body, source, bodyProblem) = readPrompt(promptPath)
             } else if let tablePath {
-                (body, source, unreadable) = readTable(tablePath)
+                (body, source, bodyProblem) = readTable(tablePath)
             }
+            unreadable = unreadable ?? bodyProblem
         }
 
         /// A prompt file, read verbatim. No front matter, no templating: what is
@@ -263,7 +289,8 @@ struct Config: Decodable, Equatable {
                 name: entry.name, description: entry.description,
                 display: entry.display,
                 folder: entry.folder, timeout: entry.timeout,
-                confirm: entry.confirm, body: body, source: entry.source
+                confirm: entry.confirm, body: body, source: entry.source,
+                tests: entry.tests
             ))
         }
         return (kept, unreadable)
@@ -329,6 +356,10 @@ struct Config: Decodable, Equatable {
         /// folder and beside the config is otherwise invisible, and "which one
         /// is running" is the first question when something is wrong.
         var source: TransformFolder.Resolved?
+        /// The case set `--eval <name>` scores this against, when it is not the
+        /// `cases.yaml` every folder has by convention. Relative to the folder,
+        /// like everything else a transform names.
+        var tests: String?
 
         enum Body: Equatable {
             /// Instructions for the local model.

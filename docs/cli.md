@@ -21,6 +21,7 @@ means it did what it says**, so these compose into scripts — which is what
 | `--pipeline <file.yaml> "<text>"` | What does this pipeline do to this sentence? |
 | `--replace "<text>"` | What do my replacement rules do to this sentence? |
 | `--route "<what you'd say>"` | Which transform does this instruction reach? |
+| `--eval <transform>` | How does it score against its own case set? |
 | `--seed-config` | What does a first launch write, and what did it leave alone? |
 
 Every one of them reads `~/.config/parrotflow/`. Set `PARROTFLOW_CONFIG_DIR` to
@@ -91,6 +92,62 @@ so a case file states the setup it assumes instead of inheriting this machine's.
 - `--quiet` prints only the result, for scripts.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
+
+## Scoring a transform: `--eval`
+
+One sentence tells you a rewrite is wrong. Only a set tells you a change made
+it better rather than moved the failure.
+
+```sh
+$PF --eval code_identifiers                        # transforms/…/cases.yaml
+$PF --eval slack_mentions --cases heldout.yaml     # another set in the folder
+$PF --eval grammar --probe restraint --verbose
+$PF --eval ~/scratch/my-cases.yaml                 # one-off, outside a folder
+```
+
+It resolves the transform from your config and runs **that** — the same code
+the app runs, including the part where every way of failing leaves the text
+alone. A runner that reimplements the thing it scores drifts from it, and the
+number then describes code nobody ships.
+
+```yaml
+# The contract, in prose: what counts as a case here and what is deliberately
+# out of scope. It is what you will disagree with yourself about in a week.
+cases:
+  - probe: ambiguity_common        # optional; groups the breakdown
+    input:  mark it as resolved
+    expect: mark it as resolved
+```
+
+`input` and `expect` are the whole requirement. **`expect` left out means "comes
+back exactly as it went in"**, and those cases are reported as their own half —
+detected, never declared. A rewrite that scores well on `change` and badly on
+`keep` is not 80% of the way there; it is one that makes you proof-read every
+dictation.
+
+Four optional keys, each earning its place:
+
+| | |
+|---|---|
+| `probe:` on a case | the breakdown. One broken category hides behind eleven healthy ones for exactly as long as nobody breaks it out |
+| `instruction:` | what the speaker said, for a prompt reached by voice. The same prompt scores differently as a pipeline stage, which is given nothing |
+| `control:` | a command doing the same job without a model. The only thing that answers "is the model earning its place" — on Slack mentions it scored the same and the model was dropped |
+| `intermediate:` | `field:`, `resolve:` and optionally `produce:`, for a two-stage transform. Scores what the model alone returns, separately, so you can tell whether the prompt or the code is at fault |
+
+Where an intermediate gold exists it is **checked against itself before
+anything is scored**: resolving it must produce `expect`. A typo in a gold
+otherwise scores every candidate against the typo, silently, for as long as the
+set exists — so that is a refusal, not a warning.
+
+Latency is reported warm, after a throwaway first call. A cold start is Ollama
+reading weights off a disk and has nothing to say about the thing you changed.
+
+`--eval` exits 0 whenever it managed to score, whatever the number: a set worth
+having keeps its residue in, failing. It exits 1 when it could not score at all.
+
+Custom gates — "a handle belonging to someone who was not named must be zero" —
+do not generalise and stay in a script of your own. See
+[authoring.md](authoring.md).
 
 ## Testing a spoken instruction
 
@@ -192,7 +249,8 @@ scripts/check-routing.sh           scripts/check-wake.sh
 scripts/check-split.sh             scripts/check-grammar.sh
 scripts/check-dates.sh             scripts/check-inplace.sh
 scripts/check-default-config.sh    scripts/check-seeded-transform.sh
-scripts/check-transform-folders.sh scripts/check-span.sh
+scripts/check-transform-folders.sh scripts/check-eval.sh
+scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

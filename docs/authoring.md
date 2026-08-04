@@ -35,8 +35,8 @@ including how to build a validation set that can tell you which one you need.
 ## The loop
 
 ```
-1. write the cases            tests/<thing>-cases.yaml
-2. score what exists now      scripts/check-<thing>.sh        <- the baseline
+1. write the cases            transforms/<name>/cases.yaml
+2. score what exists now      $PF --eval <name>               <- the baseline
 3. change one thing
 4. score again                same command, same set
 5. keep it only if the number went up and no category collapsed
@@ -46,6 +46,17 @@ Steps 1 and 2 are not optional overhead. Tuning by eye fixes the example in
 front of you and silently breaks one you are not looking at — which is why
 every rewrite in this repo ships with a set, and why the sets keep their
 failures in rather than dropping them to make a number look better.
+
+`--eval` is that loop in the binary, against your own config, so it is
+available to anyone who installed the app and not only to this repository. It
+runs the transform your config actually names — not a copy of it — and always
+reports the must-not-change half and the per-probe grid separately. The full
+format and every optional key is in [cli.md](cli.md#scoring-a-transform---eval).
+
+The sets in this repository that predate it still have bespoke runners in
+`scripts/`, and some of them always will: a custom gate — "a handle belonging
+to someone who was not named must be zero" — is not something a generic runner
+can express, and should not try to.
 
 ## Recipe: a substitution
 
@@ -210,6 +221,20 @@ $PF --pipeline my-test.yaml "on en a vingt et un" --lang fr
 
 ## Writing the case set
 
+It goes in the transform's own folder, called `cases.yaml`, which is where
+`--eval <name>` looks:
+
+```yaml
+# The contract, in prose — see below.
+cases:
+  - probe: language-said
+    input:  add a python function called max retries
+    expect: add a python function called max_retries
+  - probe: prose
+    input:  we should discuss the retry count tomorrow    # no expect: —
+                                                          # it must not change
+```
+
 Twenty to forty cases. Fewer and you cannot tell a real change from noise; more
 and you stop running it.
 
@@ -232,19 +257,33 @@ and you stop running it.
 - **Write the contract at the top of the file**, in prose: what counts as a
   case for this feature and what is deliberately out of scope. It is the thing
   you will disagree with yourself about in a week.
-- **Group by category**, so a regression reads as "all the two-word ones broke"
-  rather than an unattributable drop of four points.
+- **Group by `probe:`**, so a regression reads as "all the two-word ones broke"
+  rather than an unattributable drop of four points. `--eval` prints the grid.
+- **Run the control.** If the job can be done without a model, `control:` in
+  the case file scores that too, on the same cases. It is the only thing that
+  answers "is the model earning its place", and twice in this repo the answer
+  was no.
 
-The sets that exist: `spelling` (62) and `french` (45) for corrections,
-`numbers` (97), `routing` (45), `dotted` (56), `code-identifier` (75),
-`grammar` (17), `wake` (25), `split` (14), `generic`, `dates`, `inplace`,
-`pipeline`, `replacement`. Each has a runner in `scripts/`.
+The sets that exist. A transform's set lives in its folder; the ones belonging
+to a built-in stage or to the router have nowhere else to be and stay in
+`tests/`:
+
+| Where | Sets |
+|---|---|
+| `examples/transforms/<name>/` | `code_identifiers` (75), `dotted` (56), `grammar` (17), `email` (26) |
+| `tests/` | `spelling` (62), `french` (45), `numbers` (97), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement` |
+
+Each has a runner in `scripts/`; the transform sets can also be scored with
+`--eval`. `examples/transforms/` is a byte-for-byte mirror of what a first
+launch writes into `~/.config/parrotflow/transforms/`, kept honest by
+`scripts/check-seeded-transform.sh`.
 
 ## Before you call it done
 
-- [ ] `--check-config` is clean, and names every `command:` transform you added
-- [ ] the check script for what you touched still passes, and you know its
-      number before and after
+- [ ] `--check-config` is clean, names every `command:` transform you added, and
+      the resolved path it prints for each is the one you meant
+- [ ] `--eval <name>`, or the check script for what you touched, still passes —
+      and you know its number before and after, on both halves
 - [ ] any stage costing a model call has a `when:`, an `unless:` or an `app:`
 - [ ] failure leaves the transcript alone — kill the model, run it again, see
       the sentence come through untouched
