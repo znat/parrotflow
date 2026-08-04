@@ -324,6 +324,48 @@ check "and the warm-up runs a case that was going to be scored anyway" \
   "$(grep -c 'this one is asked for' "$WORK/transforms/recorded/seen.txt")" \
   "2"
 
+# The same question for the gold check. `resolve:` is a `command:` like any
+# other, and the check that the gold agrees with itself used to send every
+# case's gold to it before --probe had filtered anything — so an excluded case
+# reached the program through a side door rather than through the scoring loop.
+mkdir -p "$WORK/transforms/goldrecorded"
+cat > "$WORK/transforms/goldrecorded/goldrecorded.py" <<'RECORDER'
+#!/usr/bin/env python3
+import pathlib, sys
+text = sys.stdin.read().strip()
+with pathlib.Path("seen.txt").open("a") as log:
+    log.write(text + "\n")
+print(text.replace("[[", "").replace("]]", ""))
+RECORDER
+chmod +x "$WORK/transforms/goldrecorded/goldrecorded.py"
+cat >> "$WORK/config.yaml" <<'YAML'
+  - name: goldrecorded
+    description: writes down every gold it is asked to resolve
+    command: goldrecorded.py
+YAML
+cat > "$WORK/transforms/goldrecorded/cases.yaml" <<'YAML'
+intermediate:
+  field: marks
+  resolve: goldrecorded.py
+cases:
+  - probe: excluded
+    input: this gold is not asked for
+    marks: this gold is not asked for
+  - probe: wanted
+    input: this gold is asked for
+    marks: this gold is asked for
+YAML
+: > "$WORK/transforms/goldrecorded/seen.txt"
+"$BIN" --eval goldrecorded --probe wanted > /dev/null 2>&1
+
+check "the gold check never resolves an excluded case" \
+  "$(grep -c 'this gold is not asked for' "$WORK/transforms/goldrecorded/seen.txt")" \
+  "0"
+
+check "and it still checks the gold of the cases it will score" \
+  "$(grep -c 'this gold is asked for' "$WORK/transforms/goldrecorded/seen.txt")" \
+  "3"
+
 # --- a set that names a file that is not there ------------------------------
 check "a missing set names where it looked" \
   "$("$BIN" --eval shout --cases nowhere.yaml 2>&1 | grep -c 'no nowhere.yaml')" \

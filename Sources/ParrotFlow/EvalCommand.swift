@@ -49,11 +49,27 @@ enum EvalCommand {
             + (probe.map { "  — only probe \($0)" } ?? ""))
         print("  body     \(body(of: transform))")
 
+        // What `--probe` selected, decided once and handed to everything that
+        // runs a case. Deciding it twice is how the gold check came to send
+        // every case to the resolver while the scoring loop ran a subset:
+        // `resolve:` is a `command:` like any other, and an input somebody
+        // filtered out must not reach someone's program by a side door.
+        let selected = probe.map { wanted in set.cases.filter { $0.probe == wanted } } ?? set.cases
+        guard !selected.isEmpty else {
+            let known = Set(set.cases.map(\.probe)).filter { !$0.isEmpty }.sorted()
+            print("")
+            print("  ✗ no case has probe \"\(probe ?? "")\""
+                + (known.isEmpty
+                    ? " — no case in this set names one"
+                    : " — have: \(known.joined(separator: ", "))"))
+            return 1
+        }
+
         // The gold, against itself, before anything is scored. A typo in an
         // intermediate gold otherwise scores every candidate against a typo,
         // silently, forever — so this is a refusal and not a warning.
         if let intermediate = set.intermediate {
-            let wrong = badGold(set, intermediate, transform: transform)
+            let wrong = badGold(selected, intermediate, transform: transform)
             guard wrong.isEmpty else {
                 print("")
                 print("  ✗ the gold does not agree with itself."
@@ -65,22 +81,10 @@ enum EvalCommand {
                     + " every candidate against its own typo.")
                 return 1
             }
-            print("  gold     \(set.cases.count) cases resolve to their `expect`")
+            print("  gold     \(selected.count) cases resolve to their `expect`")
         }
 
-        let scored = score(set, transform: transform, config: config, probe: probe)
-        // A `--probe` that matched nothing scored nothing, and printing 0/0
-        // under a heading is how a typo reads as a clean run. The contract is
-        // that 0 means "this was scored", so this is the other case.
-        guard scored.overall.total > 0 else {
-            let known = Set(set.cases.map(\.probe)).filter { !$0.isEmpty }.sorted()
-            print("")
-            print("  ✗ no case has probe \"\(probe ?? "")\""
-                + (known.isEmpty
-                    ? " — no case in this set names one"
-                    : " — have: \(known.joined(separator: ", "))"))
-            return 1
-        }
+        let scored = score(set, selected: selected, transform: transform, config: config)
         report(scored, set: set, probe: probe, verbose: verbose)
         // 0 means "this was scored", not "this was perfect. A set worth having
         // keeps its residue in, failing — tests/…/dotted/cases.txt scores 54/54
@@ -284,20 +288,13 @@ enum EvalCommand {
     }
 
     private static func score(
-        _ set: EvalCases, transform: Config.Transform, config: Config, probe: String?
+        _ set: EvalCases, selected: [EvalCases.Case],
+        transform: Config.Transform, config: Config
     ) -> Scored {
         var scored = Scored()
         let instruction = set.instruction ?? ""
         var control = (overall: Tally(), change: Tally(), keep: Tally())
         var intermediate = Tally()
-
-        // What `--probe` selected, decided once. The warm-up runs one of these
-        // and not simply the first case in the file: a `command:` body is
-        // someone's program, and an input the user asked to exclude is an
-        // input that must not be handed to it — a transform is text in and
-        // text out to this runner, but nothing stops the script it names from
-        // writing a file or calling something.
-        let selected = set.cases.filter { probe == nil || $0.probe == probe }
 
         // Warm first, and throw the number away. A cold start is 7–10s of
         // reading weights off a disk and has nothing to say about the thing
@@ -347,9 +344,10 @@ enum EvalCommand {
 
     /// The cases whose gold does not resolve to their own `expect`.
     private static func badGold(
-        _ set: EvalCases, _ intermediate: EvalCases.Intermediate, transform: Config.Transform
+        _ cases: [EvalCases.Case], _ intermediate: EvalCases.Intermediate,
+        transform: Config.Transform
     ) -> [String] {
-        set.cases.compactMap { one in
+        cases.compactMap { one in
             guard let gold = one.fields[intermediate.field] else { return nil }
             let resolved = piped(intermediate.resolve, gold, in: transform)
             guard resolved != one.expect else { return nil }
