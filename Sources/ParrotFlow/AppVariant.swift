@@ -48,10 +48,24 @@ enum AppVariant {
         isDev ? "right_command" : "right_option"
     }
 
-    /// A different menu bar glyph, because two microphones in the menu bar with
-    /// no way to tell them apart is worse than one.
-    static var menuBarSymbol: String { isDev ? "mic.circle" : "mic" }
-    static var menuBarSymbolRecording: String { isDev ? "mic.circle.fill" : "mic.fill" }
+    /// The parrot this build sits in the menu bar with when nothing is happening.
+    ///
+    /// Both builds show the same bird — it is the app's mark, and giving the one
+    /// you develop against a different animal means the icon you look at all day
+    /// is not the icon you ship. Colour tells them apart instead, because two
+    /// identical parrots in the menu bar with no way to tell them apart is worse
+    /// than one.
+    ///
+    /// The released app gets the template, which follows the menu bar into light
+    /// and dark and is the only one of the three that does. The dev build gives
+    /// that up for sky — a build you can pick out of the bar at a glance is worth
+    /// more on the machine it is being written on than one that themes politely.
+    static var menuBarIdleImage: String {
+        isDev ? "MenuBarParrotDev" : "MenuBarParrotTemplate"
+    }
+
+    /// Scarlet, in both builds, for as long as the microphone is open.
+    static let menuBarRecordingImage = "MenuBarParrotRecording"
 
     // MARK: About
 

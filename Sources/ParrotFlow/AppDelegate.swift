@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var inputDeviceItem: NSMenuItem!
     private var permissionsItem: NSMenuItem!
 
-    /// The recording state the menu bar icon was last drawn for.
+    /// The recording state the menu bar parrot was last tinted for.
     private var shownRecording: Bool?
 
     /// Shown only while `config.problems()` has something in it.
@@ -1762,11 +1762,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(
-            systemSymbolName: AppVariant.menuBarSymbol,
-            accessibilityDescription: AppVariant.displayName
-        )
-        statusItem.button?.image?.isTemplate = true
+        statusItem.button?.image = Self.idleParrot
 
         let menu = NSMenu()
 
@@ -1859,22 +1855,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let recording = recorder.isRecording
 
         // Only when it actually changes. updateUI runs on a 0.1s timer while
-        // recording, to redraw the elapsed clock, and the icon is the one thing
-        // in here that cannot change between two ticks of the same state —
-        // rebuilding the symbol regardless was ten identical NSImages a second.
+        // recording, to redraw the elapsed clock, and the bird is the one thing
+        // in here that cannot change between two ticks of the same state.
+        //
+        // Swapping the whole image rather than tinting one. `contentTintColor`
+        // is the obvious way to turn a menu bar glyph red and it does not work:
+        // set it on a status button and AppKit stops treating the image as a
+        // template at all and draws its own pixels, which for a template is
+        // solid black. So the colour is baked into a second file and the button
+        // is handed whichever bird the state calls for.
         if shownRecording != recording {
             shownRecording = recording
-            statusItem.button?.image = NSImage(
-                systemSymbolName: recording
-                    ? AppVariant.menuBarSymbolRecording
-                    : AppVariant.menuBarSymbol,
-                accessibilityDescription: AppVariant.displayName
-            )
-            // Stays a template image so `contentTintColor` applies — a
-            // non-template symbol ignores the tint and renders black in a dark
-            // menu bar.
-            statusItem.button?.image?.isTemplate = true
-            statusItem.button?.contentTintColor = recording ? .systemRed : nil
+            statusItem.button?.image = recording ? Self.recordingParrot : Self.idleParrot
         }
 
         let shortcut = hotKeys.binding?.displayName
@@ -1993,6 +1985,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Set by name because `preferredImageVisibility` arrived in the macOS 27
     /// SDK and this builds against 26. `2` is `.hidden`; the check makes it a
     /// no-op on any system that predates the property.
+    /// The bird, flat, at the size the menu bar draws glyphs.
+    ///
+    /// A bird for the menu bar, by name.
+    ///
+    /// Built by scripts/make-icons.py from the same Resources/parrot.svg the app
+    /// icon comes from, at @1x/@2x/@3x — `NSImage(named:)` picks the rung that
+    /// matches the display, and reads the `Template` suffix to decide whether
+    /// the file is a mask to paint the menu bar's own colour through or an image
+    /// to draw as-drawn. That is why nothing here touches `isTemplate`: the file
+    /// name is the single place it is decided, and code that also sets it is one
+    /// more place for the two to disagree.
+    ///
+    /// Falls back to a microphone if a file is missing, which happens exactly
+    /// once — running the binary outside its bundle. A status item with no image
+    /// is a status item you cannot click, and losing the menu is a worse way to
+    /// find out than an unfamiliar glyph.
+    private static func menuBarParrot(_ name: String) -> NSImage? {
+        guard let image = NSImage(named: name) else {
+            let fallback = NSImage(systemSymbolName: "mic", accessibilityDescription: nil)
+            fallback?.isTemplate = true
+            return fallback
+        }
+        image.accessibilityDescription = AppVariant.displayName
+        return image
+    }
+
+    private static let idleParrot = menuBarParrot(AppVariant.menuBarIdleImage)
+    private static let recordingParrot = menuBarParrot(AppVariant.menuBarRecordingImage)
+
     private static func hideAutomaticImage(_ item: NSMenuItem) {
         guard item.responds(to: Selector(("setPreferredImageVisibility:"))) else { return }
         item.setValue(2, forKey: "preferredImageVisibility")

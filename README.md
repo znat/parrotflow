@@ -102,6 +102,10 @@ command line, permissions, architecture. Working on this with an agent?
 
 [Apache 2.0](LICENSE).
 
+The parrot is by Md Moniruzzaman, from the [Noun
+Project](https://thenounproject.com), used under CC BY. The outline is his; the
+plumage is ours — see [docs/development.md](docs/development.md#the-icons).
+
 <div align="center">
 
 macOS dictation · offline speech to text · local voice typing · open source
