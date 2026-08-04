@@ -2037,8 +2037,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        settingsItem.target = self
+        // One row for the two files you configure this app by: the config, and
+        // the folder of transforms beside it. A submenu rather than two lines
+        // because they are the same errand, and this menu is mostly state —
+        // every row spent on a door is a row not spent saying what is happening.
+        let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
+        let settingsMenu = NSMenu()
+
+        // Keeps ⌘, — the shortcut belongs to the thing it opens, not to the
+        // row that only unfolds.
+        let editConfigItem = NSMenuItem(
+            title: "Edit Config…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        editConfigItem.target = self
+        settingsMenu.addItem(editConfigItem)
+
+        let transformsItem = NSMenuItem(
+            title: "View Transforms",
+            action: #selector(openTransformsFolder),
+            keyEquivalent: ""
+        )
+        transformsItem.target = self
+        settingsMenu.addItem(transformsItem)
+
+        settingsItem.submenu = settingsMenu
         menu.addItem(settingsItem)
 
         permissionsItem = NSMenuItem(
@@ -2067,7 +2091,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitItem.target = self
         menu.addItem(quitItem)
 
-        for item in menu.items { Self.hideAutomaticImage(item) }
+        // Submenus too: "Edit Config…" is a settings row by any name the system
+        // recognises, and it earns the same gear if nobody says otherwise.
+        for item in menu.items {
+            Self.hideAutomaticImage(item)
+            for child in item.submenu?.items ?? [] { Self.hideAutomaticImage(child) }
+        }
 
         menu.delegate = self
         statusItem.menu = menu
@@ -2178,7 +2207,95 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// window to drift out of sync with it.
     @objc private func openSettings() {
         try? ConfigStore.createIfMissing()
-        NSWorkspace.shared.open(ConfigStore.fileURL)
+        Self.openInEditor(ConfigStore.fileURL)
+    }
+
+    /// The transforms folder — the layout is the documentation, so opening the
+    /// directory says more than a list of names would.
+    ///
+    /// Created if it is not there, because an empty folder is an answer ("this
+    /// is where they go") and a window that never opened is not.
+    @objc private func openTransformsFolder() {
+        let dir = ConfigStore.transformsDirectory
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        Self.openInEditor(dir)
+    }
+
+    /// VS Code if it is here, and whatever the system would have used if it is
+    /// not — a config file and a folder of scripts are both things you came to
+    /// edit, and an editor that opens the folder as a project is a better
+    /// answer than TextEdit and a Finder window.
+    ///
+    /// Two chances to fall back, because there are two ways to not have it.
+    /// Launch Services can name no application at all — VS Code was never
+    /// installed — and it can name one that no longer launches, which is what
+    /// a bundle moved to the Trash looks like from here. The second is why the
+    /// fallback is in the completion handler rather than only in the `guard`:
+    /// the error arrives after the call succeeds.
+    ///
+    /// What the fallback must not do is hand the file back to the application
+    /// that just failed, which is exactly what the system would say to do on a
+    /// machine where the trashed VS Code is still the handler for YAML. See
+    /// `openWithSystem`.
+    private static func openInEditor(_ url: URL) {
+        guard let editor = visualStudioCode else {
+            openWithSystem(url)
+            return
+        }
+        NSWorkspace.shared.open(
+            [url],
+            withApplicationAt: editor,
+            configuration: NSWorkspace.OpenConfiguration()
+        ) { _, error in
+            guard let error else { return }
+            Log.write("menu: VS Code did not open \(url.path) (\(error.localizedDescription));"
+                + " using the default application")
+            DispatchQueue.main.async { openWithSystem(url, avoiding: editor) }
+        }
+    }
+
+    /// Hand the file to whatever the system would have opened it with, with
+    /// two ways of not disappearing quietly.
+    ///
+    /// `avoiding` is the application that just failed. Someone who has VS Code
+    /// installed has very likely also made it the handler for YAML, so the
+    /// system's answer to "who opens config.yaml" can be the same bundle that
+    /// could not launch a moment ago — and asking it twice fails twice. When
+    /// that is what the system says, stop asking and show the file in Finder,
+    /// which needs nobody's help to work.
+    ///
+    /// The second way is the ordinary one: the handler exists, is not the
+    /// failed editor, and still does not open. `open` says so by returning
+    /// false, and a menu item that does nothing at all is worth a line in the
+    /// log — otherwise the only report of the failure is a window that never
+    /// appeared.
+    private static func openWithSystem(_ url: URL, avoiding failed: URL? = nil) {
+        let handler = NSWorkspace.shared.urlForApplication(toOpen: url)
+        if let failed, handler?.standardizedFileURL == failed.standardizedFileURL {
+            Log.write("menu: the default application for \(url.lastPathComponent) is the one that"
+                + " just failed; showing it in Finder instead")
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            return
+        }
+        if !NSWorkspace.shared.open(url) {
+            Log.write("menu: nothing would open \(url.path); showing it in Finder instead")
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
+    /// Where VS Code is, asked of Launch Services rather than assumed to be in
+    /// /Applications — it is also a valid install in ~/Applications, and on a
+    /// machine that has both, this is the copy the person actually uses.
+    ///
+    /// Looked up each time so that installing VS Code does not require
+    /// restarting this app to be noticed.
+    private static var visualStudioCode: URL? {
+        for identifier in ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"] {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier) {
+                return url
+            }
+        }
+        return nil
     }
 
     @objc private func openPermissions() {
