@@ -22,15 +22,19 @@ $PF --check-config                                  # what will actually run
 $PF --pipeline <file.yaml> "<text>" --app <name>    # a stage, without a mic
 $PF --replace "<text>"                              # the substitution tables
 $PF --route "<what someone would say>"              # which transform that reaches
+$PF --eval <transform>                              # score it against its set
 ```
 
 `--check-config` reports what survived parsing, which is not what the file
 says. Everything else is in [docs/cli.md](docs/cli.md).
 
-**Never change a prompt or a pattern without scoring it.** Every rewrite in
-this repo has a case set in `tests/` and a runner in `scripts/`. Get the number
-before, change one thing, get it after. "It looks better" is how a change fixes
-the example in front of you and breaks two you are not looking at.
+**Never change a prompt or a pattern without scoring it.** Every rewrite has a
+case set — a transform's in its own folder under `examples/transforms/<name>/`,
+everything else in `tests/` — and a runner, either `$PF --eval <name>` or a
+script in `scripts/`. Get the number before, change one thing, get it after.
+"It looks better" is how a change fixes the example in front of you and breaks
+two you are not looking at. Read both halves: `keep` is the one that decides
+whether a rewrite is usable.
 
 **Fail open.** A stage that errors, times out or finds no model must leave the
 transcript exactly as it arrived. Test it by stopping Ollama and running the

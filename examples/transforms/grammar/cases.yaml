@@ -48,6 +48,13 @@
 # *examples* did not (v4a, 15/17). Elsewhere here examples beat rules. It is
 # worth trying both rather than assuming which way it will go.
 
+# What the speaker said, because this prompt is asked for by voice rather than
+# run as a pipeline stage — and the same prompt scores differently under the
+# two. `--eval grammar` reproduces scripts/check-grammar.sh only with it, at
+# 16/17; without it the prompt is given the text and nothing else and comes
+# back at 15/17, which is the number for a use this transform does not have.
+instruction: fix the grammar and punctuation
+
 cases:
   # --- real errors, minimally fixed ---------------------------------------
   - input: the panel dont show up sometimes
