@@ -126,11 +126,9 @@ struct Config: Decodable, Equatable {
             }
             confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
             timeout = try c.decodeIfPresent(Double.self, forKey: .timeout)
-            // Written either way, like a body: `tests: heldout.yaml` and
-            // `tests: { path: heldout.yaml }` mean the same thing, because
-            // having to remember which of the two a key takes is the kind of
-            // thing a config format should not ask.
-            // Written either way, and refused when it is neither. A mapping
+            // Written either way — `tests: heldout.yaml` and
+            // `tests: { path: heldout.yaml }` mean the same thing — and
+            // refused when it is neither. A mapping
             // that is not `{ path: … }` — `tests: { file: heldout.yaml }` —
             // used to decode as nothing at all, and the transform then scored
             // `cases.yaml` while the config said otherwise. A key that does
@@ -165,6 +163,14 @@ struct Config: Decodable, Equatable {
                 !command.isEmpty
             ].filter { $0 }.count > 1
 
+            // Assigned through a local rather than into `unreadable` directly.
+            // The tuple form overwrote whatever was already there, so a
+            // malformed `tests:` was erased the moment the body happened to
+            // read successfully — and the entry was then kept, scoring
+            // `cases.yaml` while the config said otherwise. The first reason
+            // an entry cannot be used is the one worth reporting; a body that
+            // is fine has nothing to say about a key that is not.
+            var bodyProblem: String?
             if !command.isEmpty {
                 body = .command(command)
             } else if let table {
@@ -172,10 +178,11 @@ struct Config: Decodable, Equatable {
             } else if !instructions.isEmpty {
                 body = .prompt(instructions)
             } else if let promptPath {
-                (body, source, unreadable) = readPrompt(promptPath)
+                (body, source, bodyProblem) = readPrompt(promptPath)
             } else if let tablePath {
-                (body, source, unreadable) = readTable(tablePath)
+                (body, source, bodyProblem) = readTable(tablePath)
             }
+            unreadable = unreadable ?? bodyProblem
         }
 
         /// A prompt file, read verbatim. No front matter, no templating: what is

@@ -264,6 +264,25 @@ check "a malformed tests: is refused rather than ignored" \
      | grep -c 'tests:` is neither a filename')" \
   "1"
 
+# A malformed `tests:` must survive a body that reads perfectly well. The
+# reason an entry cannot be used was being assigned into the same variable the
+# body's own result went into, so a valid `prompt: { path: … }` erased it and
+# the transform was kept — scoring cases.yaml while the config named something
+# else.
+mkdir -p "$WORK/transforms/mistyped_with_body"
+printf 'Return only the text.\n' > "$WORK/transforms/mistyped_with_body/mistyped_with_body.md"
+cat >> "$WORK/config.yaml" <<'YAML'
+  - name: mistyped_with_body
+    description: a body that reads, beside a mistyped test key
+    prompt: { path: mistyped_with_body.md }
+    tests: { file: heldout.yaml }
+YAML
+
+check "a malformed tests: is not erased by a body that reads" \
+  "$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>/dev/null \
+     | grep -c '"mistyped_with_body" `tests:` is neither a filename')" \
+  "1"
+
 # --- what --probe actually hands to the program ----------------------------
 #
 # A `command:` body is someone's program. This runner treats a transform as
