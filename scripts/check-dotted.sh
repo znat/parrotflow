@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scores the `dotted` transform against tests/dotted-cases.txt.
+# Scores the `dotted` transform against examples/transforms/dotted/cases.txt.
 #
 #   scripts/check-dotted.sh
 #
@@ -92,7 +92,7 @@ while IFS='|' read -r kind input want; do
       $input"
     printf '  ✗ %s  [%s]\n      got   %s\n      want  %s\n' "$kind" "$input" "$got" "$want"
   fi
-done < "$ROOT/tests/dotted-cases.txt"
+done < "$ROOT/examples/transforms/dotted/cases.txt"
 
 echo
 echo "  $pass/$total   plus $residue known-unfixable$failed"

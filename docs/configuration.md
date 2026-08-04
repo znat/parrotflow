@@ -50,14 +50,45 @@ feedback:
 | | |
 |---|---|
 | Config | `~/.config/parrotflow/config.yaml` |
+| Transforms | `~/.config/parrotflow/transforms/<name>/` — one folder each |
 | Recordings | `~/Recordings/ParrotFlow` |
 | Trace | `~/Recordings/ParrotFlow/trace.jsonl` |
 | Log | `~/Library/Logs/ParrotFlow.log` |
-| The example script | `~/.config/parrotflow/code_identifiers.py`, written on first launch and never overwritten |
+| The example transform | `~/.config/parrotflow/transforms/code_identifiers/`, written on first launch and never overwritten |
 
 The menu bar item shows the current state and offers *Correct a Word…*, *Open
-Recordings Folder*, *Settings…* — which opens `config.yaml` in your editor —
-and *Permissions…*.
+Recordings Folder* — the wavs and `trace.jsonl` — *Settings…*, which opens
+`config.yaml` in your editor, and *Permissions…*.
+
+### A folder per transform
+
+A transform named `X` owns `transforms/X/`. Everything belonging to it lives
+inside, so it can be written, scored and handed to someone else as one thing:
+
+```
+~/.config/parrotflow/
+  config.yaml
+  transforms/
+    code_identifiers/
+      code_identifiers.py    # the entry point, named after the transform
+      cases.yaml             # what --eval scores it against
+    slack_mentions/
+      slack_mentions.py
+      cases.yaml
+      roster.json            # data the transform owns
+```
+
+That folder is both where the transform's files are looked for **and the
+working directory its command runs in** — which is what pays for the extra
+directory. A script can open `roster.json` as a bare relative path, so the
+folder is self-contained: copy it to another machine and it works.
+
+That folder is the only place a transform's files are looked for. There is no
+flat alternative to fall back to: a `command:` that names neither a file in its
+folder nor anything the shell can find on `PATH` is reported by
+`--check-config` as a fault, rather than failing quietly once per transcript.
+Writing the path out in full — `transforms/slack/slack.md` — names the same
+file, because people write both.
 
 The dev build keeps its own copies of all of these; see
 [development.md](development.md).

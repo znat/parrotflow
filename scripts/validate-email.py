@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score the `email` prompt against tests/email-cases.yaml.
+"""Score the `email` prompt against examples/transforms/email/cases.yaml.
 
     scripts/validate-email.py gemma4:e4b                  # what ships today
     scripts/validate-email.py gemma4:e4b --variant v7
@@ -30,7 +30,7 @@ except ImportError:
     sys.exit("pip install pyyaml")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CASES = ROOT / "tests" / "email-cases.yaml"
+CASES = ROOT / "examples" / "transforms" / "email" / "cases.yaml"
 EXAMPLE_CONFIG = ROOT / "config.example.yaml"
 
 # --- prompt variants -------------------------------------------------------

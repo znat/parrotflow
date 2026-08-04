@@ -21,6 +21,13 @@ means it did what it says**, so these compose into scripts — which is what
 | `--pipeline <file.yaml> "<text>"` | What does this pipeline do to this sentence? |
 | `--replace "<text>"` | What do my replacement rules do to this sentence? |
 | `--route "<what you'd say>"` | Which transform does this instruction reach? |
+| `--seed-config` | What does a first launch write, and what did it leave alone? |
+
+Every one of them reads `~/.config/parrotflow/`. Set `PARROTFLOW_CONFIG_DIR` to
+point them somewhere else — a whole config directory in `/tmp`, say — which is
+how the check scripts score the binary without inheriting whatever this machine
+happens to have configured. The app reads it too, so do not export it from your
+shell profile.
 
 ### `--check-config`
 
@@ -42,6 +49,11 @@ config: /Users/you/.config/parrotflow/config.yaml
 It also names, every time and whether or not anything is wrong:
 
 - every `command:` transform, because that is config that executes code
+- **the resolved absolute path of every transform's body**, so a file present
+  both in `transforms/<name>/` and beside `config.yaml` cannot leave you
+  guessing which one ran
+- a file still at the old location beside `config.yaml`, and where to move it —
+  a notice, not a fault: it runs, and nothing is moved for you
 - a pipeline step naming a transform that does not exist
 - a pipeline key that is neither `default` nor one of your `languages:`
 - an `app:` lookahead that is not anchored, which would run the stage
@@ -179,8 +191,8 @@ scripts/check-dotted.sh            scripts/check-numbers.sh
 scripts/check-routing.sh           scripts/check-wake.sh
 scripts/check-split.sh             scripts/check-grammar.sh
 scripts/check-dates.sh             scripts/check-inplace.sh
-scripts/check-default-config.sh    scripts/check-example-script.sh
-scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
+scripts/check-default-config.sh    scripts/check-seeded-transform.sh
+scripts/check-transform-folders.sh scripts/check-span.sh
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

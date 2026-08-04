@@ -327,7 +327,7 @@ spans score 74% — it is how much of the answer code builds.
 
 ## Worked example 2: no model at all
 
-`tests/code-identifier-cases.yaml` and `scripts/validate-code-identifiers.py`. The task:
+`examples/transforms/code_identifiers/cases.yaml` and `scripts/validate-code-identifiers.py`. The task:
 turn a name said out loud into the identifier a language spells it as — "a
 python function called max retries" into `max_retries`.
 

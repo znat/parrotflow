@@ -46,16 +46,16 @@ enum CommandRunner {
     /// stdout, or nil if the program could not run, failed, took too long, or
     /// said nothing. Nil means "keep the transcript".
     ///
-    /// `base` is what a relative path is relative *to*: the directory of the
-    /// file that declared the transform, so a config carries its scripts beside
-    /// it. Not the working directory, which for an app launched from the Finder
-    /// is "/" and means nothing.
+    /// `folder` is what a relative path is relative *to*, and what the command
+    /// runs in — the transform's own directory, not the process's, which for an
+    /// app launched from the Finder is "/" and means nothing.
     static func run(
-        _ command: String, on text: String, base: URL?, seconds: TimeInterval? = nil
+        _ command: String, on text: String, in folder: TransformFolder?,
+        seconds: TimeInterval? = nil
     ) -> String? {
         let timeout = seconds ?? Self.timeout
-        let base = base ?? ConfigStore.directory
-        if let complaint = complaint(about: command, base: base) {
+        let folder = folder ?? TransformFolder(configDirectory: ConfigStore.directory, name: "")
+        if let complaint = complaint(about: command, in: folder) {
             Log.write("command: \(complaint); kept the transcript")
             return nil
         }
@@ -67,8 +67,10 @@ enum CommandRunner {
         // which is why the rewriting below only touches a first word that
         // turns out to name a real file next to the config.
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", shellCommand(for: command, base: base)]
-        process.currentDirectoryURL = base
+        process.arguments = ["-c", shellCommand(for: command, in: folder)]
+        // The folder, so a script opens `roster.json` as a bare relative path
+        // and the whole transform is one directory you can copy.
+        process.currentDirectoryURL = folder.workingDirectory
 
         let input = Pipe()
         let output = Pipe()
@@ -170,36 +172,44 @@ enum CommandRunner {
     ///
     /// So the file system decides: the longest prefix that names a file is the
     /// program, and the rest is arguments. A first word that names nothing is
-    /// left alone for the shell to find on PATH — `sed`, `python3`.
-    static func parts(of command: String, base: URL?)
-        -> (program: String, arguments: String, isPath: Bool) {
-        let expanded = (command as NSString).expandingTildeInPath
-        let base = base ?? ConfigStore.directory
-        let fm = FileManager.default
-
-        func path(for prefix: Substring) -> String {
-            prefix.hasPrefix("/")
-                ? String(prefix)
-                : base.appendingPathComponent(String(prefix)).standardized.path
-        }
+    /// left alone for the shell to find on PATH — `sed`, `python3`. That last
+    /// case is why `resolved` can be nil on a command that runs perfectly
+    /// well, and why the search must not be allowed to turn a bare `sed` into
+    /// a complaint.
+    static func parts(of command: String, in folder: TransformFolder?)
+        -> (program: String, arguments: String, resolved: TransformFolder.Resolved?) {
+        // Only when there is a tilde to expand. `expandingTildeInPath` also
+        // standardises, and standardising a command is not the same as
+        // standardising a path: it drops a trailing slash, so
+        // `sed -e s/quick/slow/` reached the shell as `s/quick/slow` and sed
+        // refused a substitution it had been handed correctly.
+        let expanded = command.hasPrefix("~")
+            ? (command as NSString).expandingTildeInPath : command
+        let folder = folder ?? TransformFolder(configDirectory: ConfigStore.directory, name: "")
 
         // Every place the command could be split, longest first. Existing is
         // enough — being executable is not required here, deliberately: a
         // script that is there but not `chmod +x` is the single most likely
         // thing to be wrong, and `complaint` names it as itself rather than
         // leaving the shell to say "command not found".
+        //
+        // Longest prefix wins over which directory it was found in, and the
+        // order matters: `my scripts/rewrite.py --lang python` has three spaces
+        // and only one of them is the boundary, so a shorter prefix that
+        // happens to exist in the folder must not beat a longer one that
+        // exists beside the config.
         var boundaries = [expanded.endIndex]
         boundaries += expanded.indices.filter { expanded[$0] == " " }.reversed()
         for boundary in boundaries {
-            let candidate = path(for: expanded[expanded.startIndex..<boundary])
-            guard fm.fileExists(atPath: candidate) else { continue }
-            return (candidate, String(expanded[boundary...]), true)
+            let prefix = String(expanded[expanded.startIndex..<boundary])
+            guard let found = folder.resolve(prefix) else { continue }
+            return (found.path, String(expanded[boundary...]), found)
         }
 
         guard let first = expanded.split(separator: " ", maxSplits: 1).first else {
-            return (expanded, "", false)
+            return (expanded, "", nil)
         }
-        return (String(first), String(expanded.dropFirst(first.count)), false)
+        return (String(first), String(expanded.dropFirst(first.count)), nil)
     }
 
     /// What the shell is actually given.
@@ -215,9 +225,9 @@ enum CommandRunner {
     /// the process this code holds *is* the program. A timeout then kills the
     /// thing that is slow rather than its parent — without it, terminating the
     /// shell left the script running and the next transcript started another.
-    static func shellCommand(for command: String, base: URL?) -> String {
-        let (program, arguments, isPath) = parts(of: command, base: base)
-        guard isPath else { return program + arguments }
+    static func shellCommand(for command: String, in folder: TransformFolder?) -> String {
+        let (program, arguments, resolved) = parts(of: command, in: folder)
+        guard resolved != nil else { return program + arguments }
         // A pipeline or a sequence stays the shell's business: `exec` takes one
         // simple command, and the shell is the right thing to be waiting on
         // when there are several.
@@ -235,6 +245,26 @@ enum CommandRunner {
         "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
+    /// Whether the shell will find this name on PATH — `sed`, `python3`.
+    ///
+    /// Asked so that a command which resolved to no file can be told apart from
+    /// a command which named a file that is not there. Both look identical in
+    /// the config, and they want opposite responses: one is a one-liner doing
+    /// exactly what it says, the other is a transform that will silently do
+    /// nothing on every transcript until someone reads the log.
+    ///
+    /// A name with a slash in it is a path and never a PATH lookup, which is
+    /// the shell's rule too.
+    static func onPath(_ name: String) -> Bool {
+        guard !name.isEmpty, !name.contains("/") else { return false }
+        let fm = FileManager.default
+        let path = ProcessInfo.processInfo.environment["PATH"]
+            ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        return path.split(separator: ":").contains { directory in
+            fm.isExecutableFile(atPath: "\(directory)/\(name)")
+        }
+    }
+
     /// What is wrong with this command before it is even run, in words, or nil
     /// if nothing obvious is.
     ///
@@ -242,10 +272,10 @@ enum CommandRunner {
     /// the system will refuse to run it. Everything else — a typo in the name,
     /// an interpreter that is not installed — is the shell's to report, and it
     /// reports those well.
-    static func complaint(about command: String, base: URL?) -> String? {
-        let (program, _, isPath) = parts(of: command, base: base)
+    static func complaint(about command: String, in folder: TransformFolder?) -> String? {
+        let (program, _, resolved) = parts(of: command, in: folder)
         let fm = FileManager.default
-        guard isPath, fm.fileExists(atPath: program),
+        guard resolved != nil, fm.fileExists(atPath: program),
               !fm.isExecutableFile(atPath: program) else { return nil }
         return "\(program) is not executable — chmod +x it"
     }

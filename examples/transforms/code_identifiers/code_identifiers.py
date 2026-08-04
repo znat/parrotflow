@@ -21,12 +21,13 @@ The convention comes from the language if one was said, and is camelCase when
 none was. A class or a type takes PascalCase whatever the language; a constant
 takes SCREAMING_SNAKE_CASE.
 
-A copy of this file is written to ~/.config/parrotflow/code_identifiers.py on
-first launch and never overwritten afterwards, and the step above is in the
-default pipeline. This one, in examples/, is the copy you read and edit; see
-scripts/check-example-script.sh, which keeps the two equal.
+A copy of this folder — this file and cases.yaml beside it — is written to
+~/.config/parrotflow/transforms/code_identifiers/ on first launch and never
+overwritten afterwards, and the step above is in the default pipeline. This
+one, in examples/, is the copy you read and edit; see
+scripts/check-seeded-transform.sh, which keeps the two equal.
 
-Why a script and not a prompt: measured. On tests/code-code-identifier-cases.yaml, 56
+Why a script and not a prompt: measured. On examples/transforms/code_identifiers/cases.yaml, 56
 cases, this scores 100% and costs a process start; gemma4:e4b scores 68% and
 costs a second — and its errors are the expensive kind, capitalising words it
 was not asked to touch and translating French names into English. See
