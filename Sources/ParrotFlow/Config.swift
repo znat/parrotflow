@@ -1628,17 +1628,18 @@ if __name__ == "__main__":
       # return a better one, in its own voice, and you will not notice until it
       # has gone.
       #
-      # 8/10 on gemma4:e4b, and the six versions before it are written down in
-      # config.example.yaml beside the same prompt. The short version: a
+      # 21/26 on gemma4:e4b — tests/email-cases.yaml, scored by
+      # scripts/validate-email.py, which reads the prompt out of
+      # config.example.yaml. The short version of what the cases caught: a
       # prohibition ("do not invent a greeting") read as a topic and produced
       # one; "nothing is ever deleted" produced a literal "[Signature]";
       # worked examples for the greeting came back in the output; and the list
       # rule has to sit with the paragraph rule, because after the short-reply
       # clause it turned a two-word reply into "[No body text]".
       #
-      # The two still failing are one shape — a short reply ending in a goodbye
-      # comes back as the goodbye alone. Numbered lists are deliberately absent:
-      # the version that forced them from spoken ordinals dropped an item.
+      # Spoken ordinals are the known gap: "One, … Two, … Three." stays prose
+      # and the numbers are deleted. Two variants and a model twice the size
+      # fail it the same way, so it is not a wording problem.
       - name: email
         description: lay dictated text out as an email
         display: Laying out the email
@@ -1665,11 +1666,13 @@ if __name__ == "__main__":
           "there are three things" does. Two things are a sentence and stay
           one.
 
-          A name at the end is a signature: a blank line, then the name on
+          The email ends on the last thing the speaker said. If that last
+          thing is a name, it is a signature: a blank line, then the name on
           its own line, and a closing word said just before it — thanks,
-          merci — on the line above. No name at the end means no signature:
-          the last thing said is the last line of the body, wherever it
-          sounds like a goodbye.
+          merci — on the line above. If it is anything else — a question, a
+          goodbye, a sentence — that is the last line, and there is nothing
+          under it. The only name that can appear is one that was spoken; an
+          unspoken one has no stand-in, in brackets or otherwise.
 
           A short reply is not an email with parts. One or two sentences and
           no hello in front of them come back as one or two sentences,
