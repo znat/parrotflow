@@ -225,7 +225,9 @@ cd ~/Recordings/ParrotFlow
 
 # Which words is the model least sure of? Candidates for the replacement
 # table, ranked instead of guessed at.
-jq -r '.asr.words[] | select(.confidence < 0.5) | .word' trace.jsonl |
+# `[]?` because a dictation that failed before the decoder returned is still
+# written down, with a null `asr` — and iterating that aborts jq outright.
+jq -r '.asr.words[]? | select(.confidence < 0.5) | .word' trace.jsonl |
   sort | uniq -c | sort -rn | head -20
 
 # A dictation whose ending went missing: did the decoder stop, or the gate?

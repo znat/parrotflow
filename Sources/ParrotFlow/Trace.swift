@@ -118,7 +118,14 @@ enum Trace {
         body: () async throws -> T
     ) async rethrows -> T {
         let collector = Collector(wav: wav, source: source)
-        defer { append(collector.record(at: stamp(), app: app)) }
+        // The destination is fixed when the dictation starts, not when it ends.
+        // `output_dir` can change on any save of config.yaml — the file is
+        // watched and reloaded live — and a save while a prompt stage is
+        // running would otherwise file the record in the new directory while
+        // the clip it names sits in the old one. `wav` is a bare filename, so
+        // the two being separated is the one thing that breaks the join.
+        let directory = Self.directory
+        defer { append(collector.record(at: stamp(), app: app), to: directory) }
         return try await $current.withValue(collector) { try await body() }
     }
 
@@ -135,7 +142,25 @@ enum Trace {
     /// that write here are handed a transcript and nothing else.
     nonisolated(unsafe) static var directory: URL?
 
-    private static func append(_ record: Record) {
+    /// Appends one line, atomically against every other writer of this file.
+    ///
+    /// Two processes write here by design: the menu bar app, and a
+    /// `--transcribe` sweep over the archive — which `cli.md` recommends
+    /// running, and which nobody is going to quit the app before starting.
+    /// Seeking to the end and then writing is two steps, and both processes
+    /// can take the first before either takes the second, which loses a line
+    /// or splices two into something no longer parseable as JSONL.
+    ///
+    /// `O_APPEND` collapses those two steps into one the kernel does not
+    /// interleave, which `FileHandle(forWritingTo:)` does not ask for. The
+    /// serial queue still orders this process's own writes and keeps them off
+    /// the caller's thread; it just cannot say anything about the other
+    /// process.
+    ///
+    /// Deliberately no size cap. This is the corpus, not a debug buffer: a year
+    /// of heavy use is a few megabytes, and the whole point is being able to
+    /// ask a question of every dictation you have ever given.
+    private static func append(_ record: Record, to directory: URL?) {
         guard let directory else { return }
         let url = directory.appendingPathComponent("trace.jsonl")
 
@@ -145,18 +170,18 @@ enum Trace {
         data.append(0x0A)  // one object per line, so `jq -c` and friends work
 
         queue.async {
-            let fm = FileManager.default
-            if let handle = try? FileHandle(forWritingTo: url) {
-                defer { try? handle.close() }
-                // Deliberately no size cap. This is the corpus, not a debug
-                // buffer: a year of heavy use is a few megabytes, and the whole
-                // point is being able to ask a question of every dictation you
-                // have ever given.
-                _ = try? handle.seekToEnd()
-                try? handle.write(contentsOf: data)
-            } else {
-                try? fm.createDirectory(at: directory, withIntermediateDirectories: true)
-                try? data.write(to: url)
+            try? FileManager.default.createDirectory(
+                at: directory, withIntermediateDirectories: true
+            )
+            let fd = open(url.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+            guard fd >= 0 else { return }
+            defer { close(fd) }
+            data.withUnsafeBytes { buffer in
+                guard let base = buffer.baseAddress else { return }
+                // One call, so the append stays the single atomic act O_APPEND
+                // promises. A short write would mean a torn line, and there is
+                // nothing useful to do about it but stop.
+                _ = write(fd, base, buffer.count)
             }
         }
     }
