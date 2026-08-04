@@ -205,6 +205,65 @@ check "tests: names the set --eval scores by default" \
   "$("$BIN" --eval shout_heldout 2>/dev/null | grep -c 'heldout.yaml')" \
   "1"
 
+# --- the set's own transform wins over the machine's -----------------------
+#
+# A case file carrying `transforms:` is stating what it assumes, and the whole
+# point is that it scores the same wherever it runs. A config on this machine
+# with an entry of the same name must not be the one that runs — silently, and
+# only on the machines where the two differ, which is exactly the case the set
+# carried its own definition to survive.
+cat >> "$WORK/config.yaml" <<'YAML'
+  - name: contested
+    description: the machine's version, which must not be what runs
+    replace:
+      MACHINE: [contested]
+YAML
+
+cat > "$WORK/elsewhere/contested-cases.yaml" <<'YAML'
+transform: contested
+transforms:
+  - name: contested
+    description: the set's own version
+    replace:
+      SET: [contested]
+cases:
+  - input: a contested word
+    expect: a SET word
+YAML
+
+check "a set that carries its own transform scores that one" \
+  "$("$BIN" --eval "$WORK/elsewhere/contested-cases.yaml" 2>/dev/null \
+     | grep -E '^  overall' | sed 's/  */ /g;s/^ //')" \
+  "overall 1/1 = 100%"
+
+# --- a --probe that matches nothing ----------------------------------------
+#
+# Scoring nothing and exiting 0 is how a typo reads as a clean run.
+check "a --probe naming no case is refused" \
+  "$("$BIN" --eval shout --probe nosuchprobe > /dev/null 2>&1; echo $?)" \
+  "1"
+
+check "and it says which probes the set does have" \
+  "$("$BIN" --eval shout --probe nosuchprobe 2>/dev/null | grep -c 'have: bystander, roster')" \
+  "1"
+
+# --- a tests: that is neither form -----------------------------------------
+#
+# `tests: { file: … }` is a key that does not do what it says. It used to
+# decode as nothing and leave the transform scoring cases.yaml while the config
+# said otherwise.
+cat >> "$WORK/config.yaml" <<'YAML'
+  - name: mistyped
+    description: names its set with the wrong key
+    command: shout.py
+    tests: { file: heldout.yaml }
+YAML
+
+check "a malformed tests: is refused rather than ignored" \
+  "$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>/dev/null \
+     | grep -c 'tests:` is neither a filename')" \
+  "1"
+
 # --- a set that names a file that is not there ------------------------------
 check "a missing set names where it looked" \
   "$("$BIN" --eval shout --cases nowhere.yaml 2>&1 | grep -c 'no nowhere.yaml')" \

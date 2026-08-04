@@ -69,6 +69,18 @@ enum EvalCommand {
         }
 
         let scored = score(set, transform: transform, config: config, probe: probe)
+        // A `--probe` that matched nothing scored nothing, and printing 0/0
+        // under a heading is how a typo reads as a clean run. The contract is
+        // that 0 means "this was scored", so this is the other case.
+        guard scored.overall.total > 0 else {
+            let known = Set(set.cases.map(\.probe)).filter { !$0.isEmpty }.sorted()
+            print("")
+            print("  ✗ no case has probe \"\(probe ?? "")\""
+                + (known.isEmpty
+                    ? " — no case in this set names one"
+                    : " — have: \(known.joined(separator: ", "))"))
+            return 1
+        }
         report(scored, set: set, probe: probe, verbose: verbose)
         // 0 means "this was scored", not "this was perfect. A set worth having
         // keeps its residue in, failing — tests/…/dotted/cases.txt scores 54/54
@@ -171,11 +183,17 @@ enum EvalCommand {
         }
 
         var config = config
-        // The set's own transform, when it brought one, has to be the one the
-        // pipeline finds by name.
-        if config.transform(named: transform.name) == nil {
-            config.transforms.append(transform)
-        }
+        // The transform that was resolved is the one that runs, whichever of
+        // the two it came from.
+        //
+        // Putting it first rather than only when the name is free: `locate`
+        // already decided, preferring the set's own `transforms:` so a case
+        // file can state what it assumes. Appending only when the config had
+        // no entry of that name handed the decision back to the config — and
+        // silently, on exactly the machines where the two disagree, which is
+        // the case the set carried its own transform to survive.
+        config.transforms.removeAll { $0.name.caseInsensitiveCompare(transform.name) == .orderedSame }
+        config.transforms.insert(transform, at: 0)
         let pipeline = Pipeline(steps: [Pipeline.Step(stage: .transform, transform: transform.name)])
         var output = text
         let started = Date()

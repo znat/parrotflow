@@ -130,8 +130,18 @@ struct Config: Decodable, Equatable {
             // `tests: { path: heldout.yaml }` mean the same thing, because
             // having to remember which of the two a key takes is the kind of
             // thing a config format should not ask.
-            let testsWritten = (try? trimmed(.tests)) ?? ""
-            tests = path(.tests) ?? (testsWritten.isEmpty ? nil : testsWritten)
+            // Written either way, and refused when it is neither. A mapping
+            // that is not `{ path: … }` — `tests: { file: heldout.yaml }` —
+            // used to decode as nothing at all, and the transform then scored
+            // `cases.yaml` while the config said otherwise. A key that does
+            // not do what it says is worse than one that fails.
+            if let written = path(.tests) {
+                tests = written
+            } else if let scalar = try? trimmed(.tests) {
+                tests = scalar.isEmpty ? nil : scalar
+            } else {
+                unreadable = "`tests:` is neither a filename nor `{ path: <filename> }`"
+            }
 
             // A body written either way. The mapping is tried first and only
             // succeeds on `{ path: <string> }`, so nothing that decoded before
