@@ -56,11 +56,24 @@ tell application "Google Chrome"
   set URL of active tab of front window to "file://$FIXTURE#$encoded"
 end tell
 OSA
-  # Long enough for the navigation to settle and the page to take focus back
-  # from the omnibox. Short of this the app reads the address bar instead of the
-  # composer, refuses correctly, and the case scores a refusal that says nothing
-  # about the write path.
-  sleep 2
+  # Wait for the box to actually read the seed, and to keep reading it — not for
+  # a guessed interval. Two things race here and a fixed sleep loses to both:
+  # the navigation has to settle and the page has to take focus back from the
+  # omnibox, and a paste from the *previous* case can still be in flight and land
+  # on top of the fresh seed. That is not hypothetical — it appended 46
+  # characters to a 27 character seed, the title had not caught up when the
+  # harness looked, and the case scored as corruption by the app rather than as
+  # the harness racing itself.
+  #
+  # So: settled means the same text twice, a beat apart.
+  local previous="" current=""
+  for _ in $(seq 1 30); do
+    current="$(read_fixture)"
+    [ -n "$current" ] && [ "$current" = "$previous" ] && [ "$current" = "$text" ] && return 0
+    previous="$current"
+    sleep 0.25
+  done
+  return 1
 }
 
 seed_app() {
@@ -95,10 +108,8 @@ while IFS='|' read -r name id seed target replacement expect; do
   [ -z "$name" ] && continue
   total=$((total + 1))
 
-  $SEED "$seed"
-  got="$($READ)"
-  if [ "$got" != "$seed" ]; then
-    printf '  ⊘ %s — seed did not land (read back "%s")\n' "$name" "$got"
+  if ! $SEED "$seed"; then
+    printf '  ⊘ %s — seed did not settle (read back "%s")\n' "$name" "$($READ)"
     skipped=$((skipped + 1)); continue
   fi
 
@@ -112,6 +123,21 @@ print(i, len(target))
 ' "$seed" "$target")
 
   [ "$expect" = "unchanged" ] && want="$seed" || want="$expect"
+
+  # Bring the fixture back to the front immediately before the write. An
+  # unattended run shares the machine, and something else taking focus for a
+  # moment — a chat app raising its window was the observed case — means the app
+  # reads that window instead. The sentinel stops it writing there, so the harm
+  # is a refusal rather than somebody's message being edited, but a refusal that
+  # says nothing about the write path is still a wasted case.
+  if [ "$TARGET" = "fixture" ]; then
+    osascript -e 'tell application "Google Chrome" to activate' >/dev/null 2>&1
+    sleep 0.6
+    if [ "$(read_fixture)" != "$seed" ]; then
+      printf '  ⊘ %s — the box changed between seeding and writing\n' "$name"
+      skipped=$((skipped + 1)); continue
+    fi
+  fi
 
   open -g -na ParrotFlowDev --args \
     --span-test "$start" "$length" "$replacement" --find "$id" --after 2
