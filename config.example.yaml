@@ -138,6 +138,12 @@ transforms:
   # reason it is a prompt. It is told twice not to write anything, because a
   # model handed a dictated email will gladly return a better one in its own
   # voice and you will not notice until it has gone.
+  #
+  # 21/26 — tests/email-cases.yaml, scripts/validate-email.py. Spoken ordinals
+  # ("One, ... Two, ... Three.") are the known gap: they stay prose and the
+  # numbers are deleted. Two variants and a model twice the size all fail it
+  # the same way, so it is not a wording problem — see the notes at the bottom
+  # of the runner.
   - name: email
     description: lay dictated text out as an email
     display: Laying out the email
@@ -164,11 +170,13 @@ transforms:
       "there are three things" does. Two things are a sentence and stay
       one.
 
-      A name at the end is a signature: a blank line, then the name on
+      The email ends on the last thing the speaker said. If that last
+      thing is a name, it is a signature: a blank line, then the name on
       its own line, and a closing word said just before it — thanks,
-      merci — on the line above. No name at the end means no signature:
-      the last thing said is the last line of the body, wherever it
-      sounds like a goodbye.
+      merci — on the line above. If it is anything else — a question, a
+      goodbye, a sentence — that is the last line, and there is nothing
+      under it. The only name that can appear is one that was spoken; an
+      unspoken one has no stand-in, in brackets or otherwise.
 
       A short reply is not an email with parts. One or two sentences and
       no hello in front of them come back as one or two sentences,
