@@ -2232,9 +2232,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// a bundle moved to the Trash looks like from here. The second is why the
     /// fallback is in the completion handler rather than only in the `guard`:
     /// the error arrives after the call succeeds.
+    ///
+    /// What the fallback must not do is hand the file back to the application
+    /// that just failed, which is exactly what the system would say to do on a
+    /// machine where the trashed VS Code is still the handler for YAML. See
+    /// `openWithSystem`.
     private static func openInEditor(_ url: URL) {
         guard let editor = visualStudioCode else {
-            NSWorkspace.shared.open(url)
+            openWithSystem(url)
             return
         }
         NSWorkspace.shared.open(
@@ -2245,7 +2250,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let error else { return }
             Log.write("menu: VS Code did not open \(url.path) (\(error.localizedDescription));"
                 + " using the default application")
-            DispatchQueue.main.async { NSWorkspace.shared.open(url) }
+            DispatchQueue.main.async { openWithSystem(url, avoiding: editor) }
+        }
+    }
+
+    /// Hand the file to whatever the system would have opened it with, with
+    /// two ways of not disappearing quietly.
+    ///
+    /// `avoiding` is the application that just failed. Someone who has VS Code
+    /// installed has very likely also made it the handler for YAML, so the
+    /// system's answer to "who opens config.yaml" can be the same bundle that
+    /// could not launch a moment ago — and asking it twice fails twice. When
+    /// that is what the system says, stop asking and show the file in Finder,
+    /// which needs nobody's help to work.
+    ///
+    /// The second way is the ordinary one: the handler exists, is not the
+    /// failed editor, and still does not open. `open` says so by returning
+    /// false, and a menu item that does nothing at all is worth a line in the
+    /// log — otherwise the only report of the failure is a window that never
+    /// appeared.
+    private static func openWithSystem(_ url: URL, avoiding failed: URL? = nil) {
+        let handler = NSWorkspace.shared.urlForApplication(toOpen: url)
+        if let failed, handler?.standardizedFileURL == failed.standardizedFileURL {
+            Log.write("menu: the default application for \(url.lastPathComponent) is the one that"
+                + " just failed; showing it in Finder instead")
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+            return
+        }
+        if !NSWorkspace.shared.open(url) {
+            Log.write("menu: nothing would open \(url.path); showing it in Finder instead")
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         }
     }
 
