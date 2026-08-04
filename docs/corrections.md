@@ -130,6 +130,12 @@ It refuses if you have edited the text since. An undo fired against text that
 has moved on is not an undo, it is a second unwanted edit, landing exactly where
 you had started fixing things by hand.
 
+And it only ever writes to the field it changed, which it remembers rather than
+looks for. Two fields holding the same sentence are not unusual — a message and
+the reply quoting it, the same text pasted into a second window — so matching
+text alone would happily rewrite the wrong one while leaving the substitution
+you wanted reversed exactly where it was.
+
 One deep, on purpose. This is not an edit history; it is the answer to "that
 went somewhere I did not expect", which is only ever asked about the thing that
 just happened.

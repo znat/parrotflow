@@ -45,6 +45,9 @@ struct Surface {
 
     let kind: Kind
     let element: AXUIElement
+    /// The app the element belongs to, so an undo can go back to it rather than
+    /// to whatever happens to be in front when it is asked for.
+    let owner: NSRunningApplication?
     /// The whole editable content, in one coordinate space.
     let content: String
     /// The selection, as offsets into `content`. Nil when nothing is selected;
@@ -135,13 +138,15 @@ struct Surface {
         } ?? false
 
         if isTerminal {
-            return screen(element: element, value: value, dictated: dictated)
+            return screen(element: element, owner: front, value: value, dictated: dictated)
         }
-        return editable(element: element, value: value)
+        return editable(element: element, owner: front, value: value)
     }
 
     /// A field, a browser input, a composer: the value is the content.
-    private static func editable(element: AXUIElement, value: String) -> Surface {
+    private static func editable(
+        element: AXUIElement, owner: NSRunningApplication?, value: String
+    ) -> Surface {
         var span: Range<String.Index>?
         if let range = SelectionReader.selectedRange(of: element),
            range.location != NSNotFound, range.location >= 0 {
@@ -152,7 +157,7 @@ struct Surface {
                     + " does not fit \(value.count) chars of value; ignoring it")
             }
         }
-        return Surface(kind: .editable, element: element, content: value, span: span)
+        return Surface(kind: .editable, element: element, owner: owner, content: value, span: span)
     }
 
     /// A terminal: the content is the input box, dug back out of the screen.
@@ -164,7 +169,7 @@ struct Surface {
     /// *all* of them, where a transcript only ever describes the last one and
     /// retyping from it would delete the rest.
     private static func screen(
-        element: AXUIElement, value: String, dictated: String?
+        element: AXUIElement, owner: NSRunningApplication?, value: String, dictated: String?
     ) -> Surface? {
         // The box first, and a single row only when no box is drawn — a bare
         // shell rather than a TUI. That fallback is the one place a transcript
@@ -200,7 +205,7 @@ struct Surface {
                     + " times in the input box; cannot say which was selected")
             }
         }
-        return Surface(kind: .screen, element: element, content: box, span: span)
+        return Surface(kind: .screen, element: element, owner: owner, content: box, span: span)
     }
 
     /// Retyping a whole line is proportional to its length, and past a point the
@@ -309,6 +314,17 @@ struct Surface {
         let after: String
         /// What the substitution was called, for the toast and the log.
         let describedAs: String
+        /// The element that was written to, and the app it belongs to.
+        ///
+        /// Without these an undo goes wherever the caret happens to be, and the
+        /// content check is not enough to catch it: two fields holding the same
+        /// sentence are not unusual — a message and the reply quoting it, the
+        /// same text pasted into a second window — and one of them would be
+        /// rewritten while the substitution it was meant to reverse stayed put.
+        /// The text says whether it is safe to undo; only the element says
+        /// where.
+        let element: AXUIElement
+        let owner: NSRunningApplication?
 
         static func == (lhs: Undo, rhs: Undo) -> Bool {
             lhs.before == rhs.before && lhs.after == rhs.after
@@ -329,7 +345,10 @@ struct Surface {
         guard updated != content else {
             return .refused("the text already reads that way")
         }
-        let undo = Undo(before: content, after: updated, describedAs: label)
+        let undo = Undo(
+            before: content, after: updated, describedAs: label,
+            element: element, owner: owner
+        )
 
         switch kind {
         case .editable:
@@ -345,8 +364,12 @@ struct Surface {
     /// text is not an undo, it is a second unwanted edit — and it would land
     /// exactly where the user had just started fixing things by hand.
     static func undo(_ record: Undo) -> Outcome {
-        guard let surface = read() else {
-            return .refused("nothing to undo into")
+        // The recorded element, never `focusedElement()`. Reading whatever is
+        // focused is how an undo lands in the wrong window — and the content
+        // check below cannot catch that, because it is a question about the text
+        // rather than about which field holds it.
+        guard let surface = read(element: record.element, app: record.owner) else {
+            return .refused("the field it changed is not there any more")
         }
         guard surface.folded(surface.content) == surface.folded(record.after) else {
             return .refused("the text has changed since; leaving it alone")

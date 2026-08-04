@@ -1236,10 +1236,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Hand focus back before reading or writing: saying the phrase went
-        // through our own hotkey, and the window that holds the text is no
-        // longer the one accessibility will answer about.
-        if let owner = focusAtPress?.owner ?? selectionAtPress?.owner, !owner.isActive {
+        // Back to the window the substitution went into — recorded at the time,
+        // not read now. Saying the phrase went through our own hotkey, and by
+        // then you may well be looking at something else entirely; activating
+        // *that* is how an undo arrives in the wrong app.
+        if let owner = record.owner, !owner.isActive {
             owner.activate()
             Thread.sleep(forTimeInterval: 0.15)
         }
