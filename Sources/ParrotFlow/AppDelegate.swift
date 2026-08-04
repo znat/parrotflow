@@ -917,10 +917,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .replace:
             return Replacements.applyExact(to: text, rules: transform.rules)
         case .command(let command):
-            // Nil is every way a program can fail, and it means keep the text.
-            return CommandRunner.run(
+            // Nil is every way a program can fail, and in a pipeline it means
+            // keep the text — a stage that fails must not cost you a sentence.
+            //
+            // Asked for by name it means something else. You said "use slack
+            // handles", the script did not run, and returning the text
+            // unchanged makes that indistinguishable from a script that ran
+            // and found nothing to do: the selection path then says "nothing
+            // to change" and the inline path says nothing at all. Both are
+            // describing a transform that worked. So this throws, and the
+            // failure paths both callers already have get to do their job.
+            guard let result = CommandRunner.run(
                 command, on: text, in: transform.folder, seconds: transform.timeout
-            ) ?? text
+            ) else { throw CommandDidNotRun(name: transform.name) }
+            return result
+        }
+    }
+
+    /// A `command:` transform that produced no rewrite, asked for by name.
+    ///
+    /// The log already carries which of the ways it went wrong — could not
+    /// start, exited non-zero, took too long, said nothing — and that is more
+    /// than fits on screen. What belongs on screen is that it did not run.
+    private struct CommandDidNotRun: LocalizedError {
+        let name: String
+        var errorDescription: String? {
+            "\(name) did not run — the log says what it said"
         }
     }
 
