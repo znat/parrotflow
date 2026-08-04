@@ -128,11 +128,23 @@ enum CheckConfigCommand {
         // What "hey parrot" can reach. Printed even when `prompts:` is empty,
         // because the built-ins are the answer to "why did it do that" as
         // often as a prompt of your own is.
-        let catalogue = Catalogue(prompts: config.prompts)
+        let catalogue = Catalogue(transforms: config.transforms)
         print("  ✓ capabilities      \(catalogue.capabilities.count) reachable by \"\(transcription.activationPhrase)\"")
+        // What each one is made of, because the three cost wildly different
+        // things — a model call, a process start, nothing at all — and because
+        // a program reachable by voice is a program run by saying a sentence,
+        // which this file says out loud everywhere else it happens.
         for capability in catalogue.capabilities {
-            let kind = capability.isTransform ? "prompt " : "built-in"
-            print("      \(kind)  \(capability.name) — \(capability.describedAs)")
+            print("      \(capability.kind)  \(capability.name) — \(capability.describedAs)")
+        }
+        // A transform with no description cannot be routed to, so it is not in
+        // the list above. It still runs from a pipeline, where the name is
+        // written down rather than said — which is the difference worth naming,
+        // since "I wrote it and it does not answer" is otherwise a mystery.
+        let unroutable = config.transforms.filter { $0.description.isEmpty }
+        if !unroutable.isEmpty {
+            print("  · not by voice      \(unroutable.map(\.name).joined(separator: ", "))"
+                + " — no description to match spoken words against")
         }
         // Not one of the capabilities above — the router reaches it by
         // answering ANY, not by picking it off the list — so it is printed
@@ -143,18 +155,19 @@ enum CheckConfigCommand {
             print("  · free_form         off — an instruction no prompt covers is refused")
         }
 
-        // A `replace:` transform is not in the catalogue — the router reaches
-        // prompts only, for now — so it would otherwise be invisible here, and
-        // "I wrote it and nothing says it exists" is the wrong way to find out
-        // that it runs from a pipeline and not from your voice.
-        // Tables only. A `command:` is not one, and counting its rules said
-        // "0 rule(s)" about a transform that has no rules to have — the line
-        // read as a broken table rather than as a program. Programs are named
-        // by `notices()`, which says it of every one of them, every run.
+        // How many rules each table holds, which nothing else says. The
+        // catalogue above now lists tables like everything else — the router
+        // reaches all three bodies — so this is no longer where you find out
+        // that a `replace:` transform exists at all; it is where you find out
+        // whether it has anything in it. A table that reads "0 rule(s)" is a
+        // table whose pattern did not survive parsing.
+        //
+        // Tables only. A `command:` has no rules to count, and counting them
+        // said "0 rule(s)" about a program — a line that read as a broken
+        // table rather than as a script.
         let tables = config.transforms.filter(\.isTable)
         if !tables.isEmpty {
-            print("  · replace           \(tables.count) transform(s), reachable from a pipeline"
-                + " and not by voice")
+            print("  · replace           \(tables.count) transform(s)")
             for table in tables {
                 let rules = table.rules.count
                 print("      table     \(table.name) — \(rules) rule(s)"

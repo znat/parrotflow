@@ -785,7 +785,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // being kept warm is Ollama's prompt cache, and a system prompt that
         // differs by one line is a cache miss and the 3.5s this exists to avoid.
         let system = Router.prompt(
-            for: Catalogue(prompts: config.prompts), freeForm: config.freeForm
+            for: Catalogue(transforms: config.transforms), freeForm: config.freeForm
         )
         keepWarmInFlight = true
         Task.detached(priority: .background) { [weak self] in
@@ -807,7 +807,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleVoiceCommand(_ command: String) {
-        let catalogue = Catalogue(prompts: config.prompts)
+        let catalogue = Catalogue(transforms: config.transforms)
 
         // Deterministic phrases first: no model needed, and they work when
         // Ollama is not running. This also covers the wake phrase said on its
@@ -850,7 +850,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         // the whole specification, so it goes through unsplit,
                         // exactly as it would to a prompt of your own.
                         Log.write("router: \"\(command)\" → \(FreeForm.name)")
-                        self.runTransform(FreeForm.prompt(for: command), instruction: command)
+                        self.runTransform(FreeForm.prompt(for: command).asTransform, instruction: command)
                     case .none:
                         // Nothing fits. Deliberately not falling through to
                         // dictation: the wake phrase means you were not
@@ -887,8 +887,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             beginCorrection()
         case .action(.spelling):
             interpretSpelling(instruction)
-        case .transform(let prompt):
-            runTransform(prompt, instruction: instruction)
+        case .transform(let transform):
+            runTransform(transform, instruction: instruction)
+        }
+    }
+
+    /// Runs any of the three bodies over text and gives back the result.
+    ///
+    /// The one place that knows how a transform is made, so the two paths that
+    /// reach one by voice — over your selection, and inline in a dictation —
+    /// cannot disagree about what running it means. It mirrors
+    /// `Pipeline.runTransform`, which does the same job for a stage.
+    ///
+    /// The spoken instruction reaches a `prompt:` and nothing else. A script
+    /// and a table take text on one side and give text on the other; there is
+    /// nowhere to put "in French" and no honest way to invent one. Saying it
+    /// anyway is harmless — the words are consumed by the routing and the
+    /// transform runs — and is the reason `--check-config` names what each
+    /// capability is made of.
+    private func perform(
+        _ transform: Config.Transform, instruction: String, on text: String
+    ) async throws -> String {
+        switch transform.body {
+        case .prompt:
+            guard let prompt = transform.asPrompt else { return text }
+            return try await PromptRunner.run(
+                prompt: prompt, instruction: instruction, text: text, config: llmConfig()
+            )
+        case .replace:
+            return Replacements.applyExact(to: text, rules: transform.rules)
+        case .command(let command):
+            // Nil is every way a program can fail, and in a pipeline it means
+            // keep the text — a stage that fails must not cost you a sentence.
+            //
+            // Asked for by name it means something else. You said "use slack
+            // handles", the script did not run, and returning the text
+            // unchanged makes that indistinguishable from a script that ran
+            // and found nothing to do: the selection path then says "nothing
+            // to change" and the inline path says nothing at all. Both are
+            // describing a transform that worked. So this throws, and the
+            // failure paths both callers already have get to do their job.
+            guard let result = CommandRunner.run(
+                command, on: text, in: transform.folder, seconds: transform.timeout
+            ) else { throw CommandDidNotRun(name: transform.name) }
+            return result
+        }
+    }
+
+    /// A `command:` transform that produced no rewrite, asked for by name.
+    ///
+    /// The log already carries which of the ways it went wrong — could not
+    /// start, exited non-zero, took too long, said nothing — and that is more
+    /// than fits on screen. What belongs on screen is that it did not run.
+    private struct CommandDidNotRun: LocalizedError {
+        let name: String
+        var errorDescription: String? {
+            "\(name) did not run — the log says what it said"
         }
     }
 
@@ -938,7 +992,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The selection is taken from the snapshot made when the hotkey went down,
     /// not read now — by the time this runs, our own panel may hold focus, and
     /// reading then returns nothing or something of ours.
-    private func runTransform(_ prompt: Config.Prompt, instruction: String) {
+    private func runTransform(_ transform: Config.Transform, instruction: String) {
         // Never the clipboard. `read()` falls back to it for the correction
         // panel, where you see the words before anything happens and can
         // cancel; a transform gets no such look. The clipboard holds whatever
@@ -967,19 +1021,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The text itself, not just its length: a transform that worked on the
         // wrong thing is otherwise indistinguishable in the log from one that
         // worked on the right thing badly.
-        Log.write("transform: \(prompt.name) over \(selection == nil ? "the last dictation" : "the selection") — \"\(target.prefix(80))\"")
-        beginProgress(prompt.progressLabel)
+        Log.write("transform: \(transform.name) over \(selection == nil ? "the last dictation" : "the selection") — \"\(target.prefix(80))\"")
+        beginProgress(transform.progressLabel)
 
-        let llmConfig = llmConfig()
         Task { [weak self] in
             do {
-                let result = try await PromptRunner.run(
-                    prompt: prompt, instruction: instruction,
-                    text: target, config: llmConfig
-                )
+                guard let result = try await self?.perform(
+                    transform, instruction: instruction, on: target
+                ) else { return }
                 await MainActor.run {
                     self?.finishTransform(
-                        prompt: prompt, selection: selection,
+                        transform: transform, selection: selection,
                         before: target, after: result
                     )
                 }
@@ -994,7 +1046,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func finishTransform(
-        prompt: Config.Prompt,
+        transform: Config.Transform,
         selection: SelectionReader.Selection?,
         before: String,
         after: String
@@ -1003,8 +1055,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let cleaned = after.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
-            Log.write("transform: \(prompt.name) returned nothing")
-            flash("\(prompt.name) returned nothing from \(quoted(before))", tone: .caution)
+            Log.write("transform: \(transform.name) returned nothing")
+            flash("\(transform.name) returned nothing from \(quoted(before))", tone: .caution)
             return
         }
         // Saying so beats replacing text with itself and calling it done, which
@@ -1016,23 +1068,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // failed — and telling them apart took reading the log. Showing what it
         // looked at answers the first two at a glance.
         guard cleaned != before.trimmingCharacters(in: .whitespacesAndNewlines) else {
-            Log.write("transform: \(prompt.name) changed nothing")
-            flash("\(prompt.name): nothing to change in \(quoted(before))", tone: .plain)
+            Log.write("transform: \(transform.name) changed nothing")
+            flash("\(transform.name): nothing to change in \(quoted(before))", tone: .plain)
             return
         }
 
-        guard prompt.confirm else {
-            applyTransform(cleaned, to: selection, replacing: before, prompt: prompt)
+        guard transform.confirm else {
+            applyTransform(cleaned, to: selection, replacing: before, transform: transform)
             return
         }
 
         previewPanel.onApply = { [weak self] edited in
-            self?.applyTransform(edited, to: selection, replacing: before, prompt: prompt)
+            self?.applyTransform(edited, to: selection, replacing: before, transform: transform)
         }
         previewPanel.onCancel = {
-            Log.write("transform: \(prompt.name) discarded")
+            Log.write("transform: \(transform.name) discarded")
         }
-        previewPanel.show(prompt: prompt.name, before: before, after: cleaned)
+        previewPanel.show(prompt: transform.name, before: before, after: cleaned)
     }
 
     /// One edit to make to text that is already in the field.
@@ -1261,20 +1313,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ text: String,
         to selection: SelectionReader.Selection?,
         replacing replaced: String,
-        prompt: Config.Prompt
+        transform: Config.Transform
     ) {
         // Replacing the selection puts it back exactly where it came from.
         // Without one there is nowhere to aim, so it goes in at the cursor the
         // same way a dictation would.
         if let selection {
-            switch replaceSelected(with: text, in: selection, describedAs: prompt.name) {
+            switch replaceSelected(with: text, in: selection, describedAs: transform.name) {
             case .replaced:
-                applied(prompt.name)
+                applied(transform.name)
             case .failed, .notAttempted:
                 Log.write("transform: this app would not accept the rewrite; left on the clipboard")
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
-                flash("\(prompt.name) copied — this app won't let me edit it", tone: .caution)
+                flash("\(transform.name) copied — this app won't let me edit it", tone: .caution)
             }
         } else {
             // Hand focus back first. Showing the preview called NSApp.activate
@@ -1298,17 +1350,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                !SelectionReader.isOurs(element) {
                 let edit = Edit(find: original, replace: text, fuzzy: false)
                 switch applyInPlace(
-                    [edit], dictated: original, in: element, describedAs: prompt.name
+                    [edit], dictated: original, in: element, describedAs: transform.name
                 ) {
                 case .replaced:
-                    applied(prompt.name)
+                    applied(transform.name)
                     lastTranscript = text
                     return
                 case .failed:
                     Log.write("transform: the line would not take the rewrite; left on the clipboard")
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(text, forType: .string)
-                    flash("\(prompt.name) copied — this app won't let me edit it", tone: .caution)
+                    flash("\(transform.name) copied — this app won't let me edit it", tone: .caution)
                     lastTranscript = text
                     return
                 case .notAttempted:
@@ -1319,9 +1371,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch TextInserter.insert(text, mode: config.transcription.insertMode) {
             case .pasted, .copied:
                 if config.feedback.sound { NSSound(named: "Glass")?.play() }
-                flash("\(prompt.name) applied", tone: .done)
+                flash("\(transform.name) applied", tone: .done)
             case .clipboardOnly:
-                flash("\(prompt.name) copied — grant Accessibility to paste", tone: .caution)
+                flash("\(transform.name) copied — grant Accessibility to paste", tone: .caution)
             }
         }
         lastTranscript = text
@@ -1561,7 +1613,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         text: String, instruction: String, destination: Destination,
         focus: SelectionReader.Selection?
     ) {
-        let catalogue = Catalogue(prompts: config.prompts)
+        let catalogue = Catalogue(transforms: config.transforms)
 
         /// Write what was said, and say why it is not what was asked for.
         func giveUp(_ why: String, tone: NoticeTone = .caution) {
@@ -1572,24 +1624,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setLabel(why, clearAfter: 7)
         }
 
-        func run(_ prompt: Config.Prompt) {
-            beginProgress(prompt.progressLabel)
-            let llm = llmConfig()
+        func run(_ transform: Config.Transform) {
+            beginProgress(transform.progressLabel)
             Task { [weak self] in
                 do {
-                    let result = try await PromptRunner.run(
-                        prompt: prompt, instruction: instruction, text: text, config: llm
-                    )
+                    guard let result = try await self?.perform(
+                        transform, instruction: instruction, on: text
+                    ) else { return }
                     await MainActor.run {
                         guard let self else { return }
                         self.endProgress()
                         let cleaned = result.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !cleaned.isEmpty else {
-                            giveUp("\(prompt.name) returned nothing", tone: .failure)
+                            giveUp("\(transform.name) returned nothing", tone: .failure)
                             return
                         }
                         if cleaned != text {
-                            Log.write("inline: \(prompt.name) rewrote the transcript")
+                            Log.write("inline: \(transform.name) rewrote the transcript")
                             Log.write("    before: \(text)")
                             Log.write("    after:  \(cleaned)")
                         }
@@ -1607,7 +1658,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let capability = Router.local(instruction: instruction, catalogue: catalogue) {
             Log.write("inline router: \"\(instruction)\" named \(capability.name) outright")
             switch capability {
-            case .transform(let prompt): run(prompt)
+            case .transform(let transform): run(transform)
             case .action(let action):
                 runInlineAction(
                     action, text: text, instruction: instruction,
@@ -1634,9 +1685,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     guard let self else { return }
                     switch decision {
-                    case .matched(.transform(let prompt)):
-                        Log.write("inline router: \"\(instruction)\" → \(prompt.name)")
-                        run(prompt)
+                    case .matched(.transform(let transform)):
+                        Log.write("inline router: \"\(instruction)\" → \(transform.name)")
+                        run(transform)
                     case .matched(.action(let action)):
                         self.runInlineAction(
                             action, text: text, instruction: instruction,
@@ -1644,7 +1695,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         )
                     case .anything:
                         Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
-                        run(FreeForm.prompt(for: instruction))
+                        run(FreeForm.prompt(for: instruction).asTransform)
                     case .none:
                         giveUp("Not something to change in the text: \"\(instruction)\"")
                     }
