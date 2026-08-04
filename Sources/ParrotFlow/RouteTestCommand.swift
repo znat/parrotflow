@@ -15,7 +15,7 @@ enum RouteTestCommand {
             return 1
         }
 
-        let catalogue = Catalogue(prompts: config.prompts)
+        let catalogue = Catalogue(transforms: config.transforms)
         let phrases = config.transcription.activationPhrases
 
         // The wake phrase is stripped first, exactly as the app does it, so a

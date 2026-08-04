@@ -406,6 +406,12 @@ struct Config: Decodable, Equatable {
                 ? trimmed : trimmed + "…"
         }
 
+        /// What the menu bar says while this runs, or the transform's own name
+        /// when nothing was written — see `Prompt.progressLabel`.
+        var progressLabel: String {
+            Self.label(display) ?? "\(name)…"
+        }
+
         /// The prompt-shaped view of this transform, for everything that
         /// already speaks `Prompt` — the router, `PromptRunner`, the panels.
         var asPrompt: Prompt? {
@@ -494,6 +500,16 @@ struct Config: Decodable, Equatable {
         /// `display:` existed, so a config that says nothing loses nothing.
         var progressLabel: String {
             Transform.label(display) ?? "\(name)…"
+        }
+
+        /// The transform-shaped view, for the catalogue — which now holds
+        /// transforms rather than prompts, and has to be able to hold the
+        /// free-form one too. It is a prompt that no config declares.
+        var asTransform: Transform {
+            Transform(
+                name: name, description: description, display: display,
+                confirm: confirm, body: .prompt(content)
+            )
         }
 
         /// Where the spoken instruction goes if the prompt asks for it inline.

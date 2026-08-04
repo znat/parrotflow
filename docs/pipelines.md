@@ -434,11 +434,12 @@ pattern if you live in Gmail, and accept that every other tab gets the stage
 too. There is no narrower answer available: the condition is a window, not a
 URL.
 
-**They cost the router something, and it is measured.** Both are prompts, so
-both join the catalogue the activation phrase reaches, and every description
-added is another way for an idle sentence to find a tool.
-`tests/routing-cases.yaml` was rerun and grew: 41/45 on three prompts, 50/54 on
-six. One new failure appeared and it is the expensive class, the one the
+**They cost the router something, and it is measured.** Both join the catalogue
+the activation phrase reaches — as every transform with a description now does,
+whatever its body — and each description added is another way for an idle
+sentence to find a tool. `tests/routing-cases.yaml` was rerun and grew: 41/45 on
+three prompts, 50/54 on six, and 50/54 again when the tables and scripts joined
+the list. One new failure appeared and it is the expensive class, the one the
 negative half of that set exists for:
 
 ```
@@ -523,11 +524,29 @@ a decimal and it is `numbers` that consumes that word. Swap the two and `dotted`
 gets there first: "three one.four". The `DECIMAL` cases in the set exist to fail
 if anyone reorders them.
 
-Transforms with a `prompt:` body are also what the activation phrase reaches:
-"hey parrot, tidy that up" routes on the same `description`. A `replace:`
-transform is not routable by voice today — it runs from a pipeline only, and
-`--check-config` lists it apart from the catalogue so that is visible rather
-than surprising.
+Transforms are also what the activation phrase reaches: "hey parrot, tidy that
+up" routes on the same `description`. **All three bodies**, because what a
+transform is made of is not a reason you cannot ask for it out loud — a table
+costs nothing and a script costs a process start, and both answer to a
+description exactly as a prompt does.
+
+It was prompts only until it became a real bug. The catalogue was built from
+`config.prompts`, which drops every `command:` body, so a transform that became
+a script left the list silently — and a router shown nine of your ten tools
+does not report the tenth missing, it picks the nearest of the nine. Measured:
+"use slack handles" reached `slack`, the chat-tidying prompt, which tidied the
+sentence and left the name alone. `--check-config` now prints what each
+capability is made of, so a program answering your voice is visible rather than
+implied.
+
+An entry with **no `description:`** is not in the catalogue — there is nothing
+to match spoken words against. It still runs from a pipeline, where the name is
+written down rather than said, and `--check-config` names it apart so that is
+visible rather than surprising.
+
+The spoken instruction reaches a `prompt:` and nothing else. A script and a
+table take text in and give text back; there is nowhere to put "in French" and
+no honest way to invent one.
 
 `prompts:` is the older name for this section and still reads, `content:`
 alongside `prompt:` with it. `- prompt: <name>` still works as a pipeline step.
