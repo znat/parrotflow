@@ -275,9 +275,20 @@ struct Pipeline: Equatable, Codable {
     /// nothing about the wake-phrase guard, so a prompt the pipeline had
     /// skipped was reported as having "ran, changed nothing". A diagnostic that
     /// disagrees with the thing it is diagnosing is worse than none.
+    /// Why a stage did not run, in both registers.
+    ///
+    /// `described` names the actual pattern, which is what you need to fix a
+    /// condition. `code` is the category, which is what you need to count —
+    /// and the prose cannot be counted, because every branch below phrases it
+    /// differently and two of them interpolate a regex.
+    struct Skip {
+        let code: String
+        let described: String
+    }
+
     static func skipReason(
         for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil
-    ) -> String? {
+    ) -> Skip? {
         if step.stage == .transform {
             // Only the prompt-bodied ones. `allowPrompts` is there to keep
             // `--replace` off the network, and a `replace:` transform is a
@@ -290,7 +301,7 @@ struct Pipeline: Equatable, Codable {
             // become a way onto the network.
             let named = step.transform.flatMap { config.transform(named: $0) }
             if !allowPrompts, named?.isPrompt ?? true {
-                return "prompts are off on this path"
+                return Skip(code: "prompts_off", described: "prompts are off on this path")
             }
             // Either position. A phrase at the front means the whole utterance
             // is an instruction; one in the middle means the instruction is
@@ -300,10 +311,10 @@ struct Pipeline: Equatable, Codable {
             // document.
             let phrases = config.transcription.activationPhrases
             if VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) != nil {
-                return "this is a spoken command"
+                return Skip(code: "spoken_command", described: "this is a spoken command")
             }
             if VoiceCommand.inlineInstruction(text, phrases: phrases) != nil {
-                return "this carries an instruction of its own"
+                return Skip(code: "inline_instruction", described: "this carries an instruction of its own")
             }
         }
         if let wanted = step.app {
@@ -312,17 +323,23 @@ struct Pipeline: Equatable, Codable {
             // a terminal-only stage in your editor, which is the one outcome
             // asking for `app:` was meant to prevent.
             guard let app else {
-                return "app \(wanted) cannot be checked — nothing was in front"
+                return Skip(
+                    code: "app_unknown",
+                    described: "app \(wanted) cannot be checked — nothing was in front"
+                )
             }
             if !step.matches(app.searchable, wanted) {
-                return "app \(wanted) did not match \(app.described)"
+                return Skip(
+                    code: "app_mismatch",
+                    described: "app \(wanted) did not match \(app.described)"
+                )
             }
         }
         if let unless = step.unless, step.matches(text, unless) {
-            return "unless \(unless) matched"
+            return Skip(code: "unless_matched", described: "unless \(unless) matched")
         }
         if let when = step.when, !step.matches(text, when) {
-            return "when \(when) did not match"
+            return Skip(code: "when_unmatched", described: "when \(when) did not match")
         }
         return nil
     }
@@ -346,8 +363,8 @@ struct Pipeline: Equatable, Codable {
                 // indistinguishable from one that ran and found nothing, and
                 // only one of those is answerable by editing a condition.
                 let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
-                Log.write("pipeline: skipped \(named) — \(reason)")
-                Trace.current?.recordSkip(named, reason: reason)
+                Log.write("pipeline: skipped \(named) — \(reason.described)")
+                Trace.current?.recordSkip(named, code: reason.code, reason: reason.described)
                 continue
             }
             // After the skip check, not before: a stage that is about to

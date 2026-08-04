@@ -117,7 +117,7 @@ actor Transcriber {
         let asr = AsrManager(models: models)
         var decoderState = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
         let result = try await asr.transcribe(url, decoderState: &decoderState)
-        Trace.current?.recordASR(result)
+        Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
         return await Self.applyReplacements(
             to: result.text, config: config, app: app, progress: progress

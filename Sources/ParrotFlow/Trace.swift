@@ -24,6 +24,14 @@ import Foundation
 /// the sake of a debug artefact.
 enum Trace {
 
+    /// The shape of a line. Records written before this existed have no `v` at
+    /// all, which reads as 1 — two of them, from the afternoon this was built.
+    ///
+    /// One field, and the only moment it is free is before there is anything to
+    /// migrate. A reader three months from now needs to know which shape it is
+    /// holding without inferring it from which keys happen to be present.
+    static let version = 2
+
     /// The dictation being traced right now, if any. Nil on every path that
     /// did not ask for a trace — nothing here runs unless a collector is bound.
     @TaskLocal static var current: Collector?
@@ -33,6 +41,35 @@ enum Trace {
     enum Source: String {
         case live
         case cli
+    }
+
+    /// Which kind of line this is. Corrections are not dictations — they arrive
+    /// minutes later, from a panel or the terminal — but they belong in the same
+    /// file, because the question they answer is about the dictation they
+    /// followed. `jq 'select(.kind == "correction")'` separates them.
+    enum Kind: String {
+        case dictation
+        case correction
+    }
+
+    /// The app a dictation was spoken into.
+    ///
+    /// Both halves, because they answer different questions: the bundle id is
+    /// what survives a rename and what a query should group on, and the name is
+    /// what a human reads. Until now only the name was kept, while `app:`
+    /// conditions were matching against both.
+    ///
+    /// Deliberately *not* the window title. It is the highest-yield field on
+    /// offer and the one that leaks hardest — document names, client names,
+    /// ticket subjects — and nothing here needs it.
+    struct App: Encodable {
+        let name: String
+        let bundleID: String
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case bundleID = "bundle_id"
+        }
     }
 
     // MARK: - Collecting
@@ -51,15 +88,30 @@ enum Trace {
         private var vad: VAD?
         private var stages: [Stage] = []
         private var final: String?
+        private var lang: String?
 
         init(wav: String, source: Source) {
             self.wav = wav
             self.source = source
         }
 
-        func recordASR(_ result: ASRResult) {
+        /// Which language the pipeline was chosen for.
+        ///
+        /// Ours, not Parakeet's — `ASRResult` carries no language and
+        /// `TokenLanguageFilter` takes a hint rather than reporting one, so
+        /// there is nothing to log from the model. This is the verdict that
+        /// actually selected the stages, which makes it the more useful of the
+        /// two anyway. `Pipeline.forText` has always computed it and
+        /// `Replacements.apply` has always thrown it away.
+        func recordLanguage(_ language: String) {
+            lock.lock(); defer { lock.unlock() }
+            lang = language
+        }
+
+        func recordASR(_ result: ASRResult, model: String) {
             lock.lock(); defer { lock.unlock() }
             asr = ASR(
+                model: model,
                 text: result.text,
                 confidence: result.confidence,
                 duration: result.duration,
@@ -76,9 +128,13 @@ enum Trace {
             )
         }
 
-        func recordSkip(_ name: String, reason: String) {
+        /// - Parameter code: the category, for grouping. The prose beside it
+        ///   names the actual pattern that did or did not match, which is what
+        ///   you need to fix a condition — and which is useless for counting,
+        ///   because every stage phrases it differently.
+        func recordSkip(_ name: String, code: String, reason: String) {
             lock.lock(); defer { lock.unlock() }
-            stages.append(Stage(name: name, skipped: reason))
+            stages.append(Stage(name: name, skipCode: code, skipped: reason))
         }
 
         /// Every stage that ran, including the ones that changed nothing —
@@ -98,10 +154,11 @@ enum Trace {
             final = text
         }
 
-        fileprivate func record(at: String, app: String?) -> Record {
+        fileprivate func record(at: String, app: App?) -> Record {
             lock.lock(); defer { lock.unlock() }
             return Record(
-                at: at, wav: wav, source: source.rawValue, app: app,
+                v: Trace.version, kind: Kind.dictation.rawValue,
+                at: at, wav: wav, source: source.rawValue, app: app, lang: lang,
                 asr: asr, vad: vad, stages: stages, final: final
             )
         }
@@ -114,7 +171,7 @@ enum Trace {
     /// Writes the line whether or not the body threw: a dictation that failed
     /// halfway is the one you most want the decoder's numbers for.
     static func record<T>(
-        wav: String, source: Source, app: String? = nil,
+        wav: String, source: Source, app: App? = nil,
         body: () async throws -> T
     ) async rethrows -> T {
         let collector = Collector(wav: wav, source: source)
@@ -127,6 +184,24 @@ enum Trace {
         let directory = Self.directory
         defer { append(collector.record(at: stamp(), app: app), to: directory) }
         return try await $current.withValue(collector) { try await body() }
+    }
+
+    /// Writes down a rule someone taught the app.
+    ///
+    /// Its own line rather than a field on a dictation: a correction arrives
+    /// minutes after the transcript it is about, from a panel or the terminal,
+    /// long past the task that carried the collector. Joining the two is a
+    /// question for whoever reads the file, and `at` is enough to do it.
+    ///
+    /// - Parameter via: which path taught it — `panel`, `inline` or `learn`.
+    static func correction(heard: String, corrected: String, via: String) {
+        append(
+            Correction(
+                v: version, kind: Kind.correction.rawValue, at: stamp(),
+                heard: heard, corrected: corrected, via: via
+            ),
+            to: directory
+        )
     }
 
     private static let queue = DispatchQueue(label: "com.parrotflow.trace")
@@ -160,7 +235,7 @@ enum Trace {
     /// Deliberately no size cap. This is the corpus, not a debug buffer: a year
     /// of heavy use is a few megabytes, and the whole point is being able to
     /// ask a question of every dictation you have ever given.
-    private static func append(_ record: Record, to directory: URL?) {
+    private static func append<Line: Encodable>(_ record: Line, to directory: URL?) {
         guard let directory else { return }
         let url = directory.appendingPathComponent("trace.jsonl")
 
@@ -241,17 +316,46 @@ enum Trace {
     }
 
     fileprivate struct Record: Encodable {
+        let v: Int
+        let kind: String
         let at: String
         let wav: String
         let source: String
-        let app: String?
+        let app: App?
+        let lang: String?
         let asr: ASR?
         let vad: VAD?
         let stages: [Stage]
         let final: String?
     }
 
+    /// A rule someone taught the app, on its own line.
+    ///
+    /// The one free source of human labels in the whole system: a correction is
+    /// a person saying, in real distribution and unprompted, that the decoder
+    /// got a word wrong and what the right one was. It cannot be reconstructed
+    /// afterwards from anything else on disk.
+    ///
+    /// These are the corrections ParrotFlow already mediates — the panel, an
+    /// inline instruction, `--learn` — and nothing more. Watching the field
+    /// after the text lands would catch more of them, and would mean reading
+    /// another app's content back out through Accessibility after we have given
+    /// focus away. That is a different thing to be, and not one this file needs.
+    fileprivate struct Correction: Encodable {
+        let v: Int
+        let kind: String
+        let at: String
+        let heard: String
+        let corrected: String
+        let via: String
+    }
+
     fileprivate struct ASR: Encodable {
+        /// Which model produced this. Without it there is no telling a prompt
+        /// regression from a model that changed under you between two runs.
+        /// The repository id is all FluidAudio exposes — there is no revision
+        /// to log, so none is invented.
+        let model: String
         let text: String
         let confidence: Float
         let duration: Double
@@ -274,13 +378,21 @@ enum Trace {
 
     fileprivate struct Stage: Encodable {
         let name: String
+        var skipCode: String?
         var skipped: String?
         var before: String?
         var after: String?
         var seconds: Double?
 
-        init(name: String, skipped: String) {
+        enum CodingKeys: String, CodingKey {
+            case name
+            case skipCode = "skip_reason"
+            case skipped, before, after, seconds
+        }
+
+        init(name: String, skipCode: String, skipped: String) {
             self.name = name
+            self.skipCode = skipCode
             self.skipped = skipped
         }
 

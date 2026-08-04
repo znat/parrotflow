@@ -40,7 +40,12 @@ enum Replacements {
         to text: String, config: Config, allowPrompts: Bool = true, app: Pipeline.App? = nil,
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
-        await Pipeline.forText(text, config: config).0.run(
+        let (pipeline, language) = Pipeline.forText(text, config: config)
+        // The verdict that picked the stages, which until now was computed here
+        // and discarded on the same line. Parakeet reports no language of its
+        // own, so this is the only one there is to write down.
+        Trace.current?.recordLanguage(language)
+        return await pipeline.run(
             text, config: config, allowPrompts: allowPrompts, app: app, progress: progress
         )
     }

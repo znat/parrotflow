@@ -162,7 +162,7 @@ enum PipelineCommand {
                 for: step, text: current, config: config,
                 allowPrompts: allowPrompts, app: front
             ) {
-                print("  ⊘ \(step.stage.name)  — skipped, \(reason)")
+                print("  ⊘ \(step.stage.name)  — skipped, \(reason.described)")
                 continue
             }
             var after = current

@@ -8,6 +8,7 @@ enum LearnCommand {
     static func run(heard: String, corrected: String) -> Int32 {
         do {
             try ConfigWriter.addReplacement(heard: heard, corrected: corrected)
+            Trace.correction(heard: heard, corrected: corrected, via: "learn")
             print("✓ \(heard) → \(corrected)")
             return 0
         } catch {

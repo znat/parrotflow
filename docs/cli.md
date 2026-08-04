@@ -206,7 +206,7 @@ Ask a question of more than one dictation and you want the trace instead.
 tail -1 ~/Recordings/ParrotFlow/trace.jsonl | jq .
 ```
 
-One JSON object per dictation, appended and never rotated, beside the clips it
+One JSON object per line, appended and never rotated, beside the clips it
 describes. It holds what the decoder actually returned before anything touched
 it — the raw text, its confidence, and **every word with its start, end and
 confidence** — plus the speech gate's segment boundaries, then each pipeline
@@ -217,6 +217,32 @@ sweep over the archive does not read as a day of dictation.
 
 The decoder computed all of it either way. It used to be dropped one line after
 it arrived.
+
+`kind` says which sort of line you are holding.
+
+- **`dictation`** — the shape above.
+- **`correction`** — `heard`, `corrected`, and `via` (`panel`, `command` or
+  `learn`). Written whenever a rule is taught, which is minutes after the
+  transcript it is about and from a different place entirely, so it gets its
+  own line rather than a field on one. These are the only human labels in the
+  system, and nothing else on disk can reconstruct them.
+
+`v` is the schema version — records written before it existed have no `v` and
+should be read as 1.
+
+A note on what is **not** here. `lang` is ParrotFlow's own verdict, the one that
+picked the pipeline; Parakeet reports no language of its own, so there is
+nothing else to log. `app` carries the name and the bundle id and deliberately
+not the window title, which is the highest-yield field available and the one
+that leaks document names, client names and ticket subjects. And a correction is
+only recorded when ParrotFlow mediates it — reading the field back after the
+text has landed would catch more of them and would mean looking at another app's
+content after focus has been given away, which is a different thing to be.
+
+Nothing derived is stored: pause gaps, filled pauses, confidence dips and
+whether a gate would have fired are all computable from `asr.words` and
+`vad.segments`, and baking them in would mean recomputing history every time a
+threshold moves.
 
 The questions it answers, which the log cannot:
 
@@ -235,13 +261,21 @@ jq -r 'select(.asr.words|length > 0) |
        [.wav, (.vad.segments[-1][1]), (.asr.words[-1].end), .vad.total] | @tsv' trace.jsonl
 
 # What each stage really costs on your own sentences.
-jq -r '.stages[] | select(.seconds) | [.name, .seconds] | @tsv' trace.jsonl |
+jq -r '.stages[]? | select(.seconds) | [.name, .seconds] | @tsv' trace.jsonl |
   awk '{n[$1]++; s[$1]+=$2} END {for (k in n) printf "%-28s %6.3fs  ×%d\n", k, s[k]/n[k], n[k]}' |
   sort -k2 -rn
 
 # Every dictation a prompt stage rewrote, and into what.
-jq -r '.stages[] | select(.before and .before != .after) |
+jq -r '.stages[]? | select(.before and .before != .after) |
        [.name, .before, .after] | @tsv' trace.jsonl
+
+# Which stage conditions are doing the skipping, by category rather than by
+# whichever regex happened to be written into the prose.
+jq -r '.stages[]? | select(.skip_reason) | .skip_reason' trace.jsonl |
+  sort | uniq -c | sort -rn
+
+# Every rule you have ever taught, and from where.
+jq -r 'select(.kind == "correction") | [.via, .heard, .corrected] | @tsv' trace.jsonl
 ```
 
 `--transcribe` writes a trace line too, which is what makes it worth having:
