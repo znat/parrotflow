@@ -113,12 +113,16 @@ struct Surface {
             return nil
         }
         guard let value = SelectionReader.visibleText(of: element) else {
-            // Ghostty and iTerm land here and always will: they focus the
-            // window, render their screen with Metal, and publish nothing but
-            // chrome to accessibility. Walking down from the window finds their
-            // tab title — 44 characters where the screen is two thousand — and
-            // treating that as the input line would retype chrome into the pty.
-            // So this refuses, and the text goes to the clipboard.
+            // A window that has not finished handing over its text view lands
+            // here too, which is why `read` retries rather than taking this as
+            // final. Ghostty and iTerm both answer this way for a few hundred
+            // milliseconds after coming forward, and reading them once was
+            // enough to write them up as terminals that publish nothing at all.
+            //
+            // Walking down from the window to find *some* text was tried and
+            // taken out again: it reaches the tab title long before the screen,
+            // and retyping that into a pty is worse than declining. Waiting is
+            // the fix; searching is not.
             Log.write("surface: the focused element has no readable value")
             return nil
         }
