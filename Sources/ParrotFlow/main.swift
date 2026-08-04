@@ -14,7 +14,7 @@ let arguments = CommandLine.arguments
 // flush and the rest did not, so `--replace` was dropping the very lines that
 // explain what the pipeline did — a stage saying it skipped, and why. Doing it
 // here covers every path, including the ones added later.
-atexit { Log.flush() }
+atexit { Log.flush(); Trace.flush() }
 
 /// `--lang fr` or `--lang en,fr`. One entry pins a grammar; several stand in
 /// for the configured list, so a case file can state the environment it assumes

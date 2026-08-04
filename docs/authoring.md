@@ -206,7 +206,10 @@ and you stop running it.
 - **Use real inputs.** These come out of speech recognition, so the test inputs
   must be mangled the way speech recognition mangles them. A set built from
   tidy sentences measures nothing, because tidy sentences were never the
-  problem.
+  problem. `trace.jsonl` beside your recordings is where they are: every
+  dictation you have given, with the decoder's own confidence on each word, so
+  the ones it struggled with can be pulled out rather than invented — see
+  [cli.md](cli.md#the-trace).
 - **Include negatives — a lot of them.** Roughly one in five, and closer to
   half for anything that runs on every transcript rather than on demand. Models
   are strongly biased toward producing output, and a confident wrong answer

@@ -347,6 +347,7 @@ struct Pipeline: Equatable, Codable {
                 // only one of those is answerable by editing a condition.
                 let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
                 Log.write("pipeline: skipped \(named) — \(reason)")
+                Trace.current?.recordSkip(named, reason: reason)
                 continue
             }
             // After the skip check, not before: a stage that is about to
@@ -355,7 +356,18 @@ struct Pipeline: Equatable, Codable {
                 .flatMap({ config.transform(named: $0) })?.displayLabel {
                 progress?(label)
             }
+            // Timed here rather than inside each kind of stage, so the number
+            // covers the same span for a table, a script and a model call —
+            // the three costs `AGENTS.md` asks you to choose between, finally
+            // measured on your own sentences instead of quoted from a README.
+            let before = output
+            let started = CFAbsoluteTimeGetCurrent()
             output = await apply(step, to: output, config: config)
+            Trace.current?.recordStage(
+                step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name,
+                before: before, after: output,
+                seconds: CFAbsoluteTimeGetCurrent() - started
+            )
         }
         return output
     }

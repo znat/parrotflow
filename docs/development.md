@@ -11,6 +11,7 @@ separate applications**. Both can be installed, and both can run at once.
 | Config | `~/.config/parrotflow/` | `~/.config/parrotflow-dev/` |
 | Log | `ParrotFlow.log` | `ParrotFlow-Dev.log` |
 | Recordings | `~/Recordings/ParrotFlow` | `~/Recordings/ParrotFlow Dev` |
+| Trace | `~/Recordings/ParrotFlow/trace.jsonl` | `~/Recordings/ParrotFlow Dev/trace.jsonl` |
 | Menu bar | `mic` | `mic.circle` |
 
 This is not tidiness. macOS grants microphone and Accessibility **per bundle

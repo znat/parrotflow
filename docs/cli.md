@@ -195,3 +195,57 @@ that was skipped and why, and the before-and-after of every rewrite a model
 made. A stage that silently does not run looks exactly like one that ran and
 found nothing — only one of those is answerable by editing a condition, so the
 log distinguishes them.
+
+It is for reading over your own shoulder while something goes wrong: prose,
+second resolution, and a rolling buffer that throws the oldest away at 1 MB.
+Ask a question of more than one dictation and you want the trace instead.
+
+## The trace
+
+```sh
+tail -1 ~/Recordings/ParrotFlow/trace.jsonl | jq .
+```
+
+One JSON object per dictation, appended and never rotated, beside the clips it
+describes. It holds what the decoder actually returned before anything touched
+it — the raw text, its confidence, and **every word with its start, end and
+confidence** — plus the speech gate's segment boundaries, then each pipeline
+stage with its before, its after and what it cost in seconds, and finally the
+text that was delivered. `wav` joins a line to its recording; `source` is
+`live` for something you spoke and `cli` for a `--transcribe` re-run, so a
+sweep over the archive does not read as a day of dictation.
+
+The decoder computed all of it either way. It used to be dropped one line after
+it arrived.
+
+The questions it answers, which the log cannot:
+
+```sh
+cd ~/Recordings/ParrotFlow
+
+# Which words is the model least sure of? Candidates for the replacement
+# table, ranked instead of guessed at.
+jq -r '.asr.words[] | select(.confidence < 0.5) | .word' trace.jsonl |
+  sort | uniq -c | sort -rn | head -20
+
+# A dictation whose ending went missing: did the decoder stop, or the gate?
+jq -r 'select(.asr.words|length > 0) |
+       [.wav, (.vad.segments[-1][1]), (.asr.words[-1].end), .vad.total] | @tsv' trace.jsonl
+
+# What each stage really costs on your own sentences.
+jq -r '.stages[] | select(.seconds) | [.name, .seconds] | @tsv' trace.jsonl |
+  awk '{n[$1]++; s[$1]+=$2} END {for (k in n) printf "%-28s %6.3fs  ×%d\n", k, s[k]/n[k], n[k]}' |
+  sort -k2 -rn
+
+# Every dictation a prompt stage rewrote, and into what.
+jq -r '.stages[] | select(.before and .before != .after) |
+       [.name, .before, .after] | @tsv' trace.jsonl
+```
+
+`--transcribe` writes a trace line too, which is what makes it worth having:
+change a table, re-run the clips, and both sets of numbers sit in one file
+joined to the same audio.
+
+```sh
+for f in ~/Recordings/ParrotFlow/*.wav; do ParrotFlow --transcribe "$f" >/dev/null; done
+```
