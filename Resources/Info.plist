@@ -20,6 +20,9 @@
 	<string>0.4.0</string> <!-- x-release-please-version -->
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
+	<!-- Built from Resources/parrot.svg by scripts/make-icons.py. -->
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>

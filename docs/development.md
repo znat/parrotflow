@@ -49,6 +49,41 @@ VARIANT=release make logs  # act on the shipped app instead
 `AppVariant.swift` is where the app derives its own paths from the identifier it
 was built with.
 
+## The icons
+
+`Resources/parrot.svg` is the drawing and the only place a colour is decided.
+The outline is by Md Moniruzzaman, from the Noun Project under CC BY; the
+plumage is the wheel of `ParrotStyle.swift` run head to tail.
+
+```sh
+python3 scripts/make-icons.py   # only when the drawing changes
+```
+
+That writes `AppIcon.icns` and the three menu bar birds, all committed. It is
+not part of the build: an app that cannot compile without a rasteriser working
+is an app with one more way to fail.
+
+Two things in there were measured rather than assumed, and both will look like
+mistakes until you hit them yourself.
+
+`qlmanage` is the obvious rasteriser and composites onto opaque white. It
+reports `hasAlpha: yes` and every pixel of that alpha is `1.0`, which in the
+menu bar is a white tile with a bird cut out of it. `scripts/rasterize.swift`
+draws through AppKit into a bitmap it allocates, so the background is one we
+choose, and it is none.
+
+**A status button cannot be tinted.** `contentTintColor` looks like the way to
+colour a menu bar glyph; set it and AppKit stops applying the template treatment
+altogether and draws the image's own pixels, which for a template is solid
+black. So each colour is baked into its own file — the released app takes the
+`Template` one and follows the bar into light and dark, the dev build takes sky,
+and an open microphone takes orange. Reach for a tint here and you will get a
+black bird and no error.
+
+Colours are chosen from what the menu bar renders, not from what they are: it
+washes and lifts everything it is handed, and scarlet came out of it at 7° of
+hue, which is a red rather than the orange it was meant to be.
+
 ## Releasing
 
 Nobody picks a version number. release-please reads the commit subjects since

@@ -34,6 +34,13 @@ cp "$BIN" "$APP/Contents/MacOS/$EXECUTABLE_NAME"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
+# The icons are committed, not built here: they come out of Resources/parrot.svg
+# via scripts/make-icons.py, which only needs running when the drawing changes.
+# Rebuilding them on every `make run` would put a rasteriser between you and a
+# working app for no gain.
+cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"
+cp "$ROOT"/Resources/MenuBarParrot*.png "$APP/Contents/Resources/"
+
 # Resources/Info.plist carries the released identity; the dev bundle is that
 # file with three keys rewritten. One template rather than two files means a key
 # cannot be added to one variant and forgotten in the other.
