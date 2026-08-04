@@ -134,6 +134,26 @@ if let index = arguments.firstIndex(of: "--prompt") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--eval") {
+    guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
+        print("usage: ParrotFlow --eval <transform|cases.yaml>"
+            + " [--cases <file>] [--probe <name>] [--verbose]")
+        exit(2)
+    }
+    func value(_ flag: String) -> String? {
+        arguments.firstIndex(of: flag).flatMap { at in
+            arguments.indices.contains(at + 1) && !arguments[at + 1].hasPrefix("--")
+                ? arguments[at + 1] : nil
+        }
+    }
+    exit(EvalCommand.run(
+        target: arguments[index + 1],
+        cases: value("--cases"),
+        probe: value("--probe"),
+        verbose: arguments.contains("--verbose")
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--pipeline") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"]"
