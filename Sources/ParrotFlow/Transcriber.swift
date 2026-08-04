@@ -117,6 +117,7 @@ actor Transcriber {
         let asr = AsrManager(models: models)
         var decoderState = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
         let result = try await asr.transcribe(url, decoderState: &decoderState)
+        Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
         return await Self.applyReplacements(
             to: result.text, config: config, app: app, progress: progress
@@ -162,6 +163,13 @@ actor Transcriber {
             format: "speech gate: %.2fs speech in %.2fs (%d segment(s))",
             speech, total, segments.count
         ))
+        // The boundaries, not just the totals: "the ending was cut off" is
+        // answered by where the last segment stops against where the words
+        // stop, and the log line above cannot tell you either.
+        Trace.current?.recordVAD(
+            speech: speech, total: total,
+            segments: segments.map { ($0.startTime, $0.endTime) }
+        )
         return segments.isEmpty
     }
 

@@ -45,8 +45,31 @@ enum TranscribeCommand {
                 try await transcriber.prepare(config: config)
                 let loadElapsed = Date().timeIntervalSince(loadStart)
 
+                // Traced like a real dictation, marked `cli` so a sweep over
+                // the archive can be told apart from what was actually spoken.
+                // This is the path that makes the trace worth having: re-run
+                // the recordings after a change and the two sets of numbers sit
+                // in the same file, joined to the same clips.
+                //
+                // The line goes to the recordings directory even when the clip
+                // does not live there, because one corpus in one place is the
+                // point and a `--transcribe /tmp/t.wav` should not leave a
+                // `trace.jsonl` behind in /tmp. That costs the bare-filename
+                // join, so a clip from anywhere else is named by its full path
+                // instead — the join stays exact either way.
+                let directory = config.resolvedOutputDir
+                Trace.directory = directory
+                let isInCorpus = url.deletingLastPathComponent().standardizedFileURL.path
+                    == directory.standardizedFileURL.path
                 let started = Date()
-                let text = try await transcriber.transcribe(url: url, config: config)
+                let text = try await Trace.record(
+                    wav: isInCorpus ? url.lastPathComponent : url.standardizedFileURL.path,
+                    source: .cli, beside: directory
+                ) {
+                    let text = try await transcriber.transcribe(url: url, config: config)
+                    Trace.current?.recordFinal(text)
+                    return text
+                }
                 let elapsed = Date().timeIntervalSince(started)
 
                 print("\r\u{1B}[K", terminator: "")

@@ -18,6 +18,7 @@
 | Where the words go | `Destination.swift` | Asks the focused element whether it takes text, at the press — decides the pill's icon and whether the transcript is typed or copied |
 | Menu bar & wiring | `AppDelegate.swift` | |
 | Logging | `Log.swift` | `~/Library/Logs/ParrotFlow.log` — a menu bar app has no console |
+| The record | `Trace.swift` | `trace.jsonl` beside the recordings — one line per dictation, with word timings and confidences the log cannot hold |
 | Floating surfaces | `RecordingOverlay.swift`, `PreviewPanel.swift`, `NoticeHUD.swift`, `ParrotStyle.swift` | Borderless non-activating `NSPanel`s, one look between them |
 | Variants | `AppVariant.swift` | Dev and released builds are separate apps — [development.md](development.md) |
 

@@ -14,7 +14,14 @@ let arguments = CommandLine.arguments
 // flush and the rest did not, so `--replace` was dropping the very lines that
 // explain what the pipeline did — a stage saying it skipped, and why. Doing it
 // here covers every path, including the ones added later.
-atexit { Log.flush() }
+atexit { Log.flush(); Trace.flush() }
+
+// Where `trace.jsonl` goes, for every command below that writes one. The app
+// sets this again from `applyConfig`, which is the copy that follows a live
+// edit of `output_dir`; this is only so a terminal command has somewhere to
+// write before any of that has run. Silent when the config will not load —
+// a trace is a debug artefact and must not be the reason a command fails.
+Trace.directory = (try? ConfigStore.load())?.resolvedOutputDir
 
 /// `--lang fr` or `--lang en,fr`. One entry pins a grammar; several stand in
 /// for the configured list, so a case file can state the environment it assumes

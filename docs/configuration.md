@@ -51,6 +51,7 @@ feedback:
 |---|---|
 | Config | `~/.config/parrotflow/config.yaml` |
 | Recordings | `~/Recordings/ParrotFlow` |
+| Trace | `~/Recordings/ParrotFlow/trace.jsonl` |
 | Log | `~/Library/Logs/ParrotFlow.log` |
 | The example script | `~/.config/parrotflow/code_identifiers.py`, written on first launch and never overwritten |
 

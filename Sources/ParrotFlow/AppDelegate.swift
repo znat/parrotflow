@@ -213,6 +213,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // which the app never runs. A mistyped stage name used to vanish at
         // decode time with no trace anywhere: replacements simply stopped
         // happening, and nothing distinguished that from an empty table.
+        // Beside the recordings, and re-read here because `output_dir` can move
+        // on any save of config.yaml.
+        Trace.directory = config.resolvedOutputDir
+
         configProblems = config.problems()
         for problem in configProblems { Log.write("config: \(problem)") }
         // Logged and not flashed. A `command:` transform is announced on every
@@ -643,18 +647,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // "Transcribing…" is the truth until the decoder is done, and
                 // a lie for the second a prompt or a script spends after it.
                 // A stage that wrote a `display:` says so itself.
-                let text = try await self?.transcriber.transcribe(
-                    url: recording.url, config: config, app: app,
-                    progress: { label in
-                        Task { @MainActor [weak self] in
-                            // Still this dictation, and still one that has
-                            // something on screen to replace.
-                            guard let self, self.transcriptionRun == run,
-                                  self.transcriptionLabel != nil else { return }
-                            self.beginProgress(label)
+                // The trace is opened around the whole chain, not just the
+                // decoder: the stages that follow write into the same record,
+                // and the line is appended even if one of them throws.
+                let text = try await Trace.record(
+                    wav: recording.url.lastPathComponent, source: .live,
+                    app: app.map { Trace.App(name: $0.name, bundleID: $0.bundleID) },
+                    beside: recording.url.deletingLastPathComponent()
+                ) {
+                    let text = try await self?.transcriber.transcribe(
+                        url: recording.url, config: config, app: app,
+                        progress: { label in
+                            Task { @MainActor [weak self] in
+                                // Still this dictation, and still one that has
+                                // something on screen to replace.
+                                guard let self, self.transcriptionRun == run,
+                                      self.transcriptionLabel != nil else { return }
+                                self.beginProgress(label)
+                            }
                         }
-                    }
-                ) ?? ""
+                    ) ?? ""
+                    Trace.current?.recordFinal(text)
+                    return text
+                }
                 await MainActor.run {
                     guard let self else { return }
                     // Only if the screen is still ours. Push-to-talk does not
@@ -1241,6 +1256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
                 Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+                Trace.correction(heard: rule.heard, corrected: rule.corrected, via: "command")
             } catch {
                 presentAlert(title: "Could not save the rule", message: error.localizedDescription)
                 pendingSelection = nil
@@ -1629,6 +1645,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 do {
                     try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
                     Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+                    Trace.correction(
+                        heard: rule.heard, corrected: rule.corrected, via: "panel"
+                    )
                 } catch {
                     self.presentAlert(
                         title: "Could not save the rule", message: error.localizedDescription
