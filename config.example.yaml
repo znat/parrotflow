@@ -78,43 +78,23 @@ updates:
   after_days: 7
 
 # What the activation phrase can reach, and what a pipeline can name. The
-# description is what the router matches your words against, so write it the way
-# you would say it; the whole instruction reaches the body, which is why one
-# entry covers "format those dates ISO" and "format those dates with slashes".
+# description is what the router matches your words against, so write it the
+# way you would say it; the whole instruction reaches the body, which is why
+# one entry covers "format those dates ISO" and "with slashes".
 #
 # `prompt:` asks the local model, about a second. `replace:` is a substitution
-# table, free, and reachable only from a pipeline, where it can be scoped to one
-# app — two tables with the same pattern are how "user dot name" becomes
-# user.name in a terminal and `user.name` in chat. `command:` runs a program of
-# yours — transcript on stdin, rewrite on stdout — and one that fails or takes
-# over two seconds changes nothing. See docs/pipelines.md.
+# table, free. `command:` runs a program of yours — transcript on stdin,
+# rewrite on stdout — and one that fails or takes over two seconds changes
+# nothing. All three are reachable by voice and from a pipeline.
 #
-# `display:` is what the menu bar says while an entry runs, ellipsis added for
-# you. Leave it off a table, which finishes before the label could be read.
+# `display:` is what the menu bar says while an entry runs. Results are shown
+# before they replace your selection; `confirm: false` skips that.
 #
-# Results are shown before they replace your selection; `confirm: false` skips
-# that, and --check-config lists everything the phrase reaches.
-#
-# A transform named X owns transforms/X/ beside this file. A relative path is
-# looked for there first, and that folder is the working directory its command
-# runs in — so a script can read a data file of its own by a bare name and the
-# whole transform is one directory you can copy:
-#
-#   transforms/slack_mentions/
-#     slack_mentions.py     the entry point, named after the transform
-#     cases.yaml            the set --eval scores it against
-#     roster.json           data it owns
-#
-# A body long enough to want an editor of its own can live in a file. A short
-# one is better here, where you can see it:
-#
-#   - name: slack
-#     description: tidy dictated text into a chat message
-#     prompt: { path: slack.md }        # transforms/slack/slack.md
-#
-#   - name: dotted
-#     description: spoken dotted paths as code
-#     replace: { path: dotted.yaml }    # the same table, in a file
+# A transform named X owns transforms/X/ beside this file: its script or
+# prompt, its case set, and any data it reads. That folder is the working
+# directory a command runs in, so a script can open a sibling by bare name.
+# A body too long to sit here can live there — `prompt: { path: slack.md }`.
+# See docs/pipelines.md.
 transforms:
   - name: bullets
     description: turn text into a short bullet list
@@ -156,17 +136,12 @@ transforms:
       Return only the text.
 
   # Scoped to mail windows by the pipeline above. `grammar` mends a sentence;
-  # this also lays one out — a greeting on its own line, a blank line where the
-  # subject changes — which is the part no substitution can express and the
-  # reason it is a prompt. It is told twice not to write anything, because a
-  # model handed a dictated email will gladly return a better one in its own
-  # voice and you will not notice until it has gone.
+  # this also lays one out, which is the part no substitution can express. It
+  # is told twice not to write anything, because a model handed a dictated
+  # email will gladly return a better one in its own voice.
   #
-  # 21/26 — examples/transforms/email/cases.yaml, scripts/validate-email.py. Spoken ordinals
-  # ("One, ... Two, ... Three.") are the known gap: they stay prose and the
-  # numbers are deleted. Two variants and a model twice the size all fail it
-  # the same way, so it is not a wording problem — see the notes at the bottom
-  # of the runner.
+  # 21/26 — score it with scripts/validate-email.py. Spoken ordinals are the
+  # known gap: they stay prose and the numbers are deleted.
   - name: email
     description: lay dictated text out as an email
     display: Laying out the email
