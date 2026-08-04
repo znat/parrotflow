@@ -23,30 +23,8 @@ actor Transcriber {
         case failed(String)
     }
 
-    /// The stock `.default` config is built for long-form streaming, and holds
-    /// text as provisional until `minContextForConfirmation: 10s` has passed
-    /// and confidence clears 0.85. Both gates exist to stop a live transcript
-    /// rewriting itself in front of the reader.
-    ///
-    /// Dictation clips are mostly shorter than 10s, and we only ever hand over
-    /// a finished recording, so neither buys anything here.
-    private static let dictationConfig = SlidingWindowAsrConfig(
-        chunkSeconds: 11.0,
-        hypothesisChunkSeconds: 11.0,  // one pass: the clip is already finished
-        leftContextSeconds: 2.0,
-        rightContextSeconds: 2.0,
-        minContextForConfirmation: 0.3,
-        confirmationThreshold: 0.0
-    )
-
     private(set) var status: Status = .idle
 
-    // Models are cached; the manager is not. SlidingWindowAsrManager holds its
-    // input AsyncStream in a `let` created at init, and finish() closes that
-    // stream for good — startStreaming() cannot re-arm it. A reused manager
-    // therefore reads from a dead stream, processes no audio, and returns
-    // whatever text was left over from the previous clip. Measured: the second
-    // and every later dictation returned text left over from the previous one.
     private var vad: VadManager?
     private var models: AsrModels?
 
@@ -86,15 +64,6 @@ actor Transcriber {
         setStatus(.ready)
     }
 
-    /// A manager is good for exactly one clip — see the note on `models`.
-    private func makeManager() async throws -> SlidingWindowAsrManager {
-        guard let models else { throw TranscriberError.notReady }
-
-        let manager = SlidingWindowAsrManager(config: Self.dictationConfig)
-        try await manager.loadModels(models)
-        return manager
-    }
-
     private var lastReportedPercent: Int = -1
 
     private func reportDownload(_ label: String, _ progress: DownloadProgress) {
@@ -115,33 +84,42 @@ actor Transcriber {
         progress: (@Sendable (String) -> Void)? = nil
     ) async throws -> String {
         try await prepare(config: config)
-        let manager = try await makeManager()
 
         if config.audio.speechGate, try await isSilent(url: url) {
             Log.write("speech gate: no speech detected; not transcribing")
             return ""
         }
 
-        let file = try AVAudioFile(forReading: url)
-        try await manager.startStreaming(source: .microphone)
+        guard let models else { throw TranscriberError.notReady }
 
-        // Feed the whole clip through, then let the manager drain. Chunking at
-        // 1 s keeps buffers small without introducing boundaries the spotter
-        // would care about — it sees the accumulated window, not these chunks.
-        let format = file.processingFormat
-        let chunkFrames = AVAudioFrameCount(format.sampleRate)
-        while file.framePosition < file.length {
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: chunkFrames) else {
-                break
-            }
-            try file.read(into: buffer, frameCount: chunkFrames)
-            if buffer.frameLength == 0 { break }
-            await manager.streamAudio(buffer)
-        }
+        // A finished clip goes through the batch path in one call, not through
+        // SlidingWindowAsrManager. That manager is built for a stream whose end
+        // has not arrived yet: it decodes in fixed windows, and a clip longer
+        // than its chunk gets split and the seam between windows swallows
+        // words. It is the reason dictations came back with their endings
+        // missing — a 12s clip returned its first sentence and dropped the two
+        // after it, reproducibly, from the file on disk.
+        //
+        // Re-run over the 518 recordings in ~/Recordings: 65 clips came back
+        // with more of what was said, several recovering whole clauses; the 65
+        // that came back shorter are punctuation and casing, bar two where the
+        // old path had been inventing sentences over silence.
+        //
+        // The batch path decodes a clip up to 15s as a single window and chunks
+        // longer ones itself, with the overlap merge FluidAudio's own benchmarks
+        // use. Nothing here needs a partial transcript before the recording
+        // ends, so there is no reason to pay for one. It is no slower: 12s of
+        // audio in 0.2s either way.
+        //
+        // A manager per clip, not one cached: the decoder state below is
+        // per-clip, and a shared manager would carry one clip's state into the
+        // next. The models are the expensive part and those are cached.
+        let asr = AsrManager(models: models)
+        var decoderState = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
+        let result = try await asr.transcribe(url, decoderState: &decoderState)
 
-        let raw = try await manager.finish()
         return await Self.applyReplacements(
-            to: raw, config: config, app: app, progress: progress
+            to: result.text, config: config, app: app, progress: progress
         )
     }
 
