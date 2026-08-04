@@ -154,6 +154,12 @@ enum PipelineCommand {
         // a question about which stage did it, and the finished string cannot
         // say. Re-run one stage at a time rather than instrumenting `run`: the
         // scored path stays the one the app uses, and this stays a viewer.
+        // The same things `--check-config` says about a config: which entries
+        // run a program, and which of their files are still at the old
+        // location. A fixture can carry a `command:` transform, so a fixture
+        // can execute code, and the rule that this app says out loud what
+        // executes does not stop at the file called config.yaml.
+        for notice in config.notices() { print("  · \(notice)") }
         print("in:   \(text)")
         if let front { print("app:  \(front.described)") }
         var current = text

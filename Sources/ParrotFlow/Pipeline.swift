@@ -446,7 +446,7 @@ struct Pipeline: Equatable, Codable {
             // transcript. Logged either way: a stage you wrote yourself is
             // exactly the one whose before and after you want on the record.
             guard let result = CommandRunner.run(
-                command, on: text, base: transform.directory, seconds: transform.timeout
+                command, on: text, in: transform.folder, seconds: transform.timeout
             ) else { return text }
             if result != text {
                 Log.write("pipeline: transform \(name) rewrote the transcript")

@@ -8,6 +8,6 @@ languages: [en]
 transforms:
   - name: code_identifiers
     description: spoken names as identifiers
-    command: ../../examples/code_identifiers.py
+    command: ../../examples/transforms/code_identifiers/code_identifiers.py
 pipeline:
   - transform: code_identifiers

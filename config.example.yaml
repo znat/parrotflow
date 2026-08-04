@@ -94,6 +94,27 @@ updates:
 #
 # Results are shown before they replace your selection; `confirm: false` skips
 # that, and --check-config lists everything the phrase reaches.
+#
+# A transform named X owns transforms/X/ beside this file. A relative path is
+# looked for there first, and that folder is the working directory its command
+# runs in — so a script can read a data file of its own by a bare name and the
+# whole transform is one directory you can copy:
+#
+#   transforms/slack_mentions/
+#     slack_mentions.py     the entry point, named after the transform
+#     cases.yaml            the set --eval scores it against
+#     roster.json           data it owns
+#
+# A body long enough to want an editor of its own can live in a file. A short
+# one is better here, where you can see it:
+#
+#   - name: slack
+#     description: tidy dictated text into a chat message
+#     prompt: { path: slack.md }        # transforms/slack/slack.md
+#
+#   - name: dotted
+#     description: spoken dotted paths as code
+#     replace: { path: dotted.yaml }    # the same table, in a file
 transforms:
   - name: bullets
     description: turn text into a short bullet list
@@ -141,7 +162,7 @@ transforms:
   # model handed a dictated email will gladly return a better one in its own
   # voice and you will not notice until it has gone.
   #
-  # 21/26 — tests/email-cases.yaml, scripts/validate-email.py. Spoken ordinals
+  # 21/26 — examples/transforms/email/cases.yaml, scripts/validate-email.py. Spoken ordinals
   # ("One, ... Two, ... Three.") are the known gap: they stay prose and the
   # numbers are deleted. Two variants and a model twice the size all fail it
   # the same way, so it is not a wording problem — see the notes at the bottom

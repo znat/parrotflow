@@ -157,9 +157,18 @@ transforms:
     timeout_seconds: 2
 ```
 
-- A relative path is relative to **the file that named it**, and runs with that
-  directory as its working directory. A bare name that is not a file there
-  (`sed`, `tr`) is looked up on PATH, so a one-liner with arguments works.
+```
+~/.config/parrotflow/transforms/shout/
+  shout.py        # the entry point, named after the transform
+  cases.yaml      # the set, right there
+  volumes.json    # whatever data it owns
+```
+
+- A relative path is looked for in **the transform's own folder** first, and
+  beside `config.yaml` second. The folder is the working directory, so
+  `shout.py` opens `volumes.json` by that name and the folder is a thing you
+  can copy whole. A bare name that is not a file in either place (`sed`, `tr`)
+  is looked up on PATH, so a one-liner with arguments works.
 - The script is run directly, so its **shebang** picks the interpreter, and it
   needs the **execute bit** — a script that is there but not `chmod +x` is the
   likeliest thing to be wrong with a `command:` transform. Both the log and
@@ -170,7 +179,7 @@ transforms:
 - Two seconds is right for a script and wrong for one that asks a model. A
   command ending in `--model something` wants `timeout_seconds: 12` beside it.
 
-`examples/code_identifiers.py` is the shipped one, and the best template: rules
+`examples/transforms/code_identifiers/code_identifiers.py` is the shipped one, and the best template: rules
 first, model behind a flag, a table of language conventions that is edited
 rather than prompted.
 
@@ -213,10 +222,10 @@ and you stop running it.
 - **Include negatives — a lot of them.** Roughly one in five, and closer to
   half for anything that runs on every transcript rather than on demand. Models
   are strongly biased toward producing output, and a confident wrong answer
-  beats a refusal on any set without negatives. `tests/code-identifier-cases.yaml`
+  beats a refusal on any set without negatives. `examples/transforms/code_identifiers/cases.yaml`
   is 32 of 75 cases that must come back untouched, and that half is the one that
   catches regressions.
-- **Keep the residue in, failing.** `tests/dotted-cases.txt` scores 54/54 and
+- **Keep the residue in, failing.** `examples/transforms/dotted/cases.txt` scores 54/54 and
   carries two more it cannot do. A set that reaches 100% by dropping what it
   cannot do is worse than a number.
 - **Write the contract at the top of the file**, in prose: what counts as a

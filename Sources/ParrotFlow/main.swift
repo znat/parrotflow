@@ -16,6 +16,14 @@ let arguments = CommandLine.arguments
 // here covers every path, including the ones added later.
 atexit { Log.flush(); Trace.flush() }
 
+// Before anything reads the config, because reading it creates it: `load`
+// calls `createIfMissing`, so a line below that merely wants the output
+// directory would seed the files this command exists to report on, and every
+// run would say they were already there.
+if arguments.contains("--seed-config") {
+    exit(SeedConfigCommand.run())
+}
+
 // Where `trace.jsonl` goes, for every command below that writes one. The app
 // sets this again from `applyConfig`, which is the copy that follows a live
 // edit of `output_dir`; this is only so a terminal command has somewhere to

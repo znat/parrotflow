@@ -59,6 +59,44 @@ exist. `replace:` is a substitution table of its own, in the same shape as
 yours, which costs a process start — about 30ms for `python3`, 5ms for a shell
 script.
 
+### The folder, and `path:`
+
+A transform named `X` owns `transforms/X/` beside the config that declared it.
+A relative path is looked for there first and beside `config.yaml` second, and
+the folder is the working directory a `command:` runs in — so a script can read
+a data file of its own by a bare relative name.
+
+`prompt:` and `replace:` can name a file instead of holding one. `command:`
+already is a path:
+
+```yaml
+transforms:
+  - name: slack
+    description: tidy dictated text into a chat message
+    prompt: { path: slack.md }          # transforms/slack/slack.md
+
+  - name: dotted
+    description: spoken dotted paths as code
+    replace: { path: dotted.yaml }      # the same table, in a file
+
+  - name: slack_mentions
+    description: turn people's names into Slack mentions
+    command: slack_mentions.py          # transforms/slack_mentions/…
+```
+
+A scalar stays a scalar: an inline `prompt: |` is unchanged, and a three-line
+prompt is worse in a file than in the config it belongs to. A prompt file is
+read verbatim — no front matter, no templating. A `replace:` file holds the
+same mapping the inline table would.
+
+A `path:` naming a file that is not there, or is not readable, takes out **that
+transform and nothing else**: it is skipped, `--check-config` says why, and the
+rest of the config goes on working.
+
+`--check-config` prints the resolved absolute path of every body. A prompt
+present both in the folder and beside `config.yaml` is otherwise invisible, and
+"which one is running" is the first question when an edit had no effect.
+
 ### `display:`, or: what the pause is for
 
 A stage that takes a second is a second in which the menu bar says
@@ -132,11 +170,17 @@ the log and `--check-config` name that case as itself rather than as "command
 not found", which would send you looking for a file that is sitting right where
 you put it.
 
-A relative path is relative to **the file that named it**: `command:
-code_identifiers.py` is the script sitting beside your config.yaml. It runs with
-that directory as its working directory, so it can read its neighbours. A bare
-name that is not a file there — `sed`, `python3` — is left to the shell to find
-on PATH, so a command can be a one-liner with its own arguments:
+A relative path is looked for in the transform's own folder first: `command:
+code_identifiers.py` on a transform named `code_identifiers` is
+`transforms/code_identifiers/code_identifiers.py`. That folder is also the
+working directory, so the script can read its neighbours by bare relative name.
+Beside `config.yaml` is tried second, which is where a script written before
+folders existed still sits; it runs, and `--check-config` says where to move it.
+Writing the path out in full — `command:
+transforms/code_identifiers/code_identifiers.py` — names the same file and is
+not reported. A bare name that is not a file in either place — `sed`, `python3`
+— is left to the shell to find on PATH, so a command can be a one-liner with
+its own arguments:
 
 ```yaml
   - name: shout
@@ -153,7 +197,7 @@ start.
 
 ### `code_identifiers`, which ships
 
-`examples/code_identifiers.py` is the first one, and it is in the default pipeline.
+`examples/transforms/code_identifiers/code_identifiers.py` is the first one, and it is in the default pipeline.
 It turns "a python function called max retries" into "…called max_retries", in
 English and French, with the convention taken from the language named in the
 sentence — snake_case for python and rust, camelCase for typescript and go,
@@ -261,7 +305,7 @@ The second word is matched but not consumed, which is what lets a chain work:
 `user point profile point name` → `user.profile.name`. Consuming it would leave
 the middle token unavailable to the next match.
 
-**54/54 on `tests/dotted-cases.txt`, plus two it cannot do.** Two ordinary words
+**54/54 on `examples/transforms/dotted/cases.txt`, plus two it cannot do.** Two ordinary words
 either side — "réunion point hebdomadaire" — is a shape only a dictionary would
 tell from code, and both residual cases are kept in the set, failing, rather
 than dropped to make the number look better. They are unlikely in a terminal or
@@ -340,7 +384,7 @@ part. Four findings, all of them the prompt making things worse before better:
 | the greeting rule given examples | put the examples in the output: "Hi Tom," and "À toi," |
 | the list rule moved after the short-reply clause | a two-word reply came back as "[No body text]" |
 
-The first is the lesson `tests/grammar-cases.yaml` already records — a rule
+The first is the lesson `examples/transforms/grammar/cases.yaml` already records — a rule
 about restraint making the model less restrained. The third is that file's
 other lesson running the opposite way: elsewhere here examples beat rules, and
 in a prompt whose output is the same shape as its examples they get copied.

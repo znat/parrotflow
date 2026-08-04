@@ -106,6 +106,25 @@ enum CheckConfigCommand {
             print("        default: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
         }
 
+        // Where each body actually came from.
+        //
+        // A file present both in the folder and at the old location beside
+        // config.yaml is otherwise invisible, and "which one is running" is the
+        // first question when a change you made had no effect. Printed as the
+        // resolved absolute path for that reason: what the config says is
+        // `slack_mentions.py`, and that is exactly the string that cannot
+        // answer it.
+        if !config.transforms.isEmpty {
+            print("  · transforms        \(config.transforms.count) defined")
+            let width = config.transforms.map(\.name.count).max() ?? 0
+            for transform in config.transforms {
+                let name = transform.name.padding(
+                    toLength: max(width, 1), withPad: " ", startingAt: 0
+                )
+                print("      \(name)  \(kind(of: transform))  \(bodyPath(transform))")
+            }
+        }
+
         // What "hey parrot" can reach. Printed even when `prompts:` is empty,
         // because the built-ins are the answer to "why did it do that" as
         // often as a prompt of your own is.
@@ -209,6 +228,38 @@ enum CheckConfigCommand {
         }
 
         return ok ? 0 : 1
+    }
+
+    /// Which of the three bodies this is, in one column.
+    private static func kind(of transform: Config.Transform) -> String {
+        switch transform.body {
+        case .prompt: return "prompt "
+        case .replace: return "replace"
+        case .command: return "command"
+        }
+    }
+
+    /// The resolved absolute path of a body, or what it is instead of a file.
+    ///
+    /// `on PATH` is the honest answer for `command: sed`: nothing was resolved,
+    /// the shell will look it up, and printing a path this made up would be a
+    /// worse lie than saying so.
+    private static func bodyPath(_ transform: Config.Transform) -> String {
+        if let found = transform.resolvedSource {
+            return shortened(found.path) + (found.atOldLocation ? "   (old location)" : "")
+        }
+        if case .command(let command) = transform.body {
+            return "\(command.split(separator: " ").first ?? "") — on PATH"
+        }
+        return "inline"
+    }
+
+    /// `$HOME` written as `~`. The paths are long, the home half is the same on
+    /// every line, and the part that differs is the part being read.
+    private static func shortened(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        guard path.hasPrefix(home + "/") else { return path }
+        return "~" + path.dropFirst(home.count)
     }
 
     /// Digs the real cause out of the wrappers. Yams reports both its own parse

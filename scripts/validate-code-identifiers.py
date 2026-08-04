@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Score an identifier transform against tests/code-code-identifier-cases.yaml.
+"""Score an identifier transform against examples/transforms/code_identifiers/cases.yaml.
 
     scripts/validate-code-identifiers.py gemma4:e4b
     scripts/validate-code-identifiers.py gemma4:e4b --variant v2 --verbose
@@ -35,7 +35,7 @@ except ImportError:
     sys.exit("pip install pyyaml")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CASES = ROOT / "tests" / "code-identifier-cases.yaml"
+CASES = ROOT / "examples" / "transforms" / "code_identifiers" / "cases.yaml"
 
 # --- prompt variants -------------------------------------------------------
 #
@@ -200,7 +200,7 @@ SPAN_ONLY = {"v4"}
 
 def place(span, text):
     """The sentence with `span` cased and put back — the deterministic half,
-    shared with examples/code_identifiers.py so both are scored on one algorithm."""
+    shared with examples/transforms/code_identifiers/code_identifiers.py so both are scored on one algorithm."""
     span = span.strip().strip('".')
     if not span or re.search(r"\bno name\b|\bnone\b", span, re.I):
         return text
@@ -309,10 +309,10 @@ def place_extracted(reply, text):
 
 # --- the control -----------------------------------------------------------
 #
-# No model: examples/code_identifiers.py, imported rather than reimplemented. It was
+# No model: examples/transforms/code_identifiers/code_identifiers.py, imported rather than reimplemented. It was
 # a copy of these rules until the copies could disagree — and a runner scoring
 # its own version of an algorithm answers a question about code nobody runs.
-sys.path.insert(0, str(ROOT / "examples"))
+sys.path.insert(0, str(ROOT / "examples" / "transforms" / "code_identifiers"))
 import code_identifiers as shipped  # noqa: E402
 
 cased = shipped.cased
@@ -376,7 +376,7 @@ def main():
     ap.add_argument("--script", default=None,
                     help="score a `command:` transform instead — the same way the app runs it,"
                          " the transcript on stdin and the rewrite on stdout. Takes arguments:"
-                         " --script 'examples/code_code_identifiers.py --model gemma4:e4b'")
+                         " --script 'examples/transforms/code_identifiers/code_identifiers.py --model gemma4:e4b'")
     args = ap.parse_args()
 
     cases = yaml.safe_load(pathlib.Path(args.cases).read_text())["cases"]
@@ -511,6 +511,6 @@ main()
 # CAUTIONS. The rules were tuned on cases now in this set, so 91% is not a
 # held-out number; the honest ones were 93%, 88% and 100% on the three batches
 # written afterwards. The next change needs new cases again. And the runner
-# imports examples/code_identifiers.py rather than reimplementing it, so
+# imports examples/transforms/code_identifiers/code_identifiers.py rather than reimplementing it, so
 # `--code-only` and `--script` score the file the app writes —
 # scripts/check-example-script.sh keeps the shipped copy equal to it.

@@ -50,14 +50,42 @@ feedback:
 | | |
 |---|---|
 | Config | `~/.config/parrotflow/config.yaml` |
+| Transforms | `~/.config/parrotflow/transforms/<name>/` — one folder each |
 | Recordings | `~/Recordings/ParrotFlow` |
 | Trace | `~/Recordings/ParrotFlow/trace.jsonl` |
 | Log | `~/Library/Logs/ParrotFlow.log` |
-| The example script | `~/.config/parrotflow/code_identifiers.py`, written on first launch and never overwritten |
+| The example transform | `~/.config/parrotflow/transforms/code_identifiers/`, written on first launch and never overwritten |
 
 The menu bar item shows the current state and offers *Correct a Word…*, *Open
-Recordings Folder*, *Settings…* — which opens `config.yaml` in your editor —
-and *Permissions…*.
+Recordings Folder* — the wavs and `trace.jsonl` — *Settings…*, which opens
+`config.yaml` in your editor, and *Permissions…*.
+
+### A folder per transform
+
+A transform named `X` owns `transforms/X/`. Everything belonging to it lives
+inside, so it can be written, scored and handed to someone else as one thing:
+
+```
+~/.config/parrotflow/
+  config.yaml
+  transforms/
+    code_identifiers/
+      code_identifiers.py    # the entry point, named after the transform
+      cases.yaml             # what --eval scores it against
+    slack_mentions/
+      slack_mentions.py
+      cases.yaml
+      roster.json            # data the transform owns
+```
+
+That folder is both where the transform's files are looked for **and the
+working directory its command runs in** — which is what pays for the extra
+directory. A script can open `roster.json` as a bare relative path, so the
+folder is self-contained: copy it to another machine and it works.
+
+A file beside `config.yaml` rather than in the folder still resolves, still
+runs, and is reported by `--check-config` as wanting to move. Nobody's setup
+stops working because they upgraded, and nothing is moved for you.
 
 The dev build keeps its own copies of all of these; see
 [development.md](development.md).
