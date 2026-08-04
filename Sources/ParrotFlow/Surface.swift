@@ -672,10 +672,14 @@ struct Surface {
     /// the caller pasted onto the end of the line. That is the append.
     private func clearedBox() -> Bool {
         for _ in 0..<12 {
+            // Spelled `.some`/`.none` rather than `true`/`false`/`nil`. Both
+            // read the same, and only this one is exhaustive to every compiler
+            // that has to build it — Swift 6.3 accepts the literals, the 6.0 on
+            // the CI runner asks for `.some(_)` and fails the build.
             switch boxIsEmpty() {
-            case true: return true
-            case false: break
-            case nil:
+            case .some(true): return true
+            case .some(false): break
+            case .none:
                 Log.write("surface: cannot read the input box back; refusing to clear blind")
                 return false
             }

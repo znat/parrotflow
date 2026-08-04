@@ -281,4 +281,3 @@ enum PeekCommand {
         text.suffix(80).replacingOccurrences(of: "\n", with: "⏎")
     }
 }
-
