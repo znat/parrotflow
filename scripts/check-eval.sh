@@ -264,6 +264,47 @@ check "a malformed tests: is refused rather than ignored" \
      | grep -c 'tests:` is neither a filename')" \
   "1"
 
+# --- what --probe actually hands to the program ----------------------------
+#
+# A `command:` body is someone's program. This runner treats a transform as
+# text in and text out, but nothing stops the script from writing a file or
+# calling something, so an input the user asked to exclude must not reach it —
+# including through the warm-up run, which used to take the first case in the
+# file rather than the first case being scored — so the excluded case is
+# deliberately the first one here.
+mkdir -p "$WORK/transforms/recorded"
+cat > "$WORK/transforms/recorded/recorded.py" <<'RECORDER'
+#!/usr/bin/env python3
+import pathlib, sys
+text = sys.stdin.read().strip()
+with pathlib.Path("seen.txt").open("a") as log:
+    log.write(text + "\n")
+print(text)
+RECORDER
+chmod +x "$WORK/transforms/recorded/recorded.py"
+cat >> "$WORK/config.yaml" <<'YAML'
+  - name: recorded
+    description: writes down every input it is given
+    command: recorded.py
+YAML
+cat > "$WORK/transforms/recorded/cases.yaml" <<'YAML'
+cases:
+  - probe: excluded
+    input: this one is not
+  - probe: wanted
+    input: this one is asked for
+YAML
+: > "$WORK/transforms/recorded/seen.txt"
+"$BIN" --eval recorded --probe wanted > /dev/null 2>&1
+
+check "--probe never hands an excluded input to the program" \
+  "$(grep -c 'this one is not' "$WORK/transforms/recorded/seen.txt")" \
+  "0"
+
+check "and the warm-up runs a case that was going to be scored anyway" \
+  "$(grep -c 'this one is asked for' "$WORK/transforms/recorded/seen.txt")" \
+  "2"
+
 # --- a set that names a file that is not there ------------------------------
 check "a missing set names where it looked" \
   "$("$BIN" --eval shout --cases nowhere.yaml 2>&1 | grep -c 'no nowhere.yaml')" \

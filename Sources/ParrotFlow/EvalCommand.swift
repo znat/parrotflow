@@ -291,15 +291,24 @@ enum EvalCommand {
         var control = (overall: Tally(), change: Tally(), keep: Tally())
         var intermediate = Tally()
 
+        // What `--probe` selected, decided once. The warm-up runs one of these
+        // and not simply the first case in the file: a `command:` body is
+        // someone's program, and an input the user asked to exclude is an
+        // input that must not be handed to it — a transform is text in and
+        // text out to this runner, but nothing stops the script it names from
+        // writing a file or calling something.
+        let selected = set.cases.filter { probe == nil || $0.probe == probe }
+
         // Warm first, and throw the number away. A cold start is 7–10s of
         // reading weights off a disk and has nothing to say about the thing
-        // being measured; timings that include it send you optimising it.
-        if let first = set.cases.first {
+        // being measured; timings that include it send you optimising it. It
+        // is a case that is about to be scored anyway, so this costs one extra
+        // run of one input rather than one of an input nobody asked for.
+        if let first = selected.first {
             _ = through(transform, first.input, config: config, instruction: instruction)
         }
 
-        for one in set.cases {
-            if let probe, one.probe != probe { continue }
+        for one in selected {
             let (got, seconds) = through(transform, one.input, config: config, instruction: instruction)
             let correct = got == one.expect
             scored.overall.add(correct)
