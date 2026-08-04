@@ -143,7 +143,7 @@ actor Transcriber {
             var retryState = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
             let raw = try await asr.transcribe(closed.samples, decoderState: &retryState)
             let retried = Self.restoreTimings(raw, closed: closed, seconds: gated.seconds)
-            if Self.lastWordEnd(retried) > Self.lastWordEnd(result) {
+            if Self.lastWordEnd(retried) > Self.lastWordEnd(result), Self.extends(result, by: retried) {
                 Log.write(String(
                     format: "decoder stopped %.2fs before the speech did; "
                         + "closed %d long pause(s) and recovered to %.2fs",
@@ -151,6 +151,12 @@ actor Transcriber {
                     closed.pauses, Self.lastWordEnd(retried)
                 ))
                 result = retried
+            } else if Self.lastWordEnd(retried) > Self.lastWordEnd(result) {
+                Log.write(String(
+                    format: "closed %d long pause(s) and reached %.2fs, but the retry "
+                        + "rewrote text the first pass had already decoded; keeping the first pass",
+                    closed.pauses, Self.lastWordEnd(retried)
+                ))
             }
         }
         Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
@@ -254,6 +260,32 @@ actor Transcriber {
 
     nonisolated static func lastSpeechEnd(_ gate: SpeechGate) -> Double {
         gate.segments.last?.end ?? 0
+    }
+
+    /// True when the retry says everything the first pass said, in the same
+    /// order, before it says anything new.
+    ///
+    /// Reaching further into the clip is not on its own a reason to take the
+    /// retry. It decodes the *whole* clip, not just the tail, and closing the
+    /// pauses moves every window boundary after the first pause — so its
+    /// version of the opening is a different decode of audio the first pass
+    /// may already have got right. Swapping wholesale on the strength of a
+    /// later ending would trade a recovered tail for a silently rewritten
+    /// beginning, which is a worse bug than the one being fixed: nobody
+    /// re-reads the part that was already correct.
+    ///
+    /// Prefix rather than equality, because what makes the retry worth having
+    /// is precisely the words it adds at the end. Compared on letters and
+    /// digits alone so that a different token split, a comma, or a capital at
+    /// a moved window boundary is not read as rewritten speech.
+    nonisolated static func extends(_ result: ASRResult, by retried: ASRResult) -> Bool {
+        let first = comparable(result.text)
+        guard !first.isEmpty else { return false }
+        return comparable(retried.text).hasPrefix(first)
+    }
+
+    private nonisolated static func comparable(_ text: String) -> String {
+        text.lowercased().filter { $0.isLetter || $0.isNumber }
     }
 
     /// True when the decoder stopped well before the speech did — the symptom
