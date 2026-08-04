@@ -126,6 +126,34 @@ check "the old location gets exactly one notice" \
      | grep -c 'found at the old location')" \
   "1"
 
+# 4b — a script at the old location keeps its own neighbours.
+#
+# The folder exists — seeding writes cases.yaml into it even when the script
+# stays beside config.yaml — so "the folder is the working directory" and "the
+# program is at the old location" are both true at once, and only one of them
+# can decide where the process runs. It has to be the program: this script
+# reads a data file that has always sat beside it, and a working directory
+# chosen from the folder alone points it at a directory that never held one.
+# The failure is silent — a non-zero command keeps the transcript — so the
+# stage would simply stop working, on an upgrade, with nothing said.
+mkdir -p "$WORK/transforms/neighbourly"
+printf 'cases go here\n' > "$WORK/transforms/neighbourly/cases.yaml"
+cat > "$WORK/neighbourly.py" <<'PY'
+#!/usr/bin/env python3
+import pathlib, sys
+suffix = pathlib.Path("suffix.txt").read_text().strip()
+print(sys.stdin.read().strip().upper() + suffix)
+PY
+chmod +x "$WORK/neighbourly.py"
+printf '?\n' > "$WORK/suffix.txt"
+fixture neighbourly.yaml '  - name: neighbourly
+    description: a script that predates folders and reads a file beside it
+    command: neighbourly.py' neighbourly
+
+check "a script at the old location still finds the file beside it" \
+  "$("$BIN" --pipeline "$WORK/neighbourly.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
+  "KEEP IT DOWN?"
+
 # 5 — a folder file wins over one of the same name at the old location. This is
 # the case `--check-config` prints resolved paths for: with a copy in both
 # places, nothing else can tell you which one ran.

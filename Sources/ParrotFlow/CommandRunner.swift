@@ -70,9 +70,21 @@ enum CommandRunner {
         // turns out to name a real file next to the config.
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", shellCommand(for: command, in: folder)]
-        // The folder, so a script can open `roster.json` as a bare relative
-        // path and the whole transform is one directory you can copy.
-        process.currentDirectoryURL = folder.workingDirectory
+        // Where the program actually is — not where the folder would prefer it
+        // to be. A script in the folder opens `roster.json` as a bare relative
+        // path, which is the whole point of the folder; a script still beside
+        // `config.yaml` keeps the neighbours it has always had.
+        //
+        // The two came apart on exactly the config this change promises not to
+        // disturb. Seeding writes `transforms/<name>/cases.yaml` even when the
+        // script stays at the old location, so the folder exists while the
+        // program does not live in it — and a working directory chosen from the
+        // folder alone would have pointed an upgraded script at a directory
+        // that has never held its data. Its `open("roster.json")` fails, the
+        // command exits non-zero, and a non-zero command keeps the transcript:
+        // the stage stops doing anything and says nothing about why.
+        process.currentDirectoryURL = parts(of: command, in: folder).resolved
+            .map { $0.url.deletingLastPathComponent() } ?? folder.workingDirectory
 
         let input = Pipe()
         let output = Pipe()

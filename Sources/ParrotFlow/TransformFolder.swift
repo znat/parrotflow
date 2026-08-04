@@ -48,7 +48,13 @@ struct TransformFolder: Equatable {
         [url, configDirectory.standardizedFileURL].compactMap { $0 }
     }
 
-    /// Where a `command:` runs.
+    /// Where a command with no file of its own runs — a bare `sed` the shell
+    /// finds on PATH.
+    ///
+    /// Only that case. A command that resolved to a file runs in **that file's**
+    /// directory, decided by `CommandRunner.run`, because a script's neighbours
+    /// are the files beside the script and not the files beside a folder it was
+    /// never in.
     ///
     /// The folder when it is there, and the config directory when it is not — a
     /// working directory that does not exist is not a slower process, it is a
