@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PFBOX|</title>
+<style>
+  body { font: 15px/1.5 -apple-system, sans-serif; margin: 0; padding: 40px; background: #1a1d21; color: #d1d2d3; }
+  h1 { font-size: 13px; font-weight: 600; color: #868686; margin: 0 0 12px; letter-spacing: .04em; text-transform: uppercase; }
+  #composer { min-height: 96px; padding: 12px 14px; border: 1px solid #565856; border-radius: 8px; background: #222529; outline: none; white-space: pre-wrap; }
+  #composer:focus { border-color: #1d9bd1; }
+  p { color: #868686; font-size: 12px; margin: 14px 0 0; }
+</style>
+</head>
+<body>
+
+<!--
+  A composer shaped like the ones that break in-place editing.
+
+  Not a <textarea>. A textarea is a native control and macOS gives it a real
+  accessibility implementation for free, which is exactly the case that already
+  worked — so testing against one would prove nothing about Slack, about the new
+  Outlook, or about any of the web. A contenteditable div is what those actually
+  are, and what makes the accessibility API answer questions about a tree of
+  nodes rather than about a string.
+
+  The oracle is the page's own DOM, published in document.title, where AppleScript
+  can read it without going anywhere near the API under test. That independence
+  is the entire point of this file: the write path reports its own success through
+  accessibility, and accessibility is what is on trial. A verdict has to come from
+  somewhere else.
+
+  Seeded through the URL fragment rather than by typing, so a case starts from an
+  exact known string:
+
+      file://…/composer.html#PFCHK-301%20Jery%20is%20on%20vacation
+-->
+
+<h1>ParrotFlow span fixture</h1>
+<div id="composer" contenteditable="true" spellcheck="false"></div>
+<p>The title mirrors this box. <code>PFBOX|&lt;contents&gt;</code></p>
+
+<script>
+  var composer = document.getElementById('composer');
+
+  // innerText rather than textContent: a contenteditable turns a wrapped line
+  // into separate nodes, and textContent would run the pieces together with no
+  // separator — reporting "onvacation" for a box plainly reading "on vacation"
+  // and failing every case for a reason that has nothing to do with the write.
+  function publish() {
+    document.title = 'PFBOX|' + composer.innerText.replace(/ /g, ' ').replace(/\n+$/, '');
+  }
+
+  function seed() {
+    var text = decodeURIComponent(location.hash.slice(1));
+    composer.textContent = text;
+    publish();
+    composer.focus();
+    // Caret to the end, where a composer leaves it after you type — a test that
+    // started from a collapsed selection at position 0 would be starting from a
+    // state no real use produces.
+    var range = document.createRange();
+    range.selectNodeContents(composer);
+    range.collapse(false);
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  composer.addEventListener('input', publish);
+  window.addEventListener('hashchange', seed);
+
+  // Navigating by setting the URL leaves Chrome's focus in the omnibox often
+  // enough to make the harness flaky — the app then reads the address bar,
+  // finds no composer, and refuses. It refuses correctly, which is the point,
+  // but a fixture that measures Chrome's focus behaviour is not measuring the
+  // thing under test. So the box takes focus back whenever the window gets it.
+  window.addEventListener('focus', function () { composer.focus(); });
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) composer.focus();
+  });
+
+  seed();
+  // Once more after the navigation has fully settled, for the same reason.
+  setTimeout(seed, 250);
+</script>
+
+</body>
+</html>

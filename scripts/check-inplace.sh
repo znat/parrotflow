@@ -29,6 +29,13 @@ BIN="$APP/Contents/MacOS/ParrotFlow"
 SESSION="${PF_CHECK_SESSION:-pfcheck}"
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
 SCRATCH="${TMPDIR:-/tmp}/pf-check-inplace"
+# Which terminal hosts the fixture. Terminal.app by default because it is on
+# every Mac; the point of the switch is that "does in-place editing work in a
+# terminal" has a different answer per terminal, and the only way to know is to
+# run the set in each one.
+#
+#   PF_VIEWPORT=Ghostty scripts/check-inplace.sh
+VIEWPORT="${PF_VIEWPORT:-Terminal}"
 
 [ -x "$TMUX" ]  || { echo "tmux not found"; exit 1; }
 [ -d "$APP" ]   || { echo "install the dev app first: make install"; exit 1; }
@@ -70,7 +77,7 @@ start_fixture() {
   chmod +x "$SCRATCH/attach.command"
   # A freshly opened window is frontmost without anyone having to click, which
   # is what lets this run unattended.
-  open -a Terminal "$SCRATCH/attach.command"
+  open -a "$VIEWPORT" "$SCRATCH/attach.command"
   sleep 4
 }
 
@@ -81,7 +88,7 @@ pass=0; total=0; refused=0; corrupted=0; skipped=0; wrongpath=0
 start_fixture
 trap '"$TMUX" kill-session -t "$SESSION" 2>/dev/null' EXIT
 
-while IFS='|' read -r name id dictated line heard corrected expect literal want_log; do
+while IFS='|' read -r name id dictated line heard corrected expect literal want_log span; do
   [ -z "$name" ] && continue
   total=$((total + 1))
 
@@ -96,9 +103,23 @@ while IFS='|' read -r name id dictated line heard corrected expect literal want_
   [ "$expect" = "unchanged" ] && want="$line" || want="$expect"
 
   mark=$(grep -c "" "$LOG" 2>/dev/null || echo 0)
-  open -a Terminal; sleep 2
-  open -g -na ParrotFlowDev --args \
-    --edit-test "$heard" "$corrected" --find "$id" --dictated "$dictated" $literal --after 3
+  open -a "$VIEWPORT"; sleep 2
+  # A span case names the range; the offsets come from the seeded line, which
+  # the check above has just confirmed is what is on screen. Computed here
+  # rather than written into the case file, so they cannot drift from the text.
+  if [ -n "$span" ]; then
+    read -r start length < <(python3 -c '
+import sys
+line, heard = sys.argv[1], sys.argv[2]
+i = line.index(heard)
+print(i, len(heard))
+' "$line" "$heard")
+    open -g -na ParrotFlowDev --args \
+      --span-test "$start" "$length" "$corrected" --find "$id" --dictated "$dictated" --after 3
+  else
+    open -g -na ParrotFlowDev --args \
+      --edit-test "$heard" "$corrected" --find "$id" --dictated "$dictated" $literal --after 3
+  fi
   sleep 7
 
   got="$(input_region)"
@@ -130,7 +151,8 @@ for c in yaml.safe_load(open(sys.argv[1]))["cases"]:
     print("|".join(str(c[k]) for k in
         ("name", "id", "dictated", "line", "heard", "corrected", "expect"))
           + "|" + ("--literal" if c.get("literal") else "")
-          + "|" + str(c.get("log", "")))
+          + "|" + str(c.get("log", ""))
+          + "|" + ("span" if c.get("span") else ""))
 ' "$ROOT/tests/inplace-cases.yaml")
 
 echo

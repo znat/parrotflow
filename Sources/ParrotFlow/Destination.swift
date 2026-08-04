@@ -115,7 +115,7 @@ enum Destination: Equatable {
     /// The exception is deliberately narrow either way: being wrong here costs
     /// a paste into a window that ignores it, which is what happened before any
     /// of this existed.
-    private static func terminalName(of app: Pipeline.App) -> String? {
+    static func terminalName(of app: Pipeline.App) -> String? {
         let bundle = app.bundleID.lowercased()
         let name = app.name.lowercased()
         if terminalBundleIDs.contains(bundle) || terminalNames.contains(name) {

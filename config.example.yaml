@@ -8,8 +8,10 @@ transcription:
   # instruction about the words before it. An empty list turns this off.
   activation_phrases: [hey parrot, by the way parrot]
 
-  # For fields Accessibility cannot write, terminals mostly: clear the line with
-  # Ctrl-A Ctrl-K and retype it corrected, if it still holds what you dictated.
+  # Terminals only. Their accessibility value is a picture of a screen, so
+  # the only thing that writes there is keystrokes: clear the input line
+  # with Ctrl-A Ctrl-K and retype it corrected. Everywhere else — a field,
+  # a browser, Slack, Outlook — edits the range directly and ignores this.
   rewrite_line: true
 
   # Languages you dictate in, most spoken first — the first is the fallback for

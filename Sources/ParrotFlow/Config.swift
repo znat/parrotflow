@@ -1417,9 +1417,10 @@ if __name__ == "__main__":
       # first is the one to teach someone.
       activation_phrases: [hey parrot, by the way parrot]
 
-      # Last resort for fields Accessibility cannot write, terminals mostly:
-      # clear the input line with Ctrl-A Ctrl-K and retype it corrected. It
-      # only fires when the line still holds what you dictated.
+      # Terminals only. Their accessibility value is a picture of a screen, so
+      # the only thing that writes there is keystrokes: clear the input line
+      # with Ctrl-A Ctrl-K and retype it corrected. Everywhere else — a field,
+      # a browser, Slack, Outlook — edits the range directly and ignores this.
       rewrite_line: true
 
       # Languages you dictate in, most spoken first — the first one is the

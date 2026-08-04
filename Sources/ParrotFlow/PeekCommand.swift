@@ -36,7 +36,9 @@ enum PeekCommand {
     /// a harness seeds a sentinel through tmux and names it here: if it is not
     /// in the value, accessibility and the pane are not looking at the same
     /// place and every measurement after this point is fiction.
-    static func run(seconds: Double, expecting sentinel: String? = nil) -> Int32 {
+    static func run(
+        seconds: Double, expecting sentinel: String? = nil, viaCopy: Bool = false
+    ) -> Int32 {
         defer { Log.flush() }
 
         // Declare ourselves an accessory before anything else. Launched through
@@ -123,6 +125,25 @@ enum PeekCommand {
         report("selected  \(selected.map { "\"\(preview($0))\"" } ?? "none")")
         report("range     \(rangeDescription(of: element))")
 
+        // What the write path will actually be handed. Everything above is raw
+        // accessibility; this is the one coordinate space the app edits in, and
+        // when the two disagree it is this line that decides what happens.
+        if let surface = Surface.read(element: element) {
+            report("")
+            report("as a surface:")
+            report("  kind    \(surface.kind)")
+            report("  content \(surface.content.count) chars — \"\(preview(surface.content))\"")
+            if let span = surface.span {
+                let range = NSRange(span, in: surface.content)
+                report("  span    \(range.location)+\(range.length) — \"\(preview(String(surface.content[span])))\"")
+            } else {
+                report("  span    none")
+            }
+        } else {
+            report("")
+            report("as a surface: unreadable — nothing here can be edited in place")
+        }
+
         if let sentinel {
             guard let value, value.contains(sentinel) else {
                 report("sentinel  \"\(sentinel)\" NOT in the focused element — wrong window")
@@ -133,42 +154,98 @@ enum PeekCommand {
 
         report("")
         report("a write here would:")
-        describeBranches(value: value, selected: selected)
+        describeBranches()
+
+        if viaCopy { reportSelectAllCopy() }
         return 0
     }
 
-    /// Mirrors the branch order in `SelectionReader.replaceSelection` and
-    /// `rewriteCurrentLine`. Held in step with them by hand — when this and the
-    /// write path disagree, this command is the one lying, and the harness
-    /// built on top of it is measuring nothing.
-    private static func describeBranches(value: String?, selected: String?) {
-        // The direct range write is the only branch that cannot be predicted
-        // from a read: setting a range returns .success in terminals that then
-        // ignore it, which is exactly the lie the write path exists to survive.
-        // So this reports what is knowable and says plainly what is not.
-        report("  1. try the accessibility range write — unknowable without writing;")
-        report("     terminals report success here and change nothing")
+    /// Asks the app for its own text with Select All and Copy.
+    ///
+    /// Opt-in because it borrows the clipboard and leaves a selection on screen.
+    /// The question it answers is whether a surface that publishes nothing to
+    /// accessibility — Ghostty, iTerm — will still hand over its contents
+    /// through the one path every Mac app implements. ⌘-keys are handled by the
+    /// application, never forwarded to a pty, so this cannot disturb a shell.
+    private static func reportSelectAllCopy() {
+        let pasteboard = NSPasteboard.general
+        let saved = pasteboard.string(forType: .string)
+        let before = pasteboard.changeCount
 
-        if let selected, !selected.isEmpty {
-            report("  2. fall back to pasting over the live selection — available")
-        } else {
-            report("  2. fall back to pasting over the live selection — refused,")
-            report("     no selection to confirm, so it will not paste blind")
+        report("")
+        report("via Select All + Copy:")
+        postCommandKey(0x00)   // A
+        Thread.sleep(forTimeInterval: 0.4)
+        postCommandKey(0x08)   // C
+
+        let deadline = Date().addingTimeInterval(1.5)
+        while Date() < deadline, pasteboard.changeCount == before {
+            Thread.sleep(forTimeInterval: 0.05)
         }
 
-        guard let value else {
-            report("  3. retyping the input line — unavailable, value unreadable")
+        if pasteboard.changeCount == before {
+            report("  nothing — the clipboard never changed")
+        } else if let text = pasteboard.string(forType: .string) {
+            let rows = text.components(separatedBy: "\n")
+            report("  \(text.count) chars, \(rows.count) row(s)")
+            let borders = rows.filter { SelectionReader.isBorder($0) }.count
+            report("  \(borders) row(s) look like a rule the TUI drew")
+            if let box = SelectionReader.joinedInputBox(in: text) {
+                report("  input box: \(box.count) chars — \"\(preview(box))\"")
+            } else {
+                report("  input box: none found between the last two rules")
+            }
+            report("  tail: \"\(preview(text))\"")
+        }
+
+        if let saved {
+            pasteboard.clearContents()
+            pasteboard.setString(saved, forType: .string)
+        }
+    }
+
+    private static func postCommandKey(_ key: CGKeyCode) {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
+        else { return }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+    }
+
+    /// Mirrors the branch order in `Surface.replace`. Held in step with it by
+    /// hand — when this and the write path disagree, this command is the one
+    /// lying, and the harness built on top of it is measuring nothing.
+    private static func describeBranches() {
+        guard let surface = Surface.read() else {
+            report("  nothing — the surface is unreadable, so no branch is reachable")
             return
         }
-        if (try? ConfigStore.load())?.transcription.rewriteLine != true {
-            report("  3. retyping the input line — refused, rewrite_line is off")
-        } else if value.contains("\n") {
-            report("  3. retyping the input line — refused, value is \(value.count) chars")
-            report("     of screen, not one field; a terminal never passes this gate")
-        } else if value.count > 2000 {
-            report("  3. retyping the input line — refused, \(value.count) chars is too long")
-        } else {
-            report("  3. retyping the input line — available (Ctrl-A, Ctrl-K, paste)")
+
+        switch surface.kind {
+        case .editable:
+            // Neither of these can be predicted from a read. Setting a range
+            // returns .success in surfaces that then ignore it, which is exactly
+            // the lie the write path exists to survive, so this says plainly
+            // what is unknowable rather than guessing at it.
+            report("  1. set the range, write the text into it — unknowable without")
+            report("     writing; a native field takes this one")
+            report("  2. set the range, confirm what came back, paste over it —")
+            report("     unknowable without writing; this is the branch that carries")
+            report("     the web, where selecting works and writing does not")
+            report("  3. otherwise refused, and the text goes to the clipboard")
+
+        case .screen:
+            if (try? ConfigStore.load())?.transcription.rewriteLine != true {
+                report("  retyping the input line — refused, rewrite_line is off")
+                return
+            }
+            report("  retyping the input line (Ctrl-A, Ctrl-K, paste) — the only")
+            report("  branch here; a terminal takes keystrokes and refuses the rest")
+            report("  content is \(surface.content.count) chars of input box, and")
+            report("  the clear is checked between presses rather than assumed")
         }
     }
 

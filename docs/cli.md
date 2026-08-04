@@ -131,13 +131,23 @@ $PF --transcribe /tmp/t.wav
 ```sh
 $PF --peek 3 [--find <sentinel>]
 $PF --edit-test <needle> <replacement> --find <sentinel> [--after 3] [--literal]
+$PF --span-test <start> <length> <replacement> --find <sentinel> [--after 3]
 ```
 
-`--peek` reads the selection the way the app would. `--edit-test` performs a
-real in-place edit in the frontmost window after a delay, which is why
-`--find <sentinel>` is **required**: without it this writes into whatever
-happens to be in front, which during a test run is as likely to be a real
-window as the scratch one you meant.
+`--peek` reads the surface the way the app would — the value, the selection, and
+then the same thing as `Surface` sees it: the content as one string and the span
+as offsets into it. That last block is the one that decides what a write does;
+when it and the raw accessibility lines above it disagree, the surface block is
+the one that matters.
+
+`--edit-test` performs a real in-place edit after a delay, finding the text by
+searching for it. `--span-test` does the same to a character range given
+outright, which is how the app itself now works — a caller that knows which
+characters it wants changed says so, and nothing searches for anything.
+
+`--find <sentinel>` is **required** for both: without it these write into
+whatever happens to be in front, which during a test run is as likely to be a
+real window as the scratch one you meant.
 
 ## Looking at the floating surfaces
 
@@ -170,6 +180,10 @@ scripts/check-routing.sh           scripts/check-wake.sh
 scripts/check-split.sh             scripts/check-grammar.sh
 scripts/check-dates.sh             scripts/check-inplace.sh
 scripts/check-default-config.sh    scripts/check-example-script.sh
+scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
+
+PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
+$PF --peek 3 --via-copy                        # what Select All + Copy hands back
 
 scripts/validate-prompt.py gemma4:e4b        # spelling + French correction sets
 scripts/validate-code-identifiers.py         # the identifier transform

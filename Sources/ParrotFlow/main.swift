@@ -170,7 +170,36 @@ if let index = arguments.firstIndex(of: "--peek") {
     let sentinel = arguments.firstIndex(of: "--find").flatMap { found in
         arguments.indices.contains(found + 1) ? arguments[found + 1] : nil
     }
-    exit(PeekCommand.run(seconds: seconds ?? 3, expecting: sentinel))
+    exit(PeekCommand.run(
+        seconds: seconds ?? 3, expecting: sentinel,
+        viaCopy: arguments.contains("--via-copy")
+    ))
+}
+
+if let index = arguments.firstIndex(of: "--span-test") {
+    guard arguments.indices.contains(index + 3),
+          let start = Int(arguments[index + 1]), let length = Int(arguments[index + 2]) else {
+        print("usage: ParrotFlow --span-test <start> <length> <replacement> --find <sentinel> [--after <seconds>]")
+        exit(2)
+    }
+    guard let found = arguments.firstIndex(of: "--find"),
+          arguments.indices.contains(found + 1) else {
+        print("✗ --find <sentinel> is required; it is what stops this writing into a real window")
+        exit(2)
+    }
+    let seconds = arguments.firstIndex(of: "--after").flatMap { after in
+        arguments.indices.contains(after + 1) ? Double(arguments[after + 1]) : nil
+    }
+    let dictated = arguments.firstIndex(of: "--dictated").flatMap { said in
+        arguments.indices.contains(said + 1) ? arguments[said + 1] : nil
+    }
+    exit(EditTestCommand.runSpan(
+        start: start, length: length,
+        replacement: arguments[index + 3],
+        sentinel: arguments[found + 1],
+        dictated: dictated,
+        seconds: seconds ?? 3
+    ))
 }
 
 if let index = arguments.firstIndex(of: "--edit-test") {

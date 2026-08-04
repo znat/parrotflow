@@ -126,9 +126,17 @@ before it, in the same breath — which is why there are two. See
 
 ## `transcription.rewrite_line`
 
-Last resort for fields Accessibility cannot write, terminals mostly: clear the
-input line with ⌃A ⌃K and retype it corrected. Destructive by nature, so it only
-fires when the line still holds what you dictated.
+Terminals only. Their accessibility value is a picture of a screen rather than
+an editable buffer, so the only thing that writes there is keystrokes: the input
+line is cleared with ⌃A ⌃K and retyped corrected. Destructive by nature, which is
+why it is a setting — but it is checked rather than hoped, and a clear that
+cannot be read back is a refusal rather than a guess.
+
+Everywhere else — a field, a browser, Slack, Outlook — edits a range directly and
+never touches this. It used to be the fallback for those too, which is how a
+correction ended up appended to the end of a line instead of replacing a word in
+it: ⌃K clears nothing in a composer, and the paste that followed landed on the
+end of what was still there.
 
 ## `transcription.replacements`
 
