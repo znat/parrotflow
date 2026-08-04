@@ -63,6 +63,22 @@ and a rule for "Das mean" matches nothing you will ever say. Since the target
 spelling is already known from the letters, the closest match to it in the last
 transcript is the word that needs fixing.
 
+## In Slack, in a browser, in Outlook
+
+These all work the same way and are not told apart: what a correction needs is
+the field's text and the characters to change, and a composer, a webview and a
+mail body all supply both.
+
+The one that took measuring is Chromium — Slack, the new Outlook, every browser
+tab. It accepts a request to move the selection, answers `.success`, and does it
+a moment later; asked what it has selected in a contenteditable it says `""`
+whatever is highlighted. Read too early, that is indistinguishable from an app
+that ignores the request, and it was misread that way for a while. Waiting for
+the answer is the whole of the fix.
+
+`scripts/check-span.sh` scores this against a local fixture page that behaves
+like a composer, and against Slack or Outlook directly if you focus one.
+
 ## What it needs
 
 Ollama running with the model in `llm.model` (`ollama pull gemma4:e4b`), and

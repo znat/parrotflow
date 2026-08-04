@@ -1020,21 +1020,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         previewPanel.show(prompt: prompt.name, before: before, after: cleaned)
     }
 
-    /// Puts a transformed phrase where the phrase it replaces is sitting.
-    ///
-    /// The accessibility write first, because it disturbs nothing. A terminal
-    /// refuses it — its value is a picture of a screen — and there the only
-    /// thing that writes is keystrokes, which stays behind `rewrite_line`
-    /// because it clears the line to do it.
-    /// Three outcomes, not two.
-    ///
-    /// "It did not happen" and "it was tried and rolled back" call for opposite
-    /// things afterwards. Treating them alike is what produced
-    /// "Fifty cents.50 cents.": the retype had already put text on the line and
-    /// taken it off again, and the caller, seeing only false, pasted on top of
-    /// the result.
-    private enum InPlace { case replaced, notAttempted, failed }
-
     /// One edit to make to text that is already in the field.
     struct Edit {
         let find: String
@@ -1050,86 +1035,133 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let fuzzy: Bool
     }
 
-    /// Makes edits to text where it already sits, by whichever means the app
-    /// in front will accept.
+    /// Three outcomes, not two.
     ///
-    /// The one ladder for both callers. Corrections and transforms want the
-    /// same thing — the field says X, make it say Y — and having each keep its
-    /// own version of this meant a fix for one silently left the other behind.
+    /// "It did not happen" and "it was tried and rolled back" call for opposite
+    /// things afterwards. Treating them alike is what produced
+    /// "Fifty cents.50 cents.": the retype had already put text on the line and
+    /// taken it off again, and the caller, seeing only false, pasted on top of
+    /// the result.
+    private enum InPlace { case replaced, notAttempted, failed }
+
+    /// Turns edits into a span and hands it to `Surface`.
     ///
-    /// The accessibility write first, per edit, because it disturbs nothing. A
-    /// terminal refuses it, and there the only thing that writes is keystrokes,
-    /// which stays behind `rewrite_line` because it clears the line to do it —
-    /// and which is done once for all the edits rather than once each, since
-    /// every retype is a chance to lose the line.
+    /// The two halves of an in-place edit are *where* and *how*, and only the
+    /// first one belongs here. Locating is this app's problem — a rule learned
+    /// by ear names a word that may be spelled differently on screen, and
+    /// resolving that needs the fuzzy match below. Writing is the surface's
+    /// problem, and it is the same problem in every app, which is why there is
+    /// one ladder rather than one per caller.
+    ///
+    /// All the edits are applied to the content first and the result handed over
+    /// as a single substitution. Done one at a time, the second edit would be
+    /// located against a string that the first had already changed — and in a
+    /// terminal each one costs a whole line retype, which is a fresh chance to
+    /// lose the line.
     private func applyInPlace(
         _ edits: [Edit], dictated: String?, in element: AXUIElement
     ) -> InPlace {
         guard !edits.isEmpty else { return .notAttempted }
+        guard let surface = Surface.read(element: element, dictated: dictated) else {
+            return .notAttempted
+        }
 
-        var written = 0
+        var updated = surface.content
+        var applied = 0
         for edit in edits {
-            if SelectionReader.replaceLastOccurrence(
-                of: edit.find, with: edit.replace, in: element
+            let before = updated
+            if edit.fuzzy {
+                // A rule, so every occurrence on the line: a name you have just
+                // taught the app to spell is misspelled everywhere it appears,
+                // not only the last time you said it. `applying` also falls back
+                // to the closest word, because the word on screen and the word
+                // in the rule are two hearings of one name.
+                updated = SelectionReader.applying(
+                    [(heard: edit.find, corrected: edit.replace)], to: updated
+                )
+            } else if let found = updated.range(
+                of: edit.find, options: [.caseInsensitive, .backwards]
             ) {
-                written += 1
-                continue
+                // A phrase, so the last occurrence only: this is the sentence
+                // dictated a moment ago being replaced by its rewritten form,
+                // and there is exactly one of it.
+                updated = updated.replacingCharacters(in: found, with: edit.replace)
             }
-            guard edit.fuzzy,
-                  let text = SelectionReader.visibleText(of: element),
-                  let nearest = VoiceCommand.closestWord(to: edit.replace, in: text),
-                  nearest.lowercased() != edit.replace.lowercased(),
-                  SelectionReader.replaceLastOccurrence(
-                      of: nearest, with: edit.replace, in: element
-                  )
-            else { continue }
-            written += 1
+            if updated != before { applied += 1 }
         }
-        if written == edits.count {
-            Log.write("rewrote \(written) occurrence(s) in the focused field")
+
+        guard applied > 0, let change = Surface.minimalSpan(from: surface.content, to: updated) else {
+            Log.write("in-place: nothing on the line matches \(edits.map(\.find))")
+            return .notAttempted
+        }
+        if applied < edits.count {
+            Log.write("in-place: \(applied) of \(edits.count) edits found their text")
+        }
+
+        switch surface.replace(change.range, with: change.replacement) {
+        case .replaced:
             return .replaced
+        case .refused(let why):
+            Log.write("in-place: refused — \(why)")
+            return .failed
+        }
+    }
+
+    /// Substitutes the text that was selected when the hotkey went down.
+    ///
+    /// The recorded range is a hint, not an address. It was read before the
+    /// panel opened and before focus moved, and a field that has scrolled or
+    /// been typed into since will happily hand back a range that now covers
+    /// something else — so it is used only when the characters sitting there are
+    /// still the ones that were selected. Otherwise the text is found again by
+    /// its content, which is the thing that was actually pointed at.
+    private func replaceSelected(
+        with text: String, in selection: SelectionReader.Selection
+    ) -> InPlace {
+        // Re-query rather than reuse: apps generally only honour writes to
+        // whatever currently has focus, and by now our own panel has held it.
+        let element = SelectionReader.refocusedElement(in: selection.owner)
+            ?? selection.element.flatMap { SelectionReader.isOurs($0) ? nil : $0 }
+        guard let element,
+              let surface = Surface.read(
+                  element: element, app: selection.owner, dictated: selection.text
+              )
+        else { return .notAttempted }
+
+        var target: Range<String.Index>?
+        if let recorded = selection.range,
+           recorded.location >= 0, recorded.length > 0,
+           let range = Range(
+               NSRange(location: recorded.location, length: recorded.length),
+               in: surface.content
+           ), surface.content[range] == selection.text {
+            target = range
+        } else if let found = surface.range(of: selection.text) {
+            Log.write("transform: the recorded range moved; found the selection by its text")
+            target = found
         }
 
-        // Some but not all. Reporting success here said the whole batch had
-        // landed while one of the corrections had quietly not been made, and
-        // the clipboard fallback the caller keeps for exactly that never ran —
-        // so a rule you confirmed was neither in the field nor anywhere you
-        // could reach it. Two rules in one breath is what made this reachable;
-        // with one edit there was no partial state to be wrong about.
-        if written > 0 {
-            Log.write("rewrite: \(written) of \(edits.count) landed in the field;"
-                + " retyping the line so the rest do too")
+        guard let target else {
+            Log.write("transform: \"\(selection.text.prefix(40))\" is no longer in the field")
+            return .notAttempted
         }
+        switch surface.replace(target, with: text) {
+        case .replaced:
+            return .replaced
+        case .refused(let why):
+            Log.write("transform: refused — \(why)")
+            return .failed
+        }
+    }
 
-        guard config.transcription.rewriteLine else {
-            Log.write("rewrite: rewrite_line is off; not retyping")
-            // A partial write is not "nothing happened". The caller treats both
-            // the same today, but saying `failed` keeps the log and the return
-            // value telling the same story.
-            return written > 0 ? .failed : .notAttempted
-        }
-        Log.write("rewrite: retyping the line via keystrokes")
-        let retyped = SelectionReader.rewriteCurrentLine(dictated: dictated, in: element) { line in
-            // Fuzzy edits go through the rule machinery, which matches on word
-            // boundaries and falls back to the closest spelling. Literal ones
-            // cannot: a phrase may end in a full stop, and \b will not match
-            // past it, so "Sixty Euros." found nothing and was pasted alongside.
-            var output = SelectionReader.applying(
-                edits.filter(\.fuzzy).map { (heard: $0.find, corrected: $0.replace) },
-                to: line
-            )
-            for edit in edits where !edit.fuzzy {
-                guard let found = output.range(
-                    of: edit.find, options: [.caseInsensitive, .backwards]
-                ) else { continue }
-                output = output.replacingCharacters(in: found, with: edit.replace)
-            }
-            return output
-        }
-        // The retype found its line and acted on it either way; if it came back
-        // false it has already put the line back, and the text belongs on the
-        // clipboard rather than on top of what it restored.
-        return retyped ? .replaced : .failed
+    /// The toast after a substitution, and the phrase that takes it back.
+    ///
+    /// Said every time rather than only when something looks wrong, because the
+    /// moment you can tell it went wrong is the moment you are looking at the
+    /// text and not at the menu bar. It has to already be on screen.
+    private func applied(_ what: String) {
+        if config.feedback.sound { NSSound(named: "Glass")?.play() }
+        flash("\(what) applied", tone: .done)
     }
 
     private func applyTransform(
@@ -1142,21 +1174,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Without one there is nowhere to aim, so it goes in at the cursor the
         // same way a dictation would.
         if let selection {
-            switch SelectionReader.replaceSelection(with: text, in: selection) {
-            case .written, .pasted:
-                if config.feedback.sound { NSSound(named: "Glass")?.play() }
-                flash("\(prompt.name) applied", tone: .done)
-            case .clipboardOnly:
+            switch replaceSelected(with: text, in: selection) {
+            case .replaced:
+                applied(prompt.name)
+            case .failed, .notAttempted:
                 Log.write("transform: this app would not accept the rewrite; left on the clipboard")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
                 flash("\(prompt.name) copied — this app won't let me edit it", tone: .caution)
             }
         } else {
             // Hand focus back first. Showing the preview called NSApp.activate
             // to put the panel in front, so by the time Apply is pressed we are
             // the frontmost app and Cmd-V lands in our own window — which is
-            // how "digits applied" appeared over a TUI that never changed. The
-            // other branch never had this problem because replaceSelection
-            // activates the owner itself.
+            // how "digits applied" appeared over a TUI that never changed.
             if let owner = focusAtPress?.owner, !owner.isActive {
                 owner.activate()
                 // Let it come forward before the keystroke is posted.
@@ -1173,10 +1204,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                let element = SelectionReader.focusedElement(),
                !SelectionReader.isOurs(element) {
                 let edit = Edit(find: original, replace: text, fuzzy: false)
-                switch applyInPlace([edit], dictated: original, in: element) {
+                switch applyInPlace(
+                    [edit], dictated: original, in: element
+                ) {
                 case .replaced:
-                    if config.feedback.sound { NSSound(named: "Glass")?.play() }
-                    flash("\(prompt.name) applied", tone: .done)
+                    applied(prompt.name)
                     lastTranscript = text
                     return
                 case .failed:
@@ -1267,9 +1299,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Put the corrected phrase back where it came from, whether or not any
         // rules were saved — the user may just be fixing this one instance.
         let trimmed = correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        var outcome: SelectionReader.ReplaceOutcome?
+        var landedOnClipboard = false
         if let selection = pendingSelection, !trimmed.isEmpty {
-            outcome = SelectionReader.replaceSelection(with: correctedText, in: selection)
+            switch replaceSelected(with: correctedText, in: selection) {
+            case .replaced:
+                break
+            case .failed, .notAttempted:
+                Log.write("field would not accept the correction; it is on the clipboard")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(correctedText, forType: .string)
+                landedOnClipboard = true
+            }
         } else if !rules.isEmpty, let focus = focusAtPress,
                   let element = SelectionReader.refocusedElement(in: focus.owner)
                       ?? focus.element.flatMap({ SelectionReader.isOurs($0) ? nil : $0 }) {
@@ -1284,12 +1324,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 in: element
             ) {
             case .replaced:
-                outcome = .written
+                break
             case .notAttempted, .failed:
                 Log.write("field would not accept the rewrite; correction is on the clipboard")
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(rules[0].corrected, forType: .string)
-                outcome = .clipboardOnly
+                landedOnClipboard = true
             }
         } else if !trimmed.isEmpty {
             NSPasteboard.general.clearContents()
@@ -1299,7 +1339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focusAtPress = nil
 
         if config.feedback.sound { NSSound(named: "Glass")?.play() }
-        if outcome == .clipboardOnly {
+        if landedOnClipboard {
             flash("Rule saved · \"\(rules.first?.corrected ?? "")\" copied — this app won't let me edit it", tone: .caution)
             return
         }
@@ -1619,8 +1659,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// long as someone takes to think about a spelling — and a dictation
     /// started somewhere else in the meantime moves that field. Reading it late
     /// would hand focus to the newer app and paste this sentence into it.
+    ///
+    /// `proposed` is named apart from the panel's own `rules` on purpose. Both
+    /// used to be called `rules`, and the closure's parameter shadowed this one
+    /// — so the test for "was the panel opened on the sentence rather than on
+    /// proposed rules" compared a non-optional array against nil, was always
+    /// false, and silently threw away text the speaker had typed into the panel
+    /// by hand. The two are genuinely different questions: what the model
+    /// proposed on the way in, and what was confirmed on the way out.
     private func showInlineCorrection(
-        over text: String, rules: [(heard: String, corrected: String)]?,
+        over text: String, rules proposed: [(heard: String, corrected: String)]?,
         destination: Destination, focus: SelectionReader.Selection?
     ) {
         pendingSelection = nil
@@ -1672,7 +1720,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The panel edits words, not the sentence, when it was opened on
             // proposed rules — so its text is only the target when it was
             // opened on the sentence itself.
-            let final = rules == nil && !correctedText.trimmingCharacters(
+            let final = proposed == nil && !correctedText.trimmingCharacters(
                 in: .whitespacesAndNewlines
             ).isEmpty ? correctedText : corrected
             self.lastTranscript = final
@@ -1687,8 +1735,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.insertDictation(text, to: destination)
         }
 
-        if let rules {
-            correctionPanel.show(rules: rules)
+        if let proposed {
+            correctionPanel.show(rules: proposed)
         } else {
             correctionPanel.show(selection: text)
         }

@@ -15,6 +15,7 @@
 | Config | `Config.swift` | Yams + a `DispatchSource` file watcher for live reload |
 | Permissions | `Permissions.swift` | `AVCaptureDevice` for mic, `AXIsProcessTrusted` for Accessibility |
 | Text insertion | `TextInserter.swift`, `SelectionReader.swift` | Paste-via-clipboard, then the pasteboard is put back |
+| Editing in place | `Surface.swift` | The field as one string plus one span, and the ladder that substitutes a range of it — [below](#editing-text-that-is-already-there) |
 | Where the words go | `Destination.swift` | Asks the focused element whether it takes text, at the press — decides the pill's icon and whether the transcript is typed or copied |
 | Menu bar & wiring | `AppDelegate.swift` | |
 | Logging | `Log.swift` | `~/Library/Logs/ParrotFlow.log` — a menu bar app has no console |
@@ -34,6 +35,95 @@ prompt — a steep price when a bare modifier types nothing on its own, so there
 is nothing to swallow. Polling `CGEventSource.flagsState` every 25 ms needs no
 permission at all. The trade is ~25 ms of latency and no way to stop the key
 also reaching the frontmost app.
+
+## Editing text that is already there
+
+Dictation writes at the caret. Everything else — a correction, a transform over
+a selection, a rewrite of the sentence you just said — has to change text that
+is already on screen without disturbing the rest of it. That is `Surface`.
+
+It answers two questions and nothing else. **What is in the field**, as one
+string, and **what is selected**, as offsets into that same string. A caller
+that knows which characters it wants changed says so; nothing searches for
+anything.
+
+    let surface = Surface.read()
+    surface.content        // the whole editable text
+    surface.span           // the selection, as offsets into it
+    surface.replace(range, with: "Jerry")
+
+Two kinds, because only one distinction survives contact with real apps:
+
+| Kind | What `content` is | How it is written |
+| --- | --- | --- |
+| `editable` | the accessibility value itself | a range write, else a selection plus a paste, else the caret is walked to the span |
+| `screen` | the input box, read back out of a terminal's picture of itself | the line is cleared and retyped whole |
+
+A native field, a browser, an Electron composer and a webview are all
+`editable`. They are not told apart in advance, because the thing that
+distinguishes them cannot be read — it can only be discovered by writing and
+looking. A terminal is named rather than examined, the same way `Destination`
+names it.
+
+### The three rules that keep this safe
+
+**Nothing is trusted to have worked because it returned success.** Setting an
+accessibility attribute reports `.success` in surfaces that ignore it entirely.
+Every branch reads the value back and looks for the replacement *with the
+characters that should surround it* — an append produces the replacement but
+never the neighbourhood, which is the difference between "Jerry is on vacation"
+and "Jery is on vacationJerry is on vacation".
+
+**Nothing is written blind.** The old retype pressed ⌃A ⌃K and typed whatever
+happened next, which in anything that is not a terminal cleared nothing and
+appended everything. A clear that cannot be verified is now a refusal.
+
+**A request is not an action.** Selecting a range, pasting, and killing a line
+are all things you ask an app to do and it does when it is ready. Reading back
+immediately measures the delay, not the write. Every check here polls — and the
+one place that did not is why the caret-walking branch below exists at all.
+
+### What each surface actually does
+
+Measured with `--peek` and `--span-test`, not assumed:
+
+- **A native field** takes the range write, the first and cheapest branch.
+- **Chromium** — so Slack, the new Outlook, and every browser — accepts
+  `AXSelectedTextRange`, returns `.success`, and applies it *a beat later*. Read
+  immediately it reports the caret exactly where it was, which is
+  indistinguishable from refusing. Polling for half a second is the whole fix.
+  It reports `""` for the selected text of a contenteditable however the
+  selection was made, so the range it echoes back is the evidence, not the text.
+- **A terminal** — Terminal.app, Ghostty and iTerm all behave the same way —
+  refuses everything but keystrokes, so the line is cleared and retyped, and the
+  clear is checked between presses because ⌃K kills to the end of a *visual* row
+  and a wrapped line takes several. The full case set scores 8/8 in each of the
+  three.
+- **Ghostty hands back the window for a moment after it comes forward**, and its
+  text view only once focus has landed. Peeked in that gap it reports no value
+  at all, which reads exactly like a terminal that publishes nothing — it was
+  misread that way here, and written up as an app that could not be edited
+  before the harness was pointed at it and scored 6/8 rather than 0. The two
+  failures were empty reads, not bad writes. Retrying the read for 0.6 s makes
+  it 8/8. Nothing about Ghostty needed working around; the read simply had to
+  wait, which is the same lesson as every poll in this file.
+
+The caret-walking branch is the last resort for an `editable` that will not move
+its selection on request: the caret is stepped to the span with arrow keys and
+the span selected with ⇧←, checking the app's own reported range at every step.
+Arrow keys change no text, so everything up to the paste is free to fail.
+
+### When it goes wrong anyway
+
+A paste that lands somewhere unintended is undone with ⌘Z — the app's own edit
+history, which is the one mechanism guaranteed to work in a surface that has
+just proved it does not honour accessibility writes. Only when the value
+actually changed: if the paste landed nowhere, ⌘Z would undo whatever the person
+did before we arrived.
+
+And every substitution leaves an undo record, which is what `"hey parrot, undo"`
+puts back. It compares what is on screen against what it wrote and refuses if
+the text has moved on, because an undo fired against edited text is not an undo.
 
 ## Where the time goes
 

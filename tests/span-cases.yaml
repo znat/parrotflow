@@ -1,0 +1,85 @@
+# Cases for scripts/check-span.sh — substituting a character range in place.
+#
+# The question here is narrower than tests/inplace-cases.yaml asks. That one
+# starts from "the field says X, make it say Y" and lets the app find the words.
+# This starts from a range that is already known — the caller says *these
+# characters*, and the only thing under test is whether exactly those change.
+#
+#   seed         what is in the composer when the substitution fires
+#   target       the substring whose offsets become the span; found once, exactly
+#   replacement  what those characters become
+#   expect       the whole content afterwards, or `unchanged` where refusing is right
+#
+# Refusing is a passing result wherever the write cannot be verified. A
+# substitution that does not happen costs a trip to the clipboard; one that
+# happens to the wrong characters costs the text.
+cases:
+  # The bug that started this. In a surface where the range write is ignored,
+  # the old code cleared nothing and pasted, and the result contained the
+  # corrected text — so the check passed while the line read both versions.
+  - name: one word, mid-sentence
+    id: PFCHK-301
+    seed: PFCHK-301 Jery is on vacation
+    target: Jery
+    replacement: Jerry
+    expect: PFCHK-301 Jerry is on vacation
+
+  # The same word twice, and only the named range moves. A find-and-replace
+  # cannot express this and would have to pick one by rule; a span says which.
+  - name: the second of two identical words
+    id: PFCHK-302
+    seed: PFCHK-302 Jery said Jery is away
+    target: Jery is
+    replacement: Jerry is
+    expect: PFCHK-302 Jery said Jerry is away
+
+  # The user's case: several dictated sentences in one box, and the word to fix
+  # is in the first. Retyping from the last transcript would delete the rest.
+  - name: a word in the earlier of two sentences
+    id: PFCHK-303
+    seed: PFCHK-303 Jery is on vacation. I will ask him on Monday.
+    target: Jery
+    replacement: Jerry
+    expect: PFCHK-303 Jerry is on vacation. I will ask him on Monday.
+
+  # Punctuation immediately after the span. A word-boundary rule cannot match
+  # past a full stop, which is how "Sixty Euros." became "Sixty Euros.60 Euros."
+  - name: a phrase ending in punctuation
+    id: PFCHK-304
+    seed: PFCHK-304 It costs Sixty Euros.
+    target: Sixty Euros.
+    replacement: 60 Euros.
+    expect: PFCHK-304 It costs 60 Euros.
+
+  # The span at the very end, where an append and a correct substitution produce
+  # strings that differ only in what was left behind.
+  - name: the last word in the box
+    id: PFCHK-305
+    seed: PFCHK-305 send it to Tasmin
+    target: Tasmin
+    replacement: Tasmeen
+    expect: PFCHK-305 send it to Tasmeen
+
+  # Growing and shrinking the content, so the offsets after the span move.
+  - name: a replacement longer than what it replaces
+    id: PFCHK-306
+    seed: PFCHK-306 the DB is down and the DB is slow
+    target: DB is down
+    replacement: database is completely down
+    expect: PFCHK-306 the database is completely down and the DB is slow
+
+  - name: a replacement shorter than what it replaces
+    id: PFCHK-307
+    seed: PFCHK-307 please review the pull request today
+    target: the pull request
+    replacement: it
+    expect: PFCHK-307 please review it today
+
+  # An apostrophe, which most composers turn curly on the way in. The check
+  # folds them, because a typographic substitution is not a failed write.
+  - name: a replacement carrying an apostrophe
+    id: PFCHK-308
+    seed: PFCHK-308 their going to the store
+    target: their
+    replacement: they're
+    expect: PFCHK-308 they're going to the store

@@ -85,3 +85,36 @@ cases:
     corrected: Georgy
     expect: PFCHK-206 I saw a movie with Georgy.So Georgy.
     log: retyped
+
+  # --- spans, addressed rather than searched for ---------------------------
+  #
+  # Everything above says "the line reads X, make it read Y" and lets the app
+  # find the words. These name a range instead, which is what the app now does
+  # internally and what a prompt handed the content plus a selection will
+  # produce. `span: true` computes the offsets from `heard` inside `line`, so
+  # the case file stays readable and the numbers stay honest.
+
+  # The worry this whole layer exists for: several dictated sentences in one
+  # box, and the word to fix is in the first. Retyping from the last transcript
+  # would delete the rest of the line.
+  - name: a span in the earlier of two sentences
+    id: PFCHK-210
+    dictated: PFCHK-210 Jery is on vacation. I will ask him Monday.
+    line: PFCHK-210 Jery is on vacation. I will ask him Monday.
+    heard: Jery
+    corrected: Jerry
+    expect: PFCHK-210 Jerry is on vacation. I will ask him Monday.
+    span: true
+    log: retyped
+
+  # Only the named occurrence moves. A find-and-replace cannot express this;
+  # the point of a span is that it says which one.
+  - name: a span over the second of two identical words
+    id: PFCHK-211
+    dictated: PFCHK-211 Jery said Jery is away
+    line: PFCHK-211 Jery said Jery is away
+    heard: Jery is
+    corrected: Jerry is
+    expect: PFCHK-211 Jery said Jerry is away
+    span: true
+    log: retyped
