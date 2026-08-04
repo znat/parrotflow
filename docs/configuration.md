@@ -57,8 +57,10 @@ feedback:
 | The example transform | `~/.config/parrotflow/transforms/code_identifiers/`, written on first launch and never overwritten |
 
 The menu bar item shows the current state and offers *Correct a Word…*, *Open
-Recordings Folder* — the wavs and `trace.jsonl` — *Settings…*, which opens
-`config.yaml` in your editor, and *Permissions…*.
+Recordings Folder* — the wavs and `trace.jsonl` — *Settings*, which holds *Edit
+Config…* (`config.yaml`) and *View Transforms* (the `transforms/` folder), and
+*Permissions…*. Both open in VS Code if it is installed, and in whatever the
+system would otherwise use if it is not.
 
 ### A folder per transform
 

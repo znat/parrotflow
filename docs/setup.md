@@ -388,7 +388,8 @@ nobody — tell them that rather than leaving them to find out.
 > the result first.
 >
 > Settings are in `~/.config/parrotflow/config.yaml` and reload on save. The
-> menu bar icon has *Correct a Word…*, *Settings…* and *Permissions…*.
+> menu bar icon has *Correct a Word…*, *Settings* — *Edit Config…* and *View
+> Transforms* — and *Permissions…*.
 
 ---
 

@@ -1253,11 +1253,16 @@ enum ConfigStore {
         directory.appendingPathComponent("config.yaml")
     }
 
+    /// Where every transform's folder sits — `TransformFolder` resolves the
+    /// same path per transform, from the directory of whichever config
+    /// declared it.
+    static var transformsDirectory: URL {
+        directory.appendingPathComponent("transforms", isDirectory: true)
+    }
+
     /// The folder the `code_identifiers` transform owns.
     static var codeIdentifiersFolder: URL {
-        directory
-            .appendingPathComponent("transforms", isDirectory: true)
-            .appendingPathComponent("code_identifiers", isDirectory: true)
+        transformsDirectory.appendingPathComponent("code_identifiers", isDirectory: true)
     }
 
     /// Where the `code_identifiers` transform's program lives — in its folder,
