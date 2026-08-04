@@ -70,21 +70,7 @@ enum CommandRunner {
         // turns out to name a real file next to the config.
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", shellCommand(for: command, in: folder)]
-        // Where the program actually is — not where the folder would prefer it
-        // to be. A script in the folder opens `roster.json` as a bare relative
-        // path, which is the whole point of the folder; a script still beside
-        // `config.yaml` keeps the neighbours it has always had.
-        //
-        // The two came apart on exactly the config this change promises not to
-        // disturb. Seeding writes `transforms/<name>/cases.yaml` even when the
-        // script stays at the old location, so the folder exists while the
-        // program does not live in it — and a working directory chosen from the
-        // folder alone would have pointed an upgraded script at a directory
-        // that has never held its data. Its `open("roster.json")` fails, the
-        // command exits non-zero, and a non-zero command keeps the transcript:
-        // the stage stops doing anything and says nothing about why.
-        process.currentDirectoryURL = parts(of: command, in: folder).resolved
-            .map { $0.url.deletingLastPathComponent() } ?? folder.workingDirectory
+        process.currentDirectoryURL = workingDirectory(for: command, in: folder)
 
         let input = Pipe()
         let output = Pipe()
@@ -156,6 +142,46 @@ enum CommandRunner {
         var result = String(data: collected.value, encoding: .utf8) ?? ""
         if result.hasSuffix("\n") { result.removeLast() }
         return result.isEmpty ? nil : result
+    }
+
+    /// Where a command runs: **the directory of the first file it names.**
+    ///
+    /// One rule, because the two obvious ones are each wrong half the time. The
+    /// folder alone breaks an upgrade — seeding writes
+    /// `transforms/<name>/cases.yaml` even when the script stays beside
+    /// `config.yaml`, so the folder exists while nothing in the command lives in
+    /// it, and a script that has read `roster.json` from beside `config.yaml`
+    /// for months is started somewhere that never held one. The config
+    /// directory alone breaks the folder, which is the whole point of it.
+    ///
+    /// The arguments are searched too, and that is not thoroughness for its own
+    /// sake. `python3 legacy.py` is how a config that predates folders names a
+    /// script: the program is a bare interpreter the shell finds on PATH, so
+    /// nothing about the program says where the transform lives, and only
+    /// `legacy.py` does. Getting it wrong there is the same silent failure —
+    /// the interpreter cannot find the file, the command exits non-zero, and a
+    /// non-zero command keeps the transcript.
+    ///
+    /// Only the working directory is decided here. `parts` still reports the
+    /// *program*, because that is what `complaint` checks the execute bit of,
+    /// and `python3 legacy.py` needs no execute bit on `legacy.py`.
+    ///
+    /// Nothing names a file — a bare `sed`, `tr '[:lower:]' '[:upper:]'` — and
+    /// the folder is right: it is where a transform's own files are, and a
+    /// one-liner that reads none does not care either way.
+    static func workingDirectory(for command: String, in folder: TransformFolder) -> URL {
+        let (_, arguments, resolved) = parts(of: command, in: folder)
+        if let resolved { return resolved.url.deletingLastPathComponent() }
+
+        for token in arguments.split(separator: " ") {
+            // A flag is not a path, and quoting is the shell's business — by
+            // the time this sees `'[:lower:]'` the quotes are still on it.
+            let bare = token.trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
+            guard !bare.isEmpty, !bare.hasPrefix("-"),
+                  let found = folder.resolve(bare) else { continue }
+            return found.url.deletingLastPathComponent()
+        }
+        return folder.workingDirectory
     }
 
     /// SIGTERM, then SIGKILL if that was not enough.

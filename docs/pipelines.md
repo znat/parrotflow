@@ -172,8 +172,14 @@ you put it.
 
 A relative path is looked for in the transform's own folder first: `command:
 code_identifiers.py` on a transform named `code_identifiers` is
-`transforms/code_identifiers/code_identifiers.py`. That folder is also the
-working directory, so the script can read its neighbours by bare relative name.
+`transforms/code_identifiers/code_identifiers.py`.
+
+**A command runs in the directory of the first file it names**, so a script
+reads its neighbours by bare relative name. That is the folder for a transform
+that lives in one, and the config directory for a script that has not moved —
+including when the interpreter is spelled out, `python3 legacy.py`, where the
+program is on PATH and only the argument says where the transform is. A command
+that names no file at all — `sed`, `tr` — runs in the folder.
 Beside `config.yaml` is tried second, which is where a script written before
 folders existed still sits; it runs, and `--check-config` says where to move it.
 Writing the path out in full — `command:

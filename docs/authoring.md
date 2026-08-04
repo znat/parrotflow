@@ -165,10 +165,11 @@ transforms:
 ```
 
 - A relative path is looked for in **the transform's own folder** first, and
-  beside `config.yaml` second. The folder is the working directory, so
-  `shout.py` opens `volumes.json` by that name and the folder is a thing you
-  can copy whole. A bare name that is not a file in either place (`sed`, `tr`)
-  is looked up on PATH, so a one-liner with arguments works.
+  beside `config.yaml` second. A command runs in the directory of the first
+  file it names, so `shout.py` opens `volumes.json` by that name and the folder
+  is a thing you can copy whole — and a script that has not moved keeps reading
+  the neighbours it always had. A bare name that is not a file in either place
+  (`sed`, `tr`) is looked up on PATH, so a one-liner with arguments works.
 - The script is run directly, so its **shebang** picks the interpreter, and it
   needs the **execute bit** — a script that is there but not `chmod +x` is the
   likeliest thing to be wrong with a `command:` transform. Both the log and

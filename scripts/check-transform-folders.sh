@@ -154,6 +154,44 @@ check "a script at the old location still finds the file beside it" \
   "$("$BIN" --pipeline "$WORK/neighbourly.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
   "KEEP IT DOWN?"
 
+# 4c — the same, wrapped in an interpreter.
+#
+# `python3 legacy.py` names no file as its *program* — python3 comes off PATH —
+# so nothing about the program says where the transform lives, and only the
+# argument does. A working directory taken from the folder here means the
+# interpreter cannot find the script at all, which fails the same silent way.
+mkdir -p "$WORK/transforms/wrapped"
+printf 'cases go here\n' > "$WORK/transforms/wrapped/cases.yaml"
+cat > "$WORK/wrapped.py" <<'PY'
+#!/usr/bin/env python3
+import pathlib, sys
+print(sys.stdin.read().strip().upper() + pathlib.Path("suffix.txt").read_text().strip())
+PY
+fixture wrapped.yaml '  - name: wrapped
+    description: an interpreter and a script that predates folders
+    command: python3 wrapped.py' wrapped
+
+check "an interpreter-wrapped script at the old location still runs" \
+  "$("$BIN" --pipeline "$WORK/wrapped.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
+  "KEEP IT DOWN?"
+
+# And the same shape in the folder, which must not be broken by fixing the one
+# above: the argument resolves in the folder, so that is where it runs.
+mkdir -p "$WORK/transforms/wrapped_new"
+cat > "$WORK/transforms/wrapped_new/wrapped_new.py" <<'PY'
+#!/usr/bin/env python3
+import pathlib, sys
+print(sys.stdin.read().strip().upper() + pathlib.Path("suffix.txt").read_text().strip())
+PY
+printf '!\n' > "$WORK/transforms/wrapped_new/suffix.txt"
+fixture wrapped-new.yaml '  - name: wrapped_new
+    description: an interpreter and a script that lives in its folder
+    command: python3 wrapped_new.py' wrapped_new
+
+check "an interpreter-wrapped script in the folder reads its own neighbours" \
+  "$("$BIN" --pipeline "$WORK/wrapped-new.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
+  "KEEP IT DOWN!"
+
 # 5 — a folder file wins over one of the same name at the old location. This is
 # the case `--check-config` prints resolved paths for: with a copy in both
 # places, nothing else can tell you which one ran.
