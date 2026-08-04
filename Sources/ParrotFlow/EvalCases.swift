@@ -66,18 +66,29 @@ struct EvalCases {
         var mustNotChange: Bool { expect == input }
     }
 
-    /// What is wrong with the file, in words, or nothing.
-    func problems() -> [String] {
+    /// What is wrong with the cases that are about to run, in words.
+    ///
+    /// Asked about a selection rather than the whole file, because `--probe` is
+    /// a subset and a case nobody is scoring cannot make a scored one wrong. A
+    /// bucket you have finished should not be unscoreable because the bucket
+    /// you are still writing has no gold in it yet — and a run without
+    /// `--probe` still asks about everything, so the half-written state is
+    /// never invisible for long.
+    ///
+    /// The two whole-file faults stay whole-file: a set with no cases at all,
+    /// and an `intermediate:` with no `resolve:`, which is the thing that
+    /// checks a gold against itself and cannot be selected around.
+    func problems(for cases: [Case]) -> [String] {
         var found: [String] = []
-        if cases.isEmpty { found.append("no cases") }
+        if self.cases.isEmpty { found.append("no cases") }
+        if let intermediate, intermediate.resolve.isEmpty {
+            found.append("`intermediate:` needs a `resolve:` — it is what checks"
+                + " the gold against itself")
+        }
         for (index, one) in cases.enumerated() where one.input.isEmpty {
             found.append("case \(index + 1) has no `input`")
         }
         if let intermediate {
-            if intermediate.resolve.isEmpty {
-                found.append("`intermediate:` needs a `resolve:` — it is what checks"
-                    + " the gold against itself")
-            }
             for one in cases where one.fields[intermediate.field] == nil {
                 found.append("case \"\(one.name)\" has no `\(intermediate.field)`")
             }

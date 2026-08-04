@@ -366,6 +366,50 @@ check "and it still checks the gold of the cases it will score" \
   "$(grep -c 'this gold is asked for' "$WORK/transforms/goldrecorded/seen.txt")" \
   "3"
 
+# A bucket you have finished is scoreable while another is still being
+# written. Validation used to read the whole file before --probe narrowed it,
+# so one case with no gold in it yet made every probe unscoreable — including
+# the ones that were complete.
+mkdir -p "$WORK/transforms/halfwritten"
+cat > "$WORK/transforms/halfwritten/halfwritten.py" <<'RESOLVER'
+#!/usr/bin/env python3
+import sys
+print(sys.stdin.read().strip().replace("[[", "").replace("]]", ""))
+RESOLVER
+chmod +x "$WORK/transforms/halfwritten/halfwritten.py"
+cat >> "$WORK/config.yaml" <<'YAML'
+  - name: halfwritten
+    description: one finished bucket and one still being written
+    command: halfwritten.py
+YAML
+cat > "$WORK/transforms/halfwritten/cases.yaml" <<'YAML'
+intermediate:
+  field: marks
+  resolve: halfwritten.py
+cases:
+  - probe: finished
+    input: a done case
+    marks: a [[done]] case
+    expect: a done case
+  - probe: draft
+    input: a case whose gold is not written yet
+    expect: a case whose gold is not written yet
+YAML
+
+check "a finished probe scores while another is still being written" \
+  "$("$BIN" --eval halfwritten --probe finished 2>/dev/null \
+     | grep -E '^  overall' | sed 's/  */ /g;s/^ //')" \
+  "overall 1/1 = 100%"
+
+check "and it says the rest of the file was not checked" \
+  "$("$BIN" --eval halfwritten --probe finished 2>/dev/null \
+     | grep -c 'outside this probe')" \
+  "1"
+
+check "while a full run still refuses the half-written set" \
+  "$("$BIN" --eval halfwritten > /dev/null 2>&1; echo $?)" \
+  "1"
+
 # --- a set that names a file that is not there ------------------------------
 check "a missing set names where it looked" \
   "$("$BIN" --eval shout --cases nowhere.yaml 2>&1 | grep -c 'no nowhere.yaml')" \

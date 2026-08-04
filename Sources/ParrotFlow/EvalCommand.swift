@@ -37,7 +37,23 @@ enum EvalCommand {
         guard let found = locate(target, cases: override, config: config) else { return 1 }
         let (file, set, transform) = found
 
-        let problems = set.problems()
+        // What `--probe` selected, decided once and handed to everything that
+        // reads a case — validation, the gold check, the scoring. Deciding it
+        // twice is how the gold check came to send every case to the resolver
+        // while the scoring loop ran a subset: `resolve:` is a `command:` like
+        // any other, and an input somebody filtered out must not reach
+        // someone's program by a side door.
+        let selected = probe.map { wanted in set.cases.filter { $0.probe == wanted } } ?? set.cases
+        guard !selected.isEmpty else {
+            let known = Set(set.cases.map(\.probe)).filter { !$0.isEmpty }.sorted()
+            print("✗ no case has probe \"\(probe ?? "")\""
+                + (known.isEmpty
+                    ? " — no case in this set names one"
+                    : " — have: \(known.joined(separator: ", "))"))
+            return 1
+        }
+
+        let problems = set.problems(for: selected)
         guard problems.isEmpty else {
             print("✗ \(short(file.path)):")
             for problem in problems { print("    \(problem)") }
@@ -48,21 +64,14 @@ enum EvalCommand {
         print("  cases    \(short(file.path))  (\(set.cases.count))"
             + (probe.map { "  — only probe \($0)" } ?? ""))
         print("  body     \(body(of: transform))")
-
-        // What `--probe` selected, decided once and handed to everything that
-        // runs a case. Deciding it twice is how the gold check came to send
-        // every case to the resolver while the scoring loop ran a subset:
-        // `resolve:` is a `command:` like any other, and an input somebody
-        // filtered out must not reach someone's program by a side door.
-        let selected = probe.map { wanted in set.cases.filter { $0.probe == wanted } } ?? set.cases
-        guard !selected.isEmpty else {
-            let known = Set(set.cases.map(\.probe)).filter { !$0.isEmpty }.sorted()
-            print("")
-            print("  ✗ no case has probe \"\(probe ?? "")\""
-                + (known.isEmpty
-                    ? " — no case in this set names one"
-                    : " — have: \(known.joined(separator: ", "))"))
-            return 1
+        // A subset run is not a clean bill of health for the file. Said only
+        // when there is something to say, so it stays a signal.
+        let elsewhere = probe.map { wanted in
+            set.problems(for: set.cases.filter { $0.probe != wanted })
+        } ?? []
+        if !elsewhere.isEmpty {
+            print("  · \(elsewhere.count) problem(s) in cases outside this probe,"
+                + " not checked here — run without --probe to see them")
         }
 
         // The gold, against itself, before anything is scored. A typo in an
