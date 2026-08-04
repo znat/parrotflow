@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var statusItem: NSStatusItem!
     private var statusInfoItem: NSMenuItem!
+    private var inputDeviceItem: NSMenuItem!
     private var permissionsItem: NSMenuItem!
 
     /// The recording state the menu bar icon was last drawn for.
@@ -1761,6 +1762,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusInfoItem.isEnabled = false
         menu.addItem(statusInfoItem)
 
+        // Under the state it qualifies: which microphone the next press will
+        // listen through. Worth a row because the answer is chosen elsewhere —
+        // a headset connects and silently becomes the input for everything.
+        inputDeviceItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+        inputDeviceItem.isEnabled = false
+        menu.addItem(inputDeviceItem)
+
         // Above the separator, so it reads as part of the app's state rather
         // than as one more thing you can do. Hidden until there is something
         // to say — a notice at launch is missed, and a setting that quietly
@@ -1999,6 +2007,14 @@ extension AppDelegate: NSMenuDelegate {
     /// than in this app.
     func menuNeedsUpdate(_ menu: NSMenu) {
         permissionsItem.isHidden = !hasPermissionProblem
+
+        // Here rather than in `updateUI`, which runs on a 0.1s timer while
+        // recording: the device is picked in System Settings, so the moment the
+        // menu opens is both the first time the answer can have changed and the
+        // only time anyone can read it.
+        let device = Recorder.inputDeviceName
+        inputDeviceItem.isHidden = device == nil
+        inputDeviceItem.title = device.map { "Microphone  ·  \($0)" } ?? ""
     }
 
     private var hasPermissionProblem: Bool {
