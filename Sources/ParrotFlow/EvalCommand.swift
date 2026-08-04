@@ -397,8 +397,9 @@ enum EvalCommand {
         print("")
         let shown = verbose ? scored.failures : Array(scored.failures.prefix(5))
         for failure in shown {
-            let where_ = failure.probe.isEmpty ? failure.half : "\(failure.half), \(failure.probe)"
-            print("  ✗ \(failure.name)  [\(where_)]")
+            let bucket = failure.probe.isEmpty
+                ? failure.half : "\(failure.half), \(failure.probe)"
+            print("  ✗ \(failure.name)  [\(bucket)]")
             if failure.name != failure.input { print("      in    \(failure.input)") }
             print("      got   \(failure.got)")
             print("      want  \(failure.want)")

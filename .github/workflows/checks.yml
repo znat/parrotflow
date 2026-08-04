@@ -117,6 +117,12 @@ jobs:
       - name: A folder per transform
         run: scripts/check-transform-folders.sh
 
+      # The scoring harness itself, against sets built for the purpose. No
+      # model anywhere in it: the numbers have to be the same on a runner and
+      # on a laptop with Ollama up.
+      - name: The eval harness
+        run: scripts/check-eval.sh
+
       # Not a validation set: it checks that the file a new install is written
       # with still teaches everything config.example.yaml documents. That has
       # drifted twice, both times silently.
