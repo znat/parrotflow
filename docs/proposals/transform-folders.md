@@ -21,7 +21,7 @@ Do not relitigate these; they were argued and settled.
 
 | | |
 |---|---|
-| One layout, enforced | Folders. There is no flat alternative to fall back to. |
+| One layout, enforced | Folders. There is no flat alternative to fall back to. **[built]** literally — see *Back-compat*, which was specified and then removed. |
 | Folder name | The transform's name, verbatim as `config.yaml` spells it. Underscores, not hyphens. |
 | Entry point | `<name>.py` / `<name>.md` / `<name>.yaml` inside the folder — not `main.py` or `transform.py`. It is what people grep for, and a dozen editor tabs reading `transform.py` is miserable. |
 | Case set | `cases.yaml` inside the folder. Uniform, and `--eval <name>` finds it by convention. |
@@ -67,7 +67,9 @@ For a relative body path declared by transform `X`, in the config at
 
 1. `<configDir>/transforms/X/<path>` — the folder. Normal case.
 2. `<configDir>/<path>` — the old location. Resolves, runs, and is reported as
-   needing to move (see *Back-compat*).
+   needing to move (see *Back-compat*). **[built, then removed]** — reachable
+   only when it lands inside the folder, so both spellings of a folder path
+   work and nothing outside is reachable.
 3. `PATH`, if and only if the path has no `/` in it — keeps
    `command: sed`-style one-liners working. This is existing behaviour in
    `CommandRunner.parts(of:base:)`; do not regress it.
@@ -116,22 +118,51 @@ comparing resolved absolute paths, not by string-matching the prefix.
 - `namesBoth` validation is unchanged: a mapping form still counts as naming
   that one body.
 
-### Back-compat
+### Back-compat — specified, then dropped
 
-Existing configs point at `code_identifiers.py` beside `config.yaml`. Those
-keep working, via rule 2. `--check-config` prints one line per such transform:
+The text below is what was decided, and it was implemented. It is kept because
+the argument against it only became visible once it existed.
 
-```
-  · transforms: "code_identifiers" found at the old location —
-      move it to transforms/code_identifiers/code_identifiers.py
-```
+> Existing configs point at `code_identifiers.py` beside `config.yaml`. Those
+> keep working, via rule 2. `--check-config` prints one line per such transform,
+> as a notice and not a fault. Nobody's setup stops working because they
+> upgraded.
+>
+> No auto-migration; moving files under someone without asking is worse than a
+> line of output.
 
-A notice, not a fault. It goes through `notices()` and not `problems()` — the
-distinction already exists in `Config.swift` for exactly this reason, and
-getting it wrong makes the app announce that a working config is broken.
+**[built, then removed.]** Two directories that can disagree cost more than the
+migration was worth, and the bill arrived as four rounds of review findings on
+one pull request — each a different config where "which directory does this
+command run in" had a different right answer:
 
-Nobody's setup stops working because they upgraded. No auto-migration; moving
-files under someone without asking is worse than a line of output.
+- a script at the old location, started in a folder that never held its data
+- the same wrapped in an interpreter, `python3 legacy.py`, where the program is
+  on PATH and only the argument says where the transform is
+- a quoted path with a space in it, which argument splitting missed
+- a folder file named *before* the script, where argument order changed the
+  answer
+
+None of them was wrong about the code. They were all the same defect: a rule
+that has to pick between two places will be asked to pick by configs nobody
+anticipated, and each answer is right for one of them.
+
+And it was bought for nobody. The layout landed before anyone had installed the
+app — three releases, six downloads between them, all of them the author's own
+testing. A migration path was being maintained, and reviewed, and argued over,
+for a population of zero.
+
+So the fallback is gone and the decision at the top of this file is true as
+written: **there is no flat alternative to fall back to.** What replaces it is
+one line from `--check-config`, as a fault rather than a notice, naming a
+program that is in neither the transform's folder nor on `PATH`. Left to the
+shell that failed once per transcript into the log while the pipeline returned
+the text unchanged; said here, it is answerable by moving one file.
+
+Either spelling of a path into the folder still resolves —
+`slack_mentions.py` and `transforms/slack_mentions/slack_mentions.py` name the
+same file, as specified above — because that is one place reached two ways, not
+two places.
 
 ### `--check-config` requirements
 

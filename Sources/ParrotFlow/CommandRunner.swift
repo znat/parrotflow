@@ -46,11 +46,9 @@ enum CommandRunner {
     /// stdout, or nil if the program could not run, failed, took too long, or
     /// said nothing. Nil means "keep the transcript".
     ///
-    /// `folder` is what a relative path is relative *to*, and it is two places:
-    /// `transforms/<name>/` first, then the config directory itself, so a
-    /// script written before folders existed keeps running from where it is.
-    /// It is also the working directory — the folder's, not the process's,
-    /// which for an app launched from the Finder is "/" and means nothing.
+    /// `folder` is what a relative path is relative *to*, and what the command
+    /// runs in — the transform's own directory, not the process's, which for an
+    /// app launched from the Finder is "/" and means nothing.
     static func run(
         _ command: String, on text: String, in folder: TransformFolder?,
         seconds: TimeInterval? = nil
@@ -70,7 +68,9 @@ enum CommandRunner {
         // turns out to name a real file next to the config.
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", shellCommand(for: command, in: folder)]
-        process.currentDirectoryURL = workingDirectory(for: command, in: folder)
+        // The folder, so a script opens `roster.json` as a bare relative path
+        // and the whole transform is one directory you can copy.
+        process.currentDirectoryURL = folder.workingDirectory
 
         let input = Pipe()
         let output = Pipe()
@@ -142,88 +142,6 @@ enum CommandRunner {
         var result = String(data: collected.value, encoding: .utf8) ?? ""
         if result.hasSuffix("\n") { result.removeLast() }
         return result.isEmpty ? nil : result
-    }
-
-    /// Where a command runs: **the directory of the first file it names.**
-    ///
-    /// One rule, because the two obvious ones are each wrong half the time. The
-    /// folder alone breaks an upgrade — seeding writes
-    /// `transforms/<name>/cases.yaml` even when the script stays beside
-    /// `config.yaml`, so the folder exists while nothing in the command lives in
-    /// it, and a script that has read `roster.json` from beside `config.yaml`
-    /// for months is started somewhere that never held one. The config
-    /// directory alone breaks the folder, which is the whole point of it.
-    ///
-    /// The arguments are searched too, and that is not thoroughness for its own
-    /// sake. `python3 legacy.py` is how a config that predates folders names a
-    /// script: the program is a bare interpreter the shell finds on PATH, so
-    /// nothing about the program says where the transform lives, and only
-    /// `legacy.py` does. Getting it wrong there is the same silent failure —
-    /// the interpreter cannot find the file, the command exits non-zero, and a
-    /// non-zero command keeps the transcript.
-    ///
-    /// Only the working directory is decided here. `parts` still reports the
-    /// *program*, because that is what `complaint` checks the execute bit of,
-    /// and `python3 legacy.py` needs no execute bit on `legacy.py`.
-    ///
-    /// Nothing names a file — a bare `sed`, `tr '[:lower:]' '[:upper:]'` — and
-    /// the folder is right: it is where a transform's own files are, and a
-    /// one-liner that reads none does not care either way.
-    static func workingDirectory(for command: String, in folder: TransformFolder) -> URL {
-        let (_, arguments, resolved) = parts(of: command, in: folder)
-        if let resolved { return resolved.url.deletingLastPathComponent() }
-
-        for token in words(of: arguments) {
-            // A flag is not a path.
-            guard !token.hasPrefix("-"), let found = folder.resolve(token) else { continue }
-            // The directory it was found *under*, not the one it lives in.
-            //
-            // The program is rewritten to an absolute path before the shell
-            // sees it, so moving the working directory cannot disturb it. An
-            // argument is not: it reaches the shell exactly as written, and
-            // the shell resolves it against the working directory we set. Set
-            // that to the file's own directory and the relative path is
-            // counted twice — `python3 'my scripts/rewrite.py'` looked for
-            // `my scripts/my scripts/rewrite.py`, which is a directory nobody
-            // has. What the argument is relative *to* is the answer, and that
-            // is also what the command ran in before folders existed.
-            return found.base ?? found.url.deletingLastPathComponent()
-        }
-        return folder.workingDirectory
-    }
-
-    /// An argument list split the way the shell will split it: on spaces that
-    /// are not inside quotes, with the quotes removed.
-    ///
-    /// Splitting on every space instead is wrong for the one case that most
-    /// needs to work — `python3 'my scripts/rewrite.py'`, where the quotes are
-    /// there precisely because the path has a space in it. That is the same
-    /// problem `parts` solves for the program, and it has the same answer:
-    /// a space is an ordinary character in a path, so something has to say
-    /// which spaces are separators. On the program side the file system says;
-    /// here the quoting does, because by the time this runs the quotes are
-    /// still on the string — YAML gave it to us verbatim.
-    ///
-    /// Not a shell parser. Escapes, `$(…)` and word splitting are the shell's,
-    /// and a command that needs them is one whose working directory is not
-    /// going to be decided by reading it.
-    static func words(of arguments: String) -> [String] {
-        var words: [String] = []
-        var current = ""
-        var quote: Character?
-        for character in arguments {
-            if let open = quote {
-                if character == open { quote = nil } else { current.append(character) }
-            } else if character == "'" || character == "\"" {
-                quote = character
-            } else if character == " " {
-                if !current.isEmpty { words.append(current); current = "" }
-            } else {
-                current.append(character)
-            }
-        }
-        if !current.isEmpty { words.append(current) }
-        return words
     }
 
     /// SIGTERM, then SIGKILL if that was not enough.
@@ -325,6 +243,26 @@ enum CommandRunner {
     /// embedded single quote ends the quoting, so it is spelled out.
     private static func quoted(_ path: String) -> String {
         "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// Whether the shell will find this name on PATH — `sed`, `python3`.
+    ///
+    /// Asked so that a command which resolved to no file can be told apart from
+    /// a command which named a file that is not there. Both look identical in
+    /// the config, and they want opposite responses: one is a one-liner doing
+    /// exactly what it says, the other is a transform that will silently do
+    /// nothing on every transcript until someone reads the log.
+    ///
+    /// A name with a slash in it is a path and never a PATH lookup, which is
+    /// the shell's rule too.
+    static func onPath(_ name: String) -> Bool {
+        guard !name.isEmpty, !name.contains("/") else { return false }
+        let fm = FileManager.default
+        let path = ProcessInfo.processInfo.environment["PATH"]
+            ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        return path.split(separator: ":").contains { directory in
+            fm.isExecutableFile(atPath: "\(directory)/\(name)")
+        }
     }
 
     /// What is wrong with this command before it is even run, in words, or nil

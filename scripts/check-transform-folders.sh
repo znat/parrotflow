@@ -4,16 +4,19 @@
 #
 #   scripts/check-transform-folders.sh
 #
-# A transform named X owns `transforms/X/` beside the config that declared it.
-# Three things have to be true of that, and each of them was a decision:
+# A transform named X owns `transforms/X/` beside the config that declared it,
+# and that is the only place its files are looked for. Three things follow, and
+# each of them was a decision:
 #
-#   the folder is searched first        so `command: shout.py` finds it there
-#   the config directory is searched    so a script written before folders
-#   second                              existed keeps running, with one notice
-#   the folder is the working           so a script can open a sibling data
-#   directory                           file by a bare relative path, and the
-#                                       whole transform is one directory you
-#                                       can copy to another machine
+#   one place to look          `command: shout.py` is in the folder or it is
+#                              nowhere — there is no second directory that
+#                              could disagree about which file runs
+#   either spelling            `transforms/X/shout.py` names the same file,
+#                              because people write both. It is accepted only
+#                              when it lands inside the folder
+#   the folder is the          so a script opens a sibling data file by a bare
+#   working directory          relative path, and the whole transform is one
+#                              directory you can copy to another machine
 #
 # Everything is built in a temporary directory and run through `--pipeline`,
 # which carries its own `transforms:` and resolves relative paths against the
@@ -58,19 +61,7 @@ PY
 chmod +x "$WORK/transforms/shout/shout.py"
 printf '!\n' > "$WORK/transforms/shout/suffix.txt"
 
-# --- the old location ------------------------------------------------------
-#
-# The same script, beside the fixture rather than in a folder, which is where
-# every `command:` written before this existed still sits.
-mkdir -p "$WORK/transforms/legacy"
-cat > "$WORK/legacy.py" <<'PY'
-#!/usr/bin/env python3
-import sys
-print(sys.stdin.read().strip().upper())
-PY
-chmod +x "$WORK/legacy.py"
-
-fixture() {  # fixture <file> <transform yaml>
+fixture() {  # fixture <file> <transform yaml> <name>
   cat > "$WORK/$1" <<YAML
 transforms:
 $2
@@ -87,204 +78,46 @@ fixture spelled-out.yaml '  - name: shout
     description: everything in capitals
     command: transforms/shout/shout.py' shout
 
-fixture old.yaml '  - name: legacy
-    description: everything in capitals
-    command: legacy.py' legacy
-
 fixture path.yaml '  - name: sed_transform
     description: a one-liner off PATH
-    command: sed -e s/quick/slow/' sed_transform
+    command: sed -e s/quick/slow/g' sed_transform
 
-# 1 — the folder is searched first, and is the working directory.
+# 1 — the folder is searched, and is the working directory.
 check "command: shout.py resolves in the folder" \
   "$("$BIN" --pipeline "$WORK/folder.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
   "KEEP IT DOWN!"
 
-# 2 — the spelled-out path names the same file, and is not reported as needing
-# to move. Both spellings are things people write and both must work.
+# 2 — and the spelled-out path names the same file. Both are things people
+# write; neither may be the only one that works.
 check "command: transforms/shout/shout.py resolves to the same file" \
   "$("$BIN" --pipeline "$WORK/spelled-out.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
   "KEEP IT DOWN!"
-
-check "the spelled-out path is not reported as needing to move" \
-  "$("$BIN" --pipeline "$WORK/spelled-out.yaml" "keep it down" 2>/dev/null \
-     | grep -c 'old location')" \
-  "0"
 
 # 3 — a bare name that is not a file anywhere is left for the shell to find.
 check "command: sed still works" \
   "$("$BIN" --pipeline "$WORK/path.yaml" "the quick brown fox" --quiet 2>/dev/null | tail -1)" \
   "the slow brown fox"
 
-# 4 — the old location runs, and says so exactly once.
-check "a script at the old location still runs" \
-  "$("$BIN" --pipeline "$WORK/old.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
-  "KEEP IT DOWN"
+# 4 — a path that reaches outside the folder resolves to nothing. This is the
+# fallback that used to exist, and its absence is the point: one place to look.
+mkdir -p "$WORK/outside/transforms/stray"
+cat > "$WORK/outside/config.yaml" <<'YAML'
+transforms:
+  - name: stray
+    description: a script left beside config.yaml
+    command: stray.py
+YAML
+printf '#!/usr/bin/env python3\nprint("nope")\n' > "$WORK/outside/stray.py"
+chmod +x "$WORK/outside/stray.py"
+stray="$(PARROTFLOW_CONFIG_DIR="$WORK/outside" "$BIN" --check-config 2>/dev/null)"
 
-check "the old location gets exactly one notice" \
-  "$("$BIN" --pipeline "$WORK/old.yaml" "keep it down" 2>/dev/null \
-     | grep -c 'found at the old location')" \
+check "a command outside its folder is reported, not silently left to the shell" \
+  "$(printf '%s\n' "$stray" | grep -c 'stray.py is not in transforms/stray/')" \
   "1"
 
-# 4b — a script at the old location keeps its own neighbours.
-#
-# The folder exists — seeding writes cases.yaml into it even when the script
-# stays beside config.yaml — so "the folder is the working directory" and "the
-# program is at the old location" are both true at once, and only one of them
-# can decide where the process runs. It has to be the program: this script
-# reads a data file that has always sat beside it, and a working directory
-# chosen from the folder alone points it at a directory that never held one.
-# The failure is silent — a non-zero command keeps the transcript — so the
-# stage would simply stop working, on an upgrade, with nothing said.
-mkdir -p "$WORK/transforms/neighbourly"
-printf 'cases go here\n' > "$WORK/transforms/neighbourly/cases.yaml"
-cat > "$WORK/neighbourly.py" <<'PY'
-#!/usr/bin/env python3
-import pathlib, sys
-suffix = pathlib.Path("suffix.txt").read_text().strip()
-print(sys.stdin.read().strip().upper() + suffix)
-PY
-chmod +x "$WORK/neighbourly.py"
-printf '?\n' > "$WORK/suffix.txt"
-fixture neighbourly.yaml '  - name: neighbourly
-    description: a script that predates folders and reads a file beside it
-    command: neighbourly.py' neighbourly
-
-check "a script at the old location still finds the file beside it" \
-  "$("$BIN" --pipeline "$WORK/neighbourly.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
-  "KEEP IT DOWN?"
-
-# 4c — the same, wrapped in an interpreter.
-#
-# `python3 legacy.py` names no file as its *program* — python3 comes off PATH —
-# so nothing about the program says where the transform lives, and only the
-# argument does. A working directory taken from the folder here means the
-# interpreter cannot find the script at all, which fails the same silent way.
-mkdir -p "$WORK/transforms/wrapped"
-printf 'cases go here\n' > "$WORK/transforms/wrapped/cases.yaml"
-cat > "$WORK/wrapped.py" <<'PY'
-#!/usr/bin/env python3
-import pathlib, sys
-print(sys.stdin.read().strip().upper() + pathlib.Path("suffix.txt").read_text().strip())
-PY
-fixture wrapped.yaml '  - name: wrapped
-    description: an interpreter and a script that predates folders
-    command: python3 wrapped.py' wrapped
-
-check "an interpreter-wrapped script at the old location still runs" \
-  "$("$BIN" --pipeline "$WORK/wrapped.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
-  "KEEP IT DOWN?"
-
-# And the same shape in the folder, which must not be broken by fixing the one
-# above: the argument resolves in the folder, so that is where it runs.
-mkdir -p "$WORK/transforms/wrapped_new"
-cat > "$WORK/transforms/wrapped_new/wrapped_new.py" <<'PY'
-#!/usr/bin/env python3
-import pathlib, sys
-print(sys.stdin.read().strip().upper() + pathlib.Path("suffix.txt").read_text().strip())
-PY
-printf '!\n' > "$WORK/transforms/wrapped_new/suffix.txt"
-fixture wrapped-new.yaml '  - name: wrapped_new
-    description: an interpreter and a script that lives in its folder
-    command: python3 wrapped_new.py' wrapped_new
-
-check "an interpreter-wrapped script in the folder reads its own neighbours" \
-  "$("$BIN" --pipeline "$WORK/wrapped-new.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
-  "KEEP IT DOWN!"
-
-# 4d — and the same again with a space in the path.
-#
-# The quotes are there because the path has a space in it, so splitting the
-# arguments on every space is exactly wrong here: quoting is the only thing
-# that says where the path ends. Same failure if it is missed — the
-# interpreter never finds the script.
-#
-# `suffix.txt` sits beside config.yaml and not beside the script, deliberately.
-# An argument reaches the shell exactly as written, so the working directory
-# has to be what that path is relative *to* — which is also what the command
-# ran in before folders existed. Aiming at the script's own directory instead
-# counts `my scripts/` twice and finds nothing.
-mkdir -p "$WORK/my scripts" "$WORK/transforms/spaced"
-printf 'cases go here\n' > "$WORK/transforms/spaced/cases.yaml"
-cat > "$WORK/my scripts/spaced.py" <<'PY'
-#!/usr/bin/env python3
-import pathlib, sys
-print(sys.stdin.read().strip().upper() + pathlib.Path("suffix.txt").read_text().strip())
-PY
-printf ';\n' > "$WORK/suffix.txt"
-fixture spaced.yaml "  - name: spaced
-    description: an interpreter and a path with a space in it
-    command: python3 'my scripts/spaced.py'" spaced
-
-check "an interpreter-wrapped path with a space runs where it always did" \
-  "$("$BIN" --pipeline "$WORK/spaced.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
-  "KEEP IT DOWN;"
-
-# 5 — a folder file wins over one of the same name at the old location. This is
-# the case `--check-config` prints resolved paths for: with a copy in both
-# places, nothing else can tell you which one ran.
-cp "$WORK/legacy.py" "$WORK/transforms/legacy/legacy.py"
-cat > "$WORK/transforms/legacy/legacy.py" <<'PY'
-#!/usr/bin/env python3
-import sys
-print(sys.stdin.read().strip() + " (from the folder)")
-PY
-chmod +x "$WORK/transforms/legacy/legacy.py"
-check "the folder wins over the old location" \
-  "$("$BIN" --pipeline "$WORK/old.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
-  "keep it down (from the folder)"
-
-# --- prompt: { path: } and replace: { path: } -------------------------------
-mkdir -p "$WORK/transforms/tidy"
-printf 'wrap dotted paths in backticks\n' > "$WORK/transforms/tidy/tidy.md"
-cat > "$WORK/transforms/tidy/tidy.yaml" <<'YAML'
-'`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
-YAML
-
-cat > "$WORK/table.yaml" <<'YAML'
-transforms:
-  - name: tidy
-    description: wrap dotted paths in backticks
-    replace: { path: tidy.yaml }
-pipeline:
-  - transform: tidy
-YAML
-
-check "replace: { path: } reads the table out of the folder" \
-  "$("$BIN" --pipeline "$WORK/table.yaml" "read config.port" --quiet 2>/dev/null | tail -1)" \
-  'read `config.port`'
-
-# An inline table with one entry called `path` is still a table. The mapping
-# form is only ever `path: <a string>`, so this cannot be taken for one.
-cat > "$WORK/inline-table.yaml" <<'YAML'
-transforms:
-  - name: tidy
-    description: a table with a rule about the word path
-    replace:
-      chemin: [path]
-pipeline:
-  - transform: tidy
-YAML
-
-check 'an inline table whose key is `path` is still a table' \
-  "$("$BIN" --pipeline "$WORK/inline-table.yaml" "the path is long" --quiet 2>/dev/null | tail -1)" \
-  "the chemin is long"
-
-# A `path:` naming nothing takes out that transform and nothing else. The
-# pipeline still runs, and the transcript comes through.
-cat > "$WORK/missing.yaml" <<'YAML'
-transforms:
-  - name: tidy
-    description: points at a file that is not there
-    prompt: { path: nowhere.md }
-pipeline:
-  - replacements
-  - transform: tidy
-YAML
-
-check "a path: naming nothing leaves the rest of the config working" \
-  "$("$BIN" --pipeline "$WORK/missing.yaml" "the rest still runs" --quiet 2>/dev/null | tail -1)" \
-  "the rest still runs"
+check "and that is a fault, so --check-config exits 1" \
+  "$(PARROTFLOW_CONFIG_DIR="$WORK/outside" "$BIN" --check-config > /dev/null 2>&1; echo $?)" \
+  "1"
 
 # --- prompt: { path: }, through a whole config ------------------------------
 #
@@ -342,35 +175,6 @@ check "the seeded config resolves its command into the folder" \
 
 check "a seeded config is clean" \
   "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --check-config > /dev/null 2>&1; echo $?)" \
-  "0"
-
-# Nothing is ever overwritten, and an install that predates folders keeps the
-# script it has: seeding a fresh one into the folder would put it in front of
-# the edited copy — the folder is searched first — and the stop lists someone
-# tuned would stop running with nothing said.
-UPGRADED="$WORK/upgraded"
-mkdir -p "$UPGRADED"
-printf '#!/usr/bin/env python3\nimport sys\nprint(sys.stdin.read().strip())\n' \
-  > "$UPGRADED/code_identifiers.py"
-chmod +x "$UPGRADED/code_identifiers.py"
-mine="$(cat "$UPGRADED/code_identifiers.py")"
-PARROTFLOW_CONFIG_DIR="$UPGRADED" "$BIN" --seed-config > /dev/null 2>&1
-
-check "an edited script at the old location is left alone" \
-  "$(cat "$UPGRADED/code_identifiers.py")" \
-  "$mine"
-
-check "and no fresh copy is put in front of it" \
-  "$([ -e "$UPGRADED/transforms/code_identifiers/code_identifiers.py" ] && echo yes || echo no)" \
-  "no"
-
-check "and it is reported as wanting to move, exactly once" \
-  "$(PARROTFLOW_CONFIG_DIR="$UPGRADED" "$BIN" --check-config 2>/dev/null \
-     | grep -c 'found at the old location')" \
-  "1"
-
-check "and --check-config still exits 0" \
-  "$(PARROTFLOW_CONFIG_DIR="$UPGRADED" "$BIN" --check-config > /dev/null 2>&1; echo $?)" \
   "0"
 
 echo

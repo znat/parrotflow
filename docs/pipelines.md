@@ -170,16 +170,18 @@ the log and `--check-config` name that case as itself rather than as "command
 not found", which would send you looking for a file that is sitting right where
 you put it.
 
-A relative path is looked for in the transform's own folder first: `command:
-code_identifiers.py` on a transform named `code_identifiers` is
-`transforms/code_identifiers/code_identifiers.py`.
+A relative path is looked for in the transform's own folder, and nowhere else:
+`command: code_identifiers.py` on a transform named `code_identifiers` is
+`transforms/code_identifiers/code_identifiers.py`. Writing it out in full names
+the same file. **The folder is the working directory**, so a script reads its
+neighbours by bare relative name.
 
-**A command runs in the directory of the first file it names**, so a script
-reads its neighbours by bare relative name. That is the folder for a transform
-that lives in one, and the config directory for a script that has not moved —
-including when the interpreter is spelled out, `python3 legacy.py`, where the
-program is on PATH and only the argument says where the transform is. A command
-that names no file at all — `sed`, `tr` — runs in the folder.
+One place to look, deliberately. An earlier draft searched the config directory
+too, so a script left beside `config.yaml` kept running; two directories that
+can disagree turned out to cost more than they bought, because *which* one a
+command runs in stops being answerable once the command names files in both. A
+program that is in neither the folder nor on `PATH` is a fault `--check-config`
+names, and moving the file is the whole fix.
 Beside `config.yaml` is tried second, which is where a script written before
 folders existed still sits; it runs, and `--check-config` says where to move it.
 Writing the path out in full — `command:

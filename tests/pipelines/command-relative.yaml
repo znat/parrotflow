@@ -1,13 +1,15 @@
 # A `command:` naming a script by a relative path — the shipped example, not a
-# copy of it, because two copies of a script drift and only one of them is the
-# one the docs point at. It resolves against the
-# directory of the file that declared it — this one — which is the same rule a
-# real config follows with config.yaml. Anchoring at ~/.config/parrotflow
-# instead would have made this case score differently on every machine.
+# copy of it, reached through a symlink so this scores the file people edit.
+#
+# The point is the resolution rule: a transform named X looks in
+# `transforms/X/` beside the file that declared it, which is this fixture here
+# and `config.yaml` in a real install. There is nowhere else to look, so a
+# script that is not in the folder is a fault `--check-config` reports rather
+# than something the shell is left to fail on once per transcript.
 languages: [en]
 transforms:
   - name: code_identifiers
     description: spoken names as identifiers
-    command: ../../examples/transforms/code_identifiers/code_identifiers.py
+    command: code_identifiers.py
 pipeline:
   - transform: code_identifiers

@@ -245,9 +245,7 @@ enum CheckConfigCommand {
     /// the shell will look it up, and printing a path this made up would be a
     /// worse lie than saying so.
     private static func bodyPath(_ transform: Config.Transform) -> String {
-        if let found = transform.resolvedSource {
-            return shortened(found.path) + (found.atOldLocation ? "   (old location)" : "")
-        }
+        if let found = transform.resolvedSource { return shortened(found.path) }
         if case .command(let command) = transform.body {
             return "\(command.split(separator: " ").first ?? "") — on PATH"
         }

@@ -39,13 +39,6 @@ enum SeedConfigCommand {
                 print("  · \(relative) — already there, left alone")
             } else if fm.fileExists(atPath: file.path) {
                 print("  ✓ \(relative) — written")
-            } else {
-                // The one case worth naming: a `code_identifiers.py` beside
-                // config.yaml is an install that predates folders, and seeding
-                // the folder would put a fresh script in front of the edited
-                // one. --check-config says where it is and where to move it.
-                print("  · \(relative) — not written; there is already a copy"
-                    + " at the old location")
             }
         }
         return 0

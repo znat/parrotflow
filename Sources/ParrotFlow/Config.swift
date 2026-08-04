@@ -1105,6 +1105,21 @@ struct Config: Decodable, Equatable {
             else { continue }
             found.append("transforms: \"\(transform.name)\" cannot run \(command) — \(wrong)")
         }
+        // A command that named neither a file in the folder nor anything the
+        // shell can find. There is one place a transform's program can be now,
+        // so a name that is not there and not on PATH is a mistake rather than
+        // an ambiguity — and it is the mistake a config written before folders
+        // makes, every time. Left to the shell it fails once per transcript,
+        // into the log, while the pipeline goes on returning the text
+        // unchanged: the loudest this can be said is here.
+        for transform in transforms {
+            guard case .command(let command) = transform.body,
+                  transform.resolvedSource == nil else { continue }
+            let program = String(command.split(separator: " ").first ?? "")
+            guard !CommandRunner.onPath(program) else { continue }
+            found.append("transforms: \"\(transform.name)\" — \(program) is not in"
+                + " transforms/\(transform.name)/, and the shell cannot find it either")
+        }
         for language in transcription.languages {
             let pipeline = Pipeline.resolved(config: self, language: language)
             for problem in pipeline.validate() {
@@ -1139,17 +1154,9 @@ struct Config: Decodable, Equatable {
     /// wasn't. Announcing is not complaining, and the two cannot share a list
     /// that one end of the app treats as failure.
     func notices() -> [String] {
-        var said: [String] = transforms.compactMap { transform in
+        let said: [String] = transforms.compactMap { transform in
             guard case .command(let command) = transform.body else { return nil }
             return "transforms: \"\(transform.name)\" runs a program — \(command)"
-        }
-        // A file still at the old location, beside `config.yaml` rather than in
-        // the folder. It runs, and it goes on running: nobody's setup stops
-        // working because they upgraded, and moving files under someone
-        // without asking is worse than a line of output.
-        said += transforms.compactMap { transform in
-            guard let found = transform.resolvedSource, found.atOldLocation else { return nil }
-            return transform.folder?.moveNotice(for: found.url)
         }
         return said
     }
@@ -1212,21 +1219,14 @@ enum ConfigStore {
         codeIdentifiersFolder.appendingPathComponent("code_identifiers.py")
     }
 
-    /// Where it lived before folders: beside `config.yaml`. Still resolved,
-    /// still run, and reported by `--check-config` as wanting to move.
-    static var legacyCodeIdentifiersURL: URL {
-        directory.appendingPathComponent("code_identifiers.py")
-    }
-
     /// Creates the config file, and the one transform it ships with, if they
     /// are not there yet.
     ///
     /// A folder rather than two loose files, because that is the layout the
-    /// app now reads and a shipped example that does not demonstrate it
-    /// teaches the wrong thing. The case set goes in with the script: a
-    /// transform that arrives with its own set is the whole argument of
-    /// docs/authoring.md made concrete, and `--eval code_identifiers` finds it
-    /// by convention.
+    /// app reads and a shipped example that does not demonstrate it teaches
+    /// the wrong thing. The case set goes in with the script: a transform that
+    /// arrives with its own set is the whole argument of docs/authoring.md
+    /// made concrete, and `--eval code_identifiers` finds it by convention.
     ///
     /// The script is written rather than bundled because this app has no
     /// resources — `defaultYAML` is a string in the binary for the same reason
@@ -1234,17 +1234,9 @@ enum ConfigStore {
     /// point of it. Nothing here is ever overwritten: once it exists it is
     /// yours, and an update that reverted your stop lists would be the app
     /// taking back something it gave you.
-    ///
-    /// Which is also why the script is written only when it is in **neither**
-    /// place. An install that predates folders has an edited copy beside
-    /// `config.yaml`; seeding the folder anyway would put a fresh one in front
-    /// of it — the folder is searched first — and the user's stop lists would
-    /// stop running with nothing said. Nobody's setup changes because they
-    /// upgraded.
     static func createIfMissing() throws {
         let fm = FileManager.default
-        let seeded = fm.fileExists(atPath: codeIdentifiersURL.path)
-        if !seeded, !fm.fileExists(atPath: legacyCodeIdentifiersURL.path) {
+        if !fm.fileExists(atPath: codeIdentifiersURL.path) {
             try fm.createDirectory(at: codeIdentifiersFolder, withIntermediateDirectories: true)
             try defaultCodeIdentifiersScript.write(
                 to: codeIdentifiersURL, atomically: true, encoding: .utf8

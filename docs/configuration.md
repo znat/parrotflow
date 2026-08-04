@@ -83,9 +83,12 @@ working directory its command runs in** — which is what pays for the extra
 directory. A script can open `roster.json` as a bare relative path, so the
 folder is self-contained: copy it to another machine and it works.
 
-A file beside `config.yaml` rather than in the folder still resolves, still
-runs, and is reported by `--check-config` as wanting to move. Nobody's setup
-stops working because they upgraded, and nothing is moved for you.
+That folder is the only place a transform's files are looked for. There is no
+flat alternative to fall back to: a `command:` that names neither a file in its
+folder nor anything the shell can find on `PATH` is reported by
+`--check-config` as a fault, rather than failing quietly once per transcript.
+Writing the path out in full — `transforms/slack/slack.md` — names the same
+file, because people write both.
 
 The dev build keeps its own copies of all of these; see
 [development.md](development.md).

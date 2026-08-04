@@ -13,9 +13,15 @@ import Foundation
 /// `roster.json` as a bare relative path and the folder is self-contained: copy
 /// it to another machine, or paste it into a gist, and it works.
 ///
-/// The config directory itself is searched second, because that is where every
-/// script written before folders existed still sits and nobody's setup is
-/// allowed to stop working because they upgraded.
+/// **One layout, and nothing to fall back to.** An earlier draft searched the
+/// config directory too, so that a script written before folders existed kept
+/// running where it was. Two directories that can disagree turned out to be a
+/// steady source of defects rather than a kindness: which one a command runs
+/// in stopped being answerable without knowing where every file it names
+/// happens to sit, and every answer was wrong for some other config. It was
+/// paid for a population of nobody — the layout arrived before anyone had
+/// installed the app. A config that still points outside its folder is now
+/// told so once, by `--check-config`, and moving the file is the whole fix.
 struct TransformFolder: Equatable {
     /// The directory of the file that declared the transform — where
     /// `config.yaml` is, or where a `--pipeline` fixture is.
@@ -42,24 +48,12 @@ struct TransformFolder: Equatable {
             .standardizedFileURL
     }
 
-    /// The directories a relative path is tried against, in order: the folder,
-    /// then the old location beside `config.yaml`.
-    var searchPath: [URL] {
-        [url, configDirectory.standardizedFileURL].compactMap { $0 }
-    }
-
-    /// Where a command with no file of its own runs — a bare `sed` the shell
-    /// finds on PATH.
+    /// Where a `command:` runs — the folder, always.
     ///
-    /// Only that case. A command that resolved to a file runs in **that file's**
-    /// directory, decided by `CommandRunner.run`, because a script's neighbours
-    /// are the files beside the script and not the files beside a folder it was
-    /// never in.
-    ///
-    /// The folder when it is there, and the config directory when it is not — a
+    /// The config directory only when the folder is not there at all, because a
     /// working directory that does not exist is not a slower process, it is a
-    /// process that cannot start at all, and a config whose folders have not
-    /// been created yet is an ordinary state to be in.
+    /// process that cannot start. A transform whose folder is missing has
+    /// nothing to run anyway; this just decides where it fails.
     var workingDirectory: URL {
         var isDirectory: ObjCBool = false
         if let url, FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory),
@@ -72,28 +66,14 @@ struct TransformFolder: Equatable {
     /// A file the transform declared, found.
     struct Resolved: Equatable {
         var url: URL
-        /// True when it was found beside `config.yaml` rather than in the
-        /// folder. A notice and never a fault: it runs, and `--check-config`
-        /// says where it should move to.
-        var atOldLocation: Bool
-        /// The directory the search found it under — the folder or the config
-        /// directory — and so the directory the path as written is relative
-        /// *to*. Nil for an absolute path, which is relative to nothing.
-        ///
-        /// Distinct from `url.deletingLastPathComponent()`, and the difference
-        /// decides where a command runs: `transforms/x/x.py` was found under
-        /// the config directory and *lives* in `transforms/x/`. Which of the
-        /// two is wanted depends on whether the path survives into the command
-        /// — see `CommandRunner.workingDirectory`.
-        var base: URL?
 
         var path: String { url.path }
     }
 
-    /// The first directory in the search path that has `path`, or nil.
+    /// The file at `path` inside the folder, or nil.
     ///
     /// An absolute path — or one starting `~` — is its own answer and skips the
-    /// search entirely.
+    /// folder entirely.
     func resolve(_ path: String) -> Resolved? {
         // Expanded only when there is a tilde, because the expansion also
         // standardises — and a trailing slash is the shell's business, not
@@ -105,45 +85,29 @@ struct TransformFolder: Equatable {
         if expanded.hasPrefix("/") {
             let url = URL(fileURLWithPath: expanded).standardizedFileURL
             guard fm.fileExists(atPath: url.path) else { return nil }
-            // Deliberate, wherever it points. Nothing to move, and nothing it
-            // is relative to.
-            return Resolved(url: url, atOldLocation: false, base: nil)
+            return Resolved(url: url)
         }
 
-        for base in searchPath {
-            let candidate = base.appendingPathComponent(expanded).standardizedFileURL
-            guard fm.fileExists(atPath: candidate.path) else { continue }
-            return Resolved(url: candidate, atOldLocation: !contains(candidate), base: base)
-        }
-        return nil
+        guard let url else { return nil }
+        let inFolder = url.appendingPathComponent(expanded).standardizedFileURL
+        if fm.fileExists(atPath: inFolder.path) { return Resolved(url: inFolder) }
+
+        // `transforms/slack_mentions/slack_mentions.py` spells out what
+        // `slack_mentions.py` does, and people write both, so both name the
+        // same file. Resolved against the config directory and then **required
+        // to land inside the folder** — which is what keeps this from being a
+        // second place to look. Nothing outside the folder can be reached this
+        // way, so there are still never two directories that could disagree.
+        let spelledOut = configDirectory.appendingPathComponent(expanded).standardizedFileURL
+        guard fm.fileExists(atPath: spelledOut.path), contains(spelledOut) else { return nil }
+        return Resolved(url: spelledOut)
     }
 
-    /// Whether a resolved file is inside the folder.
-    ///
-    /// Compared as resolved absolute paths rather than by looking at what was
-    /// written, because both of these name the same file and neither is at the
-    /// old location:
-    ///
-    ///     command: slack_mentions.py
-    ///     command: transforms/slack_mentions/slack_mentions.py
-    ///
-    /// The first is found by the folder. The second is relative to the config
-    /// directory and spells out what the first does — string-matching the
-    /// prefix would report it as needing to move to where it already is.
+    /// Whether a path is inside the folder, compared as resolved absolute
+    /// paths rather than by matching what was written.
     private func contains(_ candidate: URL) -> Bool {
         guard let url else { return false }
         let folder = url.path.hasSuffix("/") ? url.path : url.path + "/"
         return candidate.path.hasPrefix(folder)
-    }
-
-    /// What `--check-config` prints for a file found beside `config.yaml`.
-    ///
-    /// A notice and not a fault. The distinction matters at the other end: the
-    /// app puts `problems()` behind "⚠︎ your config does nothing", and a
-    /// working script in the place it has always been is not that.
-    func moveNotice(for file: URL) -> String? {
-        guard url != nil else { return nil }
-        return "transforms: \"\(name)\" found at the old location — move it to"
-            + " transforms/\(name)/\(file.lastPathComponent)"
     }
 }
