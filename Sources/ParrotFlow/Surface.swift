@@ -45,6 +45,9 @@ struct Surface {
 
     let kind: Kind
     let element: AXUIElement
+    /// The app the element belongs to, so an undo can go back to it rather than
+    /// to whatever happens to be in front when it is asked for.
+    let owner: NSRunningApplication?
     /// The whole editable content, in one coordinate space.
     let content: String
     /// The selection, as offsets into `content`. Nil when nothing is selected;
@@ -135,13 +138,15 @@ struct Surface {
         } ?? false
 
         if isTerminal {
-            return screen(element: element, value: value, dictated: dictated)
+            return screen(element: element, owner: front, value: value, dictated: dictated)
         }
-        return editable(element: element, value: value)
+        return editable(element: element, owner: front, value: value)
     }
 
     /// A field, a browser input, a composer: the value is the content.
-    private static func editable(element: AXUIElement, value: String) -> Surface {
+    private static func editable(
+        element: AXUIElement, owner: NSRunningApplication?, value: String
+    ) -> Surface {
         var span: Range<String.Index>?
         if let range = SelectionReader.selectedRange(of: element),
            range.location != NSNotFound, range.location >= 0 {
@@ -152,7 +157,7 @@ struct Surface {
                     + " does not fit \(value.count) chars of value; ignoring it")
             }
         }
-        return Surface(kind: .editable, element: element, content: value, span: span)
+        return Surface(kind: .editable, element: element, owner: owner, content: value, span: span)
     }
 
     /// A terminal: the content is the input box, dug back out of the screen.
@@ -164,7 +169,7 @@ struct Surface {
     /// *all* of them, where a transcript only ever describes the last one and
     /// retyping from it would delete the rest.
     private static func screen(
-        element: AXUIElement, value: String, dictated: String?
+        element: AXUIElement, owner: NSRunningApplication?, value: String, dictated: String?
     ) -> Surface? {
         // The box first, and a single row only when no box is drawn — a bare
         // shell rather than a TUI. That fallback is the one place a transcript
@@ -200,7 +205,7 @@ struct Surface {
                     + " times in the input box; cannot say which was selected")
             }
         }
-        return Surface(kind: .screen, element: element, content: box, span: span)
+        return Surface(kind: .screen, element: element, owner: owner, content: box, span: span)
     }
 
     /// Retyping a whole line is proportional to its length, and past a point the
@@ -291,9 +296,39 @@ struct Surface {
 
     enum Outcome: Equatable {
         /// The characters in that range, and no others, now read differently.
-        case replaced
+        case replaced(Undo)
         /// Nothing was written, and nothing was disturbed trying.
         case refused(String)
+    }
+
+    /// What it takes to put a substitution back.
+    ///
+    /// The whole content on both sides rather than a range and a string: by the
+    /// time an undo is asked for, the surface has been written to, and any range
+    /// recorded beforehand describes a string that no longer exists. Two
+    /// snapshots can always be checked against what is actually there, which is
+    /// the one question undo has to get right — *is this still the text I
+    /// wrote?* — and a range cannot answer it at all.
+    struct Undo: Equatable {
+        let before: String
+        let after: String
+        /// What the substitution was called, for the toast and the log.
+        let describedAs: String
+        /// The element that was written to, and the app it belongs to.
+        ///
+        /// Without these an undo goes wherever the caret happens to be, and the
+        /// content check is not enough to catch it: two fields holding the same
+        /// sentence are not unusual — a message and the reply quoting it, the
+        /// same text pasted into a second window — and one of them would be
+        /// rewritten while the substitution it was meant to reverse stayed put.
+        /// The text says whether it is safe to undo; only the element says
+        /// where.
+        let element: AXUIElement
+        let owner: NSRunningApplication?
+
+        static func == (lhs: Undo, rhs: Undo) -> Bool {
+            lhs.before == rhs.before && lhs.after == rhs.after
+        }
     }
 
     /// Substitutes one range of `content`, and nothing else.
@@ -304,19 +339,52 @@ struct Surface {
     /// somebody's sentence is the one this file exists to prevent.
     @discardableResult
     func replace(
-        _ range: Range<String.Index>, with replacement: String
+        _ range: Range<String.Index>, with replacement: String, describedAs label: String = "edit"
     ) -> Outcome {
         let updated = content.replacingCharacters(in: range, with: replacement)
         guard updated != content else {
             return .refused("the text already reads that way")
         }
+        let undo = Undo(
+            before: content, after: updated, describedAs: label,
+            element: element, owner: owner
+        )
 
         switch kind {
         case .editable:
-            return writeEditable(range, replacement: replacement, updated: updated)
+            return writeEditable(range, replacement: replacement, updated: updated, undo: undo)
         case .screen:
-            return writeScreen(updated: updated)
+            return writeScreen(updated: updated, undo: undo)
         }
+    }
+
+    /// Puts the content back the way it was before a substitution.
+    ///
+    /// Refuses when the text has moved on. An undo that fires against edited
+    /// text is not an undo, it is a second unwanted edit — and it would land
+    /// exactly where the user had just started fixing things by hand.
+    static func undo(_ record: Undo) -> Outcome {
+        // The recorded element, never `focusedElement()`. Reading whatever is
+        // focused is how an undo lands in the wrong window — and the content
+        // check below cannot catch that, because it is a question about the text
+        // rather than about which field holds it.
+        guard let surface = read(element: record.element, app: record.owner) else {
+            return .refused("the field it changed is not there any more")
+        }
+        guard surface.folded(surface.content) == surface.folded(record.after) else {
+            return .refused("the text has changed since; leaving it alone")
+        }
+        guard let edit = minimalSpan(from: record.after, to: record.before) else {
+            return .refused("there is nothing to put back")
+        }
+        // Located against `record.after`, which we have just confirmed is what
+        // is on screen, so the offsets are the surface's own.
+        guard let range = Range(
+            NSRange(edit.range, in: record.after), in: surface.content
+        ) else {
+            return .refused("could not place the undo in the field")
+        }
+        return surface.replace(range, with: edit.replacement, describedAs: "undo")
     }
 
     // MARK: - The editable ladder
@@ -328,7 +396,7 @@ struct Surface {
     /// that then ignore it entirely, which is the single fact that has caused
     /// every corrupted line this code has ever produced.
     private func writeEditable(
-        _ range: Range<String.Index>, replacement: String, updated: String
+        _ range: Range<String.Index>, replacement: String, updated: String, undo: Undo
     ) -> Outcome {
         let nsRange = NSRange(range, in: content)
         // The replacement in the company it is meant to keep. Checking for the
@@ -341,7 +409,7 @@ struct Surface {
         //    is what a native field accepts.
         if select(nsRange), setSelectedText(replacement), landed(fragment) {
             Log.write("surface: wrote \(nsRange.length) chars via the accessibility range")
-            return .replaced
+            return .replaced(undo)
         }
 
         // 2. Set the range and paste over it. Chromium and Electron implement
@@ -353,7 +421,7 @@ struct Surface {
             Log.write("surface: the range write was ignored; pasting over a confirmed selection")
             TextInserter.insert(replacement, mode: .paste)
             if settled(on: fragment) {
-                return .replaced
+                return .replaced(undo)
             }
             return .refused(repairedAfterStrayPaste())
         }
@@ -372,7 +440,7 @@ struct Surface {
         //    it is to where the span starts, and every step of that walk can be
         //    checked against the app's own account before anything is typed.
         if let outcome = writeByWalkingTheCaret(
-            nsRange, replacement: replacement, fragment: fragment
+            nsRange, replacement: replacement, fragment: fragment, undo: undo
         ) {
             return outcome
         }
@@ -396,7 +464,7 @@ struct Surface {
     /// Nil rather than a refusal when the walk is too long to be worth taking,
     /// so the caller can fall through to its own last resort.
     private func writeByWalkingTheCaret(
-        _ target: NSRange, replacement: String, fragment: String
+        _ target: NSRange, replacement: String, fragment: String, undo: Undo
     ) -> Outcome? {
         guard var caret = caretOffset() else {
             Log.write("surface: the app will not say where the caret is; cannot walk to the span")
@@ -439,7 +507,7 @@ struct Surface {
 
         Log.write("surface: walked the caret to \(target.location)+\(target.length); pasting")
         TextInserter.insert(replacement, mode: .paste)
-        if settled(on: fragment) { return .replaced }
+        if settled(on: fragment) { return .replaced(undo) }
         return .refused(repairedAfterStrayPaste())
     }
 
@@ -636,7 +704,7 @@ struct Surface {
     /// The caret's position inside the input is invisible to accessibility, so
     /// there is no way to address a range here without assuming where it starts,
     /// and an assumption that is wrong edits the wrong characters.
-    private func writeScreen(updated: String) -> Outcome {
+    private func writeScreen(updated: String, undo: Undo) -> Outcome {
         guard let config = try? ConfigStore.load(), config.transcription.rewriteLine else {
             return .refused("rewrite_line is off, so terminals cannot be edited")
         }
@@ -647,7 +715,7 @@ struct Surface {
         TextInserter.insert(updated, mode: .paste)
         if box(reads: updated) {
             Log.write("surface: retyped \(updated.count) chars of input line")
-            return .replaced
+            return .replaced(undo)
         }
 
         // Put it back deliberately rather than with Ctrl-Y. The paste has

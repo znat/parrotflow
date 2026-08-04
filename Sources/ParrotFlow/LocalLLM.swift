@@ -224,6 +224,8 @@ enum VoiceCommand {
     /// carry more than one: "Tasmeen spells T A S M E E N and Mick spells
     /// M I K" is two rules, and the panel opens with a row for each.
     case addRules([(heard: String, corrected: String)])
+    /// Put the last substitution back where it was.
+    case undo
     /// Understood as nothing actionable.
     case unrecognised(String)
 
@@ -414,6 +416,18 @@ enum VoiceCommand {
             .trimmingCharacters(in: .whitespaces)
 
         if normalized.isEmpty { return .openCorrectionPanel }
+
+        // Undo before anything else, and never through the model. The moment
+        // this is wanted is the moment a substitution went somewhere unexpected,
+        // and an answer that depends on Ollama being up is no answer then. Both
+        // languages the app transcribes, because the panic word comes out in
+        // whichever one you were already speaking.
+        let undoPhrases = [
+            "undo", "undo that", "undo it", "cancel", "cancel that",
+            "revert", "revert that", "put it back", "undo the change",
+            "annule", "annuler", "annule ça", "annuler ça", "reviens en arrière",
+        ]
+        if undoPhrases.contains(normalized) { return .undo }
 
         let vocabularyPhrases = [
             "fix vocabulary", "update vocabulary", "edit vocabulary",

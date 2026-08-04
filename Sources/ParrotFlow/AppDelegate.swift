@@ -100,6 +100,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// works against when there is no selection to work against instead.
     private var lastTranscript: String?
 
+    /// The last substitution made in somebody else's window, and enough to put
+    /// it back.
+    ///
+    /// One deep on purpose. This is not an edit history — it is the answer to
+    /// "that went somewhere I did not expect", which is only ever asked about
+    /// the thing that just happened. A stack would invite walking backwards
+    /// through edits the app cannot see the consequences of.
+    ///
+    /// It survives until the next substitution rather than expiring on a timer:
+    /// what makes an undo unsafe is the text having moved on, and `Surface.undo`
+    /// checks that directly by comparing what is on screen against what it
+    /// wrote. A clock cannot answer that question and would only refuse a valid
+    /// undo for having been asked slowly.
+    private var lastSubstitution: Surface.Undo?
+
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1059,7 +1074,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// terminal each one costs a whole line retype, which is a fresh chance to
     /// lose the line.
     private func applyInPlace(
-        _ edits: [Edit], dictated: String?, in element: AXUIElement
+        _ edits: [Edit], dictated: String?, in element: AXUIElement,
+        describedAs label: String
     ) -> InPlace {
         guard !edits.isEmpty else { return .notAttempted }
         guard let surface = Surface.read(element: element, dictated: dictated) else {
@@ -1098,8 +1114,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("in-place: \(applied) of \(edits.count) edits found their text")
         }
 
-        switch surface.replace(change.range, with: change.replacement) {
-        case .replaced:
+        switch surface.replace(change.range, with: change.replacement, describedAs: label) {
+        case .replaced(let undo):
+            lastSubstitution = undo
             return .replaced
         case .refused(let why):
             Log.write("in-place: refused — \(why)")
@@ -1126,7 +1143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// removed around it. With no offset to go on there is nothing to choose
     /// between them, and this refuses.
     private func replaceSelected(
-        with text: String, in selection: SelectionReader.Selection
+        with text: String, in selection: SelectionReader.Selection, describedAs label: String
     ) -> InPlace {
         // Re-query rather than reuse: apps generally only honour writes to
         // whatever currently has focus, and by now our own panel has held it.
@@ -1170,8 +1187,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("transform: \"\(selection.text.prefix(40))\" is no longer in the field")
             return .notAttempted
         }
-        switch surface.replace(target, with: text) {
-        case .replaced:
+        switch surface.replace(target, with: text, describedAs: label) {
+        case .replaced(let undo):
+            lastSubstitution = undo
             return .replaced
         case .refused(let why):
             Log.write("transform: refused — \(why)")
@@ -1190,7 +1208,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// text and not at the menu bar. It has to already be on screen.
     private func applied(_ what: String) {
         if config.feedback.sound { NSSound(named: "Glass")?.play() }
-        flash("\(what) applied", tone: .done)
+        flash("\(what) applied\(undoHint)", tone: .done)
+    }
+
+    /// `· "Hey parrot, undo"` — empty when there is no phrase to say it with.
+    ///
+    /// The configured phrase rather than a fixed one: it is spelled however the
+    /// person set it, and offering words that do not work is worse than saying
+    /// nothing.
+    private var undoHint: String {
+        guard let phrase = config.transcription.activationPhrases.first?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !phrase.isEmpty,
+              lastSubstitution != nil
+        else { return "" }
+        return " · \"\(phrase.prefix(1).uppercased() + phrase.dropFirst()), undo\""
+    }
+
+    /// Puts the last substitution back.
+    ///
+    /// Deliberately reachable without the model — it is matched as a literal
+    /// phrase — because the moment you need it is the moment something has gone
+    /// wrong, and "Ollama is not running" is not an acceptable answer then.
+    private func performUndo() {
+        guard let record = lastSubstitution else {
+            Log.write("undo: nothing has been substituted yet")
+            flash("Nothing to undo", tone: .caution)
+            return
+        }
+
+        // Back to the window the substitution went into — recorded at the time,
+        // not read now. Saying the phrase went through our own hotkey, and by
+        // then you may well be looking at something else entirely; activating
+        // *that* is how an undo arrives in the wrong app.
+        if let owner = record.owner, !owner.isActive {
+            owner.activate()
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+
+        switch Surface.undo(record) {
+        case .replaced:
+            Log.write("undo: put back \(quoted(record.before))")
+            lastSubstitution = nil
+            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            flash("Undone", tone: .done)
+        case .refused(let why):
+            Log.write("undo: refused — \(why)")
+            flash("Can't undo — \(why)", tone: .caution)
+        }
     }
 
     private func applyTransform(
@@ -1203,7 +1267,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Without one there is nowhere to aim, so it goes in at the cursor the
         // same way a dictation would.
         if let selection {
-            switch replaceSelected(with: text, in: selection) {
+            switch replaceSelected(with: text, in: selection, describedAs: prompt.name) {
             case .replaced:
                 applied(prompt.name)
             case .failed, .notAttempted:
@@ -1234,7 +1298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                !SelectionReader.isOurs(element) {
                 let edit = Edit(find: original, replace: text, fuzzy: false)
                 switch applyInPlace(
-                    [edit], dictated: original, in: element
+                    [edit], dictated: original, in: element, describedAs: prompt.name
                 ) {
                 case .replaced:
                     applied(prompt.name)
@@ -1270,6 +1334,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch command {
         case .openCorrectionPanel:
             beginCorrection()
+        case .undo:
+            performUndo()
         case .addRules(let rules):
             // Prefilled, not saved: the model proposed them, you confirm them.
             // One utterance can carry more than one, so the panel opens with a
@@ -1330,7 +1396,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trimmed = correctedText.trimmingCharacters(in: .whitespacesAndNewlines)
         var landedOnClipboard = false
         if let selection = pendingSelection, !trimmed.isEmpty {
-            switch replaceSelected(with: correctedText, in: selection) {
+            switch replaceSelected(
+                with: correctedText, in: selection, describedAs: "correction"
+            ) {
             case .replaced:
                 break
             case .failed, .notAttempted:
@@ -1350,7 +1418,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch applyInPlace(
                 rules.map { Edit(find: $0.heard, replace: $0.corrected, fuzzy: true) },
                 dictated: lastTranscript,
-                in: element
+                in: element,
+                describedAs: "correction"
             ) {
             case .replaced:
                 break
@@ -1373,7 +1442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         switch rules.count {
-        case 0: flash("Text replaced", tone: .done)
+        case 0: flash("Text replaced\(undoHint)", tone: .done)
         case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)", tone: .done)
         default: flash("Saved \(rules.count) rules", tone: .done)
         }
@@ -1655,7 +1724,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 over: text, rules: nil,
                                 destination: destination, focus: focus
                             )
-                        case .unrecognised:
+                        case .undo, .unrecognised:
+                            // Undo cannot be reached from here: this path is
+                            // the spelling extractor, and it is only asked
+                            // about an instruction that already routed to
+                            // `spelling`. Said mid-dictation it would mean
+                            // undoing a substitution that has not happened yet
+                            // — the text is still in this function.
                             self.giveUpInline(
                                 text, why: "Didn't understand \"\(instruction)\"",
                                 destination: destination

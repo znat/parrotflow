@@ -130,7 +130,7 @@ enum EditTestCommand {
     private static func write(
         _ range: Range<String.Index>, _ replacement: String, in surface: Surface
     ) -> Int32 {
-        switch surface.replace(range, with: replacement) {
+        switch surface.replace(range, with: replacement, describedAs: "edit-test") {
         case .replaced:
             // Deliberately not "succeeded". This is what the write path claimed,
             // which is the thing under test, not the verdict on it.
