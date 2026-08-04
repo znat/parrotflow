@@ -114,6 +114,26 @@ sentence is French. Score a model or a prompt against them with
 `--command "<what you'd say>"` shows how a phrase would be routed. See
 [cli.md](cli.md).
 
+## Taking it back
+
+Every substitution says how to undo it, in the toast that confirms it:
+
+    grammar applied · "Hey parrot, undo"
+
+Say that and the text goes back to what it was. It is matched as a literal
+phrase, never through the model — the moment you want it is the moment
+something went somewhere unexpected, and "Ollama is not running" is not an
+acceptable answer then. `cancel`, `revert` and `put it back` work too, as do
+`annule` and `annuler`.
+
+It refuses if you have edited the text since. An undo fired against text that
+has moved on is not an undo, it is a second unwanted edit, landing exactly where
+you had started fixing things by hand.
+
+One deep, on purpose. This is not an edit history; it is the answer to "that
+went somewhere I did not expect", which is only ever asked about the thing that
+just happened.
+
 ## In a terminal
 
 Selections are fragile: they get dropped on a keystroke or when focus moves,

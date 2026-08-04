@@ -105,6 +105,8 @@ enum CommandTestCommand {
             for rule in rules {
                 print("   action: add rule   \(rule.heard) → \(rule.corrected)")
             }
+        case .undo:
+            print("   action: undo the last substitution")
         case .unrecognised(let text):
             print("   action: none — didn't understand \"\(text)\"")
         }
