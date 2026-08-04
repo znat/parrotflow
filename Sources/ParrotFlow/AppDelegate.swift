@@ -1115,6 +1115,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// something else — so it is used only when the characters sitting there are
     /// still the ones that were selected. Otherwise the text is found again by
     /// its content, which is the thing that was actually pointed at.
+    ///
+    /// Finding it again is where this can go wrong, and the recorded range earns
+    /// its keep a second time. A field reading "Jerry and Jerry" gives two
+    /// answers to "where is Jerry", and taking either one on its own merits
+    /// rewrites a word the speaker was not pointing at — selecting the first and
+    /// having the last one changed is worse than nothing happening. So a
+    /// repeated selection is resolved by *where* it was: the occurrence nearest
+    /// the offset originally recorded, which survives text being inserted or
+    /// removed around it. With no offset to go on there is nothing to choose
+    /// between them, and this refuses.
     private func replaceSelected(
         with text: String, in selection: SelectionReader.Selection
     ) -> InPlace {
@@ -1136,9 +1146,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                in: surface.content
            ), surface.content[range] == selection.text {
             target = range
-        } else if let found = surface.range(of: selection.text) {
-            Log.write("transform: the recorded range moved; found the selection by its text")
-            target = found
+        } else {
+            let matches = surface.ranges(of: selection.text)
+            if matches.count == 1 {
+                Log.write("transform: the recorded range moved; found the selection by its text")
+                target = matches[0]
+            } else if matches.count > 1, let recorded = selection.range, recorded.location >= 0 {
+                // Nearest the offset it was read at, not nearest the end.
+                target = matches.min {
+                    abs(offset(of: $0, in: surface.content) - recorded.location)
+                        < abs(offset(of: $1, in: surface.content) - recorded.location)
+                }
+                Log.write("transform: \(matches.count) copies of the selection;"
+                    + " taking the one nearest where it was read")
+            } else if matches.count > 1 {
+                Log.write("transform: \(matches.count) copies of the selection and nothing"
+                    + " says which was meant; not guessing")
+                return .notAttempted
+            }
         }
 
         guard let target else {
@@ -1152,6 +1177,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("transform: refused — \(why)")
             return .failed
         }
+    }
+
+    private func offset(of range: Range<String.Index>, in text: String) -> Int {
+        NSRange(range, in: text).location
     }
 
     /// The toast after a substitution, and the phrase that takes it back.

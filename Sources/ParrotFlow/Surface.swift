@@ -261,6 +261,28 @@ struct Surface {
         content.range(of: needle, options: [.caseInsensitive, .backwards])
     }
 
+    /// Every range holding `needle`, in the order they appear.
+    ///
+    /// For callers that have to know whether the text is ambiguous before they
+    /// pick one. "Nearest the end" is a fine answer when the word was dictated a
+    /// moment ago and a bad one when the caller is pointing at a specific
+    /// occurrence — and the difference between those is not visible from a
+    /// single range.
+    func ranges(of needle: String) -> [Range<String.Index>] {
+        var found: [Range<String.Index>] = []
+        var from = content.startIndex
+        while let next = content.range(
+            of: needle, options: [.caseInsensitive], range: from..<content.endIndex
+        ) {
+            found.append(next)
+            from = next.lowerBound < next.upperBound
+                ? next.upperBound
+                : content.index(after: next.lowerBound)
+            if from >= content.endIndex { break }
+        }
+        return found
+    }
+
     // MARK: - Writing
 
     enum Outcome: Equatable {
