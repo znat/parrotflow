@@ -1,0 +1,33 @@
+# Variables carried from one stage to the next.
+#
+# Four stages, none of them interesting. `replacements` and `numbers` publish
+# what the pipeline derives plus one fact of their own; `first` and `second` are
+# the same script under two names, so they get two namespaces. What is scored is
+# that every namespace is still there at the end — a stage contributing nothing
+# erases nothing, and a stage contributing something erases nothing either.
+#
+# `first --echo replacements.count` is the half that cannot be faked in Swift:
+# it reports back what the *script* found in its context, so a case that passes
+# proves the scope reached the far side of a pipe rather than merely surviving
+# in memory. `second --echo first.count` then proves the same for a fact
+# published by another script rather than by a built-in stage.
+languages: [en, fr]
+replacements:
+  Supabase: [super base]
+
+transforms:
+  - name: first
+    description: publishes a count, and reports what replacements published
+    command: counter.py --count 2 --echo replacements.count
+    returns: json
+
+  - name: second
+    description: publishes its own count, and reports what first published
+    command: counter.py --count 7 --label kept --echo first.count
+    returns: json
+
+pipeline:
+  - replacements
+  - numbers
+  - transform: first
+  - transform: second

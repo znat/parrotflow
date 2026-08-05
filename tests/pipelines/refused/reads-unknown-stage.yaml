@@ -1,0 +1,7 @@
+# A condition naming a stage that is not in this pipeline at all. Distinct from
+# the ordering case above, and told apart in the message — one is "move it" and
+# the other is "you did not spell it right".
+languages: [en]
+pipeline:
+  - stage: numbers
+    when: cod_identifiers.count == 0

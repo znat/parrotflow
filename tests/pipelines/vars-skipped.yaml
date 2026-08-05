@@ -1,0 +1,30 @@
+# What a skipped stage leaves in the scope, and what a bare-text command does.
+#
+# `first` is gated on an app it will not match here, so it never runs. It gets
+# `ran: false` and nothing else — no `ok`, no `changed`. Inventing those would
+# let `first.ok` read true for a stage that never happened, which is exactly the
+# silent wrong answer the variables were added to remove. The way to ask is
+# `first.ran && first.ok`, and `&&` short-circuits so the second half is never
+# evaluated on a stage that has no `ok` to read.
+#
+# `quiet` is the back-compatibility half: no `returns:` at all, so it speaks the
+# old contract — text on stdin, text on stdout, no JSON anywhere. It still gets
+# the derived variables, so a script nobody has touched since before any of this
+# existed is still something a later stage can gate on.
+languages: [en]
+
+transforms:
+  - name: first
+    description: never runs here
+    command: counter.py --count 3
+    returns: json
+
+  - name: quiet
+    description: a plain stdin-to-stdout command, as they have always been
+    command: tr '[:lower:]' '[:upper:]'
+
+pipeline:
+  - stage: transform
+    transform: first
+    app: /ghostty/
+  - transform: quiet

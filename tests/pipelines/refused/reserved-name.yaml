@@ -1,0 +1,11 @@
+# A transform named after something already in the scope. `asr.confidence` comes
+# from transcription; a transform called `asr` would file its own variables in
+# the same place and leave no way to tell which writer a condition read.
+languages: [en]
+transforms:
+  - name: asr
+    description: collides with the transcription metadata
+    command: counter.py --count 1
+    returns: json
+pipeline:
+  - transform: asr

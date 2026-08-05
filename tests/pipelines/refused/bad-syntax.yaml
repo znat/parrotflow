@@ -1,0 +1,7 @@
+# An expression that does not parse. Caught at load rather than on the first
+# dictation — `=~` is the operator people arrive expecting, so it is worth
+# failing on the line that has it rather than three stages into a transcript.
+languages: [en]
+pipeline:
+  - stage: numbers
+    when: text =~ "hello"

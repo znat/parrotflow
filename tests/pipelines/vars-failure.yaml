@@ -1,0 +1,36 @@
+# The ways a structured stage does not work, and what each leaves behind.
+#
+# All three must let the transcript through untouched — that is the rule this
+# whole file exists under — and all three must be *distinguishable afterwards*,
+# because "failed" and "ran and found nothing" want opposite responses from the
+# stage below and used to look identical.
+#
+#   broken   declared `returns: json` and printed prose      -> ok false
+#   crashed  exited non-zero                                  -> ok false
+#   quiet    returned variables and no `text` key             -> ok true, changed false
+#
+# The third is the one worth reading twice. Returning no `text` is not an error:
+# it is a stage saying it looked and left the sentence alone, which is different
+# from echoing the input back and is the reason `text` is optional in the reply.
+languages: [en]
+
+transforms:
+  - name: broken
+    description: declares json and prints prose
+    command: counter.py --garbage
+    returns: json
+
+  - name: second
+    description: exits non-zero
+    command: counter.py --fail
+    returns: json
+
+  - name: quiet
+    description: publishes a variable and touches no text
+    command: counter.py --count 5 --no-text
+    returns: json
+
+pipeline:
+  - transform: broken
+  - transform: second
+  - transform: quiet
