@@ -90,8 +90,36 @@ so a case file states the setup it assumes instead of inheriting this machine's.
 - `--no-prompts` skips the stages that would call the model, so a run stays
   deterministic and fast.
 - `--quiet` prints only the result, for scripts.
+- `--vars` prints the whole variable scope when the run is done, one line per
+  path, before the output line — so `--quiet --vars | tail -1` is still the
+  result. It is how a stage whose only contribution is a fact gets scored at
+  all, and the first thing to reach for when a condition is not deciding what
+  you expected. See [pipelines.md](pipelines.md#variables).
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
+
+```
+$ $PF --pipeline tests/pipelines/vars-shipped.yaml \
+      "a python function called max retries" --vars
+in:   a python function called max retries
+  → transform
+      a python function called max_retries
+      code_identifiers.asked_model = false  code_identifiers.changed = true  code_identifiers.count = 1
+  ⊘ transform  — skipped, when code_identifiers.count == 0 did not match (code_identifiers.count = 1)
+var   code_identifiers.asked_model = false
+var   code_identifiers.changed = true
+var   code_identifiers.count = 1
+var   code_identifiers.ms = 69.0
+var   code_identifiers.ok = true
+var   code_identifiers.ran = true
+var   dotted.ran = false
+var   language = "en"
+out:  a python function called max_retries
+```
+
+The line under a stage is what *that* stage contributed; the `var` block at the
+end is the whole scope. A skipped stage names the values that decided it, which
+is the question you actually have.
 
 ## Scoring a transform: `--eval`
 

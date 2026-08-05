@@ -1,0 +1,20 @@
+# What language a structured command is told it is dealing with.
+#
+# `languages:` lists en first, and a French transcript detects as fr. The
+# context used to carry the *first configured* language rather than the
+# detected one — and to encode it over the correct value the scope already
+# held, under the same key, so the wrong one won. A script branching on
+# `ctx["language"]` therefore applied English rules to a French sentence.
+#
+# `first` reports back what it was given, so the case is scored from the far
+# side of the pipe rather than from what Swift believes it sent.
+languages: [en, fr]
+
+transforms:
+  - name: first
+    description: reports the language it was handed
+    command: counter.py --echo language
+    returns: json
+
+pipeline:
+  - transform: first

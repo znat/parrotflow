@@ -245,3 +245,236 @@ cases:
     pipeline: command-patient
     input: read user dot name
     expect: READ USER DOT NAME
+
+  # --- variables ------------------------------------------------------------
+  #
+  # `expect_vars` asserts on the scope rather than on the sentence, which is the
+  # only way to score a stage whose whole contribution is a fact. Each entry has
+  # to appear in the `--vars` listing with that exact value; a case that names no
+  # variables is unaffected.
+  #
+  # What is being scored here is the machinery, not the stages — the fixtures use
+  # a script that publishes whatever its flags say, so a failure is about the
+  # carrying and never about whether some transform changed its mind.
+
+  # Every namespace present at the end, including the two that ran before the
+  # ones that published last. This is carry-through in its plainest form: four
+  # stages, and the first one's facts are still readable after the other three.
+  - name: every stage's variables survive the stages after it
+    pipeline: vars
+    input: super base has vingt et un users
+    expect: Supabase has 21 users
+    expect_vars:
+      replacements.count: 1
+      replacements.changed: true
+      numbers.language: fr
+      numbers.changed: true
+      first.count: 2
+      second.count: 7
+      second.label: kept
+
+  # The same run, read from the far side of a pipe. `first` reports what it found
+  # at `replacements.count` and `second` reports what it found at `first.count`,
+  # so a pass here means the scope reached two separate scripts — not merely that
+  # it survived in Swift, which every other case in this section would also show.
+  - name: a script sees what the stages above it published
+    pipeline: vars
+    input: super base has vingt et un users
+    expect: Supabase has 21 users
+    expect_vars:
+      first.saw: 1
+      second.saw: 2
+
+  # And the same pipeline on a sentence the table does not touch, so the numbers
+  # a script reads are the ones this run produced rather than any run's.
+  - name: what a script sees is this transcript's, not the last one's
+    pipeline: vars
+    input: nothing here matches
+    expect: unchanged
+    expect_vars:
+      replacements.count: 0
+      first.saw: 0
+      second.saw: 2
+
+  # Both halves of the rule, in one pipeline. `counter` runs twice: `count` is
+  # republished and the later value wins; `label` is written only by the first
+  # run and has to survive the second one saying nothing about it.
+  - name: a stage run twice overrides its own variables
+    pipeline: vars-override
+    input: read user dot name
+    expect: unchanged
+    expect_vars:
+      counter.count: 2
+      counter.label: first-run
+
+  # The stage in between is untouched by either run of `counter`, and its own
+  # namespace is untouched by them. A stage writes under its own name and
+  # nowhere else — there is no way to spell otherwise, which is the point.
+  - name: one stage's variables do not reach another's namespace
+    pipeline: vars-override
+    input: read user dot name
+    expect: unchanged
+    expect_vars:
+      quiet.count: 9
+      quiet.changed: false
+
+  # A condition reading a variable rather than the text. The table fires, so
+  # `replacements.count` is 1, so the stage gated on it being 0 stands down.
+  - name: a stage stands down because an earlier stage already did the work
+    pipeline: vars-conditions
+    app: Ghostty
+    input: super base is down
+    expect: Supabase is down
+    expect_vars:
+      first.saw: 1
+      second.ran: false
+
+  # The same pipeline, the other branch. Nothing for the table to do, so the
+  # gated stage runs.
+  - name: and runs when the earlier stage found nothing to do
+    pipeline: vars-conditions
+    app: Ghostty
+    input: nothing here matches
+    expect: unchanged
+    expect_vars:
+      first.saw: 0
+      second.ran: true
+      second.count: 42
+
+  # `app` and `language` are in the scope before any stage runs, so a condition
+  # can read them by name. Ghostty, so the stage that excludes terminals stands
+  # down — written as a real negation rather than as the anchored negative
+  # lookahead the `app:` key would have needed.
+  - name: a condition reads the seeded app and language
+    pipeline: vars-conditions
+    app: Ghostty
+    input: nothing here matches
+    expect: unchanged
+    expect_vars:
+      third.ran: false
+
+  - name: and the same condition lets it run in an editor
+    pipeline: vars-conditions
+    app: Zed
+    input: nothing here matches
+    expect: unchanged
+    expect_vars:
+      third.ran: true
+      third.count: 7
+
+  # The three ways a structured stage does not work. All three keep the
+  # transcript; all three stay distinguishable afterwards.
+  - name: a stage that printed prose is marked as having failed
+    pipeline: vars-failure
+    input: read user dot name
+    expect: unchanged
+    expect_vars:
+      broken.ok: false
+      broken.changed: false
+
+  - name: a stage that exited non-zero is marked the same way
+    pipeline: vars-failure
+    input: read user dot name
+    expect: unchanged
+    expect_vars:
+      second.ok: false
+
+  # Returning no `text` is not a failure. It is a stage saying it looked and
+  # left the sentence alone, which is why `text` is optional in the reply — and
+  # it has to be told apart from the two above it.
+  - name: a stage that returns variables and no text is not a failure
+    pipeline: vars-failure
+    input: read user dot name
+    expect: unchanged
+    expect_vars:
+      quiet.ok: true
+      quiet.changed: false
+      quiet.count: 5
+
+  # A skipped stage gets `ran: false` and nothing else. No `ok`, no `changed` —
+  # inventing them would let `first.ok` read true for a stage that never
+  # happened.
+  - name: a skipped stage reports that it did not run
+    pipeline: vars-skipped
+    app: Zed
+    input: read user dot name
+    expect: READ USER DOT NAME
+    expect_vars:
+      first.ran: false
+
+  # A command with no `returns:` speaks the old contract and knows nothing about
+  # any of this, and still gets the derived variables — so a script written
+  # before variables existed is still something a later stage can gate on.
+  - name: a plain stdin-to-stdout command still gets the derived variables
+    pipeline: vars-skipped
+    app: Zed
+    input: read user dot name
+    expect: READ USER DOT NAME
+    expect_vars:
+      quiet.ran: true
+      quiet.ok: true
+      quiet.changed: true
+
+  # The language a structured command is handed is the detected one, not the
+  # first entry in `languages:`. Scored from what the script reports back,
+  # because what Swift believes it sent is not the question.
+  - name: a structured command is told the detected language
+    pipeline: vars-language
+    input: on en a vingt et un dans le tableau
+    expect: unchanged
+    expect_vars:
+      first.saw: fr
+
+  - name: and the configured order does not decide it
+    pipeline: vars-language
+    input: there are twenty one rows in the table
+    expect: unchanged
+    expect_vars:
+      first.saw: en
+
+  # The shipped script, speaking the protocol, with the stage below it gated on
+  # what it published. A sentence it takes:
+  - name: the shipped transform publishes what it converted
+    pipeline: vars-shipped
+    input: a python function called max retries
+    expect: a python function called max_retries
+    expect_vars:
+      code_identifiers.count: 1
+      code_identifiers.asked_model: false
+      dotted.ran: false
+  # And one it declines, which is what lets the stage below it have a turn.
+  - name: and stands aside for the next stage when it converted nothing
+    pipeline: vars-shipped
+    input: read user dot name
+    expect: read user.name
+    expect_vars:
+      code_identifiers.count: 0
+      dotted.ran: true
+      dotted.changed: true
+
+# Pipelines that must not load at all.
+#
+# Scored separately because the property is different: these never reach a
+# transcript, and what is being checked is that `--check-config` says the useful
+# thing rather than that some stage did something. `expect_problem` is a
+# substring — the whole message is prose and would tie a case to its wording.
+refused:
+  - name: a condition reading a stage that runs later is refused
+    pipeline: reads-later-stage
+    expect_problem: runs *after* this stage
+
+  - name: a condition naming a stage nothing declares is refused
+    pipeline: reads-unknown-stage
+    expect_problem: nothing in this pipeline is called "cod_identifiers"
+
+  - name: the old bare-word condition is refused, and told what to write
+    pipeline: bare-word
+    expect_problem: 'write it as a pattern: /genre/'
+
+  - name: an expression that does not parse is refused at load
+    pipeline: bad-syntax
+    expect_problem: is not part of this language
+
+  - name: a transform named after the transcription metadata is refused
+    pipeline: reserved-name
+    expect_problem: would file its variables where asr already is

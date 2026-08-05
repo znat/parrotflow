@@ -161,8 +161,23 @@ actor Transcriber {
         }
         Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
+        // The same numbers the trace records, handed to the pipeline as well.
+        //
+        // Not read back off `Trace`, deliberately. The collector is bound only
+        // when somebody asked for a trace — `Trace.current` is nil the rest of
+        // the time — and a condition reading `asr.confidence` must not work on
+        // the runs you are watching and quietly stop on the runs you are not.
+        // So the trace consumes these; it does not own them.
         return await Self.applyReplacements(
-            to: result.text, config: config, app: app, progress: progress
+            to: result.text, config: config, app: app,
+            seed: Scope(values: [
+                "asr.model": .string(Repo.parakeetV3.rawValue),
+                "asr.confidence": .double(Double(result.confidence)),
+                "asr.duration": .double(result.duration),
+                "asr.processing": .double(result.processingTime),
+                "asr.words": .int(result.tokenTimings?.count ?? 0),
+            ]),
+            progress: progress
         )
     }
 
@@ -420,9 +435,12 @@ actor Transcriber {
     /// How names get fixed — see `Replacements`.
     nonisolated static func applyReplacements(
         to text: String, config: Config, app: Pipeline.App? = nil,
+        seed: Scope = Scope(),
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
-        await Replacements.apply(to: text, config: config, app: app, progress: progress)
+        await Replacements.apply(
+            to: text, config: config, app: app, seed: seed, progress: progress
+        )
     }
 }
 

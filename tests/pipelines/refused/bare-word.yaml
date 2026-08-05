@@ -1,0 +1,9 @@
+# The old form. `when: genre` used to mean "the word genre appears, on word
+# boundaries" and now parses as a variable nobody defined. Reading it as false
+# would be the silent failure this whole design removes, so it is refused — and
+# the message says what to write instead, because a breaking change that only
+# says "no" is a breaking change nobody can act on.
+languages: [en, fr]
+pipeline:
+  - stage: numbers
+    when: genre

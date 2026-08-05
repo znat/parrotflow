@@ -43,6 +43,90 @@ enum CommandRunner {
     /// that already runs on every transcript.
     static let timeout: TimeInterval = 2
 
+    /// What a command handed back.
+    ///
+    /// `text` is optional and that is the whole difference between the two
+    /// protocols. A bare command's stdout *is* the text, so it always has one. A
+    /// `returns: json` command may return only variables — "I looked, I found
+    /// three, I changed nothing" — and an absent `text` says that in a way an
+    /// echoed copy of the input cannot.
+    struct Output: Equatable {
+        var text: String?
+        var vars: [String: Scope.Value] = [:]
+    }
+
+    /// What a structured command is told about the transcript besides the
+    /// transcript.
+    ///
+    /// Read-only from the script's side, and deliberately not the same shape as
+    /// what comes back: a command receives the whole accumulated scope and
+    /// returns only its own contribution. It has no way to spell "and everything
+    /// else, unchanged", so it has no way to drop it. Carrying is the pipeline's
+    /// job — a `sed` one-liner could never have echoed a namespace, and a
+    /// contract only some bodies can honour is not one.
+    struct Context: Encodable {
+        let scope: Scope
+
+        /// The bare names go at the top and the namespaced ones nest under
+        /// `vars`, so a script reads `ctx["vars"]["numbers"]["count"]` rather
+        /// than splitting a dotted string itself. The flat storage inside
+        /// `Scope` is an implementation detail of the evaluator, and pushing it
+        /// through the interface would make every script a parser.
+        ///
+        /// Everything comes from the scope and nothing is passed in beside it.
+        /// `language` used to be its own parameter, taken from the first
+        /// configured language — which is not the detected one, and which was
+        /// then encoded *over* the correct value the scope already held, under
+        /// the same key. Two sources for one field is how they disagree; there
+        /// is now one.
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: Key.self)
+            var nested: [String: [String: Scope.Value]] = [:]
+            for path in scope.paths {
+                guard let value = scope[path] else { continue }
+                guard let dot = path.firstIndex(of: ".") else {
+                    try container.encode(value, forKey: Key(path))
+                    continue
+                }
+                let namespace = String(path[path.startIndex..<dot])
+                let name = String(path[path.index(after: dot)...])
+                nested[namespace, default: [:]][name] = value
+            }
+            try container.encode(nested, forKey: Key("vars"))
+        }
+
+        struct Key: CodingKey {
+            let stringValue: String
+            var intValue: Int? { nil }
+            init(_ value: String) { stringValue = value }
+            init?(stringValue value: String) { stringValue = value }
+            init?(intValue: Int) { return nil }
+        }
+    }
+
+    /// What goes in on stdin when a transform declares `returns: json`.
+    private struct Envelope: Encodable {
+        let text: String
+        let ctx: Context
+    }
+
+    /// What must come back. Both keys optional, because a script that only
+    /// contributes variables and a script that only rewrites text are both
+    /// ordinary — and `text: null` is how the first one says so without echoing
+    /// a string it never looked at.
+    private struct Reply: Decodable {
+        var text: String?
+        var vars: [String: Scope.Value] = [:]
+
+        enum CodingKeys: String, CodingKey { case text, vars }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            text = try c.decodeIfPresent(String.self, forKey: .text)
+            vars = try c.decodeIfPresent([String: Scope.Value].self, forKey: .vars) ?? [:]
+        }
+    }
+
     /// stdout, or nil if the program could not run, failed, took too long, or
     /// said nothing. Nil means "keep the transcript".
     ///
@@ -53,6 +137,28 @@ enum CommandRunner {
         _ command: String, on text: String, in folder: TransformFolder?,
         seconds: TimeInterval? = nil
     ) -> String? {
+        run(command, on: text, in: folder, seconds: seconds, structured: false, context: nil)?
+            .text
+    }
+
+    /// The same run, in whichever of the two protocols the transform declared.
+    ///
+    /// `structured` is read from the config rather than sniffed from the output,
+    /// and that is a decision worth defending. The obvious rule — "if stdout
+    /// parses as an object with a `text` key, it is structured" — breaks on
+    /// exactly the transcript this app is most likely to be handed by somebody
+    /// who dictates code: one that *is* a JSON object. Sniffing also means a
+    /// script's protocol depends on its output, so a stage silently changes
+    /// contract on the one sentence that happens to look like a map.
+    ///
+    /// Nil still means "keep the transcript", and now also means "and record
+    /// that this stage did not work" — the caller turns it into `ok: false`, so
+    /// a later condition can tell a stage that failed from a stage that ran and
+    /// found nothing.
+    static func run(
+        _ command: String, on text: String, in folder: TransformFolder?,
+        seconds: TimeInterval?, structured: Bool, context: Context?
+    ) -> Output? {
         let timeout = seconds ?? Self.timeout
         let folder = folder ?? TransformFolder(configDirectory: ConfigStore.directory, name: "")
         if let complaint = complaint(about: command, in: folder) {
@@ -71,6 +177,20 @@ enum CommandRunner {
         // The folder, so a script opens `roster.json` as a bare relative path
         // and the whole transform is one directory you can copy.
         process.currentDirectoryURL = folder.workingDirectory
+        if structured {
+            // So `returns: json` stays the only place the protocol is declared.
+            // The script has to know too — it is reading stdin — and the
+            // alternative was a flag in the `command:` line that means the same
+            // thing as the key above it and can disagree with it.
+            //
+            // It also keeps a script runnable by hand. `echo "text" | ./x.py`
+            // has no variable set, so the script takes the old path, which is
+            // what every harness in scripts/ does and what anybody debugging one
+            // will type.
+            var environment = ProcessInfo.processInfo.environment
+            environment["PARROTFLOW_PROTOCOL"] = "json"
+            process.environment = environment
+        }
 
         let input = Pipe()
         let output = Pipe()
@@ -109,7 +229,21 @@ enum CommandRunner {
             return nil
         }
 
-        input.fileHandleForWriting.write(Data(text.utf8))
+        // The transcript on its own, or the transcript wrapped in what the
+        // pipeline knows about it. An encoding failure falls back to the bare
+        // text rather than to nothing: a script that then cannot parse its input
+        // fails in its own way and the transcript survives, which is a better
+        // outcome than this returning nil for a reason nobody can see.
+        var payload = Data(text.utf8)
+        if structured, let context {
+            let encoder = JSONEncoder()
+            if let encoded = try? encoder.encode(Envelope(text: text, ctx: context)) {
+                payload = encoded
+            } else {
+                Log.write("command: \"\(command)\" could not be given its context; sent bare text")
+            }
+        }
+        input.fileHandleForWriting.write(payload)
         try? input.fileHandleForWriting.close()
 
         if exited.wait(timeout: .now() + timeout) == .timedOut {
@@ -141,7 +275,24 @@ enum CommandRunner {
         // is not this app's business, and `print` adds exactly one newline.
         var result = String(data: collected.value, encoding: .utf8) ?? ""
         if result.hasSuffix("\n") { result.removeLast() }
-        return result.isEmpty ? nil : result
+        guard !result.isEmpty else { return nil }
+
+        guard structured else { return Output(text: result) }
+
+        guard let reply = try? JSONDecoder().decode(Reply.self, from: Data(result.utf8)) else {
+            // Loud, and then harmless. A transform that declared `returns: json`
+            // and printed something else is a script bug rather than a config
+            // one, so it cannot be caught by `--check-config` and has to be
+            // caught here — but the transcript still comes through untouched,
+            // because the alternative is losing a sentence over a stray
+            // `print()` somebody left in.
+            Log.write(
+                "command: \"\(command)\" declares returns: json but printed"
+                + " \(result.prefix(120)); kept the transcript"
+            )
+            return nil
+        }
+        return Output(text: reply.text, vars: reply.vars)
     }
 
     /// SIGTERM, then SIGKILL if that was not enough.

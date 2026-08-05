@@ -1,0 +1,34 @@
+# The same transform twice, which is the only way a namespace gets written over.
+#
+# Allowed, deliberately. Refusing it would rule out running `replacements`
+# before and after a rewrite, which is a thing people do — so the rule is the one
+# a list executed top to bottom invites: the later run wins.
+#
+# `counter` bumps whatever it finds under its own name, and writes `label` only
+# on the run that found nothing. So the two runs publish different things, which
+# is what makes both halves of "carry through unless overridden" scoreable in one
+# pipeline:
+#
+#   counter.count   1 then 2   — republished, so the later value must win
+#   counter.label   set once   — never mentioned again, so it must survive
+#
+# `quiet` sits between them so that "the later run wins" is a claim about order
+# rather than about adjacency, and so that a third namespace is present to be
+# left alone by both.
+languages: [en]
+
+transforms:
+  - name: counter
+    description: bumps its own count, and labels itself the first time only
+    command: counter.py --bump counter.count --label-once first-run
+    returns: json
+
+  - name: quiet
+    description: publishes a count and touches no text
+    command: counter.py --count 9 --no-text
+    returns: json
+
+pipeline:
+  - transform: counter
+  - transform: quiet
+  - transform: counter

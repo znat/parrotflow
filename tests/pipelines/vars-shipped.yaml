@@ -1,0 +1,28 @@
+# The shipped `code_identifiers`, through the structured protocol, reached by
+# symlink so this scores the file people actually edit.
+#
+# Everything else in this section uses a script that publishes whatever its
+# flags say, which is right for testing the machinery and proves nothing about
+# whether a real transform can speak the protocol. This one does the opposite:
+# the transform is the one in examples/, the count is derived from the rewrite
+# it actually performed, and `dotted` below it is gated on that count — which is
+# the arrangement the default config wants, since the two overlap in every
+# terminal and only one of them should take a given sentence.
+languages: [en, fr]
+
+transforms:
+  - name: code_identifiers
+    description: spoken names as identifiers
+    command: code_identifiers.py
+    returns: json
+
+  - name: dotted
+    description: spoken dots as dots, when nothing else took the sentence
+    replace:
+      $1.$2: ["/(\\w+) dot (\\w+)/"]
+
+pipeline:
+  - transform: code_identifiers
+  - stage: transform
+    transform: dotted
+    when: code_identifiers.count == 0

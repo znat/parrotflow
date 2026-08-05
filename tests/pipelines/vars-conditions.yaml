@@ -1,0 +1,42 @@
+# A stage gated on what an earlier stage published, which is the whole reason
+# variables exist.
+#
+# `first` reports how many replacement rules fired. `second` runs only when that
+# is zero — the shape the real config wants for `dotted`, which should stand
+# down when `code_identifiers` has already taken the sentence. Scored on two
+# inputs: one the table rewrites and one it does not, so the same pipeline takes
+# both branches.
+#
+# `third` is the seed half: `app` and `language` are put in the scope before any
+# stage runs, so a condition can read them by name instead of only through the
+# `app:` key. Note that it is a real negation — `!app.contains(…)` — where the
+# `app:` key would have needed an anchored negative lookahead.
+languages: [en, fr]
+replacements:
+  Supabase: [super base]
+
+transforms:
+  - name: first
+    description: reports what the table did
+    command: counter.py --echo replacements.count
+    returns: json
+
+  - name: second
+    description: runs only when the table found nothing
+    command: counter.py --count 42
+    returns: json
+
+  - name: third
+    description: runs anywhere but a terminal
+    command: counter.py --count 7
+    returns: json
+
+pipeline:
+  - replacements
+  - transform: first
+  - stage: transform
+    transform: second
+    when: replacements.count == 0
+  - stage: transform
+    transform: third
+    when: '!app.contains("ghostty") && language == "en"'

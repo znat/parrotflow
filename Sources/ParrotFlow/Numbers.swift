@@ -82,13 +82,32 @@ enum Numbers {
     /// "vingt et un", two of the commonest things anyone dictates, would be
     /// handed the wrong grammar and come back untouched.
     static func apply(to text: String, languages: [String]) -> String {
+        read(text, languages: languages).text
+    }
+
+    /// The same pass, saying which grammar it was that read the numbers.
+    ///
+    /// That verdict has always been computed here and thrown away, and it is not
+    /// the same answer as the pipeline's own language: the rule above is "try the
+    /// detected one, then the others, and let a candidate win only on real
+    /// evidence", so a French number inside an English sentence is read by the
+    /// French grammar while the pipeline is still an English one. The pipeline
+    /// publishes it as `numbers.language`, which is the first time anything has
+    /// been able to see which grammar actually fired.
+    ///
+    /// When nothing changed there is no winner, and the detected language is
+    /// reported — that is the grammar that was asked and declined, which is the
+    /// useful answer to "why did this not become a digit".
+    static func read(
+        _ text: String, languages: [String]
+    ) -> (text: String, language: String) {
         let fallback = languages.first ?? "en"
         let detected = DictationLanguage.detect(
             text, allowed: languages, fallback: fallback
         )
 
         let primary = apply(to: text, grammar: .named(detected))
-        if primary != text { return primary }
+        if primary != text { return (primary, detected) }
 
         let identifiable = text.split(whereSeparator: { $0.isWhitespace }).count
             >= DictationLanguage.minimumWords && languages.count > 1
@@ -98,9 +117,9 @@ enum Numbers {
             let output = apply(to: text, grammar: grammar)
             guard output != text else { continue }
             if identifiable, !hasPlainNumberWord(text, grammar) { continue }
-            return output
+            return (output, language)
         }
-        return text
+        return (text, detected)
     }
 
     /// Whether the text contains a word this grammar reads as a unit, a teen or

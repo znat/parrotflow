@@ -140,10 +140,13 @@ enum Trace {
         /// Every stage that ran, including the ones that changed nothing —
         /// "ran and found nothing" and "was skipped" are different answers and
         /// only the log conflates them.
-        func recordStage(_ name: String, before: String, after: String, seconds: Double) {
+        func recordStage(
+            _ name: String, before: String, after: String, seconds: Double,
+            vars: [String: Scope.Value] = [:]
+        ) {
             lock.lock(); defer { lock.unlock() }
             stages.append(
-                Stage(name: name, before: before, after: after, seconds: seconds)
+                Stage(name: name, before: before, after: after, seconds: seconds, vars: vars)
             )
         }
 
@@ -395,11 +398,19 @@ enum Trace {
         var before: String?
         var after: String?
         var seconds: Double?
+        /// What the stage published about itself — `count`, `language`, and the
+        /// `ran`/`ok`/`changed`/`ms` the pipeline derives for every stage.
+        ///
+        /// Worth a column of its own rather than folding into the prose: this is
+        /// the file a sweep runs over, and "which transcripts did
+        /// code_identifiers actually fire on" is a `jq` query when the numbers
+        /// are numbers and a regex over English when they are not.
+        var vars: [String: Scope.Value]?
 
         enum CodingKeys: String, CodingKey {
             case name
             case skipCode = "skip_reason"
-            case skipped, before, after, seconds
+            case skipped, before, after, seconds, vars
         }
 
         init(name: String, skipCode: String, skipped: String) {
@@ -408,11 +419,15 @@ enum Trace {
             self.skipped = skipped
         }
 
-        init(name: String, before: String, after: String, seconds: Double) {
+        init(
+            name: String, before: String, after: String, seconds: Double,
+            vars: [String: Scope.Value]
+        ) {
             self.name = name
             self.before = before
             self.after = after
             self.seconds = seconds
+            self.vars = vars.isEmpty ? nil : vars
         }
     }
 }

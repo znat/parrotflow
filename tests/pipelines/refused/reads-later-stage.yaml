@@ -1,0 +1,18 @@
+# A condition reading a stage that runs *after* it.
+#
+# The failure this refuses is the one no runtime error can catch in time: at run
+# time "the stage below has not published anything yet" and "the stage published
+# nothing" are the same absence, and by then the transcript is already halfway
+# through. Only the pipeline as a whole knows the order, so only `validate` can
+# see the difference — the same argument that already refuses `fuzzy` before
+# `replacements`.
+languages: [en]
+transforms:
+  - name: later
+    description: publishes a count
+    command: counter.py --count 1
+    returns: json
+pipeline:
+  - stage: numbers
+    when: later.count == 0
+  - transform: later

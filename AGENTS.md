@@ -48,7 +48,12 @@ rewrite a sentence and 8/8 asked only to identify which words matter, with a
 script doing the rest. Split the job before reaching for a bigger prompt.
 
 **A stage that costs a model call needs a condition.** `when:`, `unless:` or
-`app:`, so it is skipped on the transcripts that never needed it.
+`app:`, so it is skipped on the transcripts that never needed it. A condition
+between slashes is a regular expression; anything else is an expression over
+what the stages above published — `code_identifiers.count == 0`,
+`asr.confidence < 0.7`, `!grammar.changed`. `--pipeline <file> "<text>" --vars`
+prints the whole scope, and a skipped stage names the values that decided it.
+See [docs/pipelines.md](docs/pipelines.md#variables).
 
 **Say out loud what executes.** A `command:` transform makes `config.yaml` run
 a program. If you add one, tell the person whose machine it runs on, in the

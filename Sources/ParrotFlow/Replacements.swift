@@ -38,15 +38,18 @@ enum Replacements {
     /// out of this function did not move the call sites too.
     static func apply(
         to text: String, config: Config, allowPrompts: Bool = true, app: Pipeline.App? = nil,
-        progress: (@Sendable (String) -> Void)? = nil
+        seed: Scope = Scope(), progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         let (pipeline, language) = Pipeline.forText(text, config: config)
         // The verdict that picked the stages, which until now was computed here
         // and discarded on the same line. Parakeet reports no language of its
         // own, so this is the only one there is to write down.
         Trace.current?.recordLanguage(language)
+        var seed = seed
+        seed.set("language", .string(language))
         return await pipeline.run(
-            text, config: config, allowPrompts: allowPrompts, app: app, progress: progress
+            text, config: config, allowPrompts: allowPrompts, app: app,
+            seed: seed, progress: progress
         )
     }
 
@@ -55,8 +58,26 @@ enum Replacements {
     /// Literal on word boundaries, or a regular expression when the source is
     /// wrapped in slashes. Case-insensitive either way.
     static func applyExact(to text: String, rules: [Config.Transcription.Rule]) -> String {
+        exact(to: text, rules: rules).text
+    }
+
+    /// The same pass, with how many rules actually fired.
+    ///
+    /// Split out rather than folded in because the count is only wanted by the
+    /// pipeline, which publishes it as `replacements.count` so a later stage can
+    /// ask whether this one already did the job. Every other caller wants the
+    /// string and nothing else, and `applyExact` above is still exactly what
+    /// they were calling.
+    ///
+    /// Counted per *rule*, not per substitution: "two rules fired" is the
+    /// question a condition is asking, and a rule that replaced the same word
+    /// four times did one thing, not four.
+    static func exact(
+        to text: String, rules: [Config.Transcription.Rule]
+    ) -> (text: String, count: Int) {
         var output = text
         var deleted = false
+        var fired = 0
 
         for rule in rules {
             guard let pattern = try? NSRegularExpression(
@@ -71,10 +92,13 @@ enum Replacements {
                 range: NSRange(output.startIndex..., in: output),
                 withTemplate: rule.template
             )
-            if rule.isDeletion, output != before { deleted = true }
+            if output != before {
+                fired += 1
+                if rule.isDeletion { deleted = true }
+            }
         }
 
-        return deleted ? tidy(output) : output
+        return (deleted ? tidy(output) : output, fired)
     }
 
     /// Closes the gaps a deletion leaves — doubled spaces, a space before a
