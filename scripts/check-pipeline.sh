@@ -110,6 +110,26 @@ while IFS='|' read -r name fixture problem; do
   total=$((total + 1))
   path="$ROOT/tests/pipelines/refused/$fixture.yaml"
 
+  # An entry with no `expect_problem` is refused rather than run. `grep -F ""`
+  # matches every line, so a case with nothing to look for passed on any
+  # failure at all — and that is exactly what happened to four cases appended
+  # to the wrong section of the file: they named no problem, the fixture did
+  # not exist, the binary failed to load it, and the empty pattern called that
+  # a pass. A test that cannot fail is worse than no test.
+  if [ -z "$problem" ]; then
+    failed="$failed
+      $name"
+    printf '  ✗ %s  [%s]\n      no expect_problem — a refused case must say what it is looking for\n' \
+      "$name" "$fixture"
+    continue
+  fi
+  if [ ! -f "$path" ]; then
+    failed="$failed
+      $name"
+    printf '  ✗ %s\n      no such fixture: tests/pipelines/refused/%s.yaml\n' "$name" "$fixture"
+    continue
+  fi
+
   if out="$("$BIN" --pipeline "$path" "anything at all" --app "" --quiet 2>&1)"; then
     failed="$failed
       $name"

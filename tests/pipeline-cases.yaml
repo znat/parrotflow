@@ -415,6 +415,43 @@ cases:
       quiet.ok: true
       quiet.changed: true
 
+  # The language a structured command is handed is the detected one, not the
+  # first entry in `languages:`. Scored from what the script reports back,
+  # because what Swift believes it sent is not the question.
+  - name: a structured command is told the detected language
+    pipeline: vars-language
+    input: on en a vingt et un dans le tableau
+    expect: unchanged
+    expect_vars:
+      first.saw: fr
+
+  - name: and the configured order does not decide it
+    pipeline: vars-language
+    input: there are twenty one rows in the table
+    expect: unchanged
+    expect_vars:
+      first.saw: en
+
+  # The shipped script, speaking the protocol, with the stage below it gated on
+  # what it published. A sentence it takes:
+  - name: the shipped transform publishes what it converted
+    pipeline: vars-shipped
+    input: a python function called max retries
+    expect: a python function called max_retries
+    expect_vars:
+      code_identifiers.count: 1
+      code_identifiers.asked_model: false
+      dotted.ran: false
+  # And one it declines, which is what lets the stage below it have a turn.
+  - name: and stands aside for the next stage when it converted nothing
+    pipeline: vars-shipped
+    input: read user dot name
+    expect: read user.name
+    expect_vars:
+      code_identifiers.count: 0
+      dotted.ran: true
+      dotted.changed: true
+
 # Pipelines that must not load at all.
 #
 # Scored separately because the property is different: these never reach a
@@ -441,24 +478,3 @@ refused:
   - name: a transform named after the transcription metadata is refused
     pipeline: reserved-name
     expect_problem: would file its variables where asr already is
-
-  # The shipped script, speaking the protocol, with the stage below it gated on
-  # what it published. A sentence it takes:
-  - name: the shipped transform publishes what it converted
-    pipeline: vars-shipped
-    input: a python function called max retries
-    expect: a python function called max_retries
-    expect_vars:
-      code_identifiers.count: 1
-      code_identifiers.asked_model: false
-      dotted.ran: false
-
-  # And one it declines, which is what lets the stage below it have a turn.
-  - name: and stands aside for the next stage when it converted nothing
-    pipeline: vars-shipped
-    input: read user dot name
-    expect: read user.name
-    expect_vars:
-      code_identifiers.count: 0
-      dotted.ran: true
-      dotted.changed: true

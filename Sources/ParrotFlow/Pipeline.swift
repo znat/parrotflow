@@ -551,6 +551,15 @@ struct Pipeline: Equatable, Codable {
             scope.set("app", .string(app.name))
             scope.set("bundle_id", .string(app.bundleID))
         }
+        // Only when the caller did not already resolve it. `Replacements.apply`
+        // detects the language to choose the pipeline and seeds it on the way
+        // in, so the live path costs nothing here; a caller that reaches this
+        // type directly — `--eval` does — would otherwise leave `language`
+        // absent from a condition and from a script's context. Absent is better
+        // than wrong, and present-and-right is better than either.
+        if scope["language"] == nil {
+            scope.set("language", .string(Pipeline.forText(output, config: config).1))
+        }
 
         for step in steps {
             let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
@@ -694,9 +703,7 @@ struct Pipeline: Equatable, Codable {
             let outcome = CommandRunner.run(
                 command, on: text, in: transform.folder, seconds: transform.timeout,
                 structured: transform.returnsJSON,
-                context: transform.returnsJSON
-                    ? CommandRunner.Context(scope: scope, language: config.transcription.languages.first ?? "en")
-                    : nil
+                context: transform.returnsJSON ? CommandRunner.Context(scope: scope) : nil
             )
             guard let result = outcome else {
                 return StageResult(text: text, vars: ["ok": .bool(false)])

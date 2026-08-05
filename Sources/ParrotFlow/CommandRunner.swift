@@ -66,13 +66,19 @@ enum CommandRunner {
     /// contract only some bodies can honour is not one.
     struct Context: Encodable {
         let scope: Scope
-        let language: String
 
         /// The bare names go at the top and the namespaced ones nest under
         /// `vars`, so a script reads `ctx["vars"]["numbers"]["count"]` rather
         /// than splitting a dotted string itself. The flat storage inside
         /// `Scope` is an implementation detail of the evaluator, and pushing it
         /// through the interface would make every script a parser.
+        ///
+        /// Everything comes from the scope and nothing is passed in beside it.
+        /// `language` used to be its own parameter, taken from the first
+        /// configured language — which is not the detected one, and which was
+        /// then encoded *over* the correct value the scope already held, under
+        /// the same key. Two sources for one field is how they disagree; there
+        /// is now one.
         func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: Key.self)
             var nested: [String: [String: Scope.Value]] = [:]
@@ -86,7 +92,6 @@ enum CommandRunner {
                 let name = String(path[path.index(after: dot)...])
                 nested[namespace, default: [:]][name] = value
             }
-            try container.encode(language, forKey: Key("language"))
             try container.encode(nested, forKey: Key("vars"))
         }
 

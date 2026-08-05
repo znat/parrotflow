@@ -234,9 +234,16 @@ def ask(model, text, endpoint="http://localhost:11434"):
         return ""
 
 
-def place(reply, text):
+def place(reply, text, converted=None):
     """The extraction applied — the deterministic half, sharing `cased` and
-    `style_for` with the rules above so there is one algorithm and not two."""
+    `style_for` with the rules above so there is one algorithm and not two.
+
+    `converted` is appended one entry per name taken, exactly as `convert` does
+    — the two paths produce the same kind of rewrite and have to report it the
+    same way. A model conversion that did not count would publish `count: 0` on
+    a sentence this stage had just rewritten, and the stage below, told to stand
+    down when the count is zero, would run anyway.
+    """
     language, names = None, []
     for line in reply.splitlines():
         line = line.strip()
@@ -257,6 +264,8 @@ def place(reply, text):
         start = out.lower().index(span.lower())
         out = (out[:start] + cased(words, style_for(out, out[:start], language))
                + out[start + len(span):])
+        if converted is not None:
+            converted.append(span)
     return out
 
 
@@ -289,9 +298,14 @@ if __name__ == "__main__":
     asked = False
     # The model is asked only about what the rules declined. On a sentence with
     # a marker in it — the common case — nothing is paid at all.
+    #
+    # `converted` is passed on rather than reset: the branch is only reached
+    # when the rules took nothing, so it is empty here — but threading it keeps
+    # `count` meaning "names this stage converted" regardless of which half did
+    # it, which is the only reading a condition below can rely on.
     if model and out == text:
         asked = True
-        out = place(ask(model, text), text)
+        out = place(ask(model, text), text, converted)
 
     if not structured:
         sys.stdout.write(out)

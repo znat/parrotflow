@@ -65,7 +65,13 @@ def main():
     ctx = envelope.get("ctx", {})
 
     def look(path):
-        namespace, _, name = path.partition(".")
+        # A dotted path is a stage's variable; a bare one is a seed sitting at
+        # the top of the context — `language`, `app`, `bundle_id`. Both are
+        # reachable because both are things a script legitimately branches on,
+        # and `language` in particular was once handed over wrong.
+        namespace, dot, name = path.partition(".")
+        if not dot:
+            return ctx.get(path)
         return ctx.get("vars", {}).get(namespace, {}).get(name)
 
     variables = {}
