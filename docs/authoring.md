@@ -200,6 +200,77 @@ file does. `--check-config` names every `command:` transform out loud, every
 time — a config that runs something you have forgotten about, or that arrived
 in a config you copied from somewhere, should not be able to stay quiet.
 
+## Recipe: a program that reports what it did
+
+Text in, text out cannot say anything except the text — so a stage that
+*looked* and found nothing is indistinguishable from one that ran and changed
+nothing, and the stage below has to re-derive the judgement from the same
+words. Adding `returns: json` swaps the plumbing for one that carries
+variables. See [pipelines.md](pipelines.md#variables) for what a condition can
+then do with them.
+
+```yaml
+  - name: code_identifiers
+    description: spoken names as identifiers
+    command: code_identifiers.py
+    returns: json
+```
+
+**In**, on stdin:
+
+```json
+{ "text": "a python function called max retries",
+  "ctx": { "app": "Ghostty", "bundle_id": "com.mitchellh.ghostty",
+           "language": "en",
+           "vars": { "asr": { "confidence": 0.91, "duration": 4.2 },
+                     "replacements": { "ran": true, "count": 1,
+                                       "changed": true, "ms": 0.4 } } } }
+```
+
+**Out**, on stdout — and only what this stage contributes:
+
+```json
+{ "text": "a python function called max_retries",
+  "vars": { "count": 1, "asked_model": false } }
+```
+
+- **Both keys are optional.** No `text` means "I looked and left the sentence
+  alone", which is not the same as echoing the input back and is not a failure.
+  No `vars` means the stage published nothing this time.
+- **Never echo the context back.** You cannot erase another stage's variables
+  by leaving them out, because carrying them is the pipeline's job. The reply
+  is a contribution, not a replacement.
+- Values are strings, numbers or booleans. One level, no nesting.
+- Print something that is not JSON and the transcript comes through untouched
+  with `<stage>.ok` set false, and the log says what was printed. That is a
+  script bug rather than a config one, so `--check-config` cannot catch it.
+
+The app sets **`PARROTFLOW_PROTOCOL=json`** in the environment when — and only
+when — the transform declares `returns: json`. Read that rather than taking a
+flag, so `returns:` stays the single declaration and the script is still
+runnable by hand:
+
+```python
+structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
+raw = sys.stdin.read()
+text = json.loads(raw)["text"] if structured else raw.rstrip("\n")
+...
+if structured:
+    sys.stdout.write(json.dumps({"text": out, "vars": {"count": n}}))
+else:
+    sys.stdout.write(out)
+```
+
+That branch is worth keeping. Every harness in `scripts/` pipes plain text, and
+so will you the first time a stage misbehaves.
+
+> **Upgrading an existing transform.** A transform folder is written on first
+> launch and **never overwritten**, so adding `returns: json` to a config whose
+> script predates it means the script prints bare text, the app cannot read it,
+> and the stage silently stops doing anything. Edit the script first, then the
+> config. `--pipeline <fixture> "<text>" --vars` is how you check, before it
+> matters.
+
 ## Recipe: a language
 
 `pipelines:` takes a key per language, and a language's own list wins over

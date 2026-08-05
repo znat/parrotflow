@@ -572,13 +572,136 @@ stages above — so a cheap stage can make an expensive one unnecessary rather
 than merely earlier. Both may be set and `unless` wins, because a reason not to
 run is a stronger statement than a reason to.
 
-The pattern is written like a replacement source: between slashes it is a
-regular expression, otherwise a word matched on word boundaries.
-Case-insensitive either way.
+Between slashes it is a regular expression, matched case-insensitively.
+Anything else is an **expression** — see [Variables](#variables) below.
+
+> A bare word used to mean "this word appears, on word boundaries". It now
+> parses as a variable, and `--check-config` refuses it by name rather than
+> letting a stage quietly stop running: `when: genre` is told to become
+> `when: /genre/`.
 
 A skipped stage says so in the log. A stage that silently does not run looks
 exactly like one that ran and found nothing, and only one of those is
 answerable by editing a condition.
+
+## Variables
+
+A regex can ask one thing: does the text say this. It cannot ask whether the
+stage above already did the job — so a stage had to re-derive that judgement
+from the same words, or run when it should not have.
+
+Every stage publishes facts about itself, under its own name, and a condition
+can read them:
+
+```yaml
+pipelines:
+  default:
+    - replacements
+    - transform: code_identifiers
+    - stage: transform
+      transform: dotted
+      when: code_identifiers.count == 0     # only if nothing else took it
+```
+
+Four are derived for every stage, whatever it is and whether or not it knows
+any of this exists:
+
+| | |
+|---|---|
+| `<stage>.ran` | false when a condition skipped it |
+| `<stage>.ok` | false when it errored, timed out, or returned nothing |
+| `<stage>.changed` | whether the text differs from what went in |
+| `<stage>.ms` | how long it took |
+
+They are **derived, never claimed**. A stage cannot forget to report `changed`,
+and cannot report it about the wrong string.
+
+Stages add their own on top. The built-in ones publish `replacements.count`,
+`numbers.language` — which grammar actually read the numbers, and not the same
+answer as the pipeline's language — and, for a prompt stage, `model`. A
+`command:` transform publishes whatever it likes; see
+[docs/authoring.md](authoring.md#recipe-a-program-that-reports-what-it-did).
+
+Before any stage runs, the scope already holds `text`, `app`, `bundle_id`,
+`language`, and what transcription measured — `asr.confidence`, `asr.duration`,
+`asr.processing`, `asr.words`. So a stage can stand down on a recording the
+recogniser was not sure about:
+
+```yaml
+    - stage: transform
+      transform: disfluency
+      when: asr.confidence < 0.7 && asr.duration > 3.0
+```
+
+### The rules
+
+**A stage writes under its own name and nowhere else.** The namespace comes
+from the pipeline, not from the stage, so one stage reaching into another's
+facts is not guarded against — it is unspellable.
+
+**Everything else carries through.** A stage contributing nothing erases
+nothing. Carrying is the pipeline's job, not something each script has to
+remember; a `sed` one-liner could never have echoed a namespace back.
+
+**A name is a fact about the stage, not a claim about the text.**
+`code_identifiers.count` — how many names it converted — stays true after a
+later stage rewrites the sentence. A variable called `has_identifier` would
+not. The namespace makes the first reading the natural one.
+
+**The same stage twice writes the same namespace, and the later run wins.** A
+condition between the two sees the earlier facts. Keys the second run does not
+mention survive it.
+
+**A skipped stage gets `ran: false` and nothing else** — no `ok`, no `changed`.
+Inventing them would let `grammar.ok` read true for a stage that never
+happened. Ask `grammar.ran && grammar.ok`; `&&` short-circuits, so the second
+half is never evaluated on a stage that has no `ok`.
+
+### The expression language
+
+A subset of [CEL](https://cel.dev), which is chosen for the spec rather than
+for any library: if the pipeline is ever rewritten in another language, the
+configs people have written keep meaning what they meant.
+
+```
+paths          text, numbers.count, asr.confidence
+literals       "a string", 12, 1.5, true, false
+operators      &&  ||  !  ==  !=  <  <=  >  >=
+methods        matches(re)  contains(s)  startsWith(s)  endsWith(s)
+```
+
+Strings compare and match case-insensitively, and `matches` is ICU — the same
+engine `/…/` conditions use, so a pattern moved from one form to the other
+behaves identically.
+
+`!` is a real negation, which is why the anchored negative lookahead below is
+not needed in an expression:
+
+```yaml
+      app: /^(?!.*(term|ghostty))/          # a pattern needs the anchor
+      when: '!app.matches("term|ghostty")'  # an expression does not
+```
+
+**An unknown name is an error, not false.** Silently reading false is how a
+condition stops working without anything saying so. Two of the three cases are
+caught at load, by `--check-config`, before a transcript ever reaches them:
+
+- a name nothing defines — `when: genre`, the old bare-word form
+- a stage that runs *later* in the pipeline than the condition reading it,
+  which no runtime error can catch in time: by then the transcript is already
+  halfway through, and "has not run yet" and "reported nothing" are the same
+  absence
+
+The third — a variable a script stopped publishing — can only be seen at run
+time. The stage is skipped, and the log says why.
+
+`--pipeline … --vars` prints the whole scope, and a skipped stage names the
+values that decided it:
+
+```
+  ⊘ transform  — skipped, when code_identifiers.count == 0 did not match
+                 (code_identifiers.count = 1)
+```
 
 ## Apps
 

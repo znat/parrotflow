@@ -42,6 +42,24 @@ transcription:
       - transform: code_identifiers
         app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
         when: /\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\b/
+      #
+      # A `when:` that is not a pattern is an expression over what the stages
+      # above published — `code_identifiers.count`, `replacements.count`,
+      # `numbers.language`, `asr.confidence`, and `<stage>.ran` / `.ok` /
+      # `.changed` / `.ms` for every stage. So a stage can stand down because
+      # another one already took the sentence, rather than re-deciding from the
+      # same words:
+      #
+      #   - transform: code_identifiers
+      #   - stage: transform
+      #     transform: dotted
+      #     when: code_identifiers.count == 0
+      #
+      # Reading a variable needs the stage that publishes it to declare
+      # `returns: json` and to speak that protocol — see docs/authoring.md.
+      # Both halves, in that order: a transform folder is never overwritten, so
+      # a config that asks for it before the script understands it turns that
+      # stage off. `--pipeline <file> "<text>" --vars` shows the whole scope.
       # The two stages that ask the model, and the only two costing a second.
       # `app:` reads the window that was in front, and a browser tab is not an
       # app: add your browser to the pattern if you live in Gmail, knowing every
