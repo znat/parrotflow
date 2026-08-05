@@ -75,6 +75,7 @@ struct Config: Decodable, Equatable {
         var description = ""
         var display = ""
         var confirm = true
+        var returnsJSON = false
         var body: Transform.Body?
         var folder: TransformFolder?
         var timeout: Double?
@@ -90,7 +91,7 @@ struct Config: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey {
             case name, description, display, confirm, prompt, content, replace, command
-            case tests
+            case tests, returns
             case timeout = "timeout_seconds"
         }
 
@@ -126,6 +127,20 @@ struct Config: Decodable, Equatable {
             }
             confirm = try c.decodeIfPresent(Bool.self, forKey: .confirm) ?? true
             timeout = try c.decodeIfPresent(Double.self, forKey: .timeout)
+            // `returns: json`, spelled as a word rather than as `returns_json:
+            // true`, because the thing being named is a protocol and there may
+            // one day be a second one. Anything else is refused rather than
+            // read as false: `returns: JSON` and `returns: text` both look like
+            // they say something, and a key that quietly means nothing is how a
+            // script ends up talking past the app that runs it.
+            if let declared = try c.decodeIfPresent(String.self, forKey: .returns) {
+                let written = declared.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                returnsJSON = written == "json"
+                if !returnsJSON, written != "text" {
+                    unreadable = "returns: \(declared) — write `returns: json`, or leave it out"
+                }
+            }
             // Written either way — `tests: heldout.yaml` and
             // `tests: { path: heldout.yaml }` mean the same thing — and
             // refused when it is neither. A mapping
@@ -289,7 +304,8 @@ struct Config: Decodable, Equatable {
                 name: entry.name, description: entry.description,
                 display: entry.display,
                 folder: entry.folder, timeout: entry.timeout,
-                confirm: entry.confirm, body: body, source: entry.source,
+                confirm: entry.confirm, returnsJSON: entry.returnsJSON,
+                body: body, source: entry.source,
                 tests: entry.tests
             ))
         }
@@ -347,6 +363,20 @@ struct Config: Decodable, Equatable {
         /// when a transform is run over your selection — a pipeline stage runs
         /// on a transcript nobody has seen yet, so there is nothing to confirm.
         var confirm: Bool = true
+        /// Whether a `command:` speaks the structured protocol — `{text, ctx}`
+        /// in, `{text?, vars?}` out — rather than plain text on stdin and stdout.
+        ///
+        /// Declared rather than detected. Reading the output to decide would
+        /// break on the one transcript most likely to arrive in a folder with a
+        /// `code_identifiers` stage in it: a sentence that *is* a JSON object.
+        /// It would also make a script's protocol depend on its answer, so a
+        /// stage would change contract on one sentence in a thousand and nowhere
+        /// else.
+        ///
+        /// Off by default, and off is the whole of the old contract: stdout is
+        /// the transcript, `sed` is still a transform, and nothing anybody has
+        /// already written has to change.
+        var returnsJSON: Bool = false
         var body: Body
         /// Where the body was read from, when it was read from a file at all —
         /// `prompt: { path: slack.md }`. Nil for an inline body, and nil for a
@@ -1876,6 +1906,7 @@ they say where a name ends, and that boundary is a judgement about how you
 speak, not a fact.
 """
 import json
+import os
 import re
 import sys
 import urllib.request
@@ -1947,7 +1978,14 @@ def cased(words, style):
     return words[0].lower() + "".join(word.capitalize() for word in words[1:])
 
 
-def convert(text):
+def convert(text, converted=None):
+    """The rewrite. `converted`, if given, is appended one entry per name taken.
+
+    An out-parameter rather than a second return value because
+    `scripts/validate-code-identifiers.py` calls this as `shipped.convert` and
+    compares its result to a string — a tuple would have changed what the
+    scoreboard measures in order to add a number nothing there reads.
+    """
     out = text
     # Right to left, so an earlier rewrite cannot move a later match.
     for match in list(TRIGGER.finditer(text))[::-1]:
@@ -1969,6 +2007,8 @@ def convert(text):
             continue
         if span in out:
             out = out.replace(span, cased(words, style_for(text, text[:match.start()])), 1)
+            if converted is not None:
+                converted.append(span)
     return out
 
 
@@ -2074,13 +2114,46 @@ if __name__ == "__main__":
         index = sys.argv.index("--model")
         model = sys.argv[index + 1] if len(sys.argv) > index + 1 else None
 
-    text = sys.stdin.read().rstrip("\n")
-    out = convert(text)
+    # Two protocols, and which one is in force is decided by the config rather
+    # than by anything here: ParrotFlow sets PARROTFLOW_PROTOCOL=json when the
+    # transform declares `returns: json`, and leaves it unset otherwise.
+    #
+    # Reading the environment rather than taking a flag keeps `returns:` the
+    # single declaration — a flag in the `command:` line would say the same
+    # thing one line lower and could disagree with it. It also keeps this
+    # runnable by hand: `echo "a python function called max retries" |
+    # ./code_identifiers.py` takes the plain path, which is what every harness
+    # in scripts/ does and what anybody debugging one will type.
+    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
+
+    raw = sys.stdin.read()
+    if structured:
+        text = json.loads(raw)["text"]
+    else:
+        text = raw.rstrip("\n")
+
+    converted = []
+    out = convert(text, converted)
+    asked = False
     # The model is asked only about what the rules declined. On a sentence with
     # a marker in it — the common case — nothing is paid at all.
     if model and out == text:
+        asked = True
         out = place(ask(model, text), text)
-    sys.stdout.write(out)
+
+    if not structured:
+        sys.stdout.write(out)
+        raise SystemExit(0)
+
+    # `count` is what a later stage wants: `dotted` should stand down when this
+    # already took the sentence, and until now the only way to ask was to
+    # re-derive the judgement from the words. `asked` is for the log rather than
+    # for a condition — it is the difference between a stage that cost nothing
+    # and one that cost a second, and it was previously invisible.
+    sys.stdout.write(json.dumps({
+        "text": out,
+        "vars": {"count": len(converted), "asked_model": asked},
+    }))
 """#
 
     /// Reads and decodes the config. Missing keys fall back to the struct defaults.

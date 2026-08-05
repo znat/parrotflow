@@ -58,6 +58,7 @@ they say where a name ends, and that boundary is a judgement about how you
 speak, not a fact.
 """
 import json
+import os
 import re
 import sys
 import urllib.request
@@ -129,7 +130,14 @@ def cased(words, style):
     return words[0].lower() + "".join(word.capitalize() for word in words[1:])
 
 
-def convert(text):
+def convert(text, converted=None):
+    """The rewrite. `converted`, if given, is appended one entry per name taken.
+
+    An out-parameter rather than a second return value because
+    `scripts/validate-code-identifiers.py` calls this as `shipped.convert` and
+    compares its result to a string — a tuple would have changed what the
+    scoreboard measures in order to add a number nothing there reads.
+    """
     out = text
     # Right to left, so an earlier rewrite cannot move a later match.
     for match in list(TRIGGER.finditer(text))[::-1]:
@@ -151,6 +159,8 @@ def convert(text):
             continue
         if span in out:
             out = out.replace(span, cased(words, style_for(text, text[:match.start()])), 1)
+            if converted is not None:
+                converted.append(span)
     return out
 
 
@@ -256,10 +266,43 @@ if __name__ == "__main__":
         index = sys.argv.index("--model")
         model = sys.argv[index + 1] if len(sys.argv) > index + 1 else None
 
-    text = sys.stdin.read().rstrip("\n")
-    out = convert(text)
+    # Two protocols, and which one is in force is decided by the config rather
+    # than by anything here: ParrotFlow sets PARROTFLOW_PROTOCOL=json when the
+    # transform declares `returns: json`, and leaves it unset otherwise.
+    #
+    # Reading the environment rather than taking a flag keeps `returns:` the
+    # single declaration — a flag in the `command:` line would say the same
+    # thing one line lower and could disagree with it. It also keeps this
+    # runnable by hand: `echo "a python function called max retries" |
+    # ./code_identifiers.py` takes the plain path, which is what every harness
+    # in scripts/ does and what anybody debugging one will type.
+    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
+
+    raw = sys.stdin.read()
+    if structured:
+        text = json.loads(raw)["text"]
+    else:
+        text = raw.rstrip("\n")
+
+    converted = []
+    out = convert(text, converted)
+    asked = False
     # The model is asked only about what the rules declined. On a sentence with
     # a marker in it — the common case — nothing is paid at all.
     if model and out == text:
+        asked = True
         out = place(ask(model, text), text)
-    sys.stdout.write(out)
+
+    if not structured:
+        sys.stdout.write(out)
+        raise SystemExit(0)
+
+    # `count` is what a later stage wants: `dotted` should stand down when this
+    # already took the sentence, and until now the only way to ask was to
+    # re-derive the judgement from the words. `asked` is for the log rather than
+    # for a condition — it is the difference between a stage that cost nothing
+    # and one that cost a second, and it was previously invisible.
+    sys.stdout.write(json.dumps({
+        "text": out,
+        "vars": {"count": len(converted), "asked_model": asked},
+    }))

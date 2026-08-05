@@ -165,7 +165,8 @@ if let index = arguments.firstIndex(of: "--pipeline") {
     exit(PipelineCommand.run(
         path: arguments[index + 1], text: text,
         quiet: arguments.contains("--quiet"), app: appArgument,
-        allowPrompts: !arguments.contains("--no-prompts")
+        allowPrompts: !arguments.contains("--no-prompts"),
+        showVars: arguments.contains("--vars")
     ))
 }
 
