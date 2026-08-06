@@ -98,6 +98,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// it" is the whole of what cancelling means.
     private var cancelledThroughRun = 0
     private var escapeMonitors: [Any] = []
+    /// How many transcriptions have been started and not yet landed.
+    ///
+    /// Push-to-talk does not wait for the previous transcript, so two dictations
+    /// are ordinarily in flight at once — the same overlap `transcriptionRun`
+    /// exists to survive. The Escape monitors are one shared pair, so the older
+    /// run finishing must not take them away from the newer one still recording
+    /// behind it. Nothing tears them down until this is zero and the recorder is
+    /// idle.
+    private var runsInFlight = 0
     private var keepWarmTimer: Timer?
     private var keepWarmInFlight = false
     private var hotkeyError: String?
@@ -697,6 +706,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Take the monitors down only when there is nothing left to cancel.
+    ///
+    /// One dictation finishing is not the end of dictation. Hold the key again
+    /// while a prompt stage is still running and the newer recording shares this
+    /// pair, having found them already installed — so an unconditional teardown
+    /// on the older run's completion would leave the newer one uncancellable,
+    /// and the bug would only show up on the second press.
+    private func stopWatchingForEscapeIfIdle() {
+        guard !recorder.isRecording, runsInFlight <= 0 else { return }
+        stopWatchingForEscape()
+    }
+
     private func stopWatchingForEscape() {
         escapeMonitors.forEach(NSEvent.removeMonitor)
         escapeMonitors.removeAll()
@@ -716,7 +737,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Transcription takes the watch over from here — it is the other half
         // of the dictation Escape can still stop. With transcription off there
         // is nothing left to cancel, so it ends now.
-        if !config.transcription.enabled { stopWatchingForEscape() }
+        if !config.transcription.enabled { stopWatchingForEscapeIfIdle() }
 
         if let recording {
             lastRecording = recording
@@ -756,6 +777,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func transcribe(_ recording: Recorder.Recording) {
         transcriptionRun += 1
+        runsInFlight += 1
         let run = transcriptionRun
         // On the HUD and not just in the menu. Releasing the key hides the
         // recording pill, and everything after it — the decoder, then any
@@ -827,12 +849,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // nowhere. Logged, because a dictation that vanishes with
                     // no line in the log is indistinguishable from one that
                     // failed silently.
+                    self.runsInFlight -= 1
                     guard !self.wasCancelled(run) else {
                         Log.write("escape: dropped the transcript of a cancelled run")
+                        self.stopWatchingForEscapeIfIdle()
                         self.updateUI()
                         return
                     }
-                    self.stopWatchingForEscape()
+                    self.stopWatchingForEscapeIfIdle()
                     self.finishTranscription(
                         text: text, destination: destination, focus: focus
                     )
@@ -841,7 +865,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     guard let self else { return }
                     if self.transcriptionRun == run { self.endProgress() }
-                    self.stopWatchingForEscape()
+                    self.runsInFlight -= 1
+                    self.stopWatchingForEscapeIfIdle()
                     guard !self.wasCancelled(run) else { return }
                     Log.write("transcription failed: \(error.localizedDescription)")
                     self.presentAlert(title: "Transcription failed", message: error.localizedDescription)
@@ -2076,9 +2101,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Putting focus back would mean setting `kAXFocused` and trusting an app to
     /// honour it, which is a guess; the clipboard is not.
     ///
-    /// nil means there is nothing to compare against — no focus was resolved at
-    /// the press — and the paste goes ahead as it always did. Passed explicitly
-    /// at every call rather than defaulted, so a new path has to say which it is.
+    /// A nil `aimedAt` means there was nothing to compare against — no focus was
+    /// resolved at the press at all — and the paste goes ahead as it always did.
+    /// That is different from failing to read focus *now*, which counts as
+    /// moved: not knowing is not the same as knowing it is fine. Passed
+    /// explicitly at every call rather than defaulted, so a new path has to say
+    /// which it is.
     ///
     /// False positives would make this unusable: guard too eagerly and every
     /// dictation ends up on the clipboard. The comparison was measured before it
@@ -2088,14 +2116,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func insertDictation(
         _ text: String, to destination: Destination, aimedAt element: AXUIElement?
     ) {
+        // Confirmed the same field, or nothing to confirm against. Anything
+        // else copies.
+        //
+        // A lookup that fails counts as moved rather than as unchanged. It
+        // returns nil on a 0.25s timeout against a busy app, and "I could not
+        // tell" is not "it is fine" — pasting on it would be the guess this
+        // whole check exists to avoid. The cost of being wrong that way is a
+        // transcript on the clipboard with a notice, which is recoverable; the
+        // cost the other way is a sentence in somebody else's window.
+        //
+        // Accessibility is checked first so a machine without the grant keeps
+        // the message it has always had. `TextInserter` returns `.clipboardOnly`
+        // there and says so below, and "Focus moved" would be both wrong and
+        // less useful than "grant Accessibility".
         if config.transcription.insertMode == .paste, let element,
-           let now = SelectionReader.focusedElement(), !CFEqual(now, element) {
-            TextInserter.insert(text, mode: .clipboard)
-            if config.feedback.sound { NSSound(named: "Glass")?.play() }
-            Log.write("focus moved since the press; copied instead of pasting")
-            flash("Focus moved — the transcription is on your clipboard", tone: .caution)
-            updateUI()
-            return
+           Permissions.accessibility == .granted {
+            let now = SelectionReader.focusedElement()
+            if now == nil || !CFEqual(now!, element) {
+                TextInserter.insert(text, mode: .clipboard)
+                if config.feedback.sound { NSSound(named: "Glass")?.play() }
+                Log.write(now == nil
+                    ? "could not read what is focused; copied instead of pasting"
+                    : "focus moved since the press; copied instead of pasting")
+                flash("Focus moved — the transcription is on your clipboard", tone: .caution)
+                updateUI()
+                return
+            }
         }
 
         // Nowhere to type: the pill said so by leaving its icon out, and this is

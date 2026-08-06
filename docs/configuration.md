@@ -151,6 +151,11 @@ trusting it to, which is a guess. The clipboard is not a guess.
 This is a comparison of the focused element, so it catches a move between panes
 of the same app, which is the case that actually happens.
 
+If the field cannot be read at all — a busy app that does not answer in time —
+that counts as moved and the transcript is copied. Not knowing is not the same
+as knowing it is fine, and a transcript on your clipboard is recoverable in a
+way that one typed into somebody else's window is not.
+
 ## Escape stops a dictation
 
 Press ⎋ while recording, or while it is transcribing, and the dictation ends.
