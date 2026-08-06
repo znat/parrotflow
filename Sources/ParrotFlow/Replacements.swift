@@ -72,12 +72,17 @@ enum Replacements {
     /// Counted per *rule*, not per substitution: "two rules fired" is the
     /// question a condition is asking, and a rule that replaced the same word
     /// four times did one thing, not four.
+    /// - Returns: the rewritten text, how many rules fired, and what each one
+    ///   wrote — `heard -> written`, joined by `; `. The third is for a stage
+    ///   that has to judge the substitutions rather than make them: a judge
+    ///   handed only the finished sentence cannot see what changed in it.
     static func exact(
         to text: String, rules: [Config.Transcription.Rule]
-    ) -> (text: String, count: Int) {
+    ) -> (text: String, count: Int, changes: String) {
         var output = text
         var deleted = false
         var fired = 0
+        var changes: [String] = []
 
         for rule in rules {
             guard let pattern = try? NSRegularExpression(
@@ -95,10 +100,14 @@ enum Replacements {
             if output != before {
                 fired += 1
                 if rule.isDeletion { deleted = true }
+                if !rule.isDeletion { changes.append("\(rule.source) -> \(rule.replacement)") }
             }
         }
 
-        return (deleted ? tidy(output) : output, fired)
+        return (
+            deleted ? tidy(output) : output, fired,
+            changes.joined(separator: "; ")
+        )
     }
 
     /// Closes the gaps a deletion leaves — doubled spaces, a space before a

@@ -61,9 +61,153 @@ struct Config: Decodable, Equatable {
     /// 18/19 — and `confirm` is what makes the residue survivable.
     var freeForm: Bool = true
 
+    /// Read from `vocabulary.yaml` beside the config, not from `config.yaml`.
+    /// It is maintained by the app rather than by hand — see `Vocabulary`.
+    var vocabulary: Vocabulary = Vocabulary()
+
     enum CodingKeys: String, CodingKey {
         case hotkey, audio, feedback, transcription, llm, transforms, prompts, updates
         case freeForm = "free_form"
+    }
+
+    /// The words you dictate that the recogniser gets wrong, and what the app
+    /// has learnt about each one.
+    ///
+    /// Not only names. A colleague's surname, a drug brand, an internal
+    /// project, a library, an acronym, or any word a non-native speaker says in
+    /// a way the model was not trained on — the common property is that it
+    /// sounds like something else, not that it is a proper noun.
+    ///
+    /// Its own file because the two halves have different owners. `config.yaml`
+    /// is written by a person and read by the app; `vocabulary.yaml` is written
+    /// by the app — the correction panel, `--learn`, the calibrate skill — and
+    /// only read by a person. Mixing them means a hand edit and a learnt entry
+    /// land in the same file, and one of them eventually loses.
+    struct Vocabulary: Decodable, Equatable {
+
+        /// Whether names are matched by sound at all. Off costs nothing; on
+        /// pulls a ~98 MB model on first use.
+        var acoustic: Bool = false
+
+        /// How close a decoded word must sound to a name before it is replaced,
+        /// unless the name says otherwise.
+        ///
+        /// 0.75 is the measured default on this machine. Below it, ordinary
+        /// words start being overwritten: "vessel" lands 0.67 from "Vercel"
+        /// and "Alama" 0.67 from "Ollama".
+        var minSimilarity: Float = 0.75
+
+        /// One term, and what is known about it.
+        ///
+        /// `floor` is the similarity this term needs, overriding the default.
+        /// `off` means never match by sound at all — the honest setting when
+        /// the decoder writes the term and an ordinary word identically.
+        /// Measured here: "Claude" and "cloud" both come back as "cloud", so
+        /// no threshold can separate them.
+        ///
+        /// `heard` is for renderings no floor can reach. "Prezi" is 0.33 from
+        /// "Praisy" and would need a floor that swallowed every "praise"; as an
+        /// exact rule it costs nothing and cannot misfire.
+        struct Term: Decodable, Equatable {
+            var floor: Float?
+            /// `floor: off` — never matched by sound, only by `heard`.
+            var never = false
+            var heard: [String] = []
+
+            init(floor: Float? = nil, never: Bool = false, heard: [String] = []) {
+                self.floor = floor
+                self.never = never
+                self.heard = heard
+            }
+
+            enum CodingKeys: String, CodingKey { case floor, heard }
+
+            /// Four shapes, because most terms need none of this:
+            ///
+            ///     Tasmeen:                              nothing to say
+            ///     Mirza: 0.85                           a floor
+            ///     Praisy: [Prissy, Pressy]              renderings
+            ///     Claude: {floor: off, heard: [cloud]}  both
+            init(from decoder: Decoder) throws {
+                if let single = try? decoder.singleValueContainer() {
+                    if single.decodeNil() { self.init(); return }
+                    if let number = try? single.decode(Float.self) {
+                        self.init(floor: number); return
+                    }
+                    if let listed = try? single.decode([String].self) {
+                        self.init(heard: listed); return
+                    }
+                }
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                let heard = try c.decodeIfPresent([String].self, forKey: .heard) ?? []
+                // `off` rather than a magic number. The previous spelling was
+                // `1.0`, which reads as maximum strictness and meant the
+                // opposite — never fire at all.
+                // `off` is a YAML 1.1 boolean, not a string — as are `on`,
+                // `yes` and `no`. Written as `floor: off` it arrives here as
+                // `false`, and reading it only as a string threw, which took
+                // the whole file down silently.
+                if let flag = (try? c.decodeIfPresent(Bool.self, forKey: .floor)) ?? nil {
+                    self.init(floor: nil, never: flag == false, heard: heard)
+                    return
+                }
+                if let word = (try? c.decodeIfPresent(String.self, forKey: .floor)) ?? nil {
+                    self.init(floor: nil, never: word.lowercased() == "off", heard: heard)
+                    return
+                }
+                self.init(
+                    floor: try c.decodeIfPresent(Float.self, forKey: .floor),
+                    heard: heard
+                )
+            }
+        }
+
+        var terms: [String: Term] = [:]
+
+        enum CodingKeys: String, CodingKey {
+            case acoustic, terms
+            case minSimilarity = "min_similarity"
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init()
+            if let on = try c.decodeIfPresent(Bool.self, forKey: .acoustic) {
+                acoustic = on
+            }
+            if let floor = try c.decodeIfPresent(Float.self, forKey: .minSimilarity) {
+                minSimilarity = floor
+            }
+            terms = try c.decodeIfPresent([String: Term].self, forKey: .terms) ?? [:]
+        }
+    }
+
+    /// The terms given to the decoder as acoustic context, each with its floor.
+    ///
+    /// Short and non-alphabetic terms are dropped. A four-character term
+    /// free-start aligns to almost any run of frames, which is what makes short
+    /// terms the over-firing ones, and a name carrying a dot or a digit is not
+    /// something the decoder could have produced.
+    var vocabularyTerms: [(text: String, minSimilarity: Float)] {
+        vocabulary.terms
+            .filter { term, entry in
+                !entry.never && term.count >= 5 && term.allSatisfy(\.isLetter)
+            }
+            .map { ($0.key, $0.value.floor ?? vocabulary.minSimilarity) }
+            .sorted { $0.0 < $1.0 }
+    }
+
+    /// The exact rules the vocabulary file contributes. Flattened the same way
+    /// `transcription.replacements` is, so the substitution pass takes both and
+    /// never needs to know which file a rule came from.
+    var vocabularyRules: [Transcription.Rule] {
+        vocabulary.terms
+            .flatMap { term, entry in
+                entry.heard.map { Transcription.Rule(source: $0, replacement: term) }
+            }
+            .sorted { $0.source < $1.source }
     }
 
     /// One entry of `transforms:` as it is written, before it is known to be
@@ -1231,9 +1375,36 @@ struct Config: Decodable, Equatable {
     /// wasn't. Announcing is not complaining, and the two cannot share a list
     /// that one end of the app treats as failure.
     func notices() -> [String] {
-        let said: [String] = transforms.compactMap { transform in
+        var said: [String] = transforms.compactMap { transform in
             guard case .command(let command) = transform.body else { return nil }
             return "transforms: \"\(transform.name)\" runs a program — \(command)"
+        }
+
+        // The vocabulary is learnt rather than written, so it is the part of
+        // the configuration nobody remembers the contents of. Printed in full.
+        let rules = vocabularyRules.count
+        if !vocabulary.terms.isEmpty {
+            let byEar = vocabularyTerms
+            said.append("vocabulary: \(vocabulary.terms.count) terms in"
+                + " \(ConfigStore.vocabularyURL.lastPathComponent),"
+                + " \(byEar.count) matched by sound, \(rules) by rule")
+            if vocabulary.acoustic, !byEar.isEmpty {
+                said.append("vocabulary: by sound at floor \(vocabulary.minSimilarity) — "
+                    + byEar.map { $0.minSimilarity == vocabulary.minSimilarity
+                        ? $0.text : "\($0.text) \($0.minSimilarity)" }
+                        .joined(separator: ", "))
+            }
+            if !vocabulary.acoustic, !byEar.isEmpty {
+                said.append("vocabulary: `acoustic: false`, so \(byEar.count) names"
+                    + " are only matched by their `heard` rules")
+            }
+            let silent = vocabulary.terms
+                .filter { $0.value.never && $0.value.heard.isEmpty }
+                .keys.sorted()
+            if !silent.isEmpty {
+                said.append("vocabulary: \(silent.joined(separator: ", ")) —"
+                    + " `floor: off` and no `heard`, so nothing can match them")
+            }
         }
         return said
     }
@@ -1281,6 +1452,12 @@ enum ConfigStore {
 
     static var fileURL: URL {
         directory.appendingPathComponent("config.yaml")
+    }
+
+    /// The learnt half. Missing is normal and means an empty vocabulary — it
+    /// is written the first time something is learnt, not at install.
+    static var vocabularyURL: URL {
+        directory.appendingPathComponent("vocabulary.yaml")
     }
 
     /// Where every transform's folder sits — `TransformFolder` resolves the
@@ -1333,10 +1510,69 @@ enum ConfigStore {
             try defaultCodeIdentifiersCases.write(to: cases, atomically: true, encoding: .utf8)
             Log.write("config: wrote transforms/code_identifiers/cases.yaml")
         }
+        // The vocabulary, empty but explained. Written so the file exists to
+        // be found and read — a person who never dictates a mangled word
+        // should still be able to see what the app would learn about them, and
+        // an empty file with a header does that better than a missing one.
+        if !fm.fileExists(atPath: vocabularyURL.path) {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            try defaultVocabularyYAML.write(
+                to: vocabularyURL, atomically: true, encoding: .utf8
+            )
+            Log.write("config: wrote vocabulary.yaml")
+        }
+
         guard !fm.fileExists(atPath: fileURL.path) else { return }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         try defaultYAML.write(to: fileURL, atomically: true, encoding: .utf8)
     }
+
+    /// What `vocabulary.yaml` says before anything has been learnt.
+    ///
+    /// Every term is commented out. A vocabulary that arrives with entries in
+    /// it is a vocabulary tuned for somebody else's voice, and the floors are
+    /// the part that cannot be guessed — "Vercel" needs 0.75 on one person and
+    /// would overwrite "vessel" on another.
+    static let defaultVocabularyYAML = """
+    # ParrotFlow vocabulary — words you say that the recogniser gets wrong.
+    #
+    # Not only names. A colleague's surname, a drug brand, an internal project,
+    # a library, an acronym, or any word you pronounce in a way the model was
+    # not trained on. What they have in common is that they sound like
+    # something else.
+    #
+    # DO NOT EDIT UNLESS YOU REALLY KNOW WHAT YOU ARE DOING.
+    #
+    # This file is learnt while you use the app. Entries arrive when you correct
+    # a term, and the floors are measured from your own voice — not chosen. A
+    # wrong number here does not fail loudly: it silently rewrites words you
+    # meant, in every dictation, until you notice.
+    #
+    # If you want to change something, the safe move is to let the app measure
+    # again rather than to pick a number.
+    #
+    #   floor   how close a word must sound to the term before it is replaced,
+    #           from 0 to 1. Left out, the default below applies. `off` means
+    #           never match by sound — the setting for a term the recogniser
+    #           writes identically to an ordinary word, where no number helps.
+    #   heard   renderings no floor can reach, matched exactly.
+
+    # Matching by sound needs a ~98 MB model, pulled on first use.
+    acoustic: false
+    min_similarity: 0.75
+
+    terms: {}
+    #  Tasmeen:                     # nothing close in your speech
+    #  Mirza:
+    #    floor: 0.85                # "Mira" lands at 0.80
+    #  Praisy:
+    #    floor: 0.90                # "praise" lands at 0.83
+    #    heard: [Prissy, Pressy]
+    #  Claude:
+    #    floor: off                 # "cloud" both ways — no floor works
+    #    heard: [cloud]
+
+    """
 
     /// The shipped copy of examples/transforms/code_identifiers/cases.yaml.
     ///
@@ -2180,9 +2416,27 @@ if __name__ == "__main__":
         // A relative `command:` is relative to the file that declared it, so a
         // config carries its scripts beside it and a `--pipeline` fixture
         // carries its own.
-        return try YAMLDecoder().decode(
+        var config = try YAMLDecoder().decode(
             Config.self, from: text, userInfo: [.configDirectory: directory]
         )
+        config.vocabulary = loadVocabulary()
+        return config
+    }
+
+    /// `vocabulary.yaml`, or an empty one. A vocabulary that will not parse is
+    /// reported and skipped rather than thrown: it is learnt state, and losing
+    /// dictation entirely because one line of it is malformed would be the
+    /// wrong trade.
+    static func loadVocabulary() -> Config.Vocabulary {
+        guard let text = try? String(contentsOf: vocabularyURL, encoding: .utf8),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return Config.Vocabulary() }
+        do {
+            return try YAMLDecoder().decode(Config.Vocabulary.self, from: text)
+        } catch {
+            Log.write("vocabulary.yaml could not be read (\(error)); ignoring it")
+            return Config.Vocabulary()
+        }
     }
 
     /// Computed rather than a constant because the dev build seeds a different

@@ -6,7 +6,11 @@ import Foundation
 /// change the YAML, re-run, see whether the name came out right.
 enum TranscribeCommand {
 
-    static func run(path: String) -> Int32 {
+    /// - Parameter withVocabulary: false for `--no-vocab`, which decodes the
+    ///   clip as the recogniser heard it. Calibration needs that: measuring how
+    ///   far a speaker's rendering lands from a term is meaningless if the term
+    ///   has already been written over it.
+    static func run(path: String, withVocabulary: Bool = true) -> Int32 {
         guard #available(macOS 14, *) else {
             print("✗ transcription needs macOS 14 or later")
             return 1
@@ -18,9 +22,10 @@ enum TranscribeCommand {
             return 1
         }
 
-        let config: Config
+        var config: Config
         do {
             config = try ConfigStore.load()
+            if !withVocabulary { config.vocabulary.acoustic = false }
         } catch {
             print("✗ config: \(CheckConfigCommand.describe(error))")
             return 1

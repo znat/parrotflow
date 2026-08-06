@@ -72,6 +72,12 @@ transcription:
   # The spelling you want, and the ways it comes out wrong. Whole words,
   # case-insensitive. A /slashed/ source is a regex and the target is then a
   # template ($1 writes back a capture); an empty target deletes instead.
+  #
+  # Words the recogniser mangles — a colleague's surname, a product, an
+  # acronym — go in vocabulary.yaml beside this file instead. That one is
+  # learnt while you use the app rather than written by hand, which is why it
+  # is kept apart. Patterns, deletions and anything that is not a word you say
+  # belong here.
   replacements:
     "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
     Tasmeen: [Tasmid, Tasmin, Tasmine]

@@ -380,7 +380,11 @@ struct Pipeline: Equatable, Codable {
             }
             // `text.matches(…)` and friends: `text` is a seed and a namespace
             // prefix is not, so a path under a stage is only ever a variable.
-            if Scope.reserved.contains(namespace), namespace != "asr", namespace != "vad" {
+            // `asr`, `vad` and `vocabulary` are seeded as groups by the
+            // transcriber; the rest of the reserved names are bare strings, so
+            // a dotted path under one of those is a mistake.
+            if Scope.reserved.contains(namespace),
+               !["asr", "vad", "vocabulary"].contains(namespace) {
                 problems.append(
                     "\(named): \(label) \"\(condition)\" reads \"\(path)\", but \"\(namespace)\""
                         + " is text rather than a group of variables"
@@ -569,6 +573,16 @@ struct Pipeline: Equatable, Codable {
         if scope["language"] == nil {
             scope.set("language", .string(Pipeline.forText(output, config: config).1))
         }
+        // Same reason, for the acoustic pass. It runs inside transcription and
+        // seeds these itself; every other way in — `--replace`, `--pipeline`,
+        // a case set — has no audio and so seeds nothing, and a condition
+        // reading `vocabulary.count` then fails the *whole* expression rather
+        // than resolving to zero. `a || b` is not a rescue when `a` throws.
+        if scope["vocabulary.count"] == nil {
+            scope.set("vocabulary.count", .int(0))
+            scope.set("vocabulary.changes", .string(""))
+        }
+
         for step in steps {
             let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
             let namespace = Pipeline.namespace(of: step)
@@ -605,6 +619,33 @@ struct Pipeline: Equatable, Codable {
             let result = await apply(step, to: output, config: config, app: app, scope: scope)
             let seconds = CFAbsoluteTimeGetCurrent() - started
             output = result.text
+
+            // `vocabulary.count` answers one question: was a vocabulary term
+            // written into this transcript? Not "by which mechanism" — sound
+            // and exact rules are both ways of getting the same term in, and a
+            // caller asking whether to check the result does not care which
+            // fired. The acoustic pass seeds its own count before the pipeline
+            // starts; a rule whose target is a vocabulary term adds to it here.
+            if step.stage == .replacements, case .string(let wrote)? = result.vars["changes"] {
+                let known = Set(config.vocabulary.terms.keys)
+                let hits = wrote.split(separator: ";").filter { pair in
+                    guard let arrow = pair.range(of: "->") else { return false }
+                    return known.contains(
+                        pair[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
+                    )
+                }.count
+                if hits > 0 {
+                    let before: Int
+                    if case .int(let had)? = scope["vocabulary.count"] { before = had }
+                    else { before = 0 }
+                    scope.set("vocabulary.count", .int(before + hits))
+                    if case .string(let had)? = scope["vocabulary.changes"], !had.isEmpty {
+                        scope.set("vocabulary.changes", .string(had + "; " + wrote))
+                    } else {
+                        scope.set("vocabulary.changes", .string(wrote))
+                    }
+                }
+            }
 
             // Derived, never claimed. `changed` is the comparison this loop just
             // made, and a stage cannot get it wrong by forgetting to report it
@@ -651,8 +692,20 @@ struct Pipeline: Equatable, Codable {
     ) async -> StageResult {
         switch step.stage {
         case .replacements:
-            let done = Replacements.exact(to: text, rules: config.transcription.rules)
-            return StageResult(text: done.text, vars: ["count": .int(done.count)])
+            // Both tables. `config.yaml` holds the patterns and deletions a
+            // person wrote; `vocabulary.yaml` holds the names the app learnt.
+            // One pass, so a rule behaves the same whichever file it came from.
+            let done = Replacements.exact(
+                to: text, rules: config.transcription.rules + config.vocabularyRules
+            )
+            // `changes` as well as `count`, so a later stage can judge what
+            // this one did. A stage handed only the finished sentence cannot
+            // tell which words were rewritten, and guessing is how a judge
+            // starts reverting things nobody changed.
+            return StageResult(text: done.text, vars: [
+                "count": .int(done.count),
+                "changes": .string(done.changes),
+            ])
         case .fuzzy:
             // From the rules, not from the table's keys. Fuzzy matching
             // compares spellings, so a target is only a candidate if it is one
