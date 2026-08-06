@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var config = Config()
     private var configWatcher: FileWatcher?
+    private var vocabularyWatcher: FileWatcher?
 
     private let hotKeys = HotKeyManager()
     private let recorder = Recorder()
@@ -419,6 +420,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func watchConfig() {
         try? ConfigStore.createIfMissing()
         configWatcher = FileWatcher(url: ConfigStore.fileURL) { [weak self] in
+            self?.loadConfig(announceErrors: true)
+        }
+        // The vocabulary is a second file and needs its own watch. It is the
+        // one the app writes to itself — a term learnt from a correction, a
+        // floor measured from a recording — so "takes effect on the next
+        // restart" is the wrong behaviour for the file most likely to change
+        // while the app is running.
+        vocabularyWatcher = FileWatcher(url: ConfigStore.vocabularyURL) { [weak self] in
             self?.loadConfig(announceErrors: true)
         }
     }
