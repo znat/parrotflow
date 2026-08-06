@@ -30,15 +30,25 @@ non-native speaker which of their terms will never be safe acoustically.
 import argparse, json, os, pathlib, re, subprocess, sys, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-# The words a person is plausibly going to say, English and French, by usage
-# frequency — not every word ever printed. `/usr/share/dict/words` is web2,
-# 234k entries deep in the archaic, and using it sets floors against words
-# nobody says: `Vercel` collides with `vervel`, a strap on a hawk's leg, at
-# 0.83, and a floor above that would refuse `Versal` — the mishearing that
-# actually happens. Checked in rather than derived from the user's own history,
-# because at setup there is no history.
-WORDS = ROOT / "data" / "common-words.txt"
+# The words a person is plausibly going to say, by usage frequency — not every
+# word ever printed. `/usr/share/dict/words` is web2, 234k entries deep in the
+# archaic, and using it sets floors against words nobody says: `Vercel`
+# collides with `vervel`, a strap on a hawk's leg, at 0.83, and a floor above
+# that would refuse `Versal`, the mishearing that actually happens.
+#
+# One file per language, and only the ones a person actually dictates in are
+# read. A term is only in danger from words its speaker says: `Praisy` collides
+# with the French `prises` and the English `praise`, and someone who dictates
+# only in English should not have their floor raised by the first.
+WORDS = ROOT / "data"
 FALLBACK_WORDS = pathlib.Path("/usr/share/dict/words")
+
+
+def word_lists(languages):
+    """The frequency lists for these languages, or web2 if none are shipped."""
+    found = [WORDS / f"common-words-{code}.txt" for code in languages]
+    found = [path for path in found if path.exists()]
+    return found or ([FALLBACK_WORDS] if FALLBACK_WORDS.exists() else [])
 
 
 # ------------------------------------------------------------------ distance
@@ -75,21 +85,26 @@ GLUED_PHRASES = [
 ]
 
 
-def confusables(term, limit=8):
-    """Ordinary words and phrases within reach of `term`, closest first."""
-    source = WORDS if WORDS.exists() else FALLBACK_WORDS
-    if not source.exists():
-        return []
+def confusables(term, languages=("en", "fr"), limit=8):
+    """Ordinary words and phrases within reach of `term`, closest first.
+
+    Only the languages given are searched, so the answer is about the words
+    this speaker says rather than about every word in print.
+    """
     target = term.lower()
-    found = []
-    with source.open() as handle:
-        for line in handle:
-            word = line.strip().lower()
-            if not word or word == target or abs(len(word) - len(target)) > 3:
-                continue
-            score = similarity(word, target)
-            if score >= 0.55:
-                found.append((score, word))
+    found, seen = [], set()
+    for source in word_lists(languages):
+        with source.open() as handle:
+            for line in handle:
+                word = line.strip().lower()
+                if not word or word == target or word in seen:
+                    continue
+                if abs(len(word) - len(target)) > 3:
+                    continue
+                score = similarity(word, target)
+                if score >= 0.55:
+                    seen.add(word)
+                    found.append((score, word))
     for phrase in GLUED_PHRASES:
         score = similarity(phrase, target)
         if score >= 0.55:
@@ -236,6 +251,8 @@ def main():
 
     find = sub.add_parser("confusables")
     find.add_argument("terms", nargs="+")
+    find.add_argument("--lang", default="en,fr",
+                      help="languages the speaker dictates in, e.g. en or en,fr")
 
     run = sub.add_parser("score")
     run.add_argument("manifest")
@@ -246,11 +263,13 @@ def main():
 
     args = ap.parse_args()
     if args.command == "confusables":
+        languages = [c.strip() for c in args.lang.split(",") if c.strip()]
         for term in args.terms:
-            near = confusables(term)
+            near = confusables(term, languages)
             print(f"\n{term}")
             if not near:
-                print("  nothing within 0.55 — safe at any floor")
+                print(f"  nothing within 0.55 in {'/'.join(languages)}"
+                      " — safe at any floor")
             for value, word in near:
                 print(f"  {value:.2f}  {word}")
         return 0
