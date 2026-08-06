@@ -23,34 +23,44 @@ enum PromptRunner {
         max(256, (text.count / 4) * 2)
     }
 
+    /// Build the two messages.
+    ///
+    /// `scope` is what the pipeline has accumulated, and it is empty on the
+    /// voice-command path — there is no pipeline behind "hey parrot, make that a
+    /// list". The instruction is put into it rather than substituted separately,
+    /// so `{{instruction}}` is an ordinary lookup and not a reserved word with
+    /// its own rule. That also gives it the same disappearing-paragraph
+    /// behaviour as everything else, which matters because in a pipeline the
+    /// instruction is *always* empty: `Pipeline.runPrompt` has no spoken
+    /// instruction to pass and never did.
     static func compose(
-        prompt: Config.Prompt, instruction: String, text: String
+        prompt: Config.Prompt, instruction: String, text: String, scope: Scope = Scope()
     ) -> (system: String, user: String) {
         let instruction = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var scope = scope
+        scope.set("instruction", .string(instruction))
+        let system = Template.fill(prompt.content, from: scope)
 
         // Asked for inline, the instruction goes where the prompt puts it and
         // nowhere else — repeating it in the user message would have the model
         // weighing two copies of the same sentence.
-        if prompt.wantsInstructionInline {
-            return (
-                system: prompt.content.replacingOccurrences(
-                    of: Config.Prompt.instructionPlaceholder, with: instruction
-                ),
-                user: text
-            )
-        }
+        if prompt.wantsInstructionInline { return (system, text) }
 
-        guard !instruction.isEmpty else { return (prompt.content, text) }
-        return (prompt.content, "instruction: \(instruction)\n\ntext:\n\(text)")
+        guard !instruction.isEmpty else { return (system, text) }
+        return (system, "instruction: \(instruction)\n\ntext:\n\(text)")
     }
 
     static func run(
         prompt: Config.Prompt,
         instruction: String,
         text: String,
+        scope: Scope = Scope(),
         config: LocalLLM.Config
     ) async throws -> String {
-        let composed = compose(prompt: prompt, instruction: instruction, text: text)
+        let composed = compose(
+            prompt: prompt, instruction: instruction, text: text, scope: scope
+        )
         let raw = try await LocalLLM.complete(
             system: composed.system,
             user: composed.user,
@@ -81,11 +91,21 @@ enum PromptRunner {
 
         // "Here is the corrected text:" and friends, but only when the label
         // sits on its own line — a colon mid-sentence is the speaker's.
+        //
+        // A list header has the same shape and must survive. "Hey, so there are
+        // three things I need:" is 37 characters, ends in a colon, and is the
+        // sentence the speaker said. Stripping it deleted the opening line of
+        // every dictated list — measured on the slack set, where it cost three
+        // points and every one of them was a case whose answer starts with a
+        // colon line. What tells the two apart is not the line itself but what
+        // follows: a preamble introduces prose, a header introduces items.
         if let newline = text.firstIndex(of: "\n") {
             let first = text[text.startIndex..<newline].trimmingCharacters(in: .whitespaces)
-            if first.hasSuffix(":"), first.count < 60, !first.hasPrefix("-") {
-                text = String(text[text.index(after: newline)...])
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            let rest = text[text.index(after: newline)...]
+            let next = rest.prefix { $0 != "\n" }.trimmingCharacters(in: .whitespaces)
+            let opensList = ["- ", "* ", "• "].contains { next.hasPrefix($0) }
+            if first.hasSuffix(":"), first.count < 60, !first.hasPrefix("-"), !opensList {
+                text = String(rest).trimmingCharacters(in: .whitespacesAndNewlines)
             }
         }
 

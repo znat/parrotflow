@@ -1,0 +1,89 @@
+# What a prompt says once the scope is folded into it. Run with
+# scripts/check-compose.sh.
+#
+# No model is involved and none should be. A prompt has two halves that fail in
+# ways that look identical from the outside — what it was asked, and what the
+# model did with it — and only the first has an exact answer. This set is that
+# half. The validate-*.py sets score the other one.
+#
+# Format, tilde-separated:
+#
+#   template ~ name=value|name=value ~ expected
+#
+# `\n` is a newline in both the template and the expectation, because the rule
+# being scored is about paragraphs and a case file is line-oriented.
+
+# --- the ordinary case --------------------------------------------------
+On screen:\n{{context.text}} ~ context.text=the build failed ~ On screen:\nthe build failed
+
+# A string arrives unquoted. `Scope.Value.described` puts quotes around one for
+# a log line, and reusing it here would hand the model a quotation.
+say {{context.text}} ~ context.text=hello ~ say hello
+
+# --- nothing to put in, so the paragraph goes ----------------------------
+# An empty value and a name the scope never had are the same answer. A stage
+# that declines publishes its keys emptied, so a prompt that told the two apart
+# would behave one way in Slack and another in a terminal showing nothing.
+Rewrite it.\n\nOn screen:\n{{context.text}}\n\nBe brief. ~ context.text= ~ Rewrite it.\n\nBe brief.
+Rewrite it.\n\nOn screen:\n{{context.text}}\n\nBe brief. ~ language=en ~ Rewrite it.\n\nBe brief.
+
+# The heading goes with the value. Dropping only the line that held the
+# placeholder would leave the promise and take the thing promised.
+Rewrite.\n\nOn screen:\n{{context.text}} ~ context.text= ~ Rewrite.
+
+# One empty placeholder takes the paragraph even though the other resolved. A
+# paragraph is one claim; half of it is not a smaller claim.
+Rewrite.\n\n{{language}} and {{context.text}} ~ language=en|context.text= ~ Rewrite.
+
+# --- position ------------------------------------------------------------
+# Dropping the first paragraph must not leave the blank line that followed it.
+{{context.text}}\n\nBe brief. ~ context.text= ~ Be brief.
+
+# Nor the last one the blank line before it.
+Be brief.\n\n{{context.text}} ~ context.text= ~ Be brief.
+
+# The middle one closes the gap rather than doubling it.
+One.\n\n{{context.text}}\n\nThree. ~ context.text= ~ One.\n\nThree.
+
+# --- no placeholders at all ---------------------------------------------
+# The overwhelming majority of prompts. Nothing may move.
+Rewrite it.\n\nBe brief. ~  ~ Rewrite it.\n\nBe brief.
+
+# --- the four scalars ----------------------------------------------------
+count {{numbers.count}} ~ numbers.count=3 ~ count 3
+truncated {{context.truncated}} ~ context.truncated=true ~ truncated true
+ratio {{asr.confidence}} ~ asr.confidence=0.75 ~ ratio 0.75
+
+# `false` is a value, not an absence. It renders, and its paragraph stays —
+# only empty and missing drop.
+Rewrite.\n\nok {{context.ok}} ~ context.ok=false ~ Rewrite.\n\nok false
+
+# --- the spoken instruction is an ordinary name --------------------------
+# `{{instruction}}` is not special-cased any more. On the voice path it is
+# filled; in a pipeline it is always empty, so it takes its paragraph with it
+# exactly like any other name.
+Do this:\n{{instruction}}\n\nBe brief. ~ instruction=make it a list ~ Do this:\nmake it a list\n\nBe brief.
+Do this:\n{{instruction}}\n\nBe brief. ~ instruction= ~ Be brief.
+
+# --- shape -------------------------------------------------------------
+# Spaces inside the braces are the kind of thing someone writes once and never
+# thinks about again.
+say {{ context.text }} ~ context.text=hi ~ say hi
+
+# Two names on one line, both filled, in order.
+Rewrite.\n\n{{language}}: {{context.text}} ~ language=fr|context.text=le build ~ Rewrite.\n\nfr: le build
+
+# An unclosed brace is not a placeholder and must survive untouched, or a prompt
+# that talks about braces gets edited for talking about braces.
+use {{ and see ~ context.text=x ~ use {{ and see
+
+# --- the limit of the rule ----------------------------------------------
+# When every paragraph would be dropped, none is. An empty system message is not
+# a smaller instruction, it is no instruction — the model would be left with the
+# transcript and nothing else, and whatever it returned would be applied.
+#
+# So this is the shape the rule cannot save, and the reason the documentation
+# says to give a placeholder its own paragraph next to one that has none. The
+# dangling heading below is the cost of not deleting somebody's whole prompt.
+On screen:\n{{context.text}} ~ context.text= ~ On screen:
+see {{context.text}} now ~ context.text= ~ see  now

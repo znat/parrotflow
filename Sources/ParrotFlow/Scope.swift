@@ -51,6 +51,18 @@ struct Scope: Equatable {
             }
         }
 
+        /// How it reads inside a prompt. Not `described`, which puts quotes
+        /// around a string so a log line shows where it ends — a quoted screen
+        /// in a prompt is a screen the model has been handed as a quotation.
+        var plain: String {
+            switch self {
+            case .string(let s): return s
+            case .int(let i): return String(i)
+            case .double(let d): return String(d)
+            case .bool(let b): return b ? "true" : "false"
+            }
+        }
+
         /// The number this is, for `<`, `>` and friends. Ints and doubles
         /// compare with each other — a script that returns `1` and one that
         /// returns `1.0` have said the same thing, and a condition that treats
@@ -78,9 +90,12 @@ struct Scope: Equatable {
     /// `text` is here because it is a bare name rather than a namespace: a
     /// stage called `text` would contribute `text.count` while `text` itself is
     /// a string, and a path that is both a value and a prefix has no sensible
-    /// answer.
+    /// answer. `instruction` joined it when prompts learned to read the scope —
+    /// `PromptRunner.compose` puts the spoken instruction there, so it is a bare
+    /// name for exactly the same reason.
     static let reserved: Set<String> = [
-        "text", "app", "bundle_id", "language", "asr", "vad",
+        "text", "app", "bundle_id", "language", "instruction",
+        "asr", "vad", "vocabulary",
     ]
 
     init(values: [String: Value] = [:]) {
