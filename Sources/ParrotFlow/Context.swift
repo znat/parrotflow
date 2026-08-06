@@ -79,6 +79,21 @@ enum Context {
     private static let pressLock = NSLock()
     nonisolated(unsafe) private static var press: Press?
 
+    /// Which press the stored capture belongs to.
+    ///
+    /// The reads run on a concurrent queue, so two of them can be in flight at
+    /// once, and nothing makes them finish in the order they started. An AX call
+    /// against a wedged app runs until its messaging timeout — far longer than
+    /// the 1–39ms a healthy one takes — so a slow read from the previous press
+    /// could land after a fast one from this press and overwrite it. The stage
+    /// would then publish the screen from a dictation ago, with nothing in the
+    /// value to say so.
+    ///
+    /// A counter taken at the start and checked at the end makes that
+    /// unrepresentable: a read that is no longer the newest simply does not
+    /// store its answer.
+    nonisolated(unsafe) private static var pressGeneration = 0
+
     static var pressCapture: Press? {
         pressLock.lock()
         defer { pressLock.unlock() }
@@ -103,9 +118,15 @@ enum Context {
     /// property this capture exists for.
     ///
     /// Any previous press is cleared first, so a stale capture from the last
-    /// dictation can never be published as if it were this one.
+    /// dictation can never be published as if it were this one — and the
+    /// generation taken here is checked before storing, so a read that has been
+    /// overtaken cannot put the stale one back. See `pressGeneration`.
     static func capturePress(app: Pipeline.App?, element: AXUIElement?) {
-        pressLock.lock(); press = nil; pressLock.unlock()
+        pressLock.lock()
+        pressGeneration += 1
+        let mine = pressGeneration
+        press = nil
+        pressLock.unlock()
         guard let element else { return }
 
         let started = CFAbsoluteTimeGetCurrent()
@@ -113,8 +134,16 @@ enum Context {
         let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
 
         pressLock.lock()
-        press = Press(element: element, outcome: outcome, ms: ms)
+        let newest = mine == pressGeneration
+        if newest { press = Press(element: element, outcome: outcome, ms: ms) }
         pressLock.unlock()
+
+        guard newest else {
+            Log.write(String(
+                format: "context: a %.0fms read was overtaken by a newer press; dropped", ms
+            ))
+            return
+        }
         switch outcome {
         case .success(let capture):
             Log.write(String(
@@ -238,11 +267,20 @@ enum Context {
         return rows.joined(separator: "\n")
     }
 
-    /// The last `limit` characters, cut at a row boundary.
+    /// The last `limit` characters, cut at a row boundary where there is one.
     ///
-    /// Mid-row would be worse than useless: a truncated first line reads as a
-    /// sentence somebody said rather than as a fragment, and there is nothing in
-    /// the string to say which. Cutting on a newline makes the loss visible.
+    /// Mid-row is the worse cut: a truncated first line reads as a sentence
+    /// somebody said rather than as a fragment, and there is nothing in the
+    /// string to say which. Cutting on a newline makes the loss visible.
+    ///
+    /// But preferring a boundary is not the same as requiring one. A single row
+    /// longer than the whole budget has no boundary inside it, and keeping it
+    /// whole to preserve the nicer cut would hand an unbounded string to a
+    /// prompt — `limit` is how much of the screen may be disclosed at all, not
+    /// only how much is worth reading. A wrapped terminal keeps rows near the
+    /// pane width, so this is the log line or the pasted blob that did not wrap.
+    /// It is cut from the front, keeping the end, for the same reason the whole
+    /// function keeps the end.
     static func tail(of text: String, limit: Int) -> (text: String, truncated: Bool) {
         guard text.count > limit else { return (text, false) }
         let rows = text.components(separatedBy: "\n")
@@ -251,7 +289,10 @@ enum Context {
         for row in rows.reversed() {
             // +1 for the newline that rejoins it.
             let cost = row.count + 1
-            if size + cost > limit, !kept.isEmpty { break }
+            if size + cost > limit {
+                if kept.isEmpty { kept.append(String(row.suffix(limit))) }
+                break
+            }
             kept.append(row)
             size += cost
         }

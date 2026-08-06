@@ -777,10 +777,15 @@ which the pipeline already has as `text`. A stage handed the same sentence twice
 — once as its input, once as "context" — has every reason to read it as a
 quotation.
 
-**The last 2000 characters, cut on a row boundary.** The tail, because the rows
-nearest the box are the ones the sentence is answering. On a boundary, because a
-half row reads like something somebody said and there is nothing in the string
-to say otherwise.
+**The last 2000 characters, cut on a row boundary where there is one.** The
+tail, because the rows nearest the box are the ones the sentence is answering.
+On a boundary, because a half row reads like something somebody said and there
+is nothing in the string to say otherwise.
+
+A single row longer than the whole budget has no boundary inside it, and is cut
+anyway — 2000 is how much of your screen may leave it at all, not only how much
+is worth reading. A wrapped terminal keeps rows near the pane width, so that is
+the log line or the pasted blob that did not wrap.
 
 ### Why it is not in the default
 

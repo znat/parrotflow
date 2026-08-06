@@ -279,6 +279,7 @@ scripts/check-dates.sh             scripts/check-inplace.sh
 scripts/check-default-config.sh    scripts/check-seeded-transform.sh
 scripts/check-transform-folders.sh scripts/check-eval.sh
 scripts/check-compose.sh           # what a prompt says once the scope is in it
+scripts/check-context.sh           # what the context stage publishes for a screen
 scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
