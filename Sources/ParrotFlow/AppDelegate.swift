@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var config = Config()
     private var configWatcher: FileWatcher?
     private var vocabularyWatcher: FileWatcher?
+    private var transformWatchers: [FileWatcher] = []
 
     private let hotKeys = HotKeyManager()
     private let recorder = Recorder()
@@ -218,6 +219,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         applyConfig()
+        // After the load, not with the other watchers: a transform can be
+        // renamed, removed or pointed at a different file, so which files are
+        // worth watching is only known once the config has been read.
+        watchTransformFiles()
     }
 
     /// Says a config problem once, at the moment it appears.
@@ -429,6 +434,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // while the app is running.
         vocabularyWatcher = FileWatcher(url: ConfigStore.vocabularyURL) { [weak self] in
             self?.loadConfig(announceErrors: true)
+        }
+    }
+
+    /// Every file a transform reads its body from — `prompt: { path: slack.md }`
+    /// and `replace: { path: … }`.
+    ///
+    /// Those are read once, when the config is decoded, so without this a
+    /// prompt edit does nothing until `config.yaml` happens to be saved. That
+    /// is the wrong way round: a prompt is the file somebody iterates on,
+    /// twenty times in a row, and `config.yaml` is the one they touch monthly.
+    ///
+    /// Rebuilt on every load rather than added to, because a transform can be
+    /// renamed, removed, or pointed at a different file, and a watcher left
+    /// behind would reload on a file nothing reads.
+    private func watchTransformFiles() {
+        transformWatchers = config.transforms.compactMap { transform in
+            guard let source = transform.source else { return nil }
+            return FileWatcher(url: source.url) { [weak self] in
+                self?.loadConfig(announceErrors: true)
+            }
         }
     }
 

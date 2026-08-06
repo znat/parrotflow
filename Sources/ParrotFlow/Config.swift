@@ -2410,8 +2410,14 @@ if __name__ == "__main__":
     static func load() throws -> Config {
         try createIfMissing()
         let text = try String(contentsOf: fileURL, encoding: .utf8)
+        // An empty config.yaml is a supported state — it means "defaults for
+        // everything" — and it must not take the vocabulary down with it. The
+        // two files are independent, and one of them being blank says nothing
+        // about the other.
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return Config()
+            var bare = Config()
+            bare.vocabulary = loadVocabulary()
+            return bare
         }
         // A relative `command:` is relative to the file that declared it, so a
         // config carries its scripts beside it and a `--pipeline` fixture
