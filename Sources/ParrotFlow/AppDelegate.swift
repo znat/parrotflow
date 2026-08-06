@@ -92,6 +92,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Running between the hotkey coming up and the recording actually stopping
     /// — see `stopRecordingAfterTail`.
     private var releaseTail: Timer?
+    /// Every transcription run at or below this was cancelled with Escape and
+    /// must not be written anywhere. A high-water mark rather than a set: runs
+    /// only ever increase, so "this one and everything still in flight behind
+    /// it" is the whole of what cancelling means.
+    private var cancelledThroughRun = 0
+    private var escapeMonitors: [Any] = []
+    /// How many transcriptions have been started and not yet landed.
+    ///
+    /// Push-to-talk does not wait for the previous transcript, so two dictations
+    /// are ordinarily in flight at once — the same overlap `transcriptionRun`
+    /// exists to survive. The Escape monitors are one shared pair, so the older
+    /// run finishing must not take them away from the newer one still recording
+    /// behind it. Nothing tears them down until this is zero and the recorder is
+    /// idle.
+    private var runsInFlight = 0
     private var keepWarmTimer: Timer?
     private var keepWarmInFlight = false
     private var hotkeyError: String?
@@ -580,6 +595,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        watchForEscape()
+
         if config.feedback.sound { NSSound(named: "Tink")?.play() }
         if config.feedback.overlay {
             overlay.model.elapsed = 0
@@ -599,6 +616,113 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateUI()
     }
 
+    // MARK: - Escape
+
+    /// Stop a dictation that is already under way.
+    ///
+    /// Escape is the one key everybody already presses to mean "not that". You
+    /// say the wrong sentence, or you realise mid-sentence that the model is
+    /// about to rewrite it into the wrong window, and the only way out was to
+    /// let it finish and undo it afterwards.
+    ///
+    /// It works with the hotkey still held. In push-to-talk the key is down for
+    /// the whole dictation, so a cancel that needed you to let go first would be
+    /// no cancel at all — the release is what commits the recording. Stopping
+    /// the recorder here means the later release finds nothing recording and
+    /// does nothing, which is exactly right.
+    ///
+    /// Two states, and both are cancellable because both are waits you can
+    /// regret. A recording ends without being transcribed. A transcription in
+    /// flight is marked so its result is dropped when it lands: the model call
+    /// is not interruptible, so this cannot make it stop sooner — it only makes
+    /// sure nothing is written when it does.
+    private func cancelDictation() {
+        let recording = recorder.isRecording
+        // A run is in flight when one has been started and nothing has retired
+        // it yet. `transcriptionRun` is bumped per dictation and already carries
+        // through the whole chain, so it is the identity to cancel against.
+        let transcribing = transcriptionLabel != nil
+        guard recording || transcribing else { return }
+
+        if recording {
+            // The clip on disk is left alone. It cost nothing to write, the
+            // recordings folder is where you go to find out what the app heard,
+            // and deleting the evidence of the thing you just cancelled is the
+            // opposite of useful when the reason you cancelled it was that
+            // something sounded wrong.
+            _ = recorder.stop(config: config)
+            tickTimer?.invalidate(); tickTimer = nil
+            pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
+            releaseTail?.invalidate(); releaseTail = nil
+            overlay.hide()
+        }
+        if transcribing {
+            cancelledThroughRun = transcriptionRun
+            endProgress()
+        }
+
+        stopWatchingForEscape()
+        if config.feedback.sound { NSSound(named: "Pop")?.play() }
+        Log.write("escape: cancelled while \(recording ? "recording" : "transcribing")")
+        flash(recording ? "Recording cancelled" : "Transcription cancelled", tone: .caution)
+        updateUI()
+    }
+
+    /// Whether this run was cancelled and must not be delivered.
+    private func wasCancelled(_ run: Int) -> Bool { run <= cancelledThroughRun }
+
+    /// Listen for Escape while there is something to cancel, and only then.
+    ///
+    /// Two monitors because they cover different halves. The global one sees
+    /// keys while another app is in front, which is every ordinary dictation.
+    /// The local one sees them while a panel of ours is up.
+    ///
+    /// A global monitor observes and does not consume, so Escape still reaches
+    /// the app you are typing into. That is deliberate rather than a limitation:
+    /// swallowing it would need an event tap over every keystroke on the
+    /// machine, and pressing Escape to stop a dictation into a TUI usually means
+    /// you want the TUI to see it too.
+    ///
+    /// Installed when recording starts and removed when the dictation is over,
+    /// so an idle app is not watching the keyboard at all.
+    private func watchForEscape() {
+        guard escapeMonitors.isEmpty else { return }
+        // Through `KeyCodes` rather than Carbon directly. That table is already
+        // the one place in the app that knows what a key is called, and it is
+        // what a `hotkey:` of "escape" would resolve through.
+        guard let escape = KeyCodes.code(for: "escape") else { return }
+        let cancel: (NSEvent) -> Void = { [weak self] event in
+            guard event.keyCode == UInt16(escape) else { return }
+            DispatchQueue.main.async { self?.cancelDictation() }
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: .keyDown, handler: cancel) {
+            escapeMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: {
+            cancel($0)
+            return $0
+        }) {
+            escapeMonitors.append(local)
+        }
+    }
+
+    /// Take the monitors down only when there is nothing left to cancel.
+    ///
+    /// One dictation finishing is not the end of dictation. Hold the key again
+    /// while a prompt stage is still running and the newer recording shares this
+    /// pair, having found them already installed — so an unconditional teardown
+    /// on the older run's completion would leave the newer one uncancellable,
+    /// and the bug would only show up on the second press.
+    private func stopWatchingForEscapeIfIdle() {
+        guard !recorder.isRecording, runsInFlight <= 0 else { return }
+        stopWatchingForEscape()
+    }
+
+    private func stopWatchingForEscape() {
+        escapeMonitors.forEach(NSEvent.removeMonitor)
+        escapeMonitors.removeAll()
+    }
+
     private func stopRecording(reason: String? = nil) {
         guard recorder.isRecording else { return }
 
@@ -609,6 +733,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         releaseTail?.invalidate(); releaseTail = nil
         overlay.hide()
         if config.feedback.sound { NSSound(named: "Pop")?.play() }
+
+        // Transcription takes the watch over from here — it is the other half
+        // of the dictation Escape can still stop. With transcription off there
+        // is nothing left to cancel, so it ends now.
+        if !config.transcription.enabled { stopWatchingForEscapeIfIdle() }
 
         if let recording {
             lastRecording = recording
@@ -648,6 +777,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func transcribe(_ recording: Recorder.Recording) {
         transcriptionRun += 1
+        runsInFlight += 1
         let run = transcriptionRun
         // On the HUD and not just in the menu. Releasing the key hides the
         // recording pill, and everything after it — the decoder, then any
@@ -714,6 +844,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // The text is delivered either way: `destination` was
                     // captured at the press for exactly that reason.
                     if self.transcriptionRun == run { self.endProgress() }
+                    // Escape, while this was decoding. The decoder cannot be
+                    // stopped part-way, so the text exists — it simply goes
+                    // nowhere. Logged, because a dictation that vanishes with
+                    // no line in the log is indistinguishable from one that
+                    // failed silently.
+                    self.runsInFlight -= 1
+                    guard !self.wasCancelled(run) else {
+                        Log.write("escape: dropped the transcript of a cancelled run")
+                        self.stopWatchingForEscapeIfIdle()
+                        self.updateUI()
+                        return
+                    }
+                    self.stopWatchingForEscapeIfIdle()
                     self.finishTranscription(
                         text: text, destination: destination, focus: focus
                     )
@@ -722,6 +865,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     guard let self else { return }
                     if self.transcriptionRun == run { self.endProgress() }
+                    self.runsInFlight -= 1
+                    self.stopWatchingForEscapeIfIdle()
+                    guard !self.wasCancelled(run) else { return }
                     Log.write("transcription failed: \(error.localizedDescription)")
                     self.presentAlert(title: "Transcription failed", message: error.localizedDescription)
                     self.updateUI()
@@ -1610,7 +1756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Log.write("transcribed: \(trimmed)")
         lastTranscript = trimmed
-        insertDictation(trimmed, to: destination)
+        insertDictation(trimmed, to: destination, aimedAt: focus?.element)
     }
 
     /// An instruction found inside a dictation: route it, run it over the words
@@ -1638,7 +1784,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         func giveUp(_ why: String, tone: NoticeTone = .caution) {
             endProgress()
             Log.write("inline: \(why); wrote the text as dictated")
-            insertDictation(text, to: destination)
+            insertDictation(text, to: destination, aimedAt: focus?.element)
             notice.show(why, tone: tone, duration: 7)
             setLabel(why, clearAfter: 7)
         }
@@ -1664,7 +1810,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             Log.write("    after:  \(cleaned)")
                         }
                         self.lastTranscript = cleaned
-                        self.insertDictation(cleaned, to: destination)
+                        self.insertDictation(cleaned, to: destination, aimedAt: focus?.element)
                     }
                 } catch {
                     await MainActor.run {
@@ -1759,7 +1905,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 giveUpInline(
                     text,
                     why: "\"\(instruction)\" needs the local model to read the spelling",
-                    destination: destination
+                    destination: destination, focus: focus
                 )
                 return
             }
@@ -1803,7 +1949,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             // — the text is still in this function.
                             self.giveUpInline(
                                 text, why: "Didn't understand \"\(instruction)\"",
-                                destination: destination
+                                destination: destination, focus: focus
                             )
                         }
                     }
@@ -1813,7 +1959,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.endProgress()
                         self.giveUpInline(
                             text, why: error.localizedDescription, tone: .failure,
-                            destination: destination
+                            destination: destination, focus: focus
                         )
                     }
                 }
@@ -1900,13 +2046,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.lastTranscript = final
             handBack()
             Log.write("inline: writing into \(focus?.owner?.localizedName ?? "the frontmost app")")
-            self.insertDictation(final, to: destination)
+            self.insertDictation(final, to: destination, aimedAt: focus?.element)
         }
         correctionPanel.onCancel = { [weak self] in
             guard let self else { return }
             Log.write("inline: correction dismissed; wrote the text as dictated")
             handBack()
-            self.insertDictation(text, to: destination)
+            self.insertDictation(text, to: destination, aimedAt: focus?.element)
         }
 
         if let proposed {
@@ -1919,11 +2065,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Write what was said, and say why it is not what was asked for.
     private func giveUpInline(
         _ text: String, why: String, tone: NoticeTone = .caution,
-        destination: Destination
+        destination: Destination, focus: SelectionReader.Selection?
     ) {
         endProgress()
         Log.write("inline: \(why); wrote the text as dictated")
-        insertDictation(text, to: destination)
+        insertDictation(text, to: destination, aimedAt: focus?.element)
         notice.show(why, tone: tone, duration: 7)
         setLabel(why, clearAfter: 7)
     }
@@ -1940,7 +2086,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// carried in rather than read off `self` — by the time an inline prompt
     /// and a correction panel have both had their turn, the field may be
     /// holding a newer press's answer.
-    private func insertDictation(_ text: String, to destination: Destination) {
+    /// Write the transcript where it was aimed, or put it on the clipboard and
+    /// say so.
+    ///
+    /// `aimedAt` is the element that had focus when the hotkey went down. A
+    /// transcript arrives seconds later — a decoder, then any prompt stage —
+    /// and `TextInserter` posts ⌘V into whatever is frontmost by then. Dictate
+    /// an instruction into one terminal pane, switch to the next while it works,
+    /// and the sentence lands in the wrong session. Nothing in this app has ever
+    /// pinned a pane: every `owner.activate()` here activates an application.
+    ///
+    /// So this does not try to steer the paste back. It refuses to paste at all
+    /// when the field is not the one that was dictated into, and copies instead.
+    /// Putting focus back would mean setting `kAXFocused` and trusting an app to
+    /// honour it, which is a guess; the clipboard is not.
+    ///
+    /// A nil `aimedAt` means there was nothing to compare against — no focus was
+    /// resolved at the press at all — and the paste goes ahead as it always did.
+    /// That is different from failing to read focus *now*, which counts as
+    /// moved: not knowing is not the same as knowing it is fine. Passed
+    /// explicitly at every call rather than defaulted, so a new path has to say
+    /// which it is.
+    ///
+    /// False positives would make this unusable: guard too eagerly and every
+    /// dictation ends up on the clipboard. The comparison was measured before it
+    /// was relied on — the press-time experiment behind the `context` stage ran
+    /// this same `CFEqual` across 17 real dictations and the element was equal
+    /// every time.
+    private func insertDictation(
+        _ text: String, to destination: Destination, aimedAt element: AXUIElement?
+    ) {
+        // Confirmed the same field, or nothing to confirm against. Anything
+        // else copies.
+        //
+        // A lookup that fails counts as moved rather than as unchanged. It
+        // returns nil on a 0.25s timeout against a busy app, and "I could not
+        // tell" is not "it is fine" — pasting on it would be the guess this
+        // whole check exists to avoid. The cost of being wrong that way is a
+        // transcript on the clipboard with a notice, which is recoverable; the
+        // cost the other way is a sentence in somebody else's window.
+        //
+        // Accessibility is checked first so a machine without the grant keeps
+        // the message it has always had. `TextInserter` returns `.clipboardOnly`
+        // there and says so below, and "Focus moved" would be both wrong and
+        // less useful than "grant Accessibility".
+        if config.transcription.insertMode == .paste, let element,
+           Permissions.accessibility == .granted {
+            let now = SelectionReader.focusedElement()
+            if now == nil || !CFEqual(now!, element) {
+                TextInserter.insert(text, mode: .clipboard)
+                if config.feedback.sound { NSSound(named: "Glass")?.play() }
+                Log.write(now == nil
+                    ? "could not read what is focused; copied instead of pasting"
+                    : "focus moved since the press; copied instead of pasting")
+                flash("Focus moved — the transcription is on your clipboard", tone: .caution)
+                updateUI()
+                return
+            }
+        }
+
         // Nowhere to type: the pill said so by leaving its icon out, and this is
         // the other half of that. Pasting anyway is the bad outcome — a ⌘V into
         // a Finder window or a video player does whatever that window makes of

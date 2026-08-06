@@ -137,6 +137,45 @@ transcript arrives it goes to your clipboard with a notice saying where it went.
 Terminals are the exception: what they show macOS is a screen rather than a
 field, so they are recognised by name and always counted as somewhere to write.
 
+**If you move, it copies rather than pastes.** A transcript arrives seconds
+after you stop talking — a decoder, then whatever the pipeline runs — and the
+paste goes to whatever is in front by then. Dictate an instruction into one
+terminal pane, switch to the next while it works, and it used to land in the
+wrong session.
+
+So the field is checked against the one you dictated into, and a transcript that
+no longer has a home there goes to the clipboard with a notice instead. It does
+not try to put focus back: that would mean asking an app to restore a pane and
+trusting it to, which is a guess. The clipboard is not a guess.
+
+This is a comparison of the focused element, so it catches a move between panes
+of the same app, which is the case that actually happens.
+
+If the field cannot be read at all — a busy app that does not answer in time —
+that counts as moved and the transcript is copied. Not knowing is not the same
+as knowing it is fine, and a transcript on your clipboard is recoverable in a
+way that one typed into somebody else's window is not.
+
+## Escape stops a dictation
+
+Press ⎋ while recording, or while it is transcribing, and the dictation ends.
+Nothing is written.
+
+It works with the hotkey still held, which is the point of it: in push-to-talk
+the key is down for the whole sentence, and letting go is what commits the
+recording. Say the wrong thing and you can stop before it lands.
+
+A recording that is cancelled is still written to your recordings folder — it is
+where you go to hear what the app heard, and the moment you most want that is
+the moment you cancelled. It is simply never transcribed.
+
+Cancelling during transcription cannot make the decoder stop sooner. The model
+call is not interruptible. What it guarantees is that nothing is written when it
+finishes.
+
+Escape is not swallowed. The app you are typing into still sees it, which is
+usually what you want when you are stopping a dictation into a terminal.
+
 ## `transcription.languages`
 
 Not passed to the speech model — Parakeet transcribes multilingually by itself
