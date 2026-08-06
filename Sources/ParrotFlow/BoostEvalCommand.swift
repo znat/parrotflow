@@ -269,7 +269,13 @@ enum BoostEvalCommand {
         print("ready.  cbw \(sizeConfig.cbw), size-default minSimilarity \(sizeConfig.minSimilarity)\n")
 
         var tallies = [Tally](repeating: Tally(), count: sweep.count)
+        // Both counted over the clips that were actually scored. A clip that
+        // failed to load, decoded to nothing, or returned no CTC frames is
+        // skipped, and counting its positives anyway made `negatives` too
+        // small — negative, on a bad enough run — and overstated how many
+        // names the vocabulary had failed to fix.
         var decoded = 0
+        var decodedPositives = 0
 
         for (index, clip) in clips.enumerated() {
             guard let samples = load(url: clip.url) else { continue }
@@ -289,6 +295,7 @@ enum BoostEvalCommand {
             )
             guard !spotted.logProbs.isEmpty else { continue }
             decoded += 1
+            if clip.hasTerm { decodedPositives += 1 }
 
             for (slot, variant) in sweep.enumerated() {
                 let on = rescorers[slot].ctcTokenRescore(
@@ -309,7 +316,10 @@ enum BoostEvalCommand {
             if (index + 1) % 10 == 0 { print("  \(index + 1)/\(clips.count)…") }
         }
 
-        report(sweep: sweep, tallies: tallies, clips: clips, decoded: decoded, verbose: verbose)
+        report(
+            sweep: sweep, tallies: tallies, positives: decodedPositives,
+            decoded: decoded, verbose: verbose
+        )
 
         // The loosest variant that still has the rescue off — the one that
         // proposes both the catches and the junk, so a judge set has negatives.
@@ -369,9 +379,8 @@ enum BoostEvalCommand {
     }
 
     private static func report(
-        sweep: [Variant], tallies: [Tally], clips: [Case], decoded: Int, verbose: Bool
+        sweep: [Variant], tallies: [Tally], positives: Int, decoded: Int, verbose: Bool
     ) {
-        let positives = clips.filter(\.hasTerm).count
         let negatives = decoded - positives
 
         func row(_ cells: [String]) -> String {

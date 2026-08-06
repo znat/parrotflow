@@ -85,7 +85,9 @@ enum SpotCommand {
 
         print("── what the CTC returned ────────────────────────────────")
         print("   the grid, top 3 tokens per frame. No vocabulary involved.\n")
-        let start = Int((from ?? 0) / spotted.frameDuration)
+        // Clamped: `--from -1` is a legal number and an illegal frame index,
+        // and subscripting the grid with it crashes rather than complaining.
+        let start = max(0, Int((from ?? 0) / spotted.frameDuration))
         let end = min(spotted.logProbs.count, Int((to ?? seconds) / spotted.frameDuration))
         for frame in start..<max(start, end) {
             let row = spotted.logProbs[frame]
