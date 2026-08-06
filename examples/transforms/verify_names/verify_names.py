@@ -307,6 +307,17 @@ def verdicts(said, pairs, terms, app="unknown", screen=""):
     with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
         reply = json.load(response)["message"]["content"]
     found = re.findall(pattern, reply.upper())
+    # Recorded whichever way it was asked. The batched path had its own request
+    # and never appended, so a batched run wrote `asked: 0` to the trace and
+    # left its decisions unreplayable — the one thing the trace exists to
+    # prevent.
+    JUDGED.append({
+        "heard": "; ".join(h for h, _, _, _ in pairs),
+        "term": "; ".join(t for _, t, _, _ in pairs),
+        "reply": reply.strip(),
+        "system": messages[0]["content"],
+        "user": messages[-1]["content"],
+    })
     if len(found) != len(pairs):
         return [False] * len(pairs)
     yes = tokens[0]
@@ -423,10 +434,19 @@ def main():
     # invites the model to agree with what it can see. Measured on one clip:
     # "not a Vercel for blame" -> YES, "not a vessel for blame" -> NO. Same
     # word, same term, opposite answers.
+    # Every occurrence, not the first. One rule replaces every match in the
+    # transcript but reports itself once, so "Prissy -> Praisy" can stand for
+    # three substitutions. Undoing one of three leaves the other two applied
+    # and unjudged.
+    #
+    # The cost is a transcript where the speaker said the term *and* a
+    # rendering of it in one breath — "Praisy asked Prissy" — where reverting
+    # all takes the correct one with it. That needs the decoder to produce the
+    # exact spelling and a mishearing of it in the same clip, which is rarer
+    # than the case this fixes.
     original = text
     for heard, term, _, _ in pairs:
-        if term in original:
-            original = original.replace(term, heard, 1)
+        original = original.replace(term, heard)
 
     # Declining means putting the words back, not leaving the transcript as it
     # arrived — it arrives with every substitution already applied. Returning
@@ -467,7 +487,7 @@ def main():
 
     for (heard, term, a, b), keep in zip(pairs, keeps):
         if not keep and term in output:
-            output = output.replace(term, heard, 1)
+            output = output.replace(term, heard)
             reverted.append(f"{term} -> {heard}")
 
     # `asked` and `judged` ride back as stage variables. The pipeline files
