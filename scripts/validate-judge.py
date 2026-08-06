@@ -233,9 +233,18 @@ def ask(model, system, said, heard, term, tokens, speaker_framed=False):
 # --------------------------------------------------------------------- main
 
 def load_shipped():
-    """The judge as it ships, imported rather than reimplemented."""
+    """The judge as it ships, imported rather than reimplemented.
+
+    Optional: the transform is a separate thing from this harness, and a
+    checkout without it should say so rather than raise from inside importlib.
+    """
     import importlib.util
     path = ROOT / "examples/transforms/verify_names/verify_names.py"
+    if not path.exists():
+        print(f"✗ --script needs {path.relative_to(ROOT)}, which is not in this"
+              " checkout.\n  Score the no-model control instead:"
+              " validate-judge.py none --code-only")
+        raise SystemExit(2)
     spec = importlib.util.spec_from_file_location("verify_names", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
