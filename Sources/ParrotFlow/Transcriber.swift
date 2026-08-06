@@ -161,6 +161,33 @@ actor Transcriber {
         }
         Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
+        // Before the pipeline, because this is the last point where the words
+        // still line up with the audio they came from. Every text stage after
+        // it — numbers especially — rewrites words the token timings index.
+        var text = result.text
+        var vocabularyCount = 0
+        var vocabularyChanges = ""
+        if Vocabulary.wanted(config) {
+            do {
+                try await Vocabulary.shared.prepare(config: config) { [weak self] label in
+                    Task { await self?.setStatus(.downloading(label)) }
+                }
+                if let samples = gated?.decodable == true
+                    ? gated?.samples : Self.samples(at: url) {
+                    let outcome = await Vocabulary.shared.apply(
+                        to: text, samples: samples,
+                        tokenTimings: result.tokenTimings ?? [], config: config
+                    )
+                    text = outcome.text
+                    vocabularyCount = outcome.count
+                    vocabularyChanges = outcome.changes
+                }
+            } catch {
+                Log.write("vocabulary: \(error.localizedDescription); left as decoded")
+            }
+            setStatus(.ready)
+        }
+
         // The same numbers the trace records, handed to the pipeline as well.
         //
         // Not read back off `Trace`, deliberately. The collector is bound only
@@ -169,13 +196,19 @@ actor Transcriber {
         // the runs you are watching and quietly stop on the runs you are not.
         // So the trace consumes these; it does not own them.
         return await Self.applyReplacements(
-            to: result.text, config: config, app: app,
+            to: text, config: config, app: app,
             seed: Scope(values: [
                 "asr.model": .string(Repo.parakeetV3.rawValue),
                 "asr.confidence": .double(Double(result.confidence)),
                 "asr.duration": .double(result.duration),
                 "asr.processing": .double(result.processingTime),
                 "asr.words": .int(result.tokenTimings?.count ?? 0),
+                // What the vocabulary pass wrote, for a stage that judges the
+                // substitutions rather than making them. Seeded even when it
+                // did nothing, so `vocabulary.count > 0` is a condition a
+                // pipeline can read rather than an error about a missing path.
+                "vocabulary.count": .int(vocabularyCount),
+                "vocabulary.changes": .string(vocabularyChanges),
             ]),
             progress: progress
         )
@@ -252,6 +285,23 @@ actor Transcriber {
             segments: segments.map { ($0.startTime, $0.endTime) },
             decodable: decodable
         )
+    }
+
+    /// The clip as 16 kHz mono samples, for the vocabulary pass when the
+    /// speech gate is off and has not already read them. Nil rather than
+    /// throwing: a name left misheard is worth less than a lost dictation.
+    static func samples(at url: URL) -> [Float]? {
+        guard let file = try? AVAudioFile(forReading: url),
+              file.processingFormat.sampleRate == sampleRate,
+              file.processingFormat.channelCount == 1,
+              let buffer = AVAudioPCMBuffer(
+                  pcmFormat: file.processingFormat,
+                  frameCapacity: AVAudioFrameCount(file.length)
+              ),
+              (try? file.read(into: buffer)) != nil,
+              let channel = buffer.floatChannelData?[0]
+        else { return nil }
+        return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
     }
 
     // MARK: - Closing long pauses

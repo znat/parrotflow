@@ -61,11 +61,17 @@ if let index = arguments.firstIndex(of: "--record") {
 
 if let index = arguments.firstIndex(of: "--transcribe") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --transcribe <file.wav>")
+        print("usage: ParrotFlow --transcribe <file.wav> [--no-vocab]")
         exit(2)
     }
-    exit(TranscribeCommand.run(path: arguments[index + 1]))
+    exit(TranscribeCommand.run(
+        path: arguments[index + 1],
+        withVocabulary: !arguments.contains("--no-vocab")
+    ))
 }
+
+
+
 
 if let index = arguments.firstIndex(of: "--replace") {
     guard arguments.indices.contains(index + 1) else {
