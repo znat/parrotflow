@@ -452,6 +452,54 @@ cases:
       dotted.ran: true
       dotted.changed: true
 
+  # --- context, which from here can only decline --------------------------
+  #
+  # See tests/pipelines/context.yaml for why the capture itself is not scored.
+  # What these hold down is the rule that survives that: a stage which has
+  # nothing to publish costs nothing and hides nothing.
+  #
+  # The reason is always the same one here, and that is the point rather than a
+  # limitation. The stage publishes what was captured when the hotkey went down,
+  # and `--pipeline` has no hotkey — so this is also the scored answer to "what
+  # does the stage do when it is reached by a path that never pressed anything".
+  - name: context declines with no press to publish, and says which
+    pipeline: context
+    app: Ghostty com.mitchellh.ghostty
+    input: super base has twenty one users
+    expect: Supabase has 21 users
+    expect_vars:
+      context.ran: true
+      context.ok: false
+      context.chars: 0
+      context.declined: nothing was captured when the hotkey went down
+
+  # The stage sits between `replacements` and `numbers` in the fixture, so this
+  # case is also the answer to "does a stage that publishes variables disturb
+  # the ones either side of it". Both still fire.
+  - name: a declining context leaves the stages around it alone
+    pipeline: context
+    app: Ghostty com.mitchellh.ghostty
+    input: super base has twenty one users
+    expect: Supabase has 21 users
+    expect_vars:
+      context.changed: false
+      replacements.count: 1
+      numbers.ran: true
+
+  # A non-terminal used to decline here for its own reason. It cannot any more:
+  # the terminal check moved to the press, so from `--pipeline` every app gets
+  # `noPress` and an app-specific case would pass without testing anything. The
+  # case that remains is the one still worth holding: whatever the app, the
+  # transcript comes out untouched.
+  - name: context leaves a non-terminal transcript exactly as it arrived
+    pipeline: context
+    app: Slack com.tinyspeck.slackmacgap
+    input: super base has twenty one users
+    expect: Supabase has 21 users
+    expect_vars:
+      context.ok: false
+      context.changed: false
+
 # Pipelines that must not load at all.
 #
 # Scored separately because the property is different: these never reach a
@@ -478,3 +526,10 @@ refused:
   - name: a transform named after the transcription metadata is refused
     pipeline: reserved-name
     expect_problem: would file its variables where asr already is
+
+  # The same rule, for the name a prompt reads the spoken instruction from. It
+  # is a bare value and would also be a namespace prefix, which is exactly why
+  # `text` is on that list.
+  - name: a transform named after the spoken instruction is refused
+    pipeline: reserved-instruction
+    expect_problem: would file its variables where instruction already is

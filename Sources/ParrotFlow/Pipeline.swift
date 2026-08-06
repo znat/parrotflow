@@ -38,6 +38,9 @@ struct Pipeline: Equatable, Codable {
         case fuzzy
         /// Spoken numbers as digits, in the language its own pass resolves.
         case numbers
+        /// What is on screen around the field, published as `context.*` and
+        /// never written into the transcript. Terminals only — see `Context`.
+        case context
         /// One of the entries in `transforms:`, run over the whole
         /// transcript. The only stage that names something outside itself, and
         /// the only one that might call a model — see `Step.transform`.
@@ -45,10 +48,16 @@ struct Pipeline: Equatable, Codable {
 
         var name: String { rawValue }
 
-        /// Whether it can be in a default nobody wrote. `transform` cannot: it
-        /// needs a name, and there is no transform every install is guaranteed
-        /// to have. Everything else is in the default the moment it exists.
-        var isAutomatic: Bool { self != .transform }
+        /// Whether it can be in a default nobody wrote.
+        ///
+        /// `transform` cannot: it needs a name, and there is no transform every
+        /// install is guaranteed to have.
+        ///
+        /// `context` cannot either, for a different and stronger reason. It
+        /// reads the screen. Turning that on for everybody who never wrote a
+        /// `pipelines:` block would be a silent change to what the app looks at,
+        /// which is the one kind of change that has to be asked for by name.
+        var isAutomatic: Bool { self != .transform && self != .context }
     }
 
     /// The app a transcript is on its way into, for `Step.app`.
@@ -560,7 +569,6 @@ struct Pipeline: Equatable, Codable {
         if scope["language"] == nil {
             scope.set("language", .string(Pipeline.forText(output, config: config).1))
         }
-
         for step in steps {
             let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
             let namespace = Pipeline.namespace(of: step)
@@ -594,7 +602,7 @@ struct Pipeline: Equatable, Codable {
             // measured on your own sentences instead of quoted from a README.
             let before = output
             let started = CFAbsoluteTimeGetCurrent()
-            let result = await apply(step, to: output, config: config, scope: scope)
+            let result = await apply(step, to: output, config: config, app: app, scope: scope)
             let seconds = CFAbsoluteTimeGetCurrent() - started
             output = result.text
 
@@ -639,7 +647,7 @@ struct Pipeline: Equatable, Codable {
     }
 
     private func apply(
-        _ step: Step, to text: String, config: Config, scope: Scope
+        _ step: Step, to text: String, config: Config, app: App?, scope: Scope
     ) async -> StageResult {
         switch step.stage {
         case .replacements:
@@ -659,8 +667,77 @@ struct Pipeline: Equatable, Codable {
         case .numbers:
             let done = Numbers.read(text, languages: config.transcription.languages)
             return StageResult(text: done.text, vars: ["language": .string(done.language)])
+        case .context:
+            return await readContext(on: text)
         case .transform:
             return await runTransform(step, on: text, config: config, scope: scope)
+        }
+    }
+
+    /// The screen behind the field, as variables. Never as text.
+    ///
+    /// This is the one stage that returns its input untouched by construction
+    /// rather than by outcome, so `context.changed` is false on every run and
+    /// means it. A stage that could put the screen into the transcript would be
+    /// a stage that could paste somebody's terminal into their chat message.
+    ///
+    /// The screen is not read here. It was read when the hotkey went down, and
+    /// this hands on what `Context.capturePress` stored.
+    ///
+    /// That is the whole point of the stage's shape. By the time this runs there
+    /// has been a transcription and possibly a model call, and focus may be in
+    /// another pane — so a read here answers "what is on screen now" when the
+    /// question is "what were you looking at when you decided to say this".
+    /// Those are the same screen most of the time and the wrong one exactly when
+    /// it matters.
+    ///
+    /// It also means this stage does no accessibility work at all, which is why
+    /// there is no thread argument to have. An earlier version read here and hopped
+    /// to the main actor to do it; that deadlocked, because `--pipeline` drives
+    /// this with a semaphore the main thread is sitting in.
+    ///
+    /// Declining is normal and is not an error: no permission, the wrong app in
+    /// front, a surface that is not a terminal, or no press at all — which is
+    /// every run under `--pipeline`, and every entry point that is not the
+    /// hotkey. Each publishes `ok: false` and the reason, because "read nothing"
+    /// and "was not allowed to look" are different answers and a condition
+    /// should be able to tell them apart.
+    private func readContext(on text: String) async -> StageResult {
+        switch Context.pressCapture?.outcome ?? .failure(.noPress) {
+        case .failure(let why):
+            Log.write("pipeline: context declined — \(why.rawValue)")
+            // The same keys a successful read publishes, emptied, plus the
+            // reason. Not fewer: a condition is written once and has to hold on
+            // the runs where nothing could be read, which are most of them — and
+            // `context.text` that is absent throws where `context.text` that is
+            // empty is simply true. Empty is also the honest answer. Nothing was
+            // on screen as far as this stage is concerned, and `ok` and
+            // `declined` are there to say whether that was a screen or a refusal.
+            return StageResult(text: text, vars: [
+                "ok": .bool(false),
+                "declined": .string(why.rawValue),
+                "text": .string(""),
+                "chars": .int(0),
+                "lines": .int(0),
+                "truncated": .bool(false),
+            ])
+        case .success(let capture):
+            // The whole capture goes to the log, not a count of it. The point of
+            // this stage is to find out what is worth reading off a screen, and
+            // that judgement cannot be made from "1840 chars". Worth knowing
+            // before turning it on: while it is on, the log holds what was on
+            // screen when you dictated.
+            Log.write("pipeline: context read \(capture.chars) chars, \(capture.lines) line(s)"
+                + (capture.truncated ? " (truncated to the last \(Context.maxChars))" : ""))
+            for row in capture.text.components(separatedBy: "\n") {
+                Log.write("    | \(row)")
+            }
+            return StageResult(text: text, vars: [
+                "text": .string(capture.text),
+                "chars": .int(capture.chars),
+                "lines": .int(capture.lines),
+                "truncated": .bool(capture.truncated),
+            ])
         }
     }
 
@@ -682,7 +759,7 @@ struct Pipeline: Equatable, Codable {
         }
         switch transform.body {
         case .prompt:
-            return await runPrompt(step, named: name, on: text, config: config)
+            return await runPrompt(step, named: name, on: text, config: config, scope: scope)
         case .replace:
             // Exact and free, so there is nothing to guard and nothing to
             // report beyond what the table did — the log line is the same one
@@ -731,7 +808,7 @@ struct Pipeline: Equatable, Codable {
     /// after belong in the log whether or not anything went wrong, because
     /// nothing on screen will ever show you it happened.
     private func runPrompt(
-        _ step: Step, named name: String, on text: String, config: Config
+        _ step: Step, named name: String, on text: String, config: Config, scope: Scope
     ) async -> StageResult {
         guard config.llm.enabled else {
             Log.write("pipeline: skipped prompt \(name) — llm.enabled is false")
@@ -745,8 +822,15 @@ struct Pipeline: Equatable, Codable {
         do {
             let result = try await PromptRunner.run(
                 prompt: prompt,
+                // No spoken instruction exists on this path — a pipeline prompt
+                // is not something anybody asked for out loud. `{{instruction}}`
+                // in a pipeline prompt therefore resolves to nothing, and takes
+                // its paragraph with it.
                 instruction: "",
                 text: text,
+                // What every stage before this one published. A prompt reads it
+                // by the same names a condition does.
+                scope: scope,
                 config: LocalLLM.Config(
                     endpoint: config.llm.endpoint,
                     model: config.llm.model,

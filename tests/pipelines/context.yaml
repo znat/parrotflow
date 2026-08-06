@@ -1,0 +1,31 @@
+# The `context` stage, scored for the only thing a fixture can score about it.
+#
+# What it captures cannot be tested from here and deliberately is not faked.
+# Two reasons, and the first is now the binding one: the screen is read when the
+# hotkey goes down, and `--pipeline` has no hotkey, so there is never a capture
+# to publish. Behind that sits TCC, which pins the accessibility grant to the app
+# bundle — a binary run from a terminal is attributed to the terminal and gets
+# nothing even when it does look. A fixture that stubbed the screen would be
+# scoring the stub.
+#
+# What is worth scoring is the declining itself, because that is the rule the
+# whole app is built on: a stage that cannot do its job leaves the transcript
+# exactly as it arrived. This stage has more ways to not do its job than any
+# other — no permission, wrong app in front, not a terminal — and every one of
+# them has to come out here.
+#
+# Read the live capture with `--peek` instead. It runs inside the bundle, so it
+# has the grant, and it prints exactly what this stage would publish.
+languages: [en]
+
+replacements:
+  Supabase: [super base]
+
+pipeline:
+  # Before and after, on purpose. `context` sits in the middle of a real
+  # pipeline in the config it is written for, and a stage that publishes
+  # variables must not disturb the stages either side of it — including when
+  # it declines, which from here it always does.
+  - replacements
+  - context
+  - numbers

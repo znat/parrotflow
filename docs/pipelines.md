@@ -26,6 +26,7 @@ get every stage back — a missing section is silence, not a choice. Write
 | `replacements` | The substitutions in `replacements:` — literal, word-boundary, case-insensitive, or a regex between slashes. |
 | `fuzzy` | The same table against renderings you have not taught, so "super bays" reaches Supabase. Only words the spell checker does not know are eligible, which is what keeps "Excel" from becoming "Vercel". Needs `replacements` before it and says so if it does not have one, because on its own it swallows the preceding word. |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
+| `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
 `numbers` rewrites transcripts that were already correct, so run `--numbers` on
@@ -703,6 +704,121 @@ values that decided it:
                  (code_identifiers.count = 1)
 ```
 
+## Context: what is on screen around the field
+
+Every other stage sees the sentence and nothing else. `context` is the one that
+looks up: it reads the screen behind the field you are dictating into and
+publishes it, so a later stage can know what the sentence is answering.
+
+```yaml
+pipelines:
+  default:
+    - replacements
+    - context
+    - stage: transform
+      transform: reply
+      when: context.ok && context.chars > 200
+```
+
+It publishes five things, on top of the four every stage gets:
+
+| | |
+|---|---|
+| `context.text` | what was on screen, minus the input box |
+| `context.chars` | how much of it there is |
+| `context.lines` | how many rows |
+| `context.truncated` | whether the cap cut anything off the front |
+| `context.declined` | why nothing was read, when nothing was |
+
+**It never changes the transcript.** `context.changed` is false on every run and
+means it — the stage returns its input by construction, not by outcome. A stage
+that could put the screen into the transcript is a stage that could paste your
+terminal into a chat message.
+
+**Terminals only, for now.** A terminal's accessibility value *is* its visible
+screen, so the whole context costs one call — the same call the app already
+makes to edit a line in place. No other app works that way. A Slack composer
+publishes its own contents and nothing above it, so the messages would have to
+come from walking the window's children: hundreds of round trips, per app, for a
+flat run of text with no author attached. That may still be worth building. It
+is not the same feature, and one stage that means "cheap" in one app and
+"expensive" in the next is not a stage anybody can budget for. So everything
+else is declined out loud.
+
+**The screen is read when the hotkey goes down, not when the stage runs.** The
+press is the last moment the pane is known. By the time the pipeline reaches
+this stage there has been a transcription and possibly a model call, and focus
+may be somewhere else — so a read then answers "what is on screen now" when the
+question is "what were you looking at when you decided to say this".
+
+Those are the same screen nearly always. Measured over 17 dictations, a press
+reading and a stage reading agreed 15 times, and both differences were under 35
+characters of spinner and token counter. The reason to take the earlier one is
+not that it is fresher. It is that the pane is certain.
+
+The read costs about 1ms on a small pane and 36–39ms on a long scrollback, so it
+runs on a background queue after the recorder has started. It is skipped
+entirely unless some pipeline names the stage.
+
+**This does not fix where the text lands.** If you dictate into one pane and
+switch to another before the transcript is ready, the ⌘V still goes to the pane
+you switched to. That is a real gap and it is not this stage's — the fix is to
+put the transcript on the clipboard instead of pasting it somewhere you did not
+aim, and it belongs next to the paste. Until then, the context at least
+describes the pane you meant.
+
+**Only the hotkey captures.** Any other entry point — `--pipeline`, a scripted
+transcription — reaches the stage with nothing to publish and gets
+`context.declined: nothing was captured when the hotkey went down`. Use `--peek`
+to see a live read on demand.
+
+**The input box is left out.** It holds the sentence being dictated right now,
+which the pipeline already has as `text`. A stage handed the same sentence twice
+— once as its input, once as "context" — has every reason to read it as a
+quotation.
+
+**The last 2000 characters, cut on a row boundary where there is one.** The
+tail, because the rows nearest the box are the ones the sentence is answering.
+On a boundary, because a half row reads like something somebody said and there
+is nothing in the string to say otherwise.
+
+A single row longer than the whole budget has no boundary inside it, and is cut
+anyway — 2000 is how much of your screen may leave it at all, not only how much
+is worth reading. A wrapped terminal keeps rows near the pane width, so that is
+the log line or the pasted blob that did not wrap.
+
+### Why it is not in the default
+
+Every other stage is on the moment it exists — delete `pipelines:` and you get
+all of them. `context` is not, and `transform` is the only other exception.
+
+It reads the screen. Turning that on for everybody who never wrote a
+`pipelines:` block would be a silent change to what the app looks at, and that
+is the one kind of change that has to be asked for by name. Write the line and
+you have it.
+
+Worth knowing before you write it: **while the stage is on, the log holds what
+was on screen when you dictated.** That is deliberate — the whole point is to
+find out what is worth reading off a screen, and that judgement cannot be made
+from "1840 chars" — but it is a real consequence and `~/Library/Logs` is a real
+file.
+
+### Seeing what it captures
+
+`--pipeline` cannot show you. TCC pins the accessibility grant to the app
+bundle, so a binary run from a terminal is attributed to the terminal and gets
+nothing; the stage declines every time and `tests/pipelines/context.yaml` scores
+that declining rather than a stub.
+
+`--peek` can, because it runs inside the bundle:
+
+```sh
+open -na ParrotFlowDev --args --peek 6
+# click the window you want, then read the log
+```
+
+It prints what the stage would publish, in full, under `as context:`.
+
 ## Apps
 
 `app:` runs a stage only where you want it — the rewrite that belongs in a
@@ -794,6 +910,75 @@ text before and after.
 If the model is not running, the prompt does not exist, or the call fails, the
 transcript comes back exactly as it arrived. A dictation tool can afford to
 skip a stage and cannot afford to lose a sentence.
+
+### Reading variables from a prompt
+
+A prompt names a variable the way a condition does. Anything a stage published
+is reachable, as long as that stage runs earlier in the pipeline.
+
+```yaml
+pipeline:
+  - context
+  - transform: rewrite
+
+transforms:
+  - name: rewrite
+    prompt: |
+      Rewrite the dictation as a clear instruction.
+
+      This is on the speaker's screen right now:
+      {{context.text}}
+
+      Use it to spell names and paths. Never quote it back.
+```
+
+`{{context.text}}`, `{{numbers.count}}`, `{{language}}`, `{{app}}` — the same
+names `when:` reads, so there is one vocabulary rather than two.
+
+**A name with nothing behind it takes its paragraph with it.** Most variables
+are absent most of the time: `context` only reads terminals, so in Slack that
+prompt is just the first line and the last. Substituting an empty string would
+leave `This is on the speaker's screen right now:` over a blank, which tells a
+model there is a screen and then shows it none — and a small model asked to use
+something that is not there will invent it.
+
+The paragraph is the unit because that is what a prompt is written in. A heading
+and its content are one thought, and dropping only the line with the placeholder
+would keep the promise and remove the thing promised. One empty name takes the
+whole paragraph even if another in it resolved.
+
+So **give a placeholder its own paragraph, beside at least one paragraph that
+has none.** A prompt where every paragraph holds a placeholder cannot be emptied
+— an empty system message is no instruction at all, and the model would be left
+with the transcript and whatever it felt like doing to it — so in that one case
+the paragraphs stay and the gaps are simply blank. That is the shape the rule
+cannot save.
+
+Score a prompt's placeholders without a model:
+
+```sh
+$PF --compose 'On screen:\n{{context.text}}\n\nBe brief.' 'context.text=hello'
+scripts/check-compose.sh
+```
+
+**`{{instruction}}` is one of these names, not a special case.** It holds the
+spoken instruction from ["hey parrot, make that a list"](#an-instruction-inside-a-dictation).
+In a pipeline there is no spoken instruction, so it is always empty there and
+takes its paragraph with it like any other name.
+
+### Two things to know before interpolating a screen
+
+`{{context.text}}` puts up to 2000 characters of your terminal into the system
+message. That is the point, and it has two consequences worth stating.
+
+If the screen holds something shaped like an instruction, the model may follow
+it. A Claude Code pane is exactly where arbitrary text lives, so this is
+prompt injection from your own screen.
+
+And it goes wherever `llm.endpoint` points. On localhost that is the same
+machine. Point it at a hosted model and the interpolation is the moment your
+screen leaves the machine. The `context` stage alone never sends anything
+anywhere; `{{context.text}}` in a prompt is what does.
 
 ## Why there is no `dates` or `digits` prompt
 

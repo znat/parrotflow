@@ -1,0 +1,53 @@
+# What the `context` stage would publish for a given screen. Run with
+# scripts/check-context.sh.
+#
+# The two string steps, in the order the stage runs them: cut the input box off
+# the bottom, then keep the tail. Neither touches accessibility, so both have an
+# exact answer — and they are the only part of this stage that does. What is
+# genuinely on screen is at the mercy of TCC and of whatever is in front, and a
+# fixture that stubbed a real screen would be scoring the stub. See
+# tests/pipelines/context.yaml.
+#
+# Format, tilde-separated:
+#
+#   screen ~ limit ~ truncated|whole ~ expected
+#
+# `\n` is a newline in the screen and in the expectation.
+
+# --- the input box comes off ---------------------------------------------
+# A TUI draws the box between the last two rules, and everything from the
+# second-to-last rule down is the field being dictated into. Keeping it would
+# hand a stage the sentence it is already holding as `text`.
+the answer is 42\n\n╭────╮\nwhat next\n╰────╯ ~ 2000 ~ whole ~ the answer is 42
+
+# No rules at all is a bare shell rather than a TUI. The last non-empty row is
+# the prompt line and goes for the same reason.
+make failed\nerror here\n$  ~ 2000 ~ whole ~ make failed\nerror here
+
+# Blank rows top and bottom are padding the terminal drew, not silence anyone
+# meant, so `context.lines` counts rows of content.
+\n\nreal content\n\n\nprompt$ ~ 2000 ~ whole ~ real content
+
+# --- the tail ------------------------------------------------------------
+# Whole rows from the end. The rows nearest the box are the ones the sentence
+# is answering.
+one\ntwo\nthree\nprompt$ ~ 10 ~ truncated ~ two\nthree
+
+# Under the limit is not truncated, and must say so — `context.truncated` is
+# how a prompt knows whether it is seeing all of something.
+abcd\nefgh\nprompt$ ~ 9 ~ whole ~ abcd\nefgh
+
+# --- a row with no boundary inside it ------------------------------------
+# The row boundary is the preferred cut, not the only one. A single row longer
+# than the whole budget used to come through whole, because the guard that
+# stopped the result being empty had no upper bound on the first row kept. The
+# limit is how much of the screen may be disclosed at all — a wrapped terminal
+# keeps rows near the pane width, so this is the log line or the pasted blob
+# that did not wrap, and it is exactly the shape worth bounding.
+#
+# Cut from the front, keeping the end, like the function around it.
+ABCDEFGHIJKLMNOPQRSTUVWXYZ\nprompt$ ~ 10 ~ truncated ~ QRSTUVWXYZ
+
+# With a row that does fit below it, the boundary is available again and the
+# oversized row is simply left out.
+ABCDEFGHIJKLMNOPQRSTUVWXYZ\nshort\nprompt$ ~ 10 ~ truncated ~ short

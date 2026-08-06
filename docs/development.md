@@ -127,6 +127,8 @@ scripts/check-pipeline.sh         # stages, conditions, app gating
 scripts/check-dotted.sh           # the one rewrite that fires on ordinary language
 scripts/check-numbers.sh          # 97 cases, English and French
 scripts/check-routing.sh          # which transform an instruction reaches
+scripts/check-compose.sh          # what a prompt says once the scope is in it
+scripts/check-context.sh          # what the context stage publishes for a screen
 ```
 
 The full list is in [cli.md](cli.md#the-check-scripts). Anything touching a

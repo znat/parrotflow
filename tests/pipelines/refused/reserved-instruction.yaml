@@ -1,0 +1,17 @@
+# A transform named after the spoken instruction.
+#
+# `instruction` became a bare name in the scope when prompts learned to read it —
+# `PromptRunner.compose` puts the spoken instruction there so `{{instruction}}`
+# is an ordinary lookup rather than a word with its own rule. That makes it the
+# same shape as `text`: a path that is both a value and a prefix. A transform
+# called `instruction` would contribute `instruction.count` while `instruction`
+# itself is a string, and there is no sensible answer to what `{{instruction}}`
+# then means.
+languages: [en]
+transforms:
+  - name: instruction
+    description: collides with the spoken instruction
+    command: counter.py --count 1
+    returns: json
+pipeline:
+  - transform: instruction

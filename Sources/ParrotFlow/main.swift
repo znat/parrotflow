@@ -205,6 +205,29 @@ if let index = arguments.firstIndex(of: "--peek") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--context-test") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --context-test \"<screen>\" [limit]")
+        exit(2)
+    }
+    let limit = arguments.indices.contains(index + 2)
+        ? Int(arguments[index + 2]) : nil
+    exit(ContextTestCommand.run(
+        screen: arguments[index + 1], limit: limit ?? Context.maxChars
+    ))
+}
+
+if let index = arguments.firstIndex(of: "--compose") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --compose \"<template>\" [name=value ...]")
+        exit(2)
+    }
+    exit(ComposeCommand.run(
+        template: arguments[index + 1],
+        assignments: Array(arguments[(index + 2)...]).filter { $0.contains("=") }
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--span-test") {
     guard arguments.indices.contains(index + 3),
           let start = Int(arguments[index + 1]), let length = Int(arguments[index + 2]) else {

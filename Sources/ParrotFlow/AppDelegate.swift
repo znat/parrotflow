@@ -431,6 +431,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
         }
 
+        // The screen as it was when you started talking — which is the screen
+        // the sentence is about. Taken here rather than in the pipeline because
+        // this is the last moment the pane is *known*: by the time the stage
+        // runs there has been a transcription and possibly a model call, and
+        // focus may be in another pane entirely.
+        //
+        // After the snapshot and off the main thread, because this reads an
+        // accessibility value that has been observed at 237k characters and the
+        // one thing this handler may not do is delay recording. Gated on the
+        // stage being configured, so a config that never asked for context pays
+        // nothing for the question.
+        if Context.isConfigured(in: config) {
+            let app = front?.app
+            let element = focusAtPress?.element
+            DispatchQueue.global(qos: .userInitiated).async {
+                Context.capturePress(app: app, element: element)
+            }
+        }
+
         switch config.hotkey.mode {
         case .toggle:
             toggleRecording()

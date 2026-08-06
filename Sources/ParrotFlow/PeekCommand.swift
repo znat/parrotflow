@@ -144,6 +144,26 @@ enum PeekCommand {
             report("as a surface: unreadable — nothing here can be edited in place")
         }
 
+        // What the `context` stage would publish here, which is a different
+        // question from everything above: those report what can be *written*,
+        // this reports what can be *read* and handed to a later stage. Printed
+        // in full, because deciding whether a screen is worth putting in a
+        // prompt is a judgement about the text and not about its length.
+        report("")
+        let capture = Context.read(app: front.map {
+            Pipeline.App(name: $0.localizedName ?? "", bundleID: $0.bundleIdentifier ?? "")
+        })
+        switch capture {
+        case .failure(let why):
+            report("as context: declined — \(why.rawValue)")
+        case .success(let got):
+            report("as context: \(got.chars) chars, \(got.lines) line(s)"
+                + (got.truncated ? " (truncated to the last \(Context.maxChars))" : ""))
+            for row in got.text.components(separatedBy: "\n") {
+                report("  | \(row)")
+            }
+        }
+
         if let sentinel {
             guard let value, value.contains(sentinel) else {
                 report("sentinel  \"\(sentinel)\" NOT in the focused element — wrong window")
