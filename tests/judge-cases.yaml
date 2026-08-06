@@ -1,0 +1,308 @@
+# Judge cases: name substitutions proposed by the vocabulary pass.
+#
+# Harvested from --boost-eval, variant "rescue-off+taper", over the
+# recordings on disk. `said` is raw decoder output with no
+# replacement pass, which is what the judge sees at run time.
+#
+# expect: approve — the name was misheard and this puts it right
+# expect: decline — an ordinary word is about to be overwritten
+#
+# Fill in `expect` by hand. Half of these should be declines: the
+# stage runs on every transcript, so a confident wrong approval
+# costs more than a missed name.
+
+cases:
+  - said: "Uh good morning Urza. Could you please test uploading this file, this crawl file in the dashboard editor."
+    heard: "Urza."
+    term: "Mirza"
+    expect: approve
+
+  - said: "Uh good morning Urza. Could you please test uploading this file, this crawl file in the dashboard editor."
+    heard: "please"
+    term: "Supabase"
+    expect: decline
+
+  - said: "Uh, by the way, Irza spells Mirza mirza."
+    heard: "Irza"
+    term: "Mirza"
+    expect: approve
+
+  - said: "Uh by the way pirate urza spells mirza"
+    heard: "urza"
+    term: "Mirza"
+    expect: approve
+
+  - said: "It's a community that Tasmin asked me to crawl."
+    heard: "Tasmin"
+    term: "Tasmeen"
+    expect: approve
+
+  - said: "Could you please?"
+    heard: "please?"
+    term: "Supabase"
+    expect: decline
+
+  - said: "So after every substitution in the toast in the confirming toast there should be a mention say hey parrot undo do or cancel."
+    heard: "cancel."
+    term: "Vercel"
+    expect: decline
+
+  - said: "Can you check if the quality gate is actually blocking the merge?"
+    heard: "merge?"
+    term: "Vercel"
+    expect: decline
+
+  - said: "It is fixable. I'm just waiting for Mirza's thoughts about whether it's worth fixing the extension or waiting a few days for the migration in the dashboard to be complete."
+    heard: "Mirza's"
+    term: "Mirza"
+    expect: decline
+
+  - said: "In practice, this is the ratio of test code versus feature code."
+    heard: "versus"
+    term: "Vercel"
+    expect: decline
+
+  - said: "Est-ce que c'est quelque chose qu'on pourrait mettre dans zincloud.md?"
+    heard: "mettre"
+    term: "Matthieu"
+    expect: decline
+
+  - said: "It's a different conversation that I had in chat with no context of the code base about having data that is useful to train against this fluency."
+    heard: "train"
+    term: "Praisy"
+    expect: decline
+
+  - said: "Tu as raison, Mathieu. Mais tu n'es déjà plus un jeune. Tu as eu des vrais livres en papier dans tes mains."
+    heard: "vrais"
+    term: "Praisy"
+    expect: decline
+
+  - said: "Only for red rock."
+    heard: "red rock."
+    term: "Redrock"
+    expect: approve
+
+  - said: "Je serais curieux de voir si tu observes un spike dans ton utilisation. J'imagine que ces instructions doivent nourrir le raisonnement."
+    heard: "serais"
+    term: "Praisy"
+    expect: decline
+
+  - said: "Go back to main and merge."
+    heard: "merge."
+    term: "Vercel"
+    expect: decline
+
+  - said: "Since you're rewriting the configuration, update it with the linear commands from the default one."
+    heard: "update"
+    term: "Supabase"
+    expect: decline
+
+  - said: "Of course, if the user made edits then you won't have a match, and therefore you know you need to output in the clipboard. Same if the first sentence has been edited but not the second one, well you know you can only edit the second one in place or rewrite. But not the first one."
+    heard: "match,"
+    term: "Matthieu"
+    expect: decline
+
+  - said: "Then I said the activation phrase plus not James but Patrick and the catch-old prompt returned. Nothing I can do with not James but Patrick."
+    heard: "phrase"
+    term: "Praisy"
+    expect: decline
+
+  - said: "No need to reply to my comments, just proceed with the task."
+    heard: "reply"
+    term: "Arexvy"
+    expect: decline
+
+  - said: "Um not Peter, uh Frederick."
+    heard: "Frederick."
+    term: "Redrock"
+    expect: decline
+
+  - said: "Can I fine-tune with Ansloth and use it on Olama?"
+    heard: "Olama?"
+    term: "Ollama"
+    expect: approve
+
+  - said: "I don't know how it was implemented. All I know is that there is a compression layer before between history and upload and Versal. Sending the file to its back end."
+    heard: "Versal."
+    term: "Vercel"
+    expect: approve
+
+  - said: "Hey Barrot Versal Spells V E R C E L"
+    heard: "Versal"
+    term: "Vercel"
+    expect: approve
+
+  - said: "It's possible that Prissy added a strict ten megabytes limits."
+    heard: "Prissy"
+    term: "Praisy"
+    expect: approve
+
+  - said: "Hey Parrot, Pressy spells Pr. A I S Y"
+    heard: "Pressy"
+    term: "Praisy"
+    expect: approve
+
+  - said: "When you're ready, I have something for you."
+    heard: "ready,"
+    term: "Arexvy"
+    expect: decline
+
+  - said: "So I want to create a spike with documented experiments. I mean with experiments to do and document. The harness is being worked on. As soon as it's ready we can start."
+    heard: "ready"
+    term: "Arexvy"
+    expect: decline
+
+  - said: "When you describe your experiments, use plain uh technical simplified English. Short sentences make it very clear for non-native speakers."
+    heard: "plain"
+    term: "Praisy"
+    expect: decline
+
+  - said: "When you describe your experiments, use plain uh technical simplified English. Short sentences make it very clear for non-native speakers."
+    heard: "very clear"
+    term: "Vercel"
+    expect: decline
+
+  - said: "Right now write a markdown file and then when so the markdown file should contain should be uh uploaded on scratchmill. So at least the epic description and all the subtask description, not the epic but the generic parent spike task."
+    heard: "subtask"
+    term: "Supabase"
+    expect: decline
+
+  - said: "And if you can squeeze that in, reduce the size of the comments in the config, the strict minimum so that users understand what a field does."
+    heard: "reduce"
+    term: "Redrock"
+    expect: decline
+
+  - said: "Can you look at this PR? Explain me very shortly how to reproduce the issue and verify it is resolved. And also let me know if you are able to automatically reproduce it and verify it."
+    heard: "reproduce"
+    term: "Redrock"
+    expect: decline
+
+  - said: "Can you look at this PR? Explain me very shortly how to reproduce the issue and verify it is resolved. And also let me know if you are able to automatically reproduce it and verify it."
+    heard: "verify"
+    term: "Vercel"
+    expect: decline
+
+  - said: "Also, as it was pointed out in the original document, we're not making use of the hierarchy. Can we use it in any ways? Yeah, is in this context embedding settings. If we can we can still use it, maybe at the search level."
+    heard: "level."
+    term: "Vercel"
+    expect: decline
+
+  - said: "Ok, donc fais-moi un document que je puisse copier-coller dans le projet cowork qui contient tout le processus de réflexion et les décisions qu'on a prises dans cette conversation."
+    heard: "prises"
+    term: "Praisy"
+    expect: decline
+
+  - said: "Can you add this document to or this information to the project? It's the uh the summary of a conversation I had in a separate chat um to determine how to evaluate or negotiate um a proposal from the insurance."
+    heard: "separate"
+    term: "Supabase"
+    expect: decline
+
+  - said: "41 was merged but the branch wasn't deleted so you can delete the branch rebase on 41 on main and also update GitHub settings for that repo so that branches are automatically deleted when IPR is merged."
+    heard: "rebase"
+    term: "Supabase"
+    expect: decline
+
+  - said: "Clean up the work tree and go back to main. The PR is now merged."
+    heard: "merged."
+    term: "Vercel"
+    expect: decline
+
+  - said: "Can you find the sessions? It was the the last session we had it was about testing um retrying several runs of the prompts on two Olama models."
+    heard: "Olama"
+    term: "Ollama"
+    expect: approve
+
+  - said: "I want to talk to Salman and Tasmine."
+    heard: "Tasmine."
+    term: "Tasmeen"
+    expect: approve
+
+  - said: "Hay parrot use slag handles but only for tasmine."
+    heard: "tasmine."
+    term: "Tasmeen"
+    expect: approve
+
+  - said: "Hey Tasmin. Two things for you today. The crawl file is ready and I scheduled the meeting."
+    heard: "Tasmin."
+    term: "Tasmeen"
+    expect: approve
+
+  - said: "But we have two other fixes on that branch. One is to refer the guys menu group. And another is the fix with the tail of transcriptions. Tail price didn't uh restored."
+    heard: "price"
+    term: "Praisy"
+    expect: decline
+
+  - said: "But I think I would just use Python for everything. I would drop OLAMA in Swift. It's not necessarily it's not necessary."
+    heard: "OLAMA"
+    term: "Ollama"
+    expect: approve
+
+  - said: "Okay, now create a prompt to reduce, to remove hesitations, resolve, discluency and Going back and forth like hey so I went with John um now with Mark What am I saying I went with Peter. So I went with Peter to the movies and we saw a great film, uh what was the um the Odyssey."
+    heard: "reduce,"
+    term: "Redrock"
+    expect: decline
+
+  - said: "I don't know if uh that latency is a strong indicator uh you know when we stress when we test uh intensively intensively in practice you can only transcribe once every few seconds."
+    heard: "practice"
+    term: "Praisy"
+    expect: decline
+
+  - said: "Are you testing against that same plant uh we use in uh uh GPT Luna that uh does pretty much everything?"
+    heard: "pretty"
+    term: "Arexvy"
+    expect: decline
+
+  - said: "Does Olema have a structured output?"
+    heard: "Olema"
+    term: "Ollama"
+    expect: approve
+
+  - said: "Because we could just uh we could just uh Try to move it as a prompt and uh let's uh the built-in polyma use it."
+    heard: "polyma"
+    term: "Ollama"
+    expect: approve
+
+  - said: "Never mind, it's fine. So can you resolve the comments of the previous review that were probably ad uh that that were properly addressed?"
+    heard: "probably"
+    term: "Praisy"
+    expect: decline
+
+  # ---- observed live, 2026-08-06 ----
+  # Real dictations, not harvested. These are the cases the shipped
+  # judge got wrong in production, so they tuned nothing and are the
+  # only honest test of a change made after them.
+
+  - said: "Okay. What if we record at release time then? Because when we release we obviously want the transcription to land in where we are at the time of releasing even if we switch immediately after, for example, we give one cloud session an instruction and we immediately move to a next another pane."
+    heard: "cloud"
+    term: "Claude"
+    expect: approve
+
+  - said: "Keeping in mind that context is not available from every app, only from cloud code right now. So if that is empty or no, it shouldn't break."
+    heard: "cloud"
+    term: "Claude"
+    expect: approve
+
+  - said: "I just deployed to Versal."
+    heard: "Versal"
+    term: "Vercel"
+    expect: approve
+
+  - said: "The Lancaster Office wants a made through process, not a vessel for blame."
+    heard: "vessel"
+    term: "Vercel"
+    expect: decline
+
+  - said: "Il faut geler le budget avant lundi, sinon Mira va râler."
+    heard: "Mira"
+    term: "Mirza"
+    expect: decline
+
+  - said: "The team deserves praise for how quickly they shipped a Ruxby."
+    heard: "praise"
+    term: "Praisy"
+    expect: decline
+
+  - said: "I had Salmon with Salman and we argued about bedrock principles."
+    heard: "bedrock"
+    term: "Redrock"
+    expect: decline
