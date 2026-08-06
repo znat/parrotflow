@@ -70,159 +70,117 @@ It cuts both ways: `\b(\w+) dot (\w+)\b` joins any two words either side of
 word dot on" — they are the same sentence to a regex. Scope it to where you
 mean it with `app:`, which is in docs/pipelines.md.
 
-FluidAudio's acoustic context biasing was tried, removed, and brought back.
-The removal was right about the symptom and wrong about the cause, and the
-correction is worth reading before anyone touches the thresholds again.
+### 2. A vocabulary — for words the recogniser gets wrong
 
-**July.** Boosting altered **370 of 386** clips containing none of its terms:
+Names, brands, jargon, acronyms. Anything you say that the model was not
+trained on. A term is matched by sound, so one entry covers renderings you
+have never written down.
 
-    "Let's think about how we're going to ship this code."
-      ->  "Let's Ollama going Tasmeen this code."
-
-`minSimilarity` was swept to 0.90 and the damage did not move, which read as
-"not a threshold to tune". It was the wrong threshold. FluidAudio proposes a
-replacement two ways: a TDT-anchored Levenshtein match, which `minSimilarity`
-gates, and a **spotter-anchored rescue**, which replaces a span because the CTC
-keyword spotter heard the term there. From their own source, it "is
-acoustic-evidence driven and otherwise ignores similarity". The July code
-passed no `VocabularyRescorer.Config`, so it got the defaults: rescue on, both
-of its floors disabled. The sweep moved one gate while the other stayed open.
-
-Their #702 and #724 notes name the rescue as the dominant source of
-short-keyword over-firing, and it is size-gated to vocabularies of ten terms or
-fewer — which is every vocabulary anyone writes here.
-
-**Re-measured, same 400 clips, one pass per setting:**
-
-| variant | damage | caught |
-| --- | --- | --- |
-| default (July) | 370/386 | 8/8 |
-| spotter floors | 108/386 | 8/8 |
-| rescue off | 55/386 | 8/8 |
-| rescue off + taper | 52/386 | 8/8 |
-| rescue off + taper, sim 0.65 | 10/386 | 5/8 |
-| rescue off + taper, sim 0.75 | 4/386 | 3/8 |
-| rescue off + taper, sim 0.85 | 0/386 | 2/8 |
-
-Turning the rescue off is necessary and not sufficient: at 52/386 it still
-writes `verify -> Vercel` and `please -> Supabase`. Both gates are needed.
-
-**What the damage column hides.** Several "damages" are correct fixes scored
-wrong, because the clip's stored baseline predates the term — `Olama ->
-Ollama` counts against you if the trace says "Olama". Judge substitutions by
-what they replaced, not by a label. At sim 0.75 every substitution the pass
-made was right.
-
-**What it is worth.** Over 505 transcripts the vocabulary caught three
-renderings no rule covered — `Olema`, `Irza`, `Pressy` — and every rendering it
-missed was already covered by a rule. It reduces how often you write a rule; it
-does not remove the need. `Tasmine` at 0.57 and `RXV` at 0.50 are below any
-safe floor, permanently.
-
-**The shape that actually works** is a compound the decoder splits. `RedCrawl`
-becomes "red crawl", `LangSmith` becomes "Lang Smith", and glued back together
-they match at 1.00 — so no threshold reaches anything else and they cannot
-damage a transcript.
-
-**Two traps, both measured.** `NSSpellChecker` accepts any all-caps run as an
-acronym, so `XQZPT` comes back a known word; ask about the lowercase form. And
-a term shaped like a verb-particle pair is unsafe however clean its dictionary
-neighbourhood: `Turndown` has no single-word collision and still rewrites "turn
-down the volume", because the compound matcher glues the pair to 1.00.
-
-**Context is the ceiling.** The rescorer's whole decision is
-`boostedVocabScore > originalCtcScore`, plus a string gate and a stopword list.
-Nothing reads the sentence, which is why `blocking merge` became `blocking
-Vercel`. Two things get past that, and both are measured in
-`tests/judge-cases.yaml`:
-
-| | approve | decline | overall | latency |
-| --- | --- | --- | --- | --- |
-| a spell-check gate, no model | 17/20 | 38/38 | **95%** | 0.00s |
-| gemma4:e4b, the shipped prompt | 17/20 | 36/38 | 91% | 0.88s |
-| gemma4:12b, same prompt | 19/20 | 35/38 | 93% | 1.88s |
-| one call per dictation instead of per word | 18/20 | 31/38 | 84% | 0.95s |
-| the same, with a third "unsure" answer | 18/20 | 31/38 | 84% | 0.96s |
-| asking "was the tool right?" instead of "what did they mean?" | 0/20 | 38/38 | 67% | 0.90s |
-
-**The free gate wins on points.** Its rule is one line — if `NSSpellChecker`
-knows the word, do not replace it — and it is right 55 times in 58. It ships
-anyway alongside rather than instead, because the two fail differently: a gate
-that never replaces a real word can never fix `cloud` -> `Claude` or
-`Versailles` -> `Vercel`, and those have no other answer.
-
-The last row is the lesson worth keeping. Asking whether a *tool* was right
-invites scepticism of the tool, and e4b answered no to all 58. Asking what the
-*speaker* meant recovers most of it; naming the rest of their vocabulary in the
-prompt recovers the remainder. Four attempts to restructure that prompt —
-headings, a constant system message, dropped empty sections, the vocabulary
-gloss moved — scored 86, 86, 84 and 83 against its 91, so it is left alone.
-
-Three designs were measured and rejected, and their scripts are kept so nobody
-re-proposes them from intuition. **Batching** the whole dictation into one call
-costs seven points even when the batch holds one item. A **third "unsure"
-answer** is never used — zero times in 58 cases and zero on six deliberately
-ambiguous ones — while offering it makes the model likelier to change a word it
-should leave. A **menu per ambiguous word**, with the spotter supplying the
-candidates, reaches 64% at best: offered an alternative, the model takes it.
-
-See `examples/transforms/verify_names/` and `scripts/validate-judge.py`.
-
-**One caveat on all of the above.** The case set is 17% short sentences and
-real dictation here is 36%, so these numbers are measured on inputs that favour
-a judge — context is what it runs on. Re-weighting the set is outstanding.
-
-### Where it is configured
-
-Not in `config.yaml`. The vocabulary lives in `vocabulary.yaml` beside it,
-because the two files have different owners: `config.yaml` is written by a
-person and read by the app, `vocabulary.yaml` is written by the app — the
-correction panel, `--learn`, the calibrate skill — and only read by a person.
-Mixed together, a hand edit and a learnt entry land in the same file and one of
-them eventually loses.
+It lives in `vocabulary.yaml` beside `config.yaml`. The two files have
+different owners: you write the config, the app writes the vocabulary — from
+corrections, from `--learn`, from the calibrate skill.
 
 ```yaml
 acoustic: true
 min_similarity: 0.75
 
 terms:
-  Tasmeen:                       # nothing close in this speaker's speech
+  Tasmeen:                     # nothing close in this speaker's speech
   Mirza:
-    floor: 0.85                  # "Mira" lands at 0.80
+    floor: 0.85                # "Mira" lands at 0.80
   Praisy:
-    floor: 0.90                  # "praise" lands at 0.83
+    floor: 0.90                # "praise" lands at 0.83
     heard: [Prissy, Pressy, Precy, Prezi]
   Claude:
-    floor: off                   # "cloud" both ways — no floor works
+    floor: off
     heard: [clut, cloud]
 ```
 
-A term has two ways in, and most need only one. **`floor`** is how close a
-decoded word must sound before it is replaced — left out, `min_similarity`
-applies. **`heard`** is a list of exact renderings, for the ones no floor can
-reach: "Prezi" is 0.33 from "Praisy" and would need a threshold that swallowed
+A term has two ways in, and most need one.
+
+**`floor`** is how close a decoded word must sound before it is replaced, from
+0 to 1. Omitted, `min_similarity` applies.
+
+**`heard`** is a list of exact renderings. Use it for the ones no floor can
+reach: "Prezi" is 0.33 from "Praisy", and a threshold that low would swallow
 every "praise".
 
-`floor: off` is the honest setting when the recogniser writes the term and an
-ordinary word identically. Measured on one machine: "Claude" and "cloud" both
-come back as `cloud`, "Matthieu" and "Matthew" both as `Matthew`, "Supabase"
-and "super base" both as `Supabase`. No threshold separates a distinction that
-was destroyed before anything downstream could look at it.
+**`floor: off`** turns sound matching off for one term. Use it when the
+recogniser writes the term and an ordinary word identically. Measured on one
+machine: "Claude" and "cloud" both come back as `cloud`, "Matthieu" and
+"Matthew" both as `Matthew`. No threshold separates them, because the
+distinction is gone before anything downstream can look.
 
-Two traps worth knowing. `floor: off` is a **YAML 1.1 boolean**, as are `on`,
-`yes` and `no` — reading it only as a string threw and took the whole file down
-silently. And terms are dropped below five letters or with a digit or a dot in
-them: a four-character term free-start aligns to almost any run of frames, and
-a term the decoder could not have produced is not a term.
+Terms shorter than five letters are dropped, as are terms with a digit or a
+dot. A short term aligns to almost any run of frames. A term the decoder could
+not have produced is not a term.
 
-Both mechanisms report through one variable. `vocabulary.count` is how many
-terms were written into this transcript, by sound or by rule, which is what a
-pipeline condition wants:
+#### Choosing a floor
 
-```yaml
-- transform: verify_names
-  when: vocabulary.count > 0
-```
+Set it just above the closest ordinary word. `scripts/calibrate.py confusables
+<term> --lang en,fr` lists what is in reach:
+
+    Praisy   praise 0.83   raise 0.67   pray 0.67     -> floor 0.90
+    Redrock  bedrock 0.86  redock 0.86                -> floor 0.90
+    Vercel   vessel 0.67   vertex 0.67                -> floor 0.75
+
+Pass only the languages you dictate in. "Praisy" is 0.83 from the English
+"praise" and 0.67 from the French "vrais", so the floor differs by 0.16
+depending on who is speaking.
+
+Two things to check that a word list does not tell you. `NSSpellChecker`
+accepts any all-caps run as a word, so `XQZPT` looks known — ask about the
+lowercase form. And a term shaped like a verb-particle pair is unsafe whatever
+its neighbourhood: "turn down the volume" glues to `Turndown` at 1.00.
+
+`floor: off` in YAML is the boolean `false`, not the string. So are `on`,
+`yes` and `no`. The decoder reads both.
+
+#### What it costs
+
+Matching by sound downloads a ~98 MB model on first use and adds a CTC pass
+per clip. `acoustic: false` skips both; the `heard` rules still apply.
+
+Over 400 archived clips, with the shipped settings, damage — clips containing
+no vocabulary term that came out different — falls with the floor:
+
+| floor | clips damaged | terms recovered |
+| --- | --- | --- |
+| 0.65 | 10/386 | 5/8 |
+| 0.75 | 4/386 | 3/8 |
+| 0.85 | 0/386 | 2/8 |
+
+Higher floors are safer and catch less. There is no setting that catches
+everything and breaks nothing.
+
+#### Checking the result
+
+Neither mechanism reads the sentence, so both replace ordinary words that
+resemble a term: "blocking merge" became "blocking Vercel".
+
+`verify_names` asks a local model one question per substitution and puts back
+the ones it declines. It answers YES or NO and never returns text. It runs only
+when something was substituted — `when: vocabulary.count > 0` — which is about
+one dictation in twenty.
+
+Scored on `tests/judge-cases.yaml`, 58 proposals from real recordings:
+
+| | approve | decline | overall | latency |
+| --- | --- | --- | --- | --- |
+| a spell-check gate, no model | 17/20 | 38/38 | 95% | 0.00s |
+| gemma4:e4b | 17/20 | 36/38 | 91% | 0.88s |
+| gemma4:12b | 19/20 | 35/38 | 93% | 1.88s |
+
+The gate scores higher and cannot do the job alone. Its rule is "never replace
+a real word", so it cannot fix `cloud` -> `Claude` or `Versailles` -> `Vercel`.
+Those need the sentence.
+
+Every exchange is written to `trace.jsonl` under the stage's variables, so a
+verdict can be replayed rather than guessed at.
+
+The case set is 17% short sentences; real dictation here is 36%. The numbers
+above are therefore measured on inputs that favour a judge, since context is
+what it uses.
 
 A literal substitution cannot generalise to a mishearing you have not seen, so
 that half of the map grows one entry at a time. It also cannot corrupt a
@@ -230,17 +188,16 @@ transcript that was already right, which turned out to matter more — and a
 pattern rule gives that property up in exchange for reach, which is the trade
 `app:` exists to bound.
 
-### 2. A local LLM pass — for everything else
+### 3. A local LLM pass — for everything else
 
 Free-form instructions ("format as bullets", "keep it terse") belong in a
-second stage that reads the finished transcript. Filler words used to be on
-that list; a regex does it for free, with no latency and no chance of the
-model rewriting a sentence you meant literally. On macOS
-26+ Apple's Foundation Models framework gives a local LLM with no download and
-no dependency; an MLX model is the fallback for older systems.
+second stage that reads the finished transcript. On macOS 26+ Apple's
+Foundation Models framework gives a local LLM with no download and no
+dependency. An MLX model is the fallback for older systems.
 
-Worth keeping optional and off by default. It adds latency to every dictation
-and can rewrite things you meant literally.
+Keep it optional and off by default. It adds latency to every dictation and
+can rewrite text you meant literally. Filler words are not a job for it — a
+regex removes them for free.
 
 ## Runtime options
 
