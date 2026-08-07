@@ -146,10 +146,7 @@ final class PillHUD {
             model.state = state
         }
 
-        let size = NSSize(
-            width: PillMetrics.width(for: state, hasIcon: model.appIcon != nil),
-            height: PillMetrics.height
-        )
+        let size = PillMetrics.panelSize(for: state, hasIcon: model.appIcon != nil)
 
         if panel.isVisible {
             morph(to: size)
@@ -254,24 +251,54 @@ final class PillHUD {
 
     private func build() {
         let hosting = NSHostingView(rootView: PillView().environmentObject(model))
-        hosting.frame = NSRect(x: 0, y: 0, width: PillMetrics.recording(hasIcon: false),
-                               height: PillMetrics.height)
+        hosting.frame = NSRect(origin: .zero,
+                               size: PillMetrics.panelSize(for: .recording, hasIcon: false))
         // The panel is what resizes; the view follows it. Done this way round
         // because a SwiftUI frame inside a fixed panel centres a narrow pill in
         // a wide transparent box and takes the shadow with it.
         hosting.autoresizingMask = [.width, .height]
+        // Say the backing is transparent, out loud.
+        //
+        // The glow is a blur, and a blur makes SwiftUI rasterize the view into
+        // an offscreen layer — which it then composites opaque, painting the
+        // panel's whole rectangle behind the capsule. On a floating surface
+        // that is the one artefact you cannot have: it is a visible box around
+        // the pill, in the shape of the window nobody is supposed to know is
+        // there.
+        //
+        // The panel is already `isOpaque = false` with a clear background. That
+        // governs the window; this governs the layer the blur is drawn into,
+        // and they are two different claims.
+        hosting.wantsLayer = true
+        hosting.layer?.isOpaque = false
+        hosting.layer?.backgroundColor = NSColor.clear.cgColor
+
+        // Real glass under the capsule. See `ParrotGlass` for why AppKit has to
+        // do this and SwiftUI cannot — and why it is masked rather than left to
+        // fill the window, which here would frost the margin the glow lives in.
+        let container = ParrotGlass.container(
+            hosting, radius: PillMetrics.height / 2, inset: PillMetrics.bleed,
+            // Barely tinted. The pill is glanced at over whatever you are
+            // reading, and the less of that it takes away the better.
+            tint: NSColor.black.withAlphaComponent(0.10)
+        )
+
         let panel = NSPanel(
             contentRect: hosting.frame,
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
-        panel.contentView = hosting
+        panel.contentView = container
         panel.isFloatingPanel = true
         panel.level = .statusBar
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.hasShadow = true
+        // Drawn in SwiftUI instead. The window shadow is traced from the
+        // window's alpha, so with a glow bleeding into the margin it would
+        // outline the blur rather than the capsule — a soft grey halo around a
+        // coloured one. A shadow under the capsule is the shape it should be.
+        panel.hasShadow = false
         panel.ignoresMouseEvents = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
@@ -279,8 +306,13 @@ final class PillHUD {
         self.panel = panel
     }
 
-    /// Where a pill of this width sits: centred, 96pt off the bottom, on the
-    /// screen the pointer is on — which is the screen you are typing into.
+    /// Where a pill of this window width sits: the capsule centred, 96pt off
+    /// the bottom, on the screen the pointer is on — which is the screen you
+    /// are typing into.
+    ///
+    /// `width` is the window's, bleed included, so the margin is taken back off
+    /// both axes: what has to land at 96pt is the capsule you can see, not the
+    /// transparent border the glow spills into.
     ///
     /// Recomputed at every state rather than once at the first show, so a pill
     /// that grows stays centred and one that arrives after you have moved to
@@ -289,7 +321,8 @@ final class PillHUD {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return panel?.frame.origin ?? .zero }
-        return NSPoint(x: visible.midX - width / 2, y: visible.minY + 96)
+        return NSPoint(x: visible.midX - width / 2,
+                       y: visible.minY + 96 - PillMetrics.bleed)
     }
 }
 
@@ -298,6 +331,17 @@ final class PillHUD {
 enum PillMetrics {
     static let height: CGFloat = 46
 
+    /// Transparent margin between the capsule and the edge of the window.
+    ///
+    /// The glow is drawn by blurring the rim, and a blur has to have somewhere
+    /// to go. The panel used to be exactly the size of the capsule, so anything
+    /// spilling outward was cut off square at the window edge — which is the
+    /// one artefact that gives a floating surface away as a window.
+    ///
+    /// It costs nothing: the margin is fully transparent and the panel ignores
+    /// the mouse, so a wider window is not a bigger target for anything.
+    /// `width(for:)` and `height` stay the size of the capsule you can see;
+    /// `panelSize` is what the window is set to.
     /// Wide enough for the widest blur's tail to reach zero before the window
     /// ends.
     ///
@@ -309,6 +353,13 @@ enum PillMetrics {
     /// is transparent but not invisible — a faint rectangle can still be made
     /// out where its bounds are, so the less of it there is beyond the glow, the
     /// less there is to see.
+    static let bleed: CGFloat = 52
+
+    static func panelSize(for state: PillState, hasIcon: Bool) -> NSSize {
+        NSSize(width: width(for: state, hasIcon: hasIcon) + bleed * 2,
+               height: height + bleed * 2)
+    }
+
     static let padding: CGFloat = 17
     static let gap: CGFloat = 11
     /// The gap on the meter's right, 2pt tighter than the one on its left.
@@ -417,7 +468,15 @@ struct PillView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .parrotSurface(Capsule(), alive: isWorking)
+        .parrotSurface(Capsule(), alive: isWorking, glass: true)
+        // Under the capsule, so it is the capsule's shape and not the glow's.
+        .shadow(color: .black.opacity(0.22), radius: 7, y: 2)
+        // Behind everything above it. `.background` applied last sits furthest
+        // back, which is where the bloom has to be — over the fill it would be
+        // a coloured film on the glass rather than light coming off the edge.
+        .background { PlumageBloom(shape: Capsule(), alive: isWorking) }
+        // The transparent margin the bloom spills into. See `PillMetrics.bleed`.
+        .padding(PillMetrics.bleed)
         // Bound to the state alone. The meter is fed about ten times a second
         // and must not drag a crossfade along behind it.
         .animation(.easeInOut(duration: PillHUD.motion), value: model.state)

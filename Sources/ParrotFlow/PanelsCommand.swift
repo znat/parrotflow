@@ -68,11 +68,11 @@ enum PanelsCommand {
         // window is the exception and the reason this is a column at all: it is
         // an ordinary titled window, it follows the system, and it has to be
         // legible both ways. So it appears twice, once each.
-        let surfaces: [(NSView, NSSize, NSAppearance.Name)] = [
-            (NSHostingView(rootView: PillView().environmentObject(overlay)),
-             pillSize(overlay), .darkAqua),
-            (NSHostingView(rootView: PillView().environmentObject(overlayBlind)),
-             pillSize(overlayBlind), .darkAqua),
+        let surfaces: [(view: AnyView, size: NSSize, scheme: ColorScheme, drawn: Bool)] = [
+            (AnyView(PillView().environmentObject(overlay)),
+             pillSize(overlay), .dark, true),
+            (AnyView(PillView().environmentObject(overlayBlind)),
+             pillSize(overlayBlind), .dark, true),
             // The one real window the app has, and the first thing anyone sees.
             // On the sheet for the same reason as the rest: it is looked at,
             // not asserted on, and two screens that drift apart are obvious
@@ -81,36 +81,42 @@ enum PanelsCommand {
             // One of each context, because the second button is the difference
             // between them and it is the part worth being able to see: setting
             // up says "Cancel installation", revisiting says "Not now".
-            (NSHostingView(rootView: PermissionsView()
+            (AnyView(PermissionsView()
                 .environmentObject(PermissionsModel.showing(.microphone))),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .aqua),
-            (NSHostingView(rootView: PermissionsView()
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .light, false),
+            (AnyView(PermissionsView()
                 .environmentObject(PermissionsModel.showing(
                     .accessibility, asked: true, context: .revisiting))),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .darkAqua),
-            (NSHostingView(rootView: PillView().environmentObject(notice)),
-             pillSize(notice), .darkAqua),
-            (NSHostingView(rootView: PillView().environmentObject(thinking)),
-             pillSize(thinking), .darkAqua),
-            (NSHostingView(rootView: PillView().environmentObject(caution)),
-             pillSize(caution), .darkAqua),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
+            (AnyView(PillView().environmentObject(notice)),
+             pillSize(notice), .dark, true),
+            (AnyView(PillView().environmentObject(thinking)),
+             pillSize(thinking), .dark, true),
+            (AnyView(PillView().environmentObject(caution)),
+             pillSize(caution), .dark, true),
             // The state the pill ends on, which is the only one that offers
             // rather than reports. Next to the notices because that is the
             // comparison that matters: it has to not look like one.
-            (NSHostingView(rootView: PillView().environmentObject(offer)),
-             pillSize(offer), .darkAqua),
-            (NSHostingView(rootView: CorrectionView().environmentObject(correction)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 2)), .darkAqua),
-            (NSHostingView(rootView: CorrectionView().environmentObject(rule)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 1)), .darkAqua),
-            (NSHostingView(rootView: PreviewView().environmentObject(preview)),
-             NSSize(width: PreviewMetrics.width, height: PreviewMetrics.height(forCharacters: 70)), .darkAqua),
+            (AnyView(PillView().environmentObject(offer)),
+             pillSize(offer), .dark, true),
+            (AnyView(CorrectionView().environmentObject(correction)),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 2)), .dark, false),
+            (AnyView(CorrectionView().environmentObject(rule)),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 1)), .dark, false),
+            // The dictation panel is deliberately not here. Its field is an
+            // `NSTextField` and its background is real Liquid Glass, and this
+            // sheet can draw neither — it came out as a white block inside an
+            // untinted rectangle, which is worse than an omission. Look at it
+            // with `--panels dictation`, on a screen, where both are real.
+            (AnyView(PreviewView().environmentObject(preview)),
+             NSSize(width: PreviewMetrics.sampleWidth + PreviewMetrics.bleed * 2,
+                    height: PreviewMetrics.height(for: preview.after, singleLine: false)), .dark, true),
         ]
 
         let margin: CGFloat = 36
         let gap: CGFloat = 24
-        let column = surfaces.map(\.1.width).max()! + margin * 2
-        let tall = surfaces.map(\.1.height).reduce(0, +) + gap * CGFloat(surfaces.count - 1) + margin * 2
+        let column = surfaces.map(\.size.width).max()! + margin * 2
+        let tall = surfaces.map(\.size.height).reduce(0, +) + gap * CGFloat(surfaces.count - 1) + margin * 2
         let size = NSSize(width: column * 2, height: tall)
 
         guard let canvas = NSBitmapImageRep(
@@ -132,18 +138,50 @@ enum PanelsCommand {
             NSRect(x: left, y: 0, width: column, height: size.height).fill()
 
             var top = size.height - margin
-            for (view, natural, appearance) in surfaces {
-                view.appearance = NSAppearance(named: appearance)
-                view.frame = NSRect(origin: .zero, size: natural)
-                view.layoutSubtreeIfNeeded()
-                guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { continue }
-                view.cacheDisplay(in: view.bounds, to: rep)
-                rep.draw(in: NSRect(
+            for (view, natural, scheme, drawn) in surfaces {
+                let box = NSRect(
                     x: left + (column - natural.width) / 2,
                     y: top - natural.height,
                     width: natural.width,
                     height: natural.height
-                ))
+                )
+
+                // Two ways to snapshot, and each is wrong for the other half.
+                //
+                // `ImageRenderer` draws the SwiftUI view itself, which is the
+                // only way to keep the pill's glow: the glow is a blur, a blur
+                // makes SwiftUI rasterize the layer, and `cacheDisplay` hands
+                // that back opaque — every pill came out in a black rectangle.
+                //
+                // But `ImageRenderer` cannot draw an AppKit-backed control, so
+                // the correction and preview panels come out with every text
+                // field empty. Those keep `cacheDisplay`, which has no blur to
+                // lose.
+                if drawn {
+                    // `assumeIsolated` because `ImageRenderer` is main-actor
+                    // bound and this is a plain synchronous function — called
+                    // from `main.swift` on the main thread and nowhere else.
+                    let rendered = MainActor.assumeIsolated { () -> NSImage? in
+                        let renderer = ImageRenderer(
+                            content: view
+                                .environment(\.colorScheme, scheme)
+                                .frame(width: natural.width, height: natural.height)
+                        )
+                        renderer.scale = 2
+                        renderer.isOpaque = false
+                        return renderer.nsImage
+                    }
+                    rendered?.draw(in: box)
+                } else {
+                    let hosting = NSHostingView(rootView: view)
+                    hosting.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+                    hosting.frame = NSRect(origin: .zero, size: natural)
+                    hosting.layoutSubtreeIfNeeded()
+                    if let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) {
+                        hosting.cacheDisplay(in: hosting.bounds, to: rep)
+                        rep.draw(in: box)
+                    }
+                }
                 top -= natural.height + gap
             }
         }
@@ -161,9 +199,10 @@ enum PanelsCommand {
         }
     }
 
+    /// The window's size, not the capsule's — the glow needs the bleed around
+    /// it or the sheet cuts the halo off square.
     private static func pillSize(_ model: PillModel) -> NSSize {
-        NSSize(width: PillMetrics.width(for: model.state, hasIcon: model.appIcon != nil),
-               height: PillMetrics.height)
+        PillMetrics.panelSize(for: model.state, hasIcon: model.appIcon != nil)
     }
 
     /// Something recognisable to sit in the pill's slot. Mail because that is
@@ -203,6 +242,12 @@ enum PanelsCommand {
         case "rule":
             correction.show(rules: [(heard: "Tasmin", corrected: "Tasmeen"),
                                     (heard: "Mick", corrected: "Mik")])
+        // The panel the pill's offer opens: one line, editable, over what was
+        // just dictated. A different shape from the transform preview below —
+        // short enough for a field rather than an area — and the one that is
+        // seen most, so it is worth being able to look at on its own.
+        case "dictation":
+            preview.show(transcript: "Let's ship the vocabulary harness on Tuesday.")
         case "preview":
             preview.show(
                 prompt: "Grammar",
@@ -224,10 +269,11 @@ enum PanelsCommand {
         // which is the only way to see whether the pill morphs or jumps.
         case "sequence":
             var phase = 0.0
-            ticker = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+            let meter = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
                 phase += 0.05
                 pill.model.level = Float(0.5 + 0.45 * sin(phase * 2))
             }
+            ticker = meter
 
             let script: [(TimeInterval, () -> Void)] = [
                 (0.0, { pill.recording(icon: sampleIcon()) }),
@@ -247,7 +293,7 @@ enum PanelsCommand {
                 }
             }
         default:
-            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|rule|preview|pill|sequence> [seconds]")
+            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|rule|dictation|preview|pill|sequence> [seconds]")
             return 2
         }
 
