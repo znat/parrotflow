@@ -344,6 +344,9 @@ struct PreviewView: View {
                 status: model.isTranscript ? "" : (model.status ?? "Edit it here before replacing"),
                 cancelTitle: "Discard",
                 confirmTitle: "Replace",
+                // One line commits on Return; an area needs the modifier,
+                // because there Return is a newline.
+                confirmKey: model.singleLine ? "↩" : "⌘↩",
                 compact: model.isTranscript,
                 onCancel: { model.onCancel?() },
                 onConfirm: { model.onSubmit?() }

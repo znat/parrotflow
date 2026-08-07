@@ -221,7 +221,13 @@ struct EndCaretField: NSViewRepresentable {
         DispatchQueue.main.async {
             field.window?.makeFirstResponder(field)
             if let editor = field.currentEditor() {
-                editor.selectedRange = NSRange(location: field.stringValue.count, length: 0)
+                // `NSString.length`, not `String.count`. AppKit selections are
+                // UTF-16 offsets and `count` is grapheme clusters, so one emoji
+                // or composed character in the sentence puts the caret short of
+                // the end — or inside a surrogate pair.
+                editor.selectedRange = NSRange(
+                    location: (field.stringValue as NSString).length, length: 0
+                )
             }
         }
         return field
@@ -245,8 +251,15 @@ struct EndCaretField: NSViewRepresentable {
 
         func control(_ control: NSControl, textView: NSTextView,
                      doCommandBy selector: Selector) -> Bool {
-            // Return commits. Escape is left alone so the panel's own
-            // `cancelOperation` still answers it.
+            // Return commits, and the panel says so: a one-line field shows ↩
+            // on its confirm button, not ⌘↩. There is no newline to insert in
+            // a field that holds one line, so Return meaning "done" is what
+            // every other one-line field on the system does — and advertising
+            // a modifier the field does not need is the part that was wrong.
+            // ⌘↩ still works, through the button's own shortcut.
+            //
+            // Escape is left alone so the panel's own `cancelOperation` still
+            // answers it.
             guard selector == #selector(NSResponder.insertNewline(_:)) else { return false }
             parent.onSubmit()
             return true
@@ -567,6 +580,9 @@ struct PanelActions: View {
     let status: String
     let cancelTitle: String
     let confirmTitle: String
+    /// What the confirm button advertises. ⌘↩ where Return would insert a
+    /// newline, ↩ where the field is one line and Return commits it.
+    var confirmKey: String = "⌘↩"
     /// Sit closer to what is above. For a panel holding one line, the standing
     /// 24pt of air over the buttons is most of a dead band across the bottom.
     var compact: Bool = false
@@ -592,7 +608,7 @@ struct PanelActions: View {
                              action: onCancel)
                     .keyboardShortcut(.cancelAction)
 
-                ActionButton(title: confirmTitle, key: "⌘↩", filled: true, action: onConfirm)
+                ActionButton(title: confirmTitle, key: confirmKey, filled: true, action: onConfirm)
                     .keyboardShortcut(.return, modifiers: .command)
             }
             .padding(.top, compact ? 4 : 12)
