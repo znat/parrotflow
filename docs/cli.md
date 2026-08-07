@@ -255,7 +255,7 @@ $PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
 ```
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
-`vocabulary`, `rule`, `preview` or `sequence`. `--panel-sheet` draws all of
+`vocabulary`, `rule`, `dictation`, `preview` or `sequence`. `--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
 
 `sequence` is the one that cannot be checked from a still. The pill is a single

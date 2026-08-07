@@ -337,8 +337,8 @@ private struct Instrument: View {
                 // Sized explicitly: the pill fills whatever it is given, and
                 // the panel that owns it is what decides its width in the app.
                 PillView().environmentObject(Instrument.hearing)
-                    .frame(width: PillMetrics.recording(hasIcon: false),
-                           height: PillMetrics.height)
+                    .frame(width: PillMetrics.recording(hasIcon: false) + PillMetrics.bleed * 2,
+                           height: PillMetrics.height + PillMetrics.bleed * 2)
             case .accessibility:
                 Landing()
             }
