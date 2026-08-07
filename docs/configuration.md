@@ -43,6 +43,7 @@ free_form: true
 feedback:
   sound: true
   overlay: true
+  correct_offer: true
 ```
 
 ## Where things live
@@ -273,6 +274,23 @@ real one.
 `sound` is the chime when a transcript lands. `overlay` is the floating pill
 that shows the mic is hot. Both on by default; the pill is the only thing on
 screen that says recording is happening, so turning it off is a real choice.
+
+`correct_offer` is what the pill does after the words land. It stays where it
+is for three seconds and reads `Wrong?  <your hotkey>  to fix it`. Tap that key
+— press and let go, faster than a dictation — and the whole sentence opens in
+an editable box. Fix it, press Replace, and it goes back over what was written.
+Hold the key as usual and you start the next dictation, exactly as before.
+
+The threshold is `audio.min_duration_seconds`, which is already the app's line
+between a press and a dictation: below it the recording is deleted, so a tap
+has never done anything. Nothing that used to be a dictation becomes a tap.
+
+This is the sentence, not the vocabulary. Nothing is written to `replacements:`
+— fixing one sentence is not the same as teaching a word, and most of a
+misheard sentence is words that will never come up again. To teach a word, say
+"Hey parrot, correct" or use the menu bar, which open the per-word panel.
+
+Off by setting it to `false`.
 
 ## See also
 

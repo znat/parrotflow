@@ -21,8 +21,19 @@ final class PreviewPanel {
     var onApply: ((String) -> Void)?
     var onCancel: (() -> Void)?
 
+    /// The whole dictation, editable, so a misheard sentence can be fixed
+    /// where it landed. Opened by the offer the pill makes after a dictation.
+    func show(transcript: String) {
+        model.loadTranscript(transcript)
+        present()
+    }
+
     func show(prompt: String, before: String, after: String) {
         model.load(prompt: prompt, before: before, after: after)
+        present()
+    }
+
+    private func present() {
         model.onSubmit = { [weak self] in self?.commit() }
         model.onCancel = { [weak self] in self?.dismiss(cancelled: true) }
 
@@ -128,6 +139,9 @@ final class PreviewModel: ObservableObject {
     @Published var prompt: String = ""
     @Published var before: String = ""
     @Published var after: String = ""
+    /// Set when the panel is not proposing anything — see `loadTranscript`.
+    @Published var note: String?
+    @Published var status: String?
 
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
@@ -136,6 +150,29 @@ final class PreviewModel: ObservableObject {
         self.prompt = prompt
         self.before = before
         self.after = after
+        self.note = nil
+        self.status = nil
+    }
+
+    /// The whole sentence, as it was heard, ready to be edited.
+    ///
+    /// The same panel as a transform preview because it is the same job: a
+    /// block of text you are about to replace, editable before it goes in. The
+    /// difference is who wrote the second copy — a prompt there, you here — so
+    /// the two lines start out identical and the strikethrough only appears
+    /// once you have changed something.
+    ///
+    /// Not the correction panel. That one splits what you give it into a row
+    /// per word and each row is a rule that lands in config.yaml, which is the
+    /// right shape for teaching a name and the wrong one for fixing a sentence:
+    /// most of a misheard sentence is words you do not want to teach anything
+    /// about.
+    func loadTranscript(_ text: String) {
+        self.prompt = "Dictation"
+        self.before = text
+        self.after = text
+        self.note = "heard"
+        self.status = "Fix it here — it replaces what was written"
     }
 
     /// Nothing to apply — the prompt returned what it was given.
@@ -174,7 +211,7 @@ struct PreviewView: View {
             }
 
             PanelActions(
-                status: "Edit it here before replacing",
+                status: model.status ?? "Edit it here before replacing",
                 cancelTitle: "Discard",
                 confirmTitle: "Replace",
                 onCancel: { model.onCancel?() },
@@ -190,7 +227,7 @@ struct PreviewView: View {
     private var header: some View {
         PanelHeader(
             title: model.prompt,
-            note: model.isUnchanged ? "nothing to change" : "proposed"
+            note: model.note ?? (model.isUnchanged ? "nothing to change" : "proposed")
         )
     }
 }

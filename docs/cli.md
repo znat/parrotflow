@@ -249,13 +249,19 @@ real window as the scratch one you meant.
 ## Looking at the floating surfaces
 
 ```sh
-$PF --panels preview 20  # put one surface on screen and leave it there
-$PF --panel-sheet s.png  # draw every surface into one PNG, light beside dark
+$PF --panels preview 20   # put one surface on screen and leave it there
+$PF --panels sequence 40  # run a whole dictation's worth of states, on a loop
+$PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
 ```
 
-`--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`,
-`vocabulary`, `rule` or `preview`. `--panel-sheet` draws all of them at once,
-which is where drift between them shows up.
+`--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
+`vocabulary`, `rule`, `preview` or `sequence`. `--panel-sheet` draws all of
+them at once, which is where drift between them shows up.
+
+`sequence` is the one that cannot be checked from a still. The pill is a single
+panel that changes width and crossfades its contents rather than being replaced
+— hot mic, decoding, applied, the offer, gone — and whether that morphs or
+jumps is only visible in motion. It loops for as many seconds as you give it.
 
 ## Updates
 

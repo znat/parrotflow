@@ -1210,6 +1210,24 @@ struct Config: Decodable, Equatable {
         var sound: Bool = true
         /// Show the floating recording pill near the bottom of the screen.
         var overlay: Bool = true
+        /// After a dictation lands, offer to correct it for a few seconds.
+        ///
+        /// The pill stays where it is and says which key opens the correction
+        /// panel over what was just written. It is the only moment correcting
+        /// is cheap — the words are on screen, you are looking at them, and you
+        /// have not started typing over them yet. Every other way in costs a
+        /// sentence said out loud or a trip to the menu bar.
+        ///
+        /// Separate from `overlay` on purpose. That one is about watching a
+        /// recording happen and some people turn it off as noise; this is about
+        /// what to do after one, and wanting one is no reason to want the other.
+        var correctOffer: Bool = true
+
+        enum CodingKeys: String, CodingKey {
+            case sound
+            case overlay
+            case correctOffer = "correct_offer"
+        }
 
         init() {}
 
@@ -1218,6 +1236,9 @@ struct Config: Decodable, Equatable {
             self.init()
             if let sound = try c.decodeIfPresent(Bool.self, forKey: .sound) { self.sound = sound }
             if let overlay = try c.decodeIfPresent(Bool.self, forKey: .overlay) { self.overlay = overlay }
+            if let offer = try c.decodeIfPresent(Bool.self, forKey: .correctOffer) {
+                self.correctOffer = offer
+            }
         }
     }
 
@@ -2483,6 +2504,10 @@ if __name__ == "__main__":
     feedback:
       sound: true     # a click when recording starts and stops
       overlay: true   # the floating pill while you speak
+      # After the words land the pill offers to correct them for 3s. Tap the
+      # dictation hotkey — press and let go — to open the correction panel over
+      # what was just written. Holding it still starts the next dictation.
+      correct_offer: true
 
     transcription:
       # paste     -> typed into the app you're in (needs Accessibility)

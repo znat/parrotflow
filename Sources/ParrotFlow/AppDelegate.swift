@@ -10,7 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let hotKeys = HotKeyManager()
     private let recorder = Recorder()
-    private let overlay = RecordingOverlay()
+    private let pill = PillHUD()
     private let permissions = PermissionsWindowController()
 
     private var statusItem: NSStatusItem!
@@ -58,7 +58,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var labelToken = 0
     private let correctionPanel = CorrectionPanel()
     private let previewPanel = PreviewPanel()
-    private let notice = NoticeHUD()
     private var pendingSelection: SelectionReader.Selection?
     /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
     private var selectionAtPress: SelectionReader.Selection?
@@ -117,6 +116,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// works against when there is no selection to work against instead.
     private var lastTranscript: String?
 
+    /// When the offer to correct the last dictation stops being on screen.
+    ///
+    /// Held here as well as in the pill because the pill only knows how to draw
+    /// it. Whether a press is a tap on the offer or the start of a dictation is
+    /// decided against this, and that decision is made in the hotkey handler
+    /// before anything is drawn at all.
+    private var offerUntil: Date?
+    /// Whether the offer was still up when this press went down.
+    ///
+    /// Captured at the press rather than read at the release, because the three
+    /// seconds can run out in between — and a press that began as a tap on the
+    /// offer should stay one, or the gesture would depend on how fast you let
+    /// go of a key you have already pressed.
+    private var pressTookTheOffer = false
+    /// Whether an ordinary key went down while the hotkey was held.
+    ///
+    /// A bare-modifier hotkey — `hotkey: right_command` — is also half of every
+    /// shortcut that uses that modifier. Right ⌘ V is a press and a release
+    /// well under the tap threshold, and without this it would open the
+    /// correction panel instead of pasting. Set by the same keyboard monitors
+    /// Escape already installs, so it costs nothing extra and is only watched
+    /// while there is a recording to watch.
+    private var keyDownDuringPress = false
+
+    /// How long the offer stays up.
+    ///
+    /// Long enough to read the key and act on it, short enough that it is gone
+    /// before you have started typing the next thing. It is on screen after
+    /// every dictation, so any longer and it stops being an offer and becomes
+    /// something in the way.
+    private static let offerSeconds: TimeInterval = 3
+
     /// The last substitution made in somebody else's window, and enough to put
     /// it back.
     ///
@@ -141,7 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         recorder.warmUp()
         recorder.onLevel = { [weak self] level in
-            self?.overlay.model.level = level
+            self?.pill.model.level = level
         }
         recorder.onUnexpectedStop = { [weak self] _ in
             self?.stopRecording(reason: "The audio device changed.")
@@ -499,6 +530,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // Before the recording starts, because starting it is what takes the
+        // offer off the screen.
+        pressTookTheOffer = offerIsUp
+        offerUntil = nil
+        keyDownDuringPress = false
+
         switch config.hotkey.mode {
         case .toggle:
             toggleRecording()
@@ -524,6 +561,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the character key is still down and a flicked-back modifier means
         // the chord never really broke.
         pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
+        // Checked here rather than in `stopRecording`, which is the wrong side
+        // of the release tail: the mic stays open for `release_tail_seconds`
+        // after the key comes up, so by the time the recorder is stopped every
+        // press has lasted at least that long and no tap would ever be short
+        // enough to see.
+        if takeTheOfferIfTapped() { return }
         stopRecordingAfterTail()
     }
 
@@ -592,7 +635,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Recording
 
     private func toggleRecording() {
-        recorder.isRecording ? stopRecording() : startRecording()
+        guard recorder.isRecording else {
+            startRecording()
+            return
+        }
+        // The second press of a toggle is the end of the gesture, which is
+        // where push-to-talk checks too. Same rule, measured between two
+        // presses instead of between a press and a release.
+        if takeTheOfferIfTapped() { return }
+        stopRecording()
     }
 
     private func startRecording() {
@@ -633,15 +684,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if config.feedback.sound { NSSound(named: "Tink")?.play() }
         if config.feedback.overlay {
-            overlay.model.elapsed = 0
-            overlay.model.level = 0
-            overlay.model.appIcon = appIconAtPress
-            overlay.show()
+            pill.recording(icon: appIconAtPress)
         }
 
         let tick = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self, let started = self.recorder.startedAt else { return }
-            self.overlay.model.elapsed = Date().timeIntervalSince(started)
+            self.pill.model.elapsed = Date().timeIntervalSince(started)
             self.updateUI()
         }
         RunLoop.main.add(tick, forMode: .common)
@@ -688,7 +736,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tickTimer?.invalidate(); tickTimer = nil
             pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
             releaseTail?.invalidate(); releaseTail = nil
-            overlay.hide()
+            pill.hide()
         }
         if transcribing {
             cancelledThroughRun = transcriptionRun
@@ -726,6 +774,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // what a `hotkey:` of "escape" would resolve through.
         guard let escape = KeyCodes.code(for: "escape") else { return }
         let cancel: (NSEvent) -> Void = { [weak self] event in
+            // Any key at all, before the Escape test: a key going down during
+            // a press is what tells a chord apart from a tap. See
+            // `takeTheOfferIfTapped`.
+            self?.keyDownDuringPress = true
             guard event.keyCode == UInt16(escape) else { return }
             DispatchQueue.main.async { self?.cancelDictation() }
         }
@@ -765,7 +817,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         tickTimer?.invalidate(); tickTimer = nil
         pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
         releaseTail?.invalidate(); releaseTail = nil
-        overlay.hide()
+        pill.hide()
         if config.feedback.sound { NSSound(named: "Pop")?.play() }
 
         // Transcription takes the watch over from here — it is the other half
@@ -1606,6 +1658,172 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - The offer
+
+    private var offerIsUp: Bool {
+        guard let offerUntil else { return false }
+        return offerUntil > Date()
+    }
+
+    /// Say what can be done about the words that just landed, and for how long.
+    ///
+    /// Only after a paste that worked. Every other ending already has something
+    /// to say — "on your clipboard", "grant Accessibility" — and those are more
+    /// useful than an offer, so they keep the pill. This is the one ending that
+    /// had nothing on it at all: the pill simply vanished and the dictation was
+    /// over, which is a fine thing to feel and a wasted second of screen.
+    ///
+    /// The key is read from the binding that is actually registered rather than
+    /// written down here, so a config that moved the hotkey moves what this
+    /// advertises. A modifier-only binding has a name too. If registration
+    /// failed there is no key to offer and nothing is shown.
+    private func showCorrectOffer() {
+        guard config.feedback.correctOffer else { return }
+        guard let key = hotKeys.binding?.displayName else { return }
+        guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return }
+
+        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        pill.offer(key, for: Self.offerSeconds)
+    }
+
+    /// A press on the dictation key that was too short to be a dictation, made
+    /// while the offer was up: open the correction panel instead.
+    ///
+    /// The dictation key rather than a key of its own because there is no key
+    /// of its own to have. Carbon needs a modifier, an `NSEvent` monitor cannot
+    /// swallow what it sees — so a bare ⌫ would open the panel *and* delete a
+    /// character out of the sentence it is about to correct — and a new combo
+    /// is one more thing to configure and collide with. The key already in your
+    /// hand is the one you can offer without asking for anything.
+    ///
+    /// The threshold is `audio.min_duration_seconds`, not a number of its own.
+    /// That is already the app's definition of a press too short to be speech:
+    /// under it the recorder deletes the clip and returns nothing, so a tap has
+    /// always cost nothing and done nothing. This gives it something to do
+    /// without taking anything away — a press that would have been a dictation
+    /// still is one.
+    ///
+    /// A chord is not a tap. With a bare-modifier hotkey the key is also half
+    /// of every shortcut that uses it, so `keyDownDuringPress` throws out any
+    /// press that had another key inside it — Right ⌘ V is a press and a
+    /// release well under the threshold, and it means paste. Seeing that key
+    /// in somebody else's window needs Accessibility, which is the grant the
+    /// app already asks for; without it the chord is invisible and a shortcut
+    /// during the offer opens the panel.
+    ///
+    /// Returns whether the offer was taken, so the caller can stop.
+    private func takeTheOfferIfTapped() -> Bool {
+        guard pressTookTheOffer, recorder.isRecording, !keyDownDuringPress,
+              let started = recorder.startedAt,
+              Date().timeIntervalSince(started) < config.audio.minDurationSeconds
+        else { return false }
+
+        pressTookTheOffer = false
+        offerUntil = nil
+
+        // Under the minimum, so the recorder deletes the clip and gives back
+        // nothing. Nothing to transcribe, nothing to deliver.
+        _ = recorder.stop(config: config)
+        tickTimer?.invalidate(); tickTimer = nil
+        pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
+        releaseTail?.invalidate(); releaseTail = nil
+        stopWatchingForEscapeIfIdle()
+        pill.hide()
+
+        // Captured here, not read again when Replace is pressed. See `Correction`.
+        let target = Correction(
+            original: lastTranscript ?? "",
+            element: focusAtPress?.element,
+            owner: focusAtPress?.owner
+        )
+
+        Log.write("offer: taken; editing the last transcript")
+        previewPanel.onApply = { [weak self] text in self?.replace(target, with: text) }
+        previewPanel.onCancel = { Log.write("offer: dismissed; the text stands as dictated") }
+        previewPanel.show(transcript: target.original)
+        updateUI()
+        return true
+    }
+
+    /// What an offer is about: the sentence, and the field it was written into.
+    ///
+    /// Captured when the offer is taken rather than read off `self` when
+    /// Replace is pressed. The panel can be left open for as long as it takes
+    /// to think about a spelling, and push-to-talk does not wait for the
+    /// previous transcript — so by then `lastTranscript` and `focusAtPress` can
+    /// both belong to a newer dictation, and the correction would be applied to
+    /// a sentence nobody asked about. Every other path in this file carries its
+    /// destination down the chain for the same reason.
+    private struct Correction {
+        let original: String
+        let element: AXUIElement?
+        let owner: NSRunningApplication?
+    }
+
+    /// Put the edited sentence back over the one that was written.
+    ///
+    /// The same ladder a transform without a selection climbs: hand focus back
+    /// first — showing the panel activated us, so ⌘V here would land in our own
+    /// window — then replace what we typed rather than pasting after it, which
+    /// is what leaves both versions side by side.
+    ///
+    /// It refuses to write unless the field is the one that was dictated into.
+    /// `insertDictation` makes the same check for the same reason: the words
+    /// are found by matching the sentence, and a sentence can match in more
+    /// than one place. Not knowing is not the same as knowing it is fine, so a
+    /// lookup that fails counts as moved and the text goes to the clipboard.
+    ///
+    /// No rules are saved. This is the sentence, not the vocabulary: teaching
+    /// a word is what "Hey parrot, correct" and the correction panel are for,
+    /// and quietly writing a rule out of every fixed sentence would fill
+    /// config.yaml with pairs that will never recur.
+    private func replace(_ target: Correction, with edited: String) {
+        let corrected = edited.trimmingCharacters(in: .whitespacesAndNewlines)
+        let original = target.original.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !original.isEmpty, !corrected.isEmpty, corrected != original else { return }
+
+        if let owner = target.owner, !owner.isActive {
+            owner.activate()
+            // Let it come forward before the keystroke is posted.
+            Thread.sleep(forTimeInterval: 0.15)
+        }
+
+        if config.transcription.insertMode == .paste, let aimed = target.element {
+            let now = SelectionReader.focusedElement()
+            if let now, CFEqual(now, aimed), !SelectionReader.isOurs(now) {
+                // `fuzzy: false`: the words on screen are the ones we typed
+                // there, so there is nothing to settle for — and settling for
+                // the nearest thing over a whole sentence is how a rewrite
+                // lands on the wrong line.
+                switch applyInPlace(
+                    [Edit(find: original, replace: corrected, fuzzy: false)],
+                    dictated: original, in: now, describedAs: "correction"
+                ) {
+                case .replaced:
+                    // Only if this is still the sentence the app thinks it
+                    // wrote last. A newer dictation has its own.
+                    if lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) == original {
+                        lastTranscript = corrected
+                    }
+                    applied("Correction")
+                    return
+                case .failed, .notAttempted:
+                    break
+                }
+            } else {
+                Log.write(now == nil
+                    ? "offer: could not read what is focused; copied instead of rewriting"
+                    : "offer: focus moved since the dictation; copied instead of rewriting")
+            }
+        }
+
+        Log.write("offer: left the correction on the clipboard")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(corrected, forType: .string)
+        flash("Correction copied — this app won't let me edit it", tone: .caution)
+    }
+
     private func beginCorrection() {
         // Reading the selection needs Accessibility; the panel does not. Open
         // it either way — typing both sides still beats editing YAML by hand,
@@ -1716,7 +1934,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Show a message on screen, and in the menu bar for as long as it lasts.
     private func flash(_ message: String, tone: NoticeTone = .plain) {
-        notice.show(message, tone: tone)
+        pill.notice(message, tone: tone)
         setLabel(message, clearAfter: 4)
     }
 
@@ -1725,12 +1943,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 3.5s while a cold Ollama was still loading — leaving the rest of a 10s
     /// wait with nothing on screen at all.
     private func beginProgress(_ message: String) {
-        notice.show(message, tone: .thinking, duration: nil)
+        pill.working(message)
         setLabel(message)
     }
 
     private func endProgress() {
-        notice.hide()
+        pill.hide()
         setLabel(nil)
     }
 
@@ -1819,7 +2037,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             endProgress()
             Log.write("inline: \(why); wrote the text as dictated")
             insertDictation(text, to: destination, aimedAt: focus?.element)
-            notice.show(why, tone: tone, duration: 7)
+            pill.notice(why, tone: tone, duration: 7)
             setLabel(why, clearAfter: 7)
         }
 
@@ -2104,7 +2322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         endProgress()
         Log.write("inline: \(why); wrote the text as dictated")
         insertDictation(text, to: destination, aimedAt: focus?.element)
-        notice.show(why, tone: tone, duration: 7)
+        pill.notice(why, tone: tone, duration: 7)
         setLabel(why, clearAfter: 7)
     }
 
@@ -2210,6 +2428,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch TextInserter.insert(text, mode: config.transcription.insertMode) {
         case .pasted:
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            // The words are in the field and you are looking at them. This is
+            // the only second in which correcting one is free.
+            showCorrectOffer()
         case .copied:
             // Deliberate clipboard mode — confirm it landed.
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
@@ -2385,7 +2606,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if let hotkeyError {
             statusInfoItem.title = "⚠︎ \(hotkeyError)"
         } else if recording {
-            let elapsed = Int(overlay.model.elapsed)
+            let elapsed = Int(pill.model.elapsed)
             statusInfoItem.title = String(format: "Recording  %d:%02d", elapsed / 60, elapsed % 60)
         } else {
             statusInfoItem.title = "Idle  ·  \(shortcut)"

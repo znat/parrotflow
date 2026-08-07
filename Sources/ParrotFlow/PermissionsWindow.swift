@@ -334,7 +334,11 @@ private struct Instrument: View {
             case .microphone:
                 // The real view, at its real size. It carries its own dark
                 // glass, which is what it will look like over your document.
-                RecordingPill().environmentObject(Instrument.hearing)
+                // Sized explicitly: the pill fills whatever it is given, and
+                // the panel that owns it is what decides its width in the app.
+                PillView().environmentObject(Instrument.hearing)
+                    .frame(width: PillMetrics.recording(hasIcon: false),
+                           height: PillMetrics.height)
             case .accessibility:
                 Landing()
             }
@@ -343,8 +347,9 @@ private struct Instrument: View {
     }
 
     /// Mid-sentence, so the meter has something to show.
-    private static let hearing: OverlayModel = {
-        let model = OverlayModel()
+    private static let hearing: PillModel = {
+        let model = PillModel()
+        model.state = .recording
         model.level = 0.62
         return model
     }()
