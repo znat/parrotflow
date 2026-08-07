@@ -1731,12 +1731,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stopWatchingForEscapeIfIdle()
         pill.hide()
 
+        // Captured here, not read again when Replace is pressed. See `Correction`.
+        let target = Correction(
+            original: lastTranscript ?? "",
+            element: focusAtPress?.element,
+            owner: focusAtPress?.owner
+        )
+
         Log.write("offer: taken; editing the last transcript")
-        previewPanel.onApply = { [weak self] text in self?.replaceLastDictation(with: text) }
+        previewPanel.onApply = { [weak self] text in self?.replace(target, with: text) }
         previewPanel.onCancel = { Log.write("offer: dismissed; the text stands as dictated") }
-        previewPanel.show(transcript: lastTranscript ?? "")
+        previewPanel.show(transcript: target.original)
         updateUI()
         return true
+    }
+
+    /// What an offer is about: the sentence, and the field it was written into.
+    ///
+    /// Captured when the offer is taken rather than read off `self` when
+    /// Replace is pressed. The panel can be left open for as long as it takes
+    /// to think about a spelling, and push-to-talk does not wait for the
+    /// previous transcript — so by then `lastTranscript` and `focusAtPress` can
+    /// both belong to a newer dictation, and the correction would be applied to
+    /// a sentence nobody asked about. Every other path in this file carries its
+    /// destination down the chain for the same reason.
+    private struct Correction {
+        let original: String
+        let element: AXUIElement?
+        let owner: NSRunningApplication?
     }
 
     /// Put the edited sentence back over the one that was written.
@@ -1746,46 +1768,59 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// window — then replace what we typed rather than pasting after it, which
     /// is what leaves both versions side by side.
     ///
+    /// It refuses to write unless the field is the one that was dictated into.
+    /// `insertDictation` makes the same check for the same reason: the words
+    /// are found by matching the sentence, and a sentence can match in more
+    /// than one place. Not knowing is not the same as knowing it is fine, so a
+    /// lookup that fails counts as moved and the text goes to the clipboard.
+    ///
     /// No rules are saved. This is the sentence, not the vocabulary: teaching
     /// a word is what "Hey parrot, correct" and the correction panel are for,
     /// and quietly writing a rule out of every fixed sentence would fill
     /// config.yaml with pairs that will never recur.
-    private func replaceLastDictation(with edited: String) {
+    private func replace(_ target: Correction, with edited: String) {
         let corrected = edited.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let original = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !original.isEmpty, !corrected.isEmpty, corrected != original
-        else { return }
+        let original = target.original.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !original.isEmpty, !corrected.isEmpty, corrected != original else { return }
 
-        if let owner = focusAtPress?.owner, !owner.isActive {
+        if let owner = target.owner, !owner.isActive {
             owner.activate()
             // Let it come forward before the keystroke is posted.
             Thread.sleep(forTimeInterval: 0.15)
         }
 
-        if config.transcription.insertMode == .paste,
-           let element = SelectionReader.focusedElement(),
-           !SelectionReader.isOurs(element) {
-            // `fuzzy: false`: the words on screen are the ones we typed there a
-            // second ago, so there is nothing to settle for — and settling for
-            // the nearest thing over a whole sentence is how a rewrite lands on
-            // the wrong line.
-            switch applyInPlace(
-                [Edit(find: original, replace: corrected, fuzzy: false)],
-                dictated: original, in: element, describedAs: "correction"
-            ) {
-            case .replaced:
-                lastTranscript = corrected
-                applied("Correction")
-                return
-            case .failed, .notAttempted:
-                break
+        if config.transcription.insertMode == .paste, let aimed = target.element {
+            let now = SelectionReader.focusedElement()
+            if let now, CFEqual(now, aimed), !SelectionReader.isOurs(now) {
+                // `fuzzy: false`: the words on screen are the ones we typed
+                // there, so there is nothing to settle for — and settling for
+                // the nearest thing over a whole sentence is how a rewrite
+                // lands on the wrong line.
+                switch applyInPlace(
+                    [Edit(find: original, replace: corrected, fuzzy: false)],
+                    dictated: original, in: now, describedAs: "correction"
+                ) {
+                case .replaced:
+                    // Only if this is still the sentence the app thinks it
+                    // wrote last. A newer dictation has its own.
+                    if lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) == original {
+                        lastTranscript = corrected
+                    }
+                    applied("Correction")
+                    return
+                case .failed, .notAttempted:
+                    break
+                }
+            } else {
+                Log.write(now == nil
+                    ? "offer: could not read what is focused; copied instead of rewriting"
+                    : "offer: focus moved since the dictation; copied instead of rewriting")
             }
         }
 
-        Log.write("offer: the field would not take the edit; left on the clipboard")
+        Log.write("offer: left the correction on the clipboard")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(corrected, forType: .string)
-        lastTranscript = corrected
         flash("Correction copied — this app won't let me edit it", tone: .caution)
     }
 
