@@ -45,7 +45,8 @@ enum CheckConfigCommand {
         print("  ✓ output dir        \(config.resolvedOutputDir.path)")
         print("  ✓ min duration      \(config.audio.minDurationSeconds)s")
         print("  · speech gate       \(config.audio.speechGate ? "on" : "off")")
-        print("  · feedback          sound=\(config.feedback.sound) overlay=\(config.feedback.overlay)")
+        print("  · feedback          sound=\(config.feedback.sound) overlay=\(config.feedback.overlay)"
+              + " correct_offer=\(config.feedback.correctOffer)")
 
         // Transcription — printed so a mis-decoded config is visible rather
         // than silently falling back to "no vocabulary".

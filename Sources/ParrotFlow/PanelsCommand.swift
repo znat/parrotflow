@@ -21,21 +21,23 @@ enum PanelsCommand {
     /// composite, so the material comes out as flat grey here. Everything else
     /// — colour, type, spacing, the rim — is what you will see.
     static func sheet(to path: String) -> Int32 {
-        let notice = NoticeModel()
-        notice.message = "Grammar applied"
-        notice.tone = .done
+        // One model per state, because they are one surface now: the sheet is
+        // the only place all of them are visible at once, which is where drift
+        // between them shows.
+        func pill(_ state: PillState, icon: NSImage? = nil, level: Float = 0) -> PillModel {
+            let model = PillModel()
+            model.state = state
+            model.appIcon = icon
+            model.level = level
+            return model
+        }
 
-        let caution = NoticeModel()
-        caution.message = "Grammar copied — this app won't let me edit it"
-        caution.tone = .caution
+        let notice = pill(.notice("Grammar applied", .done))
+        let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution))
+        let thinking = pill(.working("Thinking…"))
+        let offer = pill(.offer("Right ⌘"))
 
-        let thinking = NoticeModel()
-        thinking.message = "Thinking…"
-        thinking.tone = .thinking
-
-        let overlay = OverlayModel()
-        overlay.level = 0.75
-        overlay.appIcon = sampleIcon()
+        let overlay = pill(.recording, icon: sampleIcon(), level: 0.75)
 
         // The pill has two states now and the difference is the whole point of
         // the slot: with somewhere to type it holds that app's icon, with
@@ -43,8 +45,7 @@ enum PanelsCommand {
         // are told the words are going to the clipboard instead. Both are on
         // the sheet because "it looks wrong with no icon" is the kind of thing
         // that is obvious side by side and invisible a week apart.
-        let overlayBlind = OverlayModel()
-        overlayBlind.level = 0.75
+        let overlayBlind = pill(.recording, level: 0.75)
 
         let correction = CorrectionModel()
         correction.load(selection: "Tasmin and Mick")
@@ -68,12 +69,10 @@ enum PanelsCommand {
         // an ordinary titled window, it follows the system, and it has to be
         // legible both ways. So it appears twice, once each.
         let surfaces: [(NSView, NSSize, NSAppearance.Name)] = [
-            (NSHostingView(rootView: RecordingPill().environmentObject(overlay)),
-             NSSize(width: RecordingMetrics.width(hasIcon: overlay.appIcon != nil),
-                    height: RecordingMetrics.height), .darkAqua),
-            (NSHostingView(rootView: RecordingPill().environmentObject(overlayBlind)),
-             NSSize(width: RecordingMetrics.width(hasIcon: false),
-                    height: RecordingMetrics.height), .darkAqua),
+            (NSHostingView(rootView: PillView().environmentObject(overlay)),
+             pillSize(overlay), .darkAqua),
+            (NSHostingView(rootView: PillView().environmentObject(overlayBlind)),
+             pillSize(overlayBlind), .darkAqua),
             // The one real window the app has, and the first thing anyone sees.
             // On the sheet for the same reason as the rest: it is looked at,
             // not asserted on, and two screens that drift apart are obvious
@@ -89,12 +88,17 @@ enum PanelsCommand {
                 .environmentObject(PermissionsModel.showing(
                     .accessibility, asked: true, context: .revisiting))),
              NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .darkAqua),
-            (NSHostingView(rootView: NoticeView().environmentObject(notice)),
-             NSSize(width: NoticeMetrics.width(for: notice.message), height: NoticeMetrics.height), .darkAqua),
-            (NSHostingView(rootView: NoticeView().environmentObject(thinking)),
-             NSSize(width: NoticeMetrics.width(for: thinking.message), height: NoticeMetrics.height), .darkAqua),
-            (NSHostingView(rootView: NoticeView().environmentObject(caution)),
-             NSSize(width: NoticeMetrics.width(for: caution.message), height: NoticeMetrics.height), .darkAqua),
+            (NSHostingView(rootView: PillView().environmentObject(notice)),
+             pillSize(notice), .darkAqua),
+            (NSHostingView(rootView: PillView().environmentObject(thinking)),
+             pillSize(thinking), .darkAqua),
+            (NSHostingView(rootView: PillView().environmentObject(caution)),
+             pillSize(caution), .darkAqua),
+            // The state the pill ends on, which is the only one that offers
+            // rather than reports. Next to the notices because that is the
+            // comparison that matters: it has to not look like one.
+            (NSHostingView(rootView: PillView().environmentObject(offer)),
+             pillSize(offer), .darkAqua),
             (NSHostingView(rootView: CorrectionView().environmentObject(correction)),
              NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 2)), .darkAqua),
             (NSHostingView(rootView: CorrectionView().environmentObject(rule)),
@@ -157,6 +161,11 @@ enum PanelsCommand {
         }
     }
 
+    private static func pillSize(_ model: PillModel) -> NSSize {
+        NSSize(width: PillMetrics.width(for: model.state, hasIcon: model.appIcon != nil),
+               height: PillMetrics.height)
+    }
+
     /// Something recognisable to sit in the pill's slot. Mail because that is
     /// the window the `email` transform was written for, and any Mac has it.
     private static func sampleIcon() -> NSImage? {
@@ -172,21 +181,23 @@ enum PanelsCommand {
 
         // Held for the lifetime of the process: these own their NSPanels, and a
         // panel whose owner has been collected goes with it.
-        let notice = NoticeHUD()
+        let pill = PillHUD()
         let correction = CorrectionPanel()
         let preview = PreviewPanel()
-        let overlay = RecordingOverlay()
         var ticker: Timer?
 
         switch surface {
         case "notice":
-            notice.show("Grammar applied", tone: .done, duration: nil)
+            pill.notice("Grammar applied", tone: .done, duration: nil)
         case "caution":
-            notice.show("Grammar copied — this app won't let me edit it", tone: .caution, duration: nil)
+            pill.notice("Grammar copied — this app won't let me edit it", tone: .caution, duration: nil)
         case "failure":
-            notice.show("Ollama is not running on localhost:11434", tone: .failure, duration: nil)
+            pill.notice("Ollama is not running on localhost:11434", tone: .failure, duration: nil)
         case "thinking":
-            notice.show("Thinking…", tone: .thinking, duration: nil)
+            pill.working("Thinking…")
+        case "offer":
+            // No duration: it is here to be looked at, not timed out.
+            pill.set(.offer("Right ⌘"))
         case "vocabulary":
             correction.show(selection: "Tasmin and Mick")
         case "rule":
@@ -199,16 +210,44 @@ enum PanelsCommand {
                 after: "I think we should have asked them first — they're going to be annoyed."
             )
         case "pill":
-            overlay.model.appIcon = sampleIcon()
-            overlay.show()
+            pill.recording(icon: sampleIcon())
             // A meter frozen at zero says nothing about how the meter looks.
             var phase = 0.0
             ticker = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
                 phase += 0.05
-                overlay.model.level = Float(0.5 + 0.45 * sin(phase * 2))
+                pill.model.level = Float(0.5 + 0.45 * sin(phase * 2))
+            }
+
+        // The one surface whose point is the motion between its states, so it
+        // is the one that cannot be checked from a still. Runs the whole
+        // dictation — hot mic, decoding, applied, the offer, gone — on a loop,
+        // which is the only way to see whether the pill morphs or jumps.
+        case "sequence":
+            var phase = 0.0
+            ticker = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
+                phase += 0.05
+                pill.model.level = Float(0.5 + 0.45 * sin(phase * 2))
+            }
+
+            let script: [(TimeInterval, () -> Void)] = [
+                (0.0, { pill.recording(icon: sampleIcon()) }),
+                (2.6, { pill.working("Transcribing…") }),
+                (4.0, { pill.working("Grammar…") }),
+                (5.4, { pill.notice("Grammar applied", tone: .done, duration: nil) }),
+                (7.4, { pill.offer("Right ⌘", for: 3) }),
+                (11.4, { pill.recording(icon: nil) }),
+                (14.0, { pill.working("Transcribing…") }),
+                (15.4, { pill.notice("Nowhere to type — the transcription is on your clipboard",
+                                     tone: .caution, duration: 3) }),
+            ]
+            let loop = script.last!.0 + 5
+            for turn in stride(from: 0.0, to: seconds, by: loop) {
+                for (at, step) in script {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + turn + at, execute: step)
+                }
             }
         default:
-            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|vocabulary|rule|preview|pill> [seconds]")
+            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|rule|preview|pill|sequence> [seconds]")
             return 2
         }
 
