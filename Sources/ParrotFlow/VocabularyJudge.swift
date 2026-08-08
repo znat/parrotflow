@@ -518,15 +518,27 @@ enum VocabularyJudge {
     /// Apostrophes count as letters for that cut, so "I'd pick D" is three
     /// words and the answer is D rather than I.
     ///
+    /// **`I` goes last.** It is the one letter of the alphabet that is also an
+    /// English word, so "I pick B" is the model talking about itself and not
+    /// about the ninth reading. A reply whose only bare letter is `I` still
+    /// answers `I`, because on a menu that long the model may well mean it.
+    /// `A` gets no such treatment: it is the reading this stage most often
+    /// wants chosen, and burying it would cost far more than the article does.
+    ///
     /// The old rule is the fallback, for a reply with no bare letter in it at
     /// all. It is what `scripts/tune-judge.py` does, so the harness and the app
     /// still agree about every reply either of them can read.
     static func chosen(_ reply: String, of count: Int) -> Int? {
         let upper = reply.uppercased()
         let words = upper.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "\u{2019}" })
-        for word in words where word.count == 1 {
-            guard let index = letters.firstIndex(of: word[word.startIndex]) else { continue }
-            if index < count { return index }
+        let named = words.compactMap { word -> Int? in
+            guard word.count == 1, let index = letters.firstIndex(of: word[word.startIndex]),
+                  index < count
+            else { return nil }
+            return index
+        }
+        if let picked = named.first(where: { letters[$0] != "I" }) ?? named.first {
+            return picked
         }
         for character in upper {
             guard let index = letters.firstIndex(of: character) else { continue }
