@@ -195,14 +195,33 @@ def main():
     # One line per rendering seen, appended. The sample path is written whether
     # or not --audio cut one, so a later run can fill the gap without rewriting
     # rows; a reader checks the file exists.
+    #
+    # A rendering already on file is not written again. `observations.jsonl` is
+    # append-only and a count is derived from it, so a second mining run over
+    # the same archive would say every rendering had been seen twice — a number
+    # PR 8 prunes on, doubled by re-running a script. A row is the same row when
+    # it names the same clip, the same span and the same spelling.
+    already = set()
+    if observations.exists():
+        for line in observations.read_text(encoding="utf-8").splitlines():
+            try:
+                was = json.loads(line)
+            except ValueError:
+                continue
+            already.add((was.get("wav"), tuple(was.get("span") or ()),
+                         was.get("term"), was.get("heard")))
+
     rows = []
     for term, items in sorted(spans.items()):
         for n, (wav, start, end, rendering) in enumerate(items):
+            span = (round(start, 3), round(end, 3))
+            if (wav, span, term, rendering) in already:
+                continue
             relative = f"samples/{term}/{n:02d}-{bare(rendering)}.wav"
             rows.append({
                 "at": stamp(wav), "term": term, "heard": rendering,
                 "from": "mined", "score": None, "mic": args.mic,
-                "span": [round(start, 3), round(end, 3)],
+                "span": list(span),
                 "sample": relative if args.audio else None,
                 "wav": wav,
             })
@@ -220,7 +239,8 @@ def main():
 
     total = sum(len(v) for v in found.values())
     print(f"\n  {total} distinct rendering(s) across {len(found)} term(s) -> {out}")
-    print(f"  {len(rows)} observation(s) appended to {observations}")
+    print(f"  {len(rows)} observation(s) appended to {observations}"
+          f" ({len(already)} already on file)")
     for term in sorted(found):
         print(f"    {term:<10} {len(found[term]):>2} rendering(s), "
               f"{sum(found[term].values())} occurrence(s)")
