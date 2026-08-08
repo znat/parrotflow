@@ -125,11 +125,12 @@ by more than about 4.
 
 The list carries a kind, from `tests/term-kinds.yaml`:
 
+Only `{terms}` changes. The sentence around it is the shipped one.
+
 ```diff
--Their vocabulary includes: Praisy, Praisy's — colleagues, products and tools
--they talk about every day.
-+Their vocabulary includes: Praisy (a person), Praisy's (a person) —
-+colleagues, products and tools they talk about every day.
+-Their vocabulary includes: Praisy, Praisy's — colleagues, products and tools they talk
++Their vocabulary includes: Praisy (a person), Praisy's (a person) — colleagues, products and tools they talk
+ about every day.
 ```
 
 **40/53. 0/8** on its own. With one paragraph added before the final one:
