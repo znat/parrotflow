@@ -168,7 +168,7 @@ enum ConfigWriter {
         let head = lines[start]
         if let colon = head.firstIndex(of: ":"),
            head[head.index(after: colon)...].trimmingCharacters(in: .whitespaces).hasPrefix("[") {
-            let end = closingFlow(in: lines, from: start)
+            let end = closingFlow(in: lines, from: start, deeperThan: termIndent)
             removed = count(inFlow: lines[start...end].joined(separator: " "))
             lines.replaceSubrange(start...end, with: [String(head[head.startIndex...colon])])
             return (lines.joined(separator: "\n"), removed)
@@ -185,7 +185,7 @@ enum ConfigWriter {
             if indentation(of: line).count <= bodyIndent { break }
             if trimmed.hasPrefix("heard:") || trimmed.hasPrefix("pronunciations:") {
                 let keyIndent = indentation(of: line).count
-                var end = closingFlow(in: lines, from: cursor)
+                var end = closingFlow(in: lines, from: cursor, deeperThan: keyIndent)
                 removed += count(inFlow: lines[cursor...end].joined(separator: " "))
                 // A block sequence continues under the key rather than on it.
                 var below = end + 1
@@ -211,10 +211,18 @@ enum ConfigWriter {
     /// The last line of a flow sequence that starts on `from`. The live file
     /// wraps one over two lines, and cutting only the first leaves the tail
     /// behind as invalid YAML.
-    private static func closingFlow(in lines: [String], from: Int) -> Int {
+    ///
+    /// Bounded by indentation as well as by the brackets. An unclosed `[` is a
+    /// file that would not have loaded, and a scan that runs to the end of it
+    /// would delete everything after the mistake rather than nothing.
+    private static func closingFlow(in lines: [String], from: Int, deeperThan indent: Int) -> Int {
         var depth = 0
         var index = from
         while index < lines.count {
+            if index > from, !lines[index].trimmingCharacters(in: .whitespaces).isEmpty,
+               indentation(of: lines[index]).count <= indent {
+                return index - 1
+            }
             for character in lines[index] {
                 if character == "[" { depth += 1 }
                 if character == "]" { depth -= 1 }

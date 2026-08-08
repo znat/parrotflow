@@ -302,12 +302,12 @@ struct Config: Decodable, Equatable {
                     }
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
-                // The old key first, so a file carrying both keeps every
-                // rendering it has. They are the same list with different
-                // amounts known about each entry, and losing one because the
-                // other exists is how a migration eats data.
                 let old = try c.decodeIfPresent([String].self, forKey: .heard) ?? []
                 let listed = try c.decodeIfPresent([Pronunciation].self, forKey: .pronunciations) ?? []
+                // Both keys, joined. They are the same list with different
+                // amounts known about each entry, and dropping one because the
+                // other exists is how a migration eats data.
+                //
                 // The new key first, so a rendering written both ways keeps the
                 // entry that knows something about itself. Registered twice it
                 // would be two search targets for one sound, and a term's
@@ -463,18 +463,20 @@ struct Config: Decodable, Equatable {
                     + " matched by sound")
             }
 
-            // `heard:` is the old key for the same list. It still loads, every
-            // rendering still works, and each one now also searches the audio
-            // — but a bare string records nothing about itself, so a file that
-            // only has those cannot say which entries are worth keeping.
+            // `heard:` is the old key for the same list, and so is a bare list
+            // written under the term. Both still load and every rendering still
+            // works. What they cannot do is say anything about an entry: a bare
+            // string records no count and no provenance, so a file made only of
+            // those cannot decide which entries are worth keeping. The line
+            // above already says how many are searched for by sound, so this one
+            // does not repeat it.
             let wroteHeard = terms.filter { $0.value.wroteHeard }.keys.sorted()
             if !wroteHeard.isEmpty {
                 legacy.append("renderings on \(wroteHeard.joined(separator: ", "))"
                     + " are written the old way — a `heard:` list, or a bare list"
-                    + " under the term. They still work and are now searched for"
-                    + " by sound too, but the setting is `pronunciations:`, a list"
-                    + " of `- heard:` entries each with `seen:` and `from:`"
-                    + " (correction, mined or calibration)")
+                    + " under the term. They still work. The setting is"
+                    + " `pronunciations:`, a list of `- heard:` entries each with"
+                    + " `seen:` and `from:` (correction, mined or calibration)")
             }
 
             // A `from:` nobody can read. Not refused — it labels a rendering
