@@ -213,6 +213,19 @@ widen what already fires. → PR 2 (counter-measures), PR 6 (dump moved).
 clip; replay-to-replay is stable). Until reconciled, every measurement
 describes replays. → PR 1, blocking for any live claim.
 
+**F12a — the audio was never the difference (PR 1, 2026-08-08).** There is
+one audio path, not two. `Transcriber.transcribe` reads the clip from the
+same URL whether it was just dictated or replayed off disk, and the branch
+at the seam is gate-versus-no-gate, not live-versus-replay. Measured on the
+six clips of 2026-08-08 01:01–01:19 that have both a live and a replay
+`trace.jsonl` entry: VAD total, VAD segments, ASR confidence and every token
+timing are identical to the last digit. Same audio, same timings. What still
+differs is downstream of the samples — the live binary that night was
+unstamped and of unverified build (F5). The seam now logs a checksum of the
+samples on both paths, so the next live dictation settles it with one grep.
+Replay noise floor: 1 run in 8 moved 0.22 nats, on the first run after the
+CoreML cache went cold; the other 7 were bit-identical.
+
 **F13 — harness traps already hit once.** Kept verbatim so they are not
 reintroduced: a hardcoded `/Applications` path scored a stale binary; the
 newest `trace.jsonl` entry is the current run, take the first per clip;

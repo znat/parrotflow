@@ -83,7 +83,9 @@ enum Trace {
         private let lock = NSLock()
 
         private let wav: String
-        private let source: Source
+        /// Readable from outside: the seam log names the run it describes, and
+        /// "live or replay" is exactly what this field already knows.
+        let source: Source
         private var asr: ASR?
         private var vad: VAD?
         private var stages: [Stage] = []
