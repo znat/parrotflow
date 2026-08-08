@@ -1,0 +1,34 @@
+# What kind of thing each vocabulary term names.
+#
+# Spike data for `scripts/judge-framings.py`, not a config file. Nothing at run
+# time reads this, and `vocabulary.yaml`'s schema is unchanged. If a typed term
+# list turns out to be worth shipping, that is the PR that adds a `kind:` to
+# the vocabulary — not this file.
+#
+# The 11 terms are the ones in `tests/judge-menus.json`. Every label was
+# proposed once by `gemma4:e4b` with no context (`--classify`) and then checked
+# by hand. Three were changed:
+#
+#   Claude    brand -> product   the assistant is the thing being talked about
+#   Redcrawl  brand -> product   ~/Documents/redcrawl, a monorepo
+#   Redrock   brand -> product   ~/Documents/redrock, a Q&A assistant
+#
+# Eight were kept. `Praisy` was the one the model could not know, and it read
+# it right: the archive has "Is Praisy here today?" and "Praisy did an amazing
+# job", so `person` is correct.
+#
+# Inflected forms are not listed. `Praisy's`, `Arexvy.` and `Vercel?` all
+# reduce to their term in `judge-framings.base_term`.
+
+terms:
+  Arexvy: drug
+  Claude: product
+  Matthieu: person
+  Mirza: person
+  Ollama: tool
+  Praisy: person
+  Redcrawl: product
+  Redrock: product
+  Supabase: product
+  Tasmeen: person
+  Vercel: company
