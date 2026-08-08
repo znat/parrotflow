@@ -277,7 +277,8 @@ substitution. They are kept because they are what fixed the design: a per-word
 question cannot answer a sentence that says `Versailles` twice and means the
 palace once.
 
-Scored on `tests/judge-cases.yaml`, 58 proposals from real recordings:
+Scored on `tests/judge-cases.yaml` when it held 58 proposals from real
+recordings. The file holds 59 now; the case added in PR 7 was not scored here:
 
 | | approve | decline | overall | latency |
 | --- | --- | --- | --- | --- |

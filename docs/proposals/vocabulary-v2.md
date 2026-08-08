@@ -75,7 +75,7 @@ Rules for the agent doing a PR. Follow them exactly.
 | Built app | `.build/ParrotFlowDev.app/Contents/MacOS/ParrotFlow` |
 | Installed app | `/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow` |
 | Judge model | Ollama, `gemma4:e4b`, temperature 0. Do not benchmark with other models loaded; e4b is the stable reference. |
-| Menu cache | `tests/judge-menus.json` (33 menus, 28 reachable) |
+| Menu cache | `tests/judge-menus.json` (66 menus, 53 reachable — re-harvested by PR #68 over the 130-clip set) |
 | Case set | `tests/menu-cases.yaml` (127 labelled clips, in two blocks) |
 
 ### Environment preflight (run before any measurement)
@@ -104,23 +104,40 @@ is the prototype; `(CTC-vs-CTC: …)` alone is v1.
 
 | Measurement | Command | Baseline |
 |---|---|---|
-| Menu recall | `python3 scripts/menu-recall.py` | recall 30/37, on the old 37-clip set — stale, see below |
-| Judge took it | same run | picked 27/37, same set — stale, see below |
-| Before/after | `python3 scripts/before-after.py` | 16 fixed / 10 broken / 2 regressed |
-| Judge on cache | `python3 scripts/tune-judge.py` | 24/28 with the sentinel bug; 26/28 with sentinel lines stripped |
-| Two-stage (fixed harness) | see PR 2 | 25/28, ceiling 28/28 |
+| Menu recall | `python3 scripts/menu-recall.py --runs 3` | recall 102/127, re-recorded on the 127-clip set by PR #68 |
+| Judge took it | same run | picked 90/127, same run |
+| Before/after | `python3 scripts/before-after.py --runs 3` | 20 fixed / 26 broken / 11 regressed / 70 already right |
+| Judge on cache | `python3 scripts/tune-judge.py` | 41/53 on the 66-menu cache (chance 17.4); 38/53 with `--no-scores` |
+| Two-stage (fixed harness) | see PR 2 | 25/28, ceiling 28/28 — on the old 28-menu cache |
+
+Split by class, from the same `--runs 3` run (the plan asks for two totals,
+and `menu-recall.py` still prints one):
+
+| | clips | recall | picked |
+|---|---|---|---|
+| about a term | 54 | 46 | 39 |
+| controls | 73 | 56 | 51 |
+
+The 11 regressed rows are the new baseline, not a regression introduced by
+PR #68 — they arrive with the 90 unfiltered clips. Nine of them are the
+vocabulary writing a term over an ordinary word that the judge then waved
+through: `crawl`→`Redcrawl` twice, `praise`→`Praisy`, `term`→`Praisy`,
+`matches`→`Matthieu`, `retry`→`Arexvy`, `Pretty`→`Arexvy`, `Versailles
+castle`→`Vercel castle`, `update`→`Supabase`. The other two (`12-46-08`,
+`00-57-25`) differ only by a hesitation the decoder wrote this time, and no
+vocabulary term is involved.
 
 Gates for every PR from PR 3 on: recall must not fall; `before-after.py`
 must show no new REGRESSED rows; judge `picked` must not fall below the
 baseline recorded for the same cache. A `--harvest` re-run changes the cache;
 re-record the baseline in the PR when you re-harvest, and say so.
 
-**The recall and picked baselines are stale.** They were recorded on a
-37-clip set. `tests/menu-cases.yaml` now holds 127 labelled clips: 90 more
-were merged from an unfiltered random sample (F11). The next run re-records
-both numbers. Expect them to drop in absolute terms, because 73 of the new
-clips are ordinary speech with no vocabulary term in them, and some of those
-carry decoder errors the vocabulary cannot fix.
+**The recall and picked baselines above were re-recorded on 2026-08-08** by
+PR #68, on the 127 labelled clips of `tests/menu-cases.yaml`, three runs per
+clip, against `0766c81`. Two clips changed outcome between runs (`17-39-19`
+and `11-10-43`, picked on 2 runs of 3); `before-after.py` had none. The old
+37-clip numbers (recall 30/37, picked 27/37, 16/10/2) do not compare with
+them.
 
 **Record two totals, not one.** A single `recall` and a single `picked` over
 127 clips can now hide a regression. 73 of the clips are controls that the
@@ -325,6 +342,19 @@ starts by checking the audio.
 → `Matthieu` (span 0.52) and → `Matthieu's` (span 0.56), and kept "Matthew
 at". That is the judge picking wrongly, and it is PR 7's territory. F15 is
 the case where the judge is never asked. → PR 9.
+
+**F16 — the judge prompt's numbers are worth less than the words around
+them (PR #68, 2026-08-08).** On a 53-case cache, five wordings of the same
+scale — the one that ships and four alternatives — score 38, 39, 40, 41 and
+42. The shipped wording is 41 and the λ-fitted number is 38 in that same
+sentence shape and 42 in another. No number wins in both shapes, so there is
+no effect to keep, and a one-case win from a reworded prompt is inside this
+spread. Two things
+follow. Do not re-tune this prompt by wording; measure the mechanism
+instead. And the scale's upper half is unreachable — 63% of the 73 score
+lines in the cache have a gap under 1 and the largest is 2.72, because
+`decide_above: 3.0` drops anything the audio argues against more strongly
+before it can reach a menu.
 
 ---
 
@@ -764,6 +794,65 @@ evidence problem, not a span one.
 ---
 
 ## PR 7 — evidence for the judge
+
+**Measured (PR #68, 2026-08-08). Nothing was changed.** The one item under
+`Do` — the difference precomputed, the block in the user message, the scale
+in the system message — was already built by PR 3
+(`VocabularyJudge.scoreBlock`, `Pipeline.swift`, `examples/prompts/verify_names.md`).
+Both follow-ups were A/B'd on a freshly harvested cache and neither beat the
+prompt that ships.
+
+The cache was re-harvested against `0766c81` over the 130 clips of
+`tests/menu-cases.yaml`: **66 menus, 53 of them reachable** (13 never held
+the true sentence), chance 17.4/53. `grep -c '" 0\.00'` is 0 and
+`--strip-sentinels` removes nothing, so F6 stays fixed at the source. Judge
+sampling at temperature 0 is exactly repeatable — the same 12 clips failed
+on two runs of the shipped prompt.
+
+**The score block is worth +3 of 53** on that cache: 41/53 with it, 38/53
+without. It wins `12-37-22`, `08-13-36`, `16-16-25` and `17-39-19` — all
+four are menus where the block says the *term* was heard slightly more
+clearly (0.0 to 2.2) and the ordinary word is what was said, so the small
+gap is what tells the model to read the sentence. It costs `15-36-12`
+("Pretty harsh review", gap 0.1), where the same evidence pushes it to
+`Arexvy`. The +2 the review measured on the old corrupted cache is now +3
+on clean evidence, and the case for the block is the mechanism rather than
+the size.
+
+**The pro-term prior stays.** Deleting the sentence scores 40/53 against
+41/53, and the case it costs is `07-36-58` — "very low floor for Prezi"
+against `Praisy`, a menu with no score block at all, which is exactly the
+class the sentence exists for. It does not cause F5's failure either: the
+`Redcrawl` sentence (`00-14-39`, "I mean in general in our data") is wrong
+with the prior and wrong without it, and the `Supabase` sentence
+(`01-02-23`) is right both ways even though the block says `Supabase` was
+heard 2.7 more clearly. One variant tried.
+
+**The prose scale beat the fitted λ.** F14's plateau (λ 0.1–0.75) says one
+unit of sentence evidence buys 1.3 to 10 nats, centre about 2.5. Four
+alternatives were tried. Three of them make a 2×2 with what ships, which is
+what separates the number from the sentence carrying it:
+
+| picked /53 | numbers "about 1 / about 4" | fitted 2.5 | plateau edges 1.3 / 10 |
+|---|---|---|---|
+| shipped sentence shape | **41** | 38 | 39 |
+| reshaped sentence | 40 | 42 | — |
+
+The same number scores 38 or 42 depending on the wording around it, and the
+same wording scores 38 to 41 depending on the number. There is no main
+effect to keep, which is F14's "wording is worth 8 points" arriving in the
+judge prompt. Nothing was changed.
+
+**Why the scale can barely fire.** Over the 73 score lines in the fresh
+cache, 63% of gaps are under 1 and the largest is 2.72. The prompt's "a gap
+over about 4 means the sound can decide" therefore never applies: PR 4's
+`decide_above: 3.0` drops a proposal the audio argues against by more than
+3 nats, so a reading that reaches the menu cannot carry a large gap. The
+upper half of the scale is dead text, and that — not its wording — is what
+would have to change for the sound to overrule a sentence.
+
+The live failure of 14:39:15 that F15 hands to PR 7 ("Matthew at" kept over
+`Matthieu's`) is now a case in `tests/judge-cases.yaml`.
 
 **Why.** F4, F6, F8. The judge is the weakest link; the one lever that
 measured is cleaner evidence. With the sentinel gone at the source (PR 3),
