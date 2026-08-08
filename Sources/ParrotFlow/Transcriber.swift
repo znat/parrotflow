@@ -172,8 +172,13 @@ actor Transcriber {
                 try await Vocabulary.shared.prepare(config: config) { [weak self] label in
                     Task { await self?.setStatus(.downloading(label)) }
                 }
-                if let samples = gated?.decodable == true
-                    ? gated?.samples : Self.samples(at: url) {
+                // The gate has already read the clip, so re-reading it would
+                // be a second decode of the same file for the same array.
+                let gateSamples = gated?.decodable == true ? gated?.samples : nil
+                if let samples = gateSamples ?? Self.samples(at: url) {
+                    Self.logVocabularySamples(
+                        samples, from: gateSamples == nil ? .file : .gate
+                    )
                     let outcome = await Vocabulary.shared.apply(
                         to: text, samples: samples,
                         tokenTimings: result.tokenTimings ?? [], config: config
@@ -181,6 +186,13 @@ actor Transcriber {
                     text = outcome.text
                     vocabularyCount = outcome.count
                     vocabularyChanges = outcome.changes
+                } else {
+                    // The pass is configured and did nothing, which used to
+                    // look exactly like the pass finding no names. Say which.
+                    Log.write(
+                        "vocabulary samples: none — no 16 kHz mono samples for"
+                            + " \(url.lastPathComponent); left as decoded"
+                    )
                 }
             } catch {
                 Log.write("vocabulary: \(error.localizedDescription); left as decoded")
@@ -248,21 +260,17 @@ actor Transcriber {
     ///
     /// Fails open: if the detector is unavailable the clip is transcribed.
     /// Losing real speech is far worse than an occasional stray "Yeah."
+    ///
+    /// A clip it cannot read fails open too. Reading it used to throw here and
+    /// lose the dictation; the decoder is handed the same URL a line later and
+    /// reports the real failure itself, so there is nothing for this to add.
     private func runSpeechGate(url: URL) async throws -> SpeechGate? {
         guard let vad else { return nil }
 
-        let file = try AVAudioFile(forReading: url)
-        let format = file.processingFormat
-        guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: AVAudioFrameCount(file.length)
-        ) else { return nil }
-        try file.read(into: buffer)
-        guard let channel = buffer.floatChannelData?[0] else { return nil }
-        let samples = Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
-        let decodable = format.sampleRate == Self.sampleRate && format.channelCount == 1
+        guard let clip = Self.read(url) else { return nil }
+        let samples = clip.samples
         guard !samples.isEmpty else {
-            return SpeechGate(samples: samples, segments: [], decodable: decodable)
+            return SpeechGate(samples: samples, segments: [], decodable: clip.is16kMono)
         }
 
         let segments = try await vad.segmentSpeech(samples)
@@ -283,25 +291,106 @@ actor Transcriber {
         return SpeechGate(
             samples: samples,
             segments: segments.map { ($0.startTime, $0.endTime) },
-            decodable: decodable
+            decodable: clip.is16kMono
+        )
+    }
+
+    // MARK: - The seam the vocabulary pass sits on
+
+    /// Which of the two readers produced the samples handed to `Vocabulary`.
+    ///
+    /// There is one call site and two branches, and for a clip the recorder
+    /// wrote they must produce the same array: both read the same file at its
+    /// own `processingFormat`. Naming the branch in the log is what makes that
+    /// checkable instead of assumed.
+    enum SampleSource: String {
+        /// Already read by `runSpeechGate`.
+        case gate
+        /// Read here, because the gate is off or could not use what it read.
+        case file
+    }
+
+    /// One line saying exactly what the vocabulary pass was given.
+    ///
+    /// A dictation and a replay of its archived wav scored the same term ~12
+    /// nats apart (finding F12), and nothing on disk could say whether the two
+    /// runs even saw the same audio. This line answers that with a grep. One
+    /// helper for both branches on purpose: two format strings would drift and
+    /// the comparison would stop being mechanical.
+    ///
+    /// The run's own origin comes from the trace, which already records `live`
+    /// or `cli` per dictation. `unknown` means no collector was bound — a
+    /// command that does not trace, not a third audio path.
+    nonisolated static func logVocabularySamples(_ samples: [Float], from source: SampleSource) {
+        let seconds = Double(samples.count) / sampleRate
+        let head = String(
+            format: "vocabulary samples: %d samples, %.2fs, checksum %08x",
+            samples.count, seconds, checksum(samples)
+        )
+        Log.write("\(head) (\(Trace.current?.source.rawValue ?? "unknown"), \(source.rawValue))")
+    }
+
+    /// FNV-1a over the raw bits of every sample.
+    ///
+    /// Not a digest anyone should trust for anything else. It has one job: to
+    /// change when a single sample changes, so two runs can be compared by
+    /// eye. Hashing the bit pattern rather than the value keeps `-0.0` and
+    /// `0.0` distinct, which is what "the same array" has to mean here.
+    nonisolated static func checksum(_ samples: [Float]) -> UInt32 {
+        var hash: UInt32 = 2_166_136_261
+        for sample in samples {
+            var bits = sample.bitPattern
+            for _ in 0..<4 {
+                hash = (hash ^ (bits & 0xFF)) &* 16_777_619
+                bits >>= 8
+            }
+        }
+        return hash
+    }
+
+    /// The one reader. Everything that needs the clip as numbers goes through
+    /// here — the speech gate, and the vocabulary pass when the gate is off.
+    ///
+    /// It used to be two readers with the same body written twice, and they
+    /// only agreed by luck. A live dictation and a replay of its archived wav
+    /// scored the same term far apart (finding F12), and the first thing that
+    /// had to be ruled out was whether the two runs were even looking at the
+    /// same samples. Two copies of a file read cannot be ruled out; one can.
+    ///
+    /// Nil rather than throwing: a name left misheard is worth less than a
+    /// lost dictation.
+    ///
+    /// - Parameter require16kMono: nil for any other format, decided from the
+    ///   header before a buffer is allocated. A caller that cannot use the
+    ///   samples should not pay to read an hour of audio to find that out.
+    static func read(
+        _ url: URL, require16kMono: Bool = false
+    ) -> (samples: [Float], is16kMono: Bool)? {
+        guard let file = try? AVAudioFile(forReading: url) else { return nil }
+        let format = file.processingFormat
+        let is16kMono = format.sampleRate == sampleRate && format.channelCount == 1
+        guard is16kMono || !require16kMono else { return nil }
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: AVAudioFrameCount(file.length)
+        ),
+            (try? file.read(into: buffer)) != nil,
+            let channel = buffer.floatChannelData?[0]
+        else { return nil }
+        return (
+            Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength))),
+            is16kMono
         )
     }
 
     /// The clip as 16 kHz mono samples, for the vocabulary pass when the
-    /// speech gate is off and has not already read them. Nil rather than
-    /// throwing: a name left misheard is worth less than a lost dictation.
+    /// speech gate is off and has not already read them.
+    ///
+    /// Nil for anything else: the decoder reaches those clips through the URL,
+    /// which resamples, and this does not. Handing the pass a differently
+    /// sampled array would be the second audio path all over again.
     static func samples(at url: URL) -> [Float]? {
-        guard let file = try? AVAudioFile(forReading: url),
-              file.processingFormat.sampleRate == sampleRate,
-              file.processingFormat.channelCount == 1,
-              let buffer = AVAudioPCMBuffer(
-                  pcmFormat: file.processingFormat,
-                  frameCapacity: AVAudioFrameCount(file.length)
-              ),
-              (try? file.read(into: buffer)) != nil,
-              let channel = buffer.floatChannelData?[0]
-        else { return nil }
-        return Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength)))
+        read(url, require16kMono: true)?.samples
     }
 
     // MARK: - Closing long pauses
