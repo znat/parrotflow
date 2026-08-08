@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var announcedUpdate: String?
 
     private lazy var transcriber = Transcriber { [weak self] status in
-        DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
+        DispatchQueue.main.async { [weak self] in self?.handleTranscriberStatus(status) }
     }
     private var transcriptionLabel: String?
     /// Bumped by every transcription, so a stage label arriving late from one
@@ -905,22 +905,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     app: app.map { Trace.App(name: $0.name, bundleID: $0.bundleID) },
                     beside: recording.url.deletingLastPathComponent()
                 ) {
+                    // One immutable copy, taken before the closure rather
+                    // than read from inside it. `self` here is the enclosing
+                    // Task's weak capture, which is a *var* — and reading a var
+                    // from concurrently-executing code is an error under the
+                    // Swift 6 language mode. This still holds it weakly, so a
+                    // delegate that goes away still stops the progress updates.
+                    let delegate = self
                     let text = try await self?.transcriber.transcribe(
                         url: recording.url, config: config, app: app,
                         progress: { label in
-                            Task { @MainActor [weak self] in
+                            Task { @MainActor in
                                 // Still this dictation, and still one that has
                                 // something on screen to replace.
-                                guard let self, self.transcriptionRun == run,
-                                      self.transcriptionLabel != nil else { return }
-                                self.beginProgress(label)
+                                guard let delegate, delegate.transcriptionRun == run,
+                                      delegate.transcriptionLabel != nil else { return }
+                                delegate.beginProgress(label)
                             }
                         }
                     ) ?? ""
                     Trace.current?.recordFinal(text)
                     return text
                 }
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     guard let self else { return }
                     // Only if the screen is still ours. Push-to-talk does not
                     // wait, so a second press while this one was in flight has
@@ -948,7 +955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                 }
             } catch {
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     guard let self else { return }
                     if self.transcriptionRun == run { self.endProgress() }
                     self.runsInFlight -= 1
@@ -1041,7 +1048,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keepWarmInFlight = true
         Task.detached(priority: .background) { [weak self] in
             await LocalLLM.keepWarm(system: system, config: llm)
-            await MainActor.run { self?.keepWarmInFlight = false }
+            await MainActor.run { [weak self] in self?.keepWarmInFlight = false }
         }
     }
 
@@ -1090,7 +1097,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     freeForm: freeForm,
                     config: llmConfig
                 )
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     guard let self else { return }
                     switch decision {
                     case .matched(let capability):
@@ -1121,7 +1128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             } catch {
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     Log.write("routing failed: \(error.localizedDescription)")
                     self?.endProgress()
                     self?.flash(error.localizedDescription, tone: .failure)
@@ -1225,9 +1232,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     command: command, lastTranscript: context,
                     language: language, config: llmConfig
                 )
-                await MainActor.run { self?.apply(result, command: command) }
+                await MainActor.run { [weak self] in self?.apply(result, command: command) }
             } catch {
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     Log.write("command interpretation failed: \(error.localizedDescription)")
                     self?.endProgress()
                     self?.flash(error.localizedDescription, tone: .failure)
@@ -1280,14 +1287,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let result = try await self?.perform(
                     transform, instruction: instruction, on: target
                 ) else { return }
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     self?.finishTransform(
                         transform: transform, selection: selection,
                         before: target, after: result
                     )
                 }
             } catch {
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     Log.write("transform failed: \(error.localizedDescription)")
                     self?.endProgress()
                     self?.flash(error.localizedDescription, tone: .failure)
@@ -2033,7 +2040,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let catalogue = Catalogue(transforms: config.transforms)
 
         /// Write what was said, and say why it is not what was asked for.
-        func giveUp(_ why: String, tone: NoticeTone = .caution) {
+        @Sendable func giveUp(_ why: String, tone: NoticeTone = .caution) {
             endProgress()
             Log.write("inline: \(why); wrote the text as dictated")
             insertDictation(text, to: destination, aimedAt: focus?.element)
@@ -2041,14 +2048,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setLabel(why, clearAfter: 7)
         }
 
-        func run(_ transform: Config.Transform) {
+        @Sendable func run(_ transform: Config.Transform) {
             beginProgress(transform.progressLabel)
             Task { [weak self] in
                 do {
                     guard let result = try await self?.perform(
                         transform, instruction: instruction, on: text
                     ) else { return }
-                    await MainActor.run {
+                    await MainActor.run { [weak self] in
                         guard let self else { return }
                         self.endProgress()
                         let cleaned = result.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2099,7 +2106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     instruction: instruction, catalogue: catalogue,
                     freeForm: freeForm, config: llm
                 )
-                await MainActor.run {
+                await MainActor.run { [weak self] in
                     guard let self else { return }
                     switch decision {
                     case .matched(.transform(let transform)):
@@ -2175,7 +2182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         command: instruction, lastTranscript: text,
                         language: language, config: llm
                     )
-                    await MainActor.run {
+                    await MainActor.run { [weak self] in
                         guard let self else { return }
                         self.endProgress()
                         switch result {
@@ -2206,7 +2213,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         }
                     }
                 } catch {
-                    await MainActor.run {
+                    await MainActor.run { [weak self] in
                         guard let self else { return }
                         self.endProgress()
                         self.giveUpInline(
