@@ -16,6 +16,19 @@ let arguments = CommandLine.arguments
 // here covers every path, including the ones added later.
 atexit { Log.flush(); Trace.flush() }
 
+// First, and above the config: this is the handshake that says which code you
+// are running, and it must answer even when the config is broken or missing.
+if arguments.contains("--version") {
+    print(AppVariant.buildStamp)
+    exit(0)
+}
+
+// The first line of every run, app or command, and above the config for the
+// same reason: loading the config already logs — a transform it refused, a
+// vocabulary.yaml it wrote — and those lines need the stamp above them to say
+// which code produced them.
+Log.write("build: \(AppVariant.buildStamp)")
+
 // Before anything reads the config, because reading it creates it: `load`
 // calls `createIfMissing`, so a line below that merely wants the output
 // directory would seed the files this command exists to report on, and every

@@ -77,6 +77,17 @@ enum AppVariant {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
     }
 
+    /// The commit this bundle was built from, written into Info.plist by
+    /// `scripts/build-app.sh`. `--version` prints it and the app logs it at
+    /// launch, so a measurement can prove which code produced it. A stale
+    /// install that looked current once cost a night of wrong conclusions.
+    ///
+    /// "unstamped" when the key is absent — the bare SwiftPM binary run outside
+    /// a bundle. A `-dirty` suffix means the tree had uncommitted changes.
+    static var buildStamp: String {
+        Bundle.main.object(forInfoDictionaryKey: "PFBuildStamp") as? String ?? "unstamped"
+    }
+
     /// The repository as a clickable line for the standard About panel, which
     /// takes its credits as an attributed string.
     static var repositoryLink: NSAttributedString {

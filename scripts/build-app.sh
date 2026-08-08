@@ -49,6 +49,19 @@ PLIST="$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $DISPLAY_NAME" "$PLIST"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" "$PLIST"
 
+# Which commit this bundle was built from, so a measurement can prove the
+# installed app is the code under test. An installed app that silently lagged
+# the working tree once cost a night of wrong conclusions. "-dirty" means the
+# tree had uncommitted changes, so the hash alone does not describe the build.
+# `Add` rather than `Set`: the template does not carry the key, and the bundle
+# plist is a fresh copy of it on every build.
+STAMP="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+if [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; then
+    STAMP="$STAMP-dirty"
+fi
+/usr/libexec/PlistBuddy -c "Add :PFBuildStamp string $STAMP" "$PLIST"
+echo "==> Build stamp: $STAMP"
+
 # Ad-hoc ("-") by default. Set CODESIGN_IDENTITY to a self-signed identity to
 # keep the microphone permission across rebuilds — see README.
 # Prefer a stable self-signed identity when one exists — see dev-certificate.sh.
