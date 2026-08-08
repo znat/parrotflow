@@ -450,11 +450,11 @@ struct Config: Decodable, Equatable {
             // only has those cannot say which entries are worth keeping.
             let wroteHeard = terms.filter { $0.value.wroteHeard }.keys.sorted()
             if !wroteHeard.isEmpty {
-                legacy.append("a `heard:` list on"
-                    + " \(wroteHeard.joined(separator: ", ")) is legacy — the"
-                    + " renderings still work and are now searched for by sound"
-                    + " too, but the setting is `pronunciations:`, a list of"
-                    + " `- heard:` entries each with `seen:` and `from:`"
+                legacy.append("renderings on \(wroteHeard.joined(separator: ", "))"
+                    + " are written the old way — a `heard:` list, or a bare list"
+                    + " under the term. They still work and are now searched for"
+                    + " by sound too, but the setting is `pronunciations:`, a list"
+                    + " of `- heard:` entries each with `seen:` and `from:`"
                     + " (correction, mined or calibration)")
             }
 

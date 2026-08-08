@@ -198,7 +198,7 @@ terms:
     heard: [Versailles, Versal]')"
 wants "the old key loads the same list"    "$got" "1 terms in vocabulary.yaml, 1 matched by sound, 2 by rule"
 wants "and is searched for the same way"   "$got" "2 pronunciation(s) searched for by sound"
-wants "the old key is named"               "$got" 'a `heard:` list on Vercel is legacy'
+wants "the old key is named"               "$got" 'renderings on Vercel are written the old way'
 wants "with what to write instead"         "$got" 'the setting is `pronunciations:`'
 
 # The shorthand, and both keys at once. A file mid-migration must not lose the

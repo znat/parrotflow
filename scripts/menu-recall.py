@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Did the true sentence reach the judge, and did the judge take it?
 
-    scripts/menu-recall.py [--floor -5.5] [--limit N] [--runs N]
+    scripts/menu-recall.py [--floor -5.0] [--limit N] [--runs N]
 
 Two numbers, deliberately separate:
 

@@ -403,9 +403,39 @@ actor Vocabulary {
             .flatMap(Float.init) ?? config.vocabulary.decideAbove
     }
 
+    /// How well the spotter has to hear a term before its span is offered.
+    ///
+    /// Raised from -5.5 to -5.0 when pronunciations arrived, and the reason is
+    /// arithmetic rather than taste. A term's spotter score over a span is the
+    /// best of its search targets, so registering fourteen renderings of
+    /// `Praisy` makes it fifteen draws instead of one — every span in every
+    /// clip scores a little higher for that term, including the spans where it
+    /// was never said. The old floor was measured against terms alone and lets
+    /// the extra draws through: on `16-16-25` it admitted `Praisy` over "heard
+    /// by" and "judge", `Ollama` over "idea was to" and `Claude` over
+    /// "decoder", six slots in total, and the judge stage declines past four.
+    /// A clip that was right became a clip with no menu at all.
+    ///
+    /// Measured on `menu-recall.py` with the renderings registered:
+    ///
+    ///     floor   recall   picked
+    ///     -5.5     30/37    27/37    the extra draws cross max_slots
+    ///     -5.2     31/37    26/37
+    ///     -5.0     31/37    27/37    parity, and the plateau starts
+    ///     -4.8     31/37    27/37
+    ///
+    /// -5.0 rather than -4.8 because it is the loose end of the plateau: the
+    /// two score the same here, and the looser one asks less of a speaker whose
+    /// renderings this set does not contain.
+    ///
+    /// -5.0 is not a tightening of what the audio may find. The hit this whole
+    /// PR exists for — `Vercel` over "Versailles" — moves from -5.28 to -2.28
+    /// once the rendering is registered, so it clears either number by a
+    /// distance. What -5.0 cuts is the tail that got there by having more
+    /// draws.
     static var spotterFloor: Float {
         ProcessInfo.processInfo.environment["PARROTFLOW_SPOTTER_FLOOR"]
-            .flatMap(Float.init) ?? -5.5
+            .flatMap(Float.init) ?? -5.0
     }
 
     /// The term as it should be written where this word stood.
