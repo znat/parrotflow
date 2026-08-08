@@ -116,33 +116,58 @@ struct Config: Decodable, Equatable {
         /// pulls a ~98 MB model on first use.
         var acoustic: Bool = false
 
-        /// How close a decoded word must sound to a name before it is replaced,
-        /// unless the name says otherwise.
+        /// How far a decoded word's spelling may sit from a term and still be
+        /// worth a line on the judge's menu. FluidAudio's similarity, where
+        /// 1.0 is the term written out exactly.
         ///
-        /// 0.75 is the measured default on this machine. Below it, ordinary
-        /// words start being overwritten: "vessel" lands 0.67 from "Vercel"
-        /// and "Alama" 0.67 from "Ollama".
-        var minSimilarity: Float = 0.75
+        /// One of the two numbers that replaced the single floor (F1). That
+        /// floor decided both what to look at and what to write, and no value
+        /// did both jobs: at 0.75 only 2 of 20 misheard names were caught, and
+        /// low enough to catch them "in general" became "in Redcrawl". This
+        /// one only decides what to look at. Being offered costs a menu line;
+        /// being missed cannot be recovered downstream at any price.
+        ///
+        /// Shipped untuned. F5's sentences suggest 0.50 is still permissive
+        /// even for a proposal, and measuring that is PR 7's job.
+        var offerBelow: Float = 0.50
+
+        /// How far the audio may argue against a proposal, in nats of raw CTC
+        /// score, before the proposal is dropped instead of offered.
+        ///
+        /// The other of the two numbers. Raw on purpose: the rescorer's own
+        /// margin carries the vocabulary bonus, and deciding on the boosted
+        /// number is how "praise" became `Praisy` (F4). Read by
+        /// `Vocabulary.proposalMargin`.
+        ///
+        /// Generous. `versal` -> `Vercel` is 0.82 against and correct, so the
+        /// gate has to sit well clear of an ordinary near-tie. Also shipped
+        /// untuned.
+        var decideAbove: Float = 3.0
 
         /// One term, and what is known about it.
         ///
-        /// `floor` is the similarity this term needs, overriding the default.
-        /// `off` means never match by sound at all — the honest setting when
-        /// the decoder writes the term and an ordinary word identically.
+        /// `floor: off` means never match by sound at all — the honest setting
+        /// when the decoder writes the term and an ordinary word identically.
         /// Measured here: "Claude" and "cloud" both come back as "cloud", so
-        /// no threshold can separate them.
+        /// no threshold can separate them. That is a switch, not a threshold,
+        /// so the two file-level numbers do not replace it.
         ///
-        /// `heard` is for renderings no floor can reach. "Prezi" is 0.33 from
+        /// A *number* under `floor:` is legacy. It is still honoured, as this
+        /// term's `offer_below`, and `--check-config` says so.
+        ///
+        /// `heard` is for renderings no number can reach. "Prezi" is 0.33 from
         /// "Praisy" and would need a floor that swallowed every "praise"; as an
         /// exact rule it costs nothing and cannot misfire.
         struct Term: Decodable, Equatable {
-            var floor: Float?
+            /// A legacy per-term `floor:` number, read as this term's
+            /// `offer_below`. Nil means the file-level one applies.
+            var offerBelow: Float?
             /// `floor: off` — never matched by sound, only by `heard`.
             var never = false
             var heard: [String] = []
 
-            init(floor: Float? = nil, never: Bool = false, heard: [String] = []) {
-                self.floor = floor
+            init(offerBelow: Float? = nil, never: Bool = false, heard: [String] = []) {
+                self.offerBelow = offerBelow
                 self.never = never
                 self.heard = heard
             }
@@ -152,14 +177,14 @@ struct Config: Decodable, Equatable {
             /// Four shapes, because most terms need none of this:
             ///
             ///     Tasmeen:                              nothing to say
-            ///     Mirza: 0.85                           a floor
+            ///     Mirza: 0.85                           a legacy floor
             ///     Praisy: [Prissy, Pressy]              renderings
             ///     Claude: {floor: off, heard: [cloud]}  both
             init(from decoder: Decoder) throws {
                 if let single = try? decoder.singleValueContainer() {
                     if single.decodeNil() { self.init(); return }
                     if let number = try? single.decode(Float.self) {
-                        self.init(floor: number); return
+                        self.init(offerBelow: number); return
                     }
                     if let listed = try? single.decode([String].self) {
                         self.init(heard: listed); return
@@ -167,6 +192,19 @@ struct Config: Decodable, Equatable {
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 let heard = try c.decodeIfPresent([String].self, forKey: .heard) ?? []
+                // Number first. Yams answers `Bool.self` for `0.85` quite
+                // happily — anything that is not `true`/`yes`/`on` decodes as
+                // `false` — so asking about `off` before asking about the
+                // number read every measured floor as `floor: off` and dropped
+                // the term from sound matching entirely. Silently: a term that
+                // is merely never matched still loads.
+                //
+                // The reverse trap does not exist. `off` is not a number, so
+                // asking for a Float first throws and falls through.
+                if let number = (try? c.decodeIfPresent(Float.self, forKey: .floor)) ?? nil {
+                    self.init(offerBelow: number, heard: heard)
+                    return
+                }
                 // `off` rather than a magic number. The previous spelling was
                 // `1.0`, which reads as maximum strictness and meant the
                 // opposite — never fire at all.
@@ -175,25 +213,42 @@ struct Config: Decodable, Equatable {
                 // `false`, and reading it only as a string threw, which took
                 // the whole file down silently.
                 if let flag = (try? c.decodeIfPresent(Bool.self, forKey: .floor)) ?? nil {
-                    self.init(floor: nil, never: flag == false, heard: heard)
+                    self.init(offerBelow: nil, never: flag == false, heard: heard)
                     return
                 }
                 if let word = (try? c.decodeIfPresent(String.self, forKey: .floor)) ?? nil {
-                    self.init(floor: nil, never: word.lowercased() == "off", heard: heard)
+                    self.init(offerBelow: nil, never: word.lowercased() == "off", heard: heard)
                     return
                 }
-                self.init(
-                    floor: try c.decodeIfPresent(Float.self, forKey: .floor),
-                    heard: heard
-                )
+                self.init(offerBelow: nil, heard: heard)
             }
         }
 
         var terms: [String: Term] = [:]
 
+        /// Legacy keys this file was read with, in words, for `notices()`.
+        ///
+        /// Migration is done here rather than reported here: the file loads
+        /// and behaves, and the sentence explaining what to write instead is
+        /// printed by whoever prints notices. A file nobody edits by hand
+        /// should not fail to load because a key was renamed.
+        var legacy: [String] = []
+
+        /// Numbers the file asked for and did not get, in words, for
+        /// `problems()`.
+        ///
+        /// Refused here rather than reported and used. Nothing downstream
+        /// re-checks them, so a similarity of 85 would silence the whole
+        /// vocabulary on every dictation until somebody happened to run
+        /// `--check-config`. The default is kept instead, and the complaint
+        /// says which number is actually running.
+        var refused: [String] = []
+
         enum CodingKeys: String, CodingKey {
             case acoustic, terms
             case minSimilarity = "min_similarity"
+            case offerBelow = "offer_below"
+            case decideAbove = "decide_above"
         }
 
         init() {}
@@ -204,25 +259,96 @@ struct Config: Decodable, Equatable {
             if let on = try c.decodeIfPresent(Bool.self, forKey: .acoustic) {
                 acoustic = on
             }
-            if let floor = try c.decodeIfPresent(Float.self, forKey: .minSimilarity) {
-                minSimilarity = floor
+            // `min_similarity` was the file-level floor that did both jobs. It
+            // now does one, so it is read as `offer_below` — the number is
+            // kept, the meaning narrows.
+            var asked: (key: String, value: Float)?
+            if let old = try c.decodeIfPresent(Float.self, forKey: .minSimilarity) {
+                asked = ("min_similarity", old)
+                legacy.append("`min_similarity: \(old)` is the old name for"
+                    + " `offer_below:` — same number, and it now only decides"
+                    + " what reaches the menu")
+            }
+            // Written explicitly it wins, whatever the old key said. A file
+            // carrying both is mid-migration and the new key is the intent.
+            if let offered = try c.decodeIfPresent(Float.self, forKey: .offerBelow) {
+                asked = ("offer_below", offered)
+            }
+            // A similarity is 0 to 1 and nothing else can be one. Above 1 no
+            // reading ever reaches the menu; below 0 every span does. Both are
+            // a number in the wrong units, and both look like the vocabulary
+            // being broken rather than like a setting.
+            if let asked {
+                if Self.similarities.contains(asked.value) {
+                    offerBelow = asked.value
+                } else {
+                    refused.append("`\(asked.key): \(asked.value)` is outside 0 to 1 —"
+                        + " it is a similarity, where 1.0 is the term spelled exactly."
+                        + " Running at \(offerBelow)")
+                }
+            }
+            // Nats, and the audio arguing against a reading by a negative
+            // amount is the audio agreeing with it. At or below 0 every
+            // proposal the decoder does not already prefer is dropped before
+            // anyone sees it.
+            if let decided = try c.decodeIfPresent(Float.self, forKey: .decideAbove) {
+                if decided > 0 {
+                    decideAbove = decided
+                } else {
+                    refused.append("`decide_above: \(decided)` would drop every reading"
+                        + " the audio does not already prefer — it is a margin in nats,"
+                        + " and it has to be above 0. Running at \(decideAbove)")
+                }
             }
             terms = try c.decodeIfPresent([String: Term].self, forKey: .terms) ?? [:]
+
+            // The same range, one level down. A legacy per-term floor is still
+            // a similarity, and one in the wrong units takes only its own term
+            // out of reach — which is worse than the file-level case, because
+            // the rest of the vocabulary goes on working and hides it.
+            let wrong = terms
+                .filter { _, entry in entry.offerBelow.map { !Self.similarities.contains($0) } ?? false }
+                .keys.sorted()
+            for name in wrong { terms[name]?.offerBelow = nil }
+            if !wrong.isEmpty {
+                refused.append("`floor:` on \(wrong.joined(separator: ", ")) is outside"
+                    + " 0 to 1 — it is a similarity, where 1.0 is the term spelled"
+                    + " exactly. Running those at \(offerBelow)")
+            }
+
+            let floored = terms.filter { $0.value.offerBelow != nil }.keys.sorted()
+            if !floored.isEmpty {
+                legacy.append("a per-term `floor:` number on"
+                    + " \(floored.joined(separator: ", ")) is legacy — it still"
+                    + " sets what is offered for that term, but the setting is"
+                    + " `offer_below:` at the top of the file."
+                    + " `floor: off` is unaffected and still means never"
+                    + " matched by sound")
+            }
         }
+
+        /// What a similarity may be. FluidAudio's metric is normalised, so
+        /// anything outside this is a number in the wrong units.
+        private static let similarities: ClosedRange<Float> = 0...1
     }
 
-    /// The terms given to the decoder as acoustic context, each with its floor.
+    /// The terms given to the decoder as acoustic context, each with the
+    /// spelling distance at which it is worth offering.
+    ///
+    /// The file-level `offer_below` unless the term carries a legacy `floor:`
+    /// number of its own, which FluidAudio already treats as an override of the
+    /// value passed alongside it.
     ///
     /// Short and non-alphabetic terms are dropped. A four-character term
     /// free-start aligns to almost any run of frames, which is what makes short
     /// terms the over-firing ones, and a name carrying a dot or a digit is not
     /// something the decoder could have produced.
-    var vocabularyTerms: [(text: String, minSimilarity: Float)] {
+    var vocabularyTerms: [(text: String, offerBelow: Float)] {
         vocabulary.terms
             .filter { term, entry in
                 !entry.never && term.count >= 5 && term.allSatisfy(\.isLetter)
             }
-            .map { ($0.key, $0.value.floor ?? vocabulary.minSimilarity) }
+            .map { ($0.key, $0.value.offerBelow ?? vocabulary.offerBelow) }
             .sorted { $0.0 < $1.0 }
     }
 
@@ -1394,6 +1520,10 @@ struct Config: Decodable, Equatable {
             found.append("pipelines: \"\(name)\" is not a configured language, so that pipeline never runs"
                 + " — configured: \(transcription.languages.joined(separator: ", "))")
         }
+        // Numbers `vocabulary.yaml` asked for and did not get. Refused where
+        // they were read, so what runs is the default; said here, because a
+        // setting that does nothing is exactly what this list is for.
+        found += vocabulary.refused.map { "vocabulary: \($0)" }
         found += replacementProblems()
         // A `path:` that named nothing readable. The entry is gone rather than
         // idle — the pipeline step that names it will say so too — and a
@@ -1490,10 +1620,15 @@ struct Config: Decodable, Equatable {
             said.append("vocabulary: \(vocabulary.terms.count) terms in"
                 + " \(ConfigStore.vocabularyURL.lastPathComponent),"
                 + " \(byEar.count) matched by sound, \(rules) by rule")
+            // Spelled out rather than printed as `offer_below 0.5`. The key
+            // names the job; only a sentence says which way the number points.
             if vocabulary.acoustic, !byEar.isEmpty {
-                said.append("vocabulary: by sound at floor \(vocabulary.minSimilarity) — "
-                    + byEar.map { $0.minSimilarity == vocabulary.minSimilarity
-                        ? $0.text : "\($0.text) \($0.minSimilarity)" }
+                said.append("vocabulary: offered at similarity"
+                    + " \(vocabulary.offerBelow) and up, dropped when the audio"
+                    + " argues against it by more than \(vocabulary.decideAbove)"
+                    + " nats — "
+                    + byEar.map { $0.offerBelow == vocabulary.offerBelow
+                        ? $0.text : "\($0.text) \($0.offerBelow)" }
                         .joined(separator: ", "))
             }
             if !vocabulary.acoustic, !byEar.isEmpty {
@@ -1508,6 +1643,9 @@ struct Config: Decodable, Equatable {
                     + " `floor: off` and no `heard`, so nothing can match them")
             }
         }
+        // Said whether or not there are terms: a file can carry the old
+        // file-level key and nothing else.
+        said += vocabulary.legacy.map { "vocabulary: \($0)" }
         return said
     }
 
@@ -1632,9 +1770,7 @@ enum ConfigStore {
     /// What `vocabulary.yaml` says before anything has been learnt.
     ///
     /// Every term is commented out. A vocabulary that arrives with entries in
-    /// it is a vocabulary tuned for somebody else's voice, and the floors are
-    /// the part that cannot be guessed — "Vercel" needs 0.75 on one person and
-    /// would overwrite "vessel" on another.
+    /// it is a vocabulary tuned for somebody else's voice.
     static let defaultVocabularyYAML = """
     # ParrotFlow vocabulary — words you say that the recogniser gets wrong.
     #
@@ -1646,32 +1782,40 @@ enum ConfigStore {
     # DO NOT EDIT UNLESS YOU REALLY KNOW WHAT YOU ARE DOING.
     #
     # This file is learnt while you use the app. Entries arrive when you correct
-    # a term, and the floors are measured from your own voice — not chosen. A
-    # wrong number here does not fail loudly: it silently rewrites words you
-    # meant, in every dictation, until you notice.
+    # a term. If you want to change something, the safe move is to let the app
+    # measure again rather than to pick a number.
     #
-    # If you want to change something, the safe move is to let the app measure
-    # again rather than to pick a number.
+    # Two numbers, and they do different jobs. What a spelling makes worth
+    # looking at and what the audio can veto are different questions, and one
+    # threshold answering both was safe or useful and never both: strict enough
+    # to be safe it caught 2 of 20 misheard names, loose enough to catch them
+    # "in general" became "in Redcrawl".
     #
-    #   floor   how close a word must sound to the term before it is replaced,
-    #           from 0 to 1. Left out, the default below applies. `off` means
-    #           never match by sound — the setting for a term the recogniser
-    #           writes identically to an ordinary word, where no number helps.
-    #   heard   renderings no floor can reach, matched exactly.
+    #   offer_below    how far a word's spelling may sit from the term and
+    #                  still reach the menu, from 0 to 1, where 1.0 is the term
+    #                  spelled exactly. Being offered costs a line the model
+    #                  reads; being missed cannot be undone.
+    #   decide_above   how hard the audio has to argue against a reading, in
+    #                  nats, before it is dropped instead of offered.
+    #
+    # Per term:
+    #
+    #   heard   renderings no number can reach, matched exactly.
+    #   floor   `off` — never match this term by sound, only by `heard`. For a
+    #           term the recogniser writes identically to an ordinary word,
+    #           where no number helps.
 
     # Matching by sound needs a ~98 MB model, pulled on first use.
     acoustic: false
-    min_similarity: 0.75
+    offer_below: 0.50
+    decide_above: 3.0
 
     terms: {}
     #  Tasmeen:                     # nothing close in your speech
-    #  Mirza:
-    #    floor: 0.85                # "Mira" lands at 0.80
     #  Praisy:
-    #    floor: 0.90                # "praise" lands at 0.83
-    #    heard: [Prissy, Pressy]
+    #    heard: [Prissy, Pressy]    # "Prezi" is 0.33 away — no number reaches it
     #  Claude:
-    #    floor: off                 # "cloud" both ways — no floor works
+    #    floor: off                 # "cloud" both ways — no number works
     #    heard: [cloud]
 
     """
