@@ -138,18 +138,31 @@ terms:
 wants "offer_below wins over min_similarity" "$got" "offered at similarity 0.4 and up"
 wants "decide_above is read"                 "$got" "by more than 5.5 nats"
 
-# --- 7. a number in the wrong units is a fault, not a notice --------------
+# --- 7. a number in the wrong units is refused, not just reported ----------
 #
 # Both look exactly like the vocabulary being broken: above 1 nothing ever
 # reaches the menu, at or below 0 nats every reading the decoder does not
-# already prefer is dropped before anyone sees it.
-got="$(complains 'acoustic: true
+# already prefer is dropped before anyone sees it. Nothing downstream
+# re-checks them, so the value has to be refused where it is read — reporting
+# it and running it anyway means every dictation is quietly wrong until
+# somebody happens to run this command.
+body='acoustic: true
 offer_below: 85
 decide_above: 0
 terms:
-  Tasmeen:')"
+  Mirza:
+    floor: 12
+  Tasmeen:'
+got="$(complains "$body")"
 wants "a similarity outside 0 to 1 is refused" "$got" '`offer_below: 85.0` is outside 0 to 1'
-wants "a margin at 0 nats is refused"          "$got" '`decide_above: 0.0` drops every'
+wants "a margin at 0 nats is refused"          "$got" '`decide_above: 0.0` would drop every'
+wants "a per-term floor outside 0 to 1 too"    "$got" '`floor:` on Mirza is outside 0 to 1'
+
+got="$(say "$body")"
+wants "and the defaults are what actually run" "$got" \
+  "offered at similarity 0.5 and up, dropped when the audio argues against it by more than 3.0 nats"
+rejects "the refused per-term number is gone" "$got" "Mirza 12"
+rejects "and it is not called legacy either"  "$got" "is legacy"
 
 printf '\n  %d/%d\n' "$pass" "$total"
 if [ -n "$failed" ]; then

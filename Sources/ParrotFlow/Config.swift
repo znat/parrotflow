@@ -234,6 +234,16 @@ struct Config: Decodable, Equatable {
         /// should not fail to load because a key was renamed.
         var legacy: [String] = []
 
+        /// Numbers the file asked for and did not get, in words, for
+        /// `problems()`.
+        ///
+        /// Refused here rather than reported and used. Nothing downstream
+        /// re-checks them, so a similarity of 85 would silence the whole
+        /// vocabulary on every dictation until somebody happened to run
+        /// `--check-config`. The default is kept instead, and the complaint
+        /// says which number is actually running.
+        var refused: [String] = []
+
         enum CodingKeys: String, CodingKey {
             case acoustic, terms
             case minSimilarity = "min_similarity"
@@ -252,8 +262,9 @@ struct Config: Decodable, Equatable {
             // `min_similarity` was the file-level floor that did both jobs. It
             // now does one, so it is read as `offer_below` — the number is
             // kept, the meaning narrows.
+            var asked: (key: String, value: Float)?
             if let old = try c.decodeIfPresent(Float.self, forKey: .minSimilarity) {
-                offerBelow = old
+                asked = ("min_similarity", old)
                 legacy.append("`min_similarity: \(old)` is the old name for"
                     + " `offer_below:` — same number, and it now only decides"
                     + " what reaches the menu")
@@ -261,12 +272,49 @@ struct Config: Decodable, Equatable {
             // Written explicitly it wins, whatever the old key said. A file
             // carrying both is mid-migration and the new key is the intent.
             if let offered = try c.decodeIfPresent(Float.self, forKey: .offerBelow) {
-                offerBelow = offered
+                asked = ("offer_below", offered)
             }
+            // A similarity is 0 to 1 and nothing else can be one. Above 1 no
+            // reading ever reaches the menu; below 0 every span does. Both are
+            // a number in the wrong units, and both look like the vocabulary
+            // being broken rather than like a setting.
+            if let asked {
+                if Self.similarities.contains(asked.value) {
+                    offerBelow = asked.value
+                } else {
+                    refused.append("`\(asked.key): \(asked.value)` is outside 0 to 1 —"
+                        + " it is a similarity, where 1.0 is the term spelled exactly."
+                        + " Running at \(offerBelow)")
+                }
+            }
+            // Nats, and the audio arguing against a reading by a negative
+            // amount is the audio agreeing with it. At or below 0 every
+            // proposal the decoder does not already prefer is dropped before
+            // anyone sees it.
             if let decided = try c.decodeIfPresent(Float.self, forKey: .decideAbove) {
-                decideAbove = decided
+                if decided > 0 {
+                    decideAbove = decided
+                } else {
+                    refused.append("`decide_above: \(decided)` would drop every reading"
+                        + " the audio does not already prefer — it is a margin in nats,"
+                        + " and it has to be above 0. Running at \(decideAbove)")
+                }
             }
             terms = try c.decodeIfPresent([String: Term].self, forKey: .terms) ?? [:]
+
+            // The same range, one level down. A legacy per-term floor is still
+            // a similarity, and one in the wrong units takes only its own term
+            // out of reach — which is worse than the file-level case, because
+            // the rest of the vocabulary goes on working and hides it.
+            let wrong = terms
+                .filter { _, entry in entry.offerBelow.map { !Self.similarities.contains($0) } ?? false }
+                .keys.sorted()
+            for name in wrong { terms[name]?.offerBelow = nil }
+            if !wrong.isEmpty {
+                refused.append("`floor:` on \(wrong.joined(separator: ", ")) is outside"
+                    + " 0 to 1 — it is a similarity, where 1.0 is the term spelled"
+                    + " exactly. Running those at \(offerBelow)")
+            }
 
             let floored = terms.filter { $0.value.offerBelow != nil }.keys.sorted()
             if !floored.isEmpty {
@@ -278,6 +326,10 @@ struct Config: Decodable, Equatable {
                     + " matched by sound")
             }
         }
+
+        /// What a similarity may be. FluidAudio's metric is normalised, so
+        /// anything outside this is a number in the wrong units.
+        private static let similarities: ClosedRange<Float> = 0...1
     }
 
     /// The terms given to the decoder as acoustic context, each with the
@@ -1468,22 +1520,10 @@ struct Config: Decodable, Equatable {
             found.append("pipelines: \"\(name)\" is not a configured language, so that pipeline never runs"
                 + " — configured: \(transcription.languages.joined(separator: ", "))")
         }
-        // A similarity is 0 to 1 and nothing else can be one. Above 1 no
-        // reading ever reaches the menu and the whole vocabulary goes quiet;
-        // below 0 every span reaches it. Both are a number typed in the wrong
-        // units, and both look like the feature being broken.
-        if vocabulary.offerBelow < 0 || vocabulary.offerBelow > 1 {
-            found.append("vocabulary: `offer_below: \(vocabulary.offerBelow)` is outside 0 to 1"
-                + " — it is a similarity, where 1.0 is the term spelled exactly")
-        }
-        // Nats, and the audio arguing against a reading by a negative amount
-        // is the audio agreeing with it. At or below 0 every proposal the
-        // decoder does not already prefer is dropped before anyone sees it.
-        if vocabulary.decideAbove <= 0 {
-            found.append("vocabulary: `decide_above: \(vocabulary.decideAbove)` drops every"
-                + " reading the audio does not already prefer — it is a margin in nats,"
-                + " and it has to be above 0")
-        }
+        // Numbers `vocabulary.yaml` asked for and did not get. Refused where
+        // they were read, so what runs is the default; said here, because a
+        // setting that does nothing is exactly what this list is for.
+        found += vocabulary.refused.map { "vocabulary: \($0)" }
         found += replacementProblems()
         // A `path:` that named nothing readable. The entry is gone rather than
         // idle — the pipeline step that names it will say so too — and a
