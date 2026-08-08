@@ -50,11 +50,37 @@ enum VoiceStore {
         directory.appendingPathComponent("samples", isDirectory: true)
     }
 
-    /// Cut spans only — a few hundred KB each. Never the whole dictation: the
-    /// clip is already on disk once, and a second copy of it in the config
-    /// directory is an archive nobody asked for.
-    static func samples(for term: String) -> URL {
-        samplesDirectory.appendingPathComponent(term, isDirectory: true)
+    /// What `calibration.yaml` says, in one line, for `--check-config`.
+    ///
+    /// Read rather than parsed. The file is written by
+    /// `scripts/calibrate.py score` and read by a person; the app's interest in
+    /// it is that it exists, when it was measured, and how many terms came out
+    /// with no band — the ones that will never be safe acoustically for this
+    /// speaker whatever the two file-level numbers say. Anything more would be
+    /// a YAML schema, and this is a record rather than a setting.
+    static func calibration() -> (measured: String, terms: Int, closed: Int)? {
+        guard let text = try? String(contentsOf: calibrationURL, encoding: .utf8) else {
+            return nil
+        }
+        var measured = "date not recorded"
+        var terms = 0
+        var closed = 0
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let bare = line.trimmingCharacters(in: .whitespaces)
+            if bare.hasPrefix("#") { continue }
+            if bare.hasPrefix("measured:") {
+                measured = String(bare.dropFirst("measured:".count))
+                    .trimmingCharacters(in: .whitespaces)
+            }
+            // A term is a key indented two spaces under `terms:`; a band is
+            // indented four under a term. Counting keys rather than decoding
+            // keeps this working when the file grows a field.
+            if line.hasPrefix("    band:") {
+                terms += 1
+                if bare.hasSuffix("closed") { closed += 1 }
+            }
+        }
+        return (measured, terms, closed)
     }
 
     /// One rendering, seen once.

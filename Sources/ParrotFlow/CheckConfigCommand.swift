@@ -123,6 +123,16 @@ enum CheckConfigCommand {
                     + "  — `--forget \(entry.term)` drops both")
             }
         }
+        // A closed band is the one measurement that argues with the config: it
+        // says no threshold will ever separate that term for this speaker,
+        // whatever `offer_below` is set to.
+        if let bands = VoiceStore.calibration() {
+            print("  · calibration       measured \(bands.measured), \(bands.terms) term(s)"
+                + (bands.closed > 0
+                    ? ", \(bands.closed) with no band — those want `floor: off`"
+                        + " and pronunciations, not a number"
+                    : ""))
+        }
 
         // Where each body actually came from.
         //
