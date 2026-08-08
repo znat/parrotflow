@@ -108,6 +108,7 @@ is the prototype; `(CTC-vs-CTC: …)` alone is v1.
 | Judge took it | same run | picked 90/127, same run |
 | Before/after | `python3 scripts/before-after.py --runs 3` | 20 fixed / 26 broken / 11 regressed / 70 already right |
 | Judge on cache | `python3 scripts/tune-judge.py` | 41/53 on the 66-menu cache (chance 17.4); 38/53 with `--no-scores` |
+| Judge framings | `python3 scripts/judge-framings.py` | baseline 41/53, and 0/8 of the ordinary-word collision class (F17) |
 | Two-stage (fixed harness) | see PR 2 | 25/28, ceiling 28/28 — on the old 28-menu cache |
 
 Split by class, from the same `--runs 3` run (the plan asks for two totals,
@@ -355,6 +356,93 @@ instead. And the scale's upper half is unreachable — 63% of the 73 score
 lines in the cache have a gap under 1 and the largest is 2.72, because
 `decide_above: 3.0` drops anything the audio argues against more strongly
 before it can reach a menu.
+
+**F17 — the term list is the prior, and the prior is load-bearing (spike,
+2026-08-08).** Ten framings of the judge's question, all prompt-only, all
+scored by `scripts/judge-framings.py` against the same 53 cached menus. The
+prompts themselves, and the cases they turn on, are in
+[judge-framings.md](judge-framings.md).
+Chance is 17.4/53 on every row. **The set tuned on and the set reported on
+are the same 53 cases; there is no held-out set**, so anything inside F16's
+wording spread of ±2 has not moved.
+
+The class this spike was run for is the nine clips PR #68 recorded as
+regressed — an ordinary English word overwritten by a term, waved through by
+the judge. Eight are reachable; `09-35-01` ("the Versailles castle") never
+held the true sentence on its menu. **The shipped prompt gets 0 of those 8.**
+
+| framing | wordings | picked /53 | collision class /8 |
+|---|---|---|---|
+| baseline, the shipped prompt | — | **41** | **0** |
+| no term list | 2 | 36, 38 | 3, 4 |
+| inverted polarity | 3 | 35, 35, 38 | 1, 0, 1 |
+| typed terms, `Redcrawl (a product)` | 1 | 40 | 0 |
+| typed terms + a position rule | 1 | 42 | 2 |
+| the position rule alone, bare list | 1 | 41 | 2 |
+| no term list + the position rule | 1 | 36 | 4 |
+
+*H1 is true and rejected.* Cutting the enumeration wins 5 clips and loses 8,
+for 38/53. It wins exactly what the hypothesis predicts — `14-11-21` "the
+crawl data", `00-14-39` "in general in our data", `15-36-12` "Pretty harsh",
+`11-19-17` "proprietary term", `13-09-46` "praise for shipping" — and every
+one of the 8 it loses is a term that was right, now spelled as something the
+judge can read: `Praisy` → `Prissy` four times, `Prizzi` once and `Prezi`
+once, and `Arexvy` → `RXV`. The eighth (`10-23-28`, a 12-option menu) goes
+the other way and takes a reading that writes `Claude` and `Praisy` into "to
+close that loop … when the user press enters". The list is the only thing
+that tells the judge `Praisy` is a spelling at all.
+
+So the two classes want opposite things from one sentence, and that is the
+finding. No wording of the term list can serve both: it has to be present for
+a name to be spellable and absent for a name to be doubted. This is a
+mechanism to change, not a prompt to reword.
+
+*H2 by polarity is rejected.* Three wordings ported from `rerank-judge.py`'s
+`misheard` family score 35, 35 and 38 against 41, and 1, 0 and 1 of the
+collision class. F14's inversion does not transfer. A reranker scores one
+candidate at a time, so its polarity can be flipped by reading the score
+backwards; a judge that must name one letter has to perform the inversion
+itself, and it is worse at that than at picking.
+
+*H2 by syntax is the only thing that moved the class without paying for it.*
+Adding one paragraph — a name cannot be an infinitive after "to" and does not
+modify a noun like an adjective — scores 41/53 with the bare list and 42/53
+with typed names, and both take 2 of the 8. Typing the names on its own,
+with no position rule, scores 40/53 and 0 of 8, so the labels do nothing and
+the question does the work. The +1 is inside F16's spread and is not a
+result; the 0→2 on the collision class at zero total cost is the only
+signal in this spike.
+
+*The combination adds nothing.* `no-terms` and `typed` cannot be combined at
+all — one deletes the list the other annotates. Cutting the list and adding
+the position rule scores 36/53 and 4 of 8, no better on the class than
+cutting the list alone and 2 worse overall.
+
+*Repeatable.* `baseline`, `typed-slot` and `no-terms-cut` were each run
+twice in separate processes and reproduced exactly — same total, same
+per-case diff. Temperature 0 holds, as PR #68 found.
+
+*Not measured here, and why.* Cloze menus (one blank per uncertain slot,
+typed candidates under each, letters answered per blank) and cloze scored by
+logprob are not prompt changes: `VocabularyJudge` composes whole sentences
+today, so a blank means rewriting how the question is built. Fusion has
+nothing to fuse until a framing produces margins. An `NLTagger` part-of-speech
+signal needs its own accuracy study on lightly punctuated dictation before it
+can be judged as a signal at all. All three are deferred, not rejected.
+
+**Recommendation: ship no prompt change.** Nothing here clears the noise
+floor on 53 tuned cases. The one arm worth carrying forward is the position
+rule, and it should be carried as evidence rather than as a patch — 2 of 8
+is not a fix for a class the judge fails completely.
+
+What the next PR should measure instead is the per-slot question, because the
+conflict this spike measured is per-slot. The term list has to be visible
+where the name is a candidate and invisible where it is not, and a menu of
+whole sentences cannot express that — every option carries every name. A
+cloze menu can: the sentence once, a blank per uncertain span, and under each
+blank only the candidates for that span, typed. That also makes the cost
+linear in slots instead of the product PR 6 had to cap at two. Measure it
+against these same 53 menus before any of it reaches the app.
 
 ---
 
