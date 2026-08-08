@@ -237,8 +237,20 @@ enum VocabularyJudge {
             else { continue }
             let standing = Vocabulary.spans(of: term, in: text, ignoringCase: true)
             guard let before else {
-                for range in standing {
-                    parts.append(Part(range: range, decoded: heard, other: heard, term: term))
+                // No acoustic pass ran, so there is no earlier text to compare
+                // against — `--pipeline`, `--replace`, any path with no audio.
+                // One occurrence is still decidable without it: the rule is in
+                // `changes`, so it fired at least once, and a pre-existing term
+                // would be a second occurrence. More than one and nothing here
+                // can say which, so none are offered.
+                if standing.count == 1 {
+                    parts.append(Part(
+                        range: standing[0], decoded: heard, other: heard, term: term
+                    ))
+                } else if standing.count > 1 {
+                    Log.write("vocabulary judge: \"\(term)\" stands \(standing.count) time(s)"
+                        + " and no acoustic pass ran, so which one \"\(heard)\" became"
+                        + " cannot be told; that reading is not offered")
                 }
                 continue
             }
