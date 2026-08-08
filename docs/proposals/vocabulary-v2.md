@@ -424,12 +424,21 @@ Test-only: no app behaviour changes.
 
 ## PR 3 — proposals, and the judge as a prompt
 
-**Done, 2026-08-08.** Measured on the scratch config described under
-*Measuring* below: recall 31/37, picked 28/37, 0 clips flipped over three runs;
-`before-after.py --runs 3` 18 fixed / 8 broken / 1 regressed, 1 clip flipped;
-`tune-judge.py` 23/26 on a freshly harvested cache of 31 menus (chance
-7.2/26); `grep -c '" 0\.00' tests/judge-menus.json` is 0. Where the build
-differs from the text below:
+**Done, 2026-08-08.** Measured against a scratch config naming the new stage,
+`gemma4:e4b`, nothing else loaded: recall 31/37, picked 28/37, 1 clip flipped
+over three runs; `before-after.py --runs 3` 18 fixed / 8 broken / 1 regressed,
+1 clip flipped; `tune-judge.py` 23/26 on a freshly harvested cache of 31 menus
+(chance 7.4/26); `grep -c '" 0\.00' tests/judge-menus.json` is 0.
+
+The one REGRESSED row is `17-47-45`, and it is a judge error rather than a
+mechanism one: the menu held the true sentence and the model took
+"instead we want to have a Arexvy." over "a retry.". `retry` and `Arexvy` are
+0.46 apart and the audio prefers `retry` by 0.25 nats, so the proposal is
+correct at a 0.50 offer floor and the sentence is the only thing that can
+refuse it. That floor is PR 4's, and the prompt that reads the sentence is
+PR 7's. Recorded here rather than tuned.
+
+Where the build differs from the text below:
 
 - **The judge asks through `LocalLLM.complete`**, which is `/api/generate` with
   a system and a user message. `menu.py` used `/api/chat`, and so do the

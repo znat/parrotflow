@@ -7,13 +7,13 @@
    "Oh I get it. So yes, instead we want to have a retry. And then if the retry fails, we want the Redcrawl to fail.",
    "Oh I get it. So yes, instead we want to have a retry. And then if the Arexvy fails, we want the crawl to fail.",
    "Oh I get it. So yes, instead we want to have a retry. And then if the Arexvy fails, we want the Redcrawl to fail.",
-   "Oh I get it. So yes, instead we want to have a Arexvy And then if the retry fails, we want the crawl to fail.",
-   "Oh I get it. So yes, instead we want to have a Arexvy And then if the retry fails, we want the Redcrawl to fail.",
-   "Oh I get it. So yes, instead we want to have a Arexvy And then if the Arexvy fails, we want the crawl to fail.",
-   "Oh I get it. So yes, instead we want to have a Arexvy And then if the Arexvy fails, we want the Redcrawl to fail."
+   "Oh I get it. So yes, instead we want to have a Arexvy. And then if the retry fails, we want the crawl to fail.",
+   "Oh I get it. So yes, instead we want to have a Arexvy. And then if the retry fails, we want the Redcrawl to fail.",
+   "Oh I get it. So yes, instead we want to have a Arexvy. And then if the Arexvy fails, we want the crawl to fail.",
+   "Oh I get it. So yes, instead we want to have a Arexvy. And then if the Arexvy fails, we want the Redcrawl to fail."
   ],
-  "terms": "Arexvy, Redcrawl",
-  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"retry.\" -10.26   \"Arexvy\" -9.80   — \"retry.\" heard 0.5 less clearly\n  \"retry\" -7.55   \"Arexvy\" -7.80   — \"Arexvy\" heard 0.3 less clearly\n  \"crawl\" -6.81   \"Redcrawl\" -8.24   — \"Redcrawl\" heard 1.4 less clearly"
+  "terms": "Arexvy, Arexvy., Redcrawl",
+  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"retry.\" -10.26   \"Arexvy.\" -9.80   — \"retry.\" heard 0.5 less clearly\n  \"retry\" -7.55   \"Arexvy\" -7.80   — \"Arexvy\" heard 0.3 less clearly\n  \"crawl\" -6.81   \"Redcrawl\" -8.24   — \"Redcrawl\" heard 1.4 less clearly"
  },
  {
   "wav": "parrotflow-2026-08-07T17-39-27.wav",
@@ -121,7 +121,7 @@
    "I changed settings in Vercel."
   ],
   "terms": "Vercel",
-  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"Versal.\" -8.24   \"Vercel\" -9.72   — \"Vercel\" heard 1.5 less clearly"
+  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"Versal.\" -8.24   \"Vercel.\" -9.72   — \"Vercel.\" heard 1.5 less clearly"
  },
  {
   "wav": "parrotflow-2026-08-07T17-19-57.wav",
@@ -191,17 +191,14 @@
   "said": "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both praise and Praisy.",
   "menu": [
    "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both praise and praise.",
-   "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both praise and Praisy",
-   "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both praise and Praisy's",
+   "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both praise and Praisy.",
    "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both Praisy praise.",
-   "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both Praisy Praisy",
-   "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both Praisy Praisy's",
+   "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both Praisy Praisy.",
    "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both Praisy's praise.",
-   "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both Praisy's Praisy",
-   "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both Praisy's Praisy's"
+   "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both Praisy's Praisy."
   ],
-  "terms": "Praisy, Praisy's",
-  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise\" -10.08   \"Praisy\" -9.58   — \"praise\" heard 0.5 less clearly\n  \"praise.\" -5.67   \"Praisy\" -5.47   — \"praise.\" heard 0.2 less clearly"
+  "terms": "Praisy, Praisy's, Praisy.",
+  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise\" -5.57   \"Praisy\" -8.02   — \"Praisy\" heard 2.5 less clearly\n  \"praise.\" -3.57   \"Praisy.\" -4.24   — \"Praisy.\" heard 0.7 less clearly"
  },
  {
   "wav": "parrotflow-2026-08-07T16-12-33.wav",
@@ -218,11 +215,10 @@
   "said": "So the acoustic pass found praise.",
   "menu": [
    "So the acoustic pass found praise.",
-   "So the acoustic pass found Praisy",
-   "So the acoustic pass found Praisy's"
+   "So the acoustic pass found Praisy."
   ],
-  "terms": "Praisy, Praisy's",
-  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise.\" -4.61   \"Praisy\" -3.47   — \"praise.\" heard 1.1 less clearly"
+  "terms": "Praisy.",
+  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise.\" -4.61   \"Praisy.\" -3.47   — \"praise.\" heard 1.1 less clearly"
  },
  {
   "wav": "parrotflow-2026-08-07T16-09-50.wav",
@@ -250,24 +246,21 @@
    "Let's Praisy's work Praisy has done."
   ],
   "terms": "Praisy, Praisy's",
-  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise\" -8.29   \"Praisy\" -8.75   — \"Praisy\" heard 0.5 less clearly\n  \"Prissy\" -9.32   \"Praisy\" -8.27   — \"Prissy\" heard 1.1 less clearly"
+  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise\" -8.03   \"Praisy\" -9.45   — \"Praisy\" heard 1.4 less clearly\n  \"Prissy\" -8.33   \"Praisy\" -6.99   — \"Prissy\" heard 1.3 less clearly"
  },
  {
   "wav": "parrotflow-2026-08-07T16-09-15.wav",
   "said": "Let's praise the work Praisy has done",
   "menu": [
    "Let's praise the work Priss.y has done",
-   "Let's praise the work Praisy's done",
    "Let's praise the work Praisy has done",
    "Let's Praisy work Priss.y has done",
-   "Let's Praisy work Praisy's done",
    "Let's Praisy work Praisy has done",
    "Let's Praisy's work Priss.y has done",
-   "Let's Praisy's work Praisy's done",
    "Let's Praisy's work Praisy has done"
   ],
   "terms": "Praisy, Praisy's",
-  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise\" -7.23   \"Praisy\" -7.11   — \"praise\" heard 0.1 less clearly\n  \"Priss.y\" -8.23   \"Praisy\" -7.57   — \"Priss.y\" heard 0.7 less clearly"
+  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise\" -7.26   \"Praisy\" -7.09   — \"praise\" heard 0.2 less clearly\n  \"Priss.y\" -7.61   \"Praisy\" -7.54   — \"Priss.y\" heard 0.1 less clearly"
  },
  {
   "wav": "parrotflow-2026-08-07T16-09-06.wav",
@@ -277,7 +270,7 @@
    "Praisy d did an amazing job."
   ],
   "terms": "Praisy",
-  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"Prissy\" -13.23   \"Praisy\" -11.97   — \"Prissy\" heard 1.3 less clearly"
+  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"Prissy\" -13.08   \"Praisy\" -11.84   — \"Prissy\" heard 1.2 less clearly"
  },
  {
   "wav": "parrotflow-2026-08-07T16-09-00.wav",
@@ -339,13 +332,13 @@
   "menu": [
    "So why? So I said praise, P-R-A-I-S-E. Why wasn't it considered as a term and why was it replaced by Praisy?",
    "So why? So I said praise, P-R-A-I-S-E. Why wasn't it considered as a term and why was it Praisy by Praisy?",
-   "So why? So I said Praisy P-R-A-I-S-E. Why wasn't it considered as a term and why was it replaced by Praisy?",
-   "So why? So I said Praisy P-R-A-I-S-E. Why wasn't it considered as a term and why was it Praisy by Praisy?",
-   "So why? So I said Praisy's P-R-A-I-S-E. Why wasn't it considered as a term and why was it replaced by Praisy?",
-   "So why? So I said Praisy's P-R-A-I-S-E. Why wasn't it considered as a term and why was it Praisy by Praisy?"
+   "So why? So I said Praisy, P-R-A-I-S-E. Why wasn't it considered as a term and why was it replaced by Praisy?",
+   "So why? So I said Praisy, P-R-A-I-S-E. Why wasn't it considered as a term and why was it Praisy by Praisy?",
+   "So why? So I said Praisy's, P-R-A-I-S-E. Why wasn't it considered as a term and why was it replaced by Praisy?",
+   "So why? So I said Praisy's, P-R-A-I-S-E. Why wasn't it considered as a term and why was it Praisy by Praisy?"
   ],
-  "terms": "Praisy, Praisy's",
-  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise,\" -3.67   \"Praisy\" -4.93   — \"Praisy\" heard 1.3 less clearly"
+  "terms": "Praisy, Praisy's,, Praisy,",
+  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"praise,\" -3.67   \"Praisy,\" -4.93   — \"Praisy,\" heard 1.3 less clearly"
  },
  {
   "wav": "parrotflow-2026-08-07T15-37-32.wav",
@@ -411,6 +404,6 @@
    "Praisy did a great job."
   ],
   "terms": "Praisy",
-  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"Prissy\" -8.59   \"Praisy\" -7.73   — \"Prissy\" heard 0.9 less clearly"
+  "scores": "\n\nHow clearly the recogniser heard each spelling over that stretch of\naudio. Closer to zero is clearer, and the vocabulary's own bonus has been\ntaken out, so the two are comparable.\n\n  \"Prissy\" -10.85   \"Praisy\" -9.58   — \"Prissy\" heard 1.3 less clearly"
  }
 ]

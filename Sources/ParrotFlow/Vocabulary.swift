@@ -551,13 +551,17 @@ actor Vocabulary {
                     format: "%@ -> %@ @ %.2f/%.2f",
                     change.originalWord, term, change.originalScore, verdict.raw
                 ))
-                let inflected = Self.inflected(term, like: change.originalWord)
-                let holds = verdict.applied
-                    ? inflected + Self.trailingMarks(of: String(text[range]))
-                    : String(text[range])
+                // The reading carries the span's punctuation, applied or not.
+                // The rescorer's word is the whole token, so "retry." replaced
+                // by "Arexvy" costs the sentence its full stop — and on a menu
+                // that reads as a reading nobody could have said: "we want to
+                // have a Arexvy And then". A judge should never be offered one.
+                let reading = Self.inflected(term, like: change.originalWord)
+                    + Self.trailingMarks(of: String(text[range]))
+                let holds = verdict.applied ? reading : String(text[range])
                 guard let placed = moved(range, holding: holds) else { continue }
                 proposals.append(Proposal(
-                    heard: change.originalWord, term: inflected, range: placed,
+                    heard: change.originalWord, term: reading, range: placed,
                     heardScore: change.originalScore, termScore: verdict.raw,
                     bonus: verdict.bonus, applied: verdict.applied
                 ))
@@ -578,7 +582,8 @@ actor Vocabulary {
                         + String(format: " (span %.2f)", Self.gluedSimilarity(span.heard, span.term))
                 )
                 proposals.append(Proposal(
-                    heard: span.heard, term: span.term, range: placed,
+                    heard: span.heard,
+                    term: span.term + Self.trailingMarks(of: span.heard), range: placed,
                     heardScore: nil, termScore: nil, bonus: nil, applied: false
                 ))
             }
@@ -786,7 +791,13 @@ actor Vocabulary {
             for stop in [range.upperBound] + ends {
                 let phrase = String(text[range.lowerBound..<stop])
                 guard !phrase.isEmpty else { continue }
-                for reading in [term, term + "'s"] {
+                // A possessive owns the word after it, so a span that ends the
+                // sentence cannot be one. Measured: `Praisy's` was offered at a
+                // full stop — "it would be both praise and Praisy's." — and the
+                // judge took it over the reading that was right.
+                let ownsSomething = !phrase.contains(where: { ".?!".contains($0) })
+                    && stop < text.endIndex
+                for reading in ownsSomething ? [term, term + "'s"] : [term] {
                     guard phrase.lowercased() != reading.lowercased(),
                           gluedSimilarity(phrase, reading) >= widerSpanFloor,
                           !wider.contains(where: {
