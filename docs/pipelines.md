@@ -55,6 +55,12 @@ uncertain, builds every sentence the readings allow, asks the model for a
 letter, and looks the letter up. The model never writes the transcript, so it
 cannot tidy the grammar on the way past.
 
+A rule in `replacements:` is offered back too, so a name a rule wrote for a
+word you meant literally can be undone. The app works out which occurrences the
+rule wrote by comparing the transcript before and after it. When two rules
+write the same term into one sentence that comparison cannot say which is
+which, and then neither is offered — the log says so.
+
 `when: vocabulary.count > 0` is not optional in practice. Without it the stage
 costs a model call on every dictation, including the ones where nothing was
 uncertain.

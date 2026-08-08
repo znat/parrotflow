@@ -425,10 +425,10 @@ Test-only: no app behaviour changes.
 ## PR 3 — proposals, and the judge as a prompt
 
 **Done, 2026-08-08.** Measured against a scratch config naming the new stage,
-`gemma4:e4b`, nothing else loaded: recall 31/37, picked 28/37, 1 clip flipped
-over three runs; `before-after.py --runs 3` 18 fixed / 8 broken / 1 regressed,
-1 clip flipped; `tune-judge.py` 23/26 on a freshly harvested cache of 31 menus
-(chance 7.4/26); `grep -c '" 0\.00' tests/judge-menus.json` is 0.
+`gemma4:e4b`, nothing else loaded: recall 31/37, picked 27/37, no clip flipped
+over three runs; `before-after.py --runs 3` 17 fixed / 9 broken / 1 regressed,
+no clip flipped; `tune-judge.py` 22/26 on a freshly harvested cache of 31 menus
+(chance 7.6/26); `grep -c '" 0\.00' tests/judge-menus.json` is 0.
 
 The one REGRESSED row is `17-47-45`, and it is a judge error rather than a
 mechanism one: the menu held the true sentence and the model took
@@ -466,6 +466,14 @@ Where the build differs from the text below:
   prompt moved from `examples/transforms/verify_names/menu.md` to
   `examples/prompts/verify_names.md`; `tune-judge.py` and `rerank-judge.py`
   follow it.
+- **A rule only offers back the words it actually rewrote.** `replacements`
+  publishes no positions, so the transcript as the acoustic pass returned it is
+  used to tell a rule's substitution from a term the decoder had already
+  written. Without it, an already-correct term got a slot whose *head* reading
+  was the rule's source spelling — a fabricated "what the decoder wrote", in
+  the position the model agrees with most readily. This narrows the documented
+  limitation rather than removing it: two rules writing one term into one
+  sentence still cannot be told apart, and then nothing is offered.
 - **Pronunciations are not ported.** Registering a `heard:` rendering as a
   `CustomVocabularyTerm` is PR 5, so the spotter here searches for the terms
   only. That is why `Versailles` still reaches `Vercel` at −5.28 rather than
