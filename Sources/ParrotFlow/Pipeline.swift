@@ -296,9 +296,12 @@ struct Pipeline: Equatable, Codable {
         for step in steps where step.stage == .transform && (step.transform ?? "").isEmpty {
             problems.append("a prompt stage names no prompt — write `- prompt: <name>`")
         }
-        for step in steps where step.stage == .vocabulary && (step.prompt ?? "").isEmpty {
-            problems.append("a vocabulary stage names no prompt file"
-                + " — write `- vocabulary: <file.md>`")
+        for step in steps where step.stage == .vocabulary {
+            if (step.prompt ?? "").isEmpty {
+                problems.append("a vocabulary stage names no prompt file"
+                    + " — write `- vocabulary: <file.md>`")
+            }
+            problems += step.caps?.problems ?? []
         }
         problems += vocabularyOrderProblems()
         // Which namespaces a condition on this step is allowed to read: the

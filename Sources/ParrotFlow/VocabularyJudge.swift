@@ -51,6 +51,27 @@ enum VocabularyJudge {
         var perSlot = 3
 
         static let standard = Caps()
+
+        /// What the alphabet allows. The menu is lettered, so a 27th reading
+        /// would be a second `A` and the reply could not name it.
+        static let letterCeiling = 26
+
+        /// What is wrong with these numbers, in the words `--check-config`
+        /// uses. A cap of zero silences the stage on every transcript, which
+        /// reads as the judge being broken rather than as a number being wrong.
+        var problems: [String] {
+            var found: [String] = []
+            for (name, value) in [
+                ("max_slots", slots), ("max_readings", readings), ("max_per_slot", perSlot),
+            ] where value < 1 {
+                found.append("vocabulary: \(name) is \(value) — it has to be at least 1")
+            }
+            if readings > Self.letterCeiling {
+                found.append("vocabulary: max_readings is \(readings), and the menu is"
+                    + " lettered — \(Self.letterCeiling) is the most that can be named")
+            }
+            return found
+        }
     }
 
     /// One place in the sentence still in question, and the readings of it.
@@ -308,10 +329,16 @@ enum VocabularyJudge {
     static func readings(
         in text: String, from slots: [Slot], caps: Caps
     ) -> (sentences: [String], choices: [[Int]], slots: [Slot]) {
+        // The alphabet is the hard ceiling whatever the config says: a 27th
+        // reading would be a second `A`, and the reply could not name it. The
+        // trim below cannot always get under the cap on its own — it stops at
+        // two readings a slot, so five binary slots is thirty-two menus and no
+        // trimming left to do — so the enumeration is bounded as well.
+        let ceiling = max(1, min(caps.readings, Caps.letterCeiling))
         var trimmed = slots
         while true {
             let total = trimmed.reduce(1) { $0 * $1.options.count }
-            guard total > caps.readings, !trimmed.isEmpty else { break }
+            guard total > ceiling, !trimmed.isEmpty else { break }
             // The first of the widest, not the last: the leftmost slot is the
             // one a reader meets first, and Swift's `max(by:)` picks the last
             // of equal elements.
@@ -346,6 +373,7 @@ enum VocabularyJudge {
                 sentences.append(candidate)
                 choices.append(combination)
             }
+            if sentences.count >= ceiling { break }
             var index = trimmed.count - 1
             while index >= 0 {
                 combination[index] += 1
@@ -413,11 +441,18 @@ enum VocabularyJudge {
     /// The letter the reply names, read loosely.
     ///
     /// A model that answers "B." or "Option B" has decided and formatted it
-    /// badly, and refusing that is refusing a correct answer. The first letter
-    /// that *names an option* wins: taking the first letter of any kind read
-    /// "The answer is C" as A.
+    /// badly, and refusing that is refusing a correct answer.
+    ///
+    /// A bare leading letter wins outright, which is what almost every reply
+    /// is. Otherwise the first letter that *names an option* wins: taking the
+    /// first letter of any kind read "The answer is C" as A.
     static func chosen(_ reply: String, of count: Int) -> Int? {
-        for character in reply.uppercased() {
+        let upper = reply.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if let first = upper.first, let index = letters.firstIndex(of: first), index < count,
+           upper.dropFirst().first.map({ !$0.isLetter }) ?? true {
+            return index
+        }
+        for character in upper {
             guard let index = letters.firstIndex(of: character) else { continue }
             if index < count { return index }
         }
