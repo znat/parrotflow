@@ -354,7 +354,8 @@ def main():
             print(line)
         return 0
 
-    names = list(FRAMINGS) if args.framing == "all" else args.framing.split(",")
+    names = (list(FRAMINGS) if args.framing == "all"
+             else [n.strip() for n in args.framing.split(",") if n.strip()])
     for name in names:
         if name not in FRAMINGS:
             print(f"✗ no framing {name!r}; --list shows them all")
@@ -366,7 +367,8 @@ def main():
     print(f"\n  {len(cases)} reachable menus, {unreachable} never held the answer."
           f"  Judge {args.model}, temperature 0.")
     print(f"  Chance is {chance:.1f}/{len(cases)} — half these menus hold two options (F13).")
-    print("  The same 53 cases are tuned on and reported on. There is no held-out set.\n")
+    print(f"  The same {len(cases)} cases are tuned on and reported on."
+          " There is no held-out set.\n")
 
     results = {}
     for name in names:
@@ -390,22 +392,21 @@ def main():
             print(f"  {'':<16} -{len(lost)} {' '.join(lost) or '-'}")
 
     print(f"\n  the ordinary-word collision class — {len(COLLISIONS)} clips PR #68 recorded\n")
-    header = "  " + f"{'clip':<10}{'what collided':<40}"
-    print(header + "".join(f"{n[:9]:<10}" for n in names))
-    present = {c["wav"][22:-4] for c in cases}
+    print("  " + f"{'clip':<10}{'what collided':<44}"
+          + "".join(f"{n[:9]:<10}" for n in names))
+    # The stamp is the clip's time, which is what every finding cites. A clip
+    # that never held its true sentence is not in `cases` at all, and saying so
+    # is the point: it cannot be scored by any framing.
+    at_stamp = {c["wav"][22:-4]: c["wav"] for c in cases}
     for stamp, what in COLLISIONS.items():
-        if stamp not in present:
-            print(f"  {stamp:<10}{what:<40}" + "unreachable — never on the menu")
-            continue
-        wav = next(c["wav"] for c in cases if c["wav"][22:-4] == stamp)
-        marks = "".join(f"{'   ✓':<10}" if results[n][wav][0] else f"{'   ✗':<10}"
-                        for n in names)
-        print(f"  {stamp:<10}{what:<40}{marks}")
-    scored = [s for s in COLLISIONS if s in present]
+        wav = at_stamp.get(stamp)
+        marks = ("unreachable — never on the menu" if wav is None else
+                 "".join(f"{'   ✓' if results[n][wav][0] else '   ✗':<10}" for n in names))
+        print(f"  {stamp:<10}{what:<44}{marks}")
+    scored = [at_stamp[s] for s in COLLISIONS if s in at_stamp]
     print()
     for name in names:
-        got = sum(results[name][next(c['wav'] for c in cases if c['wav'][22:-4] == s)][0]
-                  for s in scored)
+        got = sum(results[name][wav][0] for wav in scored)
         print(f"  {name:<16} {got}/{len(scored)} of the collision class")
 
     if args.json:
