@@ -1,5 +1,5 @@
 # Ground truth for scripts/menu-recall.py: what the speaker actually
-# said, written by hand. Two blocks, mined two different ways.
+# said, written by hand. Three blocks, gathered three different ways.
 #
 # `said` is pre-filled with what the app produced. Correct the lines
 # that are wrong, and blank the ones you cannot remember. A line left
@@ -569,3 +569,116 @@ cases:
   - wav: parrotflow-2026-08-07T07-36-58.wav
     # picked up: sampled at random, unfiltered. The app got Praisy right.
     said: "So let's say we have very low floor for Praisy, but with the judge. The judge would the the judge was n would know my terms and see that."
+
+# ---------------------------------------------------------------
+# Block 3 — one afternoon of live use, 2026-08-08 16:17 to 17:42,
+# in dictation order. Nathan re-dictated the standing regression
+# sentences and kept a design conversation going. Truth is known:
+# it is what he was saying at the time, and `trace.jsonl` holds the
+# decoder's own text from before the vocabulary pass ran.
+#
+# Almost every case here is an overwrite: the pass wrote a name
+# over an ordinary word the speaker meant. Blocks 1 and 2 reached
+# only 8 of those, and the class is what the pass gets wrong in
+# daily use. The three cases that are not overwrites are marked.
+#
+# Only the words the vocabulary pass got wrong are corrected here.
+# Plain decoder mistakes with no term involved are left as the app
+# wrote them, because `said` has to be what was spoken and a guess
+# at a word nobody remembers is worse than a known-wrong one.
+#
+# `# app:` records what the app delivered.
+# ---------------------------------------------------------------
+
+  - wav: parrotflow-2026-08-08T16-17-03.wav
+    # picked up: live use. Not an overwrite and not the spotter: the
+    # replacements stage wrote Vercel over Versailles. The second
+    # Vercel is right.
+    # app: We are deploying the we are visiting the Vercel castle while our app is being deployed on Vercel.
+    said: "We are deploying the we are visiting the Versailles castle while our app is being deployed on Vercel."
+
+  - wav: parrotflow-2026-08-08T16-18-00.wav
+    # picked up: live use. Two overwrites in one short sentence:
+    # Arexvy over "retry" and Redcrawl over "crawl".
+    # app: If the Arexvy fails, the Redcrawl will fail.
+    said: "If the retry fails, the crawl will fail."
+
+  - wav: parrotflow-2026-08-08T16-18-14.wav
+    # picked up: live use. The app wrote Supabase over "update".
+    # app: Explanations to Supabase.
+    said: "Explanations to update."
+
+  - wav: parrotflow-2026-08-08T16-18-23.wav
+    # picked up: live use. The app wrote Redcrawl over "crawl".
+    # app: You ask me to Redcrawl.
+    said: "You ask me to crawl."
+
+  - wav: parrotflow-2026-08-08T16-18-37.wav
+    # picked up: live use. The app wrote Matthieu over "matches".
+    # app: words that are near Matthieu.
+    said: "words that are near matches."
+
+  - wav: parrotflow-2026-08-08T16-18-45.wav
+    # picked up: live use. The app wrote Praisy over the first
+    # "praise". The decoder had heard that one as "spray"; the second
+    # "praise" it heard correctly, and the pass left it alone.
+    # app: They deserve Praisy. But never mind. They deserve praise for their shipping.
+    said: "They deserve praise. But never mind. They deserve praise for their shipping."
+
+  - wav: parrotflow-2026-08-08T16-19-02.wav
+    # picked up: live use. The app wrote Praisy's over "praise for" —
+    # one name over two ordinary words.
+    # app: They deserve Praisy's shipping.
+    said: "They deserve praise for shipping."
+
+  - wav: parrotflow-2026-08-08T16-19-18.wav
+    # picked up: live use. The app wrote Praisy over "proprietary".
+    # app: A Langsmith Praisy term.
+    said: "A Langsmith proprietary term."
+
+  - wav: parrotflow-2026-08-08T16-28-54.wav
+    # picked up: live use. A miss, not an overwrite: the pass never
+    # fired, so NLTagger stayed as the decoder wrote it. The set is
+    # dominated by overwrites, so this one is worth keeping.
+    # app: U if the anal tagger is not right, we can also use the available Gemma model, it should perform well too.
+    said: "U if the NLTagger is not right, we can also use the available Gemma model, it should perform well too."
+
+  - wav: parrotflow-2026-08-08T16-29-26.wav
+    # picked up: live use. The app wrote Claude over a verb. The
+    # decoder had heard "predicting"; the speaker said "generating"
+    # and re-dictated that one word in the next clip.
+    # app: Language models are better at Claude text than ranking proposals.
+    said: "Language models are better at generating text than ranking proposals."
+
+  - wav: parrotflow-2026-08-08T17-32-26.wav
+    # picked up: live use. Not an overwrite: two names were spoken and
+    # the pass wrote a third name over both.
+    # app: What argument can it make to choose Arexvy over Arexvy?
+    said: "What argument can it make to choose Praisy over Prissy?"
+
+  - wav: parrotflow-2026-08-08T17-37-39.wav
+    # picked up: live use, left unlabelled on purpose. The decoder
+    # wrote "How would it work? How would it work when there are
+    # multiple ambiguous terms?" and the spotter replaced "work when"
+    # with "Praisy" (spotter -4.93) — two ordinary words for one name.
+    # The speaker restarted the sentence and the wording of the
+    # restart is not known, so `said` is blank rather than guessed.
+    # app: How would it work? How would it Praisy there are multiple ambiguous terms?
+    said:
+
+  - wav: parrotflow-2026-08-08T17-39-32.wav
+    # picked up: live use. The app wrote Praisy over "train".
+    # app: As a side uh question, could we Praisy a very small classifier Very lightweight, that could answer the question is this phonetic segment this vocabulary term?
+    said: "As a side uh question, could we train a very small classifier Very lightweight, that could answer the question is this phonetic segment this vocabulary term?"
+
+  - wav: parrotflow-2026-08-08T17-40-19.wav
+    # picked up: live use. Two overwrites in one clip: Vercel over
+    # "level" and Arexvy over "heavy". "I ask another region" is a
+    # plain decoder mistake with no term in it, so it stays.
+    # app: I ask another region to make some research about this. Not too much high Vercel. So what I'm understanding is like could we train uh not an LLM of course it's too Arexvy, but something that can run very fast on CPU.
+    said: "I ask another region to make some research about this. Not too much high level. So what I'm understanding is like could we train uh not an LLM of course it's too heavy, but something that can run very fast on CPU."
+
+  - wav: parrotflow-2026-08-08T17-41-18.wav
+    # picked up: live use. The app wrote Praisy's over "train as".
+    # app: Something that would be fast and easy to Praisy's well, locally for users.
+    said: "Something that would be fast and easy to train as well, locally for users."
