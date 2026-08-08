@@ -343,7 +343,8 @@ printf '%s\n' '{"at":"2026-08-07T15:21:19","term":"Praisy","heard":"Prissy","fro
 : > "$WORK/voice/samples/Praisy/00-prissy.wav"
 got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --forget Praisy 2>/dev/null)"
 wants "an unreachable shape is refused" "$got" "still has 2 pronunciation(s)"
-wants "and it says nothing else moved"  "$got" "Nothing else was touched either"
+wants "and it says nothing else moved"  "$got" "voice/ was left alone"
+wants "and that none came out"          "$got" "and none came out"
 got="$(cat "$WORK/voice/observations.jsonl")"
 wants "the observations are still there" "$got" '"term":"Praisy"'
 total=$((total + 1))

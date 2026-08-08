@@ -30,9 +30,16 @@ enum ForgetCommand {
             let renderings = try ConfigWriter.forgetPronunciations(of: name)
             let after = pronunciations(of: name)
             if after > 0 {
+                // Said precisely, because the two cases want different things
+                // of the reader: nothing came out, or some did and the rest is
+                // written in a shape the edit cannot reach.
                 print("✗ \(name) still has \(after) pronunciation(s) in"
-                    + " \(ConfigStore.vocabularyURL.lastPathComponent) and nothing was"
-                    + " removed from it. Nothing else was touched either."
+                    + " \(ConfigStore.vocabularyURL.lastPathComponent)"
+                    + (renderings > 0
+                        ? ", and \(renderings) came out — the rest is written in a shape"
+                            + " this cannot edit."
+                        : " and none came out.")
+                    + " voice/ was left alone."
                     + " Edit the entry by hand, or report the shape of it.")
                 Log.write("forget: \(name) — \(after) pronunciation(s) survived the"
                     + " edit (\(before) before, \(renderings) reported removed);"
