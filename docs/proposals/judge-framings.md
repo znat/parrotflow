@@ -579,3 +579,150 @@ patch.
    should be shipped. That is a gap for `menu-cases.yaml` to fill.
 
 Recorded as F18 in [vocabulary-v2.md](vocabulary-v2.md).
+
+---
+
+# Round 4 — is the score block informative?
+
+**The acoustic evidence is decoration. Argmax on the raw score is 28/57
+spans, and the constant "keep what the decoder wrote" is 34/57. A predictor
+that loses to a constant carries no signal.**
+
+Rounds 1-3 all rewrote the judge's question. The score block is the other half
+of what the judge is given, and nobody had measured it. This round measures it
+alone, with no model call anywhere: `scripts/gap-signal.py` is arithmetic over
+`tests/judge-menus.json`.
+
+53 reachable menus, **77 uncertain spans**. 57 carry a score line, 20 carry
+none. Gaps run 0.01 to 2.72 nats and 40 of 57 are under 1 nat. **No span in
+the cache reaches the shipped `decide_above: 3.0`** — the threshold the prompt
+tells the judge about is one nothing crosses.
+
+## Base rates — 57 scored spans
+
+| policy | right | |
+|---|---|---|
+| argmax raw score | 28/57 | 49% |
+| **keep what the decoder wrote** | **34/57** | **60%** |
+| always write the vocabulary term | 23/57 | 40% |
+| guess a reading at random | 23.9/57 | 42% |
+
+Argmax beats a coin flip by 7 points and loses to doing nothing by 11. On 4 of
+the 57 the score block names a winner the slot cannot act on — a merged span
+whose readings all hold the same spelling, like `Praisy Mathieu's` against
+`Praisy's Mathieu's`. Counting only the 53 it can decide, argmax is still
+28/53.
+
+Over all 77 spans, keeping what the decoder wrote is right 47/77.
+
+## 1. Does the gap predict correctness?
+
+Buckets 2-4 and 4+ are merged into 2+, because nothing exceeds 2.72.
+
+| \|gap\| | spans | argmax right | keep decoded |
+|---|---|---|---|
+| 0 to 0.5 | 26 | 12/26 | 16/26 |
+| 0.5 to 1 | 14 | 6/14 | 6/14 |
+| 1 to 2 | 11 | 7/11 | 6/11 |
+| 2+ | 6 | 3/6 | 6/6 |
+
+**A 2-nat gap is no more reliable than a 0.1-nat gap.** The rate wanders
+between 43% and 64% with no trend, over buckets of 26, 14, 11 and 6 spans. The
+widest bucket is argmax's worst against the constant: 3/6 against 6/6. Six
+spans is a count, not a rate — but it is the wrong sign, and it is the bucket
+the prompt's "over about 4" language is trying to describe.
+
+## 2. The absolute scores
+
+Bucketed by the *better* of the two scores. The hypothesis was that everything
+below about -8 is uninformative regardless of gap.
+
+| better score | spans | argmax right | keep decoded |
+|---|---|---|---|
+| below -10 | 12 | 6/12 | 4/12 |
+| -10 to -8 | 25 | 14/25 | 19/25 |
+| -8 to -6 | 8 | 2/8 | 1/8 |
+| -6 to -4 | 8 | 5/8 | 6/8 |
+| above -4 | 4 | 1/4 | 4/4 |
+
+**The hypothesis is not supported, and neither is its opposite.** Argmax's
+worst bucket is -8 to -6, not the floor. 37 of the 57 spans sit below -8, so
+most of the pass really is arguing about audio the recogniser barely resolved
+— but the scores are no better higher up. Three of these five buckets hold
+fewer than ten spans and cannot be read as rates.
+
+The two together, to check for a corner where the score can be trusted:
+
+| | spans | argmax right | keep decoded |
+|---|---|---|---|
+| gap under 1, heard above -8 | 15 | 6/15 | 6/15 |
+| gap under 1, heard below -8 | 25 | 12/25 | 16/25 |
+| gap 1 or more, heard above -8 | 5 | 2/5 | 5/5 |
+| gap 1 or more, heard below -8 | 12 | 8/12 | 7/12 |
+
+The one quarter where a threshold rule should work — a wide gap on clearly
+heard audio — holds five spans and argmax gets 2 of them while the constant
+gets 5.
+
+## 3. Length
+
+**The cache does not carry the bonus.** `Vocabulary.apply` subtracts it before
+`VocabularyJudge.scoreBlock` writes the line, and `VocabularyRescorer.Config`
+lives in FluidAudio, not in this repository. So the token count cannot be
+recovered by inverting `adaptiveCbw`. **Character count of the spelling is used
+as a crude stand-in and is labelled as one in every table below.** It is
+monotone in token count for these spellings, which is all the comparison needs.
+
+21 of 57 spans compare spellings of unequal length. Normalising flips the
+winner on 8.
+
+| score used | argmax right | |
+|---|---|---|
+| raw sum, as shipped | 28/57 | 49% |
+| per character | 22/57 | 39% |
+
+| per-character \|gap\| | spans | raw argmax | per-char argmax | keep decoded |
+|---|---|---|---|---|
+| 0 to 0.1 | 20 | 10/20 | 10/20 | 12/20 |
+| 0.1 to 0.25 | 21 | 11/21 | 10/21 | 7/21 |
+| 0.25 to 0.5 | 10 | 5/10 | 2/10 | 9/10 |
+| 0.5+ | 6 | 2/6 | 0/6 | 6/6 |
+
+**Normalising separates the classes worse.** It drops argmax from 28 to 22 and
+turns the largest-gap bucket into an anti-predictor: 0/6, where the constant is
+6/6. Length is not the confound.
+
+## 4. The 20 spans with no score line
+
+`scoreBlock` writes nothing for a proposal with no scores, and nothing for a
+merged span that matches two score lines. On those 20 the judge sees the
+readings and no evidence and has to decide on the sentence alone. Keeping what
+the decoder wrote is right on 13 of the 20. 13 of the 20 sit in a case that
+holds more than one span, so the judge cannot even tell which part of the
+sentence the block is silent about.
+
+## What the canonical clip looks like
+
+Clip `00-14-39`, the `"general" -9.88` / `"Redcrawl" -9.97` pair that started
+this. The gap is 0.09 and the speaker said `general`, so argmax happens to be
+right. That is the shape of the whole cache: the answer is usually the decoded
+word, and the 0.09 is not why.
+
+## Recommendation
+
+**Take the score block out of the judge's prompt and measure the judge without
+it.** It is 57 lines of evidence that predict the answer worse than a constant,
+and three rounds of prompt work have been tuned against a judge that reads
+them; the prompt's "a gap under about 1" and "more than about 4" describe a
+scale that does not exist in this data.
+
+**The question is not the prompt and it is not the evidence — it is the menu.**
+Rounds 1-3 changed the wording and the shape and moved nothing; round 4 shows
+the numbers beside them are noise. What is left is the spotter: a menu only
+exists where `Vocabulary.autoApplies` already declined, and 60% of the time the
+right answer is the reading it declined to change. Measure how much is lost by
+not building the menu at all before tuning anything else.
+
+Measured with `scripts/gap-signal.py`. No model call, no build, no install. The
+cache predates PR #70, so none of the 15 live collisions of 2026-08-08 are in
+it.
