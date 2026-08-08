@@ -1,0 +1,15 @@
+# A menu cap set to zero.
+#
+# Every one of the four caps silences the stage when it is below 1, and each
+# does it in a way that reads as the judge being broken rather than as a number
+# being wrong: `max_per_term: 0` means no place in any sentence is ever about a
+# vocabulary term, so no menu is ever built and nothing says why.
+#
+# Refused at load instead, by name, so the person who typed it learns which
+# number they typed. `max_per_term` is the one here because it is the newest;
+# the same check covers `max_slots`, `max_readings` and `max_per_slot`.
+languages: [en]
+pipeline:
+  - replacements
+  - vocabulary: verify_names.md
+    max_per_term: 0
