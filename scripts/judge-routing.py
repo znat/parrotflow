@@ -359,6 +359,12 @@ def opens_a_sentence(item, index):
     A capital there says nothing — every sentence starts with one. Anywhere
     else a capital is the decoder saying it heard a name, and that is the
     second routing test.
+
+    The word before is read off `ref`, the first menu option. Every option
+    agrees outside the spans, so that word is the same in all of them unless
+    one slot begins where another ends. No menu in this cache does that —
+    `slots` merges spans that touch through an overlap, and the ones left
+    always have a fixed word between them.
     """
     start = item["spans"][index][0]
     return start == 0 or item["ref"][start - 1].endswith((".", "!", "?"))
@@ -586,12 +592,13 @@ def main():
         if name not in ARMS:
             print(f"✗ no arm {name!r}; known: {', '.join(ARMS)}")
             return 2
+    for item in items:
+        item["code_right"] = (by_code(item) == item["truth"]
+                              if all(item["scored"]) else None)
     stray = {}
     for name in names:
         before = len(tune.STRAY)
         for item in items:
-            item["code_right"] = (by_code(item) == item["truth"]
-                                  if all(item["scored"]) else None)
             item[name] = by_judge(item, args.model, system_for(name, item["case"]),
                                   ARMS[name]["form"]) == item["truth"]
         stray[name] = len(tune.STRAY) - before
