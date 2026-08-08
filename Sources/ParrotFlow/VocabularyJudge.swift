@@ -216,7 +216,7 @@ enum VocabularyJudge {
     /// A rule rewrites in place and reorders nothing, so the terms standing in
     /// the text now are, in order, the occurrences of `heard` and of `term` in
     /// `before` — and only the first kind is a substitution to offer back. See
-    /// `written(_:_:in:became:)`.
+    /// `rewritten(_:_:in:became:)`.
     ///
     /// When the two do not line up, some other rule wrote the term as well and
     /// nothing here can say which occurrence came from where. Then none of them
@@ -242,13 +242,13 @@ enum VocabularyJudge {
                 }
                 continue
             }
-            guard let rewritten = written(heard, term, in: before, became: standing.count) else {
+            guard let mine = rewritten(heard, term, in: before, became: standing.count) else {
                 Log.write("vocabulary judge: \"\(term)\" stands \(standing.count) time(s) and"
                     + " the transcript before the rules cannot account for that many;"
                     + " \"\(heard)\" is not offered back")
                 continue
             }
-            for index in rewritten {
+            for index in mine {
                 parts.append(Part(
                     range: standing[index], decoded: heard, other: heard, term: term
                 ))
@@ -269,7 +269,7 @@ enum VocabularyJudge {
     /// Nil when the counts disagree, which means something other than this rule
     /// also wrote the term. Guessing there is how a correct word gets a wrong
     /// spelling put first on the menu.
-    static func written(
+    static func rewritten(
         _ heard: String, _ term: String, in before: String, became standing: Int
     ) -> [Int]? {
         var marks: [(at: String.Index, rule: Bool)] =
