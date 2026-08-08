@@ -512,6 +512,90 @@ blank form carrying the *shipped* question, so form is separated from content
 — this spike changed both at once and cannot say what the blanks would be
 worth on their own.
 
+**F19 — the blank form moves the failure, it does not fix it (spike,
+2026-08-08).** F18 left one thing unresolved: it changed the judge's wording
+and the shape of its question at the same time, so the blanks' 6/8 on the
+collision class could have been either. This measures the shape alone. Both
+arms carry the shipped `verify_names.md`, the shipped vocabulary list and the
+shipped score block. Only three sentences differ, and all three describe the
+shape of the question and of the answer. One arm states the sentence once per
+reading. The other states it once, with a numbered blank per uncertain span and
+the candidates under each number, answered `1=A 2=B`. Measured by
+`scripts/judge-blanks.py` on the same 53 cached menus, `gemma4:e4b`,
+temperature 0. Prompts and cases in [judge-framings.md](judge-framings.md).
+**Same set tuned on and reported on, no held-out set.** Three full runs gave
+identical totals and identical per-case diffs, and no reply was unreadable.
+
+| arm | total /53 | multi-slot /18 | single-slot /35 | collision /8 |
+|---|---|---|---|---|
+| sentence — what ships | **41** | **12** | **29** | 0 |
+| blank | 37 | 9 | 28 | **3** |
+| chance | 17.4 | 2.8 | 14.6 | 2.1 |
+
+*Half of round 2's win was the wording.* With the shipped question the blanks
+score 3/8 on the collision class, not 6/8, and 2 of the 3 are single-span
+clips where the two arms ask nearly the same question. The shape moves the
+class by about half what F18 credited it with.
+
+*The collision class is a fixed list of 8 clips, and that hides the result.*
+Counted over all 77 uncertain spans, with an *overwrite* being the error the
+spike exists for — the speaker said an ordinary word, the arm wrote a name:
+
+| | collision clips, 16 spans | every other clip, 61 spans |
+|---|---|---|
+| sentence | 4 right, **12 overwrites**, 0 names lost | 57 right, **3 overwrites**, 1 name lost |
+| blank | 10 right, **6 overwrites**, 0 names lost | 49 right, **8 overwrites**, 4 names lost |
+
+Over all 77 spans the overwrite count barely moves — 15 against 14. The blanks
+halve it on the 8 clips PR #68 wrote down and more than double it on the other
+45, including `23-00-49`, where the speaker named Versailles *and* Vercel and
+the blank arm wrote the term over the place. **The class did not shrink, it
+moved off the list being watched.** The blanks also lose 4 names to the
+sentence form's 1.
+
+*The blank arm is not stable.* A blank has to letter its own candidates, and
+the order is a free choice that changes no word of the question. Sorting them
+instead of keeping the app's menu order moves the arm from 37/53 to **31/53**,
+multi-slot from 9/18 to 5/18, overwrites from 14 to 20, names lost from 4 to
+10 — and the collision class *up*, from 3/8 to 5/8, on a different set of
+clips. **Letter order moves it 6 cases; the shape moves it 4.** The sentence
+arm keeps the app's menu and scores 41 and 61/77 in both runs, which is the
+check that only the stated variable moved.
+
+*The shape breaks on a span wider than a word.* `slots` merges overlapping
+spans, so a span can be `praise the` or `transcription when the`. Blanking it
+leaves a frame no reading completes — `So let's ___ team's work.` 4 of the 8
+losses hold such a span, and 23 of the 77 spans in the cache hold a reading of
+more than one word.
+
+*The multi-slot subset — the only place the shape can differ — prefers the
+sentence*, 12/18 against 9/18. On the 35 single-span cases the arms score 29
+and 28, which is noise.
+
+**Every judge number in F16, F17, F18 and F19 excludes the live collisions.**
+`tests/judge-menus.json` was harvested before PR #70; its newest clip is
+`2026-08-08T01-02-23`, and the 15 clips PR #70 added were dictated that
+afternoon. **12 of the 15 would enter the cache and 9 would be scorable** —
+2 are unreachable because the word the speaker said was never decoded, and 1
+cannot be called without running it. Of the 3 that stay out, 2 produce no menu
+(`16-17-03` was the replacements stage, `16-28-54` never fired) and `17-37-39`
+has no label, so the harvest skips it. That prediction rests
+on `Vocabulary.autoApplies` and `Replacements.applyFuzzy` both refusing to
+rewrite a real dictionary word, so every clip that overwrote "retry", "crawl",
+"update", "matches", "praise", "proprietary", "train", "level" or "heavy" must
+have gone through the judge. The 15 are almost all the collision class, so a
+harvest would roughly double a class the shipped prompt is 0 of 8 on.
+**That number is worth more than anything this round moved.**
+
+*The F18 data gap is still open.* On all 8 not-a-word spans in this cache the
+speaker meant the term, so no rule about that class can be falsified. What
+fills it: one clip where the speaker says a proper name that is not in the
+vocabulary, whose spelling is in no dictionary, and which sounds like a term
+that is — a colleague `Tasmin` beside `Tasmeen`, a product `Prezi` beside
+`Praisy`. → `menu-cases.yaml`.
+
+**Recommendation: ship no shape, and re-harvest before the next round.**
+
 ---
 
 ## Build order

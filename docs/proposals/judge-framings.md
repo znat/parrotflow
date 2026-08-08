@@ -579,3 +579,382 @@ patch.
    should be shipped. That is a gap for `menu-cases.yaml` to fill.
 
 Recorded as F18 in [vocabulary-v2.md](vocabulary-v2.md).
+
+---
+
+# Round 3 — the same question, in blanks
+
+**The blanks lose. Do not change the shape.**
+
+Round 2 credited the blank form with 3 cases on the collision class, but it
+changed the wording and the shape at once. Round 3 changes only the shape. The
+shipped prompt, the shipped vocabulary list and the shipped score block go into
+both arms. One states the sentence once per reading. The other states it once,
+with a numbered blank per uncertain span and the candidates under each number.
+
+| arm | total /53 | multi-slot /18 | single-slot /35 | collision /8 |
+|---|---|---|---|---|
+| sentence — what ships today | **41** | **12** | **29** | 0 |
+| blank | 37 | 9 | 28 | **3** |
+| chance | 17.4 | 2.8 | 14.6 | 2.1 |
+
+The blank form wins the collision class and loses the total. **It wins 4 cases
+and loses 8.** Round 2's 6/8 does not survive: with the shipped question the
+blanks reach 3/8, and 2 of the 3 are single-slot clips, where the two arms ask
+nearly the same question. **So the shape is worth about half of what round 2
+credited it with. The other half was the wording.**
+
+And the collision class is a fixed list of 8 clips, which hides the real
+result. Counted over all 77 uncertain spans, **the blank form does not fix the
+failure. It moves it.**
+
+| | collision clips, 16 spans | every other clip, 61 spans |
+|---|---|---|
+| sentence | 4 right, **12 overwrites** | 57 right, **3 overwrites**, 1 name lost |
+| blank | 10 right, **6 overwrites** | 49 right, **8 overwrites**, 4 names lost |
+
+An *overwrite* is the error the whole spike is about: the speaker said an
+ordinary word and the arm wrote a name over it. On the 8 clips PR #68 named,
+the blanks halve them. On the other 45 clips they more than double them. Over
+all 77 spans the overwrite count barely moves — 15 against 14 — and the blanks
+lose 4 names where the sentence loses 1.
+
+And 37/53 is not a score the blank form owns. A blank must letter its own
+candidates, and that choice carries no information. Sorting them instead of
+keeping the app's order takes the arm to **31/53** and the overwrites to 20.
+**Letter order moves it 6 cases; the shape moves it 4.**
+
+Measured with `scripts/judge-blanks.py` against `tests/judge-menus.json`,
+`gemma4:e4b`, temperature 0, nothing else loaded. The control re-measured at
+41/53, reproducing rounds 1 and 2 exactly. Three full runs gave identical
+totals and identical per-case diffs. No reply was unreadable. No build, no
+install.
+
+**The same 53 cases are tuned on and reported on.** There is no held-out set.
+
+## The one variable
+
+Three sentences of `verify_names.md` describe the shape of the question and of
+the answer. Those three change and nothing else does. They are quoted in
+`BLANK_EDITS` and the run fails loudly if one stops matching the prompt file.
+
+```diff
+-A name matcher was unsure about some words. Below is the sentence, and every
+-reading it might really have been. Exactly one is what the user said.
++A name matcher was unsure about some words. Below is the sentence with each of
++them blanked and numbered, and every reading each blank might really have been.
++Exactly one reading of each blank is what the user said.
+```
+```diff
+-Pick the reading that makes sense as a sentence, unless the sound says
+-otherwise by more than about 4. Answer with its letter only.
++Pick the reading of each blank that makes sense as a sentence, unless the sound
++says otherwise by more than about 4. Answer with one letter per blank and
++nothing else, like "1=A 2=B".
+```
+
+The user message ends `Which letter for each blank?` instead of the app's
+`Which letter?`. One string for every case, so a one-blank case and a
+three-blank case are asked in the same words.
+
+Everything else is identical: the vocabulary list, the paragraph about
+"spells", the paragraph about the acoustic gap, the "makes sense as a sentence"
+test, and the score block, which goes in unchanged because it names spellings
+and not slots. Chance is the same number for both arms, because the slot
+readings multiply back out to the menu — the harness refuses to run a case
+where they do not.
+
+Only 14 of the 53 replies used `1=A 2=B`. 29 were a single letter for a single
+blank, read by the app's own rule. 10 were bare letters in order — `A B` for
+two blanks. **Nothing was unreadable**, so the losses below are answers, not
+formatting.
+
+## What a blank question looks like — `10-12-37`
+
+The clip round 1 named as the one that argues for a per-slot question. The
+score block is the same text in both arms.
+
+```
+It's a community that ___1___ asked me to ___2___
+
+1. A. Tasmin
+   B. Tasmeen
+
+2. A. crawl.
+   B. Redcrawl.
+
+  "Tasmin" -10.13   "Tasmeen" -10.68   — "Tasmeen" heard 0.5 less clearly
+  "crawl." -10.06   "Redcrawl." -11.83   — "Redcrawl." heard 1.8 less clearly
+
+Which letter for each blank?
+```
+
+The blank arm gets it. The sentence arm takes `Tasmeen … Redcrawl`, and has in
+every framing of every round. One name is right and one is wrong, and a menu of
+whole sentences carries both in every option.
+
+## The collision class
+
+| clip | spans | said → written | sentence | blank |
+|---|---:|---|---|---|
+| `17-47-45` | 3 | retry/crawl → Arexvy/Redcrawl | ✗ | ✗ |
+| `09-35-01` | | Versailles → Vercel castle | never reached a menu ||
+| `14-04-21` | 3 | explanations to update → Praisy to Supabase | ✗ | ✗ |
+| `10-12-37` | 2 | asked me to crawl → to Redcrawl | ✗ | **✓** |
+| `14-09-56` | 2 | near matches → near Matthieu | ✗ | ✗ |
+| `13-09-46` | 1 | praise for shipping → Praisy shipping | ✗ | ✗ |
+| `11-19-17` | 1 | proprietary term → Praisy term | ✗ | **✓** |
+| `15-36-12` | 1 | Pretty harsh → Arexvy harsh | ✗ | **✓** |
+| `14-11-21` | 3 | the crawl data → the Redcrawl data | ✗ | ✗ |
+| | | **total** | **0/8** | **3/8** |
+
+The shipped prompt is 0/8 for the fourth round running. The blanks take 3.
+Only one of the 3 is the multi-slot case the shape was designed for. The other
+two are one-span clips — `Chain is a langsmith ___ term.` and `___ harsh
+review.` — where the two arms differ only in that the blank arm prints the
+sentence once instead of twice.
+
+## The trade, per span
+
+A case counts only when every one of its spans is right, so a three-span case
+scores zero whether it missed one span or three. `17-47-45` is the example: the
+sentence arm gets none of its three spans, the blank arm gets two, and both
+score ✗. Per span is where the trade is legible.
+
+77 spans over the 53 cases. Two ways to be wrong, and they are not the same
+mistake.
+
+| arm | right | wrote a name over an ordinary word | kept what was decoded, losing the name |
+|---|---|---|---|
+| sentence | **61/77** | 15 | **1** |
+| blank | 59/77 | **14** | 4 |
+
+Split by whether the clip is in PR #68's list:
+
+| | collision clips, 16 spans | every other clip, 61 spans |
+|---|---|---|
+| sentence | 4 right, 12 overwrites, 0 names lost | 57 right, 3 overwrites, 1 name lost |
+| blank | **10 right**, **6 overwrites**, 0 names lost | 49 right, **8 overwrites**, 4 names lost |
+
+The five overwrites the blank form adds outside the list are all the same
+mistake it fixes inside it:
+
+```
+17-27-23   "praise the"             -> "Praisy's"
+09-10-32   "Mira va"                -> "Mirza"
+23-00-49   "Versailles,"            -> "Vercel,"
+10-23-28   "transcription when the" -> "Praisy"
+10-23-28   "press"                  -> "Praisy's"
+```
+
+`23-00-49` is the one to read twice. It is `alternatives for Versailles, such
+as Vercel` — the speaker named both, and the blank arm wrote the vocabulary
+term over the place name. That is `09-35-01` again, the clip round 1 could
+never score.
+
+One caveat on the classification. A span that `slots` merged can hold two
+decisions at once, and then it lands in whichever column the whole span falls
+in. `17-39-27` is such a span: true `praise Matthieu's`, blank arm
+`Praisy's Matthieu's`. It is counted as a name lost, and it is also an
+overwrite of "praise". One of the four.
+
+## The blanks are not stable under letter order
+
+A blank has to letter its own candidates, and the order is a free choice. The
+arm above uses the order the app's own menu introduces them in. Sorting them
+instead changes no word of the question. `--order sorted`:
+
+| blank arm, letters in | total /53 | multi-slot /18 | collision /8 | spans right | overwrites | names lost |
+|---|---|---|---|---|---|---|
+| menu order | 37 | 9 | 3 | 59/77 | 14 | 4 |
+| sorted | **31** | **5** | **5** | **47/77** | **20** | **10** |
+| sentence arm, unaffected | 41 | 12 | 0 | 61/77 | 15 | 1 |
+
+**Letter order moves the blank arm by 6 cases. The shape itself moves it by 4.**
+It also changes *which* clips of the collision class it gets: `11-19-17` is won
+in menu order and lost in sorted, and `14-09-56`, `13-09-46` and `14-11-21` go
+the other way. The sentence arm keeps the app's menu untouched and scores 41
+and 61/77 in both runs, which is the check that the harness is varying only
+what it says it varies.
+
+So 37/53 is not the blank form's score. It is one point in a range the form
+reaches by an accident of alphabet. **A shape whose answer turns on which
+candidate got the letter A is not a shape to ship**, whichever end of the range
+is quoted.
+
+Two replies were unreadable under sorted order — `2=B 3=A`, which names two of
+three blanks, and `A=A B=B`. Both are counted wrong. In menu order there were
+none.
+
+## The multi-slot subset
+
+18 of the 53 cases hold more than one uncertain span, 42 spans between them.
+35 hold one span. **77 spans over 53 cases.**
+
+The shape can only differ where a case holds more than one span. It does differ
+there, and it differs the wrong way: **12/18 as sentences, 9/18 as blanks.** On
+the 35 single-span cases the two arms score 29 and 28, which is one case and is
+noise.
+
+So the subset where the shape is a real question prefers the sentence.
+
+## Per case
+
+```
+all          +4  17-19-57  11-19-17  10-12-37  15-36-12
+             -8  17-39-27  17-27-23  17-05-32  09-10-32
+                 14-11-36  23-00-49  10-23-28  07-36-58
+
+multi-slot   +1  10-12-37
+             -4  17-05-32  14-11-36  23-00-49  10-23-28
+
+single-slot  +3  17-19-57  11-19-17  15-36-12
+             -4  17-39-27  17-27-23  09-10-32  07-36-58
+```
+
+### What the losses have in common — a span wider than a word
+
+Four of the eight losses hold a span that is more than one word — `17-39-27`,
+`17-27-23`, `09-10-32`, `10-23-28`. `slots` merges spans that overlap, so a
+span can be `praise the` or `transcription when the`. In the sentence form
+those words stay in a sentence. In the blank form the frame around the blank is
+what is left, and what is left is not English.
+
+```
+So let's ___1___ team's work.        <- 17-27-23, the true reading is "praise the"
+
+1. A. praise the
+   B. Praisy
+   C. Praisy's
+```
+
+```
+So I guess to ___1___ that loop, is there a way we can record the
+final ___2___ user ___3___ enters.   <- 10-23-28, 12 options, 3 spans
+
+2. A. transcription when the
+   B. Praisy
+```
+
+The sentence arm reads `record the final transcription when the user press
+enters` and takes it. The blank arm chooses between `transcription when the`
+and `Praisy` inside `record the final ___ user`, which is a frame no reading
+completes.
+
+That cost is structural. A blank helps when the span is a word and hurts when
+the span is a phrase. **23 of the 77 spans in this cache hold a reading of more
+than one word.**
+
+### `07-36-58` — the clip that keeps breaking
+
+```
+So let's say we have very low floor for ___1___ but with the judge. ...
+
+1. A. Prezi,
+   B. Praisy,
+```
+
+The true reading is `Praisy,`. The sentence arm takes it, the blank arm takes
+`Prezi,`. PR #68 lost this clip when it cut the pro-term sentence, and round
+1's position rule lost it too. The term list is still in this prompt. The blank
+removes what made the list usable: the speaker is talking *about* the term, and
+the blank hides the sentence that says so.
+
+## Every number in rounds 1–3 excludes the live collisions
+
+`tests/judge-menus.json` was harvested before PR #70. Its newest clip is
+`2026-08-08T01-02-23`. The 15 clips PR #70 added were dictated the same
+afternoon, 16:17 to 17:42, and **none of them are in the cache.** Re-harvesting
+runs the app, so this round could not add them.
+
+Every judge number in rounds 1, 2 and 3 — 41/53, 0/8, 37/53, 3/8, and every
+number in F16, F17 and F18 — is measured on 53 menus that hold none of them.
+
+The 15 are almost all the ordinary-word collision class, which is the class the
+shipped prompt scores 0 on. This is what a harvest would add, read off the
+`# app:` lines in `tests/menu-cases.yaml`:
+
+| clip | what the pass did | would it enter the cache? |
+|---|---|---|
+| `16-17-03` | Vercel over "Versailles" — the replacements stage, not the spotter | no menu |
+| `16-18-00` | Arexvy over "retry", Redcrawl over "crawl" | yes, 2 spans |
+| `16-18-14` | Supabase over "update" | yes |
+| `16-18-23` | Redcrawl over "crawl" | yes |
+| `16-18-37` | Matthieu over "matches" | yes |
+| `16-18-45` | Praisy over "spray"; the speaker said "praise" | yes, unreachable |
+| `16-19-02` | Praisy's over "praise for" | yes |
+| `16-19-18` | Praisy over "proprietary" | yes |
+| `16-28-54` | nothing fired; NLTagger stayed as decoded | no menu |
+| `16-29-26` | Claude over "predicting"; the speaker said "generating" | yes, unreachable |
+| `17-32-26` | Arexvy over both Praisy and Prissy | yes, reachability unknown |
+| `17-37-39` | Praisy over "work when"; `said` deliberately blank | skipped by the harvest |
+| `17-39-32` | Praisy over "train" | yes |
+| `17-40-19` | Vercel over "level", Arexvy over "heavy" | yes, 2 spans |
+| `17-41-18` | Praisy's over "train as" | yes |
+
+**12 of the 15 would enter the cache, and 9 of those would be scorable.** Two
+are unreachable because the word the speaker said was never decoded, so no
+menu can hold it. One cannot be called without running it.
+
+That column is a prediction, not a measurement. It rests on one fact in the
+code: `Vocabulary.autoApplies` writes a term in only when the decoded word is
+**not** a real word, or is the same word with a space in it.
+`Replacements.applyFuzzy` is gated on the same test. Every clip above replaced
+an ordinary English word — "retry", "crawl", "update", "matches", "praise",
+"proprietary", "train", "level", "heavy" — so neither could have fired, and the
+judge must have been asked, which means a menu existed. Only a harvest settles
+it.
+
+Adding 9 scorable collision clips would roughly double a class the shipped
+prompt is 0 of 8 on. **That is the number to want next, and it matters more
+than the 4 cases this round moved.**
+
+## The data gap, still open
+
+Round 2 recorded it and round 3 cannot close it. On all 8 not-a-word spans in
+this cache the speaker meant the vocabulary term. There is no clip where the
+decoder wrote a non-word and the non-word was right, so **no rule about that
+class can be falsified.** The `--sweep` result that reaches 8/8 at about 1.5
+nats is unfalsifiable rather than good.
+
+What would fill it: a clip where the speaker says a proper name that is *not*
+in the vocabulary, whose spelling is in no dictionary, and which sounds like a
+term that is. A colleague called `Tasmin` beside the vocabulary's `Tasmeen`. A
+product called `Prezi` beside `Praisy`. `Arexvi` beside `Arexvy`. The right
+answer on that span is "keep what the decoder wrote", and one such clip breaks
+the 8/8 unanimity that currently makes every offset look safe.
+
+## Recommendation
+
+**Ship nothing, again.** There is no trade to weigh here, because the blank
+form does not buy the thing it was meant to buy.
+
+The trade looks like one case metric against another — 3/8 of the collision
+class against 4 cases of the total. Per span it is not a trade at all. The
+overwrite is the error that matters, and the blank form commits 14 of them
+against the sentence form's 15. It halves them on the 8 clips PR #68 happened
+to write down and it more than doubles them on the other 45, including
+`23-00-49`, where it writes `Vercel` over the place the speaker named. **The
+class did not shrink. It moved off the list we were watching.** On top of that
+the blanks lose 4 names where the sentence loses 1.
+
+If the numbers had come out the other way — collision class up, total down —
+the decision would be Nathan's. They did not. Both metrics say the same thing
+once they are counted per span.
+
+There is also nothing stable to ship. Sorting the candidates inside a blank
+changes no word of the question and moves the arm 6 cases, from 37 to 31, and
+the overwrite count from 14 to 20. The shape moves the total by 4. The choice
+of which candidate gets the letter A moves it by more.
+
+One thing is still worth keeping, and it is what the shape is for. `10-12-37`
+is the only multi-slot collision clip any arm in three rounds has got, and both
+blank arms get it. A blank is right for a span that is one word and wrong for a
+span that is a phrase. If the blanks are tried again, change the slot recovery
+and not the prompt: a merged span of four words should not be a blank at all,
+and 23 of the 77 spans here hold a reading of more than one word.
+
+Do the harvest first. Nine more collision clips against a prompt that scores 0
+of 8 on that class will say more than a fourth wording.
+
+Recorded as F19 in [vocabulary-v2.md](vocabulary-v2.md).
