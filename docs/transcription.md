@@ -82,26 +82,43 @@ corrections, from `--learn`, from the calibrate skill.
 
 ```yaml
 acoustic: true
-min_similarity: 0.75
+offer_below: 0.50
+decide_above: 3.0
 
 terms:
   Tasmeen:                     # nothing close in this speaker's speech
-  Mirza:
-    floor: 0.85                # "Mira" lands at 0.80
   Praisy:
-    floor: 0.90                # "praise" lands at 0.83
     heard: [Prissy, Pressy, Precy, Prezi]
   Claude:
     floor: off
     heard: [clut, cloud]
 ```
 
-A term has two ways in, and most need one.
+#### The two numbers
 
-**`floor`** is how close a decoded word must sound before it is replaced, from
-0 to 1. Omitted, `min_similarity` applies.
+Offering a reading and writing one are different risks, so they have different
+settings. One threshold used to do both jobs and no value did them both: strict
+enough to be safe it caught 2 of 20 misheard names, and loose enough to catch
+them "in general" became "in Redcrawl".
 
-**`heard`** is a list of exact renderings. Use it for the ones no floor can
+**`offer_below`** is how far a decoded word's spelling may sit from a term and
+still reach the judge's menu, from 0 to 1, where 1.0 is the term written out
+exactly. It decides what is looked at, not what is written. Being offered costs
+a line the model reads; being missed cannot be recovered downstream at any
+price, so it is set low.
+
+**`decide_above`** is how hard the audio has to argue against a reading, in
+nats, before the reading is dropped rather than offered. Raw scores: the
+rescorer's own margin carries the vocabulary bonus, and a term can win a span
+its sound lost badly — `Redcrawl` beat "general" by 0.57 boosted and lost by
+5.28 raw.
+
+Both ship untuned at the values above. They are the mechanism, not a
+measurement.
+
+#### Per term
+
+**`heard`** is a list of exact renderings. Use it for the ones no number can
 reach: "Prezi" is 0.33 from "Praisy", and a threshold that low would swallow
 every "praise".
 
@@ -111,47 +128,65 @@ machine: "Claude" and "cloud" both come back as `cloud`, "Matthieu" and
 "Matthew" both as `Matthew`. No threshold separates them, because the
 distinction is gone before anything downstream can look.
 
+`floor: off` in YAML is the boolean `false`, not the string. So are `on`,
+`yes` and `no`. The decoder reads both.
+
 Terms shorter than five letters are dropped, as are terms with a digit or a
 dot. A short term aligns to almost any run of frames. A term the decoder could
 not have produced is not a term.
 
-#### Choosing a floor
+#### Files written before the two numbers
 
-Set it just above the closest ordinary word. `scripts/calibrate.py confusables
-<term> --lang en,fr` lists what is in reach:
+They still load and still behave. `--check-config` says what was read.
 
-    Praisy   praise 0.83   raise 0.67   pray 0.67     -> floor 0.90
-    Redrock  bedrock 0.86  redock 0.86                -> floor 0.90
-    Vercel   vessel 0.67   vertex 0.67                -> floor 0.75
+| written | read as |
+| --- | --- |
+| `min_similarity: 0.75` | `offer_below: 0.75` |
+| `floor: 0.85` on a term | that term's `offer_below` |
+| `floor: off`, `floor: no` | unchanged — never matched by sound |
+
+A number under `floor:` is legacy: it now only decides what is offered, and the
+setting is `offer_below:` at the top of the file. `floor: off` is not legacy.
+It is a switch rather than a threshold, and the two file-level numbers do not
+replace it.
+
+#### What is in reach of a term
+
+`scripts/calibrate.py confusables <term> --lang en,fr` lists the ordinary words
+a term can be confused with:
+
+    Praisy   praise 0.83   raise 0.67   pray 0.67
+    Redrock  bedrock 0.86  redock 0.86
+    Vercel   vessel 0.67   vertex 0.67
 
 Pass only the languages you dictate in. "Praisy" is 0.83 from the English
-"praise" and 0.67 from the French "vrais", so the floor differs by 0.16
-depending on who is speaking.
+"praise" and 0.67 from the French "vrais", so the neighbourhood differs by 0.16
+depending on who is speaking. Under `offer_below` a close neighbour is no
+longer a word that gets overwritten — it is a second line on the menu, and the
+sentence picks.
 
 Two things to check that a word list does not tell you. `NSSpellChecker`
 accepts any all-caps run as a word, so `XQZPT` looks known — ask about the
 lowercase form. And a term shaped like a verb-particle pair is unsafe whatever
 its neighbourhood: "turn down the volume" glues to `Turndown` at 1.00.
 
-`floor: off` in YAML is the boolean `false`, not the string. So are `on`,
-`yes` and `no`. The decoder reads both.
-
 #### What it costs
 
 Matching by sound downloads a ~98 MB model on first use and adds a CTC pass
 per clip. `acoustic: false` skips both; the `heard` rules still apply.
 
-Over 400 archived clips, with the shipped settings, damage — clips containing
-no vocabulary term that came out different — falls with the floor:
+Over 400 archived clips, damage — clips containing no vocabulary term that came
+out different — falls as the similarity rises:
 
-| floor | clips damaged | terms recovered |
+| similarity | clips damaged | terms recovered |
 | --- | --- | --- |
 | 0.65 | 10/386 | 5/8 |
 | 0.75 | 4/386 | 3/8 |
 | 0.85 | 0/386 | 2/8 |
 
-Higher floors are safer and catch less. There is no setting that catches
-everything and breaks nothing.
+Measured on the pass that substituted. There was no setting that caught
+everything and broke nothing, which is the finding that split one number into
+two: a damaged clip at 0.65 is now a menu line, not a rewritten word.
 
 #### Checking the result
 

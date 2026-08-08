@@ -1,6 +1,6 @@
 ---
 name: vocabulary-corpus
-description: Gather the first vocabulary for ParrotFlow — the names, jargon and acronyms a person actually says — from their codebase and their Slack, and turn it into a `vocabulary.yaml` with a per-term floor. Use when setting ParrotFlow up on a new machine or a new project, when dictation keeps mangling the same words, or when someone asks what terms they should add.
+description: Gather the first vocabulary for ParrotFlow — the names, jargon and acronyms a person actually says — from their codebase and their Slack, and turn it into a `vocabulary.yaml`. Use when setting ParrotFlow up on a new machine or a new project, when dictation keeps mangling the same words, or when someone asks what terms they should add.
 ---
 
 # Building someone's first vocabulary
@@ -58,13 +58,14 @@ kinds, and only two are worth adding.
 Glued back together they match exactly, so no threshold can reach anything
 else, and they cannot damage a transcript. Take all of these.
 
-**Distinctive names with nothing near them.** Take these too, at a low floor.
+**Distinctive names with nothing near them.** Take these too. Nothing near
+them means nothing to argue about.
 
     Tasmeen    nothing within 0.71 in 234k dictionary words
     Arexvy     nothing within 0.67
 
-**Names that collide with ordinary words.** No floor works. Use `floor: off`
-and a `heard:` list instead.
+**Names that collide with ordinary words.** No threshold works. Use
+`floor: off` and a `heard:` list instead.
 
     Praisy   vs "praise"    0.83   and they sound alike, so no gate saves it
     Sentry   vs "entry"     0.83
@@ -165,10 +166,17 @@ Two things to tell the user when you hand it over:
   `slack_mentions` roster as well as the vocabulary, so one gathering serves
   both. The roster lives in `slack_mentions.py` beside the config.
 
-## Step 3 — reject the collisions, and set the floors
+## Step 3 — reject the collisions
 
-For each surviving candidate, find its nearest ordinary word. The floor goes
-just above that, so nothing else can reach the term.
+For each surviving candidate, find its nearest ordinary word. That distance
+decides one thing: whether the term can be matched by sound at all.
+
+There is no number to pick per term. The app takes two numbers for the whole
+file — `offer_below`, how far a spelling may sit from a term and still reach
+the judge's menu, and `decide_above`, how hard the audio has to argue before a
+reading is dropped. Leave both at their defaults. A near neighbour is no longer
+a word that gets overwritten; it is a second line on a menu, and the sentence
+picks.
 
 Use `NSSpellChecker` for "is this a word", because that is what
 `Replacements.isRealWord` uses. Check only the languages this person dictates
@@ -201,10 +209,11 @@ FluidAudio's gate computes:
 
 Then:
 
-- **Nearest ordinary word at 0.85 or above** — no floor works. No threshold
-  both catches the term's mishearings and excludes that word. Ship it as
-  `floor: off` with a `heard:` list instead.
-- **Otherwise** — floor = nearest + 0.05, capped at 0.90.
+- **Nearest ordinary word at 0.85 or above** — no threshold works. None both
+  catches the term's mishearings and excludes that word. Ship it as
+  `floor: off` with a `heard:` list, and let the rule put it on the menu and
+  the sentence decide.
+- **Otherwise** — plain entry. Nothing to write but the name.
 - **Check two-word phrases as well as single words.** This is the hole that
   bites: `Turndown` has no dictionary collision and scores a clean 1.00, but
   "turn down the volume" glues to `turndown` and gets rewritten. Any term
@@ -249,16 +258,21 @@ The contents of `vocabulary.yaml`, which sits beside `config.yaml`:
 
 ```yaml
 acoustic: true
-min_similarity: 0.75
+offer_below: 0.50
+decide_above: 3.0
 
 terms:
-  RedCrawl: 0.95        # "red crawl", glues to 1.00
-  LangSmith: 0.95
-  Tasmeen:              # nothing within 0.71 — the default is enough
-  Matthieu: 0.80        # "Matthew" is 0.75
+  RedCrawl:             # "red crawl", glues to 1.00
+  LangSmith:
+  Tasmeen:              # nothing within 0.71
+  Matthieu:
+    floor: off          # "Matthew" is 0.75 and sounds the same
+    heard: [Mathieu, Matthew]
 ```
 
-A bare number is the floor. An empty entry takes `min_similarity`.
+An empty entry is the normal one. The two numbers at the top are the file's,
+not a term's, and they ship untuned — leave them alone unless you have
+measured the whole set.
 
 That file carries a "do not edit unless you know what you are doing" header
 because it is normally written by the app — from corrections and from
@@ -270,7 +284,7 @@ And beside it, three short lists:
 - **Rejected, with the reason.** `Praisy` — "praise" at 0.83. `Sentry` —
   "entry" at 0.83. These go in with `floor: off` and a `heard:` list of
   renderings actually seen, so sound matching is off for them and nothing
-  else. Give the reason, or someone re-adds them with a floor next month.
+  else. Give the reason, or someone re-adds them next month.
 - **Already fine.** The terms the decoder writes correctly. Same reason.
 - **Read these aloud.** The step 5 sentences.
 

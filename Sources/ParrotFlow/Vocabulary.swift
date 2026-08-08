@@ -37,8 +37,9 @@ import Foundation
 ///
 /// So the rescue is off and the short-term boost is tapered. Measured over the
 /// same 386 clips: 10 altered at `minSimilarity` 0.65, 4 at 0.75, 0 at 0.85.
-/// The two wrong fires at 0.65 are names that sound like real words, which is
-/// what the per-term floor in `vocabulary.terms` is for.
+/// Those numbers describe a pass that substituted. This one proposes, so the
+/// similarity it is given is `offer_below:` and a wrong fire costs a menu line
+/// rather than a rewritten word — see `Config.Vocabulary.offerBelow`.
 @available(macOS 14, *)
 actor Vocabulary {
 
@@ -76,7 +77,7 @@ actor Vocabulary {
         config: Config, progress: (@Sendable (String) -> Void)? = nil
     ) async throws {
         let terms = config.vocabularyTerms
-        let signature = terms.map { "\($0.text):\($0.minSimilarity)" }
+        let signature = terms.map { "\($0.text):\($0.offerBelow)" }
         guard signature != loadedFor || rescorer == nil else { return }
 
         progress?("vocabulary model")
@@ -95,7 +96,7 @@ actor Vocabulary {
             }
             counts[term.text] = ids.count
             return CustomVocabularyTerm(
-                text: term.text, ctcTokenIds: ids, minSimilarity: term.minSimilarity
+                text: term.text, ctcTokenIds: ids, minSimilarity: term.offerBelow
             )
         }
         self.tokenCounts = counts
@@ -319,11 +320,13 @@ actor Vocabulary {
     /// argues against by this much is not a reading, and offering it spends a
     /// menu line on noise.
     ///
-    /// Generous on purpose. `versal` -> `Vercel` is 0.82 against and correct,
-    /// so the gate has to sit well clear of an ordinary near-tie.
-    static var proposalMargin: Float {
+    /// `decide_above:` in `vocabulary.yaml` is the setting. The env override
+    /// stays because the harness sweeps this number, and a harness that has to
+    /// rewrite the user's file to measure one point is a harness that
+    /// eventually leaves it rewritten.
+    static func proposalMargin(_ config: Config) -> Float {
         ProcessInfo.processInfo.environment["PARROTFLOW_PROPOSAL_MARGIN"]
-            .flatMap(Float.init) ?? 3.0
+            .flatMap(Float.init) ?? config.vocabulary.decideAbove
     }
 
     static var spotterFloor: Float {
@@ -450,7 +453,7 @@ actor Vocabulary {
                 frameDuration: spotted.frameDuration,
                 cbw: cbw,
                 marginSeconds: ContextBiasingConstants.defaultMarginSeconds,
-                minSimilarity: config.vocabulary.minSimilarity
+                minSimilarity: config.vocabulary.offerBelow
             )
             // Not `guard result.wasModified` any more. The acoustic search
             // below runs whether or not the spelling gate proposed anything,
@@ -476,6 +479,7 @@ actor Vocabulary {
             // silently dropped every replacement before this was written that
             // way.
             var decided: [(raw: Float, bonus: Float, applied: Bool, dropped: Bool)] = []
+            let margin = Self.proposalMargin(config)
             var rebuilt = ""
             var cursor = text.startIndex
             // Where a position in `text` lands in `rebuilt`, as a running
@@ -508,7 +512,7 @@ actor Vocabulary {
                 // Dropped when the audio argues hard against it — neither
                 // applied nor offered. Kept in the list so the index still
                 // lines up with `found`.
-                let dropped = !applies && change.originalScore - raw > Self.proposalMargin
+                let dropped = !applies && change.originalScore - raw > margin
                 decided.append((raw, bonus, applies, dropped))
             }
             rebuilt += text[cursor...]

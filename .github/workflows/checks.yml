@@ -138,6 +138,13 @@ jobs:
       - name: The config a new install gets
         run: scripts/check-default-config.sh
 
+      # The other learnt file. Nobody rereads vocabulary.yaml, so a key that
+      # quietly stops meaning what it meant is invisible — and one already did:
+      # Yams answers `Bool.self` for `0.85`, so a decoder that asks about
+      # `floor: off` first reads every measured floor as "never match this".
+      - name: What vocabulary.yaml adds up to
+        run: scripts/check-vocabulary-config.sh
+
       # The same trap, one directory over: the transform folder a first launch
       # is seeded with against the copy in examples/ that people read and
       # score. It has always been able to drift and has never been checked
