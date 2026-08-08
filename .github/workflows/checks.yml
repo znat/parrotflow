@@ -156,3 +156,10 @@ jobs:
       # only right in the app is a door that checks less than the other one.
       - name: Both install paths pin the same certificate
         run: scripts/check-pinned-certificate.sh
+
+      # One person's voice is not source. `.gitignore` stops `git add .` and
+      # nothing else — not `-f`, not a file tracked before the rule existed,
+      # not a rebase from the frozen prototype branch, which does carry the
+      # recordings. This checks what git tracks.
+      - name: No speaker audio in the repository
+        run: scripts/check-no-voice.sh

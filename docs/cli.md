@@ -199,6 +199,30 @@ the previous transcript does it target.
 `--learn` writes a replacement rule from the terminal, the same one the
 correction panel would have written.
 
+## Forgetting what a name sounds like
+
+```sh
+$PF --forget <term>
+```
+
+Everything learnt about how one name comes out, in one go: its pronunciations
+in `vocabulary.yaml`, every line naming it in `voice/observations.jsonl`, and
+every clip under `voice/samples/<Term>/`. The term itself stays — forgetting is
+about the learnt half, and somebody who wants the name gone deletes the name.
+
+It exists because the three files only ever grow. A rendering learnt from one
+bad clip goes on shaping the audio search forever, and the only remedy was to
+hand-edit a file whose header says not to. Data nobody can correct is data
+nobody should be asked to trust.
+
+```
+$ ParrotFlow --forget Praisy
+✓ forgot Praisy
+  14 pronunciation(s) from vocabulary.yaml
+  17 observation(s) from voice/observations.jsonl
+  17 sample(s) from voice/samples/Praisy/
+```
+
 ## Proving the microphone and the model work
 
 ```sh

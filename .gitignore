@@ -8,6 +8,16 @@ dist/
 # The runner imports examples/code_identifiers.py, which leaves this behind.
 __pycache__/
 
+# One person's voice, and the table mined out of it. It lives in `voice/`
+# beside the config now — see Sources/ParrotFlow/VoiceStore.swift — and these
+# two paths are where it used to be written. Kept here because a rebase onto an
+# older branch, or an old copy of scripts/mine-pronunciations.py, still puts it
+# there, and `git add .` would then commit somebody's colleagues' names being
+# read aloud. `scripts/check-no-voice.sh` is the half that has teeth.
+tests/acoustic/
+tests/pronunciations.yaml
+voice/
+
 # Where Claude Code puts a git worktree it makes: a checkout of this repository,
 # inside this repository. Untracked it turns every `git status` into a warning
 # about a directory that is already under version control by another route.

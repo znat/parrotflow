@@ -19,7 +19,7 @@ the audio has to argue before a reading is dropped. So a band no longer sets a
 term's threshold. It answers two questions:
 
 - **Does any threshold work for this term at all?** A closed band means no.
-  That term is `floor: off` and a `heard:` list, and nothing else.
+  That term is `floor: off` and a `pronunciations:` list, and nothing else.
 - **Where should `offer_below` sit for this speaker?** Below the lowest
   rendering of any term that still has a band. Being offered costs a line the
   model reads; being missed cannot be recovered downstream.
@@ -63,7 +63,10 @@ the second. Here: 0.51 to 0.67.
 
 **A closed band is a result, not a failure.** It says this term can never be
 separated acoustically for this person. The answer is `floor: off` with a
-`heard:` list of the renderings actually seen, and the name judge behind it.
+`pronunciations:` list of the renderings actually seen, and the name judge
+behind it. Those renderings are not only rules: each one's *sound* is
+registered with the spotter under the term's name, so a closed band still gets
+an acoustic path — it just gets it from the rendering instead of the term.
 Report it that way — a user told "no threshold works, here is the rule
 instead" has learned something; a user handed a number that quietly damages
 their transcripts has not.
@@ -109,7 +112,8 @@ yours and not the script's.
   French sentences and English sentences fail differently, and mixing them
   into one list hides that.
 
-Write a manifest beside them:
+Write a manifest at `voice/calibration.json`, beside the config — the same
+directory `PARROTFLOW_CONFIG_DIR` moves:
 
 ```json
 {"sentences": [
@@ -125,10 +129,16 @@ dictation each.
 
 ## Step 3 — score
 
-    scripts/calibrate.py score calibration.json
+    scripts/calibrate.py score            # reads voice/calibration.json
 
 It pairs the last N recordings with the N sentences by order, re-decodes each
-with the vocabulary off, and reports the band per term.
+with the vocabulary off, and reports the band per term. It also writes the
+bands to `voice/calibration.yaml`, so the next person to ask why a term is
+`floor: off` does not have to make anybody read forty sentences again.
+
+`voice/` is where everything measured from this person's voice lives —
+`observations.jsonl`, `calibration.yaml`, `samples/`. None of it goes into a
+git repository.
 
 **Pairing by order breaks when someone re-reads a line**, so it checks that
 half the sentence's words actually turned up before trusting a clip, and
@@ -163,12 +173,19 @@ The `terms:` block for `vocabulary.yaml`, which sits beside `config.yaml`:
 ```yaml
 terms:
   Vercel:
-    heard: [Versailles]    # 0.40 — below any threshold
+    pronunciations:
+      - heard: Versailles  # 0.40 — below any threshold
+        from: calibration
   Tasmeen:                 # band 0.55 .. 0.71, nothing to say
   Praisy:
     floor: off             # no band: "praise" landed at 0.83, closer than
-    heard: [Prissy]        # this speaker's own renderings
+    pronunciations:        # this speaker's own renderings
+      - heard: Prissy
+        from: calibration
 ```
+
+`heard: [a, b]` is the old spelling of that list. It still loads, and
+`--check-config` says what to write instead.
 
 No number per term. A measured floor written here still works and still
 applies to that term, but `--check-config` calls it legacy: the setting is

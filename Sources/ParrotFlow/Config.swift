@@ -144,6 +144,92 @@ struct Config: Decodable, Equatable {
         /// untuned.
         var decideAbove: Float = 3.0
 
+        /// One way this speaker's mouth turns a term into something else, and
+        /// what is known about that.
+        ///
+        /// A rendering used to be a bare string in a `heard:` list, which said
+        /// only that somebody once saw it. That is not enough to decide
+        /// anything with. A rendering seen once and never again is noise; one
+        /// seen nine times is how this person says the word. `seen` makes that
+        /// difference decidable, and `from` says who put it there, so an entry
+        /// mined from the archive can be told from one a person confirmed by
+        /// correcting a transcript.
+        ///
+        /// Nothing mechanical reads `seen` or `from` yet. They are recorded
+        /// here so PR 8 has something to cap and prune on; a count that starts
+        /// being kept the day it is first used starts at zero for every entry
+        /// that already existed.
+        struct Pronunciation: Decodable, Equatable {
+            /// Where an entry came from. `legacy` is not a source, it is the
+            /// absence of one: a bare `heard:` list, or a `pronunciations:`
+            /// entry written without `from:`, records nothing about its own
+            /// provenance and says so rather than guessing.
+            enum Source: String, Decodable, Equatable {
+                case correction
+                case mined
+                case calibration
+                case legacy
+            }
+
+            /// The spelling the decoder produced where the term was said.
+            var heard: String
+            /// How many times it has been seen. Zero means never counted,
+            /// which is every entry written before this key existed.
+            var seen: Int = 0
+            var from: Source = .legacy
+            /// A free line for a person: why this entry is here, or what it
+            /// costs. Never parsed.
+            var note: String?
+            /// What `from:` said, when it said something this does not know.
+            /// Kept rather than dropped so `notices()` can name it — a label
+            /// nobody can read is worth one line, once, rather than silence.
+            var unreadableFrom: String?
+
+            init(
+                heard: String, seen: Int = 0, from: Source = .legacy,
+                note: String? = nil, unreadableFrom: String? = nil
+            ) {
+                self.heard = heard
+                self.seen = seen
+                self.from = from
+                self.note = note
+                self.unreadableFrom = unreadableFrom
+            }
+
+            enum CodingKeys: String, CodingKey { case heard, seen, from, note }
+
+            /// Two shapes. The mapping is what the app writes; the bare string
+            /// is what a person types when they have nothing else to say:
+            ///
+            ///     - heard: Versailles
+            ///       seen: 3
+            ///       from: mined
+            ///     - Versal
+            init(from decoder: Decoder) throws {
+                if let single = try? decoder.singleValueContainer(),
+                   let word = try? single.decode(String.self) {
+                    self.init(heard: word)
+                    return
+                }
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                let word = try c.decode(String.self, forKey: .heard)
+                // An unreadable `from:` is read as `legacy` rather than
+                // refused. It is a label on a rendering, and losing the
+                // rendering over a typo in its label would cost the thing that
+                // works to protect the thing that does not do anything yet.
+                let source = (try? c.decodeIfPresent(String.self, forKey: .from))
+                    .flatMap { $0 }
+                let read = source.flatMap(Source.init(rawValue:))
+                self.init(
+                    heard: word,
+                    seen: (try? c.decodeIfPresent(Int.self, forKey: .seen)).flatMap { $0 } ?? 0,
+                    from: read ?? .legacy,
+                    note: try c.decodeIfPresent(String.self, forKey: .note),
+                    unreadableFrom: read == nil ? source : nil
+                )
+            }
+        }
+
         /// One term, and what is known about it.
         ///
         /// `floor: off` means never match by sound at all — the honest setting
@@ -155,31 +241,46 @@ struct Config: Decodable, Equatable {
         /// A *number* under `floor:` is legacy. It is still honoured, as this
         /// term's `offer_below`, and `--check-config` says so.
         ///
-        /// `heard` is for renderings no number can reach. "Prezi" is 0.33 from
-        /// "Praisy" and would need a floor that swallowed every "praise"; as an
-        /// exact rule it costs nothing and cannot misfire.
+        /// `pronunciations` is for renderings no number can reach. "Prezi" is
+        /// 0.33 from "Praisy" and would need a floor that swallowed every
+        /// "praise". As an exact rule it costs nothing and cannot misfire, and
+        /// `Vocabulary.prepare` also hands its sound to the CTC spotter.
         struct Term: Decodable, Equatable {
             /// A legacy per-term `floor:` number, read as this term's
             /// `offer_below`. Nil means the file-level one applies.
             var offerBelow: Float?
-            /// `floor: off` — never matched by sound, only by `heard`.
+            /// `floor: off` — never matched by sound as a spelling, only
+            /// through its pronunciations.
             var never = false
-            var heard: [String] = []
+            var pronunciations: [Pronunciation] = []
+            /// True when the list arrived under the old `heard:` key, so
+            /// `notices()` can name the key and say what to write instead.
+            var wroteHeard = false
 
-            init(offerBelow: Float? = nil, never: Bool = false, heard: [String] = []) {
+            /// Just the renderings, for the callers that only want the
+            /// spellings — the exact rules, and the "can anything reach this
+            /// term at all" check in `notices()`.
+            var heard: [String] { pronunciations.map(\.heard) }
+
+            init(
+                offerBelow: Float? = nil, never: Bool = false,
+                pronunciations: [Pronunciation] = [], wroteHeard: Bool = false
+            ) {
                 self.offerBelow = offerBelow
                 self.never = never
-                self.heard = heard
+                self.pronunciations = pronunciations
+                self.wroteHeard = wroteHeard
             }
 
-            enum CodingKeys: String, CodingKey { case floor, heard }
+            enum CodingKeys: String, CodingKey { case floor, heard, pronunciations }
 
-            /// Four shapes, because most terms need none of this:
+            /// Five shapes, because most terms need none of this:
             ///
             ///     Tasmeen:                              nothing to say
             ///     Mirza: 0.85                           a legacy floor
-            ///     Praisy: [Prissy, Pressy]              renderings
-            ///     Claude: {floor: off, heard: [cloud]}  both
+            ///     Praisy: [Prissy, Pressy]              renderings, legacy
+            ///     Claude: {floor: off, heard: [cloud]}  renderings, legacy
+            ///     Vercel: {pronunciations: [...]}       renderings, with counts
             init(from decoder: Decoder) throws {
                 if let single = try? decoder.singleValueContainer() {
                     if single.decodeNil() { self.init(); return }
@@ -187,11 +288,22 @@ struct Config: Decodable, Equatable {
                         self.init(offerBelow: number); return
                     }
                     if let listed = try? single.decode([String].self) {
-                        self.init(heard: listed); return
+                        self.init(
+                            pronunciations: listed.map { Pronunciation(heard: $0) },
+                            wroteHeard: true
+                        )
+                        return
                     }
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
-                let heard = try c.decodeIfPresent([String].self, forKey: .heard) ?? []
+                // The old key first, so a file carrying both keeps every
+                // rendering it has. They are the same list with different
+                // amounts known about each entry, and losing one because the
+                // other exists is how a migration eats data.
+                let old = try c.decodeIfPresent([String].self, forKey: .heard) ?? []
+                let listed = try c.decodeIfPresent([Pronunciation].self, forKey: .pronunciations) ?? []
+                let said = old.map { Pronunciation(heard: $0) } + listed
+                let wroteHeard = !old.isEmpty
                 // Number first. Yams answers `Bool.self` for `0.85` quite
                 // happily — anything that is not `true`/`yes`/`on` decodes as
                 // `false` — so asking about `off` before asking about the
@@ -202,7 +314,7 @@ struct Config: Decodable, Equatable {
                 // The reverse trap does not exist. `off` is not a number, so
                 // asking for a Float first throws and falls through.
                 if let number = (try? c.decodeIfPresent(Float.self, forKey: .floor)) ?? nil {
-                    self.init(offerBelow: number, heard: heard)
+                    self.init(offerBelow: number, pronunciations: said, wroteHeard: wroteHeard)
                     return
                 }
                 // `off` rather than a magic number. The previous spelling was
@@ -213,14 +325,20 @@ struct Config: Decodable, Equatable {
                 // `false`, and reading it only as a string threw, which took
                 // the whole file down silently.
                 if let flag = (try? c.decodeIfPresent(Bool.self, forKey: .floor)) ?? nil {
-                    self.init(offerBelow: nil, never: flag == false, heard: heard)
+                    self.init(
+                        offerBelow: nil, never: flag == false,
+                        pronunciations: said, wroteHeard: wroteHeard
+                    )
                     return
                 }
                 if let word = (try? c.decodeIfPresent(String.self, forKey: .floor)) ?? nil {
-                    self.init(offerBelow: nil, never: word.lowercased() == "off", heard: heard)
+                    self.init(
+                        offerBelow: nil, never: word.lowercased() == "off",
+                        pronunciations: said, wroteHeard: wroteHeard
+                    )
                     return
                 }
-                self.init(offerBelow: nil, heard: heard)
+                self.init(offerBelow: nil, pronunciations: said, wroteHeard: wroteHeard)
             }
         }
 
@@ -325,6 +443,35 @@ struct Config: Decodable, Equatable {
                     + " `floor: off` is unaffected and still means never"
                     + " matched by sound")
             }
+
+            // `heard:` is the old key for the same list. It still loads, every
+            // rendering still works, and each one now also searches the audio
+            // — but a bare string records nothing about itself, so a file that
+            // only has those cannot say which entries are worth keeping.
+            let wroteHeard = terms.filter { $0.value.wroteHeard }.keys.sorted()
+            if !wroteHeard.isEmpty {
+                legacy.append("a `heard:` list on"
+                    + " \(wroteHeard.joined(separator: ", ")) is legacy — the"
+                    + " renderings still work and are now searched for by sound"
+                    + " too, but the setting is `pronunciations:`, a list of"
+                    + " `- heard:` entries each with `seen:` and `from:`"
+                    + " (correction, mined or calibration)")
+            }
+
+            // A `from:` nobody can read. Not refused — it labels a rendering
+            // rather than doing anything, and dropping the rendering over its
+            // label would cost the part that works.
+            let mislabelled = terms
+                .flatMap { name, entry in
+                    entry.pronunciations.compactMap { said in
+                        said.unreadableFrom.map { "\(name)/\(said.heard): `from: \($0)`" }
+                    }
+                }
+                .sorted()
+            if !mislabelled.isEmpty {
+                legacy.append("\(mislabelled.joined(separator: ", ")) — not one of"
+                    + " correction, mined, calibration, so it is read as legacy")
+            }
         }
 
         /// What a similarity may be. FluidAudio's metric is normalised, so
@@ -355,12 +502,36 @@ struct Config: Decodable, Equatable {
     /// The exact rules the vocabulary file contributes. Flattened the same way
     /// `transcription.replacements` is, so the substitution pass takes both and
     /// never needs to know which file a rule came from.
+    ///
+    /// Every pronunciation is still a rule as well as a sound. The two catch
+    /// different things — a rule fires on a spelling wherever it appears, the
+    /// spotter fires where the audio agrees — and dropping the rules would
+    /// change what the pipeline sees on every clip. It is a measurement of its
+    /// own, not a side effect of adding the sound.
     var vocabularyRules: [Transcription.Rule] {
         vocabulary.terms
             .flatMap { term, entry in
                 entry.heard.map { Transcription.Rule(source: $0, replacement: term) }
             }
             .sorted { $0.source < $1.source }
+    }
+
+    /// The pronunciations that will be searched for in the audio, with the
+    /// term each one reports.
+    ///
+    /// Only for terms the pass already searches for. A pronunciation is
+    /// registered under its *term's* name, so one attached to a term that has
+    /// no entry of its own would make the spotter report a term with no token
+    /// count, no floor and no place in `vocabularyTerms` — a finding nothing
+    /// downstream can price. That is the real rule behind the prototype's
+    /// silent `name.count >= 5` skip, which was the same test written as a
+    /// number.
+    var vocabularyPronunciations: [(term: String, heard: String)] {
+        let searched = Set(vocabularyTerms.map(\.text))
+        return vocabulary.terms
+            .filter { searched.contains($0.key) }
+            .flatMap { name, entry in entry.pronunciations.map { (term: name, heard: $0.heard) } }
+            .sorted { ($0.term, $0.heard) < ($1.term, $1.heard) }
     }
 
     /// One entry of `transforms:` as it is written, before it is known to be
@@ -1633,14 +1804,32 @@ struct Config: Decodable, Equatable {
             }
             if !vocabulary.acoustic, !byEar.isEmpty {
                 said.append("vocabulary: `acoustic: false`, so \(byEar.count) names"
-                    + " are only matched by their `heard` rules")
+                    + " are only matched by their pronunciation rules")
+            }
+            // How many renderings reach the spotter, and how many are rules
+            // only. The second number is the one nobody expects: a rendering
+            // travels into the audio search under its term's name, so a term
+            // the pass does not search for has nothing to report it as.
+            let heard = vocabularyPronunciations
+            let mute = rules - heard.count
+            if vocabulary.acoustic, rules > 0 {
+                var both: [String] = []
+                if !heard.isEmpty {
+                    both.append("\(heard.count) pronunciation(s) searched for by sound"
+                        + " as well as matched exactly")
+                }
+                if mute > 0 {
+                    both.append("\(mute) matched exactly only — their term is not"
+                        + " searched for by sound, so nothing could report them")
+                }
+                said.append("vocabulary: " + both.joined(separator: ", "))
             }
             let silent = vocabulary.terms
-                .filter { $0.value.never && $0.value.heard.isEmpty }
+                .filter { $0.value.never && $0.value.pronunciations.isEmpty }
                 .keys.sorted()
             if !silent.isEmpty {
                 said.append("vocabulary: \(silent.joined(separator: ", ")) —"
-                    + " `floor: off` and no `heard`, so nothing can match them")
+                    + " `floor: off` and no pronunciations, so nothing can match them")
             }
         }
         // Said whether or not there are terms: a file can carry the old
@@ -1800,10 +1989,15 @@ enum ConfigStore {
     #
     # Per term:
     #
-    #   heard   renderings no number can reach, matched exactly.
-    #   floor   `off` — never match this term by sound, only by `heard`. For a
-    #           term the recogniser writes identically to an ordinary word,
-    #           where no number helps.
+    #   pronunciations  the ways this term actually comes out of the recogniser.
+    #                   Each is matched exactly as a rule, and its sound is
+    #                   searched for in the audio — which is how a rendering no
+    #                   number can reach still finds its term. `seen:` counts
+    #                   how often it has turned up, `from:` says who put it
+    #                   there: correction, mined or calibration.
+    #   floor           `off` — never match this term by its spelling, only by
+    #                   its pronunciations. For a term the recogniser writes
+    #                   identically to an ordinary word, where no number helps.
 
     # Matching by sound needs a ~98 MB model, pulled on first use.
     acoustic: false
@@ -1813,10 +2007,18 @@ enum ConfigStore {
     terms: {}
     #  Tasmeen:                     # nothing close in your speech
     #  Praisy:
-    #    heard: [Prissy, Pressy]    # "Prezi" is 0.33 away — no number reaches it
+    #    pronunciations:            # "Prezi" is 0.33 away — no number reaches it
+    #      - heard: Prissy
+    #        seen: 6
+    #        from: mined
+    #      - heard: Pressy
+    #        seen: 4
+    #        from: mined
     #  Claude:
     #    floor: off                 # "cloud" both ways — no number works
-    #    heard: [cloud]
+    #    pronunciations:
+    #      - heard: cloud
+    #        from: correction
 
     """
 
