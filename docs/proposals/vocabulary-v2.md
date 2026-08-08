@@ -76,7 +76,7 @@ Rules for the agent doing a PR. Follow them exactly.
 | Installed app | `/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow` |
 | Judge model | Ollama, `gemma4:e4b`, temperature 0. Do not benchmark with other models loaded; e4b is the stable reference. |
 | Menu cache | `tests/judge-menus.json` (33 menus, 28 reachable) |
-| Case set | `tests/menu-cases.yaml` (37 labelled clips) |
+| Case set | `tests/menu-cases.yaml` (127 labelled clips, in two blocks) |
 
 ### Environment preflight (run before any measurement)
 
@@ -104,8 +104,8 @@ is the prototype; `(CTC-vs-CTC: …)` alone is v1.
 
 | Measurement | Command | Baseline |
 |---|---|---|
-| Menu recall | `python3 scripts/menu-recall.py` | recall 30/37 |
-| Judge took it | same run | picked 27/37 |
+| Menu recall | `python3 scripts/menu-recall.py` | recall 30/37, on the old 37-clip set — stale, see below |
+| Judge took it | same run | picked 27/37, same set — stale, see below |
 | Before/after | `python3 scripts/before-after.py` | 16 fixed / 10 broken / 2 regressed |
 | Judge on cache | `python3 scripts/tune-judge.py` | 24/28 with the sentinel bug; 26/28 with sentinel lines stripped |
 | Two-stage (fixed harness) | see PR 2 | 25/28, ceiling 28/28 |
@@ -114,6 +114,29 @@ Gates for every PR from PR 3 on: recall must not fall; `before-after.py`
 must show no new REGRESSED rows; judge `picked` must not fall below the
 baseline recorded for the same cache. A `--harvest` re-run changes the cache;
 re-record the baseline in the PR when you re-harvest, and say so.
+
+**The recall and picked baselines are stale.** They were recorded on a
+37-clip set. `tests/menu-cases.yaml` now holds 127 labelled clips: 90 more
+were merged from an unfiltered random sample (F11). The next run re-records
+both numbers. Expect them to drop in absolute terms, because 73 of the new
+clips are ordinary speech with no vocabulary term in them, and some of those
+carry decoder errors the vocabulary cannot fix.
+
+**Record two totals, not one.** A single `recall` and a single `picked` over
+127 clips can now hide a regression. 73 of the clips are controls that the
+vocabulary should not touch at all; if one of them flips the right way while
+a clip that is about a term flips the wrong way, the total does not move and
+the gate passes on a real loss. So the gate is: **no clip that is about a
+vocabulary term may go to a worse mark**, and the 73 controls are reported
+beside it as a separate total. The controls should not move at all in either
+direction. The vocabulary does not touch them, so a control that changes is
+a change nobody asked for, and it needs an explanation before the PR lands.
+
+`menu-recall.py` prints one pair of totals today and does not know which
+block a clip came from. Splitting the report belongs to whoever next touches
+PR 2's harness. Until then, split by hand: the `# picked up:` comment on
+every entry in block 2 says which class the clip is in, and every clip in
+block 1 is about a term.
 
 **Caveat that stands until PR 1:** the same clip scores ~12 nats apart
 between live dictation and replay. Every number above describes replays.
@@ -281,6 +304,28 @@ between models. The 1.5B model is worse than the 0.5B. Fusion
 (0.1–0.75). Acoustic numbers pasted into the document: 20→16 — a
 cross-encoder does not read them.
 
+**F15 — a correctly-decoded term gets no slot, so a missing possessive is
+unrecoverable.** Measured live on 2026-08-08 at 14:37:21 and 14:37:41. The
+sentence "Let's praise Matthieu's work" came out as "Let's praise Matthieu
+work", and the run produced **no vocabulary log lines at all**. The decoder
+spelled the term right, so nothing was proposed. With no proposal there is
+no slot, the judge never runs, and the missing `'s` cannot be put back at
+any later stage. The possessive variants added in PR 6 only exist where a
+substitution is proposed. Contrast 14:38:21: "Let's praise Praisy's work"
+did produce a proposal, and the judge chose the possessive reading
+correctly.
+
+What is measured here is the **transcript and the empty log**, nothing more.
+The intended sentence is Nathan's own, so the possessive was meant. Whether
+the `'s` is audible in the recording is not known, and nobody has looked. So
+"the decoder dropped it" is the likely reading, not a measured one. PR 9
+starts by checking the audio.
+
+*This is not judge quality.* At 14:39:15 the judge was offered "Matthew at"
+→ `Matthieu` (span 0.52) and → `Matthieu's` (span 0.56), and kept "Matthew
+at". That is the judge picking wrongly, and it is PR 7's territory. F15 is
+the case where the judge is never asked. → PR 9.
+
 ---
 
 ## Build order
@@ -299,9 +344,11 @@ an agent working alone verifies by running gates, not by being read.
 | PR 6 | PR 6 | Span variants |
 | PR 7 | PR 7 | Evidence for the judge |
 | PR 8 | PR 8 | Learn from corrections |
+| PR 9 | — | A term the decoder got right, missing its possessive |
 
 PR 0 → PR 1 → PR 2 are strictly ordered. PR 3 depends on PR 2. PRs 4–8
-depend on PR 3 and land in order.
+depend on PR 3 and land in order. PR 9 is unscoped and does not block
+anything.
 
 ---
 
@@ -571,7 +618,9 @@ export PARROTFLOW_CONFIG_DIR=/tmp/pf-scratch
 python3 scripts/tune-judge.py --harvest    # re-harvest against this binary
 grep -c '" 0\.00' tests/judge-menus.json   # 0 — the sentinel is gone at the source (F6)
 python3 scripts/tune-judge.py              # record; the cache changed, so record rather than compare
-python3 scripts/menu-recall.py --runs 3    # gate: recall ≥ 30/37, picked ≥ 27/37, report flips
+python3 scripts/menu-recall.py --runs 3    # gate: recall and picked must not fall below the baseline
+                                           # re-recorded on the 127-clip set; 30/37 and 27/37 were
+                                           # measured on the old 37-clip set and do not apply
 python3 scripts/before-after.py --runs 3   # gate: no new REGRESSED rows
 ```
 
@@ -764,6 +813,33 @@ the one dropped; `--forget` still removes everything.
 
 ---
 
+## PR 9 — a term the decoder got right, missing its possessive
+
+**Why.** F15. The vocabulary only acts where it proposes something. When the
+decoder spells a term correctly, nothing is proposed, no slot is opened, and
+the judge is never asked. "Let's praise Matthieu's work" comes out as "Let's
+praise Matthieu work" and no vocabulary line is logged. PR 6's possessive
+variants cannot help, because they are readings of a substitution that was
+never offered.
+
+**Options, neither chosen.** (a) Open a possessive slot inside the
+vocabulary pass: a vocabulary term already in the transcript, followed by a
+bare noun, with an `'s` in the audio. That keeps the fix where the term
+knowledge is, and costs a slot on sentences that are already correct. (b)
+Treat it as ordinary dictation grammar, outside the vocabulary pass, because
+the same `'s` goes missing after names that are not terms. That is a larger
+stage and it needs its own eval set.
+
+This PR is **unscoped and unmeasured**. Nothing here has a number attached.
+F15 measured one transcript and one empty log. How often a possessive goes
+missing after a term is not known, and nobody has checked whether the `'s`
+is audible in the clip at all. Option (a) only works if it is: a slot that
+asks the audio a question the audio cannot answer is a coin toss. So the
+first step is to listen to the 14:37 clips and to count the cases across the
+archive. Then pick (a) or (b).
+
+---
+
 ## Standing regression sentences
 
 Dictate end-to-end after any PR that touches the router, the judge, or the
@@ -776,9 +852,13 @@ three. HUMAN — these need a voice.
 4. "Let's praise Praisy's work"
 5. "deployed on Vercel against the Versailles Castle", one sentence
 6. "Matthieu's work"
+7. "Let's praise Matthieu's work" — the `'s` must survive (F15)
+8. "Let's praise Antonio's work" — the control. Antonio is not a
+   vocabulary term, so this shows whether a fix for 7 over-fires on
+   ordinary names.
 
-These six belong in `tests/menu-cases.yaml` with their clips as soon as the
-clips exist (PR 3's HUMAN step records them).
+These eight belong in `tests/menu-cases.yaml` with their clips as soon as
+the clips exist (PR 3's HUMAN step records them).
 
 ## Open questions, deliberately not settled here
 

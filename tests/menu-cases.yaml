@@ -1,8 +1,12 @@
-# Menu cases mined from 300 candidate clips — 40 written, newest first.
+# Ground truth for scripts/menu-recall.py: what the speaker actually
+# said, written by hand. Two blocks, mined two different ways.
 #
 # `said` is pre-filled with what the app produced. Correct the lines
-# that are wrong, blank the ones you cannot remember, and delete any
-# clip that is not about a name. See scripts/menu-recall.py.
+# that are wrong, and blank the ones you cannot remember. A line left
+# as it is agrees with the app by construction.
+#
+# Block 1 — mined from 300 candidate clips by trigger, 40 written,
+# newest first.
 
 cases:
   - wav: parrotflow-2026-08-07T18-06-26.wav
@@ -165,3 +169,403 @@ cases:
     # picked up: a known mis-rendering
     said: "Praisy did a great job."
 
+# ---------------------------------------------------------------
+# Block 2 — sampled at random from 1579 candidate clips with no
+# trigger filter (`mine-menu-cases.py --random`), then corrected by
+# hand. 93 sampled, 90 kept here.
+#
+# Block 1 was mined by trigger, so it only holds clips whose text
+# already looked like a term. A name the app missed completely can
+# never enter that way (F11). This block can hold one, and it does:
+# 2026-08-05T23-31-30 is `Vercel` written as "Brazil", which is too
+# far from the term for any filter or floor to reach.
+#
+# The trigger filter would have admitted 23 of these 90 clips. The
+# other 67 it never sees. Most of them are about nothing, and they
+# are kept on purpose. They are the control that shows the pass
+# leaving ordinary speech alone. Keeping only the clips that mention
+# a term would rebuild the bias F11 names.
+#
+# `# app:` records what the app produced. It is written only where
+# the hand label disagrees with it.
+# ---------------------------------------------------------------
+
+  - wav: parrotflow-2026-08-04T10-28-14.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Can you check if the quality gate is actually blocking the merge?"
+
+  - wav: parrotflow-2026-08-05T17-56-55.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "What could find the answer?"
+
+  - wav: parrotflow-2026-08-07T12-41-44.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "or a good sentence to explain them they can make corrections."
+
+  - wav: parrotflow-2026-08-07T18-04-42.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "So can we add okay?"
+
+  - wav: parrotflow-2026-08-06T12-09-03.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Can we have one prompt for all words?"
+
+  - wav: parrotflow-2026-08-05T22-07-51.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: I don't know how urgent is it to tackle this as a little bit.
+    said: "I don't know how urgent is it to tackle this as"
+
+  - wav: parrotflow-2026-08-07T14-19-36.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "So when you have three pronunciations."
+
+  - wav: parrotflow-2026-08-06T14-11-21.wav
+    # picked up: sampled at random, unfiltered. The app got Supabase, Vercel right.
+    said: "Supabase is where the crawl data lives and Vercel hosts the dashboard."
+
+  - wav: parrotflow-2026-08-07T07-10-36.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "That was working before."
+
+  - wav: parrotflow-2026-08-06T09-10-32.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Il faut geler le budget avant lundi, sinon Mira va râler."
+
+  - wav: parrotflow-2026-08-04T10-55-04.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "What are our enforced coverage rules?"
+
+  - wav: parrotflow-2026-08-06T12-12-16.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: What do you mean by canonical? Currently we just you know whatever crawl file is canonical in the one that will be provided to the skill to work on to generate the eval set Yeah.
+    said: "What do you mean by canonical? Currently we just you know whatever crawl file is canonical in the one that will be provided to the skill to work on to generate the eval set."
+
+  - wav: parrotflow-2026-08-05T12-46-08.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "So are you training are you testing against the same prompt that does sort of everything for 5.6 Luna?"
+
+  - wav: parrotflow-2026-08-07T12-17-01.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Liquid glass, I mean."
+
+  - wav: parrotflow-2026-08-06T11-37-13.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: I think one is worth implementing a more neutral about the second.
+    said: "I think one is worth implementing I'm more neutral about the second."
+
+  - wav: parrotflow-2026-08-06T14-27-51.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Switch the following branch."
+
+  - wav: parrotflow-2026-08-07T14-47-26.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: Use a mermid chart as well as a very detailed step-by-step simple explanation of how the data flows through the system in text and audio how shortlists or proposals are made and examples at each stage. Like real-world examples, including the judge prompt. Verbatim, not explanation, the text with substitutions.
+    said: "Use a mermaid chart as well as a very detailed step-by-step simple explanation of how the data flows through the system in text and audio how shortlists or proposals are made and examples at each stage. Like real-world examples, including the judge prompt. Verbatim, not explanation, the text with substitutions."
+
+  - wav: parrotflow-2026-08-05T00-57-25.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Actually, let's make a little change. we're gonna re temporarily replace all our prompts with those scripts with open AI. So for every prompts we have email with bullets to restore that. Spelling Grammar In fact we we we're just using OpenAI for all our prompt but instead of changing our app we're using scripts."
+
+  - wav: parrotflow-2026-08-06T12-02-30.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "About the term is found in two places. Don't we have the information of where it is to reconcile that with the original transcription?"
+
+  - wav: parrotflow-2026-08-04T16-17-18.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "What do you mean you and wh why do we need anything over SSH?"
+
+  - wav: parrotflow-2026-08-07T09-46-57.wav
+    # picked up: sampled at random, unfiltered. The app got Vercel right.
+    said: "The app is being deployed on Vercel."
+
+  - wav: parrotflow-2026-08-05T00-58-27.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "So put the OpenAI wiring in a script and import that script in three different prompts."
+
+  - wav: parrotflow-2026-08-06T22-51-48.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: So for the scale, try to reduce the number of sentences. Maybe you can try putting more words together in the sentence.
+    said: "So for the skill, try to reduce the number of sentences. Maybe you can try putting more words together in the sentence."
+
+  - wav: parrotflow-2026-08-06T14-11-36.wav
+    # picked up: sampled at random, unfiltered. The app got Arexvy, Matthieu, Tasmeen right.
+    said: "Matthieu and Tasmeen are both on the Arexvy account."
+
+  - wav: parrotflow-2026-08-06T16-49-32.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: Not with my linear call but with the fact that the information to answer is missing from Mm.
+    said: "Not with my lenient call but with the fact that the information to answer is missing from Mm."
+
+  - wav: parrotflow-2026-08-06T10-45-24.wav
+    # picked up: sampled at random, unfiltered. The app got Mirza right.
+    said: "Mirza is my friend."
+
+  - wav: parrotflow-2026-08-04T11-20-21.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Good morning Peter, I added a few more comments."
+
+  - wav: parrotflow-2026-08-05T09-56-45.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Also onboarding process."
+
+  - wav: parrotflow-2026-08-06T09-46-01.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "How could we make that context?"
+
+  - wav: parrotflow-2026-08-04T12-52-59.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Hey Parrot, I meant with Patrick."
+
+  - wav: parrotflow-2026-08-04T23-30-34.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "I think I get the message, we can stop here."
+
+  - wav: parrotflow-2026-08-06T12-07-30.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "No, there is no cap."
+
+  - wav: parrotflow-2026-08-08T01-02-23.wav
+    # picked up: sampled at random, unfiltered. The app wrote Supabase over an ordinary word.
+    # app: You don't need to Supabase the design.
+    said: "You don't need to update the design."
+
+  - wav: parrotflow-2026-08-08T00-06-27.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "I mean the colors in the liquid glass background."
+
+  - wav: parrotflow-2026-08-07T07-40-08.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "And how could you rank them?"
+
+  - wav: parrotflow-2026-08-07T13-21-16.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Here is the stand up digest."
+
+  - wav: parrotflow-2026-08-05T23-31-30.wav
+    # picked up: sampled at random, unfiltered. The app missed Vercel.
+    # app: I just deployed to Brazil.
+    said: "I just deployed to Vercel."
+
+  - wav: parrotflow-2026-08-06T15-11-24.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: And each commit would be one PR. So I want to have multiple PRs because small PRs get better AI reviews from grapile on GitHub.
+    said: "And each commit would be one PR. So I want to have multiple PRs because small PRs get better AI reviews from Greptile on GitHub."
+
+  - wav: parrotflow-2026-08-04T11-19-17.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Chain is a langsmith proprietary term."
+
+  - wav: parrotflow-2026-08-05T16-45-13.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "So it works on sound right so how does it match words heard with terms in the vocabulary."
+
+  - wav: parrotflow-2026-08-07T09-35-01.wav
+    # picked up: sampled at random, unfiltered. The app got Mirza, Vercel right.
+    said: "So Mirza and Mira are going to the movies. The plot happens in the Versailles castle. In the meantime, they're checking if their apps deploys correctly on Vercel."
+
+  - wav: parrotflow-2026-08-06T15-30-59.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "But those comments are a problem too."
+
+  - wav: parrotflow-2026-08-06T14-04-21.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Hi Jess. I was able to use your your comments and explanations to update the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries crawl file and evaluation set."
+
+  - wav: parrotflow-2026-08-04T11-38-10.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Okay, I would like to refactor the Slack mentions prompt based on that brief."
+
+  - wav: parrotflow-2026-08-07T09-37-06.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "So is it in the pipeline?"
+
+  - wav: parrotflow-2026-08-07T13-09-30.wav
+    # picked up: sampled at random, unfiltered. The app missed Praisy.
+    # app: Tell preced a Vercel deploy is done.
+    said: "Tell Praisy a Vercel deploy is done."
+
+  - wav: parrotflow-2026-08-05T12-21-15.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: The convention we're trying to follow is to define schemas using Z and generate Variance from it. In that case, we'd generate interfaces from Z source of truth.
+    said: "The convention we're trying to follow is to define schemas using Zod and generate Variance from it. In that case, we'd generate interfaces from Zod source of truth."
+
+  - wav: parrotflow-2026-08-07T17-50-00.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Okay, so create a pending review on my behalf. Very short, concise, simple, standard technical English short sentences examples of the problems you have identified."
+
+  - wav: parrotflow-2026-08-05T23-00-49.wav
+    # picked up: sampled at random, unfiltered. The app missed Vercel.
+    # app: And then you have a list of possible alternatives for Versailles, such as Versailles.
+    said: "And then you have a list of possible alternatives for Versailles, such as Vercel."
+
+  - wav: parrotflow-2026-08-06T12-37-22.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "so that as a feature we could later surface the choice, the decision to the user."
+
+  - wav: parrotflow-2026-08-08T00-14-39.wav
+    # picked up: sampled at random, unfiltered. The app wrote Redcrawl over an ordinary word.
+    # app: I mean in Redcrawl in our data.
+    said: "I mean in general in our data."
+
+  - wav: parrotflow-2026-08-06T11-10-43.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Dude, I'm asking for a verbatim example, not an explanation."
+
+  - wav: parrotflow-2026-08-08T01-01-40.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: Any other ID then heard it?
+    said: "Any other idea than \"heard it\"?"
+
+  - wav: parrotflow-2026-08-07T23-50-26.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "It's a fair it's a fair call."
+
+  - wav: parrotflow-2026-08-05T01-27-50.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Okay, so let's not remove anything for now."
+
+  - wav: parrotflow-2026-08-04T13-15-26.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "We could even have a a path option to the prompts and the rejects or the transforms. If they are complex we can just have them on a file and the config will resolve it so that it stay clean and easy to read."
+
+  - wav: parrotflow-2026-08-07T08-13-36.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "I'm trying to understand how did he how he went from one PR fruit to another? How many commits are specifically For the purpose of that PR it seems like there was a lot of rebase and force pushed involved."
+
+  - wav: parrotflow-2026-08-08T00-30-03.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: and the plan must be in scratch more.
+    said: "and the plan must be in scratchtml."
+
+  - wav: parrotflow-2026-08-04T12-58-21.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Is it the same bug as this?"
+
+  - wav: parrotflow-2026-08-05T14-49-53.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: Where is the latency game coming from?
+    said: "Where is the latency gain coming from?"
+
+  - wav: parrotflow-2026-08-06T21-08-32.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Tu viens même pas voir tes parents ?"
+
+  - wav: parrotflow-2026-08-04T10-23-52.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Address Pr comments."
+
+  - wav: parrotflow-2026-08-06T13-19-40.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Because they depend on each other. There is codependence."
+
+  - wav: parrotflow-2026-08-06T21-08-07.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: Entrain dans le Gers ?
+    said: "En train dans le Gers ?"
+
+  - wav: parrotflow-2026-08-04T18-13-26.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Good luck with your project."
+
+  - wav: parrotflow-2026-08-05T14-10-46.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "But the idea okay."
+
+  - wav: parrotflow-2026-08-04T18-32-36.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Voilà le rapport envoyé par la compagnie d'assurance. Lis-le et mets-le en contexte de la discussion de la synthèse qu'on vient de faire et aussi tant qu'on y est met le dossier dans le dossier principal du projet."
+
+  - wav: parrotflow-2026-08-05T01-02-22.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Yeah but"
+
+  - wav: parrotflow-2026-08-04T10-12-37.wav
+    # picked up: sampled at random, unfiltered. The app got Tasmeen right.
+    said: "It's a community that Tasmeen asked me to crawl."
+
+  - wav: parrotflow-2026-08-06T14-09-56.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near matches to my vocabulary terms."
+
+  - wav: parrotflow-2026-08-04T17-22-31.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Can you give examples of such query-independent facts?"
+
+  - wav: parrotflow-2026-08-06T14-12-30.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "She deserves praise for finishing that so fast."
+
+  - wav: parrotflow-2026-08-07T14-35-52.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Tu vois, de pouvoir dire on aime."
+
+  - wav: parrotflow-2026-08-07T13-19-22.wav
+    # picked up: sampled at random, unfiltered. The app got Praisy right.
+    said: "Praisy is with us today."
+
+  - wav: parrotflow-2026-08-07T12-35-15.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "No, I want the text to be also bigger. So it's more easy it's easier to select and read."
+
+  - wav: parrotflow-2026-08-07T13-10-53.wav
+    # picked up: sampled at random, unfiltered. The app got Vercel right.
+    said: "Vercel and databricks are both in the diagram."
+
+  - wav: parrotflow-2026-08-06T14-11-48.wav
+    # picked up: sampled at random, unfiltered. The app got Ollama, Praisy right.
+    said: "Praisy sent me the Ollama benchmarks yesterday afternoon."
+
+  - wav: parrotflow-2026-08-06T13-20-20.wav
+    # picked up: sampled at random, unfiltered. The app got Vercel right.
+    said: "And the last thing we could do is add a very short definition to each vocabulary terms. For people it could be a person or a teammate, Vercel, an application deployment platform, etc."
+
+  - wav: parrotflow-2026-08-06T13-51-22.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: Hello, Jimplémenté so that on a discuté hier. Le heading sera toujours indexé et cherchable. J'ai aussi renforcé le schéma pour que le summary ne puisse pas être vide.
+    said: "Hello, j'ai implémenté ce don on a discuté hier. Le heading sera toujours indexé et cherchable. J'ai aussi renforcé le schéma pour que le summary ne puisse pas être vide."
+
+  - wav: parrotflow-2026-08-07T18-05-16.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "For example, after a dictation I press the button while the HUD tells me I can make a correction, it opens the correction dialogue and then I make changes."
+
+  - wav: parrotflow-2026-08-04T12-54-09.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: Then I said the activation phrase plus not James but Patrick and the catch-old prompt returned. Nothing I can do with not James but Patrick.
+    said: "Then I said the activation phrase plus not James but Patrick and the catch-all prompt returned. Nothing I can do with not James but Patrick."
+
+  - wav: parrotflow-2026-08-06T21-31-24.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Works f works for me."
+
+  - wav: parrotflow-2026-08-06T12-54-00.wav
+    # picked up: sampled at random, unfiltered. The app got Mirza right.
+    said: "I'm not sure how to interpret this. For example, what is the link between Mirza and Movies, the movie plot?"
+
+  - wav: parrotflow-2026-08-06T15-47-25.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    # app: And while you're doing that also support escaping. So if you press ASC during either recording or transcribing it stops even if the whole key is pressed.
+    said: "And while you're doing that also support escaping. So if you press Esc during either recording or transcribing it stops even if the whole key is pressed."
+
+  - wav: parrotflow-2026-08-06T15-36-12.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Pretty harsh review."
+
+  - wav: parrotflow-2026-08-04T18-29-00.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Okay, go ahead and create the GitHub issues."
+
+  - wav: parrotflow-2026-08-07T10-23-28.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "So I guess to close that loop, is there a way we can record the final transcription when the user press enters."
+
+  - wav: parrotflow-2026-08-07T13-09-46.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "The team deserves praise for shipping that fast."
+
+  - wav: parrotflow-2026-08-05T16-56-24.wav
+    # picked up: sampled at random, unfiltered. No vocabulary term, a control
+    said: "Can the per word score be adjusted with?"
+
+  - wav: parrotflow-2026-08-07T07-36-58.wav
+    # picked up: sampled at random, unfiltered. The app got Praisy right.
+    said: "So let's say we have very low floor for Praisy, but with the judge. The judge would the the judge was n would know my terms and see that."
