@@ -396,7 +396,13 @@ enum VocabularyJudge {
         let ceiling = max(1, min(caps.readings, Caps.letterCeiling))
         var trimmed = slots
         while true {
-            let total = trimmed.reduce(1) { $0 * $1.options.count }
+            // Stopped at the ceiling rather than multiplied out. `max_slots` is
+            // a number in a config file, and sixty binary slots is 2^60 — a
+            // number this only ever compares against 26, and one that overflows
+            // and traps on the way to being compared.
+            let total = trimmed.reduce(1) { running, slot in
+                running > ceiling ? running : running * slot.options.count
+            }
             guard total > ceiling, !trimmed.isEmpty else { break }
             // The first of the widest, not the last: the leftmost slot is the
             // one a reader meets first, and Swift's `max(by:)` picks the last
