@@ -359,9 +359,17 @@ actor Transcriber {
     ///
     /// Nil rather than throwing: a name left misheard is worth less than a
     /// lost dictation.
-    static func read(_ url: URL) -> (samples: [Float], is16kMono: Bool)? {
+    ///
+    /// - Parameter require16kMono: nil for any other format, decided from the
+    ///   header before a buffer is allocated. A caller that cannot use the
+    ///   samples should not pay to read an hour of audio to find that out.
+    static func read(
+        _ url: URL, require16kMono: Bool = false
+    ) -> (samples: [Float], is16kMono: Bool)? {
         guard let file = try? AVAudioFile(forReading: url) else { return nil }
         let format = file.processingFormat
+        let is16kMono = format.sampleRate == sampleRate && format.channelCount == 1
+        guard is16kMono || !require16kMono else { return nil }
         guard let buffer = AVAudioPCMBuffer(
             pcmFormat: format,
             frameCapacity: AVAudioFrameCount(file.length)
@@ -371,7 +379,7 @@ actor Transcriber {
         else { return nil }
         return (
             Array(UnsafeBufferPointer(start: channel, count: Int(buffer.frameLength))),
-            format.sampleRate == sampleRate && format.channelCount == 1
+            is16kMono
         )
     }
 
@@ -382,8 +390,7 @@ actor Transcriber {
     /// which resamples, and this does not. Handing the pass a differently
     /// sampled array would be the second audio path all over again.
     static func samples(at url: URL) -> [Float]? {
-        guard let clip = read(url), clip.is16kMono else { return nil }
-        return clip.samples
+        read(url, require16kMono: true)?.samples
     }
 
     // MARK: - Closing long pauses
