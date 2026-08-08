@@ -221,7 +221,7 @@ def trim_scores(block, options):
     worse than no prose.
     """
     if not block:
-        return block
+        return ""
     kept = []
     for line in tune.strip_sentinels(block).splitlines():
         found = SCORE_LINE.search(line)
@@ -375,7 +375,7 @@ def main():
             ceiling += 1
             picked_chance += 1 / len(short)
             chosen = tune.ask(args.judge, prompt.replace("{terms}", case["terms"]),
-                              short, trim_scores(case.get("scores", ""), short))
+                              short, trim_scores(case.get("scores") or "", short))
             kept += chosen is not None and recall.normalise(chosen) == truth
         print(f"  two-stage, top-{n} then {args.judge}, shortlisted by "
               f"framing {chosen_framing!r}")

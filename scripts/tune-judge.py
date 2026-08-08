@@ -104,7 +104,7 @@ def strip_sentinels(block):
     not there, so the whole block goes with them.
     """
     if not block:
-        return block
+        return ""
     kept = [line for line in block.splitlines() if not SENTINEL_LINE.match(line)]
     if not any(SCORE_LINE.search(line) for line in kept):
         return ""
@@ -204,7 +204,7 @@ def main():
             continue
         scored += 1
         chance += 1 / len(case["menu"])
-        block = "" if args.no_scores else case.get("scores", "")
+        block = "" if args.no_scores else (case.get("scores") or "")
         if args.strip_sentinels and block:
             trimmed = strip_sentinels(block)
             stripped += trimmed != block

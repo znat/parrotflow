@@ -76,14 +76,20 @@ def main():
         if not said or wav not in was:
             continue
         truth = recall.normalise(said)
-        seen, after = [], None
+        runs = []
         for _ in range(args.runs):
             _, after = recall.run(wav, None)
-            seen.append(recall.normalise(after or "") == truth)
+            runs.append((recall.normalise(after or "") == truth, after))
+        seen = [ok for ok, _ in runs]
         after_ok, moved = recall.majority(seen)
         before_ok = recall.normalise(was[wav]) == truth
         key = ("KEPT" if after_ok else "REGRESSED") if before_ok else \
               ("FIXED" if after_ok else "BROKEN")
+        # The `after:` line has to be evidence for the verdict above it, so it
+        # comes from a run that agreed with the majority. Printing the last
+        # run instead put a correct transcript under BROKEN whenever the clip
+        # flipped on its final replay.
+        after = next(text for ok, text in runs if ok == after_ok)
         rows[key].append((wav, said, was[wav], after))
         if moved:
             flipped.append((wav, sum(seen), args.runs))

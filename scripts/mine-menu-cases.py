@@ -97,7 +97,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=60)
     ap.add_argument("--random", type=int, default=0, metavar="N",
-                    help="sample N clips with no trigger filter (F11)")
+                    help="sample N clips with no trigger filter; N replaces "
+                         "--limit and the newest-first order (F11)")
     ap.add_argument("--seed", type=int, default=0,
                     help="seed for --random, so a sheet can be rebuilt")
     args = ap.parse_args()

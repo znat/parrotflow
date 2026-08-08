@@ -133,15 +133,16 @@ def main():
             print(f"  ·  {wav}  no `said` — skipped")
             continue
         truth = normalise(said)
-        seen_menu, seen_final = [], []
+        runs = []
         for _ in range(args.runs):
             menu, final = run(wav, args.floor)
             # No menu means no proposal was made anywhere. The decoder's own
             # text is then the only reading there was, and it counts as
             # recalled when the decoder was already right.
             offered = [normalise(o) for o in menu] or [normalise(final)]
-            seen_menu.append(truth in offered)
-            seen_final.append(normalise(final) == truth)
+            runs.append((truth in offered, normalise(final) == truth, menu, final))
+        seen_menu = [a for a, _, _, _ in runs]
+        seen_final = [b for _, b, _, _ in runs]
         in_menu, menu_moved = majority(seen_menu)
         took_it, final_moved = majority(seen_final)
 
@@ -149,6 +150,13 @@ def main():
         recalled += in_menu
         picked += took_it
         flipped += menu_moved or final_moved
+        # The menu and the transcript printed below have to be evidence for
+        # the mark beside them, so they come from a run that agreed with the
+        # majority on both counts. When no single run did, the one that agreed
+        # about the transcript wins: that is the line the reader acts on.
+        pick = ([r for r in runs if (r[0], r[1]) == (in_menu, took_it)]
+                or [r for r in runs if r[1] == took_it])[0]
+        menu, final = pick[2], pick[3]
         mark = "✓" if took_it else ("~" if in_menu else "✗")
         wobble = ""
         if menu_moved or final_moved:
