@@ -302,7 +302,12 @@ struct Config: Decodable, Equatable {
                 // other exists is how a migration eats data.
                 let old = try c.decodeIfPresent([String].self, forKey: .heard) ?? []
                 let listed = try c.decodeIfPresent([Pronunciation].self, forKey: .pronunciations) ?? []
-                let said = old.map { Pronunciation(heard: $0) } + listed
+                // The new key first, so a rendering written both ways keeps the
+                // entry that knows something about itself. Registered twice it
+                // would be two search targets for one sound, and a term's
+                // spotter score is the best of its targets — a duplicate is a
+                // free extra draw.
+                let said = Self.distinct(listed + old.map { Pronunciation(heard: $0) })
                 let wroteHeard = !old.isEmpty
                 // Number first. Yams answers `Bool.self` for `0.85` quite
                 // happily — anything that is not `true`/`yes`/`on` decodes as
@@ -339,6 +344,14 @@ struct Config: Decodable, Equatable {
                     return
                 }
                 self.init(offerBelow: nil, pronunciations: said, wroteHeard: wroteHeard)
+            }
+
+            /// One entry per spelling, first kept. Exact rather than
+            /// case-insensitive: "Versal" and "versal" tokenise differently and
+            /// are two renderings, not one written twice.
+            private static func distinct(_ said: [Pronunciation]) -> [Pronunciation] {
+                var seen: Set<String> = []
+                return said.filter { seen.insert($0.heard).inserted }
             }
         }
 

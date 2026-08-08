@@ -168,15 +168,12 @@ actor Vocabulary {
         // named rather than dropped in silence.
         let unsearched = config.vocabularyRules.count - heard.count
         if unsearched > 0 {
-            mute.append("\(unsearched) more on terms not searched for by sound")
+            mute.append("\(unsearched) on terms not searched for by sound")
         }
-        if !pronunciations.isEmpty {
+        if !pronunciations.isEmpty || !mute.isEmpty {
             Log.write("vocabulary: \(pronunciations.count) pronunciation(s) searched"
                 + " for by sound"
-                + (mute.isEmpty ? "" : "; skipped \(mute.joined(separator: ", "))"))
-        } else if !mute.isEmpty {
-            Log.write("vocabulary: no pronunciation searched for by sound;"
-                + " skipped \(mute.joined(separator: ", "))")
+                + (mute.isEmpty ? "" : "; rules only: \(mute.joined(separator: ", "))"))
         }
 
         let context = CustomVocabularyContext(terms: built + pronunciations)
