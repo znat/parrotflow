@@ -359,7 +359,9 @@ before it can reach a menu.
 
 **F17 — the term list is the prior, and the prior is load-bearing (spike,
 2026-08-08).** Ten framings of the judge's question, all prompt-only, all
-scored by `scripts/judge-framings.py` against the same 53 cached menus.
+scored by `scripts/judge-framings.py` against the same 53 cached menus. The
+prompts themselves, and the cases they turn on, are in
+[judge-framings.md](judge-framings.md).
 Chance is 17.4/53 on every row. **The set tuned on and the set reported on
 are the same 53 cases; there is no held-out set**, so anything inside F16's
 wording spread of ±2 has not moved.
