@@ -65,7 +65,7 @@ struct Config: Decodable, Equatable {
     /// It is maintained by the app rather than by hand — see `Vocabulary`.
     var vocabulary: Vocabulary = Vocabulary()
 
-    /// The directory this config was read from, when something said.
+    /// The directory this config was read from, when the decoder was told.
     ///
     /// A transform resolves its files through `TransformFolder`, which has a
     /// name to hang them on. A `vocabulary:` stage has only a filename, so it
