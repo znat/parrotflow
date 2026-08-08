@@ -284,7 +284,16 @@ enum ConfigWriter {
         var text = value.trimmingCharacters(in: .whitespaces)
         if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") {
             text = String(text.dropFirst().dropLast())
-            text = text.replacingOccurrences(of: "\\\"", with: "\"")
+            return text.replacingOccurrences(of: "\\\"", with: "\"")
+        }
+        // YAML's other quote, and it is not decoration: `'Praisy':` is a legal
+        // key, so a reader that only knows double quotes fails to find the term
+        // and `--forget` deletes the audio while leaving the pronunciations
+        // running. A single-quoted scalar escapes its own quote by doubling it,
+        // and has no backslash escapes at all.
+        if text.count >= 2, text.hasPrefix("'"), text.hasSuffix("'") {
+            text = String(text.dropFirst().dropLast())
+            return text.replacingOccurrences(of: "''", with: "'")
         }
         return text
     }

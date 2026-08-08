@@ -296,6 +296,65 @@ fi
 got="$(say "$(cat "$WORK/vocabulary.yaml")")"
 wants "what is left still parses" "$got" "2 terms in vocabulary.yaml, 2 matched by sound, 1 by rule"
 
+# A quoted key. `'Praisy':` and `"Praisy":` are both legal YAML, and a reader
+# that only knows one of them finds no term — which is the dangerous failure:
+# the audio and the observations go and the pronunciations stay, so the term
+# goes on firing while its evidence is gone.
+for quote in "'" '"'; do
+  body="acoustic: true
+terms:
+  ${quote}Praisy${quote}:
+    heard: [Prissy, Pressy]
+  Vercel:
+    heard: [Versal]"
+  got="$(forget_case "$body")"
+  wants "a ${quote}-quoted key is found"  "$got" "2 pronunciation(s)"
+  got="$(cat "$WORK/vocabulary.yaml")"
+  rejects "and its renderings are gone"   "$got" "Prissy"
+  wants "the key itself is left alone"    "$got" "${quote}Praisy${quote}:"
+done
+
+# And when the edit cannot reach the term, nothing else is touched either. A
+# `--forget` that deletes the audio and leaves the pronunciations running is
+# worse than one that refuses.
+printf 'acoustic: true
+terms:
+  Praisy:
+    heard: [Prissy]
+' > "$WORK/vocabulary.yaml"
+mkdir -p "$WORK/voice/samples/Praisy"
+printf '%s
+' '{"at":"2026-08-07T15:21:19","term":"Praisy","heard":"Prissy","from":"mined"}'   > "$WORK/voice/observations.jsonl"
+: > "$WORK/voice/samples/Praisy/00-prissy.wav"
+# The term is there and reachable, so this must succeed — the refusal path is
+# exercised by the guard itself, which reads the file back through the decoder.
+got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --forget Praisy 2>/dev/null)"
+wants "a reachable term is forgotten"        "$got" "1 pronunciation(s)"
+rejects "and nothing is left to complain about" "$got" "still has"
+
+# A shape the text-level edit cannot reach — the whole term body as a flow
+# mapping. The refusal is the point: deleting the audio and leaving the
+# pronunciations running is worse than doing nothing, because the term goes on
+# firing while the evidence for it is gone.
+printf 'acoustic: true\nterms:\n  Praisy: {heard: [Prissy, Pressy]}\n' > "$WORK/vocabulary.yaml"
+mkdir -p "$WORK/voice/samples/Praisy"
+printf '%s\n' '{"at":"2026-08-07T15:21:19","term":"Praisy","heard":"Prissy","from":"mined"}' \
+  > "$WORK/voice/observations.jsonl"
+: > "$WORK/voice/samples/Praisy/00-prissy.wav"
+got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --forget Praisy 2>/dev/null)"
+wants "an unreachable shape is refused" "$got" "still has 2 pronunciation(s)"
+wants "and it says nothing else moved"  "$got" "Nothing else was touched either"
+got="$(cat "$WORK/voice/observations.jsonl")"
+wants "the observations are still there" "$got" '"term":"Praisy"'
+total=$((total + 1))
+if [ -f "$WORK/voice/samples/Praisy/00-prissy.wav" ]; then
+  pass=$((pass + 1)); printf '  ✓ and so are the samples\n'
+else
+  failed="$failed
+      and so are the samples"
+  printf '  ✗ and so are the samples\n'
+fi
+
 # Nothing recorded is not an error. `--forget` is what somebody reaches for
 # when they are not sure what is in there.
 printf 'acoustic: true\nterms:\n  Praisy:\n' > "$WORK/vocabulary.yaml"
