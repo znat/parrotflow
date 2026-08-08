@@ -6,10 +6,11 @@
 # The file is learnt, not written, so nobody rereads it and a key that quietly
 # stops meaning what it meant is invisible. Two things are scored here.
 #
-#   the two numbers    `offer_below` decides what reaches the menu,
-#                      `decide_above` decides what is written without asking.
-#                      They are separate because one threshold could not do
-#                      both jobs (F1).
+#   the two numbers    `offer_below` is the spelling distance at which a
+#                      reading still reaches the menu; `decide_above` is how
+#                      hard the audio has to argue before it is dropped
+#                      instead. They are separate because one threshold could
+#                      not do both jobs (F1).
 #   the old spellings  a file written before them still loads and still
 #                      behaves: `min_similarity:` is read as `offer_below:`, a
 #                      per-term `floor:` number still sets that term's, and
@@ -41,6 +42,14 @@ say() {
   printf '%s\n' "$1" > "$WORK/vocabulary.yaml"
   PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>/dev/null \
     | sed -n 's/^  · vocabulary: //p'
+}
+
+# complains <vocabulary.yaml body> — the same for the ✗ list, which is what
+# `--check-config` exits 1 on.
+complains() {
+  printf '%s\n' "$1" > "$WORK/vocabulary.yaml"
+  PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>/dev/null \
+    | sed -n 's/^  ✗ vocabulary: //p'
 }
 
 # wants <name> <text> <substring> — the substring has to be in the text.
@@ -76,7 +85,7 @@ terms:
     floor: 0.85
   Tasmeen:')"
 wants "a legacy floor still sets what that term offers" "$got" "Mirza 0.85"
-wants "the other term is on the file default"          "$got" "0.5"
+wants "the other term is on the file default"          "$got" "similarity 0.5 and up"
 wants "and the key is called legacy"                   "$got" "is legacy"
 wants "with what to write instead"                     "$got" '`offer_below:` at the top of the file'
 
@@ -107,8 +116,8 @@ wants "and nothing can reach that term"  "$got" "Matthieu — \`floor: off\` and
 got="$(say 'acoustic: true
 terms:
   Tasmeen:')"
-wants "the default offer floor"    "$got" "offered below 0.5,"
-wants "the default decide margin"  "$got" "above 3.0 nats"
+wants "the default offer floor"    "$got" "offered at similarity 0.5 and up"
+wants "the default decide margin"  "$got" "by more than 3.0 nats"
 rejects "and nothing is legacy"    "$got" "is legacy"
 
 # --- 5. the old file-level key ---------------------------------------------
@@ -116,7 +125,7 @@ got="$(say 'acoustic: true
 min_similarity: 0.75
 terms:
   Tasmeen:')"
-wants "min_similarity is read as offer_below" "$got" "offered below 0.75,"
+wants "min_similarity is read as offer_below" "$got" "offered at similarity 0.75 and up"
 wants "and named as the old spelling"         "$got" '`min_similarity: 0.75` is the old name for `offer_below:`'
 
 # --- 6. both file-level keys: the new one is the intent --------------------
@@ -126,8 +135,21 @@ offer_below: 0.40
 decide_above: 5.5
 terms:
   Tasmeen:')"
-wants "offer_below wins over min_similarity" "$got" "offered below 0.4,"
-wants "decide_above is read"                 "$got" "above 5.5 nats"
+wants "offer_below wins over min_similarity" "$got" "offered at similarity 0.4 and up"
+wants "decide_above is read"                 "$got" "by more than 5.5 nats"
+
+# --- 7. a number in the wrong units is a fault, not a notice --------------
+#
+# Both look exactly like the vocabulary being broken: above 1 nothing ever
+# reaches the menu, at or below 0 nats every reading the decoder does not
+# already prefer is dropped before anyone sees it.
+got="$(complains 'acoustic: true
+offer_below: 85
+decide_above: 0
+terms:
+  Tasmeen:')"
+wants "a similarity outside 0 to 1 is refused" "$got" '`offer_below: 85.0` is outside 0 to 1'
+wants "a margin at 0 nats is refused"          "$got" '`decide_above: 0.0` drops every'
 
 printf '\n  %d/%d\n' "$pass" "$total"
 if [ -n "$failed" ]; then

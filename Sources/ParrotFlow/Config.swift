@@ -1468,6 +1468,22 @@ struct Config: Decodable, Equatable {
             found.append("pipelines: \"\(name)\" is not a configured language, so that pipeline never runs"
                 + " — configured: \(transcription.languages.joined(separator: ", "))")
         }
+        // A similarity is 0 to 1 and nothing else can be one. Above 1 no
+        // reading ever reaches the menu and the whole vocabulary goes quiet;
+        // below 0 every span reaches it. Both are a number typed in the wrong
+        // units, and both look like the feature being broken.
+        if vocabulary.offerBelow < 0 || vocabulary.offerBelow > 1 {
+            found.append("vocabulary: `offer_below: \(vocabulary.offerBelow)` is outside 0 to 1"
+                + " — it is a similarity, where 1.0 is the term spelled exactly")
+        }
+        // Nats, and the audio arguing against a reading by a negative amount
+        // is the audio agreeing with it. At or below 0 every proposal the
+        // decoder does not already prefer is dropped before anyone sees it.
+        if vocabulary.decideAbove <= 0 {
+            found.append("vocabulary: `decide_above: \(vocabulary.decideAbove)` drops every"
+                + " reading the audio does not already prefer — it is a margin in nats,"
+                + " and it has to be above 0")
+        }
         found += replacementProblems()
         // A `path:` that named nothing readable. The entry is gone rather than
         // idle — the pipeline step that names it will say so too — and a
@@ -1564,9 +1580,13 @@ struct Config: Decodable, Equatable {
             said.append("vocabulary: \(vocabulary.terms.count) terms in"
                 + " \(ConfigStore.vocabularyURL.lastPathComponent),"
                 + " \(byEar.count) matched by sound, \(rules) by rule")
+            // Spelled out rather than printed as `offer_below 0.5`. The key
+            // names the job; only a sentence says which way the number points.
             if vocabulary.acoustic, !byEar.isEmpty {
-                said.append("vocabulary: offered below \(vocabulary.offerBelow),"
-                    + " written without asking above \(vocabulary.decideAbove) nats — "
+                said.append("vocabulary: offered at similarity"
+                    + " \(vocabulary.offerBelow) and up, dropped when the audio"
+                    + " argues against it by more than \(vocabulary.decideAbove)"
+                    + " nats — "
                     + byEar.map { $0.offerBelow == vocabulary.offerBelow
                         ? $0.text : "\($0.text) \($0.offerBelow)" }
                         .joined(separator: ", "))
@@ -1725,16 +1745,18 @@ enum ConfigStore {
     # a term. If you want to change something, the safe move is to let the app
     # measure again rather than to pick a number.
     #
-    # Two numbers, and they do different jobs. Offering a reading and writing
-    # one are different risks, and one threshold could not do both: strict
-    # enough to be safe it caught 2 of 20 misheard names, loose enough to catch
-    # them "in general" became "in Redcrawl".
+    # Two numbers, and they do different jobs. What a spelling makes worth
+    # looking at and what the audio can veto are different questions, and one
+    # threshold answering both was safe or useful and never both: strict enough
+    # to be safe it caught 2 of 20 misheard names, loose enough to catch them
+    # "in general" became "in Redcrawl".
     #
     #   offer_below    how far a word's spelling may sit from the term and
-    #                  still reach the menu, from 0 to 1. Being offered costs a
-    #                  line the model reads; being missed cannot be undone.
+    #                  still reach the menu, from 0 to 1, where 1.0 is the term
+    #                  spelled exactly. Being offered costs a line the model
+    #                  reads; being missed cannot be undone.
     #   decide_above   how hard the audio has to argue against a reading, in
-    #                  nats, before it is dropped rather than offered.
+    #                  nats, before it is dropped instead of offered.
     #
     # Per term:
     #

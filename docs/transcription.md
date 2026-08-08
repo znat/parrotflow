@@ -96,10 +96,10 @@ terms:
 
 #### The two numbers
 
-Offering a reading and writing one are different risks, so they have different
-settings. One threshold used to do both jobs and no value did them both: strict
-enough to be safe it caught 2 of 20 misheard names, and loose enough to catch
-them "in general" became "in Redcrawl".
+What a spelling makes worth looking at and what the audio can veto are
+different questions. One threshold used to answer both and no value answered
+them both: strict enough to be safe it caught 2 of 20 misheard names, and loose
+enough to catch them "in general" became "in Redcrawl".
 
 **`offer_below`** is how far a decoded word's spelling may sit from a term and
 still reach the judge's menu, from 0 to 1, where 1.0 is the term written out
