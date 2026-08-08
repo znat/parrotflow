@@ -910,9 +910,9 @@ struct Pipeline: Equatable, Codable {
 
         let caps = step.caps ?? VocabularyJudge.Caps.standard
         // Both sources. The acoustic pass proposes with positions; a
-        // `replacements` rule has already rewritten the text and is found by
-        // searching for the term it wrote — the documented limitation, kept
-        // because a rule fires on an exact spelling and so proposes rarely.
+        // `replacements` rule publishes none, so its substitutions are found by
+        // searching for the term and told apart from the terms the decoder
+        // already had by comparing against the text the pass returned.
         var rules = ""
         if case .string(let wrote)? = scope["replacements.changes"] { rules = wrote }
         let parts = VocabularyJudge.acousticParts(
@@ -937,8 +937,8 @@ struct Pipeline: Equatable, Codable {
         // decoder's own reading is still first, so the cost is a correction
         // never offered rather than a wrong one written.
         if built.truncated {
-            Log.write("pipeline: vocabulary — \(slots.count) slots allow more than"
-                + " \(caps.readings) readings; the menu is cut at \(sentences.count)")
+            Log.write("pipeline: vocabulary — \(slots.count) slots allow more readings than"
+                + " the menu may hold; cut at \(sentences.count)")
         }
         guard sentences.count > 1 else {
             return StageResult(text: text, vars: [
