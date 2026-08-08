@@ -16,6 +16,13 @@ let arguments = CommandLine.arguments
 // here covers every path, including the ones added later.
 atexit { Log.flush(); Trace.flush() }
 
+// First, and above the config: this is the handshake that says which code you
+// are running, and it must answer even when the config is broken or missing.
+if arguments.contains("--version") {
+    print(AppVariant.buildStamp)
+    exit(0)
+}
+
 // Before anything reads the config, because reading it creates it: `load`
 // calls `createIfMissing`, so a line below that merely wants the output
 // directory would seed the files this command exists to report on, and every

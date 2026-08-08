@@ -166,6 +166,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // First line of the run, so the log says which code wrote the rest of it.
+        Log.write("build: \(AppVariant.buildStamp)")
+
         buildStatusItem()
         loadConfig(announceErrors: false)
         watchConfig()
