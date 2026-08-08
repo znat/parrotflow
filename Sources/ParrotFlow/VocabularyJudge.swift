@@ -198,10 +198,10 @@ enum VocabularyJudge {
     ///
     /// A rule has no position to publish — it fired during the `replacements`
     /// stage, which rewrites text and reports pairs. So these are found by
-    /// searching for the term, with the old limitation intact: two rules
-    /// writing one term into one sentence cannot be told apart. That is
-    /// survivable, and was not for the acoustic pass, because a rule fires on
-    /// an exact spelling and so proposes far less often.
+    /// searching for the term, which is the least-resistance path this plan
+    /// settled on rather than teaching `replacements` to publish ranges. A rule
+    /// fires on an exact spelling and so proposes far less often than the
+    /// acoustic pass, which is why the same shortcut was not survivable there.
     ///
     /// **A term the decoder already wrote is not a substitution.** Searching
     /// for the term finds every occurrence, including the ones no rule touched
