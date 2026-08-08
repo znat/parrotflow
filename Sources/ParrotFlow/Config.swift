@@ -249,8 +249,14 @@ struct Config: Decodable, Equatable {
             /// A legacy per-term `floor:` number, read as this term's
             /// `offer_below`. Nil means the file-level one applies.
             var offerBelow: Float?
-            /// `floor: off` — never matched by sound as a spelling, only
-            /// through its pronunciations.
+            /// `floor: off` — never matched by sound at all, by its own
+            /// spelling or through its pronunciations. Its renderings are
+            /// exact rules and nothing else, because a rendering is registered
+            /// under the term's name and a term with `floor: off` has no entry
+            /// for the spotter to report. That is the intended reading:
+            /// "Claude" and "cloud" come back identical because they *sound*
+            /// identical, so the audio separates them no better than the
+            /// spelling does.
             var never = false
             var pronunciations: [Pronunciation] = []
             /// True when the list arrived under the old `heard:` key, so

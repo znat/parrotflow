@@ -64,9 +64,15 @@ the second. Here: 0.51 to 0.67.
 **A closed band is a result, not a failure.** It says this term can never be
 separated acoustically for this person. The answer is `floor: off` with a
 `pronunciations:` list of the renderings actually seen, and the name judge
-behind it. Those renderings are not only rules: each one's *sound* is
-registered with the spotter under the term's name, so a closed band still gets
-an acoustic path — it just gets it from the rendering instead of the term.
+behind it. Those renderings are exact rules and nothing else. `floor: off`
+turns sound matching off for the whole term, its renderings included — which is
+right, because a closed band usually closes for the same reason the audio
+cannot help: "Claude" and "cloud" come back identical because they sound
+identical.
+
+A term with a **band** gets both. Its renderings are rules *and* search targets:
+the spotter looks for the sound of the rendering and reports the term, which is
+the only path to something like `Versailles` at 0.40 from `Vercel`.
 Report it that way — a user told "no threshold works, here is the rule
 instead" has learned something; a user handed a number that quietly damages
 their transcripts has not.

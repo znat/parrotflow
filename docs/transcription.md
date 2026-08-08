@@ -165,6 +165,13 @@ machine: "Claude" and "cloud" both come back as `cloud`, "Matthieu" and
 "Matthew" both as `Matthew`. No threshold separates them, because the
 distinction is gone before anything downstream can look.
 
+It turns the whole term off, its pronunciations included. Those stay exact
+rules and stop being search targets — a rendering is registered under the
+term's name, and a term switched off has no entry for the spotter to report.
+That is the right reading rather than a limitation: a term is usually
+`floor: off` because it *sounds* like the ordinary word, and the audio
+separates them no better than the spelling does.
+
 `floor: off` in YAML is the boolean `false`, not the string. So are `on`,
 `yes` and `no`. The decoder reads both.
 
@@ -180,7 +187,7 @@ They still load and still behave. `--check-config` says what was read.
 | --- | --- |
 | `min_similarity: 0.75` | `offer_below: 0.75` |
 | `floor: 0.85` on a term | that term's `offer_below` |
-| `floor: off`, `floor: no` | unchanged — never matched by its own spelling |
+| `floor: off`, `floor: no` | unchanged — never matched by sound |
 | `heard: [Prissy, Pressy]` | `pronunciations:`, each `from: legacy` |
 
 A number under `floor:` is legacy: it now only decides what is offered, and the

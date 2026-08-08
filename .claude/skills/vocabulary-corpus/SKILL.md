@@ -292,9 +292,9 @@ And beside it, three short lists:
 
 - **Rejected, with the reason.** `Praisy` — "praise" at 0.83. `Sentry` —
   "entry" at 0.83. These go in with `floor: off` and a `pronunciations:` list
-  of renderings actually seen, so the term's own spelling is never matched by
-  sound and the renderings still are. Give the reason, or someone re-adds them
-  next month.
+  of renderings actually seen. `floor: off` turns sound matching off for the
+  whole term, renderings included, so those are exact rules and the judge reads
+  the sentence. Give the reason, or someone re-adds them next month.
 - **Already fine.** The terms the decoder writes correctly. Same reason.
 - **Read these aloud.** The step 5 sentences.
 
