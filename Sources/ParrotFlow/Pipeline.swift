@@ -920,6 +920,12 @@ struct Pipeline: Equatable, Codable {
         ) + VocabularyJudge.ruleParts(rules, in: text, before: findings?.text)
 
         let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
+        // Logged on every run, not only when the count is fatal. `max_slots` is
+        // the cliff this stage falls off — one slot over and the whole menu is
+        // declined — so the distance to it has to be measurable before a change
+        // that widens what fires, not inferred afterwards from the clips that
+        // broke.
+        Log.write("vocabulary judge: \(slots.count) slot(s) from \(parts.count) proposal(s)")
         guard !slots.isEmpty else {
             return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(0)])
         }
