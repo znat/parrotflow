@@ -1,0 +1,60 @@
+# Is the decoded word in the dictionary?
+#
+# The router in `scripts/judge-routing.py` splits on this. A word here is a
+# word `Replacements.isRealWord` would call real: NSSpellChecker, lowercased,
+# `en` then `fr`. This **reproduces** the app's gate — it does not call it. The
+# app is a bundle and a Python harness cannot link it, so the body of the call
+# is copied into `scripts/real-words.swift`.
+#
+# Cached rather than asked each run. `checkSpelling` returns the same
+# `NSNotFound` for a known word and for a failed lookup, so a slow call reads
+# as "real" and a rerun could quietly move a routing number.
+#
+# Both cases are stored where the app would ask for both (`Vocabulary.autoApplies`
+# asks the term as written and lowercased). `Mathieu` and `Versailles` are true
+# because the app also asks French.
+#
+# Regenerate: `python3 scripts/judge-routing.py --classify-words`
+
+  close: true
+  crawl: true
+  explanation: true
+  explanations: true
+  general: true
+  matches: true
+  Mathieu: true
+  mathieu: true
+  merge: true
+  possible: true
+  praise: true
+  preced: false
+  press: true
+  Pressy: false
+  pressy: false
+  Pretty: true
+  pretty: true
+  Prezi: false
+  prezi: false
+  prissy: true
+  Prissy: true
+  prizzi: false
+  Prizzi: false
+  proprietary: true
+  rebase: true
+  retry: true
+  rxv: false
+  sentences: true
+  specifically: true
+  superbase: false
+  surface: true
+  tasmin: false
+  Tasmin: false
+  tasmine: false
+  Tasmine: false
+  update: true
+  versailles: true
+  Versailles: true
+  versal: false
+  Versal: false
+  vocabulary: true
+  watching: true
