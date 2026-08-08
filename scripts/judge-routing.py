@@ -41,6 +41,7 @@ held-out set. A one- or two-case difference is inside the wording noise F16
 measured, so a branch that moves by less than that has not moved.
 """
 import argparse
+import itertools
 import json
 import difflib
 import os
@@ -195,14 +196,40 @@ def slots(menu):
     return ref, spans, fillers
 
 
-def check(case, spans, fillers):
-    """The recovery is right only if it rebuilds the menu exactly."""
-    product = 1
-    for i in range(len(spans)):
-        product *= len({f[i] for f in fillers})
-    if product != len(case["menu"]) or len({tuple(f) for f in fillers}) != len(case["menu"]):
-        raise SystemExit(f"✗ {case['wav']}: {len(spans)} spans rebuild {product} "
-                         f"readings, menu holds {len(case['menu'])}")
+def compose(ref, spans, fill):
+    """`ref` with each span replaced by the given filler."""
+    out, cursor = [], 0
+    for (a, b), text in zip(spans, fill):
+        out += ref[cursor:a]
+        if text:
+            out.append(text)
+        cursor = b
+    out += ref[cursor:]
+    return " ".join(out)
+
+
+def check(case, ref, spans, fillers):
+    """The recovery is right only if it rebuilds the menu exactly.
+
+    Two things are checked and both are needed. Every option must come back
+    out of its own fillers, and the cartesian product of the slot options must
+    be the menu — no reading missing, none invented. Counting readings is not
+    enough: a misaligned span can hold the count and still cut the sentence in
+    the wrong place, which would move a word into the wrong routing class and
+    change the totals this file exists to report.
+    """
+    for option, fill in zip(case["menu"], fillers):
+        rebuilt = compose(ref, spans, fill)
+        if rebuilt != " ".join(option.split()):
+            raise SystemExit(f"✗ {case['wav']}: {len(spans)} spans rebuild\n"
+                             f"    {rebuilt!r}\n  from\n    {option!r}")
+    options = [sorted({f[i] for f in fillers}) for i in range(len(spans))]
+    built = {compose(ref, spans, combo) for combo in itertools.product(*options)}
+    wanted = {" ".join(o.split()) for o in case["menu"]}
+    if built != wanted:
+        raise SystemExit(
+            f"✗ {case['wav']}: the slot options do not span the menu.\n"
+            f"  invented {sorted(built - wanted)}\n  missing {sorted(wanted - built)}")
 
 
 def blank(ref, spans, index):
@@ -349,7 +376,7 @@ def analyse(cases):
     out = []
     for case in cases:
         ref, spans, fillers = slots(case["menu"])
-        check(case, spans, fillers)
+        check(case, ref, spans, fillers)
         options = [sorted({f[i] for f in fillers}) for i in range(len(spans))]
         heard = [decoded_filler(case, o) for o in options]
         scored = [slot_pair(case, o, h) for o, h in zip(options, heard)]
