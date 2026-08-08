@@ -109,6 +109,7 @@ is the prototype; `(CTC-vs-CTC: …)` alone is v1.
 | Before/after | `python3 scripts/before-after.py --runs 3` | 20 fixed / 26 broken / 11 regressed / 70 already right |
 | Judge on cache | `python3 scripts/tune-judge.py` | 41/53 on the 66-menu cache (chance 17.4); 38/53 with `--no-scores` |
 | Judge framings | `python3 scripts/judge-framings.py` | baseline 41/53, and 0/8 of the ordinary-word collision class (F17) |
+| Judge routing | `python3 scripts/judge-routing.py` | control 41/53; best routed arm 32/53; argmax 0/8 on the class it decides (F18) |
 | Two-stage (fixed harness) | see PR 2 | 25/28, ceiling 28/28 — on the old 28-menu cache |
 
 Split by class, from the same `--runs 3` run (the plan asks for two totals,
@@ -446,6 +447,70 @@ cloze menu can: the sentence once, a blank per uncertain span, and under each
 blank only the candidates for that span, typed. That also makes the cost
 linear in slots instead of the product PR 6 had to cap at two. Measure it
 against these same 53 menus before any of it reaches the app.
+
+**F18 — the acoustic score is spent before the judge sees it, and the split
+that would use it is inverted (spike, 2026-08-08).** F17's repair was to route
+each case to one decider instead of asking one prompt to serve two classes: a
+decoded word that is not a real word goes to code on the raw acoustic score, a
+decoded word that is a real word goes to a judge asked only about position,
+with no term list. `Replacements.isRealWord` is the router. Measured by
+`scripts/judge-routing.py` against the same 53 cached menus, `gemma4:e4b`,
+temperature 0. The prompts and the cases are in
+[judge-framings.md](judge-framings.md). **Same set tuned on and reported on,
+no held-out set**, and the second router was chosen after seeing the first
+one's errors.
+
+The shipped control was re-measured in the same run at 41/53, reproducing
+F17 exactly. Three full runs gave identical totals.
+
+| | branch B | branch A /51 | combined /53 | collision /8 |
+|---|---|---|---|---|
+| no router, the shipped prompt | — | 39 | **41** | 0 |
+| position question, sentence | 0/2 | 24 | 24 | 3 |
+| position question, wording 2 | 0/2 | 32 | 32 | 4 |
+| position question, one blank per slot | 0/2 | 31 | 31 | **6** |
+| the same blanks, wording 2 | 0/2 | 27 | 27 | **6** |
+
+*Branch B cannot win, and the reason is in `Vocabulary.autoApplies`.* It
+writes a term in when the term beats the decoded word on the raw score **and**
+the decoded word is not a real word. A slot only reaches a menu when one of
+those failed. On the not-a-word class the second test passed, so the first
+must have failed — the decoded spelling already scores at least as well as the
+term, on 8 slots of 8. Argmax there can only answer "keep what the decoder
+wrote", and it is **0/8** because in all 8 the speaker meant the term. The
+judge sees exactly the residue of a decision code already took.
+
+*The score is worth nothing on the other classes either.* Over 77 uncertain
+slots: argmax 0/8 where the design trusts it, 20/32 on dictionary-word slots
+and 8/17 on multi-word spans. On the dictionary-word class the constant policy
+"keep what was decoded" scores 22/32, so the class label alone beats the
+number. A sweep of a constant handed back to the term (`--sweep`) reaches 8/8
+on the not-a-word class at about 1.5 nats, but that class is unanimous — there
+is no clip in the cache where a non-word decoding was right — so nothing there
+can be falsified. **That is a gap in `menu-cases.yaml`, not a result.**
+
+*The router is close to inverted.* 12 of 53 cases are misrouted. The 2 sent to
+code are the 2 code gets wrong (`Versal.`→`Vercel.`, twice). Ten are sent to
+the judge because the mangled name is a dictionary entry — `Prissy` eight
+times, `Mathieu` once via the French dictionary — and argmax would have been
+right on every one. A second router that overrides the dictionary on a capital
+mid-sentence moves branch B from 2 cases to 3 and misroutings from 12 to 11.
+Only 5 of the 27 offending slots carry a mid-sentence capital, so the test
+fires on a fifth of its own class.
+
+*The form is worth something; the question is not.* Two wordings of the
+position question, each as a whole-sentence menu and as one blank per slot.
+Wording moves 8 cases in the sentence form, more than the form moves anything,
+so the totals turn on wording. But on the collision class the same wording goes
+3/8 as sentences and **6/8 as blanks**, and the three it gains are exactly the
+multi-slot clips a whole-sentence menu cannot express — `17-47-45`,
+`14-04-21`, `10-12-37`, the last being the clip F17 named. 18 of the 51
+branch-A cases hold more than one slot.
+
+**Recommendation: build no router, ship no prompt.** Next measurement is the
+blank form carrying the *shipped* question, so form is separated from content
+— this spike changed both at once and cannot say what the blanks would be
+worth on their own.
 
 ---
 

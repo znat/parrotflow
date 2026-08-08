@@ -111,7 +111,7 @@ def strip_sentinels(block):
     return "\n".join(kept)
 
 
-def ask(model, system, options, scores="", logprobs=False):
+def ask(model, system, options, scores="", logprobs=False, lead=""):
     """The judge's choice, either sampled or read off the letter distribution.
 
     Sampling keeps only the winner. `logprobs` asks Ollama (0.32+) for the
@@ -121,13 +121,18 @@ def ask(model, system, options, scores="", logprobs=False):
     The sampled path reads the letter with `chosen`, which is the app's own
     rule. Replies that did not begin with a bare letter are collected in STRAY
     so the size of that effect is visible rather than assumed.
+
+    `lead` goes above the lettered options. The app sends nothing there — the
+    menu is whole sentences, so the sentence is already in every option.
+    `judge-routing.py` puts the sentence with a blank in it, and needs the
+    reply read by the same rule as every other arm.
     """
     body = "\n".join(f"{string.ascii_uppercase[i]}. {o}" for i, o in enumerate(options))
     payload = {
         "model": model, "stream": False, "think": False,
         "options": {"temperature": 0, "num_predict": 8},
         "messages": [{"role": "system", "content": system},
-                     {"role": "user", "content": body + scores + "\n\nWhich letter?"}],
+                     {"role": "user", "content": lead + body + scores + "\n\nWhich letter?"}],
     }
     if logprobs:
         payload |= {"logprobs": True, "top_logprobs": 20}
