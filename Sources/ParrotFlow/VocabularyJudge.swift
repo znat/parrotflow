@@ -352,7 +352,7 @@ enum VocabularyJudge {
     /// also wrote the term. Guessing there is how a correct word gets a wrong
     /// spelling put first on the menu.
     static func rewritten(
-        _ heard: String, _ term: String, in before: String, became standing: Int
+        _ heard: String, _ term: String, in before: String, became stands: Int
     ) -> [Int]? {
         var marks: [(at: String.Index, rule: Bool)] =
             Vocabulary.spans(of: heard, in: before, ignoringCase: true)
@@ -360,7 +360,7 @@ enum VocabularyJudge {
             + Vocabulary.spans(of: term, in: before, ignoringCase: true)
                 .map { ($0.lowerBound, false) }
         marks.sort { $0.at < $1.at }
-        guard marks.count == standing else { return nil }
+        guard marks.count == stands else { return nil }
         return marks.indices.filter { marks[$0].rule }
     }
 
