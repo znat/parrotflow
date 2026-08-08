@@ -2,7 +2,7 @@
 """Score a judge prompt against menus already harvested from the archive.
 
     scripts/tune-judge.py --harvest              # run the app once, cache the menus
-    scripts/tune-judge.py                        # score the shipped menu.md
+    scripts/tune-judge.py                        # score the shipped verify_names.md
     scripts/tune-judge.py --prompt v6.md         # score a candidate
     scripts/tune-judge.py --prompt v6.md --model gemma4:12b
     scripts/tune-judge.py --strip-sentinels      # drop the fake 0.00 score lines
@@ -35,7 +35,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "tests/judge-menus.json"
-PROMPT = ROOT / "examples/transforms/verify_names/menu.md"
+PROMPT = ROOT / "examples/prompts/verify_names.md"
 CLIPS = Path.home() / "Recordings/ParrotFlow Dev"
 ENDPOINT = os.environ.get("PARROTFLOW_LLM_ENDPOINT", "http://localhost:11434") + "/api/chat"
 

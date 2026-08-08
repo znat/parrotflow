@@ -158,10 +158,18 @@ everything and breaks nothing.
 Neither mechanism reads the sentence, so both replace ordinary words that
 resemble a term: "blocking merge" became "blocking Vercel".
 
-`verify_names` asks a local model one question per substitution and puts back
-the ones it declines. It answers YES or NO and never returns text. It runs only
-when something was substituted — `when: vocabulary.count > 0` — which is about
-one dictation in twenty.
+So the pass no longer substitutes what it is unsure about. It proposes, and the
+`vocabulary:` stage decides — see [The name
+judge](pipelines.md#the-name-judge). The stage builds every sentence the
+proposals allow, asks the local model to pick one by letter, and looks the
+letter up itself; the model never writes the transcript. It runs only when
+something was found — `when: vocabulary.count > 0` — which is about one
+dictation in twenty.
+
+The numbers below are from the older shape, one YES/NO question per
+substitution. They are kept because they are what fixed the design: a per-word
+question cannot answer a sentence that says `Versailles` twice and means the
+palace once.
 
 Scored on `tests/judge-cases.yaml`, 58 proposals from real recordings:
 

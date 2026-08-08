@@ -38,7 +38,8 @@ enum Replacements {
     /// out of this function did not move the call sites too.
     static func apply(
         to text: String, config: Config, allowPrompts: Bool = true, app: Pipeline.App? = nil,
-        seed: Scope = Scope(), progress: (@Sendable (String) -> Void)? = nil
+        seed: Scope = Scope(), findings: Vocabulary.Outcome? = nil,
+        progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         let (pipeline, language) = Pipeline.forText(text, config: config)
         // The verdict that picked the stages, which until now was computed here
@@ -49,7 +50,7 @@ enum Replacements {
         seed.set("language", .string(language))
         return await pipeline.run(
             text, config: config, allowPrompts: allowPrompts, app: app,
-            seed: seed, progress: progress
+            seed: seed, findings: findings, progress: progress
         )
     }
 

@@ -41,6 +41,10 @@ struct Pipeline: Equatable, Codable {
         /// What is on screen around the field, published as `context.*` and
         /// never written into the transcript. Terminals only — see `Context`.
         case context
+        /// The names the acoustic pass was unsure about, put to a model as a
+        /// menu of whole sentences — see `VocabularyJudge`. Named by a prompt
+        /// file, `- vocabulary: verify_names.md`.
+        case vocabulary
         /// One of the entries in `transforms:`, run over the whole
         /// transcript. The only stage that names something outside itself, and
         /// the only one that might call a model — see `Step.transform`.
@@ -48,16 +52,28 @@ struct Pipeline: Equatable, Codable {
 
         var name: String { rawValue }
 
+        /// Whether the stage rewrites the transcript.
+        ///
+        /// Only used to say where `vocabulary` belongs: it reads spans the
+        /// acoustic pass measured before the pipeline started, and every stage
+        /// that edits text moves them (F10). `replacements` is the exception it
+        /// has to live with — the judge offers a rule's substitution back, so
+        /// the rules must already have fired.
+        var editsText: Bool { self != .context && self != .vocabulary }
+
         /// Whether it can be in a default nobody wrote.
         ///
         /// `transform` cannot: it needs a name, and there is no transform every
-        /// install is guaranteed to have.
+        /// install is guaranteed to have. `vocabulary` cannot either, for the
+        /// same reason — it names a prompt file.
         ///
-        /// `context` cannot either, for a different and stronger reason. It
-        /// reads the screen. Turning that on for everybody who never wrote a
-        /// `pipelines:` block would be a silent change to what the app looks at,
-        /// which is the one kind of change that has to be asked for by name.
-        var isAutomatic: Bool { self != .transform && self != .context }
+        /// `context` cannot, for a different and stronger reason. It reads the
+        /// screen. Turning that on for everybody who never wrote a `pipelines:`
+        /// block would be a silent change to what the app looks at, which is the
+        /// one kind of change that has to be asked for by name.
+        var isAutomatic: Bool {
+            self != .transform && self != .context && self != .vocabulary
+        }
     }
 
     /// The app a transcript is on its way into, for `Step.app`.
@@ -96,6 +112,17 @@ struct Pipeline: Equatable, Codable {
         /// nothing to run is a config error rather than a stage that quietly
         /// does nothing.
         var transform: String?
+        /// The prompt file a `vocabulary` stage asks with, resolved against the
+        /// directory the config was read from. Absolute paths and `~` are their
+        /// own answer.
+        ///
+        /// Not `transform:`. That name is the namespace a stage's variables are
+        /// filed under, and filing a stage's facts under `verify_names.md`
+        /// would put a filename in every condition that reads them.
+        var prompt: String?
+        /// How large the menu may get — see `VocabularyJudge.Caps`. Absent on
+        /// every other stage.
+        var caps: VocabularyJudge.Caps?
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -269,6 +296,11 @@ struct Pipeline: Equatable, Codable {
         for step in steps where step.stage == .transform && (step.transform ?? "").isEmpty {
             problems.append("a prompt stage names no prompt — write `- prompt: <name>`")
         }
+        for step in steps where step.stage == .vocabulary && (step.prompt ?? "").isEmpty {
+            problems.append("a vocabulary stage names no prompt file"
+                + " — write `- vocabulary: <file.md>`")
+        }
+        problems += vocabularyOrderProblems()
         // Which namespaces a condition on this step is allowed to read: the
         // seeds, plus every stage *above* it. Built as the list is walked, which
         // is what makes the ordering check possible at all — a condition reading
@@ -328,6 +360,28 @@ struct Pipeline: Equatable, Codable {
             }
         }
         return problems
+    }
+
+    /// Stages that move the words `vocabulary` is about to talk about.
+    ///
+    /// The judge is handed spans the acoustic pass measured on the transcript
+    /// as the decoder produced it. A stage that rewrites text moves them, and
+    /// the stage then has to re-anchor by searching for the words — which is
+    /// the mechanism that put the menu on the wrong `Versailles` (F3, F10).
+    ///
+    /// `replacements` is not listed. The judge offers a rule's substitution
+    /// back as a reading, so the rules have to have fired first; that is the
+    /// one edit this stage is built to survive, by searching for the term. Put
+    /// `replacements` above `vocabulary:` and everything else below it.
+    private func vocabularyOrderProblems() -> [String] {
+        guard let judge = stages.firstIndex(of: .vocabulary) else { return [] }
+        let above = steps[..<judge]
+            .filter { $0.stage.editsText && $0.stage != .replacements }
+            .map { Pipeline.namespace(of: $0) }
+        guard !above.isEmpty else { return [] }
+        return ["vocabulary runs after \(above.joined(separator: ", ")), which rewrite the"
+            + " transcript — the spans it was given no longer point at the same words."
+            + " Order: replacements, vocabulary, then the rest"]
     }
 
     /// What is wrong with an expression, before a transcript ever reaches it.
@@ -422,6 +476,24 @@ struct Pipeline: Equatable, Codable {
         for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil,
         scope: Scope = Scope()
     ) -> Skip? {
+        if step.stage == .vocabulary {
+            // It costs a model call, so it answers to the same two guards a
+            // prompt does: `--replace` must stay off the network, and a spoken
+            // instruction is not a dictation whose names want checking.
+            if !allowPrompts {
+                return Skip(code: "prompts_off", described: "prompts are off on this path")
+            }
+            let phrases = config.transcription.activationPhrases
+            if VoiceCommand.commandAfterWakePhrase(text, phrases: phrases) != nil {
+                return Skip(code: "spoken_command", described: "this is a spoken command")
+            }
+            if VoiceCommand.inlineInstruction(text, phrases: phrases) != nil {
+                return Skip(
+                    code: "inline_instruction",
+                    described: "this carries an instruction of its own"
+                )
+            }
+        }
         if step.stage == .transform {
             // Only the prompt-bodied ones. `allowPrompts` is there to keep
             // `--replace` off the network, and a `replace:` transform is a
@@ -535,11 +607,12 @@ struct Pipeline: Equatable, Codable {
     ///   the way to a transcript would say less than one that never moved.
     func run(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(), progress: (@Sendable (String) -> Void)? = nil
+        seed: Scope = Scope(), findings: Vocabulary.Outcome? = nil,
+        progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await runCollectingScope(
             text, config: config, allowPrompts: allowPrompts, app: app,
-            seed: seed, progress: progress
+            seed: seed, findings: findings, progress: progress
         ).text
     }
 
@@ -550,9 +623,16 @@ struct Pipeline: Equatable, Codable {
     /// have to say `.text` to get it. `--pipeline` and the case sets want both,
     /// and they are the reason the scope is reachable at all: a variable nothing
     /// can print is a variable nobody can debug.
+    /// - Parameter findings: What the acoustic pass proposed, and the exact
+    ///   text it measured those proposals against. Only the `vocabulary` stage
+    ///   reads it, and it is handed over rather than published as a variable
+    ///   because a `Range<String.Index>` cannot survive being turned into a
+    ///   string and back — which is where four of the prototype's bugs lived
+    ///   (F5, F9).
     func runCollectingScope(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(), progress: (@Sendable (String) -> Void)? = nil
+        seed: Scope = Scope(), findings: Vocabulary.Outcome? = nil,
+        progress: (@Sendable (String) -> Void)? = nil
     ) async -> (text: String, scope: Scope) {
         var output = text
         var scope = seed
@@ -616,7 +696,9 @@ struct Pipeline: Equatable, Codable {
             // measured on your own sentences instead of quoted from a README.
             let before = output
             let started = CFAbsoluteTimeGetCurrent()
-            let result = await apply(step, to: output, config: config, app: app, scope: scope)
+            let result = await apply(
+                step, to: output, config: config, app: app, scope: scope, findings: findings
+            )
             let seconds = CFAbsoluteTimeGetCurrent() - started
             output = result.text
 
@@ -688,7 +770,8 @@ struct Pipeline: Equatable, Codable {
     }
 
     private func apply(
-        _ step: Step, to text: String, config: Config, app: App?, scope: Scope
+        _ step: Step, to text: String, config: Config, app: App?, scope: Scope,
+        findings: Vocabulary.Outcome? = nil
     ) async -> StageResult {
         switch step.stage {
         case .replacements:
@@ -722,6 +805,9 @@ struct Pipeline: Equatable, Codable {
             return StageResult(text: done.text, vars: ["language": .string(done.language)])
         case .context:
             return await readContext(on: text)
+        case .vocabulary:
+            return await judgeVocabulary(step, on: text, config: config, scope: scope,
+                                         findings: findings)
         case .transform:
             return await runTransform(step, on: text, config: config, scope: scope)
         }
@@ -792,6 +878,111 @@ struct Pipeline: Equatable, Codable {
                 "truncated": .bool(capture.truncated),
             ])
         }
+    }
+
+    /// The names the acoustic pass was unsure about, put to a model as a menu.
+    ///
+    /// Fails closed at every step. The transcript that arrives here is what
+    /// ships if anything at all goes wrong — no prompt file, no proposals, too
+    /// many slots, Ollama down, an unreadable reply. Losing the judge costs a
+    /// name; losing the sentence costs the sentence.
+    ///
+    /// The mechanics are in `VocabularyJudge`. This is the wiring: where the
+    /// prompt file is, what the model is, and which variables come back.
+    private func judgeVocabulary(
+        _ step: Step, on text: String, config: Config, scope: Scope,
+        findings: Vocabulary.Outcome?
+    ) async -> StageResult {
+        func declined(_ why: String, _ vars: [String: Scope.Value] = [:]) -> StageResult {
+            Log.write("pipeline: vocabulary — \(why)")
+            return StageResult(text: text, vars: vars.merging(["ok": .bool(false)]) { a, _ in a })
+        }
+        guard config.llm.enabled else { return declined("llm.enabled is false") }
+        guard let named = step.prompt, !named.isEmpty else {
+            return declined("no prompt file named — write `- vocabulary: <file.md>`")
+        }
+        guard let prompt = config.promptFile(named) else {
+            return declined("cannot read the prompt file \(named)")
+        }
+
+        let caps = step.caps ?? VocabularyJudge.Caps.standard
+        // Both sources. The acoustic pass proposes with positions; a
+        // `replacements` rule has already rewritten the text and is found by
+        // searching for the term it wrote — the documented limitation, kept
+        // because a rule fires on an exact spelling and so proposes rarely.
+        var rules = ""
+        if case .string(let wrote)? = scope["replacements.changes"] { rules = wrote }
+        let parts = VocabularyJudge.acousticParts(
+            findings?.proposals ?? [], in: text, measuredOn: findings?.text ?? text
+        ) + VocabularyJudge.ruleParts(rules, in: text)
+
+        let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
+        guard !slots.isEmpty else {
+            return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(0)])
+        }
+        // Too many uncertain words to enumerate. Keeping what the decoder wrote
+        // is the safe answer, and it is logged rather than silent.
+        guard slots.count <= caps.slots else {
+            return declined("\(slots.count) slots > \(caps.slots); kept as decoded",
+                            ["asked": .int(0), "slots": .int(slots.count)])
+        }
+
+        let built = VocabularyJudge.readings(in: text, from: slots, caps: caps)
+        let sentences = built.sentences
+        guard sentences.count > 1 else {
+            return StageResult(text: text, vars: [
+                "asked": .int(sentences.count), "slots": .int(slots.count),
+            ])
+        }
+        let terms = Array(Set(slots.flatMap(\.terms))).sorted().joined(separator: ", ")
+        let system = prompt.replacingOccurrences(of: "{terms}", with: terms)
+        let scores = VocabularyJudge.scoreBlock(findings?.proposals ?? [])
+        VocabularyJudge.dump(system: system, sentences: sentences, scores: scores)
+
+        let reply: String
+        do {
+            reply = try await LocalLLM.complete(
+                system: system,
+                user: VocabularyJudge.menu(sentences) + scores + "\n\nWhich letter?",
+                json: false,
+                // A letter and whatever the model wraps it in. Anything longer
+                // is a model explaining itself, which this shape does not read.
+                maxTokens: 8,
+                config: LocalLLM.Config(
+                    endpoint: config.llm.endpoint, model: config.llm.model,
+                    timeout: config.llm.timeoutSeconds, keepLoaded: config.llm.keepLoaded
+                )
+            )
+        } catch {
+            return declined("\(error.localizedDescription); kept as decoded",
+                            ["asked": .int(sentences.count), "slots": .int(slots.count)])
+        }
+        guard let pick = VocabularyJudge.chosen(reply, of: sentences.count) else {
+            return declined("the reply named no option (\"\(reply)\"); kept as decoded",
+                            ["asked": .int(sentences.count), "slots": .int(slots.count),
+                             "reply": .string(reply)])
+        }
+
+        // What the judge left alone, in the words it left. "Reverted" was the
+        // word for this while the pass substituted first; it proposes now, so a
+        // slot that keeps its first reading was never changed to begin with.
+        let kept = zip(built.slots, built.choices[pick])
+            .filter { $0.1 == 0 }
+            .map { $0.0.options[0] }
+        let chosen = sentences[pick]
+        if chosen != text {
+            Log.write("pipeline: vocabulary rewrote the transcript")
+            Log.write("    before: \(text)")
+            Log.write("    after:  \(chosen)")
+        }
+        return StageResult(text: chosen, vars: [
+            "asked": .int(sentences.count),
+            "slots": .int(slots.count),
+            "kept_as_decoded": .string(kept.joined(separator: "; ")),
+            "judged": .string(chosen),
+            "reply": .string(reply.trimmingCharacters(in: .whitespacesAndNewlines)),
+            "model": .string(config.llm.model),
+        ])
     }
 
     /// Whichever kind of transform the step named.

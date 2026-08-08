@@ -533,3 +533,13 @@ refused:
   - name: a transform named after the spoken instruction is refused
     pipeline: reserved-instruction
     expect_problem: would file its variables where instruction already is
+
+  # The name judge reads spans measured before the pipeline started. Every
+  # stage that edits text moves them (F10), so the order is not a preference.
+  - name: the name judge placed after a stage that edits text is refused
+    pipeline: vocabulary-after-edit
+    expect_problem: which rewrite the transcript
+
+  - name: a name judge with no prompt file is refused
+    pipeline: vocabulary-no-prompt
+    expect_problem: names no prompt file

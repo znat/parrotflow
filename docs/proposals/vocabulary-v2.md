@@ -168,10 +168,27 @@ sentinel. → PR 3 (scores are optional, absent means absent).
 3-option shortlist but 24/28 on the full menu" had two causes, both in
 `rerank-judge.py --stage2`: the shortlist was reordered by reranker score
 (the decoder's reading must stay first; ordering is worth ~8 points), and the
-full stale score block was passed to a menu it no longer described. Fixed
-one at a time: 23→24 (order), 23→24 (trim), both →25/28. Also: with
+full stale score block was passed to a menu it no longer described. Also: with
 `--framing all --stage2`, the shortlist silently uses the last framing
 alphabetically ("terms" — the below-chance one). → PR 2.
+
+*Ablated properly in PR #62* — mxbai-rerank-base-v2, framing `misheard`,
+top-3, judged by gemma4:e4b. The two fixes are not worth the same, and the
+second only pays in company:
+
+| Shortlist | picked |
+|---|---|
+| neither fix | 23/28 |
+| order only (decoder's reading first) | 24/28 |
+| discriminating trim only | 23/28 |
+| both, sentinel lines kept | 23/28 |
+| both, sentinel lines dropped | 25/28 |
+
+So ordering is the fix. Trimming the block does nothing on its own, and can
+strand a sentinel line as the only survivor — on `2026-08-07T17-05-42` it
+dropped the two real Supabase lines and kept `"proposal" 0.00 "Praisy" -5.02`,
+which costs a case. The +2 is real; the earlier attribution was not. The trim
+therefore applies F6's rule too, which is the same effect arriving twice.
 
 **F8 — a larger judge is worse.** `gemma4:12b`: 17/28 (16/28 cleaned
 scores, 15/28 none), replies parse cleanly. Same shape as the reranker
@@ -407,6 +424,44 @@ Test-only: no app behaviour changes.
 
 ## PR 3 — proposals, and the judge as a prompt
 
+**Done, 2026-08-08.** Measured on the scratch config described under
+*Measuring* below: recall 31/37, picked 28/37, 0 clips flipped over three runs;
+`before-after.py --runs 3` 18 fixed / 8 broken / 1 regressed, 1 clip flipped;
+`tune-judge.py` 23/26 on a freshly harvested cache of 31 menus (chance
+7.2/26); `grep -c '" 0\.00' tests/judge-menus.json` is 0. Where the build
+differs from the text below:
+
+- **The judge asks through `LocalLLM.complete`**, which is `/api/generate` with
+  a system and a user message. `menu.py` used `/api/chat`, and so do the
+  harness scripts. Ollama applies the same chat template either way; the two
+  agree on these menus (23/26 through the harness, 28/31 of the recalled menus
+  through the app).
+- **`restorePunctuation` is gone.** It was a pass over the finished string, and
+  a pass that moves characters invalidates every position `apply` has just
+  worked out. The trailing marks of a replaced word are carried during the
+  rebuild instead, which is the same rule applied in the one place that knows
+  where things are.
+- **The F10 check is a refusal, not a warning.** It sits in
+  `Pipeline.validate()` beside `fuzzy` before `replacements`, which is the same
+  class of mistake, so `--check-config` refuses it. `replacements` above
+  `vocabulary:` is explicitly allowed — the judge offers a rule's substitution
+  back and needs the rules to have fired.
+- **A proposal whose span moved is re-anchored, not dropped.** With
+  `replacements` above it, a vocabulary rule shifts the text under every span
+  measured after it. The stage tries the recorded offset first and falls back
+  to the nearest word-boundary occurrence of the same words, per span rather
+  than per proposal — two readings of one span (`Praisy` and `Praisy's` over
+  "praise") must land on top of each other. Claiming them separately cost three
+  cases of recall before it was fixed.
+- **`menu.py` was never on `main`,** so retiring it was nothing to delete. The
+  prompt moved from `examples/transforms/verify_names/menu.md` to
+  `examples/prompts/verify_names.md`; `tune-judge.py` and `rerank-judge.py`
+  follow it.
+- **Pronunciations are not ported.** Registering a `heard:` rendering as a
+  `CustomVocabularyTerm` is PR 5, so the spotter here searches for the terms
+  only. That is why `Versailles` still reaches `Vercel` at −5.28 rather than
+  −2.28.
+
 **Why.** F2, F3, F5, F6, F9, F10. The spine. Two ideas in one PR because
 they share an interface: the pass proposes instead of writing, and the
 judge's machinery is a native stage so the proposals never cross a process
@@ -478,15 +533,24 @@ term search from `rule_slots` is the one part that survives, in Swift). Do
 not let the stage rescue FluidAudio's own path (`rescorerConfig` opt-outs
 stay as the prototype set them).
 
-**Verify.**
+**Verify.** The live config still names the old transform, so the harness has
+to be pointed at a config that names the new stage. `PARROTFLOW_CONFIG_DIR` is
+the seam, and the scripts pass the environment through to the app:
+
 ```
-swift build -c release && make install
-/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --version   # current hash
+swift build -c release && scripts/build-app.sh
+.build/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --version   # current hash
+
+# a scratch config: the live config.yaml and vocabulary.yaml, with the
+# pipeline entry replaced by `- vocabulary: verify_names.md` and the prompt
+# file copied in beside it
+export PARROTFLOW_CONFIG_DIR=/tmp/pf-scratch
+
 python3 scripts/tune-judge.py --harvest    # re-harvest against this binary
 grep -c '" 0\.00' tests/judge-menus.json   # 0 — the sentinel is gone at the source (F6)
-python3 scripts/tune-judge.py              # record; gate: not below 26/28-equivalent on the fresh cache
-python3 scripts/menu-recall.py             # gate: recall ≥ 30/37, picked ≥ 27/37
-python3 scripts/before-after.py            # gate: no new REGRESSED rows
+python3 scripts/tune-judge.py              # record; the cache changed, so record rather than compare
+python3 scripts/menu-recall.py --runs 3    # gate: recall ≥ 30/37, picked ≥ 27/37, report flips
+python3 scripts/before-after.py --runs 3   # gate: no new REGRESSED rows
 ```
 
 **HUMAN.** Re-dictate the standing regression sentences (below) on the new
