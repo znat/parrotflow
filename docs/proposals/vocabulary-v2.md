@@ -427,8 +427,13 @@ Test-only: no app behaviour changes.
 **Done, 2026-08-08.** Measured against a scratch config naming the new stage,
 `gemma4:e4b`, nothing else loaded: recall 31/37, picked 27/37, no clip flipped
 over three runs; `before-after.py --runs 3` 17 fixed / 9 broken / 1 regressed,
-no clip flipped; `tune-judge.py` 22/26 on a freshly harvested cache of 31 menus
-(chance 7.6/26); `grep -c '" 0\.00' tests/judge-menus.json` is 0.
+no clip flipped; `tune-judge.py` 21/25 on a freshly harvested cache of 31 menus
+(chance 7.3/25); `grep -c '" 0\.00' tests/judge-menus.json` is 0.
+
+A harvest is itself a replay. Two harvests of the same binary differ on two
+clips — `17-38-44` 3→6 options, `17-39-27` 6→3 — and the other one scored
+22/26. Read `menu-recall.py --runs 3` for reach; the cache is for A/B-ing
+prompts against a menu that does not move.
 
 The one REGRESSED row is `17-47-45`, and it is a judge error rather than a
 mechanism one: the menu held the true sentence and the model took
