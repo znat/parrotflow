@@ -543,3 +543,9 @@ refused:
   - name: a name judge with no prompt file is refused
     pipeline: vocabulary-no-prompt
     expect_problem: names no prompt file
+
+  # A cap below 1 silences the stage on every transcript. Refused by name, so
+  # the reader learns which of the four numbers they typed.
+  - name: a menu cap of zero is refused and named
+    pipeline: vocabulary-cap-zero
+    expect_problem: max_per_term is 0

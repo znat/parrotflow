@@ -920,6 +920,24 @@ struct Pipeline: Equatable, Codable {
         ) + VocabularyJudge.ruleParts(rules, in: text, before: findings?.text)
 
         let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
+        // Two numbers on every run, not only when the count is fatal.
+        // `max_slots` is the cliff this stage falls off — one slot over and the
+        // whole menu is declined — so the distance to it has to be measurable
+        // before a change that widens what fires, not inferred afterwards from
+        // the clips that broke.
+        //
+        // Counts only. **Which words** is behind `PARROTFLOW_JUDGE_DUMP`, the
+        // switch that already means "write this dictation's menu down for a
+        // harness to read". The log is a plain file under `Library/Logs` and it
+        // outlives the dictation, so a diagnostic that is on for everybody
+        // spells names into it on runs where nothing was even offered.
+        var census = "vocabulary judge: \(slots.count) slot(s) from \(parts.count) proposal(s)"
+        if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
+            census += " — " + slots.map {
+                "\"\(text[$0.range])\" (\($0.terms.joined(separator: "/")))"
+            }.joined(separator: ", ")
+        }
+        Log.write(census)
         guard !slots.isEmpty else {
             return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(0)])
         }

@@ -1256,6 +1256,7 @@ struct Config: Decodable, Equatable {
                 case maxSlots = "max_slots"
                 case maxReadings = "max_readings"
                 case maxPerSlot = "max_per_slot"
+                case maxPerTerm = "max_per_term"
             }
 
             init(from decoder: Decoder) throws {
@@ -1273,7 +1274,7 @@ struct Config: Decodable, Equatable {
                     prompt = judged
                     var caps = VocabularyJudge.Caps.standard
                     // Each optional and each on its own: a person raising the
-                    // menu ceiling should not have to restate the other two.
+                    // menu ceiling should not have to restate the rest.
                     if let slots = try c.decodeIfPresent(Int.self, forKey: .maxSlots) {
                         caps.slots = slots
                     }
@@ -1282,6 +1283,9 @@ struct Config: Decodable, Equatable {
                     }
                     if let perSlot = try c.decodeIfPresent(Int.self, forKey: .maxPerSlot) {
                         caps.perSlot = perSlot
+                    }
+                    if let perTerm = try c.decodeIfPresent(Int.self, forKey: .maxPerTerm) {
+                        caps.perTerm = perTerm
                     }
                     self.caps = caps
                     namesBoth = stage != nil || named != nil

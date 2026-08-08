@@ -41,14 +41,41 @@ enum VocabularyJudge {
         /// words. Past this many the stage keeps what the decoder wrote and
         /// says so — a menu nobody can read decides nothing.
         var slots = 4
-        /// The menu, not the slot count, is what the model is bad at. Three
-        /// binary slots is eight readings and was the most that measured
-        /// useful, so sixteen is the ceiling — a slot offering three readings
-        /// costs another slot its second one.
+        /// The menu, not the slot count, is what the model is bad at. Four
+        /// binary slots is sixteen readings, so `slots` at 4 and this at 16
+        /// are the same statement twice — and a slot that offers three
+        /// readings costs another slot its second one.
+        ///
+        /// Not measured. It was set to match `slots`, and nothing since has
+        /// looked for the length a menu stops being read at. Say so rather
+        /// than borrow a number from F7, which was the harness.
         var readings = 16
         /// Readings per slot, the decoder's own included. Two alternatives is
         /// what a lettered list stays readable at.
+        ///
+        /// Readability is the whole of the reason, deliberately. The number
+        /// that was going to justify it — a three-option shortlist scoring the
+        /// same as the full menu — is F7's, and F7 was the harness reordering
+        /// the shortlist. PR #62 re-ablated it and the effect belonged to the
+        /// ordering. Nothing measured says three is the right size, so nothing
+        /// measured should be quoted for it.
         var perSlot = 3
+        /// Places in one sentence that may be about the same term.
+        ///
+        /// `perSlot` bounds one place. Nothing bounded a term across places,
+        /// and a term reaches a menu from four directions at once — a
+        /// `replacements` rule that already rewrote the text, the rescorer's
+        /// own proposal, the wider spans built around it, and the CTC spotter
+        /// hearing it somewhere else entirely. On `17-39-40` that is six
+        /// slots for three terms, which is past `slots` and declines the whole
+        /// menu.
+        ///
+        /// So the menu grows with the size of the vocabulary rather than with
+        /// how noisily one term fires. Two, because a name said twice in one
+        /// sentence is ordinary and a name said three times is rare enough
+        /// that the third mention is more often the spotter than the speaker.
+        /// See `slots(in:from:caps:)` for which two survive.
+        var perTerm = 2
 
         static let standard = Caps()
 
@@ -62,7 +89,8 @@ enum VocabularyJudge {
         var problems: [String] {
             var found: [String] = []
             for (name, value) in [
-                ("max_slots", slots), ("max_readings", readings), ("max_per_slot", perSlot),
+                ("max_slots", slots), ("max_readings", readings),
+                ("max_per_slot", perSlot), ("max_per_term", perTerm),
             ] where value < 1 {
                 found.append("vocabulary: \(name) is \(value) — it has to be at least 1")
             }
@@ -72,6 +100,31 @@ enum VocabularyJudge {
             }
             return found
         }
+    }
+
+    /// How well evidenced a reading is, best first.
+    ///
+    /// Only `perTerm` reads this, and only to decide which places survive when
+    /// one term claims too many. It is a rank rather than a score because
+    /// there is no number the four sources share: a rule has none at all, a
+    /// wider span was never measured acoustically, and the spotter scores the
+    /// term without scoring the word the decoder wrote.
+    enum Standing: Int, Comparable {
+        /// A `replacements` rule already rewrote the text here. Strongest, not
+        /// because the rule is right but because it has already been acted on
+        /// — dropping this slot is the one case where the speaker is left with
+        /// a substitution and no way to refuse it.
+        case rule = 0
+        /// The rescorer proposed it and both spellings were scored.
+        case scored = 1
+        /// A wider span built around one of the above. Nothing scored it.
+        case wide = 2
+        /// The spotter heard the term over these frames. Nothing scored the
+        /// word the decoder wrote there, so there is no comparison — this is
+        /// the source that fires on "went to the" and "deployed on".
+        case spotted = 3
+
+        static func < (a: Standing, b: Standing) -> Bool { a.rawValue < b.rawValue }
     }
 
     /// One place in the sentence still in question, and the readings of it.
@@ -89,6 +142,8 @@ enum VocabularyJudge {
         var options: [String]
         /// The vocabulary terms this slot is about, for `{terms}`.
         let terms: [String]
+        /// The best-evidenced of the readings in it, for `Caps.perTerm`.
+        let standing: Standing
     }
 
     /// One proposal reduced to what the menu needs: a span, what stands there
@@ -106,6 +161,8 @@ enum VocabularyJudge {
         let other: String
         /// The vocabulary term at stake, for `{terms}`.
         let term: String
+        /// Where this reading came from, for `Caps.perTerm`.
+        let standing: Standing
     }
 
     // MARK: - Gathering
@@ -133,6 +190,15 @@ enum VocabularyJudge {
         let wanted = proposals
             .filter { !$0.applied && !$0.heard.isEmpty && $0.heard != $0.term }
             .sorted { $0.range.lowerBound < $1.range.lowerBound }
+        // Which of the three acoustic sources made a proposal, read off its
+        // scores rather than carried as a flag. `Vocabulary.apply` already
+        // says the same thing there: the rescorer scores both spellings, a
+        // wider span is scored by neither, and a spotter hit scores only the
+        // term (F6 — absent means absent, so absence is readable).
+        func standing(_ proposal: Vocabulary.Proposal) -> Standing {
+            if proposal.heardScore != nil, proposal.termScore != nil { return .scored }
+            return proposal.termScore == nil ? .wide : .spotted
+        }
         for proposal in wanted {
             // Offsets rather than the index itself. A `String.Index` belongs to
             // the string it was made from, and `text` is a different string
@@ -142,7 +208,8 @@ enum VocabularyJudge {
             if let already = resolved[span] {
                 parts.append(Part(
                     range: already, decoded: proposal.heard,
-                    other: proposal.term, term: proposal.term
+                    other: proposal.term, term: proposal.term,
+                    standing: standing(proposal)
                 ))
                 continue
             }
@@ -175,7 +242,8 @@ enum VocabularyJudge {
             resolved[span] = found
             parts.append(Part(
                 range: found, decoded: proposal.heard,
-                other: proposal.term, term: proposal.term
+                other: proposal.term, term: proposal.term,
+                standing: standing(proposal)
             ))
         }
         return parts
@@ -235,7 +303,7 @@ enum VocabularyJudge {
             guard !heard.isEmpty, !term.isEmpty, heard != term,
                   !heard.hasPrefix("/"), !term.contains("$")
             else { continue }
-            let standing = Vocabulary.spans(of: term, in: text, ignoringCase: true)
+            let stands = Vocabulary.spans(of: term, in: text, ignoringCase: true)
             guard let before else {
                 // No acoustic pass ran, so there is no earlier text to compare
                 // against — `--pipeline`, `--replace`, any path with no audio.
@@ -243,26 +311,28 @@ enum VocabularyJudge {
                 // `changes`, so it fired at least once, and a pre-existing term
                 // would be a second occurrence. More than one and nothing here
                 // can say which, so none are offered.
-                if standing.count == 1 {
+                if stands.count == 1 {
                     parts.append(Part(
-                        range: standing[0], decoded: heard, other: heard, term: term
+                        range: stands[0], decoded: heard, other: heard, term: term,
+                        standing: .rule
                     ))
-                } else if standing.count > 1 {
-                    Log.write("vocabulary judge: \"\(term)\" stands \(standing.count) time(s)"
+                } else if stands.count > 1 {
+                    Log.write("vocabulary judge: \"\(term)\" stands \(stands.count) time(s)"
                         + " and no acoustic pass ran, so which one \"\(heard)\" became"
                         + " cannot be told; that reading is not offered")
                 }
                 continue
             }
-            guard let mine = rewritten(heard, term, in: before, became: standing.count) else {
-                Log.write("vocabulary judge: \"\(term)\" stands \(standing.count) time(s) and"
+            guard let mine = rewritten(heard, term, in: before, became: stands.count) else {
+                Log.write("vocabulary judge: \"\(term)\" stands \(stands.count) time(s) and"
                     + " the transcript before the rules cannot account for that many;"
                     + " \"\(heard)\" is not offered back")
                 continue
             }
             for index in mine {
                 parts.append(Part(
-                    range: standing[index], decoded: heard, other: heard, term: term
+                    range: stands[index], decoded: heard, other: heard, term: term,
+                    standing: .rule
                 ))
             }
         }
@@ -282,7 +352,7 @@ enum VocabularyJudge {
     /// also wrote the term. Guessing there is how a correct word gets a wrong
     /// spelling put first on the menu.
     static func rewritten(
-        _ heard: String, _ term: String, in before: String, became standing: Int
+        _ heard: String, _ term: String, in before: String, became stands: Int
     ) -> [Int]? {
         var marks: [(at: String.Index, rule: Bool)] =
             Vocabulary.spans(of: heard, in: before, ignoringCase: true)
@@ -290,11 +360,57 @@ enum VocabularyJudge {
             + Vocabulary.spans(of: term, in: before, ignoringCase: true)
                 .map { ($0.lowerBound, false) }
         marks.sort { $0.at < $1.at }
-        guard marks.count == standing else { return nil }
+        guard marks.count == stands else { return nil }
         return marks.indices.filter { marks[$0].rule }
     }
 
     // MARK: - Slots and readings
+
+    /// The places one term may claim, cut to `limit`, best evidenced first.
+    ///
+    /// The order the survivors are chosen in is the point. A term arrives from
+    /// four sources at once and they are not equally worth a menu line, so the
+    /// cut is by `Standing` first and by position second — earliest wins a tie,
+    /// because a reader meets the leftmost place first and because the spotter's
+    /// spans, which are the ones this mostly cuts, arrive sorted by score and
+    /// not by where they sit.
+    ///
+    /// Measured on `17-39-40`, six slots for three terms: `Vercel` claims the
+    /// two places a rule rewrote plus "universal", and "universal" is the one
+    /// that goes. What survives is returned in the order it arrived in, so the
+    /// menu still reads left to right.
+    ///
+    /// A slot naming several terms is charged to all of them and kept while
+    /// **any** of them has room. Refusing it because one term is full would drop
+    /// a place that is still a live question about another.
+    ///
+    /// Applied to finished slots, not to the groups they are built from. A group
+    /// whose readings all collapse to the decoder's own is not a question and is
+    /// dropped anyway — letting it spend a term's budget on the way out would
+    /// cost a real place for nothing.
+    private static func capped(_ slots: [Slot], in text: String, to limit: Int) -> [Slot] {
+        guard limit >= 1, !slots.isEmpty else { return slots }
+        let ranked = slots.indices.sorted { left, right in
+            if slots[left].standing != slots[right].standing {
+                return slots[left].standing < slots[right].standing
+            }
+            return slots[left].range.lowerBound < slots[right].range.lowerBound
+        }
+        var used: [String: Int] = [:]
+        var keep = Set<Int>()
+        for index in ranked {
+            let slot = slots[index]
+            guard slot.terms.contains(where: { used[$0, default: 0] < limit }) else {
+                Log.write("vocabulary judge: \"\(text[slot.range])\" is a"
+                    + " \(slot.terms.joined(separator: "/")) reading past max_per_term"
+                    + " \(limit); not offered")
+                continue
+            }
+            for term in slot.terms { used[term, default: 0] += 1 }
+            keep.insert(index)
+        }
+        return slots.indices.filter(keep.contains).map { slots[$0] }
+    }
 
     /// Every position still in question, left to right, as one slot each.
     ///
@@ -305,6 +421,11 @@ enum VocabularyJudge {
     /// word. So they are grouped, and the slot covers the widest of them.
     ///
     /// A slot with one reading is not a question, so it is left out.
+    ///
+    /// `caps.perTerm` is applied to the slots rather than to the parts. Two
+    /// readings of one span — `Praisy` and `Praisy's` over "praise" — are one
+    /// place, not two, and counting them separately would spend the budget on
+    /// the case this stage exists for.
     static func slots(in text: String, from parts: [Part], caps: Caps) -> [Slot] {
         let sorted = parts.sorted { left, right in
             left.range.lowerBound == right.range.lowerBound
@@ -381,10 +502,11 @@ enum VocabularyJudge {
             guard kept.count > 1 else { continue }
             built.append(Slot(
                 range: span, options: kept,
-                terms: Array(Set(group.parts.map(\.term))).sorted()
+                terms: Array(Set(group.parts.map(\.term))).sorted(),
+                standing: group.parts.map(\.standing).min() ?? .spotted
             ))
         }
-        return built
+        return capped(built, in: text, to: caps.perTerm)
     }
 
     /// Every sentence the slots allow, the untouched one first.
@@ -394,9 +516,11 @@ enum VocabularyJudge {
     /// burying it costs declines.
     ///
     /// A slot can offer more than two readings, so the menu is trimmed rather
-    /// than the slot count capped. Speculative readings — the wider spans,
-    /// which sort last — go first, because a menu longer than eight measured
-    /// worse than a menu missing its least likely entry.
+    /// than the slot count capped. The trim takes a slot's **last** reading,
+    /// which after `slots` has ranked them is the narrowest span — and, among
+    /// spans of one width, the possessive. So the readings that go are the
+    /// ones that change least of the sentence, and a menu never loses the
+    /// decoder's own reading, which is always first.
     static func readings(
         in text: String, from slots: [Slot], caps: Caps
     ) -> (sentences: [String], choices: [[Int]], slots: [Slot], truncated: Bool) {

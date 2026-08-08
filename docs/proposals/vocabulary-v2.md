@@ -26,7 +26,7 @@ Do not relitigate these; they were argued and settled on 2026-08-08.
 | Stage name | `vocabulary`. The pipeline entry is `- vocabulary: verify_names.md`. |
 | `menu.py` | Retired entirely. The only user-facing artifact is the prompt file. `menu.py` survives on the frozen prototype branch as reference. |
 | Rule slots | Path of least resistance: rule substitutions are still found by term search, limitation documented. `replacements` does not learn to publish ranges. |
-| Knobs | Optional stage params with defaults (`max_slots: 4`, `max_readings: 16`, `max_per_slot: 3`), not env vars. The vocabulary-pass envs the harness already uses (`PARROTFLOW_SPOTTER_FLOOR`, `PARROTFLOW_JUDGE_DUMP`) stay. |
+| Knobs | Optional stage params with defaults (`max_slots: 4`, `max_readings: 16`, `max_per_slot: 3`, `max_per_term: 2`), not env vars. The vocabulary-pass envs the harness already uses (`PARROTFLOW_SPOTTER_FLOOR`, `PARROTFLOW_JUDGE_DUMP`) stay. |
 | Freeze | One `wip:` commit on `feat/vocabulary-skills-only`, then the branch is read-only forever. |
 | Execution | One PR at a time, in a worktree, by an agent. No stacking. A PR merges only when its gates pass and its Greptile review rounds are fully addressed; the next PR starts only after the merge. |
 
@@ -668,6 +668,49 @@ re-measure, but do not resize the menu on the old number.
 `menu-recall.py` output: the "praise he / praise his" clips must offer the
 wide reading; "Mirza's" must keep its possessive; "Versailles." must keep
 its full stop.
+
+**Landed (PR #66, 2026-08-08) — mostly by PR 3, which this plan told it to
+do.** PR 3's own `Do` list says "the acoustic search, the wider-span
+variants, and the possessive carry: port from the prototype's `apply`" and
+"widest-first ranking, per-slot cap". So four of the five items here were
+already on `main` before PR 6 started, and the three named clips already
+behaved. Where each lives:
+
+| Item | Where | Note |
+|---|---|---|
+| span, span+1, span+2 × term, term+`'s`, tested independently | `Vocabulary.widerSpans` | Same as the prototype, plus PR 3's guard that refuses a possessive at a sentence end |
+| possessive carried through a substitution | `Vocabulary.inflected` | `Mirza's` stays `Mirza's` |
+| trailing punctuation trimmed before replacing | `Vocabulary.trailingMarks`, and the trim at the end of `acousticSpans` | `Versailles.` keeps its full stop |
+| widest first, possessive as tiebreak | `VocabularyJudge.slots` | Identical ranking to `menu.py` line 237 |
+| cap readings per term | `Caps.perSlot` bounds one **place**; nothing bounded a **term** | The gap PR #66 filled |
+
+So PR 6 shipped the missing cap, `max_per_term`, applied in
+`VocabularyJudge.slots` where the four sources of a reading meet — a rule,
+the rescorer, a wider span and the spotter. Justified by readability, not by
+F7: `perSlot`'s doc comment now says so out loud, and `readings` admits it
+was never measured.
+
+Swept on `menu-recall.py`, one run each, everything else at the shipped
+settings:
+
+| `max_per_term` | recall | picked |
+|---|---|---|
+| 1 | 28/37 | 24/37 |
+| **2** | **31/37** | **27/37** |
+| 3 | 31/37 | 27/37 |
+| 99 (off) | 31/37 | 27/37 |
+
+2 is the tight end of the plateau, which is the end to take for a cap whose
+job is headroom. The spotter floor was **not** moved.
+
+Also here: the judge logs its slot count on every run, so the distance to
+`max_slots` can be measured rather than reconstructed from the clips that
+broke. On the 40 clips: 0 slots ×5, 1 ×17, 2 ×14, 3 ×3, 6 ×1. The one over
+the cap is `17-39-40`, which `max_per_term: 2` takes from 6 slots to 5 —
+still declined, and the anatomy is in PR #66. Its three surviving spotter
+slots are "went to the" → `Matthieu`, "universal" → `Vercel` and "deployed
+on" → `Claude`, none of which is a name anybody said. That is PR 7's
+evidence problem, not a span one.
 
 ---
 

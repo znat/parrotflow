@@ -375,9 +375,17 @@ actor Vocabulary {
         "will", "would", "can", "could", "should", "my", "your", "our", "their",
     ]
 
-    /// How many readings one term may contribute to a menu. The cap is the
-    /// point: recall wants every plausible span offered, and a person reading
-    /// a lettered list wants a list they can read.
+    /// How many **spotter** spans one term may contribute. Not the menu.
+    ///
+    /// It read "how many readings one term may contribute to a menu", which is
+    /// not what it does and not where it is used. It gates `acousticSpans`
+    /// only, so it never saw the rescorer's own proposals, the wider spans, or
+    /// a `replacements` rule — and a term reaches a menu from all four. The
+    /// menu-level cap is `VocabularyJudge.Caps.perTerm`, which is applied where
+    /// the four meet.
+    ///
+    /// Kept where it is because it is cheaper here: a detection refused now
+    /// never becomes a proposal, and a 19-second clip yields ninety of them.
     static var spansPerTerm: Int {
         ProcessInfo.processInfo.environment["PARROTFLOW_SPANS_PER_TERM"]
             .flatMap(Int.init) ?? 2

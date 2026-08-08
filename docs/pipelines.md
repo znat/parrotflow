@@ -46,6 +46,7 @@ measured during transcription and cannot survive being written to a file.
   max_slots: 4        # optional; past this many, keep what the decoder wrote
   max_readings: 16    # optional; trim the menu to this
   max_per_slot: 3     # optional; readings per place, the decoder's included
+  max_per_term: 2     # optional; places in one sentence about the same name
 ```
 
 The filename is a prompt beside `config.yaml` — the only part you own. It must
@@ -60,6 +61,15 @@ word you meant literally can be undone. The app works out which occurrences the
 rule wrote by comparing the transcript before and after it. When two rules
 write the same term into one sentence that comparison cannot say which is
 which, and then neither is offered — the log says so.
+
+**`max_per_term` is the one to move if menus stop being built.** One name
+reaches a menu from four directions — a rule that already rewrote the text, the
+sound-matching pass, the wider spans it builds around a split name, and the
+keyword spotter hearing the name somewhere else in the clip. Nothing else caps
+the total, so a noisy name can spend every slot on its own and push the count
+past `max_slots`, at which point the whole menu is declined. The cap keeps the
+two best-evidenced places and says in the log which it dropped. Raise it when a
+name really does appear three times in one sentence.
 
 `when: vocabulary.count > 0` is not optional in practice. Without it the stage
 costs a model call on every dictation, including the ones where nothing was
