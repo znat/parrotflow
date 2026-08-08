@@ -2,7 +2,7 @@
 """Score a judge prompt against menus already harvested from the archive.
 
     scripts/tune-judge.py --harvest              # run the app once, cache the menus
-    scripts/tune-judge.py                        # score the shipped menu.md
+    scripts/tune-judge.py                        # score the shipped verify_names.md
     scripts/tune-judge.py --prompt v6.md         # score a candidate
     scripts/tune-judge.py --prompt v6.md --model gemma4:12b
     scripts/tune-judge.py --strip-sentinels      # drop the fake 0.00 score lines
@@ -35,7 +35,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "tests/judge-menus.json"
-PROMPT = ROOT / "examples/transforms/verify_names/menu.md"
+PROMPT = ROOT / "examples/prompts/verify_names.md"
 CLIPS = Path.home() / "Recordings/ParrotFlow Dev"
 ENDPOINT = os.environ.get("PARROTFLOW_LLM_ENDPOINT", "http://localhost:11434") + "/api/chat"
 
@@ -118,10 +118,9 @@ def ask(model, system, options, scores="", logprobs=False):
     distribution over the first token instead, which costs the same call and
     returns a ranking with margins — and is immune to the failure below.
 
-    The sampled path takes the first letter *anywhere* in the reply, so a model
-    that answers "The answer is C" is recorded as having said A. Replies that
-    did not begin with a bare letter are collected in STRAY so the size of that
-    effect is visible rather than assumed.
+    The sampled path reads the letter with `chosen`, which is the app's own
+    rule. Replies that did not begin with a bare letter are collected in STRAY
+    so the size of that effect is visible rather than assumed.
     """
     body = "\n".join(f"{string.ascii_uppercase[i]}. {o}" for i, o in enumerate(options))
     payload = {
@@ -145,11 +144,42 @@ def ask(model, system, options, scores="", logprobs=False):
 
     if not reply[:1].isalpha():
         STRAY.append(reply)
-    letter = re.search(r"[A-Za-z]", reply)
-    if not letter:
-        return None
-    index = string.ascii_uppercase.index(letter.group().upper())
-    return options[index] if index < len(options) else None
+    index = chosen(reply, len(options))
+    return None if index is None else options[index]
+
+
+def chosen(reply, count):
+    """The letter a reply names, read exactly as the app reads it.
+
+    This is `VocabularyJudge.chosen` in Sources/, in Python. The two must agree:
+    a harness that reads "Option B" as O while the app reads it as B is scoring
+    a choice the app never made, and every baseline in this file would then
+    describe a judge nobody ships.
+
+    A letter standing on its own is the answer. `I` goes last among those,
+    because it is the one letter of the alphabet that is also an English word —
+    "I pick B" is B. A reply whose only bare letter is `I` still answers `I`.
+    Apostrophes count as letters for the cut, so "I'd pick D" is D.
+
+    The first letter anywhere is the fallback, for a reply with no bare letter
+    in it at all.
+    """
+    upper = reply.upper()
+    words = re.split(r"[^A-Z'\u2019]+", upper)
+    named = [string.ascii_uppercase.index(w) for w in words
+             if len(w) == 1 and w in string.ascii_uppercase
+             and string.ascii_uppercase.index(w) < count]
+    for index in named:
+        if string.ascii_uppercase[index] != "I":
+            return index
+    if named:
+        return named[0]
+    for character in upper:
+        if character in string.ascii_uppercase:
+            index = string.ascii_uppercase.index(character)
+            if index < count:
+                return index
+    return None
 
 
 def ranking(top, options):

@@ -356,7 +356,7 @@ def main():
         # out sixteen options reliably, but it can pick from three. Neither
         # number below is worth anything on its own — `ceiling` is what the
         # shortlist left reachable, and `picked` is what the judge did with it.
-        prompt = (ROOT / "examples/transforms/verify_names/menu.md").read_text().strip()
+        prompt = (ROOT / "examples/prompts/verify_names.md").read_text().strip()
         n = args.stage2
         ceiling = kept = 0
         ceiling_chance = picked_chance = 0.0

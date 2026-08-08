@@ -65,6 +65,33 @@ struct Config: Decodable, Equatable {
     /// It is maintained by the app rather than by hand — see `Vocabulary`.
     var vocabulary: Vocabulary = Vocabulary()
 
+    /// The directory this config was read from, when the decoder was told.
+    ///
+    /// A transform resolves its files through `TransformFolder`, which has a
+    /// name to hang them on. A `vocabulary:` stage has only a filename, so it
+    /// needs the directory itself. Nil for a `Config()` built in code, and
+    /// `ConfigStore.directory` is the answer then — see `promptFile`.
+    var directory: URL?
+
+    /// A prompt file a stage named, read.
+    ///
+    /// Relative to the directory the config came from, so a config carries its
+    /// prompts beside it the way it already carries its transforms. An absolute
+    /// path or one starting `~` is its own answer.
+    func promptFile(_ path: String) -> String? {
+        let written = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !written.isEmpty else { return nil }
+        let url: URL
+        if written.hasPrefix("/") || written.hasPrefix("~") {
+            url = URL(fileURLWithPath: (written as NSString).expandingTildeInPath)
+        } else {
+            url = (directory ?? ConfigStore.directory).appendingPathComponent(written)
+        }
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     enum CodingKeys: String, CodingKey {
         case hotkey, audio, feedback, transcription, llm, transforms, prompts, updates
         case freeForm = "free_form"
@@ -886,17 +913,31 @@ struct Config: Decodable, Equatable {
         ///
         /// The short form is the one almost every line wants, and a format that
         /// makes the common case verbose is a format people work around.
+        ///
+        /// `vocabulary:` names a prompt file rather than a transform, for the
+        /// same reason `transform:` names a transform: every entry of that kind
+        /// needs the second key, and a form that repeats itself is a form
+        /// people mistype.
+        ///
+        ///     - vocabulary: verify_names.md
+        ///       when: vocabulary.count > 0
+        ///       max_slots: 4
         struct PipelineEntry: Decodable {
             let name: String
             var transform: String?
+            var prompt: String?
+            var caps: VocabularyJudge.Caps?
             var when: String?
             var unless: String?
             var app: String?
-            /// `stage:` and `transform:`/`prompt:` on the same entry.
+            /// `stage:` and `transform:`/`prompt:`/`vocabulary:` on one entry.
             var namesBoth = false
 
             private enum CodingKeys: String, CodingKey {
-                case stage, transform, prompt, when, unless, app
+                case stage, transform, prompt, vocabulary, when, unless, app
+                case maxSlots = "max_slots"
+                case maxReadings = "max_readings"
+                case maxPerSlot = "max_per_slot"
             }
 
             init(from decoder: Decoder) throws {
@@ -906,9 +947,27 @@ struct Config: Decodable, Equatable {
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 let stage = try c.decodeIfPresent(String.self, forKey: .stage)
+                let judged = try c.decodeIfPresent(String.self, forKey: .vocabulary)
                 let named = try c.decodeIfPresent(String.self, forKey: .transform)
                     ?? c.decodeIfPresent(String.self, forKey: .prompt)
-                if let named {
+                if let judged {
+                    name = "vocabulary"
+                    prompt = judged
+                    var caps = VocabularyJudge.Caps.standard
+                    // Each optional and each on its own: a person raising the
+                    // menu ceiling should not have to restate the other two.
+                    if let slots = try c.decodeIfPresent(Int.self, forKey: .maxSlots) {
+                        caps.slots = slots
+                    }
+                    if let readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings) {
+                        caps.readings = readings
+                    }
+                    if let perSlot = try c.decodeIfPresent(Int.self, forKey: .maxPerSlot) {
+                        caps.perSlot = perSlot
+                    }
+                    self.caps = caps
+                    namesBoth = stage != nil || named != nil
+                } else if let named {
                     name = "transform"
                     transform = named
                     // Both keys on one entry is a contradiction, not a
@@ -1053,11 +1112,14 @@ struct Config: Decodable, Equatable {
                             if entry.namesBoth {
                                 // Silently preferring one would delete a stage
                                 // the config asked for.
-                                contradictoryEntries.append(entry.transform ?? "transform")
+                                contradictoryEntries.append(
+                                    entry.transform ?? entry.prompt ?? "transform"
+                                )
                                 return nil
                             }
                             return Pipeline.Step(
                                 stage: stage, transform: entry.transform,
+                                prompt: entry.prompt, caps: entry.caps,
                                 when: entry.when, unless: entry.unless, app: entry.app
                             )
                         }
@@ -1249,6 +1311,7 @@ struct Config: Decodable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init()
+        directory = decoder.userInfo[.configDirectory] as? URL
         if let hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) { self.hotkey = hotkey }
         if let audio = try c.decodeIfPresent(Audio.self, forKey: .audio) { self.audio = audio }
         if let feedback = try c.decodeIfPresent(Feedback.self, forKey: .feedback) { self.feedback = feedback }
@@ -1399,6 +1462,24 @@ struct Config: Decodable, Equatable {
         var said: [String] = transforms.compactMap { transform in
             guard case .command(let command) = transform.body else { return nil }
             return "transforms: \"\(transform.name)\" runs a program — \(command)"
+        }
+
+        // The name judge is a stage now. A pipeline that still names it as a
+        // transform keeps working — a `command:` transform is a supported
+        // escape hatch and this does not rewrite anybody's config — but it is
+        // running the old hand-off, where the positions are re-derived from
+        // occurrence counts that no longer hold once a stage edits the text
+        // (F10). Said once, however many languages spell it.
+        let legacyJudge = transcription.languages.contains { language in
+            Pipeline.resolved(config: self, language: language).steps.contains {
+                $0.stage == .transform
+                    && $0.transform?.caseInsensitiveCompare("verify_names") == .orderedSame
+            }
+        }
+        if legacyJudge {
+            said.append("pipelines: `- transform: verify_names` is the old name judge."
+                + " The app does this itself now — write `- vocabulary: verify_names.md`,"
+                + " with the prompt file beside config.yaml")
         }
 
         // The vocabulary is learnt rather than written, so it is the part of

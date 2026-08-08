@@ -167,6 +167,11 @@ actor Transcriber {
         var text = result.text
         var vocabularyCount = 0
         var vocabularyChanges = ""
+        // What the pass proposed and did not write, with the text it measured
+        // those positions against. Handed to the pipeline as a value rather
+        // than published as a variable: a range is not a string, and the
+        // prototype's JSON hand-off is where four of its bugs lived (F5, F9).
+        var findings: Vocabulary.Outcome?
         if Vocabulary.wanted(config) {
             do {
                 try await Vocabulary.shared.prepare(config: config) { [weak self] label in
@@ -186,6 +191,7 @@ actor Transcriber {
                     text = outcome.text
                     vocabularyCount = outcome.count
                     vocabularyChanges = outcome.changes
+                    findings = outcome
                 } else {
                     // The pass is configured and did nothing, which used to
                     // look exactly like the pass finding no names. Say which.
@@ -222,6 +228,7 @@ actor Transcriber {
                 "vocabulary.count": .int(vocabularyCount),
                 "vocabulary.changes": .string(vocabularyChanges),
             ]),
+            findings: findings,
             progress: progress
         )
     }
@@ -574,11 +581,12 @@ actor Transcriber {
     /// How names get fixed — see `Replacements`.
     nonisolated static func applyReplacements(
         to text: String, config: Config, app: Pipeline.App? = nil,
-        seed: Scope = Scope(),
+        seed: Scope = Scope(), findings: Vocabulary.Outcome? = nil,
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await Replacements.apply(
-            to: text, config: config, app: app, seed: seed, progress: progress
+            to: text, config: config, app: app, seed: seed,
+            findings: findings, progress: progress
         )
     }
 }

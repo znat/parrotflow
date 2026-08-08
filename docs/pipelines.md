@@ -27,10 +27,58 @@ get every stage back — a missing section is silence, not a choice. Write
 | `fuzzy` | The same table against renderings you have not taught, so "super bays" reaches Supabase. Only words the spell checker does not know are eligible, which is what keeps "Excel" from becoming "Vercel". Needs `replacements` before it and says so if it does not have one, because on its own it swallows the preceding word. |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
+| `vocabulary` | The names the acoustic pass was unsure about, put to the local model as a menu of whole sentences — see [The name judge](#the-name-judge). Names a prompt file. |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
 `numbers` rewrites transcripts that were already correct, so run `--numbers` on
 a line to see exactly what it would do before leaving it in.
+
+## The name judge
+
+`vocabulary:` decides which of the names the app was unsure about are really
+names. It is a stage rather than a transform because the evidence it needs —
+where each uncertain word sits, and how clearly each spelling was heard — is
+measured during transcription and cannot survive being written to a file.
+
+```yaml
+- vocabulary: verify_names.md
+  when: vocabulary.count > 0
+  max_slots: 4        # optional; past this many, keep what the decoder wrote
+  max_readings: 16    # optional; trim the menu to this
+  max_per_slot: 3     # optional; readings per place, the decoder's included
+```
+
+The filename is a prompt beside `config.yaml` — the only part you own. It must
+contain `{terms}`, which is replaced with the vocabulary terms the sentence is
+about. Everything else is mechanical: the app works out which words are
+uncertain, builds every sentence the readings allow, asks the model for a
+letter, and looks the letter up. The model never writes the transcript, so it
+cannot tidy the grammar on the way past.
+
+A rule in `replacements:` is offered back too, so a name a rule wrote for a
+word you meant literally can be undone. The app works out which occurrences the
+rule wrote by comparing the transcript before and after it. When two rules
+write the same term into one sentence that comparison cannot say which is
+which, and then neither is offered — the log says so.
+
+`when: vocabulary.count > 0` is not optional in practice. Without it the stage
+costs a model call on every dictation, including the ones where nothing was
+uncertain.
+
+**Order matters, and the app refuses the wrong one.** The judge is given spans
+measured on the text the decoder produced. Put `replacements` above it — the
+judge offers a rule's substitution back as a reading, so the rules have to have
+fired — and everything that edits text below it. `--check-config` refuses a
+pipeline that puts `fuzzy`, `numbers` or a transform in between, because a span
+that has moved cannot be told from a span that was always wrong.
+
+When anything goes wrong — no prompt file, the model unreachable, a reply that
+names no option, more uncertain places than `max_slots` — the transcript ships
+exactly as it arrived and the reason is in the log.
+
+It publishes `vocabulary.asked` (how many readings were on the menu),
+`vocabulary.slots`, `vocabulary.kept_as_decoded` (the places it left alone) and
+`vocabulary.judged` (the sentence it chose).
 
 ## Transforms
 

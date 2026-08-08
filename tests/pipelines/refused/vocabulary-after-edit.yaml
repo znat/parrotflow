@@ -1,0 +1,15 @@
+# The name judge placed after a stage that rewrites the transcript.
+#
+# `vocabulary:` is handed spans the acoustic pass measured on the text the
+# decoder produced. A stage that edits text moves them, and the stage then has
+# to find its words again by searching — which is the mechanism that put the
+# menu on the wrong `Versailles` (finding F10). Nothing at run time can tell a
+# moved span from a span that was always wrong, so it is refused at load.
+#
+# `replacements` is deliberately allowed above it: the judge offers a rule's
+# substitution back as a reading, so the rules have to have fired first.
+languages: [en]
+pipeline:
+  - replacements
+  - numbers
+  - vocabulary: verify_names.md
