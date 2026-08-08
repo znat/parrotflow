@@ -273,6 +273,14 @@ if let index = arguments.firstIndex(of: "--learn") {
     exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2]))
 }
 
+if let index = arguments.firstIndex(of: "--forget") {
+    guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
+        print("usage: ParrotFlow --forget <term>")
+        exit(2)
+    }
+    exit(ForgetCommand.run(term: arguments[index + 1]))
+}
+
 if let index = arguments.firstIndex(of: "--peek") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     let sentinel = arguments.firstIndex(of: "--find").flatMap { found in

@@ -58,6 +58,24 @@ actor Vocabulary {
     /// printed says the audio preferred the term when often it did not (F4).
     private var tokenCounts: [String: Int] = [:]
 
+    /// How many real terms are loaded. Not `context.terms.count`, which also
+    /// counts one entry per pronunciation.
+    ///
+    /// F9 called this a live bug: pronunciation entries inflate `forVocabSize:`
+    /// and shift the bonus for every term. Measured on FluidAudio 0.15.5, it is
+    /// not — `ContextBiasingConstants.rescorerConfig(forVocabSize:)` returns
+    /// `cbw: 4.5` at every size, and the only field that moves with size is a
+    /// `minSimilarity` this file never reads, because `apply` passes
+    /// `offer_below` instead. Adding ten renderings to one term leaves every
+    /// other term's logged bonus identical, before and after this change.
+    ///
+    /// Fixed anyway, and it is not bookkeeping. The number this asks for is the
+    /// size of the vocabulary; the size of the context is a different number
+    /// that happens to have been equal until this PR. One upstream release that
+    /// makes `cbw` depend on size again turns that coincidence into a bonus
+    /// that moves whenever somebody corrects a name.
+    private var termCount = 0
+
     /// FluidAudio's recommended short-vocabulary opt-ins, from the #702 note.
     private static let rescorerConfig = VocabularyRescorer.Config(
         shortTermCbwTaperPivot: 5,
@@ -77,7 +95,11 @@ actor Vocabulary {
         config: Config, progress: (@Sendable (String) -> Void)? = nil
     ) async throws {
         let terms = config.vocabularyTerms
+        // The pronunciations are part of what gets built, so a list that
+        // changed has to rebuild the context exactly as a floor does.
+        let heard = config.vocabularyPronunciations
         let signature = terms.map { "\($0.text):\($0.offerBelow)" }
+            + heard.map { "\($0.term)~\($0.heard)" }
         guard signature != loadedFor || rescorer == nil else { return }
 
         progress?("vocabulary model")
@@ -100,12 +122,61 @@ actor Vocabulary {
             )
         }
         self.tokenCounts = counts
+        self.termCount = built.count
         guard !built.isEmpty else {
             loadedFor = signature
             return
         }
 
-        let context = CustomVocabularyContext(terms: built)
+        // Every rendering registered as a *pronunciation* of its term rather
+        // than as a spelling to substitute.
+        //
+        // `CustomVocabularyTerm` takes its CTC token ids explicitly, and
+        // nothing requires them to be the tokenisation of `text`. So `Vercel`
+        // goes in a second time carrying the tokens of "Versailles", and the
+        // spotter searches the audio for that sound and reports the term.
+        //
+        // `minSimilarity` is set past 1 so the rescorer never picks one of
+        // these as a spelling candidate — it compares spellings, and these
+        // carry the canonical spelling, so they would only duplicate the entry
+        // above. **The spotter does not consult it, which is the whole trick.**
+        // It is how `Versailles` reaches `Vercel` at all: the two are 0.40
+        // similar, so no floor can find them, and the spotter puts the term
+        // over those frames at −2.28 rather than the −5.28 the term's own
+        // spelling gets.
+        //
+        // The table already holds these. As rules alone they rewrite every
+        // "Versailles" including the palace; as pronunciations they also fire
+        // where the audio agrees, and on one clip the two Versailles separate
+        // by about a nat.
+        var pronunciations: [CustomVocabularyTerm] = []
+        var mute: [String] = []
+        for (name, rendering) in heard {
+            let ids = tokenizer.encode(rendering)
+            guard !ids.isEmpty else {
+                mute.append("\(name)/\(rendering) tokenises to nothing")
+                continue
+            }
+            pronunciations.append(CustomVocabularyTerm(
+                text: name, ctcTokenIds: ids, minSimilarity: 1.01
+            ))
+        }
+        // The prototype skipped every term shorter than five characters here,
+        // silently. The real rule is `Config.vocabularyPronunciations`: a
+        // pronunciation reports its *term*, so it can only be registered for a
+        // term the pass already knows how to price. Whatever that drops is
+        // named rather than dropped in silence.
+        let unsearched = config.vocabularyRules.count - heard.count
+        if unsearched > 0 {
+            mute.append("\(unsearched) on terms not searched for by sound")
+        }
+        if !pronunciations.isEmpty || !mute.isEmpty {
+            Log.write("vocabulary: \(pronunciations.count) pronunciation(s) searched"
+                + " for by sound"
+                + (mute.isEmpty ? "" : "; rules only: \(mute.joined(separator: ", "))"))
+        }
+
+        let context = CustomVocabularyContext(terms: built + pronunciations)
         let spotter = CtcKeywordSpotter(models: models, blankId: models.vocabulary.count)
         self.rescorer = try await VocabularyRescorer.create(
             spotter: spotter, vocabulary: context,
@@ -329,9 +400,39 @@ actor Vocabulary {
             .flatMap(Float.init) ?? config.vocabulary.decideAbove
     }
 
+    /// How well the spotter has to hear a term before its span is offered.
+    ///
+    /// Raised from -5.5 to -5.0 when pronunciations arrived, and the reason is
+    /// arithmetic rather than taste. A term's spotter score over a span is the
+    /// best of its search targets, so registering fourteen renderings of
+    /// `Praisy` makes it fifteen draws instead of one — every span in every
+    /// clip scores a little higher for that term, including the spans where it
+    /// was never said. The old floor was measured against terms alone and lets
+    /// the extra draws through: on `16-16-25` it admitted `Praisy` over "heard
+    /// by" and "judge", `Ollama` over "idea was to" and `Claude` over
+    /// "decoder", six slots in total, and the judge stage declines past four.
+    /// A clip that was right became a clip with no menu at all.
+    ///
+    /// Measured on `menu-recall.py` with the renderings registered:
+    ///
+    ///     floor   recall   picked
+    ///     -5.5     30/37    27/37    the extra draws cross max_slots
+    ///     -5.2     31/37    26/37
+    ///     -5.0     31/37    27/37    parity, and the plateau starts
+    ///     -4.8     31/37    27/37
+    ///
+    /// -5.0 rather than -4.8 because it is the loose end of the plateau: the
+    /// two score the same here, and the looser one asks less of a speaker whose
+    /// renderings this set does not contain.
+    ///
+    /// -5.0 is not a tightening of what the audio may find. The hit this whole
+    /// PR exists for — `Vercel` over "Versailles" — moves from -5.28 to -2.28
+    /// once the rendering is registered, so it clears either number by a
+    /// distance. What -5.0 cuts is the tail that got there by having more
+    /// draws.
     static var spotterFloor: Float {
         ProcessInfo.processInfo.environment["PARROTFLOW_SPOTTER_FLOOR"]
-            .flatMap(Float.init) ?? -5.5
+            .flatMap(Float.init) ?? -5.0
     }
 
     /// The term as it should be written where this word stood.
@@ -421,6 +522,19 @@ actor Vocabulary {
     func apply(
         to text: String, samples: [Float], tokenTimings: [TokenTiming], config: Config
     ) async -> Outcome {
+        // Above every guard below, on purpose (F11). The word dump is what
+        // `scripts/mine-pronunciations.py` reads to learn how a name comes out,
+        // and it used to print from inside the acoustic search — which only
+        // runs once something has already fired. So mining could only ever
+        // widen a term the pass already found, and the clips that matter most
+        // are the ones where nothing fired at all. Nothing here needs the
+        // spotter: the words and their times come out of the decoder.
+        if ProcessInfo.processInfo.environment["PARROTFLOW_SPOTTER_DUMP"] != nil {
+            for word in Self.words(from: tokenTimings, in: text) {
+                Log.write(String(format: "  word %@ %.2f-%.2f",
+                                 String(text[word.range]), word.start, word.end))
+            }
+        }
         guard let rescorer, let spotter, let context, !tokenTimings.isEmpty else {
             return .unchanged(text)
         }
@@ -443,8 +557,10 @@ actor Vocabulary {
                 }
             }
 
+            // The number of *terms*, not the size of the context — see
+            // `termCount` for what F9 claimed here and what measures (F9).
             let cbw = ContextBiasingConstants.rescorerConfig(
-                forVocabSize: context.terms.count
+                forVocabSize: termCount
             ).cbw
             let result = rescorer.ctcTokenRescore(
                 transcript: text,
@@ -672,12 +788,6 @@ actor Vocabulary {
     ) -> [(range: Range<String.Index>, term: String, score: Float)] {
         let spoken = words(from: timings, in: text)
         let bare = { (s: Substring) in String(s).lowercased().filter(\.isLetter) }
-        if ProcessInfo.processInfo.environment["PARROTFLOW_SPOTTER_DUMP"] != nil {
-            for word in spoken {
-                Log.write(String(format: "  word %@ %.2f-%.2f",
-                                 String(text[word.range]), word.start, word.end))
-            }
-        }
 
         var out: [(range: Range<String.Index>, term: String, score: Float)] = []
         var perTerm: [String: Int] = [:]

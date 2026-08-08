@@ -65,7 +65,7 @@ them means nothing to argue about.
     Arexvy     nothing within 0.67
 
 **Names that collide with ordinary words.** No threshold works. Use
-`floor: off` and a `heard:` list instead.
+`floor: off` and a `pronunciations:` list instead.
 
     Praisy   vs "praise"    0.83   and they sound alike, so no gate saves it
     Sentry   vs "entry"     0.83
@@ -211,7 +211,7 @@ Then:
 
 - **Nearest ordinary word at 0.85 or above** — no threshold works. None both
   catches the term's mishearings and excludes that word. Ship it as
-  `floor: off` with a `heard:` list, and let the rule put it on the menu and
+  `floor: off` with a `pronunciations:` list, and let it put the term on the menu and
   the sentence decide.
 - **Otherwise** — plain entry. Nothing to write but the name.
 - **Check two-word phrases as well as single words.** This is the hole that
@@ -267,8 +267,17 @@ terms:
   Tasmeen:              # nothing within 0.71
   Matthieu:
     floor: off          # "Matthew" is 0.75 and sounds the same
-    heard: [Mathieu, Matthew]
+    pronunciations:
+      - heard: Mathieu
+        from: correction
+      - heard: Matthew
+        from: correction
 ```
+
+A rendering is matched exactly as a rule *and* searched for by sound under its
+term's name, which is what reaches a name no threshold can — `Versailles` is
+0.40 from `Vercel`. `heard: [a, b]` is the old spelling of the same list; it
+still loads, and `--check-config` says what to write instead.
 
 An empty entry is the normal one. The two numbers at the top are the file's,
 not a term's, and they ship untuned — leave them alone unless you have
@@ -282,9 +291,10 @@ leaving the header looking ignored.
 And beside it, three short lists:
 
 - **Rejected, with the reason.** `Praisy` — "praise" at 0.83. `Sentry` —
-  "entry" at 0.83. These go in with `floor: off` and a `heard:` list of
-  renderings actually seen, so sound matching is off for them and nothing
-  else. Give the reason, or someone re-adds them next month.
+  "entry" at 0.83. These go in with `floor: off` and a `pronunciations:` list
+  of renderings actually seen. `floor: off` turns sound matching off for the
+  whole term, renderings included, so those are exact rules and the judge reads
+  the sentence. Give the reason, or someone re-adds them next month.
 - **Already fine.** The terms the decoder writes correctly. Same reason.
 - **Read these aloud.** The step 5 sentences.
 

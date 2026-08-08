@@ -88,10 +88,18 @@ decide_above: 3.0
 terms:
   Tasmeen:                     # nothing close in this speaker's speech
   Praisy:
-    heard: [Prissy, Pressy, Precy, Prezi]
+    pronunciations:
+      - heard: Prissy
+        seen: 6
+        from: mined
+      - heard: Pressy
+        seen: 4
+        from: mined
   Claude:
     floor: off
-    heard: [clut, cloud]
+    pronunciations:
+      - heard: cloud
+        from: correction
 ```
 
 #### The two numbers
@@ -118,15 +126,51 @@ measurement.
 
 #### Per term
 
-**`heard`** is a list of exact renderings. Use it for the ones no number can
-reach: "Prezi" is 0.33 from "Praisy", and a threshold that low would swallow
-every "praise".
+**`pronunciations`** is the ways this term actually comes out of the
+recogniser. Each entry does two jobs. It is an exact rule, which is what
+reaches the renderings no number can: "Prezi" is 0.33 from "Praisy", and a
+threshold that low would swallow every "praise". And its *sound* is registered
+with the CTC keyword spotter under the term's name, so the audio search looks
+for the rendering and reports the term. That is the only path that reaches a
+deep miss: "Versailles" is 0.40 from `Vercel`, and searching for the sound of
+"Versailles" finds the term at −2.28 where searching for the sound of "Vercel"
+manages −5.28.
+
+A rule alone cannot tell two things apart that are spelled the same. "deployed
+on Vercel against the Versailles castle" has both, and the rule rewrites both.
+The pronunciation fires where the audio agrees, which separates them by about a
+nat on that clip.
+
+Per entry:
+
+| | |
+| --- | --- |
+| `heard` | the spelling. The only required field. |
+| `seen` | how many times it has turned up. 0 means never counted. |
+| `from` | `correction`, `mined` or `calibration`. Absent means unknown. |
+| `note` | a line for a person. Never parsed. |
+
+Nothing mechanical reads `seen` or `from` yet — they are what a per-term cap
+and a prune rule will decide on, and a count that starts being kept the day it
+is first needed starts at zero.
+
+A pronunciation is only searched for by sound when its term is: a rendering is
+registered under the *term's* name, so one attached to a term the pass does not
+look for would report a finding nothing downstream can price. Those are still
+rules, and `--check-config` counts them separately.
 
 **`floor: off`** turns sound matching off for one term. Use it when the
 recogniser writes the term and an ordinary word identically. Measured on one
 machine: "Claude" and "cloud" both come back as `cloud`, "Matthieu" and
 "Matthew" both as `Matthew`. No threshold separates them, because the
 distinction is gone before anything downstream can look.
+
+It turns the whole term off, its pronunciations included. Those stay exact
+rules and stop being search targets — a rendering is registered under the
+term's name, and a term switched off has no entry for the spotter to report.
+That is the right reading rather than a limitation: a term is usually
+`floor: off` because it *sounds* like the ordinary word, and the audio
+separates them no better than the spelling does.
 
 `floor: off` in YAML is the boolean `false`, not the string. So are `on`,
 `yes` and `no`. The decoder reads both.
@@ -144,6 +188,7 @@ They still load and still behave. `--check-config` says what was read.
 | `min_similarity: 0.75` | `offer_below: 0.75` |
 | `floor: 0.85` on a term | that term's `offer_below` |
 | `floor: off`, `floor: no` | unchanged — never matched by sound |
+| `heard: [Prissy, Pressy]` | `pronunciations:`, each `from: legacy` |
 
 A number under `floor:` is legacy: it now only decides what is offered, and the
 setting is `offer_below:` at the top of the file. `floor: off` is not legacy.
@@ -173,7 +218,8 @@ its neighbourhood: "turn down the volume" glues to `Turndown` at 1.00.
 #### What it costs
 
 Matching by sound downloads a ~98 MB model on first use and adds a CTC pass
-per clip. `acoustic: false` skips both; the `heard` rules still apply.
+per clip. `acoustic: false` skips both; the pronunciation rules still apply,
+as rules.
 
 Over 400 archived clips, damage — clips containing no vocabulary term that came
 out different — falls as the similarity rises:
@@ -187,6 +233,31 @@ out different — falls as the similarity rises:
 Measured on the pass that substituted. There was no setting that caught
 everything and broke nothing, which is the finding that split one number into
 two: a damaged clip at 0.65 is now a menu line, not a rewritten word.
+
+#### `voice/` — what this machine has heard you say
+
+The vocabulary says which words matter. `voice/`, beside `config.yaml`, says
+how they actually come out of your mouth on your microphone.
+
+```
+voice/observations.jsonl      one line per rendering seen
+voice/calibration.yaml        the bands the calibrate skill measured
+voice/samples/<Term>/*.wav    the audio of each rendering, cut out
+```
+
+Three reasons it is not in `vocabulary.yaml`. It grows without limit, and a
+setting a person reads should not. It is audio, which no YAML file wants. And
+it is one person's voice saying their colleagues' names — it stays on the
+machine, and `scripts/check-no-voice.sh` refuses a repository that carries any
+of it.
+
+The microphone is part of an observation. A rendering is a fact about a mouth
+*and* a capture chain, so `mic` is recorded per line; absent means unknown
+rather than "the one plugged in today". Samples are cut spans, a few hundred KB
+each, never a whole dictation.
+
+`--forget <term>` empties all three for one name — see
+[the command line](cli.md#forgetting-what-a-name-sounds-like).
 
 #### Checking the result
 

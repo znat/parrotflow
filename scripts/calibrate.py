@@ -2,7 +2,7 @@
 """Derive per-term similarity floors from a person's own voice.
 
     scripts/calibrate.py confusables Vercel Praisy Tasmeen
-    scripts/calibrate.py score calibration.yaml
+    scripts/calibrate.py score                    # bands -> voice/calibration.yaml
 
 A vocabulary floor is a bet about two distributions: how far a speaker's
 rendering of a name lands from its spelling, and how close the ordinary words
@@ -27,7 +27,7 @@ uncritical. A band that closes means no floor exists and the term needs a rule
 or the judge. That difference is the point: it is the measurement that tells a
 non-native speaker which of their terms will never be safe acoustically.
 """
-import argparse, json, os, pathlib, re, subprocess, sys, tempfile
+import argparse, datetime, json, os, pathlib, re, subprocess, sys, tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # The words a person is plausibly going to say, by usage frequency — not every
@@ -42,6 +42,18 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 # only in English should not have their floor raised by the first.
 WORDS = ROOT / "data"
 FALLBACK_WORDS = pathlib.Path("/usr/share/dict/words")
+
+
+def config_dir():
+    """Where the app reads its config from — the same seam it uses.
+
+    `voice/` sits inside it, so a scratch `PARROTFLOW_CONFIG_DIR` moves the
+    bands and the manifest with everything else.
+    """
+    override = os.environ.get("PARROTFLOW_CONFIG_DIR", "").strip()
+    if override:
+        return pathlib.Path(override).expanduser()
+    return pathlib.Path.home() / ".config/parrotflow-dev"
 
 
 def word_lists(languages):
@@ -237,10 +249,57 @@ def score_manifest(manifest_path, app, directory):
             heard = sorted({got for _, _, got in landings[term]["term"]})
             print(f"    {term}:")
             print(f"      floor: off")
-            print(f"      heard: [{', '.join(heard)}]")
+            print(f"      pronunciations:")
+            for rendering in heard:
+                print(f"        - heard: {rendering}")
+                print(f"          from: calibration")
         else:
             print(f"    {term}: {floor}")
+
+    write_bands(landings, emitted)
     return 0
+
+
+def write_bands(landings, emitted):
+    """The bands, kept in `voice/calibration.yaml` beside the config.
+
+    Printing them and stopping means the next person to ask "why is this term
+    `floor: off`" has to make somebody read forty sentences again. The bands are
+    a measurement of one mouth on one microphone, they cost the user's breath to
+    get, and they are the one thing here nothing else can reconstruct.
+
+    Not the vocabulary: this says what was measured, `vocabulary.yaml` says what
+    runs. Merging the two is how a note about a measurement becomes a setting
+    nobody meant to write.
+    """
+    voice = config_dir() / "voice"
+    voice.mkdir(parents=True, exist_ok=True)
+    target = voice / "calibration.yaml"
+    lines = [
+        "# Similarity bands measured from this speaker's voice by",
+        "# scripts/calibrate.py score. A record, not a setting — the app reads",
+        "# `offer_below:` and `decide_above:` from vocabulary.yaml.",
+        "#",
+        "# band   the gap between the lowest rendering of the term and the",
+        "#        highest of the words it is confused with. Closed means no",
+        "#        threshold separates them for this person.",
+        "",
+        f"measured: {datetime.date.today().isoformat()}",
+        "terms:",
+    ]
+    for term in sorted(landings):
+        mine = [value for value, _, _ in landings[term]["term"]]
+        theirs = [value for value, _, _ in landings[term]["confusable"]]
+        if not mine:
+            continue
+        lines.append(f"  {term}:")
+        lines.append(f"    renderings: [{min(mine):.2f}, {max(mine):.2f}]")
+        if theirs:
+            lines.append(f"    confusables: [{min(theirs):.2f}, {max(theirs):.2f}]")
+        floor = emitted.get(term)
+        lines.append(f"    band: {'closed' if floor is None else floor}")
+    target.write_text("\n".join(lines) + "\n")
+    print(f"\n  bands written to {target}")
 
 
 # --------------------------------------------------------------------- main
@@ -255,7 +314,9 @@ def main():
                       help="languages the speaker dictates in, e.g. en or en,fr")
 
     run = sub.add_parser("score")
-    run.add_argument("manifest")
+    run.add_argument("manifest", nargs="?", default=None,
+                     help="the sentences that were read; defaults to "
+                          "voice/calibration.json beside the config")
     run.add_argument("--app", default=str(
         ROOT / ".build/ParrotFlowDev.app/Contents/MacOS/ParrotFlow"))
     run.add_argument("--recordings", default=str(
@@ -273,7 +334,12 @@ def main():
             for value, word in near:
                 print(f"  {value:.2f}  {word}")
         return 0
-    return score_manifest(args.manifest, args.app, args.recordings)
+    manifest = args.manifest or (config_dir() / "voice/calibration.json")
+    if not pathlib.Path(manifest).exists():
+        print(f"✗ no manifest at {manifest} — write the sentences first,"
+              " see .claude/skills/calibrate/SKILL.md")
+        return 2
+    return score_manifest(manifest, args.app, args.recordings)
 
 
 if __name__ == "__main__":

@@ -107,6 +107,33 @@ enum CheckConfigCommand {
             print("        default: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
         }
 
+        // What `voice/` has piled up, per term. Printed because it is the one
+        // part of the configuration that grows on its own: nobody chose these
+        // numbers and nobody sees them until something goes wrong. Silent when
+        // the directory does not exist, which is every install that has not
+        // learnt anything yet.
+        let recorded = VoiceStore.counts()
+        if !recorded.isEmpty {
+            print("  · voice             \(recorded.count) term(s) in"
+                + " \(VoiceStore.directory.path)")
+            let width = recorded.map(\.term.count).max() ?? 0
+            for entry in recorded {
+                print("      \(entry.term.padding(toLength: width, withPad: " ", startingAt: 0))"
+                    + "  \(entry.observations) observation(s), \(entry.samples) sample(s)"
+                    + "  — `--forget \(entry.term)` drops both")
+            }
+        }
+        // A closed band is the one measurement that argues with the config: it
+        // says no threshold will ever separate that term for this speaker,
+        // whatever `offer_below` is set to.
+        if let bands = VoiceStore.calibration() {
+            print("  · calibration       measured \(bands.measured), \(bands.terms) term(s)"
+                + (bands.closed > 0
+                    ? ", \(bands.closed) with no band — those want `floor: off`"
+                        + " and pronunciations, not a number"
+                    : ""))
+        }
+
         // Where each body actually came from.
         //
         // A file present both in the folder and at the old location beside
