@@ -75,8 +75,8 @@ Rules for the agent doing a PR. Follow them exactly.
 | Built app | `.build/ParrotFlowDev.app/Contents/MacOS/ParrotFlow` |
 | Installed app | `/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow` |
 | Judge model | Ollama, `gemma4:e4b`, temperature 0. Do not benchmark with other models loaded; e4b is the stable reference. |
-| Menu cache | `tests/judge-menus.json` (66 menus, 53 reachable — re-harvested by PR #68 over the 130-clip set) |
-| Case set | `tests/menu-cases.yaml` (127 labelled clips, in two blocks) |
+| Menu cache | `tests/judge-menus.json` (66 menus, 53 reachable — re-harvested by PR #68 over the first 130 clips, so it has nothing for block 3 until the next `--harvest`) |
+| Case set | `tests/menu-cases.yaml` (145 clips, 141 labelled, in three blocks) |
 
 ### Environment preflight (run before any measurement)
 
@@ -138,7 +138,8 @@ PR #68, on the 127 labelled clips of `tests/menu-cases.yaml`, three runs per
 clip, against `0766c81`. Two clips changed outcome between runs (`17-39-19`
 and `11-10-43`, picked on 2 runs of 3); `before-after.py` had none. The old
 37-clip numbers (recall 30/37, picked 27/37, 16/10/2) do not compare with
-them.
+them. Block 3 was added after that run, so those baselines cover the first
+two blocks only. Re-record them at the next measurement.
 
 **Record two totals, not one.** A single `recall` and a single `picked` over
 127 clips can now hide a regression. 73 of the clips are controls that the
@@ -154,7 +155,9 @@ a change nobody asked for, and it needs an explanation before the PR lands.
 block a clip came from. Splitting the report belongs to whoever next touches
 PR 2's harness. Until then, split by hand: the `# picked up:` comment on
 every entry in block 2 says which class the clip is in, and every clip in
-block 1 is about a term.
+block 1 is about a term. Every clip in block 3 is about a term too. It holds
+no controls, so the control total stays at 73 and the term total grows by
+the 14 labelled clips block 3 adds.
 
 **Caveat that stands until PR 1:** the same clip scores ~12 nats apart
 between live dictation and replay. Every number above describes replays.
