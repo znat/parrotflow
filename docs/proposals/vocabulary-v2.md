@@ -377,6 +377,15 @@ every F13 fix they already contain. Then fix what the review found:
    pre-filled with the app's output and must be corrected by hand. (F11.)
 5. Fix the corrupted `approve` legend line in `tests/judge-cases.yaml` (F9).
 6. Report chance in every table that ranks (F13).
+7. `menu-recall.py` and `before-after.py`: add `--runs N`, default 1. It
+   replays each clip N times, keeps the per-clip majority, and reports how
+   many clips changed outcome between runs (F12a).
+
+**Measurement noise.** F12a: replaying the same clip gives scores up to ~5
+nats apart, so one replay is not a measurement. Any gate quoted from
+`menu-recall.py` or `before-after.py` must come with the flip count from
+`--runs 3` when the number is within 2 cases of the baseline it is compared
+with. A single-run number inside that band decides nothing.
 
 **HUMAN.** Labels for any newly mined cases.
 
