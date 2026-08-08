@@ -29,7 +29,12 @@ enum ForgetCommand {
             print("  \(renderings) pronunciation(s) from"
                 + " \(ConfigStore.vocabularyURL.lastPathComponent)")
             print("  \(gone.observations) observation(s) from voice/observations.jsonl")
-            print("  \(gone.samples) sample(s) from voice/samples/\(name)/")
+            // The folder as it is spelled on disk, not as it was typed. The
+            // match is case-insensitive, so `--forget praisy` has to be told
+            // that `samples/Praisy/` is what went.
+            let from = gone.folders.isEmpty
+                ? "voice/samples/" : gone.folders.map { "voice/samples/\($0)/" }.joined(separator: ", ")
+            print("  \(gone.samples) sample(s) from \(from)")
             Log.write("forget: \(name) — \(renderings) pronunciation(s),"
                 + " \(gone.observations) observation(s), \(gone.samples) sample(s)")
             return 0

@@ -129,10 +129,9 @@ enum VoiceStore {
         for observation in observations() {
             seen[observation.term, default: 0] += 1
         }
-        let files = FileManager.default
         var kept: [String: Int] = [:]
-        for name in (try? files.contentsOfDirectory(atPath: samplesDirectory.path)) ?? [] {
-            let inside = (try? files.contentsOfDirectory(
+        for name in termFolders() {
+            let inside = (try? FileManager.default.contentsOfDirectory(
                 atPath: samplesDirectory.appendingPathComponent(name).path
             )) ?? []
             kept[name] = inside.filter { $0.hasSuffix(".wav") }.count
@@ -142,12 +141,30 @@ enum VoiceStore {
         }
     }
 
+    /// The term folders under `samples/`, directories only.
+    ///
+    /// A stray file — `.DS_Store` is the one that turns up — is not a term, and
+    /// listing it as one would offer `--forget .DS_Store`.
+    private static func termFolders() -> [String] {
+        let files = FileManager.default
+        return ((try? files.contentsOfDirectory(atPath: samplesDirectory.path)) ?? [])
+            .filter { name in
+                var directory: ObjCBool = false
+                let path = samplesDirectory.appendingPathComponent(name).path
+                return files.fileExists(atPath: path, isDirectory: &directory)
+                    && directory.boolValue
+            }
+    }
+
     /// Everything this store knows about one term, gone.
     ///
-    /// Returns what was removed, so the caller can say it out loud. Matching is
-    /// case-insensitive: a person typing `--forget praisy` means the term.
+    /// Returns what was removed, so the caller can say it out loud — including
+    /// the folder names, because matching is case-insensitive and a person
+    /// typing `--forget praisy` should be told `samples/Praisy/` is what went.
     @discardableResult
-    static func forget(_ term: String) throws -> (observations: Int, samples: Int) {
+    static func forget(
+        _ term: String
+    ) throws -> (observations: Int, samples: Int, folders: [String]) {
         let files = FileManager.default
         var dropped = 0
         if let text = try? String(contentsOf: observationsURL, encoding: .utf8) {
@@ -170,13 +187,14 @@ enum VoiceStore {
         }
 
         var removed = 0
-        for name in (try? files.contentsOfDirectory(atPath: samplesDirectory.path)) ?? []
-        where name.caseInsensitiveCompare(term) == .orderedSame {
+        var folders: [String] = []
+        for name in termFolders() where name.caseInsensitiveCompare(term) == .orderedSame {
             let folder = samplesDirectory.appendingPathComponent(name)
             removed += ((try? files.contentsOfDirectory(atPath: folder.path)) ?? [])
                 .filter { $0.hasSuffix(".wav") }.count
             try files.removeItem(at: folder)
+            folders.append(name)
         }
-        return (dropped, removed)
+        return (dropped, removed, folders)
     }
 }
