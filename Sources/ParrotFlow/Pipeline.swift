@@ -917,7 +917,7 @@ struct Pipeline: Equatable, Codable {
         if case .string(let wrote)? = scope["replacements.changes"] { rules = wrote }
         let parts = VocabularyJudge.acousticParts(
             findings?.proposals ?? [], in: text, measuredOn: findings?.text ?? text
-        ) + VocabularyJudge.ruleParts(rules, in: text)
+        ) + VocabularyJudge.ruleParts(rules, in: text, before: findings?.text)
 
         let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
         guard !slots.isEmpty else {
@@ -932,6 +932,14 @@ struct Pipeline: Equatable, Codable {
 
         let built = VocabularyJudge.readings(in: text, from: slots, caps: caps)
         let sentences = built.sentences
+        // Trimming a slot cannot always get under the cap — it stops at two
+        // readings a slot — so the menu is cut instead. Said out loud: the
+        // decoder's own reading is still first, so the cost is a correction
+        // never offered rather than a wrong one written.
+        if built.truncated {
+            Log.write("pipeline: vocabulary — \(slots.count) slots allow more than"
+                + " \(caps.readings) readings; the menu is cut at \(sentences.count)")
+        }
         guard sentences.count > 1 else {
             return StageResult(text: text, vars: [
                 "asked": .int(sentences.count), "slots": .int(slots.count),

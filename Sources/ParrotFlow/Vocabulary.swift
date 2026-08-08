@@ -216,13 +216,17 @@ actor Vocabulary {
     /// only required on a side where the phrase itself ends in a letter or a
     /// digit, so "Olama?" still matches the word it is.
     static func spans(
-        of phrase: String, in text: String, from cursor: String.Index? = nil
+        of phrase: String, in text: String, from cursor: String.Index? = nil,
+        ignoringCase: Bool = false
     ) -> [Range<String.Index>] {
         guard !phrase.isEmpty else { return [] }
         var found: [Range<String.Index>] = []
         var from = cursor ?? text.startIndex
         while from <= text.endIndex,
-              let hit = text.range(of: phrase, range: from..<text.endIndex) {
+              let hit = text.range(
+                  of: phrase, options: ignoringCase ? [.caseInsensitive] : [],
+                  range: from..<text.endIndex
+              ) {
             if bounded(hit, in: text) { found.append(hit) }
             guard hit.lowerBound < text.endIndex else { break }
             from = text.index(after: hit.lowerBound)

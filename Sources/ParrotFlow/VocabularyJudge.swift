@@ -200,27 +200,86 @@ enum VocabularyJudge {
     /// stage, which rewrites text and reports pairs. So these are found by
     /// searching for the term, with the old limitation intact: two rules
     /// writing one term into one sentence cannot be told apart. That is
-    /// survivable here and was not for the acoustic pass, because a rule fires
-    /// on an exact spelling and so proposes far less often.
+    /// survivable, and was not for the acoustic pass, because a rule fires on
+    /// an exact spelling and so proposes far less often.
+    ///
+    /// **A term the decoder already wrote is not a substitution.** Searching
+    /// for the term finds every occurrence, including the ones no rule touched
+    /// — and a slot built on one of those puts the *rule's source spelling*
+    /// first on the menu, in the place the model agrees with most readily. So
+    /// "deployed on Vercel and the Versailles castle" would be offered
+    /// "deployed on Versailles" as the decoder's own reading, which it never
+    /// was.
+    ///
+    /// `before` is the transcript as the acoustic pass returned it, which is
+    /// what `replacements` was handed, and it says which occurrence is which.
+    /// A rule rewrites in place and reorders nothing, so the terms standing in
+    /// the text now are, in order, the occurrences of `heard` and of `term` in
+    /// `before` — and only the first kind is a substitution to offer back. See
+    /// `written(_:_:in:became:)`.
+    ///
+    /// When the two do not line up, some other rule wrote the term as well and
+    /// nothing here can say which occurrence came from where. Then none of them
+    /// are offered, and the log says so.
     ///
     /// A rule whose source is a pattern is skipped. `/(\w+) dot (\w+)/` names
     /// no spelling to offer back, and putting the pattern on a menu would ask
     /// the model to choose a regular expression.
-    static func ruleParts(_ changes: String, in text: String) -> [Part] {
+    static func ruleParts(_ changes: String, in text: String, before: String?) -> [Part] {
         var parts: [Part] = []
         for pair in changes.split(separator: ";") {
-            let written = pair.split(separator: "@").first.map(String.init) ?? String(pair)
-            guard let arrow = written.range(of: "->") else { continue }
-            let heard = written[..<arrow.lowerBound].trimmingCharacters(in: .whitespaces)
-            let term = written[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
+            let pairText = pair.split(separator: "@").first.map(String.init) ?? String(pair)
+            guard let arrow = pairText.range(of: "->") else { continue }
+            let heard = pairText[..<arrow.lowerBound].trimmingCharacters(in: .whitespaces)
+            let term = pairText[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
             guard !heard.isEmpty, !term.isEmpty, heard != term,
                   !heard.hasPrefix("/"), !term.contains("$")
             else { continue }
-            for range in Vocabulary.spans(of: term, in: text) {
-                parts.append(Part(range: range, decoded: heard, other: heard, term: term))
+            let standing = Vocabulary.spans(of: term, in: text, ignoringCase: true)
+            guard let before else {
+                for range in standing {
+                    parts.append(Part(range: range, decoded: heard, other: heard, term: term))
+                }
+                continue
+            }
+            guard let rewritten = written(heard, term, in: before, became: standing.count) else {
+                Log.write("vocabulary judge: \"\(term)\" stands \(standing.count) time(s) and"
+                    + " the transcript before the rules cannot account for that many;"
+                    + " \"\(heard)\" is not offered back")
+                continue
+            }
+            for index in rewritten {
+                parts.append(Part(
+                    range: standing[index], decoded: heard, other: heard, term: term
+                ))
             }
         }
         return parts
+    }
+
+    /// Which of the terms standing in the text now were written by this rule.
+    ///
+    /// The rule turns every `heard` into `term` and leaves every `term` where
+    /// it was. It rewrites in place, so the order is preserved: the *i*-th term
+    /// in the text now is the *i*-th of those two kinds of occurrence in the
+    /// text before. The ones that were `heard` are the substitutions; the rest
+    /// were already right and must not be offered a reading the decoder never
+    /// produced.
+    ///
+    /// Nil when the counts disagree, which means something other than this rule
+    /// also wrote the term. Guessing there is how a correct word gets a wrong
+    /// spelling put first on the menu.
+    static func written(
+        _ heard: String, _ term: String, in before: String, became standing: Int
+    ) -> [Int]? {
+        var marks: [(at: String.Index, rule: Bool)] =
+            Vocabulary.spans(of: heard, in: before, ignoringCase: true)
+                .map { ($0.lowerBound, true) }
+            + Vocabulary.spans(of: term, in: before, ignoringCase: true)
+                .map { ($0.lowerBound, false) }
+        marks.sort { $0.at < $1.at }
+        guard marks.count == standing else { return nil }
+        return marks.indices.filter { marks[$0].rule }
     }
 
     // MARK: - Slots and readings
@@ -328,7 +387,7 @@ enum VocabularyJudge {
     /// worse than a menu missing its least likely entry.
     static func readings(
         in text: String, from slots: [Slot], caps: Caps
-    ) -> (sentences: [String], choices: [[Int]], slots: [Slot]) {
+    ) -> (sentences: [String], choices: [[Int]], slots: [Slot], truncated: Bool) {
         // The alphabet is the hard ceiling whatever the config says: a 27th
         // reading would be a second `A`, and the reply could not name it. The
         // trim below cannot always get under the cap on its own — it stops at
@@ -353,6 +412,7 @@ enum VocabularyJudge {
 
         var sentences: [String] = []
         var choices: [[Int]] = []
+        var truncated = false
         // The last slot varies fastest, so the first combination is every
         // slot's first option — the decoder's own sentence.
         var combination = Array(repeating: 0, count: trimmed.count)
@@ -373,7 +433,7 @@ enum VocabularyJudge {
                 sentences.append(candidate)
                 choices.append(combination)
             }
-            if sentences.count >= ceiling { break }
+            if sentences.count >= ceiling { truncated = true; break }
             var index = trimmed.count - 1
             while index >= 0 {
                 combination[index] += 1
@@ -383,7 +443,7 @@ enum VocabularyJudge {
             }
             if index < 0 { break }
         }
-        return (sentences, choices, trimmed)
+        return (sentences, choices, trimmed, truncated)
     }
 
     // MARK: - The evidence
@@ -443,14 +503,24 @@ enum VocabularyJudge {
     /// A model that answers "B." or "Option B" has decided and formatted it
     /// badly, and refusing that is refusing a correct answer.
     ///
-    /// A bare leading letter wins outright, which is what almost every reply
-    /// is. Otherwise the first letter that *names an option* wins: taking the
-    /// first letter of any kind read "The answer is C" as A.
+    /// **A letter standing on its own is the answer.** Reading the first letter
+    /// of any kind takes "The answer is C" as A, and reading the first letter
+    /// that merely names an option takes "Option B" as O once the menu is
+    /// fifteen long — the same mistake with a bigger menu. So the reply is cut
+    /// into words and the first one-letter word that names an option wins.
+    ///
+    /// Apostrophes count as letters for that cut, so "I'd pick D" is three
+    /// words and the answer is D rather than I.
+    ///
+    /// The old rule is the fallback, for a reply with no bare letter in it at
+    /// all. It is what `scripts/tune-judge.py` does, so the harness and the app
+    /// still agree about every reply either of them can read.
     static func chosen(_ reply: String, of count: Int) -> Int? {
-        let upper = reply.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if let first = upper.first, let index = letters.firstIndex(of: first), index < count,
-           upper.dropFirst().first.map({ !$0.isLetter }) ?? true {
-            return index
+        let upper = reply.uppercased()
+        let words = upper.split(whereSeparator: { !$0.isLetter && $0 != "'" && $0 != "\u{2019}" })
+        for word in words where word.count == 1 {
+            guard let index = letters.firstIndex(of: word[word.startIndex]) else { continue }
+            if index < count { return index }
         }
         for character in upper {
             guard let index = letters.firstIndex(of: character) else { continue }
