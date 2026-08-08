@@ -632,6 +632,14 @@ install.
 
 **The same 53 cases are tuned on and reported on.** There is no held-out set.
 
+Every failure of both arms is in
+[tests/judge-failures.txt](../../tests/judge-failures.txt), verbatim — the
+system message, the user message, the raw reply and the error type for each of
+the 12 sentence-arm and 16 blank-arm failures, 8 of which both arms fail.
+Regenerate it with `scripts/judge-blanks.py --dump-failures
+tests/judge-failures.txt`, which reruns both arms, so it cannot drift from the
+numbers above.
+
 ## The one variable
 
 Three sentences of `verify_names.md` describe the shape of the question and of

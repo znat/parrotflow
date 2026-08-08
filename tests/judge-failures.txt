@@ -1,0 +1,1612 @@
+Every judge failure, verbatim — round 3 of the judge spike.
+
+What the model was sent and what it said back, for every case each arm
+got wrong. Nothing here is tidied, shortened or paraphrased. The system
+and user messages are the strings that went over the wire.
+
+Regenerate — it must never drift from the numbers in the report:
+
+    scripts/judge-blanks.py --dump-failures tests/judge-failures.txt
+
+The report is docs/proposals/judge-framings.md, round 3.
+
+Judge gemma4:e4b, temperature 0, letters inside a blank in menu order.
+53 reachable cached menus, chance 17.4.
+sentence 41/53, blank 37/53.
+
+Two errors are named. `overwrite` is a name written where the speaker
+said an ordinary word — the failure this whole spike is about. `name
+lost` is a real name left as the decoder mangled it. A span that `slots`
+merged can hold both, and then it is named by whichever the whole span
+matches.
+
+==============================================================================
+INDEX
+==============================================================================
+
+sentence arm — 12 failures
+
+  17-47-45   3 span(s)  overwrite                both arms fail
+  17-19-57   1 span(s)  name lost                
+  17-05-42   2 span(s)  overwrite                both arms fail
+  16-12-20   1 span(s)  overwrite                both arms fail
+  14-11-21   3 span(s)  overwrite                both arms fail
+  11-19-17   1 span(s)  overwrite                
+  14-04-21   3 span(s)  overwrite                both arms fail
+  00-14-39   1 span(s)  overwrite                both arms fail
+  10-12-37   2 span(s)  overwrite                
+  14-09-56   2 span(s)  overwrite                both arms fail
+  15-36-12   1 span(s)  overwrite                
+  13-09-46   1 span(s)  overwrite                both arms fail
+
+blank arm — 16 failures
+
+  17-47-45   3 span(s)  overwrite                both arms fail
+  17-39-27   1 span(s)  name lost                
+  17-27-23   1 span(s)  overwrite                
+  17-05-42   2 span(s)  overwrite                both arms fail
+  17-05-32   2 span(s)  name lost                
+  16-12-20   1 span(s)  overwrite                both arms fail
+  14-11-21   3 span(s)  overwrite                both arms fail
+  09-10-32   1 span(s)  overwrite                
+  14-11-36   2 span(s)  name lost                
+  14-04-21   3 span(s)  overwrite                both arms fail
+  23-00-49   3 span(s)  overwrite                
+  00-14-39   1 span(s)  overwrite                both arms fail
+  14-09-56   2 span(s)  overwrite                both arms fail
+  10-23-28   3 span(s)  overwrite                
+  13-09-46   1 span(s)  overwrite                both arms fail
+  07-36-58   1 span(s)  name lost                
+
+==============================================================================
+SENTENCE ARM — 12 FAILURES
+==============================================================================
+
+------------------------------------------------------------------------------
+clip      17-47-45
+arm       sentence
+both      yes — the other arm fails this clip too
+spans     3
+said:     Oh I get it. So yes, instead we want to have a retry. And then if the retry fails, we want the crawl to fail.
+true:     ['retry.', 'retry', 'crawl']
+error:    overwrite   'retry.' -> 'Arexvy.'
+error:    overwrite   'retry' -> 'Arexvy'
+error:    overwrite   'crawl' -> 'Redcrawl'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Arexvy, Arexvy., Redcrawl — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. Oh I get it. So yes, instead we want to have a retry. And then if the retry fails, we want the crawl to fail.
+B. Oh I get it. So yes, instead we want to have a retry. And then if the retry fails, we want the Redcrawl to fail.
+C. Oh I get it. So yes, instead we want to have a retry. And then if the Arexvy fails, we want the crawl to fail.
+D. Oh I get it. So yes, instead we want to have a retry. And then if the Arexvy fails, we want the Redcrawl to fail.
+E. Oh I get it. So yes, instead we want to have a Arexvy. And then if the retry fails, we want the crawl to fail.
+F. Oh I get it. So yes, instead we want to have a Arexvy. And then if the retry fails, we want the Redcrawl to fail.
+G. Oh I get it. So yes, instead we want to have a Arexvy. And then if the Arexvy fails, we want the crawl to fail.
+H. Oh I get it. So yes, instead we want to have a Arexvy. And then if the Arexvy fails, we want the Redcrawl to fail.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "retry." -10.26   "Arexvy." -9.80   — "retry." heard 0.5 less clearly
+  "retry" -9.20   "Arexvy" -8.31   — "retry" heard 0.9 less clearly
+  "crawl" -9.06   "Redcrawl" -9.58   — "Redcrawl" heard 0.5 less clearly
+
+Which letter?
+--- reply ---
+H
+--- resolved to ---
+['Arexvy.', 'Arexvy', 'Redcrawl']
+
+------------------------------------------------------------------------------
+clip      17-19-57
+arm       sentence
+both      no — the other arm gets this clip
+spans     1
+said:     My ask that was that for those sentences you give me the menu that was offered in the prompts. Also for the recent transcript where Universal was mixed up with Vercel.
+true:     ['Vercel.']
+error:    name lost   'Vercel.' -> 'Versailles.'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Vercel — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. My ask that was that for those sentences you give me the menu that was offered in the prompts. Also for the recent transcript where Universal was mixed up with Versailles.
+B. My ask that was that for those sentences you give me the menu that was offered in the prompts. Also for the recent transcript where Universal was mixed up with Vercel.
+
+Which letter?
+--- reply ---
+A
+--- resolved to ---
+['Versailles.']
+
+------------------------------------------------------------------------------
+clip      17-05-42
+arm       sentence
+both      yes — the other arm fails this clip too
+spans     2
+said:     So the document was a really super base uh for discussion and the Supabase proposal for the database is great.
+true:     ['super base', 'database is']
+error:    overwrite   'database is' -> 'Supabase is'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Supabase, Supabase's — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. So the document was a really super base uh for discussion and the Supabase proposal for the database is great.
+B. So the document was a really super base uh for discussion and the Supabase proposal for the Supabase's great.
+C. So the document was a really super base uh for discussion and the Supabase proposal for the Supabase is great.
+D. So the document was a really Supabase uh for discussion and the Supabase proposal for the database is great.
+E. So the document was a really Supabase uh for discussion and the Supabase proposal for the Supabase's great.
+F. So the document was a really Supabase uh for discussion and the Supabase proposal for the Supabase is great.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "super base" -6.48   "Supabase" -8.00   — "Supabase" heard 1.5 less clearly
+  "database" -5.99   "Supabase" -3.82   — "database" heard 2.2 less clearly
+
+Which letter?
+--- reply ---
+C
+--- resolved to ---
+['super base', 'Supabase is']
+
+------------------------------------------------------------------------------
+clip      16-12-20
+arm       sentence
+both      yes — the other arm fails this clip too
+spans     1
+said:     So the acoustic pass found praise.
+true:     ['praise.']
+error:    overwrite   'praise.' -> 'Praisy.'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy. — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. So the acoustic pass found praise.
+B. So the acoustic pass found Praisy.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "praise." -4.61   "Praisy." -3.47   — "praise." heard 1.1 less clearly
+
+Which letter?
+--- reply ---
+B
+--- resolved to ---
+['Praisy.']
+
+------------------------------------------------------------------------------
+clip      14-11-21
+arm       sentence
+both      yes — the other arm fails this clip too
+spans     3
+said:     Supabase is where the crawl data lives and Vercel hosts the dashboard.
+true:     ['Supabase', 'crawl', 'Vercel']
+error:    overwrite   'crawl' -> 'Redcrawl'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Redcrawl, Supabase, Vercel — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. superbase is where the crawl data lives and Versal hosts the dashboard.
+B. superbase is where the crawl data lives and Vercel hosts the dashboard.
+C. superbase is where the Redcrawl data lives and Versal hosts the dashboard.
+D. superbase is where the Redcrawl data lives and Vercel hosts the dashboard.
+E. Supabase is where the crawl data lives and Versal hosts the dashboard.
+F. Supabase is where the crawl data lives and Vercel hosts the dashboard.
+G. Supabase is where the Redcrawl data lives and Versal hosts the dashboard.
+H. Supabase is where the Redcrawl data lives and Vercel hosts the dashboard.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "Superbase" -6.66   "Supabase" -6.78   — "Supabase" heard 0.1 less clearly
+  "crawl" -2.93   "Redcrawl" -4.95   — "Redcrawl" heard 2.0 less clearly
+  "Versal" -6.11   "Vercel" -6.32   — "Vercel" heard 0.2 less clearly
+
+Which letter?
+--- reply ---
+H
+--- resolved to ---
+['Supabase', 'Redcrawl', 'Vercel']
+
+------------------------------------------------------------------------------
+clip      11-19-17
+arm       sentence
+both      no — the other arm gets this clip
+spans     1
+said:     Chain is a langsmith proprietary term.
+true:     ['proprietary']
+error:    overwrite   'proprietary' -> 'Praisy'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. Chain is a langsmith proprietary term.
+B. Chain is a langsmith Praisy term.
+
+Which letter?
+--- reply ---
+B
+--- resolved to ---
+['Praisy']
+
+------------------------------------------------------------------------------
+clip      14-04-21
+arm       sentence
+both      yes — the other arm fails this clip too
+spans     3
+said:     Hi Jess. I was able to use your your comments and explanations to update the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries crawl file and evaluation set.
+true:     ['explanations', 'update', 'crawl']
+error:    overwrite   'explanations' -> 'Praisy'
+error:    overwrite   'update' -> 'Supabase'
+error:    overwrite   'crawl' -> 'Redcrawl'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy, Redcrawl, Supabase — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. Hi Jess. I was able to use your your comments and explanations to update the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries crawl file and evaluation set.
+B. Hi Jess. I was able to use your your comments and explanations to update the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries Redcrawl file and evaluation set.
+C. Hi Jess. I was able to use your your comments and explanations to Supabase the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries crawl file and evaluation set.
+D. Hi Jess. I was able to use your your comments and explanations to Supabase the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries Redcrawl file and evaluation set.
+E. Hi Jess. I was able to use your your comments and Praisy to update the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries crawl file and evaluation set.
+F. Hi Jess. I was able to use your your comments and Praisy to update the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries Redcrawl file and evaluation set.
+G. Hi Jess. I was able to use your your comments and Praisy to Supabase the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries crawl file and evaluation set.
+H. Hi Jess. I was able to use your your comments and Praisy to Supabase the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries Redcrawl file and evaluation set.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "update" -5.24   "Supabase" -5.65   — "Supabase" heard 0.4 less clearly
+  "crawl" -8.39   "Redcrawl" -10.45   — "Redcrawl" heard 2.1 less clearly
+
+Which letter?
+--- reply ---
+H
+--- resolved to ---
+['Praisy', 'Supabase', 'Redcrawl']
+
+------------------------------------------------------------------------------
+clip      00-14-39
+arm       sentence
+both      yes — the other arm fails this clip too
+spans     1
+said:     I mean in general in our data.
+true:     ['general']
+error:    overwrite   'general' -> 'Redcrawl'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Redcrawl — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. I mean in general in our data.
+B. I mean in Redcrawl in our data.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "general" -9.88   "Redcrawl" -9.97   — "Redcrawl" heard 0.1 less clearly
+
+Which letter?
+--- reply ---
+B
+--- resolved to ---
+['Redcrawl']
+
+------------------------------------------------------------------------------
+clip      10-12-37
+arm       sentence
+both      no — the other arm gets this clip
+spans     2
+said:     It's a community that Tasmeen asked me to crawl.
+true:     ['Tasmeen', 'crawl.']
+error:    overwrite   'crawl.' -> 'Redcrawl.'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Redcrawl., Tasmeen — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. It's a community that Tasmin asked me to crawl.
+B. It's a community that Tasmin asked me to Redcrawl.
+C. It's a community that Tasmeen asked me to crawl.
+D. It's a community that Tasmeen asked me to Redcrawl.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "Tasmin" -10.13   "Tasmeen" -10.68   — "Tasmeen" heard 0.5 less clearly
+  "crawl." -10.06   "Redcrawl." -11.83   — "Redcrawl." heard 1.8 less clearly
+
+Which letter?
+--- reply ---
+D
+--- resolved to ---
+['Tasmeen', 'Redcrawl.']
+
+------------------------------------------------------------------------------
+clip      14-09-56
+arm       sentence
+both      yes — the other arm fails this clip too
+spans     2
+said:     Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near matches to my vocabulary terms.
+true:     ['matches', 'vocabulary']
+error:    overwrite   'matches' -> 'Matthieu'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Matthieu, Matthieu's, Praisy — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near matches to my vocabulary terms.
+B. Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near matches to my Praisy terms.
+C. Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near Matthieu to my vocabulary terms.
+D. Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near Matthieu to my Praisy terms.
+E. Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near Matthieu's to my vocabulary terms.
+F. Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near Matthieu's to my Praisy terms.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "matches" -5.74   "Matthieu" -6.93   — "Matthieu" heard 1.2 less clearly
+
+Which letter?
+--- reply ---
+C
+--- resolved to ---
+['Matthieu', 'vocabulary']
+
+------------------------------------------------------------------------------
+clip      15-36-12
+arm       sentence
+both      no — the other arm gets this clip
+spans     1
+said:     Pretty harsh review.
+true:     ['Pretty']
+error:    overwrite   'Pretty' -> 'Arexvy'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Arexvy — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. Pretty harsh review.
+B. Arexvy harsh review.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "Pretty" -13.40   "Arexvy" -13.52   — "Arexvy" heard 0.1 less clearly
+
+Which letter?
+--- reply ---
+B
+--- resolved to ---
+['Arexvy']
+
+------------------------------------------------------------------------------
+clip      13-09-46
+arm       sentence
+both      yes — the other arm fails this clip too
+spans     1
+said:     The team deserves praise for shipping that fast.
+true:     ['praise for']
+error:    overwrite   'praise for' -> 'Praisy'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy, Praisy's — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence, and every
+reading it might really have been. Exactly one is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading that makes sense as a sentence, unless the sound says
+otherwise by more than about 4. Answer with its letter only.
+--- user message ---
+A. The team deserves praise for shipping that fast.
+B. The team deserves Praisy shipping that fast.
+C. The team deserves Praisy's shipping that fast.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "praise" -8.70   "Praisy" -10.49   — "Praisy" heard 1.8 less clearly
+
+Which letter?
+--- reply ---
+B
+--- resolved to ---
+['Praisy']
+
+------------------------------------------------------------------------------
+
+==============================================================================
+BLANK ARM — 16 FAILURES
+==============================================================================
+
+------------------------------------------------------------------------------
+clip      17-47-45
+arm       blank
+both      yes — the other arm fails this clip too
+spans     3
+said:     Oh I get it. So yes, instead we want to have a retry. And then if the retry fails, we want the crawl to fail.
+true:     ['retry.', 'retry', 'crawl']
+error:    overwrite   'retry' -> 'Arexvy'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Arexvy, Arexvy., Redcrawl — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+Oh I get it. So yes, instead we want to have a ___1___ And then if the ___2___ fails, we want the ___3___ to fail.
+
+1. A. retry.
+   B. Arexvy.
+
+2. A. retry
+   B. Arexvy
+
+3. A. crawl
+   B. Redcrawl
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "retry." -10.26   "Arexvy." -9.80   — "retry." heard 0.5 less clearly
+  "retry" -9.20   "Arexvy" -8.31   — "retry" heard 0.9 less clearly
+  "crawl" -9.06   "Redcrawl" -9.58   — "Redcrawl" heard 0.5 less clearly
+
+Which letter for each blank?
+--- reply ---
+1=A 2=B 3=A
+--- resolved to ---
+['retry.', 'Arexvy', 'crawl']
+
+------------------------------------------------------------------------------
+clip      17-39-27
+arm       blank
+both      no — the other arm gets this clip
+spans     1
+said:     Let's praise Matthieu's work.
+true:     ["praise Matthieu's"]
+error:    name lost   "praise Matthieu's" -> "Praisy's Matthieu's"
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Matthieu, Praisy, Praisy's — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+Let's ___1___ work.
+
+1. A. praise Mathieu's
+   B. praise Matthieu's
+   C. Praisy Mathieu's
+   D. Praisy Matthieu's
+   E. Praisy's Mathieu's
+   F. Praisy's Matthieu's
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "praise" -6.20   "Praisy" -6.59   — "Praisy" heard 0.4 less clearly
+  "Mathieu's" -6.97   "Matthieu" -7.00   — "Matthieu" heard 0.0 less clearly
+
+Which letter for each blank?
+--- reply ---
+F
+--- resolved to ---
+["Praisy's Matthieu's"]
+
+------------------------------------------------------------------------------
+clip      17-27-23
+arm       blank
+both      no — the other arm gets this clip
+spans     1
+said:     So let's praise the team's work.
+true:     ['praise the']
+error:    overwrite   'praise the' -> "Praisy's"
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy, Praisy's — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+So let's ___1___ team's work.
+
+1. A. praise the
+   B. Praisy
+   C. Praisy's
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "praise" -9.83   "Praisy" -9.91   — "Praisy" heard 0.1 less clearly
+
+Which letter for each blank?
+--- reply ---
+C
+--- resolved to ---
+["Praisy's"]
+
+------------------------------------------------------------------------------
+clip      17-05-42
+arm       blank
+both      yes — the other arm fails this clip too
+spans     2
+said:     So the document was a really super base uh for discussion and the Supabase proposal for the database is great.
+true:     ['super base', 'database is']
+error:    overwrite   'database is' -> "Supabase's"
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Supabase, Supabase's — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+So the document was a really ___1___ uh for discussion and the Supabase proposal for the ___2___ great.
+
+1. A. super base
+   B. Supabase
+
+2. A. database is
+   B. Supabase's
+   C. Supabase is
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "super base" -6.48   "Supabase" -8.00   — "Supabase" heard 1.5 less clearly
+  "database" -5.99   "Supabase" -3.82   — "database" heard 2.2 less clearly
+
+Which letter for each blank?
+--- reply ---
+A B
+--- resolved to ---
+['super base', "Supabase's"]
+
+------------------------------------------------------------------------------
+clip      17-05-32
+arm       blank
+both      no — the other arm gets this clip
+spans     2
+said:     Praisy and Mirza worked on the new Vercel deployment.
+true:     ['Praisy', 'Vercel']
+error:    name lost   'Vercel' -> 'Versal'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy, Vercel — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+___1___ and Mirza worked on the new ___2___ deployment.
+
+1. A. Prizzi
+   B. Praisy
+
+2. A. Versal
+   B. Vercel
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "versal" -6.88   "Vercel" -7.70   — "Vercel" heard 0.8 less clearly
+
+Which letter for each blank?
+--- reply ---
+B A
+--- resolved to ---
+['Praisy', 'Versal']
+
+------------------------------------------------------------------------------
+clip      16-12-20
+arm       blank
+both      yes — the other arm fails this clip too
+spans     1
+said:     So the acoustic pass found praise.
+true:     ['praise.']
+error:    overwrite   'praise.' -> 'Praisy.'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy. — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+So the acoustic pass found ___1___
+
+1. A. praise.
+   B. Praisy.
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "praise." -4.61   "Praisy." -3.47   — "praise." heard 1.1 less clearly
+
+Which letter for each blank?
+--- reply ---
+B
+--- resolved to ---
+['Praisy.']
+
+------------------------------------------------------------------------------
+clip      14-11-21
+arm       blank
+both      yes — the other arm fails this clip too
+spans     3
+said:     Supabase is where the crawl data lives and Vercel hosts the dashboard.
+true:     ['Supabase', 'crawl', 'Vercel']
+error:    overwrite   'crawl' -> 'Redcrawl'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Redcrawl, Supabase, Vercel — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+___1___ is where the ___2___ data lives and ___3___ hosts the dashboard.
+
+1. A. superbase
+   B. Supabase
+
+2. A. crawl
+   B. Redcrawl
+
+3. A. Versal
+   B. Vercel
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "Superbase" -6.66   "Supabase" -6.78   — "Supabase" heard 0.1 less clearly
+  "crawl" -2.93   "Redcrawl" -4.95   — "Redcrawl" heard 2.0 less clearly
+  "Versal" -6.11   "Vercel" -6.32   — "Vercel" heard 0.2 less clearly
+
+Which letter for each blank?
+--- reply ---
+B B B
+--- resolved to ---
+['Supabase', 'Redcrawl', 'Vercel']
+
+------------------------------------------------------------------------------
+clip      09-10-32
+arm       blank
+both      no — the other arm gets this clip
+spans     1
+said:     Il faut geler le budget avant lundi, sinon Mira va râler.
+true:     ['Mira va']
+error:    overwrite   'Mira va' -> 'Mirza'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Mirza, Mirza's — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+Il faut geler le budget avant lundi, sinon ___1___ râler.
+
+1. A. Mira va
+   B. Mirza
+   C. Mirza's
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "Mira" -12.59   "Mirza" -12.25   — "Mira" heard 0.3 less clearly
+
+Which letter for each blank?
+--- reply ---
+B
+--- resolved to ---
+['Mirza']
+
+------------------------------------------------------------------------------
+clip      14-11-36
+arm       blank
+both      no — the other arm gets this clip
+spans     2
+said:     Matthieu and Tasmeen are both on the Arexvy account.
+true:     ['Tasmeen', 'Arexvy']
+error:    name lost   'Arexvy' -> 'RXV'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Arexvy, Tasmeen — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+Matthieu and ___1___ are both on the ___2___ account.
+
+1. A. Tasmine
+   B. Tasmeen
+
+2. A. RXV
+   B. Arexvy
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "Tasmine" -8.01   "Tasmeen" -8.75   — "Tasmeen" heard 0.7 less clearly
+
+Which letter for each blank?
+--- reply ---
+B A
+--- resolved to ---
+['Tasmeen', 'RXV']
+
+------------------------------------------------------------------------------
+clip      14-04-21
+arm       blank
+both      yes — the other arm fails this clip too
+spans     3
+said:     Hi Jess. I was able to use your your comments and explanations to update the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries crawl file and evaluation set.
+true:     ['explanations', 'update', 'crawl']
+error:    overwrite   'update' -> 'Supabase'
+error:    overwrite   'crawl' -> 'Redcrawl'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy, Redcrawl, Supabase — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+Hi Jess. I was able to use your your comments and ___1___ to ___2___ the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries ___3___ file and evaluation set.
+
+1. A. explanations
+   B. Praisy
+
+2. A. update
+   B. Supabase
+
+3. A. crawl
+   B. Redcrawl
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "update" -5.24   "Supabase" -5.65   — "Supabase" heard 0.4 less clearly
+  "crawl" -8.39   "Redcrawl" -10.45   — "Redcrawl" heard 2.1 less clearly
+
+Which letter for each blank?
+--- reply ---
+1=A 2=B 3=B
+--- resolved to ---
+['explanations', 'Supabase', 'Redcrawl']
+
+------------------------------------------------------------------------------
+clip      23-00-49
+arm       blank
+both      no — the other arm gets this clip
+spans     3
+said:     And then you have a list of possible alternatives for Versailles, such as Vercel.
+true:     ['possible', 'Versailles,', 'Vercel.']
+error:    overwrite   'Versailles,' -> 'Vercel,'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Tasmeen, Vercel — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+And then you have a list of ___1___ alternatives for ___2___ such as ___3___
+
+1. A. possible
+   B. Tasmeen
+
+2. A. Versailles,
+   B. Vercel,
+
+3. A. Versailles.
+   B. Vercel.
+
+Which letter for each blank?
+--- reply ---
+1=A 2=B 3=B
+--- resolved to ---
+['possible', 'Vercel,', 'Vercel.']
+
+------------------------------------------------------------------------------
+clip      00-14-39
+arm       blank
+both      yes — the other arm fails this clip too
+spans     1
+said:     I mean in general in our data.
+true:     ['general']
+error:    overwrite   'general' -> 'Redcrawl'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Redcrawl — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+I mean in ___1___ in our data.
+
+1. A. general
+   B. Redcrawl
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "general" -9.88   "Redcrawl" -9.97   — "Redcrawl" heard 0.1 less clearly
+
+Which letter for each blank?
+--- reply ---
+B
+--- resolved to ---
+['Redcrawl']
+
+------------------------------------------------------------------------------
+clip      14-09-56
+arm       blank
+both      yes — the other arm fails this clip too
+spans     2
+said:     Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near matches to my vocabulary terms.
+true:     ['matches', 'vocabulary']
+error:    overwrite   'matches' -> 'Matthieu'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Matthieu, Matthieu's, Praisy — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near ___1___ to my ___2___ terms.
+
+1. A. matches
+   B. Matthieu
+   C. Matthieu's
+
+2. A. vocabulary
+   B. Praisy
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "matches" -5.74   "Matthieu" -6.93   — "Matthieu" heard 1.2 less clearly
+
+Which letter for each blank?
+--- reply ---
+1=B 2=A
+--- resolved to ---
+['Matthieu', 'vocabulary']
+
+------------------------------------------------------------------------------
+clip      10-23-28
+arm       blank
+both      no — the other arm gets this clip
+spans     3
+said:     So I guess to close that loop, is there a way we can record the final transcription when the user press enters.
+true:     ['close', 'transcription when the', 'press']
+error:    overwrite   'transcription when the' -> 'Praisy'
+error:    overwrite   'press' -> "Praisy's"
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Claude, Praisy, Praisy's — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+So I guess to ___1___ that loop, is there a way we can record the final ___2___ user ___3___ enters.
+
+1. A. close
+   B. Claude
+
+2. A. transcription when the
+   B. Praisy
+
+3. A. press
+   B. Praisy
+   C. Praisy's
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "close" -10.76   "Claude" -9.36   — "close" heard 1.4 less clearly
+  "press" -8.61   "Praisy" -8.63   — "Praisy" heard 0.0 less clearly
+
+Which letter for each blank?
+--- reply ---
+A B C
+--- resolved to ---
+['close', 'Praisy', "Praisy's"]
+
+------------------------------------------------------------------------------
+clip      13-09-46
+arm       blank
+both      yes — the other arm fails this clip too
+spans     1
+said:     The team deserves praise for shipping that fast.
+true:     ['praise for']
+error:    overwrite   'praise for' -> "Praisy's"
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy, Praisy's — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+--- user message ---
+The team deserves ___1___ shipping that fast.
+
+1. A. praise for
+   B. Praisy
+   C. Praisy's
+
+How clearly the recogniser heard each spelling over that stretch of
+audio. Closer to zero is clearer, and the vocabulary's own bonus has been
+taken out, so the two are comparable.
+
+  "praise" -8.70   "Praisy" -10.49   — "Praisy" heard 1.8 less clearly
+
+Which letter for each blank?
+--- reply ---
+C
+--- resolved to ---
+["Praisy's"]
+
+------------------------------------------------------------------------------
+clip      07-36-58
+arm       blank
+both      no — the other arm gets this clip
+spans     1
+said:     So let's say we have very low floor for Praisy, but with the judge. The judge would the the judge was n would know my terms and see that.
+true:     ['Praisy,']
+error:    name lost   'Praisy,' -> 'Prezi,'
+
+--- system message ---
+The user dictates text. The speech recogniser mangles names they use often.
+Their vocabulary includes: Praisy — colleagues, products and tools they talk
+about every day.
+
+That list is not everyone they know. They also talk about other people,
+products and places that are not in it. A word that is not in the vocabulary
+can simply be a different person or thing, spelled correctly already — but only
+when it is a word or a name you recognise. A spelling that looks like a garbled
+version of a vocabulary term usually is one.
+
+Sometimes the user is not dictating but teaching a correction — "urza spells
+mirza", "Versal spells V E R C E L". The word before "spells" is the one they
+want replaced later, so it has to survive now. Keep those readings as they are.
+
+A name matcher was unsure about some words. Below is the sentence with each of
+them blanked and numbered, and every reading each blank might really have been.
+Exactly one reading of each blank is what the user said.
+
+Some readings come with a measure of how clearly the recogniser heard each
+spelling. A gap under about 1 means the sound cannot tell them apart and the
+sentence has to decide. A gap over about 4 means it can, and only a reading
+that makes no sense should overrule it.
+
+Pick the reading of each blank that makes sense as a sentence, unless the sound
+says otherwise by more than about 4. Answer with one letter per blank and
+nothing else, like "1=A 2=B".
+So let's say we have very low floor for ___1___ but with the judge. The judge would the the judge was n would know my terms and see that.
+
+1. A. Prezi,
+   B. Praisy,
+
+Which letter for each blank?
+--- reply ---
+2=A
+--- resolved to ---
+['Prezi,']
+
+------------------------------------------------------------------------------

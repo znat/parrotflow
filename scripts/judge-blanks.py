@@ -6,6 +6,7 @@
     scripts/judge-blanks.py --repeat 3         # run both arms three times over
     scripts/judge-blanks.py --order sorted     # letter the blanks' candidates differently
     scripts/judge-blanks.py --json out.json    # per-case results
+    scripts/judge-blanks.py --dump-failures tests/judge-failures.txt
 
 Round 1 (`judge-framings.py`) changed the judge's question and found that no
 wording wins (F17). Round 2 (`judge-routing.py`) tried to route each case away
@@ -243,17 +244,20 @@ def ask_blanks(model, system, item, order):
     those tokens on anything, since it answers one letter.
     """
     per_slot = options_for(item, order)
+    user = question(item, order)
     payload = {
         "model": model, "stream": False, "think": False,
         "options": {"temperature": 0, "num_predict": max(8, 6 * len(per_slot))},
         "messages": [{"role": "system", "content": system},
-                     {"role": "user", "content": question(item, order)}],
+                     {"role": "user", "content": user}],
     }
     request = urllib.request.Request(
         ENDPOINT, data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=120) as response:
         reply = json.loads(response.read())["message"]["content"].strip()
+    tune.LAST.clear()
+    tune.LAST.update(system=system, user=user, reply=reply)
     picked, item["how"] = read_answer(reply, per_slot)
     return picked
 
@@ -283,6 +287,8 @@ def run(items, arm, model, order):
             got = ask_blanks(model, system.replace("{terms}", case["terms"]), item, order)
         item[arm] = got == item["truth"]
         item[arm + " chose"] = got
+        # Kept so `--dump-failures` can print the call rather than rebuild it.
+        item[arm + " call"] = dict(tune.LAST)
 
 
 def trade(items, arm):
@@ -315,6 +321,89 @@ def trade(items, arm):
     return right, overwrite, lost, spans
 
 
+RULE = "=" * 78
+BAR = "-" * 78
+
+
+def errors(item, arm):
+    """[(kind, what)] — one entry per span this arm got wrong.
+
+    The same rule `trade` counts by. A reply the harness could not read at all
+    is its own kind: the arm answered, but not about these blanks.
+    """
+    chose = item[arm + " chose"]
+    if chose is None:
+        return [("unreadable", "the reply named no set of blanks")]
+    out = []
+    for index, truth in enumerate(item["truth"]):
+        if chose[index] != truth:
+            kind = "overwrite" if truth == item["heard"][index] else "name lost"
+            out.append((kind, f"{truth!r} -> {chose[index]!r}"))
+    return out or [("other", "every span is right but the case is not")]
+
+
+def dump_failures(items, path, model, order, chance):
+    """Every failing case in both arms, exactly as the model was given it.
+
+    The messages are the strings that went over the wire, kept by `tune.LAST`
+    rather than rebuilt here. A dump that reassembles the prompt is a dump that
+    can disagree with the run it claims to explain.
+    """
+    failed = {arm: [i for i in items if not i[arm]] for arm in ARMS}
+    both = {routing.stamp(i["case"]) for i in failed["sentence"]} \
+        & {routing.stamp(i["case"]) for i in failed["blank"]}
+
+    out = ["Every judge failure, verbatim — round 3 of the judge spike.", "",
+           "What the model was sent and what it said back, for every case each arm",
+           "got wrong. Nothing here is tidied, shortened or paraphrased. The system",
+           "and user messages are the strings that went over the wire.", "",
+           "Regenerate — it must never drift from the numbers in the report:", "",
+           f"    scripts/judge-blanks.py --dump-failures {path}", "",
+           "The report is docs/proposals/judge-framings.md, round 3.", "",
+           f"Judge {model}, temperature 0, letters inside a blank in {order} order.",
+           f"{len(items)} reachable cached menus, chance {chance:.1f}.",
+           f"sentence {sum(i['sentence'] for i in items)}/{len(items)},"
+           f" blank {sum(i['blank'] for i in items)}/{len(items)}.", "",
+           "Two errors are named. `overwrite` is a name written where the speaker",
+           "said an ordinary word — the failure this whole spike is about. `name",
+           "lost` is a real name left as the decoder mangled it. A span that `slots`",
+           "merged can hold both, and then it is named by whichever the whole span",
+           "matches.", "", RULE, "INDEX", RULE, ""]
+
+    for arm in ARMS:
+        out += [f"{arm} arm — {len(failed[arm])} failures", ""]
+        for item in failed[arm]:
+            stamp = routing.stamp(item["case"])
+            kinds = ", ".join(sorted({kind for kind, _ in errors(item, arm)}))
+            mark = "both arms fail" if stamp in both else ""
+            out.append(f"  {stamp:<10} {len(item['spans'])} span(s)  "
+                       f"{kinds:<24} {mark}")
+        out.append("")
+
+    for arm in ARMS:
+        out += [RULE, f"{arm.upper()} ARM — {len(failed[arm])} FAILURES", RULE, ""]
+        for item in failed[arm]:
+            stamp = routing.stamp(item["case"])
+            call = item[arm + " call"]
+            out += [BAR,
+                    f"clip      {stamp}",
+                    f"arm       {arm}",
+                    f"both      {'yes — the other arm fails this clip too' if stamp in both else 'no — the other arm gets this clip'}",
+                    f"spans     {len(item['spans'])}",
+                    f"said:     {item['case']['said']}",
+                    f"true:     {item['truth']}"]
+            out += [f"error:    {kind:<11} {what}" for kind, what in errors(item, arm)]
+            out += ["", "--- system message ---", call["system"],
+                    "--- user message ---", call["user"],
+                    "--- reply ---", call["reply"],
+                    "--- resolved to ---", repr(item[arm + " chose"]), ""]
+        out.append(BAR)
+        out.append("")
+
+    Path(path).write_text("\n".join(out))
+    return failed, both
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default=os.environ.get("PARROTFLOW_JUDGE_MODEL", "gemma4:e4b"))
@@ -325,6 +414,8 @@ def main():
     ap.add_argument("--show", metavar="STAMP",
                     help="print both prompts for one clip, verbatim, and stop")
     ap.add_argument("--json", metavar="PATH", help="write per-case results here")
+    ap.add_argument("--dump-failures", metavar="PATH",
+                    help="write every failing case of both arms, verbatim, here")
     args = ap.parse_args()
 
     if not CACHE.exists():
@@ -452,6 +543,14 @@ def main():
         print(f"  {clip:<10}{len(item['spans']):<7}{what:<44}{marks}")
     print("  " + f"{'total':<10}{'':<7}{'':<44}"
           + "".join(f"{f'{sum(i[a] for i in scored)}/{len(scored)}':<10}" for a in ARMS))
+
+    if args.dump_failures:
+        failed, both = dump_failures(items, args.dump_failures, args.model,
+                                     args.order, chance)
+        print(f"\n  {len(failed['sentence'])} sentence-arm failures,"
+              f" {len(failed['blank'])} blank-arm failures,"
+              f" {len(both)} clips both arms fail")
+        print(f"  written verbatim to {args.dump_failures}")
 
     if args.json:
         Path(args.json).write_text(json.dumps(

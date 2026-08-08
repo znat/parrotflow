@@ -594,7 +594,14 @@ vocabulary, whose spelling is in no dictionary, and which sounds like a term
 that is — a colleague `Tasmin` beside `Tasmeen`, a product `Prezi` beside
 `Praisy`. → `menu-cases.yaml`.
 
+Every failure of both arms is in `tests/judge-failures.txt`, verbatim, with the
+prompt each one was given. `scripts/judge-blanks.py --dump-failures` rewrites
+it from a fresh run.
+
 **Recommendation: ship no shape, and re-harvest before the next round.**
+Changing the shape of the question is not the lever. Rounds 1, 2 and 3 have now
+measured ten wordings, two routers and two shapes against one prompt that has
+not moved off 41/53 or off 0/8.
 
 ---
 

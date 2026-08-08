@@ -80,6 +80,13 @@ def harvest():
 
 STRAY = []   # replies whose first character was not the answer
 
+# The most recent call, verbatim: `system`, `user`, `reply`. `judge-blanks.py
+# --dump-failures` prints exactly what a failing case was sent and what came
+# back, and rebuilding the user message in the harness is how such a dump
+# drifts from what actually went over the wire. Overwritten on every call, so
+# read it immediately after `ask` returns.
+LAST = {}
+
 # One line of the score block: two spellings for one stretch of audio, each
 # with its score in nats. The first number is the *heard* score — what the
 # decoder actually wrote.
@@ -128,11 +135,12 @@ def ask(model, system, options, scores="", logprobs=False, lead=""):
     reply read by the same rule as every other arm.
     """
     body = "\n".join(f"{string.ascii_uppercase[i]}. {o}" for i, o in enumerate(options))
+    user = lead + body + scores + "\n\nWhich letter?"
     payload = {
         "model": model, "stream": False, "think": False,
         "options": {"temperature": 0, "num_predict": 8},
         "messages": [{"role": "system", "content": system},
-                     {"role": "user", "content": lead + body + scores + "\n\nWhich letter?"}],
+                     {"role": "user", "content": user}],
     }
     if logprobs:
         payload |= {"logprobs": True, "top_logprobs": 20}
@@ -142,6 +150,8 @@ def ask(model, system, options, scores="", logprobs=False, lead=""):
     with urllib.request.urlopen(request, timeout=60) as response:
         answer = json.loads(response.read())
     reply = answer["message"]["content"].strip()
+    LAST.clear()
+    LAST.update(system=system, user=user, reply=reply)
 
     if logprobs and answer.get("logprobs"):
         ranked = ranking(answer["logprobs"][0].get("top_logprobs", []), options)
