@@ -925,7 +925,10 @@ struct Pipeline: Equatable, Codable {
         // declined — so the distance to it has to be measurable before a change
         // that widens what fires, not inferred afterwards from the clips that
         // broke.
-        Log.write("vocabulary judge: \(slots.count) slot(s) from \(parts.count) proposal(s)")
+        Log.write("vocabulary judge: \(slots.count) slot(s) from \(parts.count) proposal(s)"
+            + (slots.isEmpty ? "" : " — " + slots.map {
+                "\"\(text[$0.range])\" (\($0.terms.joined(separator: "/")))"
+            }.joined(separator: ", ")))
         guard !slots.isEmpty else {
             return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(0)])
         }
