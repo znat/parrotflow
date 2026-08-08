@@ -120,8 +120,23 @@ re-record the baseline in the PR when you re-harvest, and say so.
 were merged from an unfiltered random sample (F11). The next run re-records
 both numbers. Expect them to drop in absolute terms, because 73 of the new
 clips are ordinary speech with no vocabulary term in them, and some of those
-carry decoder errors the vocabulary cannot fix. The gate is still "must not
-fall" against a baseline measured on the same set.
+carry decoder errors the vocabulary cannot fix.
+
+**Record two totals, not one.** A single `recall` and a single `picked` over
+127 clips can now hide a regression. 73 of the clips are controls that the
+vocabulary should not touch at all; if one of them flips the right way while
+a clip that is about a term flips the wrong way, the total does not move and
+the gate passes on a real loss. So the gate is: **no clip that is about a
+vocabulary term may go to a worse mark**, and the 73 controls are reported
+beside it as a separate total. The controls should not move at all in either
+direction. The vocabulary does not touch them, so a control that changes is
+a change nobody asked for, and it needs an explanation before the PR lands.
+
+`menu-recall.py` prints one pair of totals today and does not know which
+block a clip came from. Splitting the report belongs to whoever next touches
+PR 2's harness. Until then, split by hand: the `# picked up:` comment on
+every entry in block 2 says which class the clip is in, and every clip in
+block 1 is about a term.
 
 **Caveat that stands until PR 1:** the same clip scores ~12 nats apart
 between live dictation and replay. Every number above describes replays.
@@ -289,15 +304,22 @@ between models. The 1.5B model is worse than the 0.5B. Fusion
 (0.1–0.75). Acoustic numbers pasted into the document: 20→16 — a
 cross-encoder does not read them.
 
-**F15 — a correctly-decoded term gets no slot, so a dropped possessive is
-unrecoverable.** Measured live on 2026-08-08 at 14:37:21 and 14:37:41.
-"Let's praise Matthieu's work" was decoded as "Let's praise Matthieu work",
-and the run produced **no vocabulary log lines at all**. The decoder spelled
-the term right, so nothing was proposed. With no proposal there is no slot,
-the judge never runs, and the `'s` the decoder dropped cannot be put back.
-The possessive variants added in PR 6 only exist where a substitution is
-proposed. Contrast 14:38:21: "Let's praise Praisy's work" did produce a
-proposal, and the judge chose the possessive reading correctly.
+**F15 — a correctly-decoded term gets no slot, so a missing possessive is
+unrecoverable.** Measured live on 2026-08-08 at 14:37:21 and 14:37:41. The
+sentence "Let's praise Matthieu's work" came out as "Let's praise Matthieu
+work", and the run produced **no vocabulary log lines at all**. The decoder
+spelled the term right, so nothing was proposed. With no proposal there is
+no slot, the judge never runs, and the missing `'s` cannot be put back at
+any later stage. The possessive variants added in PR 6 only exist where a
+substitution is proposed. Contrast 14:38:21: "Let's praise Praisy's work"
+did produce a proposal, and the judge chose the possessive reading
+correctly.
+
+What is measured here is the **transcript and the empty log**, nothing more.
+The intended sentence is Nathan's own, so the possessive was meant. Whether
+the `'s` is audible in the recording is not known, and nobody has looked. So
+"the decoder dropped it" is the likely reading, not a measured one. PR 9
+starts by checking the audio.
 
 *This is not judge quality.* At 14:39:15 the judge was offered "Matthew at"
 → `Matthieu` (span 0.52) and → `Matthieu's` (span 0.56), and kept "Matthew
@@ -766,9 +788,12 @@ the same `'s` goes missing after names that are not terms. That is a larger
 stage and it needs its own eval set.
 
 This PR is **unscoped and unmeasured**. Nothing here has a number attached.
-How often the decoder drops a possessive after a term is not known, and no
-one has checked whether the `'s` is in the audio at all in these clips.
-Measure that first, then pick (a) or (b).
+F15 measured one transcript and one empty log. How often a possessive goes
+missing after a term is not known, and nobody has checked whether the `'s`
+is audible in the clip at all. Option (a) only works if it is: a slot that
+asks the audio a question the audio cannot answer is a coin toss. So the
+first step is to listen to the 14:37 clips and to count the cases across the
+archive. Then pick (a) or (b).
 
 ---
 
