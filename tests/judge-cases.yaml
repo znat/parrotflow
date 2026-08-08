@@ -316,3 +316,15 @@ cases:
     heard: "bedrock"
     term: "Redrock"
     expect: decline
+
+  # ---- observed live, 2026-08-08 14:39:15 ----
+  # The judge was offered two readings of the same span, "Matthieu"
+  # (span 0.52) and "Matthieu's" (span 0.56), and kept "Matthew at".
+  # The speaker said "Matthieu's". The possessive is the whole case:
+  # the span is two words, the term is one, and the reading that fits
+  # is the one that carries the 's.
+
+  - said: "Also tried those. I noticed that when the judge it's not invoked, uh the possessive is lost. So that is the case for that spray's Matthew at work."
+    heard: "Matthew at"
+    term: "Matthieu's"
+    expect: approve

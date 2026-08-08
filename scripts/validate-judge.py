@@ -12,8 +12,8 @@ text: a stage that can rewrite a transcript will, and this one runs on
 dictations nobody has read yet.
 
 Two numbers, because a single one hides the only failure that matters. The set
-is 33% approve and 67% decline, so a judge that answers DROP to everything
-scores 67% overall and is worthless. `approve` and `decline` are scored apart.
+is 29% approve and 71% decline, so a judge that answers DROP to everything
+scores 71% overall and is worthless. `approve` and `decline` are scored apart.
 
 Scoreboard
                             approve  decline  overall  latency
