@@ -147,6 +147,14 @@ struct Config: Decodable, Equatable {
                 // `yes` and `no`. Written as `floor: off` it arrives here as
                 // `false`, and reading it only as a string threw, which took
                 // the whole file down silently.
+                // Number first. Yams decodes `0.85` as a Bool quite happily, so
+                // asking about `off` before asking about the number swallowed
+                // every measured floor and left the term on the global default
+                // — silently, because a floor that is merely wrong still runs.
+                if let number = (try? c.decodeIfPresent(Float.self, forKey: .floor)) ?? nil {
+                    self.init(floor: number, heard: heard)
+                    return
+                }
                 if let flag = (try? c.decodeIfPresent(Bool.self, forKey: .floor)) ?? nil {
                     self.init(floor: nil, never: flag == false, heard: heard)
                     return
@@ -155,10 +163,7 @@ struct Config: Decodable, Equatable {
                     self.init(floor: nil, never: word.lowercased() == "off", heard: heard)
                     return
                 }
-                self.init(
-                    floor: try c.decodeIfPresent(Float.self, forKey: .floor),
-                    heard: heard
-                )
+                self.init(floor: nil, heard: heard)
             }
         }
 

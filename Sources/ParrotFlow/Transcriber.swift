@@ -167,6 +167,7 @@ actor Transcriber {
         var text = result.text
         var vocabularyCount = 0
         var vocabularyChanges = ""
+        var vocabularyProposals = "[]"
         if Vocabulary.wanted(config) {
             do {
                 try await Vocabulary.shared.prepare(config: config) { [weak self] label in
@@ -181,6 +182,7 @@ actor Transcriber {
                     text = outcome.text
                     vocabularyCount = outcome.count
                     vocabularyChanges = outcome.changes
+                    vocabularyProposals = outcome.proposalsJSON
                 }
             } catch {
                 Log.write("vocabulary: \(error.localizedDescription); left as decoded")
@@ -209,6 +211,10 @@ actor Transcriber {
                 // pipeline can read rather than an error about a missing path.
                 "vocabulary.count": .int(vocabularyCount),
                 "vocabulary.changes": .string(vocabularyChanges),
+                // The same pairs with their positions and their raw scores, for
+                // a stage that has to put a word back rather than judge that it
+                // was written. `changes` cannot say *which* "praise" it meant.
+                "vocabulary.proposals": .string(vocabularyProposals),
             ]),
             progress: progress
         )

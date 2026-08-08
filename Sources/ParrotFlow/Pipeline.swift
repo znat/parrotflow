@@ -581,6 +581,7 @@ struct Pipeline: Equatable, Codable {
         if scope["vocabulary.count"] == nil {
             scope.set("vocabulary.count", .int(0))
             scope.set("vocabulary.changes", .string(""))
+            scope.set("vocabulary.proposals", .string("[]"))
         }
 
         for step in steps {

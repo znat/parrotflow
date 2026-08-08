@@ -4,8 +4,18 @@
 # recordings on disk. `said` is raw decoder output with no
 # replacement pass, which is what the judge sees at run time.
 #
-# expect: approve — the name was misheard and this puts it right
+# expect: decline — the name was misheard and this puts it right
 # expect: decline — an ordinary word is about to be overwritten
+#
+# One category is easy to label backwards. A spelling correction —
+# "urza spells mirza", "Versal spells V E R C E L" — teaches a mapping.
+# The word before "spells" is the source, and rewriting it destroys the
+# correction the user is making: "Mirza spells mirza" teaches nothing.
+# These are declines however wrong the word looks. Four were labelled
+# approve until 2026-08-07.
+#
+# The activation phrase is not a reliable marker for them. It is itself
+# mangled — "Hey Barrot", "by the way pirate" — so `spells` is the tell.
 #
 # Fill in `expect` by hand. Half of these should be declines: the
 # stage runs on every transcript, so a confident wrong approval
@@ -25,12 +35,12 @@ cases:
   - said: "Uh, by the way, Irza spells Mirza mirza."
     heard: "Irza"
     term: "Mirza"
-    expect: approve
+    expect: decline
 
   - said: "Uh by the way pirate urza spells mirza"
     heard: "urza"
     term: "Mirza"
-    expect: approve
+    expect: decline
 
   - said: "It's a community that Tasmin asked me to crawl."
     heard: "Tasmin"
@@ -130,7 +140,7 @@ cases:
   - said: "Hey Barrot Versal Spells V E R C E L"
     heard: "Versal"
     term: "Vercel"
-    expect: approve
+    expect: decline
 
   - said: "It's possible that Prissy added a strict ten megabytes limits."
     heard: "Prissy"
@@ -140,7 +150,7 @@ cases:
   - said: "Hey Parrot, Pressy spells Pr. A I S Y"
     heard: "Pressy"
     term: "Praisy"
-    expect: approve
+    expect: decline
 
   - said: "When you're ready, I have something for you."
     heard: "ready,"

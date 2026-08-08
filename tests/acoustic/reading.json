@@ -1,0 +1,460 @@
+{
+  "sentences": [
+    {
+      "n": 1,
+      "text": "Praisy reviewed the pull request this morning.",
+      "against": "Praisy",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Praisy",
+          "against": "Praisy",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 2,
+      "text": "I asked Praisy about the Redrock migration.",
+      "against": "Praisy",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Praisy",
+          "against": "Praisy",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 3,
+      "text": "Can you send Praisy the prescribing information?",
+      "against": "Praisy",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Praisy",
+          "against": "Praisy",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 4,
+      "text": "Praisy and Tasmeen are both on PTO next week.",
+      "against": "Praisy",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Praisy",
+          "against": "Praisy",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 5,
+      "text": "The QBR slides came from Praisy yesterday.",
+      "against": "Praisy",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Praisy",
+          "against": "Praisy",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 6,
+      "text": "Tell Praisy the Vercel deploy is done.",
+      "against": "Praisy",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Praisy",
+          "against": "Praisy",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 7,
+      "text": "Praisy said the Sentry alerts stopped.",
+      "against": "Praisy",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Praisy",
+          "against": "Praisy",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 8,
+      "text": "The team deserves praise for shipping that fast.",
+      "against": "Praisy",
+      "kind": "confusable",
+      "targets": [
+        {
+          "word": "praise",
+          "against": "Praisy",
+          "kind": "confusable"
+        }
+      ]
+    },
+    {
+      "n": 9,
+      "text": "I want to praise the work on the crawler.",
+      "against": "Praisy",
+      "kind": "confusable",
+      "targets": [
+        {
+          "word": "praise",
+          "against": "Praisy",
+          "kind": "confusable"
+        }
+      ]
+    },
+    {
+      "n": 10,
+      "text": "She gave praise to everyone in the channel.",
+      "against": "Praisy",
+      "kind": "confusable",
+      "targets": [
+        {
+          "word": "praise",
+          "against": "Praisy",
+          "kind": "confusable"
+        }
+      ]
+    },
+    {
+      "n": 11,
+      "text": "The dashboard is deployed on Vercel now.",
+      "against": "Vercel",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Vercel",
+          "against": "Vercel",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 12,
+      "text": "Vercel rebuilt the preview after my last commit.",
+      "against": "Vercel",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Vercel",
+          "against": "Vercel",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 13,
+      "text": "Can you check the Vercel logs for that error?",
+      "against": "Vercel",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Vercel",
+          "against": "Vercel",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 14,
+      "text": "We moved staging to Vercel before the release.",
+      "against": "Vercel",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Vercel",
+          "against": "Vercel",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 15,
+      "text": "Vercel and Databricks are both in the diagram.",
+      "against": "Vercel",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Vercel",
+          "against": "Vercel",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 16,
+      "text": "Ask Matthieu why Vercel timed out.",
+      "against": "Vercel",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Vercel",
+          "against": "Vercel",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 17,
+      "text": "The Vercel build failed on the smol-toml import.",
+      "against": "Vercel",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Vercel",
+          "against": "Vercel",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 18,
+      "text": "We visited the gardens at Versailles last summer.",
+      "against": "Vercel",
+      "kind": "confusable",
+      "targets": [
+        {
+          "word": "Versailles",
+          "against": "Vercel",
+          "kind": "confusable"
+        }
+      ]
+    },
+    {
+      "n": 19,
+      "text": "The photos from Versailles are in the album.",
+      "against": "Vercel",
+      "kind": "confusable",
+      "targets": [
+        {
+          "word": "Versailles",
+          "against": "Vercel",
+          "kind": "confusable"
+        }
+      ]
+    },
+    {
+      "n": 20,
+      "text": "Versailles was crowded on Sunday afternoon.",
+      "against": "Vercel",
+      "kind": "confusable",
+      "targets": [
+        {
+          "word": "Versailles",
+          "against": "Vercel",
+          "kind": "confusable"
+        }
+      ]
+    },
+    {
+      "n": 21,
+      "text": "The Redrock migration is nearly finished.",
+      "against": "Redrock",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redrock",
+          "against": "Redrock",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 22,
+      "text": "I opened a PR against Redrock this morning.",
+      "against": "Redrock",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redrock",
+          "against": "Redrock",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 23,
+      "text": "Redrock handles the billing codes now.",
+      "against": "Redrock",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redrock",
+          "against": "Redrock",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 24,
+      "text": "Mark asked about the Redrock release date.",
+      "against": "Redrock",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redrock",
+          "against": "Redrock",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 25,
+      "text": "Redrock and Prisma share the same schema.",
+      "against": "Redrock",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redrock",
+          "against": "Redrock",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 26,
+      "text": "Redcrawl finished indexing overnight.",
+      "against": "Redcrawl",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redcrawl",
+          "against": "Redcrawl",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 27,
+      "text": "The Redcrawl logs are in Databricks.",
+      "against": "Redcrawl",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redcrawl",
+          "against": "Redcrawl",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 28,
+      "text": "I restarted Redcrawl after the deploy.",
+      "against": "Redcrawl",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redcrawl",
+          "against": "Redcrawl",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 29,
+      "text": "Redcrawl missed a few pages yesterday.",
+      "against": "Redcrawl",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redcrawl",
+          "against": "Redcrawl",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 30,
+      "text": "Redcrawl and Redrock use different queues.",
+      "against": "Redcrawl",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Redcrawl",
+          "against": "Redcrawl",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 31,
+      "text": "Tasmeen sent the crawl file this morning.",
+      "against": "Tasmeen",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Tasmeen",
+          "against": "Tasmeen",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 32,
+      "text": "I need Tasmeen to approve the NDA draft.",
+      "against": "Tasmeen",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Tasmeen",
+          "against": "Tasmeen",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 33,
+      "text": "Tasmeen is presenting at the QBR.",
+      "against": "Tasmeen",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Tasmeen",
+          "against": "Tasmeen",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 34,
+      "text": "Ask Tasmeen about the Shingrix numbers.",
+      "against": "Tasmeen",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Tasmeen",
+          "against": "Tasmeen",
+          "kind": "term"
+        }
+      ]
+    },
+    {
+      "n": 35,
+      "text": "Tasmeen and John are reviewing the ISI.",
+      "against": "Tasmeen",
+      "kind": "term",
+      "targets": [
+        {
+          "word": "Tasmeen",
+          "against": "Tasmeen",
+          "kind": "term"
+        }
+      ]
+    }
+  ],
+  "start_after": "parrotflow-2026-08-07T13-08-18.wav"
+}

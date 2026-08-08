@@ -1,0 +1,15 @@
+# Pronunciations mined from the archive by scripts/mine-pronunciations.py.
+#
+# Each entry is a spelling the decoder actually produced where this term
+# was said, with how many clips produced it. Feed them to the vocabulary
+# as `heard:` and they become CTC search targets — the spotter looks for
+# the sound of the rendering and reports the term.
+
+  Matthieu:  # Mathieu (2)
+    heard: [Mathieu]
+  Praisy:  # Prissy (6), Pressy (4), praise (2), praise he (1), Prizzi (1), Prezi (1), Priss.y (1), Prissy d (1)
+    heard: [Pressy, praise he, Prizzi, praise, Prezi, Prissy, Priss.y, Prissy d]
+  Supabase:  # superbase (1)
+    heard: [superbase]
+  Vercel:  # Versailles (3), Versal (3), versal (1)
+    heard: [Versailles, Versal, versal]
