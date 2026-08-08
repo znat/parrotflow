@@ -1,0 +1,167 @@
+# Menu cases mined from 300 candidate clips — 40 written, newest first.
+#
+# `said` is pre-filled with what the app produced. Correct the lines
+# that are wrong, blank the ones you cannot remember, and delete any
+# clip that is not about a name. See scripts/menu-recall.py.
+
+cases:
+  - wav: parrotflow-2026-08-07T18-06-26.wav
+    # picked up: a term or something near one
+    said: "Uh would that improve the recognition of the terms with time?"
+
+  - wav: parrotflow-2026-08-07T17-47-45.wav
+    # picked up: a term or something near one
+    said: "Oh I get it. So yes, instead we want to have a retry. And then if the retry fails, we want the crawl to fail."
+
+  - wav: parrotflow-2026-08-07T17-39-40.wav
+    # picked up: a known mis-rendering
+    said: "So Matthieu and Mirza went to the movies. The story was about the Versailles Castle. It's a universal story. But at the same time they were watching their app being deployed on Vercel."
+
+  - wav: parrotflow-2026-08-07T17-39-27.wav
+    # picked up: a term or something near one
+    said: "Let's praise Matthieu's work."
+
+  - wav: parrotflow-2026-08-07T17-39-19.wav
+    # picked up: a term or something near one
+    said: "Let's praise Mirza's work."
+
+  - wav: parrotflow-2026-08-07T17-39-03.wav
+    # picked up: a term or something near one
+    said: "Let's praise Praisy's work."
+
+  - wav: parrotflow-2026-08-07T17-38-57.wav
+    # picked up: a term or something near one
+    said: "Let's praise Praisy's work."
+
+  - wav: parrotflow-2026-08-07T17-38-44.wav
+    # picked up: a term or something near one
+    said: "So let's praise the work that Praisy has done."
+
+  - wav: parrotflow-2026-08-07T17-27-35.wav
+    # picked up: a term or something near one
+    said: "Let's praise the amazing work Praisy did."
+
+  - wav: parrotflow-2026-08-07T17-27-23.wav
+    # picked up: a term or something near one
+    said: "So let's praise the team's work."
+
+  - wav: parrotflow-2026-08-07T17-26-56.wav
+    # picked up: a term or something near one
+    said: "I changed settings in Vercel"
+
+  - wav: parrotflow-2026-08-07T17-26-30.wav
+    # picked up: a term or something near one
+    said: "I changed some settings in Vercel"
+
+  - wav: parrotflow-2026-08-07T17-19-57.wav
+    # picked up: a known mis-rendering
+    said: "My ask that was that for those sentences you give me the menu that was offered in the prompts. Also for the recent transcript where Universal was mixed up with Vercel."
+
+  - wav: parrotflow-2026-08-07T17-17-10.wav
+    # picked up: a term or something near one
+    said: "You and me for sure. Mirza should be too. But he's not on all project, so Let me add that to my to the list."
+
+  - wav: parrotflow-2026-08-07T17-05-42.wav
+    # picked up: a term or something near one
+    said: "So the document was a really super base uh for discussion and the Supabase proposal for the database is great."
+
+  - wav: parrotflow-2026-08-07T17-05-32.wav
+    # picked up: a term or something near one
+    said: "Praisy and Mirza worked on the new Vercel deployment."
+
+  - wav: parrotflow-2026-08-07T17-05-12.wav
+    # picked up: a term or something near one
+    said: "Let's praise Praisy's work."
+
+  - wav: parrotflow-2026-08-07T16-16-25.wav
+    # picked up: a term or something near one
+    said: "But my idea was to not substitute before the judge and only let the judge decide between what was heard by the decoder and what the decoder found similar. So in that case it would be both praise and Praisy."
+
+  - wav: parrotflow-2026-08-07T16-12-33.wav
+    # picked up: a known mis-rendering
+    said: "But replaced it with Praisy. So the judge couldn't see praise."
+
+  - wav: parrotflow-2026-08-07T16-12-20.wav
+    # picked up: a term or something near one
+    said: "So the acoustic pass found praise."
+
+  - wav: parrotflow-2026-08-07T16-09-50.wav
+    # picked up: a known mis-rendering
+    said: "Let's praise the work Praisy has done."
+
+  - wav: parrotflow-2026-08-07T16-09-37.wav
+    # picked up: a known mis-rendering
+    said: "Let's praise the work Praisy has done."
+
+  - wav: parrotflow-2026-08-07T16-09-15.wav
+    # picked up: a term or something near one
+    said: "Let's praise the work Praisy has done"
+
+  - wav: parrotflow-2026-08-07T16-09-06.wav
+    # picked up: a term or something near one
+    said: "Praisy did an amazing job."
+
+  - wav: parrotflow-2026-08-07T16-09-00.wav
+    # picked up: a term or something near one
+    said: "Is Praisy here today?"
+
+  - wav: parrotflow-2026-08-07T16-05-04.wav
+    # picked up: a term or something near one
+    said: "While they were watching the movie, their app was being deployed on Vercel."
+
+  - wav: parrotflow-2026-08-07T16-04-42.wav
+    # picked up: a known mis-rendering
+    said: "Mira and Mirza went to the movie. The movie was about the Versailles Castle. While they were watching the movie, their app was being deployed on Vercel."
+
+  - wav: parrotflow-2026-08-07T16-04-28.wav
+    # picked up: a term or something near one
+    said: "So let's praise Praisy's work."
+
+  - wav: parrotflow-2026-08-07T15-37-38.wav
+    # picked up: a term or something near one
+    said: "So why? So I said Praisy, P-R-A-I-S-E. Why wasn't it considered as a term and why was it replaced by Pressy?"
+
+  - wav: parrotflow-2026-08-07T15-37-32.wav
+    # picked up: a known mis-rendering
+    said: "Let's praise Praisy."
+
+  - wav: parrotflow-2026-08-07T15-37-24.wav
+    # picked up: a known mis-rendering
+    said: "Let's praise Praisy."
+
+  - wav: parrotflow-2026-08-07T15-37-01.wav
+    # picked up: a term or something near one
+    said:
+
+  - wav: parrotflow-2026-08-07T15-36-50.wav
+    # picked up: a known mis-rendering
+    said: "Let's praise the work that Praisy has done."
+
+  - wav: parrotflow-2026-08-07T15-36-40.wav
+    # picked up: a term or something near one
+    said: "Praisy is here."
+
+  - wav: parrotflow-2026-08-07T15-31-32.wav
+    # picked up: a term or something near one
+    said:
+
+  - wav: parrotflow-2026-08-07T15-28-16.wav
+    # picked up: a term or something near one
+    said:
+
+  - wav: parrotflow-2026-08-07T15-25-41.wav
+    # picked up: a term or something near one
+    said: "But if we disabled the vocabulary, the floors shouldn't matter anymore."
+
+  - wav: parrotflow-2026-08-07T15-21-29.wav
+    # picked up: a known mis-rendering
+    said: "Matthieu published a pull request."
+
+  - wav: parrotflow-2026-08-07T15-21-23.wav
+    # picked up: a known mis-rendering
+    said: "Praisy did a great job."
+
+  - wav: parrotflow-2026-08-07T15-21-19.wav
+    # picked up: a known mis-rendering
+    said: "Praisy did a great job."
+
