@@ -213,18 +213,35 @@ widen what already fires. → PR 2 (counter-measures), PR 6 (dump moved).
 clip; replay-to-replay is stable). Until reconciled, every measurement
 describes replays. → PR 1, blocking for any live claim.
 
-**F12a — the audio was never the difference (PR 1, 2026-08-08).** There is
-one audio path, not two. `Transcriber.transcribe` reads the clip from the
+**F12a — F12 was measurement noise, not two audio paths (PR 1,
+2026-08-08).** Two things were wrong with F12.
+
+*There is one audio path.* `Transcriber.transcribe` reads the clip from the
 same URL whether it was just dictated or replayed off disk, and the branch
 at the seam is gate-versus-no-gate, not live-versus-replay. Measured on the
-six clips of 2026-08-08 01:01–01:19 that have both a live and a replay
+six clips of 2026-08-08 01:01–01:19 that carry both a live and a replay
 `trace.jsonl` entry: VAD total, VAD segments, ASR confidence and every token
-timing are identical to the last digit. Same audio, same timings. What still
-differs is downstream of the samples — the live binary that night was
-unstamped and of unverified build (F5). The seam now logs a checksum of the
-samples on both paths, so the next live dictation settles it with one grep.
-Replay noise floor: 1 run in 8 moved 0.22 nats, on the first run after the
-CoreML cache went cold; the other 7 were bit-identical.
+timing are identical to the last digit. Same audio, same timings.
+
+*Replay-to-replay is not stable.* The CTC scores move between processes on
+byte-identical input. Ten replays of one clip, same seam checksum every time:
+
+| Clip | Term score, 10 runs | Spread |
+|---|---|---|
+| 01-03-24 (4.05s) | -4.49 ×7, -4.91 ×2, **-5.35 ×1** | 0.86 nats |
+| 01-19-35 (18.63s) | -1.96 ×6, -2.07 ×1, -1.81 ×1, -6.84 ×2 | 5.03 nats |
+
+The bolded -5.35 is the *live* number F12 was built on for that clip
+(`'Supabase'=-5.35 > 'update'=-10.13`, 01:03:29). A replay reproduces it,
+exactly, one run in ten. So the live-versus-replay gap is the same
+distribution sampled twice.
+
+**Consequences.** Do not read a single score as a measurement — the noise
+reaches 5 nats on a long clip, which is larger than most margins this plan
+argues about. Anything that ranks on score needs repeated runs, or it needs
+to rank on the decision rather than the number. The seam checksum is now
+logged on both paths, so audio can be ruled out in one grep before anyone
+chases a score again.
 
 **F13 — harness traps already hit once.** Kept verbatim so they are not
 reintroduced: a hardcoded `/Applications` path scored a stale binary; the
