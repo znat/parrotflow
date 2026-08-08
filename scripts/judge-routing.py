@@ -3,6 +3,7 @@
 
     scripts/judge-routing.py --classify-words     # NSSpellChecker, once, into YAML
     scripts/judge-routing.py --slots              # what each menu decomposes into
+    scripts/judge-routing.py --sweep              # branch B alone, no model call
     scripts/judge-routing.py                      # the split, both branches, combined
     scripts/judge-routing.py --json out.json      # per-case results, for a diff later
 
@@ -25,8 +26,15 @@ The split under test is the one the app already owns, `Replacements.isRealWord`:
 Three numbers are printed and all three are needed:
 
     branch B   the code arm, on the not-a-word subset
-    branch A   the judge arm, on the is-a-word subset, three ways
-    combined   the two put together, against today's 41/53 and against chance
+    branch A   the judge arm, on the is-a-word subset, four ways — two wordings
+               of the position question, each as a whole sentence and as one
+               blank per slot — plus the shipped prompt as the control
+    combined   the two put together, against the shipped prompt with no router
+               at all, measured in the same run, and against chance
+
+Two routers are scored, and the arms are run once for both. `is-word` is the
+gate the app ships. `is-word-lower` adds one test and was written after seeing
+where the first one sent the wrong cases, which is stated in the report.
 
 **The tuning set and the reporting set are the same 53 cases.** There is no
 held-out set. A one- or two-case difference is inside the wording noise F16
@@ -55,9 +63,10 @@ COLLISIONS = framings.COLLISIONS
 
 
 # ── the prompts ──────────────────────────────────────────────────────────────
-# Two arms share one text. Only the two marked lines differ, and they differ in
-# the *form* of the answer, not in what is asked. Keeping them one string is
-# what makes "the form is worth nothing" a claim about the form.
+# One wording, two forms. `{presented}` and `{pick}` are the only places the
+# whole-sentence arm and the blank arm differ, and they differ in the *form*
+# of the answer, not in what is asked. Keeping the rest one string is what
+# makes a difference between the two a claim about the form.
 #
 # There is no vocabulary list. That is deliberate and it is half the design:
 # on this branch the decoded word is a real English word, so the question is
