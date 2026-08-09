@@ -544,6 +544,17 @@ term. **One bad clip disarms the veto for that whole term.** The code's own
 comment says so and names two, both mined automatically:
 `Vercel/09-brazil.wav` and `Tasmeen/06-that'smeanssend.wav`.
 
+**Measured, 6a.** The mechanism is real and it is large. One bad clip injected
+into each of the nine clean folders takes the veto from 554 true rejections to
+228 across the eleven terms, and widens the tightest banks by about half a unit
+— `Supabase` 2.919 to 3.430, `Arexvy` 3.031 to 3.603. **But the two clips named
+above are not the clips that set the spread.** `Tasmeen`'s maximum is held by
+`01-tasmin.wav` and `Vercel`'s by `13-versal.wav`, both real recordings of the
+term. `06-that'smeanssend.wav` is 5th of 8 and `09-brazil.wav` is 8th of 16.
+Removing them changes nothing and makes it worse: taking `09-brazil.wav` out
+*raises* `Vercel`'s spread, 3.178 to 3.235. A bad clip with company never sets a
+maximum. The result block under 6a has the numbers.
+
 **The query side is far safer, and that asymmetry matters.** `distance` is a
 `min`, so a bad clip only counts when it is the nearest thing to the span being
 judged. A bad clip is by definition unlike the term, so for a genuine utterance
@@ -575,8 +586,13 @@ correctness, not from robustness. Round 7 found the distance scale differs per
 term. It differs per pronunciation for the same reason, and one number over both
 clusters describes neither.
 
-**This part is arithmetic, not a measurement.** Nobody has measured a bilingual
-term's spread. In the prototype log `Matthieu` sits at 3.053 over 10 recordings,
+**This part is arithmetic, not a measurement, and 6a could not measure it.**
+Nobody has measured a bilingual term's spread. 6a looked and found no second
+pronunciation in the archive to measure: no observation carries `lang`, all
+eleven `Matthieu` recordings come from dictations `trace.jsonl` marks `en`, and
+splitting them by what the decoder wrote gives one cluster, not two — 3.216
+within a group against 3.250 between, AUC 0.513. It needs a recording session,
+which is 6c's second verification. In the prototype log `Matthieu` sits at 3.053 over 10 recordings,
 which is unremarkable next to `Claude` at 3.436 over 6 — so either both its
 clusters are covered or the effect is smaller than the variation between terms.
 PR 6a should measure it.
@@ -1781,6 +1797,261 @@ rises. The same pair with the robust statistic says how much robustness buys.
 
 **Falsified if** poisoning a term barely moves its AUC. Then `spread` is not the
 weak point, §7's argument is wrong, and 6b and 6c are not worth doing.
+
+### Result, measured 2026-08-09
+
+**The falsifier's condition fired and its conclusion is false. Build 6b and
+6c.** Poisoning a term does barely move its AUC — nine of the eleven arms do not
+move it at all. That is arithmetic, not evidence. Inside one term `spread` is a
+constant, so an AUC over that term's spans cannot see it, whatever it does. The
+number that can see it is the rule's own decision, and it collapses: over the
+eleven arms one clip takes the veto from **554 true rejections to 228**, and
+buys back 8 of its 10 false ones. §7 is right about the mechanism and the
+falsifier was written against a statistic that cannot detect it.
+
+**And the two clips §7 names are not the clips that set the spread.** That is
+new, and it changes what 6c has to find.
+
+No app, no build, no model. `scripts/reference-matching.py` with a `--poison`
+arm, 122 recordings, 170 spans, every distance computed once. It is
+deterministic — no decoder, no replay, so a number here is exact for this data.
+Nothing under `~/.config/parrotflow-dev/` was written: the arms run on a copy.
+
+**This is in-sample and the plan says so twice already.** The recordings were
+mined from the clips they are scored on. The per-clip hold-out is applied
+throughout, and it does not cover the corpus-level fit. Read every absolute
+number below as better than the truth by an unknown margin. The *deltas* are
+what this experiment is for.
+
+#### The baseline reproduces round 7 exactly
+
+`--set scripted --source all`: `Supabase` 1.000, `Redrock` 0.993, `Tasmeen`
+0.985, `Redcrawl` 0.966, `Mirza` 0.940, `Arexvy` 0.936, `Ollama` 0.874,
+`Matthieu` 0.848, `Claude` 0.844, pooled **0.935** over 63 A and 718 B. The
+control is 0.832 on A and 0.076 on B, 58/63 and 13/718. Duration alone is
+0.535. Every figure matches the round 7 table to three decimals. The archive is
+still 122 recordings over 11 terms.
+
+#### AUC and spread, one bad clip added
+
+`Vercel/09-brazil.wav` injected into the nine folders that have no known bad
+clip. `Vercel` and `Tasmeen` run backwards: their own bad clip is removed.
+AUC is on the scripted set, except `Praisy` and `Vercel`, which have no scripted
+recording and so no A row there — those two are on round 5's proposal set and
+are marked.
+
+| term | rec | AUC before | AUC after | spread before | spread after |
+|---|---|---|---|---|---|
+| arexvy | 7→8 | 0.936 | 0.936 | 3.031 | **3.603** |
+| claude | 6→7 | 0.844 | 0.844 | 3.436 | 3.576 |
+| matthieu | 11→12 | 0.848 | 0.844 | 3.053 | **3.570** |
+| mirza | 15→16 | 0.940 | 0.940 | 3.257 | 3.257 |
+| ollama | 7→8 | 0.874 | 0.874 | 3.313 | 3.516 |
+| praisy | 26→27 | 0.869 † | 0.869 † | 3.235 | 3.425 |
+| redcrawl | 8→9 | 0.966 | 0.966 | 3.098 | 3.338 |
+| redrock | 7→8 | 0.993 | 0.993 | 2.999 | **3.438** |
+| supabase | 11→12 | 1.000 | 1.000 | 2.919 | **3.430** |
+| tasmeen ‡ | 8→7 | 0.985 | 0.987 | 3.268 | 3.268 |
+| vercel ‡ | 16→15 | 0.933 † | 0.933 † | 3.178 | 3.235 |
+
+† on the proposal set, 21 A / 37 B for `Praisy` and 6 A / 5 B for `Vercel`.
+‡ the bad clip removed, not added.
+
+**AUC does not move and it cannot.** Nine of the eleven arms are identical to
+three decimals. `Matthieu` moves 0.004 on 448 A-B pairs and `Tasmeen` 0.002 on
+390, which is two pair-flips and one. The reason is in the arithmetic: AUC ranks spans inside one term, and
+`spread` is one number for the whole term, so it divides out. The only route
+from a bad clip to AUC is the query side — `distance` is a `min`, so a bad clip
+lowers it when it happens to be nearest. §7 predicted that route would be small.
+Measured, it is between nothing and 0.004.
+
+**Spread moves a lot, on a clean bank.** The four bold rows are the four
+tightest banks. `Supabase` widens 0.511, `Arexvy` 0.572, `Redrock` 0.439,
+`Matthieu` 0.517. One clip, and the cloud is half a unit wider.
+
+#### The veto, which is what the spread decides
+
+Same arms, scored as `ReferenceMatch.verdict` scores them: reject when
+`distance > 1.0 × spread`, abstain under three recordings, hold out any
+recording cut from the span's own clip. A count pools both sets — every span the
+term is scored against.
+
+| term | veto B before | veto B after | veto A before | veto A after |
+|---|---|---|---|---|
+| arexvy | 55/66 (83%) | **1/66 (2%)** | 1/6 | 0/6 |
+| claude | 18/70 (26%) | 5/70 (7%) | 1/6 | 0/6 |
+| matthieu | 50/67 (75%) | **2/67 (3%)** | 2/10 | 0/10 |
+| mirza | 36/67 (54%) | 35/67 (52%) | 1/8 | 1/8 |
+| ollama | 34/67 (51%) | 10/67 (15%) | 0/7 | 0/7 |
+| praisy | 66/108 (61%) | 12/108 (11%) | 1/21 | 0/21 |
+| redcrawl | 58/66 (88%) | 25/66 (38%) | 1/8 | 0/8 |
+| redrock | 62/65 (95%) | 14/65 (22%) | 1/7 | 0/7 |
+| supabase | 62/64 (97%) | **16/64 (25%)** | 0/10 | 0/10 |
+| tasmeen ‡ | 42/68 (62%) | 43/68 (63%) | 1/7 | 1/7 |
+| vercel ‡ | 71/76 (93%) | 65/76 (86%) | 1/6 | 0/6 |
+| **total** | **554** | **228** | **10** | **2** |
+| reject everything | 784 | 784 | 96 | 96 |
+
+**B is the rule working and A is the rule costing.** A B span is a name that was
+not said, or an ordinary word the app wrote a name over. Dropping it is the
+whole point. An A span is the name really being said, and dropping it is a loss.
+
+**One clip disarms the veto.** `Arexvy` goes from catching 83% of the spans it
+should catch to 2%. `Matthieu` 75% to 3%. `Supabase`, the term with a perfect
+AUC, 97% to 25%. Across the eleven arms 326 of 554 true rejections go, and 8 of
+the 10 false ones go with them. Forty true rejections lost for each false one
+saved.
+
+**The blind control is in the table.** Rejecting everything takes all 784 B
+spans and all 96 A spans. So the clean rule at 554/10 sits well inside it and
+the poisoned rule at 228/2 has moved a long way towards doing nothing. This is
+an offline count of rejections, not the three-arm ablation. It does not say what
+any of this scores on 141 clips. That is 6b's job and 6b's bar is still 103.
+
+#### The two clips §7 names are not the clips that set the spread
+
+This is the surprise, and it was measurable only because the arm was run
+backwards.
+
+| term | the clip that holds the leave-one-out maximum | where the named bad clip ranks |
+|---|---|---|
+| tasmeen | `01-tasmin.wav` at 3.268 | `06-that'smeanssend.wav` is #5 of 8, at 2.462 |
+| vercel | `13-versal.wav` at 3.178 | `09-brazil.wav` is #8 of 16, at 3.005 |
+
+Both maxima are held by real recordings of the term. Removing
+`Tasmeen/06-that'smeanssend.wav` changes the spread by nothing at all, 3.268 to
+3.268, and the veto by one span. Removing `Vercel/09-brazil.wav` makes the
+spread **worse**, 3.178 to 3.235, and costs 6 true rejections — the clip was
+some other recording's nearest neighbour, so taking it out pushed that
+recording's leave-one-out distance up.
+
+**Why:** a bad clip with company is invisible to a maximum. `Tasmeen`'s eight
+recordings include `06-that'smeanssend`, `07-thatmeans`, `03-dasmean` and
+`04-dasmean`. Those sit near each other, so each has a close neighbour and none
+of them is ever the largest leave-one-out distance. The same shape explains
+`Mirza`, whose spread does not move when a bad clip is added: `13-mirza's.wav`
+already sits at 3.257, farther out than the injected clip.
+
+**Three things follow for 6c.** First, leave-one-out self-consistency is the
+first signal in 6c's list and it does not find either named clip. Second, a
+pruner that deletes the farthest recording deletes a real one — `01-tasmin.wav`
+and `13-versal.wav` are the term. Third, pruning one bad clip out of a group of
+bad clips can raise the spread, so 6c must handle groups, not singletons. 6c
+already says "suspect only a far singleton"; this says the singleton assumption
+is wrong on the two clips it was written for.
+
+#### The robust statistic buys most of it back
+
+The same arms with the 90th percentile of the leave-one-out distances in place
+of the maximum. Nothing else changes.
+
+| statistic | veto B clean | veto B poisoned | kept | veto A clean | veto A poisoned |
+|---|---|---|---|---|---|
+| maximum | 554 | 228 | 41% | 10 | 2 |
+| 90th percentile | 649 | 551 | 85% | 17 | 8 |
+| reject everything | 784 | 784 | — | 96 | 96 |
+
+**It is better on both a clean bank and a poisoned one.** Clean, it takes 649
+true rejections against the maximum's 554, at a cost of 7 more false ones — 17
+of 96 rather than 10 of 96. Poisoned, it holds 551 where the maximum holds 228.
+
+Per term, poisoned, the collapses stop being collapses: `Arexvy` 86%→68% rather
+than 83%→2%, `Matthieu` 75%→75% rather than 75%→3%, `Supabase` 100%→97% rather
+than 97%→25%. `Claude` is the one that still falls hard, 66%→16%, and it is the
+term with six recordings — at n=6 the 90th percentile is nearly the maximum.
+`Redrock` falls 98%→65%, and it has seven.
+
+**So the robust statistic is worth building, and it does not finish the job.**
+Below about eight recordings a high quantile is the maximum again. That is an
+argument for PR 4 and PR 5 — more clips per term — as much as for 6b.
+
+#### The second pronunciation arm could not be run. The data is not there.
+
+**Do not read the sweep below as a bilingual result.** The archive holds no
+identified second pronunciation of any term, and this is the honest report of
+looking for one.
+
+**`lang` is absent and would not have helped.** No observation carries it — PR 4
+is what would write it and PR 4 is not built. Joining
+`voice/observations.jsonl` to `trace.jsonl` by the source clip recovers the tag
+anyway, and all eleven `Matthieu` recordings come from dictations marked `en`.
+That includes the one clip where the speaker plainly says the name twice:
+`parrotflow-2026-08-09T14-04-44.wav`, decoded "That was Matthew that was
+Mathieu's idea, to be fair", which produced `09-matthew.wav` and
+`10-mathieu's.wav`.
+
+**Splitting by what the decoder wrote does not give two clusters.** Six
+recordings are rendered `matthew`, `matsu` or `match's` and five `mathieu` or
+`mathieu's`. Measured, the two groups sit on top of each other: mean distance
+within a group 3.216 over 25 pairs, between groups 3.250 over 30, AUC 0.513
+against 0.500 for one cluster. So either the speaker says it one way, or MFCC
+and DTW cannot tell the two apart on a half-second name. This method cannot
+distinguish those, and neither can any number in this plan.
+
+That leaves §7's prediction — that a thin second cluster inflates `spread` and
+the damage peaks at one or two clips — **unmeasured**. The sweep runs, but with
+groups that are not clusters it only says what adding any clip does:
+
+| bank | rec | AUC | spread | veto B | veto A |
+|---|---|---|---|---|---|
+| 6 anglicised + 0 | 6 | 0.844 | 3.253 | 36/67 | 2/10 |
+| 6 anglicised + 1 | 7 | 0.842 | 3.253 | 37/67 | 2/10 |
+| 6 anglicised + 2 | 8 | 0.855 | 3.189 | 43/67 | 2/10 |
+| 6 anglicised + 3 | 9 | 0.866 | 3.189 | 43/67 | 2/10 |
+| 6 anglicised + 4 | 10 | 0.855 | 3.189 | 39/67 | 2/10 |
+| 6 anglicised + 5 | 11 | 0.848 | 3.053 | 50/67 | 2/10 |
+
+Spread falls and the veto strengthens as clips arrive. There is no peak at one
+or two. That is what adding *correct* clips does to a maximum, and it is the
+mirror of the poison result: a clip near the bank can only shorten somebody's
+leave-one-out distance, and a clip far from it sets a new maximum.
+
+**To measure §7's prediction somebody has to record the second pronunciation on
+purpose.** 6c's second verification asks for exactly that — read `Matthieu` both
+ways, several of each. Until that session happens, "a bilingual term poisons its
+own threshold" stays an argument. No `say`-generated clip: TTS output has come
+back blank on every CTC frame before and cost a round of results.
+
+#### What is weak about this
+
+**In-sample, and the poison is one clip.** Every arm injects the same recording,
+`Vercel/09-brazil.wav`. A different bad clip would move a different amount. The
+direction is not in doubt — eight of the nine injected banks widened — but the
+size of the move is one clip's worth of evidence per term.
+
+**Rejection counts are not the ablation.** They say what the rule would drop on
+these spans. They do not say what the app would write, and the 141-clip score is
+the only thing that settles 6b.
+
+**A one-span move means nothing.** `Mirza` 36→35 and `Tasmeen` 42→43 are one
+span on a denominator near 67. Read only the large moves: the seven terms that
+lost more than 20 true rejections each.
+
+**`Claude`, `Redcrawl` and `Redrock` have no spontaneous recording**, so their
+rows are read speech against read speech from one session. Round 7 already flags
+that, and the poison deltas inherit it.
+
+#### How to reproduce
+
+```sh
+S=$(mktemp -d) && cp -R ~/.config/parrotflow-dev/voice "$S/voice"   # read only
+
+git show origin/spike/exemplars-round-2:scripts/reference-matching.py \
+  > scripts/reference-matching.py          # then the --poison arm on top
+
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/reference-matching.py \
+  --set scripted --source all              # the baseline that must reproduce
+
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/reference-matching.py \
+  --poison --pronunciation --cache "$S/dist.npz"
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/reference-matching.py \
+  --poison --pronunciation --robust --cache "$S/dist.npz"
+```
+
+The first `--poison` run computes every span-to-recording and
+recording-to-recording distance and caches them, under ten minutes. Every arm
+after that is indexing and returns at once. `--inject` picks a different bad
+clip.
 
 ### 6b — a rule that is not decided by one clip
 
