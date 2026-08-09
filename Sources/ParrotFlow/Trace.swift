@@ -211,13 +211,178 @@ enum Trace {
     /// question for whoever reads the file, and `at` is enough to do it.
     ///
     /// - Parameter via: which path taught it — `panel`, `inline` or `learn`.
-    static func correction(heard: String, corrected: String, via: String) {
+    /// - Parameter clip: the dictation it is a correction of, when that is
+    ///   known. `at` was the only join and it is a weak one: two corrections
+    ///   saved in the same second are indistinguishable, and a panel left open
+    ///   for a minute stamps the correction nowhere near its dictation. The
+    ///   clip name is exact, free here, and unrecoverable later.
+    static func correction(heard: String, corrected: String, via: String, clip: String? = nil) {
         append(
             Correction(
                 v: version, kind: Kind.correction.rawValue, at: stamp(),
-                heard: heard, corrected: corrected, via: via
+                heard: heard, corrected: corrected, via: via, wav: clip
             ),
             to: directory
+        )
+    }
+
+    // MARK: - Reading it back
+
+    /// What one dictation delivered: the words with their times, the language
+    /// the pipeline was chosen for, and the final text.
+    struct Delivered {
+        let wav: String
+        let lang: String?
+        let final: String
+        let words: [Word]
+    }
+
+    /// The line a clip was delivered on.
+    ///
+    /// **The first entry for the wav, not the newest.** `trace.jsonl` is
+    /// append-only and a clip replayed later appends another line for the same
+    /// audio; the first is the decode the speaker actually got, and the one a
+    /// correction is a correction *of*.
+    ///
+    /// Reads the whole file. It is a few megabytes after a year and this runs
+    /// once, when somebody saves a correction — a person is waiting on a panel,
+    /// not on a loop.
+    /// Asked by name, so no clip but this one is ever decoded. On this
+    /// speaker's 68 MB archive that is the difference between 1.3 seconds and
+    /// nothing, and it is spent with somebody waiting on a correction panel.
+    static func delivered(clip: String, in directory: URL?) -> Delivered? {
+        guard let directory,
+              let data = try? Data(
+                  contentsOf: directory.appendingPathComponent("trace.jsonl"),
+                  options: .mappedIfSafe
+              )
+        else { return nil }
+        let needle = Data(clip.utf8)
+        for line in data.split(separator: 0x0A, omittingEmptySubsequences: true) {
+            // Bytes first. Building a Swift String of every line to look at two
+            // fields costs more than reading the file did.
+            guard line.range(of: needle) != nil else { continue }
+            let text = String(decoding: line, as: UTF8.self)[...]
+            guard string("wav", in: text) == clip,
+                  string("kind", in: text) == Kind.dictation.rawValue,
+                  let row = decode(text)
+            else { continue }
+            // The first line for this clip, which is the decode the speaker got.
+            // A replay appends another and it is not what was corrected.
+            return row
+        }
+        return nil
+    }
+
+    /// The most recent dictation whose delivered text contains `text`.
+    ///
+    /// For the callers that have no clip in hand — `--learn` is a separate
+    /// process and never saw the dictation. Newest first, because a rendering
+    /// this speaker produces often would otherwise match the first time they
+    /// ever said it.
+    static func delivered(saying text: String, in directory: URL?) -> Delivered? {
+        let wanted = text.lowercased()
+        guard !wanted.isEmpty else { return nil }
+        return last(in: directory, containing: text) { $0.final.lowercased().contains(wanted) }
+    }
+
+    /// Every clip's first dictation line, in file order, parsed only when it
+    /// could possibly match.
+    ///
+    /// Reads the whole archive, so it is the slow way in — about 3 seconds on
+    /// 68 MB. Only `delivered(saying:)` needs it, because "the newest clip
+    /// whose text contains this" cannot be answered without looking at every
+    /// clip. `delivered(clip:)` asks a narrower question and does not come
+    /// through here.
+    ///
+    /// - Parameter containing: a string a line must contain to be worth
+    ///   parsing. Only a filter on the work, never on the answer: decoding
+    ///   every line costs about 1.6 seconds of the 3.
+    ///
+    /// **The dedupe runs before the filter, not after.** Which line is a
+    /// clip's *first* is a fact about the file, so it cannot depend on what is
+    /// being looked for. Skipping a line before counting it would let a replay
+    /// of a clip stand in for the decode the speaker actually got. The name is
+    /// read out of the raw text for that, which costs a substring scan instead
+    /// of a parse.
+    private static func candidates(
+        in directory: URL?, containing: String?, body: (Delivered) -> Bool
+    ) -> Delivered? {
+        var seen: Set<String> = []
+        var found: Delivered?
+        for line in lines(in: directory) {
+            guard string("kind", in: line) == Kind.dictation.rawValue,
+                  let wav = string("wav", in: line), seen.insert(wav).inserted
+            else { continue }
+            if let containing, !line.localizedCaseInsensitiveContains(containing) { continue }
+            guard let row = decode(line) else { continue }
+            if body(row) { found = row }
+        }
+        return found
+    }
+
+    /// A top-level string field, read out of the raw line without parsing it.
+    ///
+    /// Tolerates the space a pretty-printer puts after the colon, because this
+    /// file is written by more than one thing — the app's `JSONEncoder` puts
+    /// none, a script's `json.dumps` puts one, and a reader that only knew one
+    /// of them would silently skip half the archive.
+    ///
+    /// Not a JSON parser and not trying to be. It is wrong on a key that
+    /// appears inside a nested object first, which is why the only two keys
+    /// asked for are `kind` and `wav` — both written before `asr` by
+    /// `Record`'s field order, and neither a key of anything nested.
+    private static func string(_ key: String, in line: Substring) -> String? {
+        guard let at = line.range(of: "\"\(key)\":") else { return nil }
+        var cursor = at.upperBound
+        while cursor < line.endIndex, line[cursor] == " " { cursor = line.index(after: cursor) }
+        guard cursor < line.endIndex, line[cursor] == "\"" else { return nil }
+        cursor = line.index(after: cursor)
+        guard let close = line[cursor...].firstIndex(of: "\"") else { return nil }
+        return String(line[cursor..<close])
+    }
+
+    private static func last(
+        in directory: URL?, containing: String? = nil, where matches: (Delivered) -> Bool
+    ) -> Delivered? {
+        candidates(in: directory, containing: containing, body: matches)
+    }
+
+    private static func lines(in directory: URL?) -> [Substring] {
+        guard let directory,
+              let text = try? String(
+                  contentsOf: directory.appendingPathComponent("trace.jsonl"), encoding: .utf8
+              )
+        else { return [] }
+        return text.split(separator: "\n")
+    }
+
+    /// One line, if it is a dictation that produced words.
+    ///
+    /// Hand-read rather than decoded through a `Decodable`: `Record` is an
+    /// encoder-side shape and giving it a decoder would tie every future field
+    /// to being readable by this version. A line written by a later build has
+    /// to keep working here.
+    private static func decode(_ line: Substring) -> Delivered? {
+        guard let data = line.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["kind"] as? String == Kind.dictation.rawValue,
+              let wav = object["wav"] as? String
+        else { return nil }
+        let asr = object["asr"] as? [String: Any]
+        let words = (asr?["words"] as? [[String: Any]] ?? []).compactMap { entry -> Word? in
+            guard let word = entry["word"] as? String,
+                  let start = entry["start"] as? Double,
+                  let end = entry["end"] as? Double
+            else { return nil }
+            return Word(
+                word: word, start: start, end: end,
+                confidence: (entry["confidence"] as? Double).map(Float.init) ?? 0
+            )
+        }
+        return Delivered(
+            wav: wav, lang: object["lang"] as? String,
+            final: object["final"] as? String ?? "", words: words
         )
     }
 
@@ -365,6 +530,8 @@ enum Trace {
         let heard: String
         let corrected: String
         let via: String
+        /// The dictation this corrects, when the caller knew it.
+        let wav: String?
     }
 
     fileprivate struct ASR: Encodable {

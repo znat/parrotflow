@@ -312,6 +312,7 @@ scripts/check-compose.sh           # what a prompt says once the scope is in it
 scripts/check-context.sh           # what the context stage publishes for a screen
 scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
 scripts/check-vocabulary-config.sh # what vocabulary.yaml adds up to, old keys included
+scripts/check-corrections.sh       # a correction keeps the audio, and says what it dropped
 scripts/check-no-voice.sh          # nothing in git is one person's voice
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal

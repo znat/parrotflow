@@ -104,6 +104,47 @@ def cut(wav, start, end, target):
         dst.writeframes(frames)
 
 
+def languages():
+    """Which language each clip was dictated in, from `trace.jsonl`.
+
+    The first entry per clip, which is the decode the speaker got. Free here and
+    unrecoverable later, which is the whole argument for writing it: this
+    speaker dictates in two languages and one name has two pronunciations, so a
+    mined row without it cannot say which way the name was said.
+    """
+    out = {}
+    path = CLIPS / "trace.jsonl"
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get("kind", "dictation") != "dictation":
+            continue
+        wav = row.get("wav")
+        if wav and wav not in out:
+            out[wav] = row.get("lang")
+    return out
+
+
+def build():
+    """The build stamp of the app these words came out of.
+
+    Same reason as the language: a row cut by a build whose span logic later
+    changes is a row you cannot trust, and afterwards there is no telling which
+    build wrote it. `--version` is where the app prints it.
+    """
+    try:
+        done = subprocess.run([recall.APP, "--version"], capture_output=True,
+                              text=True, timeout=30)
+        stamped = done.stdout.strip()
+        return stamped or None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def stamp(wav):
     """The moment the clip was recorded, from its own name, as ISO 8601.
 
@@ -212,6 +253,8 @@ def main():
                          was.get("term"), was.get("heard")))
 
     rows = []
+    spoken = languages()
+    stamped = build()
     for term, items in sorted(spans.items()):
         for n, (wav, start, end, rendering) in enumerate(items):
             span = (round(start, 3), round(end, 3))
@@ -224,6 +267,10 @@ def main():
                 "span": list(span),
                 "sample": relative if args.audio else None,
                 "wav": wav,
+                # On every row, not only a correction's. A bank where half the
+                # entries know their provenance is a bank you cannot filter.
+                "lang": spoken.get(wav),
+                "build": stamped,
             })
     with observations.open("a", encoding="utf-8") as handle:
         for row in rows:

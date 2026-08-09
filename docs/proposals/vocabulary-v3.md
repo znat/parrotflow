@@ -1679,6 +1679,172 @@ unconfirmed entry is what goes; `--forget` leaving `--check-config` clean.
 word timings, or a span that does not line up. Check that first, on one live
 correction, before building the rest.
 
+### Result, measured 2026-08-09
+
+**The falsifier did not fire. A usable cut is obtainable, and the instrument
+that shows it is not the obvious one.**
+
+The falsifier asks for one live correction. No human was available to dictate
+and TTS is banned here — a previous round's `say` output was blank at −0.0 on
+every CTC frame — so this was measured on the archive instead. Same word times,
+same clips, same arithmetic. What it cannot speak to is stated at the end.
+
+**Where the timings are.** `trace.jsonl`, field `asr.words[]`, each
+`{word, start, end, confidence}`. Written by `Trace.Collector.recordASR`
+(`Trace.swift:113`) out of `ASRResult.tokenTimings`, grouped by
+`Trace.words(from:)`. No dump flag is involved.
+
+**They do not survive the pipeline in memory.**
+`Transcriber.transcribe(url:config:app:progress:)` returns a `String` and the
+`ASRResult` dies with it. `AppDelegate` keeps `lastTranscript` and
+`lastRecording` and no timings. So at all three `addReplacement` call sites
+there were none in scope, and the file is the only route. That decided the
+design — see below.
+
+**Coverage.**
+
+| | count |
+|---|---|
+| wav files on disk | 2643 |
+| distinct clips with a trace line | 2136 |
+| first entry carries word timings | 2011 |
+| of the 125 without, ones whose `final` is empty | **125 of 125** |
+| on disk **and** first-entry timings | 1779 (67%) |
+| on disk, no trace line at all | 692 |
+
+Read the third row. **Every dictation that produced text has word times.** "No
+words" means nothing was decoded, so there is nothing to correct. The 692
+untraced wavs are historical — 269 fall on 2026-08-03, and there is at most one
+a day since 2026-08-05. Part 1 §5's "456 of 2616" is the same fact on a smaller
+archive.
+
+**The cut.** `[first word start − 0.05s, last word end + 0.05s]`, sliced out of
+the PCM. The same 0.05s `scripts/mine-pronunciations.py:149` uses, so a mined
+sample and a corrected one are the same kind of object.
+
+**How it was verified, over 120 random content words and 60 real correction
+spans** — a rendering listed under `heard:` that the decoder actually wrote, of
+the 416 such spans in the archive.
+
+**1. Silence the span in place and re-decode.** The timeline is untouched, so
+the only thing that changed is the audio inside the span. The control silences
+a same-length span 0.8s away.
+
+| set | word gone after silencing the timed span | after silencing a shifted span |
+|---|---|---|
+| 120 random words | 89 of 119 (74.8%) | 14 (11.8%) |
+| 60 correction spans | **54 of 60 (90.0%)** | 15 (25.0%) |
+
+**2. Splice the span out.** 106 of 119 (89.1%) against 12.6%. Agrees with 1.
+Splicing disturbs the decode of the neighbours as well, which is why 1 is the
+better instrument.
+
+**3. Energy.** Span RMS over clip RMS is 1.19 median on the correction spans and
+1.07 on the random ones. One cut of 60 sits below 0.5×. The cuts are speech.
+
+**Do not use standalone decoding as an acceptance test for a cut.** This is the
+finding worth carrying forward, because it is the test everybody reaches for
+first. Decoding the cut on its own recovers the word in only 45 of 120 random
+spans and 20 of 60 correction spans — and a cut shifted 0.8s recovers it in 3 of
+120, so the alignment signal is there and it is the *decoder* that is failing.
+`parakeet-tdt-0.6b-v3` does not reliably decode a 0.5s fragment with no context.
+Widening the pad to 0.25s changes nothing: 46 of 120. **18 of the 19 correction
+cuts that decoded to silence still passed the silence test**, so a rule that
+accepted only decodable cuts would have thrown away good audio at about a third
+of everything. Score the cut by what removing it does to the sentence, not by
+what it says on its own.
+
+**Two failure modes the build now guards.** 2 of 60 correction spans run past
+2s, the worst at 6.4s for one word — a word time that swallowed the pause after
+it. And where silencing did not remove the word, it is mostly a clip where the
+same word is said twice, which is a limit of the measurement rather than of the
+cut.
+
+**What this cannot say.** It is the archive, not a live correction. The one
+live-specific risk was reachability at correction time, and that is a plumbing
+question the code answers rather than an audio one.
+
+### What was built, and one place the plan was wrong
+
+**One route to the audio, not two.** The plan left the choice open. It is the
+trace file, joined to the clip by name — `Trace.delivered(clip:in:)`. The
+in-memory alternative was rejected on `--learn`: it is a separate process that
+never saw the dictation, so it needs the file route whatever the app does, and
+building both would be one job with two mechanisms. PR 5 moves mining onto the
+same read.
+
+Cost, measured on a 68 MB trace of 14 001 lines: **0.3s** when the clip is
+named, which is the panel's path and the one with a person waiting; 1.3s for
+`--learn`'s fallback, which has to look at every clip to find the newest one
+whose text contains the rendering. `--learn` grew a `--clip` argument so the
+panel's path can be scored without a GUI.
+
+**The plan said `config.yaml`. It should be `vocabulary.yaml`, and this is the
+one place PR 4 contradicts the plan.** A correction whose target names a
+vocabulary term now writes the rendering into that term's `pronunciations:` with
+`seen:` and `from: correction`, instead of into `transcription.replacements`.
+Nothing about the app's behaviour changes — `Config.vocabularyRules`
+(`Config.swift:532`) turns a rendering into the same exact replacement — but two
+things do. The entry now records where it came from, which is what §6c's
+provenance signal needs. And `--forget` can reach it: a correction written to
+`config.yaml` could never be taken back, which made the plan's "`--forget` must
+remove all three" impossible to satisfy for anything this PR wrote. A correction
+that is not about a term — `teh` → `the` — still goes to `config.yaml` and keeps
+no audio.
+
+**`--forget` already removed all three.** `ForgetCommand` on `main` covers
+`vocabulary.yaml`, `observations.jsonl` and `samples/`. The work was making sure
+a correction writes where `--forget` looks, which the change above does.
+
+**Nothing is deleted silently.** The duration guard, the per-term cap and the
+seen-once rule each print what went and why, to the log in the app and to stdout
+under `--learn`. The guard's refusal is also written onto the observation as
+`skipped:`, so the rate is countable from the file later — the log truncates at
+1 MB (Part 1 §5) and a rate you can only read in prose is a rate nobody reads.
+
+**`lang` and the build stamp go on every observation**, mined ones included.
+`AppVariant.buildStamp` is reused, not reinvented. `scripts/mine-pronunciations.py`
+now reads `lang` per clip out of the trace and stamps rows with what
+`--version` prints.
+
+**The numbers, and where each comes from.** The per-term cap is 25, from the
+archive's own 8-to-26 clips per term and Part 1 §3's 0.06 AUC same-session
+advantage. The duration guard is 2.0s for one word plus 1.0s per extra word,
+from the probe's median 0.64s and p90 0.88s. The seen-once rule waits 30 days,
+and only ever drops an entry that says `from: correction` — a mined or legacy
+entry has `seen: 0`, meaning never counted, so there is no honest date to delete
+it on.
+
+### Verified by
+
+`scripts/check-corrections.sh`, 57 cases, in CI. Every case builds a whole
+config directory in /tmp behind `PARROTFLOW_CONFIG_DIR` and generates its own
+audio — a tone burst, since the cut is frame arithmetic and
+`scripts/check-no-voice.sh` refuses a repository carrying the real thing.
+
+| the plan asked for | what was observed |
+|---|---|
+| simulate a correction, check the three files | `vocabulary.yaml` gets `- heard: praise` / `seen: 1` / `from: correction`; `observations.jsonl` gets one row with `term`, `heard`, `from`, `span [1, 1.5]`, `wav`, `sample`; `samples/Praisy/00-praise.wav` exists and is 0.60s — the 0.50s span plus 0.05s either side |
+| with `lang` on the new observation | `"lang":"fr"`, from the dictation's own trace line, and it follows the clip: naming the other of two clips with the same rendering gives `"lang":"en"` |
+| and the build stamp | `"build"` equals what `--version` prints |
+| exceed the cap, the oldest unconfirmed goes | 25 samples of which the oldest is confirmed by a correction; the 26th arrives, `01-old.wav` goes, `00-old.wav` stays, the term is back at 25, and the reason is printed |
+| `--forget` leaves `--check-config` clean | `✓ forgot Praisy` — 2 pronunciations, 1 observation, 1 sample, the folder gone, and `--check-config` exits 0 with no `✗ vocabulary` line |
+
+Also scored, because each one deletes or refuses: a 6.4s span is refused by name
+and number and the observation says so; a two-word rendering gets the extra
+second and is kept; a rendering absent from the decoder's words is refused; a
+correction with no dictation behind it is refused; a rendering at `seen: 1` from
+a correction 2020 is dropped while one at `seen: 4` and a mined one are left
+alone.
+
+All 15 checks in CI pass, including the ones this touches —
+`check-vocabulary-config.sh` 61/61 and `check-no-voice.sh` 5/5.
+
+**Not done: a live correction.** It needs a human at a microphone. The probe
+above is the archive's answer to the same question, and the panel's own path is
+scored through `--learn --clip`, which takes the same route with the same clip
+name the panel passes.
+
 ## PR 5 — mining that keeps the recordings you need
 
 **Changes.** Three changes to `scripts/mine-pronunciations.py`, ported from

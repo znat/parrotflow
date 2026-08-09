@@ -1844,15 +1844,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         correctionPanel.show(selection: selection?.text ?? "")
     }
 
+    /// What the correction kept, or did not keep, of the audio.
+    ///
+    /// Nothing here is silent. A span the guard refused, a sample the cap
+    /// removed and a rendering the seen-once rule dropped are all deletions or
+    /// refusals nobody would otherwise see, and a bank that quietly loses clips
+    /// is a bank whose numbers cannot be explained afterwards.
+    private func logKept(_ outcome: Corrections.Outcome) {
+        guard let term = outcome.term else { return }
+        if let seen = outcome.seen {
+            Log.write("    \(term): seen \(seen) time(s), from correction")
+        }
+        if let sample = outcome.sample {
+            Log.write("    kept the audio as voice/\(sample)")
+        } else if let why = outcome.skipped {
+            Log.write("    no audio kept — \(why)")
+        }
+        for gone in outcome.capped {
+            Log.write("    capped voice/samples/\(term)/\(gone.file) — \(gone.why)")
+        }
+        for gone in outcome.pruned {
+            Log.write("    dropped \"\(gone)\" from \(term) — seen once and not again since")
+        }
+    }
+
     private func saveCorrections(
         _ rules: [(heard: String, corrected: String)],
         correctedText: String
     ) {
         for rule in rules {
             do {
-                try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
+                let outcome = try Corrections.learn(
+                    heard: rule.heard, corrected: rule.corrected, via: "command",
+                    clip: lastRecording?.url.lastPathComponent
+                )
                 Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
-                Trace.correction(heard: rule.heard, corrected: rule.corrected, via: "command")
+                logKept(outcome)
             } catch {
                 presentAlert(title: "Could not save the rule", message: error.localizedDescription)
                 pendingSelection = nil
@@ -2263,11 +2290,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             for rule in rules {
                 do {
-                    try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
-                    Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
-                    Trace.correction(
-                        heard: rule.heard, corrected: rule.corrected, via: "panel"
+                    let outcome = try Corrections.learn(
+                        heard: rule.heard, corrected: rule.corrected, via: "panel",
+                        clip: self.lastRecording?.url.lastPathComponent
                     )
+                    Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+                    self.logKept(outcome)
                 } catch {
                     self.presentAlert(
                         title: "Could not save the rule", message: error.localizedDescription

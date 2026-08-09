@@ -267,10 +267,19 @@ if let index = arguments.firstIndex(of: "--dates") {
 
 if let index = arguments.firstIndex(of: "--learn") {
     guard arguments.indices.contains(index + 2) else {
-        print("usage: ParrotFlow --learn <heard> <corrected>")
+        print("usage: ParrotFlow --learn <heard> <corrected> [--clip <wav>]")
         exit(2)
     }
-    exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2]))
+    // `--clip` names the dictation this corrects. The panel always knows it and
+    // passes it; a terminal does not, and without it the newest dictation whose
+    // text contains the rendering is used. Exposed here so the panel's path can
+    // be scored without a GUI, which is what this command is for.
+    exit(LearnCommand.run(
+        heard: arguments[index + 1], corrected: arguments[index + 2],
+        clip: arguments.firstIndex(of: "--clip").flatMap { at in
+            arguments.indices.contains(at + 1) ? arguments[at + 1] : nil
+        }
+    ))
 }
 
 if let index = arguments.firstIndex(of: "--forget") {

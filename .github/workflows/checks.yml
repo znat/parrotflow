@@ -145,6 +145,13 @@ jobs:
       - name: What vocabulary.yaml adds up to
         run: scripts/check-vocabulary-config.sh
 
+      # A correction now writes three files and deletes from two of them. Every
+      # one of those deletions — the duration guard, the per-term cap, the
+      # seen-once rule — is data going away on the app's own initiative, so the
+      # thing worth checking is that each says out loud what it took.
+      - name: A correction keeps the audio
+        run: scripts/check-corrections.sh
+
       # The same trap, one directory over: the transform folder a first launch
       # is seeded with against the copy in examples/ that people read and
       # score. It has always been able to drift and has never been checked

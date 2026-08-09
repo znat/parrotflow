@@ -24,8 +24,26 @@ import Foundation
 /// it genuinely is not known for the clips mined before anything recorded it —
 /// absent means unknown, never "the current one".
 ///
-/// This PR creates and reads the store. Writing on a correction is PR 8.
+/// **Every observation says which build wrote it and which language was being
+/// dictated.** Both are free at write time and neither can be recovered
+/// afterwards. `lang` is the multilingual case: this speaker dictates in two
+/// languages and one name has two pronunciations, so the tag says whether each
+/// way a name is said has clips behind it. It decides nothing on its own — a
+/// French name can be said the French way inside an English sentence. `build`
+/// is the audit trail: a clip cut by a build whose span logic later changes is
+/// a clip you cannot trust, and the stamp is the only way to tell which is
+/// which.
 enum VoiceStore {
+
+    /// How many samples one term keeps.
+    ///
+    /// Not a storage limit — 25 wav files of half a second is nothing. It is a
+    /// limit on how much one week of dictation can dominate a term's cloud.
+    /// Recordings from the same session score about 0.06 AUC higher against
+    /// each other than against another day's, so a term whose bank is 200 clips
+    /// from one afternoon describes that afternoon. The archive's own terms sit
+    /// at 8 to 26 clips, which is where this number comes from.
+    static let perTermSampleCap = 25
 
     static var directory: URL {
         ConfigStore.directory.appendingPathComponent("voice", isDirectory: true)
@@ -105,6 +123,139 @@ enum VoiceStore {
         var sample: String?
         /// The clip it came out of, as a bare filename.
         var wav: String?
+        /// Which language the pipeline was chosen for, from the dictation's own
+        /// `trace.jsonl` line. Absent means the trace did not say — never "the
+        /// current one", for the same reason `mic` is optional.
+        var lang: String?
+        /// The build stamp of whatever wrote this row, e.g. `78d7ba2`.
+        /// `AppVariant.buildStamp`, the same string `--version` prints and the
+        /// app's first log line carries.
+        var build: String?
+        /// Why this row has no `sample`, when it has none.
+        ///
+        /// A row that records a rendering but no audio is normal — the clip may
+        /// be gone, the timings may not cover it, the span may be absurd. What
+        /// is not acceptable is not knowing which. Written here rather than only
+        /// to the log so the rate is countable from the file later, and the log
+        /// truncates at 1 MB.
+        var skipped: String?
+    }
+
+    /// The store's own directories, made on demand.
+    ///
+    /// Nothing creates `voice/` at install: it appears the first time something
+    /// is learnt, so a machine that has never corrected anything has no empty
+    /// folder to explain.
+    private static func makeDirectory(_ url: URL) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    /// One more line on the end of `observations.jsonl`.
+    ///
+    /// `O_APPEND`, for the reason `Trace.append` gives: seeking to the end and
+    /// then writing is two steps and two processes can interleave them. The app
+    /// and a mining script both write here.
+    static func append(_ observation: Observation) throws {
+        try makeDirectory(directory)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes, .sortedKeys]
+        var data = try encoder.encode(observation)
+        data.append(0x0A)
+
+        let fd = open(observationsURL.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
+        guard fd >= 0 else { throw StoreError.cannotWrite(observationsURL) }
+        defer { close(fd) }
+        try data.withUnsafeBytes { buffer in
+            guard let base = buffer.baseAddress else { return }
+            guard write(fd, base, buffer.count) == buffer.count else {
+                throw StoreError.cannotWrite(observationsURL)
+            }
+        }
+    }
+
+    enum StoreError: LocalizedError {
+        case cannotWrite(URL)
+
+        var errorDescription: String? {
+            switch self {
+            case .cannotWrite(let url):
+                return "could not write \(url.lastPathComponent)"
+            }
+        }
+    }
+
+    // MARK: - Samples
+
+    /// Where a term's samples live. The folder is the term as `vocabulary.yaml`
+    /// spells it, so `--forget` can name it back.
+    static func samples(for term: String) -> URL {
+        samplesDirectory.appendingPathComponent(term, isDirectory: true)
+    }
+
+    /// The wav files of one term, oldest first by name.
+    ///
+    /// By name rather than by modification date: a copied archive has every
+    /// file stamped with the moment it was copied, and the name carries the
+    /// sequence the recording was written in.
+    static func sampleFiles(of term: String) -> [String] {
+        let inside = (try? FileManager.default.contentsOfDirectory(
+            atPath: samples(for: term).path
+        )) ?? []
+        return inside.filter { $0.hasSuffix(".wav") }.sorted()
+    }
+
+    /// A free filename for a new sample of `term`, in the shape mining writes:
+    /// `NN-rendering.wav`, numbered above everything already there.
+    static func nextSampleName(for term: String, heard: String) -> String {
+        let slug = heard.lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: "-")
+        let used = sampleFiles(of: term).compactMap { name -> Int? in
+            Int(name.prefix(while: { $0.isNumber }))
+        }
+        let next = (used.max() ?? -1) + 1
+        return String(format: "%02d-%@.wav", next, slug.isEmpty ? "rendering" : slug)
+    }
+
+    /// Holds a term to `perTermSampleCap` files, and says what went.
+    ///
+    /// **The oldest unconfirmed sample goes first.** A sample whose observation
+    /// says `from: correction` is one a person looked at a transcript and
+    /// labelled by hand; a mined one is a guess made from a decode that may
+    /// itself have been wrong. When only confirmed samples are left the oldest
+    /// of those goes, because a cap that refuses to act is not a cap.
+    ///
+    /// Never silent. Every removal is returned, and every caller logs it.
+    @discardableResult
+    static func enforceCap(on term: String, cap: Int = perTermSampleCap) -> [(file: String, why: String)] {
+        var files = sampleFiles(of: term)
+        guard files.count > cap else { return [] }
+
+        // Which samples a person confirmed, from the observations that name
+        // them. A file with no observation is unconfirmed by default — it is
+        // audio nobody wrote anything down about.
+        var confirmed: Set<String> = []
+        for observation in observations() where observation.from == "correction" {
+            if let sample = observation.sample {
+                confirmed.insert((sample as NSString).lastPathComponent)
+            }
+        }
+
+        var removed: [(file: String, why: String)] = []
+        let store = FileManager.default
+        // Unconfirmed first, oldest first within each group.
+        let order = files.filter { !confirmed.contains($0) } + files.filter { confirmed.contains($0) }
+        for name in order {
+            guard files.count > cap else { break }
+            let why = confirmed.contains(name)
+                ? "oldest confirmed — every sample of this term is confirmed"
+                : "oldest unconfirmed"
+            try? store.removeItem(at: samples(for: term).appendingPathComponent(name))
+            files.removeAll { $0 == name }
+            removed.append((name, why))
+        }
+        return removed
     }
 
     /// Every observation on file, oldest first.

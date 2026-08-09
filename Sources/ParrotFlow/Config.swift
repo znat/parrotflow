@@ -155,10 +155,13 @@ struct Config: Decodable, Equatable {
         /// mined from the archive can be told from one a person confirmed by
         /// correcting a transcript.
         ///
-        /// Nothing mechanical reads `seen` or `from` yet. They are recorded
-        /// here so PR 8 has something to cap and prune on; a count that starts
-        /// being kept the day it is first used starts at zero for every entry
-        /// that already existed.
+        /// Both are now read. `Corrections` counts a rendering up on every
+        /// correction, and drops one that stands at `seen: 1` a month after the
+        /// only time it was seen — but only when `from` says `correction`. A
+        /// mined or legacy entry has no honest first-seen date, because
+        /// `seen: 0` means "never counted", which is every entry written before
+        /// this key existed. Deleting on a date nobody recorded is how a prune
+        /// eats correct data.
         struct Pronunciation: Decodable, Equatable {
             /// Where an entry came from. `legacy` is not a source, it is the
             /// absence of one: a bare `heard:` list, or a `pronunciations:`
