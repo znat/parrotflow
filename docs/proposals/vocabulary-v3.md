@@ -1898,13 +1898,23 @@ before it still parse.
 over-fire — the samples feed the acoustic veto, not the rule that fired — and
 6a below showed a bad clip cannot be picked out of a bank from one revert.
 
-**Verified by** `scripts/check-reverts.sh`, 67 cases, in CI. It scores: no rule
+**Verified by** `scripts/check-reverts.sh`, 74 cases, in CI. It scores: no rule
 in either file; the count-down, the drop at zero, the legacy entry that has no
 count to take one off, and the case where nothing can be blamed; the clip in
 `negatives/` and nothing at all in `samples/`; `collides_with:` written and then
 left alone by `--replace`, which runs every deterministic substitution pass; a
 rendering that survives the count-down still firing; `--forget` taking all four
-back; and a row with no `polarity` reading as a positive.
+back; a row with no `polarity` reading as a positive; and a term whose value
+wraps over two lines with a comment on it surviving both directions.
+
+**One thing the review found, and it predates this PR.** Making room for
+`collides_with:` reuses the rewrite `addPronunciation` already did — a term's
+inline value becomes a block body. It joined the value onto one line, which
+destroys `Praisy: [Prissy,   # the common one` / `Pressy]`: everything after
+the `#` becomes comment, the bracket never closes, and `vocabulary.yaml` then
+loads as no terms at all, silently. The live file writes lists this way. Fixed
+here for both directions — only the first line is rewritten and the
+continuations move under the new key untouched.
 
 ## PR 5 — mining that keeps the recordings you need
 

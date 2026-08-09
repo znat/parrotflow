@@ -501,6 +501,16 @@ enum ConfigWriter {
     /// rewritten as `heard:` and `floor:` inside a block body — both are still
     /// read, so nothing is lost — and a term that already has a body is left
     /// exactly as it is.
+    ///
+    /// **A value that wraps keeps its own lines.** The live file writes one
+    /// list over two, and joining them onto one line destroys the entry when
+    /// any of them carries a comment: everything after the `#` becomes part of
+    /// the comment, so `[Prissy,   # the common one` + `Pressy]` collapses to
+    /// an unclosed bracket, and the whole of `vocabulary.yaml` then fails to
+    /// load — silently, because a file that will not parse is read as no terms
+    /// at all. Only the first line is rewritten, and the continuations move
+    /// under the new key untouched. They stay indented deeper than it, which is
+    /// all a flow sequence asks.
     private static func openBlockBody(
         of term: String, at start: Int, in lines: inout [String]
     ) -> Int {
@@ -516,16 +526,15 @@ enum ConfigWriter {
             return endOfTermBlock(in: lines, from: start, deeperThan: termIndent.count)
         }
         let closes = closingFlow(in: lines, from: start, deeperThan: termIndent.count)
-        let value = lines[start...closes].joined(separator: " ")
-        let body = String(value[value.index(after: value.firstIndex(of: ":")!)...])
-            .trimmingCharacters(in: .whitespaces)
         // A bare list is the old `heard:`; a bare number is the old `floor:`.
-        let key = body.hasPrefix("[") ? "heard" : "floor"
-        lines.replaceSubrange(start...closes, with: [
+        let key = inline.hasPrefix("[") ? "heard" : "floor"
+        var rewritten = [
             "\(termIndent)\(quoted(term)):",
-            "\(bodyIndent)\(key): \(body)",
-        ])
-        return start + 1
+            "\(bodyIndent)\(key): \(inline)",
+        ]
+        if closes > start { rewritten += lines[(start + 1)...closes] }
+        lines.replaceSubrange(start...closes, with: rewritten)
+        return closes + 1
     }
 
     /// A number written on one of an entry's lines, if it is there.

@@ -206,6 +206,11 @@ enum Corrections {
     ///    `Praisy` and means nothing to `Supabase`.
     /// 3. **The audio is kept as a negative**, in `voice/negatives/<Term>/`.
     ///
+    /// **They happen in the reverse of that order.** There is no transaction
+    /// across `vocabulary.yaml` and `voice/`, so the writes are ordered by what
+    /// a retry costs, and the count comes down last — it is the only one of the
+    /// three that cannot be repeated safely.
+    ///
     /// **No sample is deleted.** Nothing in `samples/` caused this: the samples
     /// feed the acoustic veto, not the rule that fired, and experiment 6a
     /// (PR #82) showed a bad clip cannot be picked out of a bank from one
@@ -220,25 +225,16 @@ enum Corrections {
         // What fired. The rendering list is the only thing that can be blamed,
         // and it is read from the loaded model rather than the file so a legacy
         // `heard:` list counts too — `Config.Term.heard` merges both keys.
+        //
+        // Only *named* here. Taking the count down is the last thing this
+        // function does — see below.
         let entry = config.vocabulary.terms.first {
             $0.key.caseInsensitiveCompare(term) == .orderedSame
         }?.value
         let rendering = entry?.heard.first { $0.caseInsensitiveCompare(word) == .orderedSame }
-        var blame = Blame.nothing
-        if let rendering {
-            switch try ConfigWriter.discountPronunciation(term: term, heard: rendering) {
-            case .reduced(let seen): blame = .rendering(rendering, seen: seen)
-            case .dropped: blame = .dropped(rendering)
-            case .uncounted, .notFound: blame = .uncounted(rendering)
-            }
-        } else if let rule = config.transcription.rules.first(where: {
+        let handWritten = config.transcription.rules.first {
             $0.source.caseInsensitiveCompare(word) == .orderedSame
                 && $0.replacement.caseInsensitiveCompare(term) == .orderedSame
-        }) {
-            // A rule somebody wrote into `config.yaml` by hand. Named, never
-            // edited: that file is written by a person and read by the app, and
-            // silently rewriting a line they typed is not this code's business.
-            blame = .handWritten(rule.source)
         }
 
         // The clip is cut against the *ordinary* word, not the term. The word
@@ -276,6 +272,29 @@ enum Corrections {
         outcome.capped = VoiceStore.enforceCap(on: term, .negative)
 
         let counts = try ConfigWriter.recordCollision(term: term, word: word, clips: kept)
+
+        // The count comes down last, because it is the only write here that
+        // cannot be repeated safely. There is no transaction across two files,
+        // so the writes are ordered by what a retry costs: an observation is a
+        // row in an append-only file and a duplicate is visible and harmless; a
+        // collision is a counter and one extra is recoverable; a `seen:` taken
+        // down twice can delete a rendering that should have stood at one, and
+        // nothing puts it back. Ordered this way, a failure anywhere above
+        // leaves the count untouched and the retry is clean.
+        var blame = Blame.nothing
+        if let rendering {
+            switch try ConfigWriter.discountPronunciation(term: term, heard: rendering) {
+            case .reduced(let seen): blame = .rendering(rendering, seen: seen)
+            case .dropped: blame = .dropped(rendering)
+            case .uncounted, .notFound: blame = .uncounted(rendering)
+            }
+        } else if let rule = handWritten {
+            // A rule somebody wrote into `config.yaml` by hand. Named, never
+            // edited: that file is written by a person and read by the app, and
+            // silently rewriting a line they typed is not this code's business.
+            blame = .handWritten(rule.source)
+        }
+
         outcome.revert = Revert(
             word: word, blame: blame, reverted: counts.reverted, clips: counts.clips
         )

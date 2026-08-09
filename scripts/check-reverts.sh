@@ -256,6 +256,37 @@ wants "it says there is nothing to count down" "$got" \
   'Praisy: "praise" fired and was never counted'
 wants "and leaves the entry where it is" "$(cat "$WORK/vocabulary.yaml")" "heard: [praise]"
 
+# ── a term written with a comment on it ────────────────────────────────────
+#
+# Making room for `collides_with:` under a term rewrites whatever the term's
+# value is today into a block body. The live file wraps one list over two
+# lines, and joining them onto one destroys the entry when either carries a
+# comment: everything after the `#` becomes comment, the bracket never closes,
+# and `vocabulary.yaml` then fails to load — silently, because a file that will
+# not parse reads as no terms at all.
+printf '\n  a term whose value carries a comment\n'
+fresh 'acoustic: true\nterms:\n  Praisy: [Prissy,   # the common one\n           Pressy]\n  Mirza: 0.85  # measured on 2026-08-01\n'
+clip twelve.wav
+traced twelve.wav en "Praisy" "praise:1.00:1.50"
+said Praisy praise >/dev/null
+vocab="$(cat "$WORK/vocabulary.yaml")"
+wants "the wrapped list keeps its own lines" "$vocab" "heard: [Prissy,   # the common one"
+wants "and its continuation"                 "$vocab" "Pressy]"
+wants "the other term is untouched"          "$vocab" "Mirza: 0.85  # measured on 2026-08-01"
+wants "and the collision still lands"        "$vocab" "- word: praise"
+# The check that matters: the file still loads. A term count of 2 is the app
+# reading its own vocabulary back.
+got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>/dev/null)"
+wants "and the file still loads" "$got" "vocabulary: 2 terms in vocabulary.yaml"
+
+# The same on the forward path, which goes through the same rewrite.
+clip thirteen.wav
+traced thirteen.wav en "prissy" "prissy:1.00:1.50"
+said prissy Praisy >/dev/null
+got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>/dev/null)"
+wants "a correction does not break it either" "$got" "vocabulary: 2 terms in vocabulary.yaml"
+wants "and the comment is still there" "$(cat "$WORK/vocabulary.yaml")" "# the common one"
+
 # ── nothing in the files fired ─────────────────────────────────────────────
 printf '\n  a term the acoustic pass proposed on its own\n'
 fresh 'acoustic: true\nterms:\n  Praisy:\n  Supabase:\n'
