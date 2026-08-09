@@ -60,6 +60,46 @@ enum Corrections {
         var capped: [(file: String, why: String)] = []
         /// Renderings the seen-once rule dropped.
         var pruned: [String] = []
+        /// Set when this was a revert rather than a correction — the term was
+        /// taken back, no rule was written, and the clip is a negative.
+        var revert: Revert?
+    }
+
+    /// What a revert did.
+    struct Revert {
+        /// The ordinary word the term was taken back to.
+        var word: String
+        /// What was blamed for the term firing, and what was done about it.
+        var blame: Blame
+        /// The pair's counts in `collides_with:` afterwards.
+        var reverted: Int
+        var clips: Int
+    }
+
+    /// What caused the term to be written where it was not said.
+    ///
+    /// Only two things can do it, and only one of them leaves a trace anything
+    /// can act on. An exact rule — a rendering in the term's
+    /// `pronunciations:`, which `Config.vocabularyRules` turns into a
+    /// replacement — fires on that spelling every time, so if the word the
+    /// speaker meant is registered as a rendering of the term, that rule is
+    /// what fired. Otherwise the acoustic pass proposed it from the audio, and
+    /// there is nothing in any file to blame.
+    enum Blame: Equatable {
+        /// A rendering fired, and its `seen:` count went down to this.
+        case rendering(String, seen: Int)
+        /// A rendering fired, stood at one sighting from one correction, and
+        /// is now gone: one sighting against one revert leaves nothing.
+        case dropped(String)
+        /// A rendering fired and could not be counted down — a legacy `heard:`
+        /// list, or an entry that was never counted. It is left alone.
+        case uncounted(String)
+        /// A rule in `config.yaml` maps the word to the term. A person wrote
+        /// that by hand, so it is named and not touched.
+        case handWritten(String)
+        /// Nothing in the data caused it. The acoustic pass proposed the term
+        /// from the audio, and the negative clip is the whole answer.
+        case nothing
     }
 
     /// Learn that `heard` should have been `corrected`.
@@ -74,6 +114,10 @@ enum Corrections {
     ///   the correction takes effect exactly as before — it is now recorded in
     ///   the file that owns learnt data and knows where each entry came from.
     ///   It is also the file `--forget` can reach, which `config.yaml` was not.
+    /// - **A term the other way round.** `Praisy` → "praise" is a *revert*: the
+    ///   term was written where an ordinary word was said. No rule is written
+    ///   anywhere, the rendering that fired is counted down, and the audio is
+    ///   kept as a negative. See `revert`.
     /// - **Anything else.** `teh` → `the` is not a name and has no audio worth
     ///   keeping. It goes to `transcription.replacements` in `config.yaml`,
     ///   which is what has always happened.
@@ -87,6 +131,16 @@ enum Corrections {
         let config = try ConfigStore.load()
         let term = config.vocabulary.terms.keys.first {
             $0.caseInsensitiveCompare(corrected) == .orderedSame
+        }
+
+        // Asked before the forward path, because the two are decided by the
+        // same two lookups and only one of them can be true.
+        if let taken = ConfigWriter.revertedTerm(
+            heard: heard, corrected: corrected, in: config.vocabulary
+        ) {
+            return try revert(
+                term: taken, to: corrected, via: via, clip: clip, config: config
+            )
         }
 
         guard let term else {
@@ -107,7 +161,8 @@ enum Corrections {
             at: stamp(), term: term, heard: heard, from: "correction",
             score: nil, mic: Recorder.inputDeviceName, span: nil,
             sample: nil, wav: nil, lang: nil,
-            build: AppVariant.buildStamp, skipped: nil
+            build: AppVariant.buildStamp, skipped: nil,
+            polarity: VoiceStore.Polarity.positive.rawValue
         )
 
         switch keep(heard: heard, term: term, clip: clip, config: config) {
@@ -130,6 +185,135 @@ enum Corrections {
         return outcome
     }
 
+    // MARK: - Taking a term back
+
+    /// The speaker says the term should not have fired here.
+    ///
+    /// Three things happen, and writing a replacement rule is not one of them.
+    /// A rule would rewrite every `Praisy` into "praise" from then on, correct
+    /// ones included — see `ConfigWriter.addReplacement`, which refuses that
+    /// shape whoever asks.
+    ///
+    /// 1. **Confidence in whatever fired goes down.** If the ordinary word is
+    ///    registered as a rendering of the term, that exact rule is what wrote
+    ///    it, and its `seen:` count goes down by one. Nothing else can be
+    ///    blamed: the only other thing that writes a term where it was not said
+    ///    is the acoustic pass, and it proposes from the audio, so no file
+    ///    holds anything to take back.
+    /// 2. **The pair is recorded** under the term as `collides_with:`, which is
+    ///    never matched and never substituted. It says which two things to
+    ///    compare later, and it is keyed on the pair — "praise" argues with
+    ///    `Praisy` and means nothing to `Supabase`.
+    /// 3. **The audio is kept as a negative**, in `voice/negatives/<Term>/`.
+    ///
+    /// **No sample is deleted.** Nothing in `samples/` caused this: the samples
+    /// feed the acoustic veto, not the rule that fired, and experiment 6a
+    /// (PR #82) showed a bad clip cannot be picked out of a bank from one
+    /// revert — the obvious geometric signal points at legitimate recordings
+    /// instead.
+    private static func revert(
+        term: String, to word: String, via: String, clip: String?, config: Config
+    ) throws -> Outcome {
+        var outcome = Outcome(term: term)
+        Trace.correction(heard: term, corrected: word, via: via, clip: clip)
+
+        // What fired. The rendering list is the only thing that can be blamed,
+        // and it is read from the loaded model rather than the file so a legacy
+        // `heard:` list counts too — `Config.Term.heard` merges both keys.
+        let entry = config.vocabulary.terms.first {
+            $0.key.caseInsensitiveCompare(term) == .orderedSame
+        }?.value
+        let rendering = entry?.heard.first { $0.caseInsensitiveCompare(word) == .orderedSame }
+        var blame = Blame.nothing
+        if let rendering {
+            switch try ConfigWriter.discountPronunciation(term: term, heard: rendering) {
+            case .reduced(let seen): blame = .rendering(rendering, seen: seen)
+            case .dropped: blame = .dropped(rendering)
+            case .uncounted, .notFound: blame = .uncounted(rendering)
+            }
+        } else if let rule = config.transcription.rules.first(where: {
+            $0.source.caseInsensitiveCompare(word) == .orderedSame
+                && $0.replacement.caseInsensitiveCompare(term) == .orderedSame
+        }) {
+            // A rule somebody wrote into `config.yaml` by hand. Named, never
+            // edited: that file is written by a person and read by the app, and
+            // silently rewriting a line they typed is not this code's business.
+            blame = .handWritten(rule.source)
+        }
+
+        // The clip is cut against the *ordinary* word, not the term. The word
+        // times in `trace.jsonl` come from `asr.words`, which is the decoder's
+        // own output before any vocabulary stage runs — so the word sitting at
+        // the span is "praise", the thing that was actually said. The term is
+        // tried second, for the case where the decoder wrote the name itself
+        // and no rule was involved at all.
+        var observation = VoiceStore.Observation(
+            at: stamp(), term: term, heard: word, from: "correction",
+            score: nil, mic: Recorder.inputDeviceName, span: nil,
+            sample: nil, wav: nil, lang: nil,
+            build: AppVariant.buildStamp, skipped: nil,
+            polarity: VoiceStore.Polarity.negative.rawValue
+        )
+        var kept = 0
+        switch keep(
+            heard: word, term: term, clip: clip, config: config,
+            polarity: .negative, saying: term
+        ) {
+        case .success(let cut):
+            observation.span = [cut.start, cut.end]
+            observation.sample = cut.sample
+            observation.wav = cut.wav
+            observation.lang = cut.lang
+            outcome.sample = cut.sample
+            kept = 1
+        case .failure(let why):
+            observation.skipped = why.reason
+            observation.wav = why.wav
+            observation.lang = why.lang
+            outcome.skipped = why.reason
+        }
+        try VoiceStore.append(observation)
+        outcome.capped = VoiceStore.enforceCap(on: term, .negative)
+
+        let counts = try ConfigWriter.recordCollision(term: term, word: word, clips: kept)
+        outcome.revert = Revert(
+            word: word, blame: blame, reverted: counts.reverted, clips: counts.clips
+        )
+        return outcome
+    }
+
+    /// What a revert did, in words, for whoever has to say it out loud.
+    ///
+    /// One place rather than two: the terminal prints these and the app logs
+    /// them, and a revert that reads differently depending on where it happened
+    /// is a revert nobody can compare afterwards.
+    static func said(about revert: Revert?, term: String) -> [String] {
+        guard let revert else { return [] }
+        var lines = [
+            "no rule written — a rule here would rewrite every \(term)"
+                + " into \"\(revert.word)\"",
+        ]
+        switch revert.blame {
+        case .rendering(let heard, let seen):
+            lines.append("\(term): \"\(heard)\" fired and is now seen \(seen) time(s)")
+        case .dropped(let heard):
+            lines.append("\(term): dropped \"\(heard)\" — one sighting, one revert,"
+                + " nothing left")
+        case .uncounted(let heard):
+            lines.append("\(term): \"\(heard)\" fired and was never counted,"
+                + " so there is nothing to count down — left as it is")
+        case .handWritten(let source):
+            lines.append("\(term): a rule you wrote in config.yaml maps"
+                + " \"\(source)\" to it — left alone, edit it yourself")
+        case .nothing:
+            lines.append("\(term): nothing in the files fired,"
+                + " so the acoustic pass proposed it and there is nothing to blame")
+        }
+        lines.append("collides_with \"\(revert.word)\": reverted \(revert.reverted) time(s),"
+            + " \(revert.clips) clip(s)")
+        return lines
+    }
+
     // MARK: - Cutting the audio out
 
     private struct Kept {
@@ -147,12 +331,25 @@ enum Corrections {
     }
 
     /// Finds the rendering in the dictation's word times and cuts it out.
+    ///
+    /// - Parameter polarity: which bank the clip goes into. A correction's clip
+    ///   is the term; a revert's clip is the ordinary word the term was written
+    ///   over, and the two must never share a directory — see `VoiceStore`.
+    /// - Parameter saying: the text to find the dictation by when no clip was
+    ///   named. Defaults to `heard`, which is what the delivered text holds
+    ///   after a correction. A revert needs the term instead: the delivered
+    ///   text is the sentence with the term already written into it, and the
+    ///   ordinary word is exactly what is no longer in it.
+    /// - Parameter alternate: a second spelling to look for in the word times.
+    ///   A revert passes the term, for the clip where the decoder wrote the
+    ///   name itself and no rule was involved.
     private static func keep(
-        heard: String, term: String, clip: String?, config: Config
+        heard: String, term: String, clip: String?, config: Config,
+        polarity: VoiceStore.Polarity = .positive, saying: String? = nil
     ) -> Result<Kept, Refused> {
         let recordings = config.resolvedOutputDir
         let delivered = clip.flatMap { Trace.delivered(clip: $0, in: recordings) }
-            ?? Trace.delivered(saying: heard, in: recordings)
+            ?? Trace.delivered(saying: saying ?? heard, in: recordings)
         guard let delivered else {
             return .failure(Refused(reason: "no trace line for this dictation"))
         }
@@ -162,17 +359,23 @@ enum Corrections {
                 wav: delivered.wav, lang: delivered.lang
             ))
         }
-        guard let span = span(of: heard, in: delivered.words) else {
+        // Whichever spelling the decoder actually wrote, so the duration guard
+        // below counts the words it found rather than the words it looked for.
+        let alternates = polarity == .negative ? [heard, term] : [heard]
+        guard let found = alternates.lazy.compactMap({ spelling in
+            Self.span(of: spelling, in: delivered.words).map { (spelling: spelling, at: $0) }
+        }).first else {
             return .failure(Refused(
                 reason: "\"\(heard)\" is not in the decoder's own words for this clip",
                 wav: delivered.wav, lang: delivered.lang
             ))
         }
+        let at = found.at
 
         // The duration guard. Loud, and it names the number it rejected.
-        let words = renderingWords(heard).count
+        let words = renderingWords(found.spelling).count
         let allowed = longestWord + perExtraWord * Double(max(0, words - 1))
-        let length = span.end - span.start
+        let length = at.end - at.start
         guard length > 0, length <= allowed else {
             return .failure(Refused(
                 reason: String(
@@ -191,10 +394,10 @@ enum Corrections {
             ))
         }
 
-        let name = VoiceStore.nextSampleName(for: term, heard: heard)
-        let target = VoiceStore.samples(for: term).appendingPathComponent(name)
+        let name = VoiceStore.nextSampleName(for: term, heard: heard, polarity)
+        let target = VoiceStore.clips(for: term, polarity).appendingPathComponent(name)
         do {
-            try cut(from: source, start: span.start - padding, end: span.end + padding, to: target)
+            try cut(from: source, start: at.start - padding, end: at.end + padding, to: target)
         } catch {
             return .failure(Refused(
                 reason: "the cut failed: \(error.localizedDescription)",
@@ -202,8 +405,9 @@ enum Corrections {
             ))
         }
         return .success(Kept(
-            sample: "samples/\(term)/\(name)", wav: delivered.wav, lang: delivered.lang,
-            start: span.start, end: span.end
+            sample: "\(polarity.folder)/\(term)/\(name)",
+            wav: delivered.wav, lang: delivered.lang,
+            start: at.start, end: at.end
         ))
     }
 
@@ -307,9 +511,14 @@ enum Corrections {
             $0.key.caseInsensitiveCompare(term) == .orderedSame
         })?.value else { return [] }
 
+        // Positives only. A negative row says the term was *not* said, and it
+        // carries the ordinary word under the same `heard` key — so counting it
+        // here would let a revert of "praise" keep the rendering "praise"
+        // alive, which is the opposite of what the revert meant.
         var lastSeen: [String: Date] = [:]
         for observation in VoiceStore.observations()
-        where observation.term.caseInsensitiveCompare(term) == .orderedSame {
+        where observation.kind == .positive
+            && observation.term.caseInsensitiveCompare(term) == .orderedSame {
             guard let at = date(observation.at) else { continue }
             let key = plain(observation.heard)
             lastSeen[key] = max(lastSeen[key] ?? at, at)

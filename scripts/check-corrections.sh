@@ -372,7 +372,7 @@ got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --forget Praisy 2>/dev/null)"
 wants "it forgets the term"        "$got" "✓ forgot Praisy"
 wants "the pronunciations go"      "$got" "pronunciation(s) from vocabulary.yaml"
 wants "the observations go"        "$got" "1 observation(s) from voice/observations.jsonl"
-wants "and the samples go"         "$got" "1 sample(s) from voice/samples/Praisy/"
+wants "and the samples go"         "$got" "1 sample(s) and 0 negative(s) from voice/samples/Praisy/"
 lacks "vocabulary.yaml has nothing left of it" "$(cat "$WORK/vocabulary.yaml")" "praise"
 total=$((total + 1))
 if [ ! -e "$WORK/voice/samples/Praisy" ]; then

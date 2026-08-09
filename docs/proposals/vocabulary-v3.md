@@ -1845,6 +1845,67 @@ above is the archive's answer to the same question, and the panel's own path is
 scored through `--learn --clip`, which takes the same route with the same clip
 name the panel passes.
 
+## PR 4a — a revert writes no rule, and keeps the audio
+
+**A live bug on `main`, independent of this stack.** `ConfigWriter.addReplacement`
+wrote `corrected: [heard]` into `config.yaml` whatever the direction of the
+correction. So taking a term back — the app wrote `Praisy`, the speaker meant
+"praise" — wrote `"praise": ["Praisy"]`, which rewrote *every* `Praisy` into
+"praise" from then on. One revert disabled the term, in a file `--forget` could
+not reach. Reproduced on `main` at c46c701 with `--learn Praisy praise`.
+
+That matters more now than it did, because the whole direction of this work is
+to *encourage* reverts. A revert is the most informative correction there is:
+it is the speaker saying, unprompted, that the term is wrong here and that the
+audio at this span is the ordinary word.
+
+**A revert does three things, and writing a rule is not one of them.**
+
+1. **Confidence in whatever fired goes down.** If the ordinary word is
+   registered as a rendering of the term, that exact rule is what wrote it —
+   `Config.vocabularyRules` turns every rendering into an exact replacement, so
+   it fires on that spelling every time. Its `seen:` goes down by one. Down by
+   one and not deleted: a rendering seen nine times and reverted once is still
+   how this person says the word, and deleting it would be the same bug
+   pointing the other way. It is only removed at zero, and only when
+   `from: correction` wrote it.
+2. **The pair is recorded** as `collides_with:` under the term — the word, a
+   `reverted` count and a `clips` count. Never matched, never substituted. It
+   is keyed on the pair, because "praise" argues with `Praisy` and says nothing
+   at all about `Supabase`.
+3. **The audio is kept as a negative**, in `voice/negatives/<Term>/`, with
+   `polarity: negative` on the observation.
+
+**What can and cannot be attributed.** Only two things write a term where it
+was not said: an exact rule from `pronunciations:`, and the acoustic pass. The
+first is answerable exactly at the correction site, with no new machinery — if
+the word the speaker meant is registered as a rendering of the term, that rule
+fired. The second leaves nothing in any file to take back, and the command says
+so rather than inventing a culprit. The proposal's own numbers — the
+`raw -10.12 vs -9.37, bonus 2.88` in the log — are not in scope: `Trace.Delivered`
+carries `asr.words`, `lang` and `final`, and the pipeline's stage list is not
+decoded there. Reaching them would mean a second read of the trace for a number
+nothing acts on.
+
+**`negatives/` is a separate directory, not a flag inside `samples/`.** Every
+script in this repository that walks `samples/` would otherwise ingest a
+negative as a positive, silently, and every number computed from the store
+would rot. `polarity` on the row is explicit for the same reason: the clip's
+meaning inverts, and absent has to keep meaning `positive` so the rows written
+before it still parse.
+
+**No sample is deleted on a revert.** Nothing in `samples/` caused the
+over-fire — the samples feed the acoustic veto, not the rule that fired — and
+6a below showed a bad clip cannot be picked out of a bank from one revert.
+
+**Verified by** `scripts/check-reverts.sh`, 67 cases, in CI. It scores: no rule
+in either file; the count-down, the drop at zero, the legacy entry that has no
+count to take one off, and the case where nothing can be blamed; the clip in
+`negatives/` and nothing at all in `samples/`; `collides_with:` written and then
+left alone by `--replace`, which runs every deterministic substitution pass; a
+rendering that survives the count-down still firing; `--forget` taking all four
+back; and a row with no `polarity` reading as a positive.
+
 ## PR 5 — mining that keeps the recordings you need
 
 **Changes.** Three changes to `scripts/mine-pronunciations.py`, ported from

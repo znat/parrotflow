@@ -12,6 +12,15 @@ import Foundation
 ///     voice/observations.jsonl        one line per rendering seen
 ///     voice/calibration.yaml          the bands the calibrate skill measured
 ///     voice/samples/<Term>/*.wav      the audio of each rendering, cut out
+///     voice/negatives/<Term>/*.wav    audio that is *not* the term, cut out
+///
+/// **`negatives/` is a separate directory, not a flag inside `samples/`.**
+/// A negative comes from a revert: the app wrote `Praisy`, the speaker meant
+/// "praise", and the audio at that span is the ordinary word. It is the same
+/// kind of file as a sample and the opposite kind of evidence. Every script
+/// that walks `samples/` today would ingest it as a positive and say nothing,
+/// and every number computed from this store would rot quietly. A directory
+/// nobody's glob reaches by accident is the only way to make that impossible.
 ///
 /// **Nothing here belongs in the repository.** The archive it was mined from is
 /// somebody's voice saying their colleagues' names. `scripts/check-no-voice.sh`
@@ -66,6 +75,30 @@ enum VoiceStore {
 
     static var samplesDirectory: URL {
         directory.appendingPathComponent("samples", isDirectory: true)
+    }
+
+    static var negativesDirectory: URL {
+        directory.appendingPathComponent("negatives", isDirectory: true)
+    }
+
+    /// What a clip says about its term: that it *is* one, or that it is not.
+    ///
+    /// Explicit on the row, never inferred. The clip's meaning inverts between
+    /// the two — a correction's clip is the term said out loud, a revert's clip
+    /// is the ordinary word the term was wrongly written over — and the two
+    /// rows are otherwise identical. Absent reads as `positive`, so every line
+    /// written before this key existed still means what it meant.
+    enum Polarity: String, Sendable {
+        case positive
+        case negative
+
+        /// The directory this polarity's clips live in, under `voice/`.
+        var folder: String {
+            switch self {
+            case .positive: return "samples"
+            case .negative: return "negatives"
+            }
+        }
     }
 
     /// What `calibration.yaml` says, in one line, for `--check-config`.
@@ -139,6 +172,19 @@ enum VoiceStore {
         /// to the log so the rate is countable from the file later, and the log
         /// truncates at 1 MB.
         var skipped: String?
+        /// `positive` or `negative` — see `Polarity`. Written on every row this
+        /// build produces, and absent on every row written before it, which
+        /// reads as `positive`.
+        ///
+        /// A string rather than the enum, for the reason `from` is one: a value
+        /// a later version invents must still parse here.
+        var polarity: String?
+
+        /// Which way this row points. An unreadable or absent `polarity` is
+        /// `positive`, because that is what every row without one is.
+        var kind: Polarity {
+            polarity.flatMap(Polarity.init(rawValue:)) ?? .positive
+        }
     }
 
     /// The store's own directories, made on demand.
@@ -186,32 +232,44 @@ enum VoiceStore {
 
     // MARK: - Samples
 
-    /// Where a term's samples live. The folder is the term as `vocabulary.yaml`
-    /// spells it, so `--forget` can name it back.
-    static func samples(for term: String) -> URL {
-        samplesDirectory.appendingPathComponent(term, isDirectory: true)
+    /// Where a term's clips live, by polarity. The folder is the term as
+    /// `vocabulary.yaml` spells it, so `--forget` can name it back.
+    static func clips(for term: String, _ polarity: Polarity = .positive) -> URL {
+        directory
+            .appendingPathComponent(polarity.folder, isDirectory: true)
+            .appendingPathComponent(term, isDirectory: true)
     }
+
+    /// Where a term's samples live. The positive half of `clips(for:_:)`, kept
+    /// under its own name because most callers only ever want that half.
+    static func samples(for term: String) -> URL { clips(for: term, .positive) }
 
     /// The wav files of one term, oldest first by name.
     ///
     /// By name rather than by modification date: a copied archive has every
     /// file stamped with the moment it was copied, and the name carries the
     /// sequence the recording was written in.
-    static func sampleFiles(of term: String) -> [String] {
+    static func sampleFiles(of term: String, _ polarity: Polarity = .positive) -> [String] {
         let inside = (try? FileManager.default.contentsOfDirectory(
-            atPath: samples(for: term).path
+            atPath: clips(for: term, polarity).path
         )) ?? []
         return inside.filter { $0.hasSuffix(".wav") }.sorted()
     }
 
-    /// A free filename for a new sample of `term`, in the shape mining writes:
+    /// A free filename for a new clip of `term`, in the shape mining writes:
     /// `NN-rendering.wav`, numbered above everything already there.
-    static func nextSampleName(for term: String, heard: String) -> String {
+    ///
+    /// Numbered within its own polarity's folder. `samples/Praisy/00-praise.wav`
+    /// and `negatives/Praisy/00-praise.wav` are two different files that happen
+    /// to share a name, and neither can overwrite the other.
+    static func nextSampleName(
+        for term: String, heard: String, _ polarity: Polarity = .positive
+    ) -> String {
         let slug = heard.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
             .joined(separator: "-")
-        let used = sampleFiles(of: term).compactMap { name -> Int? in
+        let used = sampleFiles(of: term, polarity).compactMap { name -> Int? in
             Int(name.prefix(while: { $0.isNumber }))
         }
         let next = (used.max() ?? -1) + 1
@@ -227,9 +285,16 @@ enum VoiceStore {
     /// of those goes, because a cap that refuses to act is not a cap.
     ///
     /// Never silent. Every removal is returned, and every caller logs it.
+    ///
+    /// One polarity at a time. A term's samples and its negatives are two banks
+    /// of the same size, and a negative must never be able to push a sample out
+    /// — the two are compared against each other, so a cap that mixed them
+    /// would let one side quietly consume the other.
     @discardableResult
-    static func enforceCap(on term: String, cap: Int = perTermSampleCap) -> [(file: String, why: String)] {
-        var files = sampleFiles(of: term)
+    static func enforceCap(
+        on term: String, cap: Int = perTermSampleCap, _ polarity: Polarity = .positive
+    ) -> [(file: String, why: String)] {
+        var files = sampleFiles(of: term, polarity)
         guard files.count > cap else { return [] }
 
         // Which of *this term's* samples a person confirmed, from the
@@ -243,9 +308,14 @@ enum VoiceStore {
         // bare name across every term would let one term's confirmed sample
         // protect another term's unconfirmed one, and the cap would then delete
         // a confirmed sample while keeping the audio nobody vouched for.
+        //
+        // Filtered by polarity for the same reason, one level up:
+        // `samples/Praisy/00-praise.wav` and `negatives/Praisy/00-praise.wav`
+        // also share a bare name, and they are the same term.
         var confirmed: Set<String> = []
         for observation in observations()
         where observation.from == "correction"
+            && observation.kind == polarity
             && observation.term.caseInsensitiveCompare(term) == .orderedSame {
             if let sample = observation.sample {
                 confirmed.insert((sample as NSString).lastPathComponent)
@@ -261,7 +331,7 @@ enum VoiceStore {
             let why = confirmed.contains(name)
                 ? "oldest confirmed — every sample of this term is confirmed"
                 : "oldest unconfirmed"
-            try? store.removeItem(at: samples(for: term).appendingPathComponent(name))
+            try? store.removeItem(at: clips(for: term, polarity).appendingPathComponent(name))
             files.removeAll { $0 == name }
             removed.append((name, why))
         }
@@ -285,35 +355,44 @@ enum VoiceStore {
     }
 
     /// What the store holds, per term, for `--check-config` and `--forget`.
-    static func counts() -> [(term: String, observations: Int, samples: Int)] {
+    ///
+    /// Samples and negatives counted apart. They are the two sides of the same
+    /// question and adding them together would report a term with 20 clips that
+    /// has 20 recordings of something it is not.
+    static func counts() -> [(term: String, observations: Int, samples: Int, negatives: Int)] {
         var seen: [String: Int] = [:]
         for observation in observations() {
             seen[observation.term, default: 0] += 1
         }
         var kept: [String: Int] = [:]
-        for name in termFolders() {
-            let inside = (try? FileManager.default.contentsOfDirectory(
-                atPath: samplesDirectory.appendingPathComponent(name).path
-            )) ?? []
-            kept[name] = inside.filter { $0.hasSuffix(".wav") }.count
-        }
-        return Set(seen.keys).union(kept.keys).sorted().map {
-            (term: $0, observations: seen[$0] ?? 0, samples: kept[$0] ?? 0)
+        var against: [String: Int] = [:]
+        for name in termFolders(.positive) { kept[name] = wavs(in: name, .positive) }
+        for name in termFolders(.negative) { against[name] = wavs(in: name, .negative) }
+        return Set(seen.keys).union(kept.keys).union(against.keys).sorted().map {
+            (term: $0, observations: seen[$0] ?? 0,
+             samples: kept[$0] ?? 0, negatives: against[$0] ?? 0)
         }
     }
 
-    /// The term folders under `samples/`, directories only.
+    private static func wavs(in term: String, _ polarity: Polarity) -> Int {
+        ((try? FileManager.default.contentsOfDirectory(
+            atPath: clips(for: term, polarity).path
+        )) ?? []).filter { $0.hasSuffix(".wav") }.count
+    }
+
+    /// The term folders under one polarity's directory, directories only.
     ///
     /// A stray file — `.DS_Store` is the one that turns up — is not a term, and
     /// listing it as one would offer `--forget .DS_Store`.
-    private static func termFolders() -> [String] {
+    private static func termFolders(_ polarity: Polarity = .positive) -> [String] {
         let files = FileManager.default
-        return ((try? files.contentsOfDirectory(atPath: samplesDirectory.path)) ?? [])
+        let root = directory.appendingPathComponent(polarity.folder, isDirectory: true)
+        return ((try? files.contentsOfDirectory(atPath: root.path)) ?? [])
             .filter { name in
-                var directory: ObjCBool = false
-                let path = samplesDirectory.appendingPathComponent(name).path
-                return files.fileExists(atPath: path, isDirectory: &directory)
-                    && directory.boolValue
+                var isDirectory: ObjCBool = false
+                let path = root.appendingPathComponent(name).path
+                return files.fileExists(atPath: path, isDirectory: &isDirectory)
+                    && isDirectory.boolValue
             }
     }
 
@@ -322,10 +401,15 @@ enum VoiceStore {
     /// Returns what was removed, so the caller can say it out loud — including
     /// the folder names, because matching is case-insensitive and a person
     /// typing `--forget praisy` should be told `samples/Praisy/` is what went.
+    ///
+    /// Both banks. A `--forget` that left `negatives/Praisy/` behind would
+    /// leave audio filed under a term nothing else remembers, and the next
+    /// thing to read the directory would find a term with negatives and no
+    /// positives — a term that looks measured and is not.
     @discardableResult
     static func forget(
         _ term: String
-    ) throws -> (observations: Int, samples: Int, folders: [String]) {
+    ) throws -> (observations: Int, samples: Int, negatives: Int, folders: [String]) {
         let files = FileManager.default
         var dropped = 0
         if let text = try? String(contentsOf: observationsURL, encoding: .utf8) {
@@ -348,14 +432,19 @@ enum VoiceStore {
         }
 
         var removed = 0
+        var against = 0
         var folders: [String] = []
-        for name in termFolders() where name.caseInsensitiveCompare(term) == .orderedSame {
-            let folder = samplesDirectory.appendingPathComponent(name)
-            removed += ((try? files.contentsOfDirectory(atPath: folder.path)) ?? [])
-                .filter { $0.hasSuffix(".wav") }.count
-            try files.removeItem(at: folder)
-            folders.append(name)
+        for polarity in [Polarity.positive, .negative] {
+            for name in termFolders(polarity)
+            where name.caseInsensitiveCompare(term) == .orderedSame {
+                let folder = clips(for: name, polarity)
+                let count = ((try? files.contentsOfDirectory(atPath: folder.path)) ?? [])
+                    .filter { $0.hasSuffix(".wav") }.count
+                if polarity == .positive { removed += count } else { against += count }
+                try files.removeItem(at: folder)
+                folders.append("\(polarity.folder)/\(name)")
+            }
         }
-        return (dropped, removed, folders)
+        return (dropped, removed, against, folders)
     }
 }

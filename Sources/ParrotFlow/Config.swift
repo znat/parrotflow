@@ -265,23 +265,82 @@ struct Config: Decodable, Equatable {
             /// True when the list arrived under the old `heard:` key, so
             /// `notices()` can name the key and say what to write instead.
             var wroteHeard = false
+            /// The ordinary words this term has been written over, and how
+            /// often the speaker took it back. See `Collision`.
+            var collisions: [Collision] = []
+
+            /// An ordinary word this term has fired on wrongly.
+            ///
+            /// **Never matched and never substituted.** It is not a rendering
+            /// and it is not a rule. Nothing reads it on the way to a decision:
+            /// `heard` does not include it, so `Config.vocabularyRules` cannot
+            /// turn it into a replacement, and the spotter is never handed it.
+            ///
+            /// It records which pair to compare against later, and how much
+            /// evidence there is for the comparison. `Praisy` versus "praise"
+            /// is a real question about this speaker's mouth; `Supabase` versus
+            /// "praise" is not a question at all. So the entry is keyed on the
+            /// pair, under the term, and means nothing to any other term.
+            ///
+            /// `reverted` counts the times a person took the term back to this
+            /// word. `clips` counts how many of those left audio in
+            /// `voice/negatives/<Term>/`. The two differ whenever the cut was
+            /// refused, and the gap is worth being able to see.
+            struct Collision: Decodable, Equatable {
+                var word: String
+                var reverted: Int = 0
+                var clips: Int = 0
+
+                init(word: String, reverted: Int = 0, clips: Int = 0) {
+                    self.word = word
+                    self.reverted = reverted
+                    self.clips = clips
+                }
+
+                enum CodingKeys: String, CodingKey { case word, reverted, clips }
+
+                /// Two shapes, like `Pronunciation`: the mapping the app writes,
+                /// and the bare string a person types when they only want to
+                /// name the word.
+                init(from decoder: Decoder) throws {
+                    if let single = try? decoder.singleValueContainer(),
+                       let word = try? single.decode(String.self) {
+                        self.init(word: word)
+                        return
+                    }
+                    let c = try decoder.container(keyedBy: CodingKeys.self)
+                    self.init(
+                        word: try c.decode(String.self, forKey: .word),
+                        reverted: try c.decodeIfPresent(Int.self, forKey: .reverted) ?? 0,
+                        clips: try c.decodeIfPresent(Int.self, forKey: .clips) ?? 0
+                    )
+                }
+            }
 
             /// Just the renderings, for the callers that only want the
             /// spellings — the exact rules, and the "can anything reach this
             /// term at all" check in `notices()`.
+            ///
+            /// Renderings only. A collision is the opposite kind of fact and
+            /// must never reach a rule table through here.
             var heard: [String] { pronunciations.map(\.heard) }
 
             init(
                 offerBelow: Float? = nil, never: Bool = false,
-                pronunciations: [Pronunciation] = [], wroteHeard: Bool = false
+                pronunciations: [Pronunciation] = [], wroteHeard: Bool = false,
+                collisions: [Collision] = []
             ) {
                 self.offerBelow = offerBelow
                 self.never = never
                 self.pronunciations = pronunciations
                 self.wroteHeard = wroteHeard
+                self.collisions = collisions
             }
 
-            enum CodingKeys: String, CodingKey { case floor, heard, pronunciations }
+            enum CodingKeys: String, CodingKey {
+                case floor, heard, pronunciations
+                case collidesWith = "collides_with"
+            }
 
             /// Five shapes, because most terms need none of this:
             ///
@@ -318,6 +377,11 @@ struct Config: Decodable, Equatable {
                 // free extra draw.
                 let said = Self.distinct(listed + old.map { Pronunciation(heard: $0) })
                 let wroteHeard = !old.isEmpty
+                // Read on every shape below, because it is orthogonal to all of
+                // them: a term can carry a legacy floor and a collision at once.
+                let collided = try c.decodeIfPresent(
+                    [Collision].self, forKey: .collidesWith
+                ) ?? []
                 // Number first. Yams answers `Bool.self` for `0.85` quite
                 // happily — anything that is not `true`/`yes`/`on` decodes as
                 // `false` — so asking about `off` before asking about the
@@ -328,7 +392,10 @@ struct Config: Decodable, Equatable {
                 // The reverse trap does not exist. `off` is not a number, so
                 // asking for a Float first throws and falls through.
                 if let number = (try? c.decodeIfPresent(Float.self, forKey: .floor)) ?? nil {
-                    self.init(offerBelow: number, pronunciations: said, wroteHeard: wroteHeard)
+                    self.init(
+                        offerBelow: number, pronunciations: said,
+                        wroteHeard: wroteHeard, collisions: collided
+                    )
                     return
                 }
                 // `off` rather than a magic number. The previous spelling was
@@ -341,18 +408,21 @@ struct Config: Decodable, Equatable {
                 if let flag = (try? c.decodeIfPresent(Bool.self, forKey: .floor)) ?? nil {
                     self.init(
                         offerBelow: nil, never: flag == false,
-                        pronunciations: said, wroteHeard: wroteHeard
+                        pronunciations: said, wroteHeard: wroteHeard, collisions: collided
                     )
                     return
                 }
                 if let word = (try? c.decodeIfPresent(String.self, forKey: .floor)) ?? nil {
                     self.init(
                         offerBelow: nil, never: word.lowercased() == "off",
-                        pronunciations: said, wroteHeard: wroteHeard
+                        pronunciations: said, wroteHeard: wroteHeard, collisions: collided
                     )
                     return
                 }
-                self.init(offerBelow: nil, pronunciations: said, wroteHeard: wroteHeard)
+                self.init(
+                    offerBelow: nil, pronunciations: said,
+                    wroteHeard: wroteHeard, collisions: collided
+                )
             }
 
             /// One entry per spelling, first kept. Exact rather than

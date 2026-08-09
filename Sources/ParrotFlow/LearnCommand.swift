@@ -15,7 +15,14 @@ enum LearnCommand {
             let outcome = try Corrections.learn(
                 heard: heard, corrected: corrected, via: "learn", clip: clip
             )
-            print("✓ \(heard) → \(corrected)")
+            // A revert is not a rule learnt, so it does not get the ✓ that says
+            // one was. It is the more informative of the two corrections and
+            // the line has to say what it actually did.
+            if outcome.revert == nil {
+                print("✓ \(heard) → \(corrected)")
+            } else {
+                print("↩ \(heard) → \(corrected) — took the term back, no rule written")
+            }
             say(outcome)
             Trace.flush()
             return 0
@@ -36,13 +43,17 @@ enum LearnCommand {
         if let seen = outcome.seen {
             print("  \(term): seen \(seen) time(s), from correction")
         }
+        for line in Corrections.said(about: outcome.revert, term: term) {
+            print("  \(line)")
+        }
         if let sample = outcome.sample {
             print("  kept the audio as voice/\(sample)")
         } else if let why = outcome.skipped {
             print("  no audio kept — \(why)")
         }
+        let bank = outcome.revert == nil ? "samples" : "negatives"
         for gone in outcome.capped {
-            print("  capped voice/samples/\(term)/\(gone.file) — \(gone.why)")
+            print("  capped voice/\(bank)/\(term)/\(gone.file) — \(gone.why)")
         }
         for gone in outcome.pruned {
             print("  dropped \"\(gone)\" — seen once and not again since")

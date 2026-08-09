@@ -1871,13 +1871,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let seen = outcome.seen {
             Log.write("    \(term): seen \(seen) time(s), from correction")
         }
+        for line in Corrections.said(about: outcome.revert, term: term) {
+            Log.write("    \(line)")
+        }
         if let sample = outcome.sample {
             Log.write("    kept the audio as voice/\(sample)")
         } else if let why = outcome.skipped {
             Log.write("    no audio kept — \(why)")
         }
+        let bank = outcome.revert == nil ? "samples" : "negatives"
         for gone in outcome.capped {
-            Log.write("    capped voice/samples/\(term)/\(gone.file) — \(gone.why)")
+            Log.write("    capped voice/\(bank)/\(term)/\(gone.file) — \(gone.why)")
         }
         for gone in outcome.pruned {
             Log.write("    dropped \"\(gone)\" from \(term) — seen once and not again since")
@@ -1894,7 +1898,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     heard: rule.heard, corrected: rule.corrected, via: "command",
                     clip: pendingClip
                 )
-                Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+                Log.write(outcome.revert == nil
+                    ? "learned replacement: \(rule.heard) -> \(rule.corrected)"
+                    : "took the term back: \(rule.heard) -> \(rule.corrected)")
                 logKept(outcome)
             } catch {
                 presentAlert(title: "Could not save the rule", message: error.localizedDescription)
@@ -2317,7 +2323,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         heard: rule.heard, corrected: rule.corrected, via: "panel",
                         clip: clip
                     )
-                    Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+                    Log.write(outcome.revert == nil
+                        ? "learned replacement: \(rule.heard) -> \(rule.corrected)"
+                        : "took the term back: \(rule.heard) -> \(rule.corrected)")
                     self.logKept(outcome)
                 } catch {
                     self.presentAlert(

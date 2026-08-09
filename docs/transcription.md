@@ -100,7 +100,18 @@ terms:
     pronunciations:
       - heard: cloud
         from: correction
+  Vercel:
+    collides_with:               # ordinary words this term has fired on
+      - word: versatile
+        reverted: 2
+        clips: 2
 ```
+
+`collides_with:` is written when you take a term back — you dictated
+"versatile" and the app wrote `Vercel`. It is a record, never a rule: nothing
+matches it and nothing substitutes it. It says which two things to compare, and
+how much evidence there is for the comparison. It is keyed on the pair, so
+"versatile" argues with `Vercel` and means nothing to any other term.
 
 #### The two numbers
 
@@ -243,7 +254,15 @@ how they actually come out of your mouth on your microphone.
 voice/observations.jsonl      one line per rendering seen
 voice/calibration.yaml        the bands the calibrate skill measured
 voice/samples/<Term>/*.wav    the audio of each rendering, cut out
+voice/negatives/<Term>/*.wav  audio that is *not* the term, cut out
 ```
+
+`negatives/` is its own directory, not a flag inside `samples/`. A negative
+comes from a revert — the app wrote `Praisy`, you meant "praise" — so the clip
+is the same kind of file and the opposite kind of evidence. Anything that walks
+`samples/` would otherwise read it as a positive and say nothing. Each row says
+which it is, as `polarity: positive` or `polarity: negative`; a row written
+before the key existed has none, and reads as positive.
 
 Three reasons it is not in `vocabulary.yaml`. It grows without limit, and a
 setting a person reads should not. It is audio, which no YAML file wants. And
@@ -256,7 +275,8 @@ The microphone is part of an observation. A rendering is a fact about a mouth
 rather than "the one plugged in today". Samples are cut spans, a few hundred KB
 each, never a whole dictation.
 
-`--forget <term>` empties all three for one name — see
+`--forget <term>` empties all of it for one name — pronunciations,
+`collides_with:` pairs, observations, samples and negatives. See
 [the command line](cli.md#forgetting-what-a-name-sounds-like).
 
 #### Checking the result

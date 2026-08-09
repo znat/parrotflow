@@ -152,6 +152,15 @@ jobs:
       - name: A correction keeps the audio
         run: scripts/check-corrections.sh
 
+      # The other direction, which used to write a rule that disabled the term
+      # it was reverting. A revert must write nothing that can fire on text
+      # later — not to config.yaml, not to vocabulary.yaml — and its clip must
+      # land in negatives/ and never in samples/. Every number this project
+      # computes walks samples/, so a negative filed as a positive would rot
+      # all of them silently.
+      - name: A revert writes no rule
+        run: scripts/check-reverts.sh
+
       # The same trap, one directory over: the transform folder a first launch
       # is seeded with against the copy in examples/ that people read and
       # score. It has always been able to drift and has never been checked

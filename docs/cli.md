@@ -199,6 +199,21 @@ the previous transcript does it target.
 `--learn` writes a replacement rule from the terminal, the same one the
 correction panel would have written.
 
+`--learn <Term> <word>` the other way round is a **revert**: the app wrote
+`Praisy`, you meant "praise". It writes no rule at all — one would rewrite
+every `Praisy` into "praise" from then on. Instead it counts down whatever
+fired, records the pair under the term as `collides_with:`, and keeps the audio
+as a negative in `voice/negatives/<Term>/`.
+
+```
+$ ParrotFlow --learn Praisy praise
+↩ Praisy → praise — took the term back, no rule written
+  no rule written — a rule here would rewrite every Praisy into "praise"
+  Praisy: "praise" fired and is now seen 1 time(s)
+  collides_with "praise": reverted 1 time(s), 1 clip(s)
+  kept the audio as voice/negatives/Praisy/00-praise.wav
+```
+
 ## Forgetting what a name sounds like
 
 ```sh
@@ -206,9 +221,10 @@ $PF --forget <term>
 ```
 
 Everything learnt about how one name comes out, in one go: its pronunciations
-in `vocabulary.yaml`, every line naming it in `voice/observations.jsonl`, and
-every clip under `voice/samples/<Term>/`. The term itself stays — forgetting is
-about the learnt half, and somebody who wants the name gone deletes the name.
+and its `collides_with:` pairs in `vocabulary.yaml`, every line naming it in
+`voice/observations.jsonl`, and every clip under `voice/samples/<Term>/` and
+`voice/negatives/<Term>/`. The term itself stays — forgetting is about the
+learnt half, and somebody who wants the name gone deletes the name.
 
 It exists because the three files only ever grow. A rendering learnt from one
 bad clip goes on shaping the audio search forever, and the only remedy was to
@@ -220,7 +236,8 @@ $ ParrotFlow --forget Praisy
 ✓ forgot Praisy
   14 pronunciation(s) from vocabulary.yaml
   17 observation(s) from voice/observations.jsonl
-  17 sample(s) from voice/samples/Praisy/
+  17 sample(s) and 3 negative(s) from voice/samples/Praisy/, voice/negatives/Praisy/
+  1 collides_with entr(ies) from vocabulary.yaml
 ```
 
 ## Proving the microphone and the model work

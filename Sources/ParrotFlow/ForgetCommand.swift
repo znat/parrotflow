@@ -2,9 +2,10 @@ import Foundation
 
 /// `--forget <term>` — everything learnt about how one name sounds, gone.
 ///
-/// Three places hold it, and until now none of them had a way out:
-/// `vocabulary.yaml` holds the renderings, `voice/observations.jsonl` holds
-/// every time one was seen, and `voice/samples/<Term>/` holds the audio. Data
+/// Four places hold it, and until now none of them had a way out:
+/// `vocabulary.yaml` holds the renderings and the `collides_with:` pairs,
+/// `voice/observations.jsonl` holds every time one was seen, and
+/// `voice/samples/<Term>/` and `voice/negatives/<Term>/` hold the audio. Data
 /// that only accumulates is data nobody can correct — a rendering learnt from
 /// one bad clip goes on shaping the search forever, and the only remedy was to
 /// edit a file the header tells you not to edit.
@@ -46,8 +47,12 @@ enum ForgetCommand {
                     + " voice/ left alone")
                 return 1
             }
+            // After the pronunciation check, with the audio. A collision is
+            // learnt data about this term and goes when the rest of it goes.
+            let collisions = try ConfigWriter.dropCollisions(of: name)
             let gone = try VoiceStore.forget(name)
-            if renderings == 0, gone.observations == 0, gone.samples == 0 {
+            if renderings == 0, collisions == 0, gone.observations == 0,
+               gone.samples == 0, gone.negatives == 0 {
                 print("· nothing recorded for \(name)")
                 return 0
             }
@@ -59,10 +64,13 @@ enum ForgetCommand {
             // match is case-insensitive, so `--forget praisy` has to be told
             // that `samples/Praisy/` is what went.
             let from = gone.folders.isEmpty
-                ? "voice/samples/" : gone.folders.map { "voice/samples/\($0)/" }.joined(separator: ", ")
-            print("  \(gone.samples) sample(s) from \(from)")
+                ? "voice/samples/" : gone.folders.map { "voice/\($0)/" }.joined(separator: ", ")
+            print("  \(gone.samples) sample(s) and \(gone.negatives) negative(s) from \(from)")
+            print("  \(collisions) collides_with entr(ies) from"
+                + " \(ConfigStore.vocabularyURL.lastPathComponent)")
             Log.write("forget: \(name) — \(renderings) pronunciation(s),"
-                + " \(gone.observations) observation(s), \(gone.samples) sample(s)")
+                + " \(collisions) collision(s), \(gone.observations) observation(s),"
+                + " \(gone.samples) sample(s), \(gone.negatives) negative(s)")
             return 0
         } catch {
             print("✗ \(error.localizedDescription)")

@@ -271,6 +271,11 @@ def main():
                 # entries know their provenance is a bank you cannot filter.
                 "lang": spoken.get(wav),
                 "build": stamped,
+                # Mining only ever produces positives: it looks for a term in a
+                # decode and cuts where it found it. Written out anyway, because
+                # a row whose meaning has to be inferred from which script wrote
+                # it is a row somebody will eventually infer wrongly.
+                "polarity": "positive",
             })
     with observations.open("a", encoding="utf-8") as handle:
         for row in rows:

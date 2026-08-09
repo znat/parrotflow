@@ -192,29 +192,7 @@ enum ConfigWriter {
         guard let start = index(ofTerm: term, in: lines) else { return (yaml, 0) }
         let termIndent = indentation(of: lines[start])
         let bodyIndent = termIndent + "  "
-
-        // Whatever the term's value is today, in block form, so a
-        // `pronunciations:` list can be appended under it. A legacy floor and a
-        // legacy `heard:` list both survive this — they are still read.
-        var end = start
-        let head = lines[start]
-        let colon = head.firstIndex(of: ":")!
-        let inline = String(head[head.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
-        if !inline.isEmpty && !inline.hasPrefix("#") {
-            let closes = closingFlow(in: lines, from: start, deeperThan: termIndent.count)
-            let value = lines[start...closes].joined(separator: " ")
-            let body = String(value[value.index(after: value.firstIndex(of: ":")!)...])
-                .trimmingCharacters(in: .whitespaces)
-            // A bare list is the old `heard:`; a bare number is the old `floor:`.
-            let key = body.hasPrefix("[") ? "heard" : "floor"
-            lines.replaceSubrange(start...closes, with: [
-                "\(termIndent)\(quoted(term)):",
-                "\(bodyIndent)\(key): \(body)",
-            ])
-            end = start + 1
-        } else {
-            end = endOfTermBlock(in: lines, from: start, deeperThan: termIndent.count)
-        }
+        let end = openBlockBody(of: term, at: start, in: &lines)
 
         // An existing `pronunciations:` block, and this rendering inside it.
         var listIndex: Int?
@@ -301,9 +279,314 @@ enum ConfigWriter {
         return true
     }
 
-    /// The line of `- heard: <name>` inside a `pronunciations:` block.
+    // MARK: - Taking a rendering back, and recording what it collided with
+
+    /// What `discountPronunciation` managed to do about a rendering.
+    enum Discount: Equatable {
+        /// Its `seen:` count went down to this.
+        case reduced(Int)
+        /// It stood at one sighting from one correction, and that correction
+        /// has now been contradicted, so the entry is gone.
+        case dropped
+        /// It is there and it cannot be counted down: a legacy `heard:` list,
+        /// or an entry with `seen: 0`, which means "never counted". There is no
+        /// honest number to subtract one from.
+        case uncounted
+        /// No such rendering. Nothing in the file caused the substitution.
+        case notFound
+    }
+
+    /// Takes one sighting back off a rendering, because the speaker said the
+    /// term should not have fired there.
+    ///
+    /// A revert is a person contradicting a rendering they once confirmed, so
+    /// the count that recorded it goes down. It only ever goes down by one: a
+    /// rendering seen nine times and reverted once is still how this person
+    /// says the word, and deleting it would be the same bug in the other
+    /// direction — one correction disabling a term.
+    ///
+    /// **The entry is only removed at zero, and only when a correction wrote
+    /// it.** `seen: 1, from: correction` reverted once is one sighting against
+    /// one revert: nothing left. A mined or legacy entry has `seen: 0`, which
+    /// means "never counted" rather than "never seen", so there is no number to
+    /// take one off — it is left alone and reported as `uncounted`. Deleting on
+    /// a count nobody recorded is how a prune eats correct data, and
+    /// `Corrections.prune` refuses for the same reason.
+    static func discountPronunciation(term: String, heard: String) throws -> Discount {
+        let url = ConfigStore.vocabularyURL
+        guard let original = try? String(contentsOf: url, encoding: .utf8) else {
+            return .notFound
+        }
+        var lines = original.components(separatedBy: "\n")
+        guard let start = index(ofTerm: term, in: lines) else { return .notFound }
+        let termIndent = indentation(of: lines[start]).count
+        let end = endOfTermBlock(in: lines, from: start, deeperThan: termIndent)
+
+        var listAt: Int?
+        for cursor in (start + 1)...max(start + 1, end) where cursor < lines.count {
+            if lines[cursor].trimmingCharacters(in: .whitespaces).hasPrefix("pronunciations:") {
+                listAt = cursor
+                break
+            }
+        }
+        // No block at all: whatever is there is a legacy `heard:` list, which
+        // carries no count. `Corrections` has already established the rendering
+        // exists, so this is `uncounted` and not `notFound`.
+        guard let listAt else { return .uncounted }
+        let listEnd = endOfTermBlock(
+            in: lines, from: listAt, deeperThan: indentation(of: lines[listAt]).count
+        )
+        guard let found = entry(named: heard, in: lines, from: listAt + 1, through: listEnd) else {
+            return .uncounted
+        }
+        let last = endOfEntry(in: lines, from: found, through: listEnd)
+        let seen = value(of: "seen", in: lines, from: found, through: last)
+        let source = word(of: "from", in: lines, from: found, through: last)
+
+        if let seen, seen >= 2 {
+            _ = set("seen", to: seen - 1, in: &lines, from: found, through: last)
+            try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+            return .reduced(seen - 1)
+        }
+        guard seen == 1, source == "correction" else { return .uncounted }
+        lines.removeSubrange(found...last)
+        // A `pronunciations:` key with nothing under it decodes as null, not as
+        // an empty list, so it goes too.
+        if endOfTermBlock(
+            in: lines, from: listAt, deeperThan: indentation(of: lines[listAt]).count
+        ) == listAt {
+            lines.remove(at: listAt)
+        }
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        return .dropped
+    }
+
+    /// Records that `term` was written over the ordinary word `word`, and
+    /// returns the pair's counts afterwards.
+    ///
+    /// Written under the term as `collides_with:`, which nothing matches and
+    /// nothing substitutes — see `Config.Vocabulary.Term.Collision`. It is not
+    /// a rendering: a rendering says "the term was said and came out like
+    /// this", and this says the opposite, that the term was *not* said here.
+    /// Putting the two in one list is how a revert would end up firing as a
+    /// rule, which is the bug this whole change exists to fix.
+    ///
+    /// Keyed on the pair. "praise" is a negative for `Praisy` and says nothing
+    /// at all about `Supabase`, so it lives under the term it argues with.
+    ///
+    /// - Parameter clips: how many negative clips this revert added, 0 or 1.
+    @discardableResult
+    static func recordCollision(
+        term: String, word: String, clips: Int
+    ) throws -> (reverted: Int, clips: Int) {
+        let url = ConfigStore.vocabularyURL
+        let original = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let (updated, counts) = recording(
+            collision: word, of: term, clips: clips, in: original
+        )
+        if updated != original {
+            try updated.write(to: url, atomically: true, encoding: .utf8)
+        }
+        return counts
+    }
+
+    /// The file with one collision recorded, and what the pair now stands at.
+    static func recording(
+        collision word: String, of term: String, clips: Int, in yaml: String
+    ) -> (String, (reverted: Int, clips: Int)) {
+        var lines = yaml.components(separatedBy: "\n")
+        guard let start = index(ofTerm: term, in: lines) else { return (yaml, (0, 0)) }
+        let termIndent = indentation(of: lines[start])
+        let bodyIndent = termIndent + "  "
+        let end = openBlockBody(of: term, at: start, in: &lines)
+
+        var listIndex: Int?
+        var cursor = start + 1
+        while cursor <= end, cursor < lines.count {
+            if lines[cursor].trimmingCharacters(in: .whitespaces).hasPrefix("collides_with:") {
+                listIndex = cursor
+                break
+            }
+            cursor += 1
+        }
+
+        guard let listAt = listIndex else {
+            lines.insert(contentsOf: [
+                "\(bodyIndent)collides_with:",
+                "\(bodyIndent)  - word: \(quoted(word))",
+                "\(bodyIndent)    reverted: 1",
+                "\(bodyIndent)    clips: \(clips)",
+            ], at: end + 1)
+            return (lines.joined(separator: "\n"), (1, clips))
+        }
+
+        // `collides_with: [praise]` is legal YAML and nothing writes it, but a
+        // person may have. Left alone rather than rewritten, for the reason
+        // `adding(pronunciation:)` leaves a flow `pronunciations:` alone:
+        // appending a block entry under a flow sequence would not parse.
+        let listIndent = indentation(of: lines[listAt])
+        if lines[listAt].trimmingCharacters(in: .whitespaces).dropFirst("collides_with:".count)
+            .trimmingCharacters(in: .whitespaces).hasPrefix("[") {
+            return (yaml, (0, 0))
+        }
+
+        let listEnd = endOfTermBlock(in: lines, from: listAt, deeperThan: listIndent.count)
+        let entryIndent = listIndent + "  "
+        if let found = entry(named: word, under: "word", in: lines, from: listAt + 1, through: listEnd) {
+            // The entry's last line is recomputed before each counter, because
+            // writing the first one can insert a line and move it.
+            func bump(_ key: String, by delta: Int) -> Int {
+                let listEnd = endOfTermBlock(in: lines, from: listAt, deeperThan: listIndent.count)
+                let last = endOfEntry(in: lines, from: found, through: listEnd)
+                return add(
+                    delta, to: key, in: &lines, from: found, through: last,
+                    indent: entryIndent + "  "
+                )
+            }
+            let reverted = bump("reverted", by: 1)
+            let kept = bump("clips", by: clips)
+            return (lines.joined(separator: "\n"), (reverted, kept))
+        }
+
+        lines.insert(contentsOf: [
+            "\(entryIndent)- word: \(quoted(word))",
+            "\(entryIndent)  reverted: 1",
+            "\(entryIndent)  clips: \(clips)",
+        ], at: listEnd + 1)
+        return (lines.joined(separator: "\n"), (1, clips))
+    }
+
+    /// Removes a term's whole `collides_with:` block, and says how many pairs
+    /// went. For `--forget`, which has to take back all four things a revert
+    /// wrote.
+    static func dropCollisions(of term: String) throws -> Int {
+        let url = ConfigStore.vocabularyURL
+        guard let original = try? String(contentsOf: url, encoding: .utf8) else { return 0 }
+        var lines = original.components(separatedBy: "\n")
+        guard let start = index(ofTerm: term, in: lines) else { return 0 }
+        let termIndent = indentation(of: lines[start]).count
+        let end = endOfTermBlock(in: lines, from: start, deeperThan: termIndent)
+
+        var listAt: Int?
+        for cursor in (start + 1)...max(start + 1, end) where cursor < lines.count {
+            if lines[cursor].trimmingCharacters(in: .whitespaces).hasPrefix("collides_with:") {
+                listAt = cursor
+                break
+            }
+        }
+        guard let listAt else { return 0 }
+        let listIndent = indentation(of: lines[listAt]).count
+        let listEnd = endOfTermBlock(in: lines, from: listAt, deeperThan: listIndent)
+        // The flow shape a person may have written: `collides_with: [praise]`.
+        let inline = lines[listAt].trimmingCharacters(in: .whitespaces)
+            .dropFirst("collides_with:".count).trimmingCharacters(in: .whitespaces)
+        var removed = 0
+        if inline.hasPrefix("[") {
+            removed = count(inFlow: lines[listAt...listEnd].joined(separator: " "))
+        } else {
+            for cursor in listAt...listEnd
+            where lines[cursor].trimmingCharacters(in: .whitespaces).hasPrefix("-") {
+                removed += 1
+            }
+        }
+        lines.removeSubrange(listAt...listEnd)
+        try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        return removed
+    }
+
+    /// The term's value in block form, with its last line's index.
+    ///
+    /// A term can be written five ways and only one of them has room for
+    /// another key underneath. `Praisy: [Prissy]` and `Mirza: 0.85` are
+    /// rewritten as `heard:` and `floor:` inside a block body — both are still
+    /// read, so nothing is lost — and a term that already has a body is left
+    /// exactly as it is.
+    private static func openBlockBody(
+        of term: String, at start: Int, in lines: inout [String]
+    ) -> Int {
+        let termIndent = indentation(of: lines[start])
+        let bodyIndent = termIndent + "  "
+        let head = lines[start]
+        guard let colon = head.firstIndex(of: ":") else {
+            return endOfTermBlock(in: lines, from: start, deeperThan: termIndent.count)
+        }
+        let inline = String(head[head.index(after: colon)...])
+            .trimmingCharacters(in: .whitespaces)
+        guard !inline.isEmpty, !inline.hasPrefix("#") else {
+            return endOfTermBlock(in: lines, from: start, deeperThan: termIndent.count)
+        }
+        let closes = closingFlow(in: lines, from: start, deeperThan: termIndent.count)
+        let value = lines[start...closes].joined(separator: " ")
+        let body = String(value[value.index(after: value.firstIndex(of: ":")!)...])
+            .trimmingCharacters(in: .whitespaces)
+        // A bare list is the old `heard:`; a bare number is the old `floor:`.
+        let key = body.hasPrefix("[") ? "heard" : "floor"
+        lines.replaceSubrange(start...closes, with: [
+            "\(termIndent)\(quoted(term)):",
+            "\(bodyIndent)\(key): \(body)",
+        ])
+        return start + 1
+    }
+
+    /// A number written on one of an entry's lines, if it is there.
+    private static func value(
+        of key: String, in lines: [String], from: Int, through last: Int
+    ) -> Int? {
+        Int(word(of: key, in: lines, from: from, through: last) ?? "")
+    }
+
+    /// A scalar written on one of an entry's lines, if it is there.
+    private static func word(
+        of key: String, in lines: [String], from: Int, through last: Int
+    ) -> String? {
+        for cursor in from...max(from, last) where cursor < lines.count {
+            let trimmed = lines[cursor].trimmingCharacters(in: .whitespaces)
+            let body = trimmed.hasPrefix("-")
+                ? String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces) : trimmed
+            guard body.hasPrefix("\(key):") else { continue }
+            return unquoted(String(body.dropFirst(key.count + 1)))
+        }
+        return nil
+    }
+
+    /// Writes a number onto an entry's existing key. False if it had none.
+    @discardableResult
+    private static func set(
+        _ key: String, to number: Int, in lines: inout [String], from: Int, through last: Int
+    ) -> Bool {
+        for cursor in from...max(from, last) where cursor < lines.count {
+            let trimmed = lines[cursor].trimmingCharacters(in: .whitespaces)
+            let body = trimmed.hasPrefix("-")
+                ? String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces) : trimmed
+            guard body.hasPrefix("\(key):") else { continue }
+            // A key on the `- ` line itself keeps its dash.
+            let head = trimmed.hasPrefix("-")
+                ? "\(indentation(of: lines[cursor]))- " : indentation(of: lines[cursor])
+            lines[cursor] = "\(head)\(key): \(number)"
+            return true
+        }
+        return false
+    }
+
+    /// Adds `delta` to an entry's counter, writing the key when it has none.
+    /// Returns what it now stands at.
+    private static func add(
+        _ delta: Int, to key: String, in lines: inout [String],
+        from: Int, through last: Int, indent: String
+    ) -> Int {
+        let was = value(of: key, in: lines, from: from, through: last) ?? 0
+        if set(key, to: was + delta, in: &lines, from: from, through: last) {
+            return was + delta
+        }
+        lines.insert("\(indent)\(key): \(was + delta)", at: last + 1)
+        return was + delta
+    }
+
+    /// The line of `- heard: <name>` inside a `pronunciations:` block, or of
+    /// `- word: <name>` inside a `collides_with:` one.
     private static func entry(
-        named heard: String, in lines: [String], from: Int, through last: Int
+        named heard: String, under key: String = "heard",
+        in lines: [String], from: Int, through last: Int
     ) -> Int? {
         for cursor in from...max(from, last) where cursor < lines.count {
             let trimmed = lines[cursor].trimmingCharacters(in: .whitespaces)
@@ -311,8 +594,8 @@ enum ConfigWriter {
             let body = String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces)
             // `- heard: Versal` and the bare `- Versal` a person may have typed.
             let spelling: String
-            if body.hasPrefix("heard:") {
-                spelling = unquoted(String(body.dropFirst("heard:".count)))
+            if body.hasPrefix("\(key):") {
+                spelling = unquoted(String(body.dropFirst(key.count + 1)))
             } else if !body.contains(":") {
                 spelling = unquoted(body)
             } else {

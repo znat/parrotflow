@@ -119,8 +119,9 @@ enum CheckConfigCommand {
             let width = recorded.map(\.term.count).max() ?? 0
             for entry in recorded {
                 print("      \(entry.term.padding(toLength: width, withPad: " ", startingAt: 0))"
-                    + "  \(entry.observations) observation(s), \(entry.samples) sample(s)"
-                    + "  — `--forget \(entry.term)` drops both")
+                    + "  \(entry.observations) observation(s), \(entry.samples) sample(s),"
+                    + " \(entry.negatives) negative(s)"
+                    + "  — `--forget \(entry.term)` drops all three")
             }
         }
         // A closed band is the one measurement that argues with the config: it
