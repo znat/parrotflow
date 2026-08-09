@@ -824,8 +824,33 @@ cp vocabulary.yaml vocabulary.yaml.bak-before-pr2-live
 
 The `.bak-before-<thing>` name is the convention already in that directory.
 
-**5. Arm A is today's config, which is what is live.** Confirm it and confirm
-the app agrees:
+**5. Arm A is today's config, which is what is live.** Relaunch the app first,
+then confirm.
+
+**Relaunching is not optional, and `--check-config` is not a substitute.**
+`--check-config` is a separate process reading the file on disk. It says nothing
+about what the *running* app holds. `FileWatcher` delivers on the main queue,
+and on a rename — which `sed -i ''` does — it closes the descriptor and reopens
+it 0.2 s later before calling back (`Config.swift:3287-3320`). So a sentence
+dictated straight after an edit can still run under the old setting, and nothing
+in the transcript would say so. A relaunch removes the race and leaves a dated
+line in the log that proves which file the running process read.
+
+```sh
+mkdir -p ~/pr2
+wc -l < ~/Library/Logs/ParrotFlow-Dev.log > ~/pr2/relaunch.mark
+pkill -f "ParrotFlowDev.app/Contents/MacOS/ParrotFlow"   # the pattern `make stop` uses
+open /Applications/ParrotFlowDev.app
+# wait until the parrot is back in the menu bar, then:
+tail -n +$(( $(cat ~/pr2/relaunch.mark) + 1 )) ~/Library/Logs/ParrotFlow-Dev.log \
+  | grep "build: "
+```
+
+That must print exactly one `build:` line, with the stamp from step 1 or 3.
+Every line below it in the log was written by a process that read the config as
+it stands now.
+
+Then confirm the setting:
 
 ```sh
 grep -n '^acoustic:' ~/.config/parrotflow-dev/vocabulary.yaml
@@ -853,7 +878,6 @@ Two more lines carry the counts and are worth a glance:
 mark is how you get this arm's lines and nobody else's.
 
 ```sh
-mkdir -p ~/pr2
 wc -l < ~/Library/Logs/ParrotFlow-Dev.log > ~/pr2/today.mark
 touch ~/pr2/today.txt && open -a TextEdit ~/pr2/today.txt
 ```
@@ -886,16 +910,28 @@ inserted (`AppDelegate.swift:2009`). The `vocabulary judge:` lines are what
 
 **8. Arm B — switch the acoustic path off, and dictate the same eight.**
 
+Edit the file, then relaunch exactly as in step 5. The app does watch
+`vocabulary.yaml` (`AppDelegate.watchConfig`), so a restart is not needed to
+pick the change up — it is needed to *know* the change has been picked up before
+the first sentence.
+
 ```sh
 cd ~/.config/parrotflow-dev
 sed -i '' 's/^acoustic: true$/acoustic: false/' vocabulary.yaml
 grep -n '^acoustic:' vocabulary.yaml        # must print 32:acoustic: false
+
+wc -l < ~/Library/Logs/ParrotFlow-Dev.log > ~/pr2/relaunch.mark
+pkill -f "ParrotFlowDev.app/Contents/MacOS/ParrotFlow"
+open /Applications/ParrotFlowDev.app
+# wait for the menu bar, then:
+tail -n +$(( $(cat ~/pr2/relaunch.mark) + 1 )) ~/Library/Logs/ParrotFlow-Dev.log \
+  | grep "build: "
 /Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --check-config \
   | grep -E "offered at similarity|acoustic: false"
 ```
 
-No restart. `AppDelegate.watchConfig` watches `vocabulary.yaml` and reloads on
-save. The same `grep` must now print one line, and it must be the other one:
+One fresh `build:` line, same stamp as before. Then the `--check-config` grep
+must print one line, and it must be the other one:
 
 ```
   · vocabulary: `acoustic: false`, so 11 names are only matched by their
@@ -929,7 +965,13 @@ grep -n '^acoustic:' ~/.config/parrotflow-dev/vocabulary.yaml   # 32:acoustic: t
 ```
 
 The last command must print a line. If it prints nothing you are still on
-`acoustic: false`.
+`acoustic: false`. Relaunch once more so the app you go back to work with is
+reading the restored file, not the edited one:
+
+```sh
+pkill -f "ParrotFlowDev.app/Contents/MacOS/ParrotFlow"
+open /Applications/ParrotFlowDev.app
+```
 
 **10. Fill in the result block**, then remove the build worktree if you made
 one: `git worktree remove .claude/worktrees/pr2-build`.
