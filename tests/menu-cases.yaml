@@ -682,3 +682,222 @@ cases:
     # picked up: live use. The app wrote Praisy's over "train as".
     # app: Something that would be fast and easy to Praisy's well, locally for users.
     said: "Something that would be fast and easy to train as well, locally for users."
+
+# Block 4 — 48 scripted lines, read in order from
+# parrotflow-recording-script.md on 2026-08-09, one dictation each.
+#
+# These are read speech, not dictation. Every other block in this file
+# was gathered from someone talking; these were gathered from someone
+# reading. Read speech is more careful — steadier pace, fewer fillers,
+# fuller vowels — so a number measured on this block is not a number
+# about how the app behaves in use. They exist to supply recordings of
+# the vocabulary terms, about seven of each, which the spontaneous
+# archive did not have for Redcrawl (none) or Supabase (one).
+#
+# Aligned 1:1 and monotonically against the script: 48 clips, 48 lines,
+# no skip and no restart of a whole line. `said` is what he said, not
+# what the script said — where he departed from the line the label
+# follows him and says so.
+
+  - wav: parrotflow-2026-08-09T13-59-59.wav
+    # picked up: read from the script
+    said: "Redcrawl finished the run last night."
+
+  - wav: parrotflow-2026-08-09T14-00-08.wav
+    # picked up: read from the script
+    said: "I pushed the fix to Redcrawl this morning."
+
+  - wav: parrotflow-2026-08-09T14-00-16.wav
+    # picked up: read from the script
+    said: "Redcrawl's output was empty again."
+
+  - wav: parrotflow-2026-08-09T14-00-23.wav
+    # picked up: read from the script
+    said: "Redcrawl and Supabase are both in the diagram."
+
+  - wav: parrotflow-2026-08-09T14-00-30.wav
+    # picked up: read from the script
+    said: "That is a Redcrawl problem, not a Supabase one."
+
+  - wav: parrotflow-2026-08-09T14-00-46.wav
+    # picked up: read from the script
+    said: "Ask Tasmeen whether Redcrawl handled it."
+
+  - wav: parrotflow-2026-08-09T14-00-51.wav
+    # picked up: read from the script
+    said: "Mirza thinks Redcrawl is the bottleneck."
+
+  - wav: parrotflow-2026-08-09T14-00-56.wav
+    # picked up: read from the script
+    # false start. The script line is "Supabase is where the rows live". A word
+# sits at 0.16-0.80s before a filler at 1.84s, decoded "Myrza" at
+# confidence 0.29, and the decoder wrote "roles" where the script says
+# "rows". Both are flagged: the leading name and rows/roles are the two
+# things in this set that are not certain.
+    said: "Mirza um Supabase is where the roles live."
+
+  - wav: parrotflow-2026-08-09T14-01-06.wav
+    # picked up: read from the script
+    said: "We migrated the table to Supabase last week."
+
+  - wav: parrotflow-2026-08-09T14-01-14.wav
+    # picked up: read from the script
+    said: "Supabase's connection pooling is the issue."
+
+  - wav: parrotflow-2026-08-09T14-01-18.wav
+    # picked up: read from the script
+    said: "Mirza set up the Supabase project."
+
+  - wav: parrotflow-2026-08-09T14-01-24.wav
+    # picked up: read from the script
+    said: "Matthieu put the audit log in Supabase."
+
+  - wav: parrotflow-2026-08-09T14-01-30.wav
+    # picked up: read from the script
+    said: "Supabase went down for about ten minutes."
+
+  - wav: parrotflow-2026-08-09T14-01-35.wav
+    # picked up: read from the script
+    said: "I would rather not put this in Supabase."
+
+  - wav: parrotflow-2026-08-09T14-01-42.wav
+    # picked up: read from the script
+    said: "Arexvy is the one with the cold chain requirement."
+
+  - wav: parrotflow-2026-08-09T14-01-49.wav
+    # picked up: read from the script
+    said: "Tasmeen owns the Arexvy account."
+
+  - wav: parrotflow-2026-08-09T14-01-55.wav
+    # picked up: read from the script
+    said: "Arexvy's launch was moved to the spring."
+
+  - wav: parrotflow-2026-08-09T14-02-01.wav
+    # picked up: read from the script
+    said: "Arexvy and Redrock are on the same slide."
+
+  - wav: parrotflow-2026-08-09T14-02-07.wav
+    # picked up: read from the script
+    said: "Matthieu sent the Arexvy deck yesterday."
+
+  - wav: parrotflow-2026-08-09T14-02-12.wav
+    # picked up: read from the script
+    said: "Mirza mentioned Arexvy in the review."
+
+  - wav: parrotflow-2026-08-09T14-02-19.wav
+    # picked up: read from the script
+    # the script says "Redrock is". The decoder wrote the contraction, so the
+# label follows it. Nothing about the term span changes either way.
+    said: "Redrock's the product, not the company."
+
+  - wav: parrotflow-2026-08-09T14-02-24.wav
+    # picked up: read from the script
+    said: "We renamed the whole thing to Redrock."
+
+  - wav: parrotflow-2026-08-09T14-02-28.wav
+    # picked up: read from the script
+    # a filler leads the line.
+    said: "uh Redrock's pricing page is not ready."
+
+  - wav: parrotflow-2026-08-09T14-02-34.wav
+    # picked up: read from the script
+    said: "Tasmeen owns the Redrock roadmap."
+
+  - wav: parrotflow-2026-08-09T14-02-39.wav
+    # picked up: read from the script
+    said: "Redrock and Redcrawl are easy to confuse."
+
+  - wav: parrotflow-2026-08-09T14-02-43.wav
+    # picked up: read from the script
+    said: "Claude rewrote most of Redrock."
+
+  - wav: parrotflow-2026-08-09T14-02-49.wav
+    # picked up: read from the script
+    said: "Ollama is running on the laptop already."
+
+  - wav: parrotflow-2026-08-09T14-02-54.wav
+    # picked up: read from the script
+    said: "Ollama keeps unloading it after five minutes."
+
+  - wav: parrotflow-2026-08-09T14-02-59.wav
+    # picked up: read from the script
+    said: "Ollama's API is close enough to the other one."
+
+  - wav: parrotflow-2026-08-09T14-03-40.wav
+    # picked up: read from the script
+    said: "Mirza installed Ollama on the new machine."
+
+  - wav: parrotflow-2026-08-09T14-03-48.wav
+    # picked up: read from the script
+    said: "Ollama and Claude are doing different jobs."
+
+  - wav: parrotflow-2026-08-09T14-03-53.wav
+    # picked up: read from the script
+    # the decoder wrote "give" for "gave" and "Olemalogues" for "Ollama
+# logs". The second is the rendering worth having.
+    said: "I gave Claude the Ollama logs."
+
+  - wav: parrotflow-2026-08-09T14-03-58.wav
+    # picked up: read from the script
+    said: "Claude wrote the first version of it."
+
+  - wav: parrotflow-2026-08-09T14-04-04.wav
+    # picked up: read from the script
+    said: "Claude's answer was better than mine."
+
+  - wav: parrotflow-2026-08-09T14-04-08.wav
+    # picked up: read from the script
+    said: "Matthieu pasted the log into Claude."
+
+  - wav: parrotflow-2026-08-09T14-04-13.wav
+    # picked up: read from the script
+    said: "Mirza reviewed the pull request yesterday."
+
+  - wav: parrotflow-2026-08-09T14-04-17.wav
+    # picked up: read from the script
+    said: "That was Mirza's suggestion originally."
+
+  - wav: parrotflow-2026-08-09T14-04-22.wav
+    # picked up: read from the script
+    said: "Mirza and Tasmeen are both out on Friday."
+
+  - wav: parrotflow-2026-08-09T14-04-27.wav
+    # picked up: read from the script
+    said: "Tasmeen sent the notes over already."
+
+  - wav: parrotflow-2026-08-09T14-04-32.wav
+    # picked up: read from the script
+    said: "Tasmeen's team is handling the rollout."
+
+  - wav: parrotflow-2026-08-09T14-04-36.wav
+    # picked up: read from the script
+    said: "Matthieu published the pull request."
+
+  - wav: parrotflow-2026-08-09T14-04-40.wav
+    # picked up: read from the script
+    said: "Matthieu's branch is still open."
+
+  - wav: parrotflow-2026-08-09T14-04-44.wav
+    # picked up: read from the script
+    # false start. He said the name twice, so this clip carries two.
+    said: "That was Matthieu, that was Matthieu's idea, to be fair."
+
+  - wav: parrotflow-2026-08-09T14-04-51.wav
+    # picked up: read from the script
+    said: "You do not need to update the design."
+
+  - wav: parrotflow-2026-08-09T14-04-55.wav
+    # picked up: read from the script
+    said: "I mean in general in our dataset."
+
+  - wav: parrotflow-2026-08-09T14-05-04.wav
+    # picked up: read from the script
+    said: "Let us praise the work that was done."
+
+  - wav: parrotflow-2026-08-09T14-05-08.wav
+    # picked up: read from the script
+    said: "We could train a very small classifier."
+
+  - wav: parrotflow-2026-08-09T14-05-15.wav
+    # picked up: read from the script
+    said: "Have a retry in case the crawl fails."
