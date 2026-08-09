@@ -31,6 +31,7 @@ Start from the question you have.
 | | |
 |---|---|
 | [transcription.md](transcription.md) | Why Parakeet and not Whisper, why it cannot be prompted, and what covers that instead. |
+| [vocabulary-pipeline.md](vocabulary-pipeline.md) | One sentence through the vocabulary pass, step by step, with the log lines. What the audio search, the text rules and the clip bank each compare, and why those are not the same question. |
 | [distribution.md](distribution.md) | Why this ships by curl rather than Homebrew, what notarization would change, and how updates work. |
 
 ---

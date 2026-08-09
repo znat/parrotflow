@@ -62,6 +62,9 @@ rule wrote by comparing the transcript before and after it. When two rules
 write the same term into one sentence that comparison cannot say which is
 which, and then neither is offered — the log says so.
 
+[vocabulary-pipeline.md](vocabulary-pipeline.md) walks one sentence through all
+of this, with the log lines it produced.
+
 **`max_per_term` is the one to move if menus stop being built.** One name
 reaches a menu from four directions — a rule that already rewrote the text, the
 sound-matching pass, the wider spans it builds around a split name, and the
