@@ -31,6 +31,47 @@ exists so nobody spends two more days re-measuring what is already known.
 never merged. Every claim names its source. Read an unmerged one with
 `git show origin/<branch>:<path>`; do not merge the branch.
 
+## Provenance — nothing here is on `main`
+
+Read this before looking for anything. The most common mistake is to assume this
+work landed.
+
+**This plan.** Branch `docs/vocabulary-v3-clip-bank`, branched from
+`docs/vocabulary-v3`. **Neither is merged.** `main` still carries the superseded
+`docs/proposals/vocabulary-v2.md` and has no `vocabulary-v3.md` at all.
+
+**The evidence.** One line each, and whether the finding exists on `main`:
+
+| branch | what is on it | on `main`? |
+|---|---|---|
+| `proto/reference-matching` | the working prototype, `ReferenceMatch.swift`, `reference-ablation.py`, and the blind control that settled the plan's direction | no |
+| `spike/exemplars-round-2` | round 7 — the 48 scripted clips, the mining changes, the 122-recording corpus and the per-term AUCs | no |
+| `spike/reference-matching` | round 6 and `scripts/reference-matching.py`, the offline distance tool PR 6a starts from | no |
+| `experiment/does-vocabulary-pay` | the ablation harness, `vocab-ablation.py`, `vocab-losses.py` and the 19-loss list | no |
+| `spike/raw-score-separation` | the AUC 0.318 result, `PARROTFLOW_CBW`, the spotter-floor sweep | no |
+| `spike/gap-informative` | round 4 | **yes** — merged as PR #73, in `judge-framings.md` |
+| `spike/ctc-06b` | the 0.6B NaN result and the re-recorded gate baselines | no |
+| `spike/judge-blanks` | round 3 and `tests/judge-failures.txt` | no |
+| `spike/onset-pilot` | `PARROTFLOW_LOGPROB_DUMP`, already re-ported into `spike/ctc-06b` | no |
+
+Part 3 says the same thing with what would be lost if a branch were deleted.
+
+**The recordings.** `~/.config/parrotflow-dev/voice/samples/<Term>/` — **122 wav
+files across 11 term folders**, outside the repository. They are kept out on
+purpose: the archive is somebody's voice saying their colleagues' names.
+`scripts/check-no-voice.sh`, which is on `main`, refuses a commit that carries
+any of it. If they look missing, they are not in git and never were.
+
+**The frozen reference.** `feat/vocabulary-skills-only`, at
+`b6b8575 chore: freeze the vocabulary v2 prototype — reference only`. Read-only.
+Do not commit to it.
+
+**One page written before the control.**
+`https://usercontent.scratchtml.link/0b489c9zkx45xizz`, expires 2026-08-13.
+**Superseded on its central claim** — it presents reference matching as the
+answer, which the blind control ruled out for the rule as built. Its diagrams
+and its onboarding and corrections design still stand.
+
 ---
 
 # Part 1 — What is true
@@ -241,6 +282,24 @@ moment something does.
 method.** Know which terms those are and route them elsewhere rather than
 pretending.
 
+**One name is said more than one way, and the language is already on disk.**
+This speaker dictates in two languages — `languages: [en, fr]`, line 22 of his
+config — and `Matthieu` comes out French or anglicised. Those are two correct
+pronunciations of one term, not one truth and one mistake. `trace.jsonl` already
+records the language per dictation as `lang`, written by
+`Trace.Record.recordLanguage` and declared at `Trace.swift:342`. Over the 2161
+traced clips the first entry says `en` on 1952, `fr` on 51, and nothing on 158
+written before the field existed. **Carry `lang` into
+`voice/observations.jsonl`** beside the `from:`, `seen:` and `mic:` fields
+`VoiceStore.Observation` already defines. It costs one field at write time and
+it cannot be recovered afterwards.
+
+**Language is a proxy, not the truth.** A speaker can say a French name the
+French way inside an English sentence. The variable that decides anything is the
+pronunciation variant, and clustering is what finds it (PR 6c). What the tag is
+good for is coverage — whether each way a name gets said has clips behind it —
+and giving a cluster a label a person recognises.
+
 ## 4. About the models and the framework
 
 **FluidAudio decides `shouldReplace` on the boosted score.** The app never sees
@@ -375,6 +434,38 @@ comment says so and names two, both mined automatically:
 `min`, so a bad clip only counts when it is the nearest thing to the span being
 judged. A bad clip is by definition unlike the term, so for a genuine utterance
 of the term it rarely wins that `min`. Almost all the exposure is in `spread`.
+
+**A second pronunciation does the same damage with correct data.** This is the
+multilingual case and it belongs here, next to the outlier, because the
+arithmetic is the same. Trace it through `ReferenceMatch.verdict` and it breaks
+in two places:
+
+- **The query side under-covers.** `distance` is a `min` over every usable
+  recording. A genuine French `Matthieu` is only near the bank if the French
+  pronunciation is *in* the bank. If it is not, the span sits at the
+  between-cluster distance from everything and is vetoed. A correct utterance,
+  rejected for being said the other way. **This is the multilingual failure that
+  bites first**, and no threshold fixes it. Only clips do.
+- **The spread inflates while the second cluster is thin.** `nearest[i]` is the
+  distance from recording i to its nearest *other* recording, and `spread` is
+  the largest of those. With both clusters well populated, every recording has a
+  close neighbour inside its own cluster, so `spread` stays a within-cluster
+  number. With **one or two** clips of the second pronunciation, those clips'
+  nearest neighbour is across the gap, that gap becomes the maximum, and the
+  veto is disarmed for the whole term. **A bilingual term poisons its own
+  threshold**, and it does it worst exactly when the second pronunciation is new
+  — which is when clips arrive one at a time from corrections.
+
+**So compute the spread per cluster, not per term.** That follows from
+correctness, not from robustness. Round 7 found the distance scale differs per
+term. It differs per pronunciation for the same reason, and one number over both
+clusters describes neither.
+
+**This part is arithmetic, not a measurement.** Nobody has measured a bilingual
+term's spread. In the prototype log `Matthieu` sits at 3.053 over 10 recordings,
+which is unremarkable next to `Claude` at 3.436 over 6 — so either both its
+clusters are covered or the effect is smaller than the variation between terms.
+PR 6a should measure it.
 
 **This argues for pruning and a robust statistic, not for a lower tolerance.**
 Lowering the tolerance to compensate eats correct proposals — see the `Mathieu`
@@ -551,12 +642,19 @@ observation so a later hold-out works. Promote the rendering into
 cap and a rule for dropping a rendering seen once and never again. `--forget
 <term>` must remove all three.
 
+**Also write the language.** Add `lang` to `VoiceStore.Observation`, from the
+same value `Trace.Record.recordLanguage` already records. Part 1 §3 says why:
+this speaker dictates in two languages, one name has two pronunciations, and the
+tag is free at write time and unrecoverable later. It labels a cluster and says
+whether coverage exists for each way a name is said. It decides nothing on its
+own.
+
 **Size.** Moderate. Touches `ConfigWriter`, `VoiceStore` and the correction
 panel.
 
-**Verified by** simulating a correction and checking the three files; exceeding
-the cap and checking the oldest unconfirmed entry is what goes; `--forget`
-leaving `--check-config` clean.
+**Verified by** simulating a correction and checking the three files, with
+`lang` on the new observation; exceeding the cap and checking the oldest
+unconfirmed entry is what goes; `--forget` leaving `--check-config` clean.
 
 **Falsified if** live dictation cannot produce a usable cut — no clip file, no
 word timings, or a span that does not line up. Check that first, on one live
@@ -627,6 +725,12 @@ after. The archive already holds real bad clips to use —
 `Vercel/09-brazil.wav`, `Tasmeen/06-that'smeanssend.wav`. Then repeat with 6b's
 robust statistic in place of the maximum.
 
+**Do the same with a correct clip of the other pronunciation.** §7 predicts a
+thin second cluster inflates `spread` the same way a bad clip does. Add one
+French `Matthieu` to an anglicised bank, measure, then add several and measure
+again — the prediction is that the damage peaks at one or two and falls away as
+the second cluster fills. Nothing has measured this.
+
 **Size.** Under 100 lines of Python. Offline.
 
 **Verified by** two numbers per term: how far AUC falls, and how far `spread`
@@ -650,9 +754,15 @@ weak point, §7's argument is wrong, and 6b and 6c are not worth doing.
    is already fairly robust — a bad clip is unlike the term, so it rarely wins
    the `min` for a genuine utterance. Measure it anyway. It is the other half of
    the rule and it is a few lines.
+3. **Compute the spread per cluster, not per term.** This one is not robustness,
+   it is correctness. §7 shows one number over two pronunciations describes
+   neither. Cluster the term's recordings (6c does the clustering), take the
+   spread inside the cluster the span is nearest, and compare against that.
+   Needs 6c's clustering, so it lands after it even though it is a change to the
+   rule.
 
-**Size.** Small in the prototype. `ReferenceMatch` already computes everything
-this needs.
+**Size.** Small in the prototype for 1 and 2. `ReferenceMatch` already computes
+everything they need. 3 waits on 6c.
 
 **Verified by** the three-arm ablation, not by AUC. `reference-ablation.py
 --runs 3` with arms `off`, `today`, `veto everything`, `new rule`. **The bar is
@@ -678,7 +788,13 @@ Four signals, all cheap at 8 to 26 clips per term:
 - **Cluster first. This is the part that must not be got wrong.** A speaker may
   say one name two ways on purpose — `Matthieu` in French, or anglicised. That
   is two real clusters, not one truth and one outlier. Keep any cluster with two
-  or more members. Suspect only a far singleton.
+  or more members. Suspect only a far singleton. The clusters are also what 6b's
+  per-cluster spread needs, so this is not only a pruning step.
+- **Label the clusters with `lang`.** Part 1 §3: the language is already in
+  `trace.jsonl` and PR 4 should carry it into every observation. It does not
+  decide anything — a French name can be said the French way in an English
+  sentence — but it names a cluster in words the speaker recognises and it says
+  whether coverage exists for each way the name is said.
 - **Provenance.** `from:` and `seen:` are already defined on
   `origin/feat/vocabulary-v2-pr5` — `VoiceStore.Observation.from` and
   `Config.Vocabulary.Pronunciation`, with sources `correction`, `mined`,
@@ -692,17 +808,22 @@ Four signals, all cheap at 8 to 26 clips per term:
 **Size.** About 200 lines of Python, plus the recording session for the bimodal
 check.
 
-**Verified by** two things, and the second matters more:
+**Verified by** three things, and the last two matter more than the first:
 
 1. the known bad clips are flagged — `Vercel/09-brazil.wav`,
    `Tasmeen/06-that'smeanssend.wav`;
-2. **a deliberately bimodal term survives untouched.** Build one: read
+2. **a deliberately bilingual term keeps both clusters.** Build one: read
    `Matthieu` both ways, several of each, and check that nothing in either
-   cluster is flagged. A method that fails this deletes correct data. It is a
-   success criterion, not a nice-to-have.
+   cluster is flagged. A method that fails this deletes correct data;
+3. **and that term still vetoes.** Keeping both clusters is only half the job.
+   Run the bilingual term through the ablation and check it still rejects a
+   wrong proposal — with the per-cluster spread from 6b, it should; with one
+   spread over both clusters, §7 says it will not. **A term that keeps all its
+   clips and rejects nothing has failed**, and the first criterion alone would
+   call that a pass.
 
-**Falsified if** the bimodal check fails, or if flagging is at chance against
-6a's poisoned clips.
+**Falsified if** either bilingual check fails, or if flagging is at chance
+against 6a's poisoned clips.
 
 **Open, and not decided here: should pruning ever be automatic?** The
 alternative is that nothing is ever deleted — the speaker is shown the suspect
@@ -710,7 +831,72 @@ clip and confirms by ear. A clip is auditable, which is the one thing a text
 rule is not, so asking is cheap and honest. It is also one more interruption.
 Decide it once 6c has a false-flag rate, not before.
 
-## PR 7 — the term that is an English word
+## PR 7 — ask the speaker for fewer clips
+
+**Design the burden down instead of absorbing it.** Every clip in the bank
+today came from a sitting: `parrotflow-recording-script.md`, 48 lines, about
+seven minutes, one dictation per line. It is already the short version — most
+lines carry two names, which is how it got shorter without collecting less. It
+is still a chore, and it is a chore that repeats per speaker and per new term.
+
+**Items 3 and 5 are proposals. Nothing measures them.** 1, 2 and 4 rest on work
+already in this plan. Ordered by leverage.
+
+**1. Only ask for terms that actually collide.** A term nothing sounds like
+needs no clips: there is nothing for a veto to reject. Part 1 §6's empirical
+confusable sweep decides which terms those are — run the spotter for the term
+across the speaker's archive and see which ordinary words it fires on. **This is
+the same line of work, not a second one.** The sweep is already owed for
+onboarding; making it also decide who needs a clip bank costs nothing extra.
+
+Measured hint at the size of the lever: of the 11 terms, round 7 found ordinary
+words overwritten by only **5** of them — `Supabase`, `Redcrawl`, `Claude`,
+`Arexvy`, `Praisy`. Six terms have never taken a word that was not theirs on
+this corpus. **Verified by** running the sweep before the next recording session
+and counting how many terms it clears. Absence of evidence is not the same as
+the sweep clearing a term, so run the sweep rather than reading the table.
+
+**2. Mine the archive before asking.** Measured, in round 7. The archive is 2616
+wavs and most terms are already in it. `scripts/mine-pronunciations.py` with PR
+5's changes took the spontaneous corpus from 27 recordings to 59 without a line
+being read, and **2 of the 11 terms needed no scripted line at all** — `Praisy`
+at 26 recordings and `Vercel` at 16. Ask only for what mining did not find.
+
+**3. A stopping rule instead of a fixed count.** Proposal. "About seven each"
+asks for too many where a name is said one way and too few where it is variable.
+Instead add clips until the term's own statistic stops moving.
+
+**How to measure it.** Replay the 122 recordings in mining order. For each term,
+plot the spread — or whatever robust statistic 6b picks — against clip count,
+and plot the term's AUC against clip count on the same axis. Read where each
+curve flattens. The stopping rule is then "add clips until the spread moves less
+than *x* over *n* clips in a row", with *x* and *n* read off those curves rather
+than guessed. It answers "how many do I need" per term, with a number.
+
+**Falsified if** the curves do not flatten, or flatten at a count no lower than
+what is asked for today, or — the one that matters — **the spread flattens while
+the AUC is still climbing**. A statistic that has stopped moving is worthless as
+a stopping signal if separation is still improving. Check that directly, per
+term, before building any of it.
+
+**4. Harvest from corrections.** PR 4 already builds the mechanism. Every
+correction is a labelled clip of a term in this speaker's voice, in spontaneous
+speech, at no cost to the speaker. Over a week it beats any script, and it is
+the only source that still works after onboarding is over.
+
+**5. Prompt during use, not in a sitting.** Proposal. One sentence surfaced
+occasionally beats a 48-line session, and the cheaper path also gives better
+data: round 7 measured read speech flattering the result by about **0.06 AUC**
+against spontaneous recordings from another day. **The trade is speed.** A
+brand-new term reaches coverage in days instead of in seven minutes, which is
+wrong for a name somebody needs today. Keep the script for that case and make it
+the exception rather than the default.
+
+**Size.** 1 and 2 are scripts. 3 is an offline measurement plus a rule. 4 is PR
+4. 5 is interface work and should not start before 3 says how many clips a term
+actually needs.
+
+## PR 8 — the term that is an English word
 
 **This is the problem that is left, and it is unsolved.** After the acoustic path
 is off, the damage that remains is a term whose rendering is an ordinary word.
@@ -729,7 +915,7 @@ the spelling, and the judge scores 0 of 8 on exactly this class.
 framings, two routers, two menu shapes and a score block have all been measured
 on this class and none moved it.
 
-## PR 8 — the possessive the decoder drops
+## PR 9 — the possessive the decoder drops
 
 **Unscoped and unmeasured. Do not start it with a design.**
 
