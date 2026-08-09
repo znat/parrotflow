@@ -1166,6 +1166,22 @@ def subsets(count, size, draws, rng):
     return out
 
 
+def joint_draws(members, pool, count, rng):
+    """`count` independent joint draws: one subset index per term, per draw.
+
+    A cohort row cuts every term's bank to n at once, so it needs a *joint*
+    sample. Pairing draw r of one term with draw r of another by index would
+    make the pool ordering part of the answer: a term small enough to be
+    enumerated exhaustively always contributes its subsets in
+    `itertools.combinations` order, and a short pool cycled against a long one
+    meets the same positions every time. The marginals survive that. The range
+    of the pooled number does not, and the range is what these rows are for.
+    So each term is resampled independently here.
+    """
+    return [{term: rng.randrange(pool[term]) for term in members}
+            for _ in range(count)]
+
+
 def band(values):
     """median and range, the only honest summary of a set of draws.
 
@@ -1282,18 +1298,24 @@ def subsample_report(source_name, cache, robust, ns, draws, seed, floor,
         members = tuple(sorted(t for t in sizes if sizes[t] >= floor_n))
         if members:
             seen[members] = floor_n
+    # The same joint draws serve the AUC rows and the decision rows below, so
+    # the two tables describe the same cohort banks and not two samples of them.
+    joint = {}
+    for members, floor_n in seen.items():
+        for n in [x for x in ns if x <= floor_n] + ["all"]:
+            rng = random.Random(f"{seed}|cohort|{len(members)}|{n}")
+            pool = {t: len(vetoes[t][sizes[t] if n == "all" else n])
+                    for t in members}
+            joint[(members, n)] = joint_draws(members, pool, draws, rng)
+
     for members, floor_n in seen.items():
         print(f"\n  the {len(members)} terms with at least {floor_n} recordings: "
               f"{', '.join(members)}")
         print(f"  {'n':>4}  {'mean per-term AUC over the cohort':^25}")
         for n in [x for x in ns if x <= floor_n]:
-            # One draw index per term, averaged. A term with fewer draws than
-            # the widest cycles, so every draw of the small bank is used and
-            # none is used twice before all of them are used once.
-            width = max(len(curves[t][n]) for t in members)
             means = []
-            for r in range(width):
-                take = [curves[t][n][r % len(curves[t][n])] for t in members]
+            for draw in joint[(members, n)]:
+                take = [curves[t][n][draw[t]] for t in members]
                 take = [v for v in take if v == v]
                 if take:
                     means.append(sum(take) / len(take))
@@ -1308,12 +1330,10 @@ def subsample_report(source_name, cache, robust, ns, draws, seed, floor,
         print(f"  {'n':>4}  {'true rejections (B)':^26}  "
               f"{'false rejections (A)':^26}")
         for n in [x for x in ns if x <= floor_n] + ["all"]:
-            pick = (lambda t: vetoes[t][sizes[t]]) if n == "all" \
-                else (lambda t: vetoes[t][n])
-            width = max(len(pick(t)) for t in members)
+            size = (lambda t: sizes[t]) if n == "all" else (lambda t: n)
             sums = {"A": [], "B": [], "dA": [], "dB": []}
-            for r in range(width):
-                draw = [pick(t)[r % len(pick(t))] for t in members]
+            for pick in joint[(members, n)]:
+                draw = [vetoes[t][size(t)][pick[t]] for t in members]
                 for group in ("A", "B"):
                     sums[group].append(sum(g["veto"][group][0] for g in draw))
                     sums["d" + group].append(
@@ -1529,6 +1549,13 @@ def main():
         if args.floor < 2:
             print("✗ --floor must be at least 2: a bank of one recording has "
                   "no leave-one-out distance and so no spread", file=sys.stderr)
+            return 2
+        if args.draws < 1:
+            # Zero draws produces no subsets, and every summary below is a
+            # median over them. Say so here rather than raising from
+            # statistics.median() nine screens later.
+            print(f"✗ --draws must be at least 1, got {args.draws}",
+                  file=sys.stderr)
             return 2
         try:
             ns = sorted({int(x) for x in args.ns.split(",") if x.strip()})

@@ -2588,26 +2588,27 @@ for the same reason.
 
 #### Pooled, in 6a's units
 
-Every term's bank cut to n at once, rejections summed. Median over the draws,
-range under it. n=2 to 5 is all eleven terms; the last two rows change the set
-and say so.
+Every term's bank cut to n at once, rejections summed, on the maximum. The
+cohort is resampled independently per term per draw, so a row is a joint sample
+of that cohort's banks. Median over 200 joint draws, range under it. n=2 to 6 is
+all eleven terms; the last two rows change the set and say so.
 
-| n | terms | true rejections (B) | false rejections (A) | maximum |
+| n | terms | true rejections (B) | false rejections (A) | |
 |---|---|---|---|---|
-| 2 | 11 | 558 [323–703] of 773 | 26 [6–46] of 77 | |
-| 3 | 11 | 504 [361–628] of 784 | 22 [10–41] of 96 | |
-| 5 | 11 | 563 [415–652] of 784 | 16 [8–29] of 96 | |
+| 2 | 11 | 555 [394–726] of 772 | 26 [9–52] of 77 | |
+| 3 | 11 | 507 [349–673] of 784 | 23 [12–39] of 96 | |
+| 5 | 11 | 560 [465–684] of 784 | 16 [6–26] of 96 | |
 | all | 11 | **554** of 784 | **10** of 96 | ← 6a's row |
-| 8 | 7 | 377 [306–448] of 516 | 10 [4–19] of 70 | |
-| 12 | 3 | 172 [128–227] of 251 | 4 [2–10] of 35 | |
+| 8 | 7 | 382 [300–460] of 516 | 10 [5–16] of 70 | |
+| 12 | 3 | 175 [129–230] of 251 | 5 [2–9] of 35 | |
 
-The same three rows with the 90th percentile: 570 [419–668] at n=3, 622
-[523–707] at n=5, 649 at the full bank. The denominator column is the blind
+The eleven-term rows with the 90th percentile: 577 [436–716] at n=3, 624
+[529–715] at n=5, 649 at the full bank. The denominator column is the blind
 control — reject every span — and every arm here sits inside it.
 
 **The pooled true-rejection count is a trap and the range says why.** Its median
-barely moves: 558 at n=2, 554 at the full bank. A reader could conclude two
-clips are as good as twenty-six. The range is 323 to 703 at n=2 and a single
+barely moves: 555 at n=2, 554 at the full bank. A reader could conclude two
+clips are as good as twenty-six. The range is 394 to 726 at n=2 and a single
 number at the full bank. The count is not lower at n=2; it is unknowable at n=2.
 This is §2's "watch for a flat response curve" in another shape.
 
