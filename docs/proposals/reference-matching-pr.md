@@ -105,7 +105,7 @@ rule. Anything built on it normalises per term.
    cosine, is stronger and cheaper at run time than a dynamic program per
    recording per span.
 3. **Do not blend it with the acoustic score.** A rank-average of the two lands
-   at 0.599, worse than the distance alone — what you get from averaging a good
+   at 0.597, worse than the distance alone — what you get from averaging a good
    predictor with an inverted one.
 
 ## Files

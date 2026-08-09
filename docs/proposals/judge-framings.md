@@ -895,7 +895,7 @@ than a dynamic program per recording per span.
 
 **The two signals are not the same signal.** The raw acoustic score is 0.333
 on these rows and the reference distance is 0.812, so what one gets wrong the
-other does not. A naive rank-average of the two lands at 0.599, worse than the
+other does not. A naive rank-average of the two lands at 0.597, worse than the
 distance alone, which is what you get from averaging a good predictor with an
 inverted one. Use the distance; do not blend it.
 

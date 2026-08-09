@@ -409,6 +409,16 @@ def report(kept, dropped):
         delta = [r["mismatched"] - r["matched"] for r in both]
         print(describe("    mismatched - matched", delta))
 
+    print("\n=== blending the two acoustic numbers ===")
+    print("  the raw score is inverted here, so averaging can only cost")
+    order = lambda values: [sorted(values).index(v) / max(1, len(values) - 1)
+                            for v in values]
+    both = A + B
+    blend = [a + b for a, b in zip(order([-r["matched"] for r in both]),
+                                   order([r["spot"] for r in both]))]
+    print(f"  AUC(A vs B) on rank(-distance) + rank(score)  "
+          f"{auc(blend[:len(A)], blend[len(A):]):.3f}")
+
     print("\n=== two rival explanations ===")
     print("  1. the span is just cleaner speech, and any recording would do")
     mA = [r for r in A if "mismatched" in r]
