@@ -1179,10 +1179,12 @@ whatever happens and are not really predictions.
 - **Row 5, today's config.** Corrected in this PR, and wrong by reasoning rather
   than by result: it claimed a veto-arm outcome for an arm PR 2 does not run.
   Arm A then measured it wrong as well.
-- **Rows 6 and 7, today's config.** Predicted `Matthieu's`. Measured `Matthieu`
-  and `Matthieu` — the possessive is eaten by the acoustic substitution. The
-  plan had the evidence for this and had filed it as PR 9 case B, a decoder
-  fault. It is a second, different fault. PR 9 now carries both.
+- **Rows 6 and 7, today's config.** Predicted `Matthieu's` in both. Measured
+  `Matthieu` in both — the possessive is eaten by the acoustic substitution.
+  Row 7 also predicted "praise" left alone and got `Praisy`, so that cell is
+  wrong twice over. The plan had filed the possessive as PR 9, a decoder fault.
+  This is a second, different fault with the same symptom, and PR 9 now carries
+  both.
 
 Three of the four sit in the "under today's config" column, and all three are
 the same mistake: the column was filled in from what the plan wanted the pass to
@@ -1490,7 +1492,7 @@ ordinary "praise" this speaker ever dictates. Part 1 §7 says exactly this:
 `Praisy: heard: praise` and `Vercel: heard: versal` look identical on the page
 and are not the same risk. So `Praisy` is the term where only the audio can
 separate the name from the word — and round 7 measured it as the hardest term in
-the set, AUC 0.869 (§2). **This is PR 8's problem, met live.** It is also the
+the set, AUC 0.869 (§3). **This is PR 8's problem, met live.** It is also the
 case PR 6 has to be good at, because a clip bank is the only evidence source
 that can tell `Praise's` from `praise` without a rule that fires
 unconditionally.
@@ -1977,7 +1979,7 @@ sentence that needed it: the decoder wrote `Praise's`, no `heard:` entry
 matched, and the sentence came out with the ordinary word. So this term loses
 under both settings, in opposite directions, and no `heard:` entry can fix it —
 `Praisy: heard: praise` would rewrite every ordinary "praise" (§7). Round 7
-already ranked it the hardest term in the set at AUC 0.869 (§2). Any answer here
+already ranked it the hardest term in the set at AUC 0.869 (§3). Any answer here
 is a piece of evidence about the sound, not a rule, which makes PR 6's clip bank
 the only candidate on the table.
 
