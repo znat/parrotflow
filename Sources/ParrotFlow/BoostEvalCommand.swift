@@ -237,8 +237,9 @@ enum BoostEvalCommand {
         print("loading models…")
         let models = try await AsrModels.downloadAndLoad()
         let asr = AsrManager(models: models)
-        let ctcModels = try await CtcModels.downloadAndLoad()
-        let ctcDirectory = CtcModels.defaultCacheDirectory(for: .ctc110m)
+        let ctcVariant = CtcChoice.variant
+        let ctcModels = try await CtcModels.downloadAndLoad(variant: ctcVariant)
+        let ctcDirectory = CtcModels.defaultCacheDirectory(for: ctcVariant)
         let tokenizer = try await CtcTokenizer.load(from: ctcDirectory)
 
         // Pre-tokenising is the step that makes the spotter fire at all: a term
