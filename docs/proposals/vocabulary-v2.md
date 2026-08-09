@@ -512,6 +512,80 @@ blank form carrying the *shipped* question, so form is separated from content
 — this spike changed both at once and cannot say what the blanks would be
 worth on their own.
 
+**F20 — audio compared to recordings separates; audio compared to a spelling
+does not (spike, 2026-08-09).** Same proposals as F19, condition `cbw0`, the
+four terms that have recordings in `tests/acoustic/`. F19 is round 5, on
+`spike/raw-score-separation` and not merged; this finding takes the next ID so
+the two do not collide when it lands. Instead of scoring the
+term's spelling against the span, compare the span to the speaker saying the
+term: MFCCs, DTW, nearest recording. **AUC(A vs B) 0.812**, against **0.333**
+for the raw acoustic score on the same 30 A / 46 B. Chance is 0.500.
+
+The control holds. The matched term is nearer than a different term on 27 of
+30 A spans (90%) and 37 of 46 B spans (80%). `mismatched − matched`, which
+cancels anything generic about the span, still separates at 0.755. Length is
+not the explanation: with the length gap held equal inside each pair the
+distance separates at 0.891, and with the distance held equal the length gap
+falls to 0.370.
+
+Two things must be said with the number. **It is one term.** 21 of the 30 A
+spans are `Praisy`, which has 17 recordings and scores 0.882; `Vercel` agrees
+at 0.800 on 6 against 5; `Matthieu`, with 2 recordings, is 0.556. **And it is
+the wrong terms.** `Redcrawl` has no recording and `Supabase` has one, so the
+23 dropped rows include every failure this project actually pays for. The
+recordings were also mined from these same clips, so each is traced to its
+source clip by its samples and held out when the proposal comes from that clip
+— without that the A group scores against copies of itself.
+
+Not a decision rule. The ranges overlap and the scale differs per term:
+`Matthieu`'s whole A range sits above `Praisy`'s whole B range. Anything built
+on this normalises per term. → record ten readings each of the terms that have
+none, re-measure, and only then choose a representation. Round 6 in
+[judge-framings.md](judge-framings.md), `scripts/reference-matching.py`.
+
+**F21 — it works on `Redcrawl` and `Supabase`, which is what F20 could not say
+(spike, 2026-08-09).** F20's recommendation was carried out. 48 scripted lines
+were read, about seven per term, and the vocabulary went from 27 recordings
+over 4 terms to **122 over 11**. `Redcrawl` 0 → 8, `Supabase` 1 → 11.
+
+*On F20's own set, nothing is dropped any more.* Same proposals, same
+deduplication, same hold-out, only the recordings changed. **AUC(A vs B) rises
+from 0.812 to 0.874** over the full 33 A / 66 B, against 0.318 for the raw
+acoustic score. F20 measured 30 A / 46 B and dropped 23 rows; round 7 drops
+none. `Matthieu`, F20's warning at 0.556 on 2 recordings, is 1.000 on 11 — the
+shortage was the explanation, not the term.
+
+*But that set has no A row for `Redcrawl` at all.* Group A means the pass
+offered the term where the term really was, and in the whole spontaneous
+archive it never once offered `Redcrawl` correctly. Five terms are in that
+position. F20's arithmetic — "ten readings put 23 rows back" — was right about
+the rows and wrong about what they hold. **Recordings cannot create a pair to
+rank.**
+
+*So the terms that matter are answered on a second set*, read off the labels of
+the 48 clips with no proposal and no model: A is the spans of the name, B is
+the spans of the other ten names plus the 8 ordinary words the pass actually
+wrote a name over. **`Redcrawl` 0.966 over 8 A / 63 B. `Supabase` 1.000 over 9
+A / 62 B. Pooled 0.935 over 63 A / 718 B.** 7 of the 8 live overwrites —
+`update`→`Supabase` and `general`→`Redcrawl` among them — sit farther from the
+name than every real utterance of it.
+
+*The control is better than F20's, in the way that matters.* F20 had group B
+nearer its own absent term on 80% of spans, which meant the distance carried
+something generic. With eleven terms in the mismatched pool instead of four
+that falls to 47% on the proposals and 2% on the scripted set, while group A
+holds at 88–92%.
+
+*Read speech flatters it by about 0.06, and three terms rest on nothing else.*
+Scoring the scripted spans against spontaneous recordings only — different day,
+dictation not reading — gives 0.856 pooled against 0.920 same-session.
+`Supabase` survives it at **0.991 on two spontaneous recordings**, which
+answers F20's open question about thin terms. `Redcrawl`, `Redrock` and
+`Claude` have no spontaneous recording and cannot take the test at all. →
+collect audio on a correction (PR 8), and still do not ship MFCC + DTW. Round 7
+in [judge-framings.md](judge-framings.md),
+`scripts/reference-matching.py --set scripted`.
+
 ---
 
 ## Build order

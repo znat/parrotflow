@@ -726,3 +726,463 @@ not building the menu at all before tuning anything else.
 Measured with `scripts/gap-signal.py`. No model call, no build, no install. The
 cache predates PR #70, so none of the 15 live collisions of 2026-08-08 are in
 it.
+
+---
+
+# Round 6 — compare the audio to recordings, not to a spelling
+
+**A span sits closer to a recording of the term when the term was said.
+AUC(A vs B) is 0.812 on plain MFCC + DTW, against 0.333 for the raw acoustic
+score on the same rows. The control holds: the matched term is the nearer of
+the two on 27 of 30 A spans, and length does not explain it. Four terms only,
+21 of the 30 A spans are `Praisy`, and `Redcrawl` — the term costing clips —
+has no recording at all.**
+
+Round 5 (`spike/raw-score-separation`, not merged) measured the acoustic
+evidence with the vocabulary bonus taken out and found it inverted: AUC 0.318
+separating "the term was said" from "the term was not said". Every acoustic
+number tried so far scores a **spelling** against audio. The decoder is asked
+what it thinks of `Praisy` as a string, and its answer turns out to be worse
+than nothing.
+
+This round asks the other question. The archive holds the speaker actually
+saying these names, cut by `scripts/mine-pronunciations.py`. Compare the span
+to those, and no spelling is involved.
+
+## The set
+
+Round 5's proposals, condition `cbw0`, deduplicated its way — one row per
+clip, term stem, word range and kind. Restricted to the four terms that have
+any recording.
+
+| term | recordings | A | B |
+|---|---|---|---|
+| Praisy | 17 | 21 | 37 |
+| Vercel | 7 | 6 | 5 |
+| Matthieu | 2 | 3 | 3 |
+| Supabase | 1 | 0 | 1 |
+| **total** | **27** | **30** | **46** |
+
+23 rows dropped from round 5's 33 A / 66 B. 21 for a term with no recording —
+`Claude` ×5, `Tasmeen` ×4, `Mirza` ×4, `Redcrawl` ×3, `Ollama` ×3, `Redrock`,
+`Arexvy`. 2 for the hold-out below, both `Supabase`, and one of those is the
+only A case that lost its evidence: `Supabase` has one recording and it was
+cut from the same clip.
+
+**The recordings were mined from these same clips**, so a recording can be the
+very span it is compared against. Each one is traced back to its source clip by
+searching the archive for its exact samples — the filename does not carry it —
+and any recording from the proposal's own clip is held out. Without that step
+the A group scores against copies of itself. It costs `Praisy` 1 recording of
+17 on the clips that carry one, and it costs `Supabase` its only A case.
+
+## The measurement
+
+Cut the span, padded 0.05s each side, the same cut `mine-pronunciations.py`
+makes. 12 MFCCs at 25ms/10ms, c0 dropped, mean and variance normalised over
+the segment. DTW with a symmetric step pattern, normalised by n + m. Take the
+nearest recording. `scripts/reference-matching.py`, numpy and the standard
+library, about eighty lines of signal processing written out rather than a
+librosa dependency.
+
+## The headline
+
+| | AUC(A vs B) |
+|---|---|
+| chance | 0.500 |
+| the raw acoustic score, round 5, all 33 A / 66 B | 0.318 |
+| **the raw acoustic score on these same 30 / 46** | **0.333** |
+| the spotter score on its own path, round 5 | 0.814 |
+| **nearest recording of the term** | **0.812** |
+| mean over the recordings of the term | 0.795 |
+
+Per term, and this is where the result is thin:
+
+| term | A / B | AUC |
+|---|---|---|
+| Praisy | 21 / 37 | 0.882 |
+| Vercel | 6 / 5 | 0.800 |
+| Matthieu | 3 / 3 | 0.556 |
+| Supabase | 0 / 1 | no pair |
+
+`Praisy` is 70% of the A group and carries the number. `Vercel` agrees on 6
+against 5. `Matthieu` has 2 recordings and 3 A spans and says nothing either
+way. **This is one term measured well and one term measured badly.**
+
+## The control — does it discriminate, or is any recording as good?
+
+Distance from each span to recordings of a *different* term:
+
+| | AUC(matched vs mismatched) | matched is nearer |
+|---|---|---|
+| group A, n=30 | 0.893 | 27/30 (90%) |
+| group B, n=46 | 0.762 | 37/46 (80%) |
+
+Chance is 50%. The right term wins, so the distance is about the term and not
+about the audio being clean. Group B being above chance too is what you would
+expect: a span only becomes a B proposal because the spotter thought it sounded
+like the term.
+
+## Two rival explanations, measured
+
+**1. The A spans are just cleaner speech, and any recording would do.** The
+mismatched distance alone separates A from B at 0.670, so some of the 0.812 is
+generic. The part that is not: `mismatched − matched` cancels whatever is
+generic in the pair and still separates A from B at **0.755**.
+
+**2. It is length.** DTW pays for stretching, and a name has a length.
+
+| | AUC(A vs B) |
+|---|---|
+| span duration alone | 0.472 |
+| \|span − nearest recording\| | 0.604 |
+| **the distance, with the length gap held equal ±0.05s** (385 pairs) | **0.891** |
+| the length gap, with the distance held equal ±0.10 (207 pairs) | 0.370 |
+
+Hold length fixed inside each A/B pair and the distance is undiminished. Hold
+the distance fixed and length falls below chance. Length is not doing the work.
+
+## The distances
+
+| | n | min | q1 | med | q3 | max |
+|---|---|---|---|---|---|---|
+| A nearest matched | 30 | 2.328 | 2.593 | 2.905 | 3.184 | 3.442 |
+| B nearest matched | 46 | 2.717 | 3.141 | 3.279 | 3.391 | 3.565 |
+| A nearest mismatched | 30 | 2.992 | 3.254 | 3.347 | 3.415 | 3.573 |
+| B nearest mismatched | 46 | 3.128 | 3.338 | 3.424 | 3.501 | 3.696 |
+| A Praisy | 21 | 2.328 | 2.471 | 2.698 | 3.078 | 3.348 |
+| B Praisy | 37 | 2.717 | 3.119 | 3.282 | 3.383 | 3.565 |
+| A Vercel | 6 | 2.883 | 2.933 | 2.978 | 3.151 | 3.328 |
+| B Vercel | 5 | 3.041 | 3.142 | 3.222 | 3.253 | 3.376 |
+| A Matthieu | 3 | 3.218 | 3.330 | 3.442 | 3.442 | 3.442 |
+| B Matthieu | 3 | 3.275 | 3.337 | 3.398 | 3.434 | 3.470 |
+
+The ranges overlap. This is a separation, not a decision rule: no threshold on
+the raw distance is clean, and the scales differ per term — `Matthieu`'s whole
+A range sits above `Praisy`'s whole B range. Anything built on this has to
+normalise per term, against that term's own recordings.
+
+## Does the nearest recording's identity carry anything?
+
+Nearly free to ask, and the answer is no. The 21 `Praisy` A spans spread over
+10 of the 16 available recordings, the 37 B spans over 13. The top recording
+takes 4 of 21 in A and 6 of 37 in B. A spans do not converge on a few
+canonical readings, so there is no shortlist to prune to.
+
+## The limitation, plainly
+
+`Redcrawl` has zero recordings and `Supabase` has one. Those are the terms
+actually costing clips — F5's `update→Supabase` and `general→Redcrawl`, round
+4's canonical `00-14-39`. **This round measures the method, not the failures
+that matter.** It says the idea works on a name with 17 recordings. It does not
+say what happens on a name with two, and `Matthieu` at 0.556 is a hint that the
+answer may be "nothing".
+
+## Recommendation
+
+**Measure it on the terms that fail, which means recording them first.** Ten
+readings of `Redcrawl`, `Redrock`, `Supabase`, `Tasmeen`, `Mirza`, `Claude`
+and `Arexvy` would put 23 of the dropped rows back and turn a four-term result
+into a vocabulary-wide one. `tests/acoustic/reading.json` on
+`feat/vocabulary-skills-only` is already a reading script of this shape; it
+covers the wrong terms.
+
+**Do not ship MFCC + DTW.** It is the crudest form of this idea and it was
+chosen to be cheap. If a few recordings per term is the design, the same
+comparison over a speech encoder's frames — or a learned embedding with one
+vector per recording and a cosine — is both stronger and cheaper at run time
+than a dynamic program per recording per span.
+
+**The two signals are not the same signal.** The raw acoustic score is 0.333
+on these rows and the reference distance is 0.812, so what one gets wrong the
+other does not. A naive rank-average of the two lands at 0.597, worse than the
+distance alone, which is what you get from averaging a good predictor with an
+inverted one. Use the distance; do not blend it.
+
+Measured with `scripts/reference-matching.py`. Per-proposal distances in
+[reference-matching-distances.md](reference-matching-distances.md). No model
+call, no decoder, no build, no install — it reads wavs and does arithmetic.
+
+---
+
+# Round 7 — the terms that cost clips, now that they have recordings
+
+**It works on `Redcrawl` and `Supabase`. Reading 48 scripted lines took the
+vocabulary from 27 recordings over 4 terms to 122 over 11. On round 5's
+proposals the headline rises from 0.812 to 0.874 and nothing is dropped any
+more — all 33 A / 66 B are measured for the first time. But that set still has
+no A row for `Redcrawl`, so the terms that matter are answered on a second set
+read straight off the labels of the 48 clips: `Redcrawl` 0.966 over 8 A / 63 B,
+`Supabase` 1.000 over 9 A / 62 B, pooled 0.935 over 63 A / 718 B. The control
+holds in both directions — the name said is nearer its own recordings on 92% of
+A spans and on 2% of B spans. Of the 8 words the app actually wrote a name over
+in these clips, 7 sit farther from that name than every real utterance of it,
+and the eighth is farther than 5 of 6.**
+
+**The caveat that has teeth: `Redcrawl`, `Redrock` and `Claude` have scripted
+recordings only, so their numbers are same-session read speech scored against
+same-session read speech.** Scoring the scripted spans against *spontaneous*
+recordings only — different day, different style, dictation not reading — gives
+0.856 pooled, and `Supabase` survives it at 0.991 on 2 recordings. `Redcrawl`
+cannot take that test, because it has no spontaneous recording to take it with.
+
+Round 6 measured the method and could not measure the failures. `Redcrawl` had
+zero recordings, `Supabase` had one, and both were dropped. Its recommendation
+was to record them. That is what the 48 lines of
+`parrotflow-recording-script.md` are.
+
+## What was gathered
+
+48 lines, read in order on 2026-08-09, one dictation each. They align 1:1 and
+monotonically against the script: 48 clips, 48 lines, no line skipped and no
+line restarted whole. Five lines diverge from the script beyond a mangled name
+and are labelled with what he said, not what the script said — see the block 4
+comments in `tests/menu-cases.yaml`. One line, `14-00-56`, is flagged twice
+over: a word sits before the sentence at 0.16–0.80s, decoded `Myrza` at
+confidence 0.29, and the decoder wrote "roles" where the script says "rows".
+
+**These are read speech, not dictation, and that is a real difference.** Read
+speech is more careful — steadier pace, fewer fillers, fuller vowels. Every
+number below that rests only on these clips is a number about careful speech.
+
+## The recordings
+
+`scripts/mine-pronunciations.py` did the cutting, the same script round 6 used,
+with three changes. It reads word times from `trace.jsonl` instead of running
+the app, so mining an archive that was already traced needs no build. `--every`
+keeps the occurrences the decoder got *right*, which the pronunciation table
+does not want and the recordings very much do. And a possessive now counts as
+the name, which alone recovers `Redcrawl's`, `Arexvy's`, `Matthieu's` and eight
+more.
+
+Those last two changes also apply to the old archive, so the spontaneous column
+below is larger than round 6's even where no new line was read.
+
+| term | round 6 | spontaneous | scripted | total |
+|---|---|---|---|---|
+| **Redcrawl** | **0** | **0** | **8** | **8** |
+| **Supabase** | **1** | **2** | **9** | **11** |
+| Arexvy | 0 | 1 | 6 | 7 |
+| Claude | 0 | 0 | 6 | 6 |
+| Matthieu | 2 | 4 | 7 | 11 |
+| Mirza | 0 | 7 | 8 | 15 |
+| Ollama | 0 | 1 | 6 | 7 |
+| Praisy | 17 | 26 | 0 | 26 |
+| Redrock | 0 | 0 | 7 | 7 |
+| Tasmeen | 0 | 2 | 6 | 8 |
+| Vercel | 7 | 16 | 0 | 16 |
+| **total** | **27** | **59** | **63** | **122** |
+
+Nothing is in the repository. They are in `voice/samples/<Term>/` beside the
+config, `scripts/check-no-voice.sh` passes, and the mining run touched nothing
+else under `~/.config/parrotflow-dev/`.
+
+## Set 1 — round 5's proposals, which is what round 6 measured
+
+Same rows, same deduplication, same hold-out. Only the recordings changed. The
+port reproduces round 6 exactly at `--source round6`, so the two are comparable
+line for line.
+
+| recordings compared against | rec | A | B | AUC |
+|---|---|---|---|---|
+| round 6, `tests/acoustic/` | 27 | 30 | 46 | 0.812 |
+| spontaneous only, re-mined | 59 | 32 | 57 | 0.831 |
+| scripted only | 63 | 6 | 24 | 0.910 |
+| **all** | **122** | **33** | **66** | **0.874** |
+| the raw acoustic score, same rows | — | 33 | 66 | 0.318 |
+| chance | — | — | — | 0.500 |
+
+**Round 6 dropped 23 of round 5's 99 rows. Round 7 drops none.** Every term now
+has a recording, so the full 33 A / 66 B is measured, and the headline went up
+rather than down as the easy terms stopped carrying it alone.
+
+The `scripted only` row is worth its own sentence. Those 63 recordings come
+from clips the proposal set does not contain, so the hold-out removed nothing —
+no span could have scored against a copy of itself even in principle — and
+spontaneous dictation spans still land nearer read-speech recordings of their
+own name than of anyone else's, at 0.910 on 6 A / 24 B.
+
+Per term, on all 122:
+
+| term | rec | A | B | AUC |
+|---|---|---|---|---|
+| Matthieu | 11 | 3 | 3 | 1.000 |
+| Ollama | 7 | 1 | 2 | 1.000 |
+| Supabase | 11 | 1 | 2 | 1.000 |
+| Vercel | 16 | 6 | 5 | 0.933 |
+| Praisy | 26 | 21 | 37 | 0.869 |
+| Tasmeen | 8 | 1 | 3 | 0.667 |
+| **Redcrawl** | **8** | **0** | **3** | **no pair** |
+| Arexvy | 7 | 0 | 1 | no pair |
+| Claude | 6 | 0 | 5 | no pair |
+| Mirza | 15 | 0 | 4 | no pair |
+| Redrock | 7 | 0 | 1 | no pair |
+
+`Matthieu` was round 6's warning — 2 recordings, AUC 0.556, chance. With 11 it
+is 1.000 on the same 3 A / 3 B rows. That is the clearest evidence that the
+number round 6 could not explain was a shortage of recordings and not a
+property of the term.
+
+**And here is the wall.** Five terms have no A row at all, `Redcrawl` among
+them. Group A means the pass offered the term where the term really was. In the
+whole spontaneous archive the pass never once offered `Redcrawl` correctly — its
+3 rows are all B, all wrong offers. No number of recordings creates a pair to
+rank. Round 6's arithmetic ("ten readings would put 23 dropped rows back") was
+right about the rows and wrong about what they would contain.
+
+## Set 2 — the scripted clips, read off the labels
+
+The labels say where every name is. So A and B can be read straight off them,
+with no proposal and no model:
+
+    A(term)   the spans of that name
+    B(term)   the spans of the other ten names, and the 8 ordinary words the
+              vocabulary pass actually wrote a name over in these clips
+
+Nothing easy is in B. Every negative is either a name in its own right or a word
+the spotter has already confused with one, so `Redrock` is a negative for
+`Redcrawl` and `praise` is a negative for `Praisy`. The same hold-out applies,
+by clip and to both groups: no span is ever scored against a recording cut from
+its own clip.
+
+| term | rec | A | B | AUC |
+|---|---|---|---|---|
+| **Supabase** | **11** | **9** | **62** | **1.000** |
+| Redrock | 7 | 7 | 64 | 0.993 |
+| Tasmeen | 8 | 6 | 65 | 0.985 |
+| **Redcrawl** | **8** | **8** | **63** | **0.966** |
+| Mirza | 15 | 8 | 63 | 0.940 |
+| Arexvy | 7 | 6 | 65 | 0.936 |
+| Ollama | 7 | 6 | 65 | 0.874 |
+| Matthieu | 11 | 7 | 64 | 0.848 |
+| Claude | 6 | 6 | 65 | 0.844 |
+| Praisy | 26 | 0 | 71 | no pair |
+| Vercel | 16 | 0 | 71 | no pair |
+| **pooled** | | **63** | **718** | **0.935** |
+
+`Praisy` and `Vercel` are not in the script, so they have no A row here. The two
+sets are complementary: set 1 answers for the terms the archive already had,
+set 2 for the terms it did not.
+
+## The control
+
+Round 6's control, run both ways.
+
+| set | group | AUC(matched vs mismatched) | matched is the nearer |
+|---|---|---|---|
+| round 6 proposals | A | 0.893 | 27/30 (90%) |
+| round 6 proposals | B | 0.762 | 37/46 (80%) |
+| round 7 proposals, 122 rec | A | 0.816 | 29/33 (88%) |
+| round 7 proposals, 122 rec | B | 0.453 | 31/66 (47%) |
+| scripted set, 122 rec | A | 0.832 | 58/63 (92%) |
+| scripted set, 122 rec | B | 0.076 | 13/718 (2%) |
+
+**Round 6's B row was the problem and it is fixed.** A B span is one where the
+term was *not* said, so it has no business being nearer that term's recordings
+than any other term's. Round 6 had it at 80%, which meant the distance was
+carrying something generic rather than something about the name. With four
+terms and 17 of the 27 recordings being `Praisy`, "the nearest mismatched
+recording" was mostly "the nearest of 17 `Praisy` recordings" — a rich pool is
+near everything. With eleven terms B falls to 47% on the proposals and 2% on
+the scripted set, while A stays at 88–92%. That is the shape the control was
+written to look for.
+
+One thing the control cannot escape: the mismatched pool is a different size
+per term, and a bigger pool is nearer by construction. The per-term A-vs-B AUC
+does not have that problem, because it holds the recordings fixed and varies
+the span. Read the tables above as the result and the control as the sanity
+check.
+
+Length is not doing the work: AUC(A vs B) on span duration alone is 0.535 on
+the scripted set and 0.452 on the proposals. Holding the length gap equal
+to ±0.05s, the distance still separates at 0.879.
+
+## The 8 live overwrites
+
+These are the failures, not a proxy for them. Each is a word the vocabulary
+pass wrote a name over in these very clips, scored against that name's own
+recordings.
+
+| the app heard | and wrote | distance | nearer than |
+|---|---|---|---|
+| `update` | Supabase | 3.135 | 0 of 9 real `Supabase` spans |
+| `crawl` | Redcrawl | 3.142 | 0 of 8 |
+| `slide` | Claude | 3.194 | **1 of 6** |
+| `retry` | Arexvy | 3.328 | 0 of 6 |
+| `general` | Redcrawl | 3.328 | 0 of 8 |
+| `already` | Arexvy | 3.380 | 0 of 6 |
+| `train` | Praisy | 3.520 | 0 of 21 |
+| `ready` | Arexvy | 3.575 | 0 of 6 |
+
+`Praisy` has no A span in the scripted clips, so `train` is ranked against the
+21 `Praisy` A spans of set 1, whose worst is 3.348.
+
+**Seven of the eight are farther from the name than every real utterance of
+it.** `update`→`Supabase` and `general`→`Redcrawl` are F1 and F5, the two
+failures this whole line of work started from, and both are rejected with room
+to spare. The exception is `slide`→`Claude` at 3.194, which beats one of the
+six real `Claude` spans; `Claude` is the shortest name in the set and has the
+fewest recordings.
+
+A rule that rejected a span sitting farther than that term's worst recording
+would have caught 7 of the 8 and lost nothing.
+
+## Does read speech flatter it?
+
+Yes, by about 0.06, and the result survives without it. The scripted spans
+scored against **spontaneous recordings only** — different day, different
+microphone session, dictation rather than reading:
+
+| term | spontaneous rec | A | B | AUC |
+|---|---|---|---|---|
+| Arexvy | 1 | 6 | 65 | 1.000 |
+| **Supabase** | **2** | **9** | **62** | **0.991** |
+| Mirza | 7 | 8 | 63 | 0.990 |
+| Tasmeen | 2 | 6 | 65 | 0.987 |
+| Matthieu | 4 | 7 | 64 | 0.924 |
+| Ollama | 1 | 6 | 65 | 0.721 |
+| **pooled** | | **42** | **526** | **0.856** |
+
+Against scripted recordings only the same spans give 0.920 pooled. So the
+same-session advantage is real and it is about 0.064. It is not the result.
+
+`Supabase` at 0.991 against **two** spontaneous recordings is the strongest
+single number here: a term with two recordings from ordinary use separates read
+speech almost perfectly. Round 6 saw `Matthieu` at 0.556 on two and concluded
+two might be worth nothing. On this evidence two is worth a great deal and round
+6's two recordings were simply poor ones.
+
+**`Redcrawl`, `Redrock` and `Claude` cannot take this test.** They have no
+spontaneous recording. Their numbers rest entirely on read speech compared with
+read speech from the same six minutes. `Redcrawl` at 0.966 is a real
+measurement of a real question, and it is the weakest-supported row in the
+table. The fix is cheap: the next few times `Redcrawl` is said in ordinary
+dictation, keep the audio.
+
+## Recommendation
+
+**The method works on the terms that cost clips.** Round 6 measured a name with
+17 recordings. Round 7 measures `Redcrawl` at 0.966 and `Supabase` at 1.000, and
+rejects 7 of the 8 live overwrites by a clear margin. The open question from
+round 6 — does this survive on a term with two recordings — is answered:
+`Supabase` on two spontaneous recordings scores 0.991.
+
+**Collect recordings from ordinary use, not only from scripts.** The reading
+gave every term a floor, and it gave three terms a floor and nothing else. PR 8
+writes an observation on a correction; that is the mechanism, and it should
+cut the audio too.
+
+**Still do not ship MFCC + DTW.** Round 6's reasoning stands and the numbers
+have not changed it. 122 recordings and 781 span-term pairs took four minutes
+of a dynamic program per recording per span. A speech encoder with one vector
+per recording and a cosine is stronger and cheaper at run time. This round says
+the *comparison to recordings* is the right question; it does not say this is
+the right implementation of it.
+
+**Do not tune a threshold on set 2.** Every A span in it is read speech from one
+session. The distances are not on a scale that transfers, and round 6 already
+showed the scale differs per term.
+
+Measured with `scripts/reference-matching.py --set scripted` and `--set
+proposals`, over `voice/samples/`. No model call, no decoder, no build, no
+install — it reads wavs and does arithmetic.
