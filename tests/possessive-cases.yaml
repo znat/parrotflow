@@ -1,0 +1,246 @@
+# Does a possessive survive a substitution? Cases for scripts/check-possessive.sh.
+#
+# The vocabulary pass replaces a whole decoded token, so "Mathieu's" is replaced
+# by "Matthieu" and the `'s` is gone. `Vocabulary.inflected` exists to stop that.
+# It had no set until it was found dropping one.
+#
+#   term    the vocabulary term being written in
+#   heard   the token the rescorer matched, exactly as the decoder wrote it
+#   expect  what should be written where that token stood
+#
+# Two failure directions, and they do not cost the same. A dropped `'s` costs
+# one word of grammar in one sentence. A `'s` written where the speaker said
+# none is a word nobody said, and the pass has no menu behind it — these
+# substitutions auto-apply. So a case that must not carry is worth more than a
+# case that must.
+#
+# The numbers below come from `~/Recordings/ParrotFlow Dev/trace.jsonl` on
+# 2026-08-10, over 13961 traced clips: 5672 decoded tokens end in `'s`, 4660 of
+# them are contractions, and the pass really substituted over 32. All 32 are
+# name possessives. The old code carried 11 of them; this carries 31.
+cases:
+  # ── The live bug. PR 2 arm A, 2026-08-09 ────────────────────────────────
+  # "Matthieu's work" came out `Matthieu work.` The old test asked whether the
+  # decoded stem was spelled like the term. A substitution only runs because it
+  # is not, so the test failed on every case it was written for.
+  - name: the live case
+    term: Matthieu
+    heard: Mathieu's
+    expect: Matthieu's
+
+  # The only shape the old test handled: the decoder spelled the name right and
+  # nothing needed carrying. It must still work.
+  - name: the stem is already the term
+    term: Matthieu
+    heard: Matthieu's
+    expect: Matthieu's
+
+  # ── Every rendering the archive shows the pass substituting over ────────
+  - name: a second rendering of the same name
+    term: Matthieu
+    heard: Matthew's
+    expect: Matthieu's
+
+  - name: an exact stem, from the comment that started this
+    term: Mirza
+    heard: Mirza's
+    expect: Mirza's
+
+  - name: one letter out
+    term: Mirza
+    heard: Myrza's
+    expect: Mirza's
+
+  # The whole token is 0.48 from `Mirza` and the stem is 0.61. An absolute floor
+  # of 0.50 on the stem would keep this one; a floor on the token would refuse
+  # it, and the pass substituted it anyway. That is why the test compares the
+  # two rather than testing either against a number.
+  - name: two letters out
+    term: Mirza
+    heard: Mirzen's
+    expect: Mirza's
+
+  - name: a term that is an ordinary word
+    term: Praisy
+    heard: praise's
+    expect: Praisy's
+
+  - name: the same, capitalised
+    term: Praisy
+    heard: Praise's
+    expect: Praisy's
+
+  - name: the most common rendering of that name
+    term: Praisy
+    heard: Pracy's
+    expect: Praisy's
+
+  - name: a doubled letter the decoder dropped
+    term: Ollama
+    heard: Olama's
+    expect: Ollama's
+
+  - name: the term spelled right
+    term: Claude
+    heard: Claude's
+    expect: Claude's
+
+  # ── Contractions. None is a possessive, and the pass must not invent one ──
+  # This is the direction the old narrow test was defending. PR 2 arm A sentence
+  # 7 has the pass writing `Praisy` over the word next to a `Let's`, so a term
+  # landing on a contraction is not hypothetical.
+  #
+  # What refuses them is not a word list. Take the `'s` off `Let's` and what is
+  # left is "Let", which is further from every term than "Lets" was — a
+  # contraction's stem is two to five letters and the length penalty in
+  # `gluedSimilarity` punishes it. All 14 contraction spellings in the archive
+  # behave this way; "Here" against `Vercel` is the closest at 0.41.
+  - name: let's, lower case
+    term: Praisy
+    heard: let's
+    expect: Praisy
+
+  - name: Let's, sentence initial
+    term: Praisy
+    heard: Let's
+    expect: Praisy
+
+  - name: he's
+    term: Matthieu
+    heard: he's
+    expect: Matthieu
+
+  - name: it's
+    term: Mirza
+    heard: it's
+    expect: Mirza
+
+  - name: that's
+    term: Praisy
+    heard: that's
+    expect: Praisy
+
+  - name: there's
+    term: Vercel
+    heard: there's
+    expect: Vercel
+
+  # The closest a contraction gets to any term in this vocabulary.
+  - name: Here's, the closest miss in the archive
+    term: Vercel
+    heard: Here's
+    expect: Vercel
+
+  # ── Both apostrophes ────────────────────────────────────────────────────
+  # The decoder writes U+2019 as often as U+0027, and the one that comes back
+  # has to be the one that was heard.
+  - name: a curly apostrophe carries
+    term: Matthieu
+    heard: Mathieu’s
+    expect: Matthieu’s
+
+  - name: a curly apostrophe on an exact stem
+    term: Mirza
+    heard: Mirza’s
+    expect: Mirza’s
+
+  - name: a curly contraction is still refused
+    term: Praisy
+    heard: Let’s
+    expect: Praisy
+
+  # ── A word that merely ends in s ────────────────────────────────────────
+  # No apostrophe, so no suffix. A plural is not a possessive, and this is the
+  # half of the old comment that is still right.
+  - name: a plural of the term
+    term: Mirza
+    heard: Mirzas
+    expect: Mirza
+
+  - name: an ordinary plural
+    term: Praisy
+    heard: praises
+    expect: Praisy
+
+  - name: the term with an s stuck on
+    term: Ollama
+    heard: Olamas
+    expect: Ollama
+
+  - name: no suffix at all
+    term: Matthieu
+    heard: Mathieu
+    expect: Matthieu
+
+  # ── French ──────────────────────────────────────────────────────────────
+  # French has no `'s` possessive, and the archive agrees: zero tokens ending in
+  # `'s` on any French-tagged clip, against 5672 in English. What French brings
+  # is the other apostrophe — an elision on the front of the word, `l'`, `d'`,
+  # `qu'`, `j'`, `n'`, `c'`. The archive has `qu'on`, `d'assurance`, `J'ai`,
+  # `c'est` and `n'est`. None ends in `'s`, so none may gain a suffix.
+  - name: l' before a term
+    term: Ollama
+    heard: l'Olama
+    expect: Ollama
+
+  - name: d' before a term
+    term: Ollama
+    heard: d'Olama
+    expect: Ollama
+
+  - name: qu', the most common French elision in the archive
+    term: Vercel
+    heard: qu'on
+    expect: Vercel
+
+  # A French plural in s, which is a plural and not a possessive.
+  - name: a French plural
+    term: Vercel
+    heard: versailles
+    expect: Vercel
+
+  # ── Punctuation and degenerate input ────────────────────────────────────
+  # The trailing mark is put back by `trailingMarks`, not here, so the suffix
+  # has to survive a token that carries one.
+  - name: a full stop after the possessive
+    term: Matthieu
+    heard: Mathieu's.
+    expect: Matthieu's
+
+  - name: a comma after the possessive
+    term: Mirza
+    heard: Mirza's,
+    expect: Mirza's
+
+  # Nothing in front of the apostrophe is not a name plus a suffix.
+  - name: a bare suffix
+    term: Praisy
+    heard: "'s"
+    expect: Praisy
+
+  - name: a bare s
+    term: Mirza
+    heard: s
+    expect: Mirza
+
+  # ── Known misses, kept because a set that hides them is worth less ──────
+  # Both are real archive renderings and both lose the possessive. In each the
+  # decoder's spelling is closer to the term *with* the trailing s than without
+  # it, so the comparison refuses to carry. Neither is a regression: today's
+  # code drops them too.
+  #
+  # `Mir's` is the one miss among the 32 substitutions the pass really made.
+  # `Prazi's` was never substituted — it is in the archive as a decoding and is
+  # close enough to `Praisy` to be reachable, so it is here as the shape rather
+  # than as a clip.
+  - name: Mir's, where the stem is three letters
+    term: Mirza
+    heard: Mir's
+    expect: Mirza
+    known-miss: Mirza's
+
+  - name: Prazi's, where the s helps the match
+    term: Praisy
+    heard: Prazi's
+    expect: Praisy
+    known-miss: Praisy's
