@@ -3,6 +3,7 @@
 
     scripts/mine-pronunciations.py            # write the table
     scripts/mine-pronunciations.py --audio    # and cut a wav per rendering
+    scripts/mine-pronunciations.py --every    # and the ones it got right
 
 The pronunciation lists were written by hand, one entry at a time, as somebody
 noticed a name coming out wrong. That is a slow way to learn something the
@@ -21,6 +22,21 @@ touched it, with the time of every word. Since PR 5 the app prints it above the
 pass's own guards (F11), so a clip where nothing fired still contributes — the
 deep misses are exactly the clips this exists for, and they were the ones it
 could never see.
+
+`trace.jsonl` in the archive carries the same words and times, written when the
+clip was actually dictated, so a clip already traced needs no app and no decode.
+That is the default; `--decode` forces the app. It matters because the app has
+to be built to run, and mining an archive that was already traced should not
+need a build.
+
+`--every` also keeps the occurrences the decoder got right. The table is about
+the ways a name comes out *wrong*, so those stay out of it. The audio is not:
+a recording of the term is a recording of the term, and the clean ones are the
+best of them.
+
+A possessive is the same name. `Redcrawl's` where the vocabulary says
+`Redcrawl` counts, because the speaker said the name; the trailing sound rides
+along in the cut and there is no honest way to remove it.
 
 Everything is written into `voice/`, beside the config, and nothing goes into
 the repository:
@@ -72,8 +88,41 @@ def terms(vocabulary):
             re.finditer(r"^  ([A-Z][\w'-]+):\s*$", vocabulary.read_text(), re.M)]
 
 
-def decoded(wav):
+def traces():
+    """The first trace line per clip, which is the decode that was delivered.
+
+    `trace.jsonl` is append-only and a clip replayed later appends another line
+    for the same wav. The first is the one the speaker actually got, and the one
+    the label was written against.
+    """
+    out = {}
+    path = CLIPS / "trace.jsonl"
+    if not path.exists():
+        return out
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        wav = row.get("wav")
+        words = (row.get("asr") or {}).get("words") or []
+        if wav and words and wav not in out:
+            out[wav] = [(w["word"], float(w["start"]), float(w["end"]))
+                        for w in words if w.get("word")]
+    return out
+
+
+TRACED = None
+
+
+def decoded(wav, decode=False):
     """The words the decoder wrote, with the time it wrote each one at."""
+    global TRACED
+    if not decode:
+        if TRACED is None:
+            TRACED = traces()
+        if TRACED.get(wav):
+            return TRACED[wav]
     environment = dict(os.environ, PARROTFLOW_SPOTTER_DUMP="1")
     done = subprocess.run(
         [recall.APP, "--transcribe", str(CLIPS / wav)],
@@ -86,6 +135,15 @@ def decoded(wav):
 
 def bare(word):
     return re.sub(r"[^\w']", "", word).lower()
+
+
+def stem(word):
+    """A term and its possessive are the same name."""
+    w = bare(word)
+    for suffix in ("'s", "s'"):
+        if len(w) > 3 and w.endswith(suffix):
+            return w[: -len(suffix)]
+    return w
 
 
 def cut(wav, start, end, target):
@@ -121,6 +179,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--audio", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--every", action="store_true",
+                    help="also keep the occurrences the decoder got right; "
+                         "they are recordings of the name too")
+    ap.add_argument("--decode", action="store_true",
+                    help="run the app instead of reading trace.jsonl")
+    ap.add_argument("--only", default=None,
+                    help="mine only the clips whose name contains this")
     ap.add_argument("--mic", default=None,
                     help="the input device these clips were recorded on; "
                          "left out, mic is null, which means unknown")
@@ -140,31 +205,49 @@ def main():
     found = defaultdict(Counter)
     spans = defaultdict(list)
     cases = recall.load_cases()
+    if args.only:
+        cases = [c for c in cases if args.only in c[0]]
     if args.limit:
         cases = cases[:args.limit]
 
     for wav, said in cases:
         if not said or not (CLIPS / wav).exists():
             continue
-        words = decoded(wav)
+        words = decoded(wav, args.decode)
         if not words:
             continue
         truth = re.findall(r"[\w'-]+", said)
 
         # Word-level alignment. Where the two disagree and the truth side names
-        # a term, the decoder's side is a rendering of it.
+        # a term, the decoder's side is a rendering of it. Where they agree and
+        # the truth side names a term, the decoder got it right — no rendering
+        # to record, but with --every still a recording of the name.
         matcher = difflib.SequenceMatcher(
             a=[bare(w) for w in truth],
             b=[bare(w[0]) for w in words], autojunk=False)
         for tag, i1, i2, j1, j2 in matcher.get_opcodes():
             if tag == "equal":
+                if not args.every:
+                    continue
+                for offset, token in enumerate(truth[i1:i2]):
+                    if stem(token) not in known:
+                        continue
+                    word = words[j1 + offset]
+                    spans[known[stem(token)]].append(
+                        (wav, word[1], word[2], bare(word[0])))
                 continue
-            wanted = [t for t in truth[i1:i2] if bare(t) in known]
+            wanted = [t for t in truth[i1:i2] if stem(t) in known]
             if len(wanted) != 1 or j1 == j2:
                 continue
-            term = known[bare(wanted[0])]
+            term = known[stem(wanted[0])]
             rendering = " ".join(w[0] for w in words[j1:j2]).strip(".,?!;:")
-            if not rendering or bare(rendering) == term.lower():
+            if not rendering:
+                continue
+            if bare(rendering) == term.lower():
+                # The name came out right inside a block that moved around it.
+                if args.every:
+                    spans[term].append(
+                        (wav, words[j1][1], words[j2 - 1][2], term.lower()))
                 continue
             found[term][rendering] += 1
             spans[term].append((wav, words[j1][1], words[j2 - 1][2], rendering))
