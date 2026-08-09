@@ -782,9 +782,13 @@ so the code under test is `origin/main`. Often the installed app already matches
 and steps 2 and 3 are unnecessary.
 
 ```sh
+git -C ~/Documents/parrotflow fetch origin --quiet
 /Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --version
 git -C ~/Documents/parrotflow rev-parse --short origin/main
 ```
+
+The `fetch` matters: `origin/main` is a local ref and a stale one would make a
+stale build look current.
 
 The two strings must be equal, and the first must not end in `-dirty`. On
 2026-08-09 both printed `78d7ba2`. If they match, go to step 4.
