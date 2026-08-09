@@ -676,9 +676,13 @@ They are **derived, never claimed**. A stage cannot forget to report `changed`,
 and cannot report it about the wrong string.
 
 Stages add their own on top. The built-in ones publish `replacements.count`,
-`numbers.language` — which grammar actually read the numbers, and not the same
-answer as the pipeline's language — and, for a prompt stage, `model`. A
-`command:` transform publishes whatever it likes; see
+`replacements.changes` and `replacements.before` — how many rules fired, which
+ones, and the sentence the stage was handed — `numbers.language`, which grammar
+actually read the numbers and is not the same answer as the pipeline's
+language, and, for a prompt stage, `model`. The name judge reads all three of
+the `replacements` ones: `changes` says which rules fired and `before` says
+*where*, because the rules leave no positions behind. A `command:` transform
+publishes whatever it likes; see
 [docs/authoring.md](authoring.md#recipe-a-program-that-reports-what-it-did).
 
 Before any stage runs, the scope already holds `text`, `app`, `bundle_id`,
