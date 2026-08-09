@@ -17,9 +17,12 @@ switch is not free and the reason is in PR 1's result.
 killed the *rejection filter as built*, not the recordings under it. The signal
 is real — AUC 0.935 pooled on a label-built set, `Supabase` 1.000, `Redcrawl`
 0.966, and 7 of the 8 words the app actually wrote a name over sit farther from
-that name than every real utterance of it. What failed is the decision rule.
-So the recordings stay, and the work is to build a rule worth the evidence.
-Part 1 §7 says why a clip beats another text rule. PR 6 says what to measure.
+that name than every real utterance of it. The bank also picks the right name
+out of eleven on 92% of the spans where a name was said, and on 2% where none
+was. What failed is the decision rule. So the recordings stay, and the work is
+to build a rule worth the evidence. Part 1 §7 says why a clip beats another text
+rule. PR 6 says what to measure, and PR 6d is the one that asks whether the
+clips can replace the rules outright.
 
 **The bar, for anything built on the clips.** Beat the blind veto on the
 three-arm ablation. Not today's pass — the blind veto. A mechanism that cannot
@@ -123,6 +126,69 @@ proposal blindly scores 103.** Head to head the measured filter wins 8 and loses
 blind vetoing is noise. It does not show the recordings are useless. The
 decision rule is the part that failed, and §7 names the mechanism that makes it
 fragile. PR 6 is the work.
+
+**The bank also says *which* term, not only whether the term was said.** That is
+a different question and it has its own measurement. For every span, round 7
+compared the distance to the recordings of the term in question against the
+distance to the nearest recording of any *other* term. Eleven terms, so this is
+1-of-11 identification.
+
+| set | group | AUC (matched vs mismatched) | matched is nearer |
+|---|---|---|---|
+| scripted set | A — the term really was said | 0.832 | 58/63 (92%) |
+| scripted set | B — the term was not said | 0.076 | 13/718 (2%) |
+| round 7 proposals | A | 0.816 | 29/33 (88%) |
+| round 7 proposals | B | 0.453 | 31/66 (47%) |
+| round 6, 27 recordings | A | 0.893 | 27/30 (90%) |
+| round 6, 27 recordings | B | 0.762 | 37/46 (80%) |
+
+**Read the last column in opposite directions for A and B.** On A a high number
+is the result: the name that was said is nearer its own recordings than any
+other name's, 92% of the time. On B a *low* number is the result: the name that
+was not said is almost never the nearest, 2% of the time. Round 6's B row at 80%
+was the warning — with 4 terms and 17 of its 27 recordings being `Praisy`,
+"nearest other term" was mostly "nearest of 17 `Praisy` recordings", so the
+distance was carrying something generic. Eleven terms fix it.
+
+**Its limit, stated as plainly as its result.** The pool of other terms is the
+other ten names plus the 8 ordinary words the pass actually wrote a name over.
+The ordinary words of the 48 scripted sentences were never scanned. So this
+measures discrimination **among candidate terms** — something has already
+singled the span out. It does not measure "is there a name here at all", and it
+does **not** show the bank can replace the `heard:` rules. Round 7 names one
+more caveat: the mismatched pool is a different size per term, and a bigger pool
+is nearer by construction. PR 6d is the experiment that would test the other
+question, and nothing in it is measured yet.
+
+**It is not measuring how long the word is.** AUC on span duration alone is
+0.535 on the scripted set, which is chance. Holding the length gap between span
+and recording to ±0.05s, the distance still separates at 0.879. Round 7.
+
+**The 8 live overwrites, one row each.** These are the failures themselves, not
+a proxy for them: each is a word the pass wrote a name over in these very clips,
+scored against that name's own recordings.
+
+| the app heard | and wrote | distance | nearer than |
+|---|---|---|---|
+| `update` | Supabase | 3.135 | 0 of 9 real spans |
+| `crawl` | Redcrawl | 3.142 | 0 of 8 |
+| `slide` | Claude | 3.194 | **1 of 6** |
+| `retry` | Arexvy | 3.328 | 0 of 6 |
+| `general` | Redcrawl | 3.328 | 0 of 8 |
+| `already` | Arexvy | 3.380 | 0 of 6 |
+| `train` | Praisy | 3.520 | 0 of 21 |
+| `ready` | Arexvy | 3.575 | 0 of 6 |
+
+`Praisy` has no A span in the scripted clips, so `train` is ranked against the
+21 `Praisy` A spans of set 1, whose worst is 3.348. The one exception is
+`slide`→`Claude`: `Claude` is the shortest name in the set and has the fewest
+recordings, 6. A rule that rejected any span farther than the term's worst
+recording would have caught 7 of the 8 and lost nothing.
+
+`update`→`Supabase` and `general`→`Redcrawl` are F1 and F5, the two failures
+this line of work started from. **`general`→`Redcrawl` still has no end-to-end
+verdict.** 3.328 above is the offline half of the answer; part 3's first cleanup
+item asks for the other half.
 
 **The LLM judge is wrong on the failure class that is left.** On the eight clips
 where an ordinary word was overwritten, the shipped prompt scores **0 of 8**, and
@@ -246,6 +312,35 @@ recordings from another day it gives 0.856. The same-session advantage is about
 separated. Treat a recording made in one session as worth less against audio from
 another.
 
+**Where a recording came from changes what it is worth. The split, and what it
+does not say.** Round 7 measured set 1 four times, changing only which
+recordings the same proposals were scored against:
+
+| recordings compared against | rec | A | B | AUC |
+|---|---|---|---|---|
+| round 6, `tests/acoustic/` | 27 | 30 | 46 | 0.812 |
+| spontaneous only, re-mined | 59 | 32 | 57 | 0.831 |
+| scripted only | 63 | 6 | 24 | 0.910 |
+| **all** | **122** | **33** | **66** | **0.874** |
+
+**The rows are not the same rows, so 0.910 is not "scripted clips are better".**
+A term with no recording in a source cannot be scored from that source at all.
+`Praisy` and `Vercel` have no scripted recording, so the scripted row drops all
+69 of their proposals — 58 `Praisy` and 11 `Vercel` — including `Praisy`, the
+hardest term in the set at 0.869. That alone can explain the gap to 0.831. Do not quote 0.910 as evidence
+that a read line is worth more than a mined one; nobody has measured that on
+equal rows.
+
+**What the split does say.** Two things. Adding recordings raises the headline:
+27 recordings give 0.812, 122 give 0.874, and nothing is dropped any more.
+And the scripted recordings generalise off their own session — those 63 come
+from clips the proposal set does not contain, so no span could score against a
+copy of itself even in principle, and spontaneous dictation spans still land
+nearer read-speech recordings of their own name than of anyone else's, at 0.910
+on 6 A / 24 B. This is the number to weigh when deciding how to spend the
+speaker's time in PR 5 (mine first, it is free) and PR 7 (ask for fewer clips).
+Weigh it against the paragraph above: read speech flatters by about 0.06.
+
 **Read speech is not dictation.** The 48 scripted clips are more careful —
 steadier pace, fewer fillers, fuller vowels. Any number resting only on them is a
 number about careful speech. Keep them in their own block of
@@ -258,7 +353,10 @@ can separate both. Normalising is worth about 0.05 AUC (0.815 against 0.768).
 **A term with very few recordings may confirm but must not reject.** Below three
 usable recordings there is no spread to compare against — two recordings give
 exactly one exemplar-to-exemplar distance. Two *good* recordings can still be
-worth a lot: `Supabase` separates at 0.991 on two spontaneous ones.
+worth a lot: `Supabase` separates at 0.991 on two spontaneous ones. And a bad
+pair is a shortage of clips, not a verdict on the term: `Matthieu` was 0.556 on
+2 recordings in round 6 and is 1.000 on 11. PR 4 carries that number, because it
+is the argument for keeping the audio from every correction.
 
 **Some terms have never once been proposed correctly, so they cannot be evaluated
 on the proposal set at all.** Five of eleven have no correct-proposal row in the
@@ -386,6 +484,13 @@ guess. Build it before adding another spelling heuristic.
 
 This is the design argument for keeping the recordings. It is an argument, not a
 measurement. Read it as the reason to run PR 6, not as its result.
+
+**Two measured facts bear on it, and they are in §1 and §3.** The clip bank
+picks the right term out of eleven on 92% of spans where a name was said and on
+2% where none was, and `Matthieu` went from AUC 0.556 on 2 recordings to 1.000
+on 11. Those are measurements about the distance, not about the rule built on
+it, and they do not make the argument below a measurement. They are why it is
+worth arguing.
 
 **A text rule is an instruction. A clip is evidence.** That difference decides
 how each one behaves as the vocabulary grows.
@@ -1105,6 +1210,17 @@ up deciding. Today `voice/samples/` grows by hand and by mining; every correctio
 the speaker makes is a labelled recording of a term in their own voice, being
 thrown away.
 
+**The measured reason to believe a bank improves with use: `Matthieu`, 0.556 to
+1.000.** Round 6 measured that term at 0.556 on 2 recordings, which is chance,
+and concluded two recordings might be worth nothing. Round 7 measured it at
+1.000 on 11 — same rows, same hold-out, only the recordings changed. That is the
+clearest single number saying a thin bank is a shortage of clips and not a
+property of the term, and PR 4 is what makes clips arrive without anyone being
+asked. **Two cautions.** The rows are 3 A / 3 B, so 1.000 rests on nine pairwise
+comparisons. And the 9 added recordings are 7 scripted lines plus 2 recovered by
+re-mining, not 9 corrections — it measures more clips, not clips from
+corrections. Round 7, `origin/spike/exemplars-round-2`.
+
 **Changes.** `ConfigWriter.addReplacement` writes a text rule to `config.yaml`
 today. Add: append an observation to `voice/observations.jsonl`, cut the
 corrected span into `voice/samples/<Term>/`, and record the source clip in the
@@ -1155,9 +1271,11 @@ trace. Note that 456 of 2616 wavs have no trace entry.
 
 **This is the active line of work on the recordings.** The blind control killed
 the rejection filter as built. It did not kill the evidence under it. The
-question here is narrow: does a rule that is not decided by its worst clip beat
-the blind veto? If it does not, the clip bank stops being a decision mechanism
-and stays what PR 4 makes it — an asset that improves with use.
+question in 6a to 6c is narrow: does a rule that is not decided by its worst
+clip beat the blind veto? 6d asks the wider one — can the bank propose a term on
+its own, with no rule in front of it. If both fail, the clip bank stops being a
+decision mechanism and stays what PR 4 makes it — an asset that improves with
+use.
 
 **Read part 1 §7 first.** It states the mechanism this attacks:
 `ReferenceMatch.verdict` sets `spread` to `nearest.max()`, so one bad clip
@@ -1179,8 +1297,10 @@ gate a text rule before it fires. Nobody has measured it, because today the
 rules are clean on this corpus. Do not schedule it. Know it is the reason the
 recordings keep their value even if 6b fails.
 
-Three experiments, in order. 6a and 6c are offline on data already on disk. No
-build, no model, no Ollama for either of them.
+Four experiments, in order. 6a, 6c and 6d's first step are offline on data
+already on disk. No build, no model, no Ollama for any of them. 6d asks a
+different question from 6a to 6c — those three fix the veto, 6d asks whether the
+bank can propose at all — and it is the only one with no measurement behind it.
 
 ### 6a — how much does one bad clip cost?
 
@@ -1301,6 +1421,64 @@ alternative is that nothing is ever deleted — the speaker is shown the suspect
 clip and confirms by ear. A clip is auditable, which is the one thing a text
 rule is not, so asking is cheap and honest. It is also one more interruption.
 Decide it once 6c has a false-flag rate, not before.
+
+### 6d — can the bank *propose* a term, with no rule behind it?
+
+**Nothing in this section is measured.** Every other number in part 1 and part 2
+has a branch and a table behind it. This one has none. Read it as a design for
+an experiment, not as a result.
+
+**The question.** Scan the spans of a sentence against the clip bank and propose
+a term when something lands close. Query by example, with no `heard:` rule and
+no spotter in front of it. This is the question that keeps coming back, and it
+is worth saying why it matters: if it works it retires the text rules, and §7 is
+the argument that the text rules are the part whose risk accumulates and cannot
+be read.
+
+**The warning, and it is the whole difficulty.** AUC 0.935 and the 92%
+identification rate in part 1 §1 were both measured on spans that something had
+**already singled out** — a `heard:` rule, the spotter, or a label. Proposing
+means scoring every span of every sentence instead. That is a completely
+different false-positive budget. **It is the exact arithmetic that killed the
+acoustic path**: a separator that is excellent at "is this candidate wrong" can
+be useless at "is there a name here at all". Part 1 §1 says it directly — the
+ordinary words of the 48 scripted sentences were never scanned, so nothing
+measured so far bears on the false-positive rate of a proposer.
+
+**So the first thing 6d measures is that rate, before anything else is built.**
+Take the 141 labelled clips, enumerate every word span from the word timings in
+`trace.jsonl`, and count how many ordinary words land within an accept distance
+of some term. Report it per 1000 words and as the share of clips with at least
+one. The labels say where the real names are, so every other hit is a false
+positive. If the rate is not small, stop: nothing downstream survives it and the
+rest of 6d is not worth writing.
+
+**Changes.** Offline first, in the same script 6a extends
+(`scripts/reference-matching.py` on `origin/spike/exemplars-round-2`). No app
+change until the false-positive number says there is a point.
+
+**Size.** Under 200 lines of Python for the false-positive sweep. Unknown after
+that, and do not scope it before the number. Note the cost: round 7's 122
+recordings over 781 span-term pairs took four minutes of a dynamic program.
+Scoring every span of every sentence multiplies that by the number of words, so
+6d is also the first place the representation ladder in *Still open* would pay.
+
+**Verified by** the plan's standing bar — `reference-ablation.py --runs 3` with
+arms `off`, `today`, `veto everything` and the proposer, beating the blind
+veto's 103 by more than the flip count explains. **And beaten as a proposer**,
+which means wins and losses against the `off` arm reported separately, never
+net. A mechanism that only ever removes proposals is 6b, not 6d.
+
+**Falsified if** the false-positive sweep finds an appreciable rate over
+ordinary words, or if the ablation does not beat 103. Either one ends it. Note
+that 6d is falsifiable before any code touches the app, which is the reason to
+do the sweep first.
+
+**The standing caveat bites harder here than anywhere.** §7: every number about
+the clip bank rests on recordings mined from the corpus they are measured on. A
+proposer is scored over every word of that same corpus, so it has more surface
+for that flaw than any arm so far. Any number 6d produces needs a held-out set
+before it means anything.
 
 ## PR 7 — ask the speaker for fewer clips
 
@@ -1455,6 +1633,39 @@ Each was measured. One line each so nobody spends a day rediscovering it.
   not the reason to want it: the dynamic program measured at about 1 ms per
   proposal. Worth revisiting once PR 6 says whether a rule on the distance beats
   the blind veto — a better representation cannot rescue a rule that does not.
+- **A representation ladder, with a middle rung.** Untested proposal. The bullet
+  above names the top rung only. There are three: DTW over MFCCs, which is what
+  runs today; the Parakeet encoder's frames mean-pooled over the span and
+  compared by cosine; and a speech embedding trained for the job. The middle
+  rung is cheap in compute, because that encoder already runs on every
+  dictation. It is not free in plumbing: nothing in the app reads encoder
+  states, `CtcModels.downloadAndLoad()` exposes none, and the only frame-level
+  dump that exists is the CTC head's per-frame distribution
+  (`PARROTFLOW_LOGPROB_DUMP`, `origin/spike/onset-pilot`). Measure the middle
+  rung on round 7's own two sets before paying for the top one.
+- **Synthetic cold-start seeding.** Untested proposal. A term with no recording
+  has no bank at all — `Redcrawl` was in that state until 2026-08-09. Seed it
+  with `say` at several voices and rates, and treat those exemplars as weak
+  evidence: probably too weak to confirm a term, possibly good enough to reject
+  one, which is the half the veto needs. **The warning comes before the idea.**
+  A previous session used `say` and every CTC frame of its output came back
+  blank, which invalidated a round of scores; PR 2's result block above forbids
+  filling itself from `say` for exactly that reason. So this needs its own
+  validity check first: does a `say` clip of a term sit inside the distance
+  range of that speaker's real recordings of it? If it does not, synthetic
+  seeding is dead, and the check costs an afternoon.
+- **A logistic-regression calibrator** over the per-proposal features that
+  already exist, as the cheap alternative to `decide_above` / `offer_below`.
+  Untested proposal. The features are already written by the harnesses — the
+  spotter score `spot` and the de-boosted `gap`
+  (`origin/spike/raw-score-separation`), the reference `matched` and
+  `mismatched` distances, the `held` recording count
+  (`origin/spike/exemplars-round-2`), the span duration and the proposal kind.
+  One fitted weight vector in place of hand-set nat thresholds, and a fit over a
+  few hundred rows is a few lines. It carries the plan's standing problem — it
+  would be fitted on the clips it is reported on — so it needs a held-out split
+  from the first run. Part 1 §2 applies as well: measure the blind version,
+  which here is the constant "keep what the decoder wrote" at 34 of 57 spans.
 - **"Too close, ask the user"** on a reranker's margins. Its own proposal. The
   same question comes back in PR 6c for a suspect clip, where it is easier: a
   clip can be played back and confirmed by ear.
@@ -1467,7 +1678,8 @@ Each was measured. One line each so nobody spends a day rediscovering it.
 It is the canonical failure — sentence 1 of the standing regression list — and
 it deserves a measured answer, not an inference. Offline, round 7 put it at
 distance **3.328**, nearer than **0 of 8** real recordings of `Redcrawl`, so the
-filter should reject it. End to end, the prototype log carries no verdict for
+filter should reject it. That row and the other seven overwrites are in part 1
+§1. End to end, the prototype log carries no verdict for
 it. What survives in `~/Library/Logs/ParrotFlow-Dev.log` is two distinct
 `crawl → Redcrawl` vetoes — `"crawl"` at 3.177 and `"crawl."` at 3.511, both
 against a spread of 3.098 over 8 recordings — and the string `general` does not
