@@ -97,6 +97,13 @@ halves: with the acoustic path vetoed and the rules left running, the wins hold
 at 27 and the losses go to 0. The rules earn the +18. The acoustic path spends
 the −9.
 
+**One rider, from PR 2's live pass.** "The rules earn the +18" is true of these
+141 clips and is not a property of rules. A `heard:` list only holds renderings
+somebody has already written down. On one live sentence the decoder produced
+`Praise's` for `Praisy`, no rule matched, and with the acoustic path off the
+name did not arrive. On that term some of the wins come from the acoustic path
+alone. PR 8 is where that lives.
+
 **Comparing audio to a spelling is inverted. Do not build on it.** Every
 acoustic number the pass computes asks the decoder what it thinks of a term as a
 *string*. With the vocabulary bonus removed, a term the speaker did **not** say
@@ -779,6 +786,17 @@ the acoustic pass, which may not run. **That is not in this PR.** PR 2 should
 watch for it live: sentence 5 of the standing regression list — "deployed on
 Vercel against the Versailles Castle" — is exactly this shape.
 
+**PR 2 did, and the line reproduced verbatim.** Arm B produced it word for word
+on a live sentence this run never saw, twice over — the decoder wrote two
+renderings and two rules fired. This attribution is no longer an inference from
+the code, and the five-line `ruleParts` fix is now a defect with a live repro.
+
+**PR 2 also found a second cost, on a different term.** Under `acoustic: false`
+one live sentence lost `Praisy` outright, because the decoder wrote a rendering
+no `heard:` entry covers and none safely could. So "no wins the rules do not
+deliver" holds on this corpus and is not a general property. See PR 2's result
+block and PR 8.
+
 **Cost.** 2115 transcriptions, 26 minutes of wall clock at 10.7 s/clip. The
 "half a day of machine time" above is wrong by an order of magnitude, and a
 cheaper screen-then-confirm design was considered and dropped for being slower
@@ -851,27 +869,60 @@ config, once with `acoustic: false` — on a build whose stamp matches the tree.
 The runbook below is the whole procedure. Paste both transcripts into the result
 block.
 
-**PR 1 changed one expectation.** Sentence 5 is the shape PR 1's gap clips have:
-`Vercel` standing twice with one occurrence written by the `heard: Versailles`
-rule. Offline, `acoustic: false` gets that sentence wrong. So this pass has a
-predicted failure as well as predicted passes, which makes it a stronger test —
-it confirms an offline finding live instead of only looking for absence of
-damage.
+**What two arms can settle, and what they cannot.** PR 2 runs today's config and
+`acoustic: false`. Neither is the veto arm. PR 1's gap is a difference in
+correct clips between **veto** and `acoustic: false`, so no comparison here can
+confirm or falsify that gap. What PR 2 can establish is what it was written for:
+whether `acoustic: false` removes the collision failures live, and whether the
+rules still deliver the names they are supposed to.
 
-**Verified by** 1–3 coming out as ordinary English under `acoustic: false`,
-4, 6 and 7 still getting their names from the rules, and sentence 5 failing
-exactly as PR 1 predicts — `Vercel … Vercel Castle` under `acoustic: false`,
-correct under today's config.
+It can still confirm the *mechanism* PR 1 blamed the gap on, because that
+mechanism writes a log line and the line is readable in one arm on its own. It
+did — see the result block. The gap and the mechanism are different claims.
 
-**Falsified if** a name the rules are supposed to deliver stops arriving, other
-than sentence 5's second `Vercel`. Then the rules cover less than the replay
-says and the acoustic path is doing something the ablation did not attribute to
-it. **Also falsified if sentence 5 comes out right under `acoustic: false`** —
-that would mean PR 1's attribution to `Pipeline.swift:920` and
-`VocabularyJudge.swift:307-323` is wrong, and the two-clip gap has another
-cause.
+**Sentence 5's row was corrected in this PR, and the correction is a reasoning
+fix, not a result.** An earlier draft of the table below predicted sentence 5
+correct under today's config and wrong under `acoustic: false`, and used the
+difference between the two as the test. That was wrong on its face. The
+correct-under-today half was a claim about the **veto** arm, which PR 2 does not
+run. PR 1's veto arm gets sentence 5 right because the acoustic pass runs and
+`Pipeline.swift:920` hands `ruleParts` a real `before`; today's arm has the same
+plumbing, and the judge still has to pick with it. Necessary is not sufficient.
+Arm A then measured it: today's config gets sentence 5 **wrong**, with a full
+two-slot menu.
+
+**Confirming PR 1's veto-vs-`acoustic: false` gap live needs a third arm, and it
+is out of scope here.** The veto arm is `ReferenceMatch.swift` plus
+`PARROTFLOW_REFERENCE_MATCH`, and both exist only on
+`origin/proto/reference-matching`. Running it live means building and installing
+that branch. **PR 2 does not do that**, and the runbook below deliberately does
+not mention it. If that gap is worth confirming live, it is its own PR with its
+own build step.
+
+**Verified by** 1–3 coming out as ordinary English under `acoustic: false`, and
+4, 6 and 7 still getting their names from the rules.
+
+**Falsified if** a name the rules are supposed to deliver stops arriving under
+`acoustic: false` — 4, 6 or 7. Then the rules cover less than the replay says,
+and the acoustic path is delivering something the ablation did not attribute to
+it. **Also falsified if a collision still writes a term under `acoustic:
+false`** — 1, 2 or 3. Then something other than the acoustic path is writing it,
+and `Vocabulary.wanted` is not the switch PR 1 took it for.
+
+**No result on sentence 5 falsifies anything in PR 2.** Both arms can get it
+wrong for different reasons: today the judge picks badly from a full menu, under
+`acoustic: false` there is no menu to pick from. Same output, two causes, and
+two arms cannot tell them apart. Record what it does and leave the attribution
+to the log lines.
+
+**Outcome.** The first half held: 1–3 came out as ordinary English and 6 and 7
+got their names. The falsifier fired on sentence 4. See the result block.
 
 ### The runbook
+
+**Both arms are run — see the result block.** This is kept as written so the
+pass can be redone on a later build. It was followed as written on 2026-08-09,
+including the relaunch and the `--check-config` grep before each arm.
 
 Sixteen dictations, two arms, about twenty minutes. Nothing here touches product
 code. It edits one line of your live `vocabulary.yaml` and puts it back at
@@ -1096,13 +1147,19 @@ scripted sentences. No `.wav`, no `voice/`, no copy of `config.yaml` or
 audio search proposing names. So a name can still arrive by rule, and an
 ordinary word can no longer be overwritten by the spotter.
 
+**This table was written before the run and is kept as it was, except sentence
+5.** It is the pre-registration, and it is worth more unedited than tidied. Only
+row 5 is changed, because it was wrong by reasoning rather than by result — the
+paragraph below the table says how. The measured transcripts are in the result
+block, and the four cells this table got wrong are listed after it.
+
 | # | Say | Under `acoustic: false` | Under today's config | Diagnostic for |
 |---|---|---|---|---|
 | 1 | in general in our data set | plain English, no `Redcrawl` | may write `Redcrawl` | the controls given back |
 | 2 | you don't need to update the design | plain English, no `Supabase` | may write `Supabase` | the controls given back |
 | 3 | the bedrock of civilization | plain English, no `Redrock` | may write `Redrock` | the controls given back |
 | 4 | Let's praise Praisy's work | `Praisy's` | `Praisy's` | a rule delivering the hardest term |
-| 5 | deployed on Vercel against the Versailles Castle | **`Vercel … Vercel Castle`, the predicted failure** | `Vercel … Versailles Castle` | both arms — the only row where they must differ |
+| 5 | deployed on Vercel against the Versailles Castle | `Vercel … Vercel Castle` | `Vercel … Vercel Castle` — **corrected**, see below | neither arm |
 | 6 | Matthieu's work | `Matthieu's` | `Matthieu's` | a rule delivering a name alone |
 | 7 | Let's praise Matthieu's work | `Matthieu's`, `'s` intact | same | the possessive, and "praise" left alone |
 | 8 | Let's praise Antonio's work | `Antonio's`, no term written | same | neither arm — it catches damage from elsewhere |
@@ -1110,6 +1167,25 @@ ordinary word can no longer be overwritten by the spotter.
 Say sentence 5 as one sentence. Sentences 7 and 8 both contain "praise", the
 word this speaker's `Praisy` sounds like, so both also check that it stays an
 ordinary word.
+
+**Four of the sixteen cells were wrong, and three are in the same column.** The
+other twelve held — with the caveat that rows 1–3's "may write" cells hold
+whatever happens and are not really predictions.
+
+- **Row 4, `acoustic: false`.** Predicted `Praisy's`. Measured `Praise's`. This
+  is the falsifier, not a miss — see the result block.
+- **Row 5, today's config.** Corrected in this PR, and wrong by reasoning rather
+  than by result: it claimed a veto-arm outcome for an arm PR 2 does not run.
+  Arm A then measured it wrong as well.
+- **Rows 6 and 7, today's config.** Predicted `Matthieu's`. Measured `Matthieu`
+  and `Matthieu` — the possessive is eaten by the acoustic substitution. The
+  plan had the evidence for this and had filed it as PR 9 case B, a decoder
+  fault. It is a second, different fault. PR 9 now carries both.
+
+Three of the four sit in the "under today's config" column, and all three are
+the same mistake: the column was filled in from what the plan wanted the pass to
+do, not from what its code does. The `acoustic: false` column was reasoned from
+`Vocabulary.wanted` and the rule tables, and it went 7 of 8.
 
 Rows 1–3 are the collision cases. None of them can be written by a rule:
 `Redcrawl`'s renderings are "red crawl" and four spellings of it, `Supabase`'s
@@ -1119,14 +1195,17 @@ there, so `acoustic: false` must leave all three alone. Under today's config
 they are three of the 9 controls the pass damages.
 
 Rows 4, 6 and 7 are the rules-still-deliver cases. The name has to arrive from
-the `heard:` list with no audio search behind it.
+the `heard:` list with no audio search behind it. **Row 4 is the one that
+broke** — the rules did not deliver `Praisy`. See the result block.
 
-**Row 5 is the predicted failure, and it comes from PR 1.** The
-`heard: Versailles` rule fires, so `Vercel` then stands twice in one sentence.
-`Vocabulary.wanted` gated the pass off (`Vocabulary.swift:89`), so there is no
-`Outcome`, so `Pipeline.swift:920` hands `ruleParts` a nil `before` and the
-judge cannot tell which occurrence the rule wrote. It offers nothing and the
-castle stays `Vercel`. The log line to look for:
+**Row 5 fails under both arms, and the two failures have different causes.** The
+`heard: Versailles` rule fires, so `Vercel` stands twice in one sentence.
+
+Under `acoustic: false`, `Vocabulary.wanted` gates the pass off
+(`Vocabulary.swift:89`), so there is no `Outcome`, so `Pipeline.swift:920` hands
+`ruleParts` a nil `before` and the judge cannot tell which occurrence the rule
+wrote. It offers nothing and the castle stays `Vercel`. The log line to look
+for:
 
 ```
 vocabulary judge: "Vercel" stands 2 time(s) and no acoustic pass ran, so which
@@ -1134,56 +1213,290 @@ one "Versailles" became cannot be told; that reading is not offered
 vocabulary judge: 0 slot(s) from 0 proposal(s)
 ```
 
-Under today's config the same sentence should log `2 slot(s) from 2
-proposal(s)` and come out with the castle.
+Under today's config the pass runs, `before` is real, and the sentence logs `2
+slot(s) from 2 proposal(s)`. **That is the menu, not the answer.** The judge
+then picks, and it can pick `Vercel` twice. The earlier draft of this section
+read the two-slot menu as a correct outcome; it is only the precondition for
+one.
 
-### Result — awaiting the human
+So row 5 is a diagnostic for **neither** arm. The two arms produce the same
+sentence for two unrelated reasons, and no comparison between them separates the
+two. What tells them apart is the log, and only the log.
 
-**Nothing here is measured yet.** Do not fill this in from a replay, from `say`,
-or from any text-to-speech. A previous session tried `say` and every CTC frame
-came back blank, which invalidated a whole round. These sixteen transcripts can
-only come from a person talking into a microphone.
+### Result, measured 2026-08-09
 
-**Run.** Date: _. Build stamp from `--version`: _. Config dir:
-`~/.config/parrotflow-dev`. Arm order: today's config first, then
-`acoustic: false`.
+**3 of 8 under today's config, 6 of 8 under `acoustic: false`.** Both arms are
+dictated. The headline holds live and the falsifier fired on one sentence.
 
-| # | Under today's config | Under `acoustic: false` | Verdict |
+**Eight sentences dictated once each is not a rate.** It is 16 dictations. Read
+the mechanisms below, which the log settles clip by clip, not the two counts.
+
+**If this is ever redone, it can only be redone by a person talking into a
+microphone.** Not from a replay, not from `say`, not from any text-to-speech. A
+previous session tried `say` and every CTC frame came back blank, which
+invalidated a whole round.
+
+**Run.** Date 2026-08-09. Build stamp `78d7ba2`, from `--version` and from the
+`build:` line of each arm's launch — the same commit as `origin/main`, so no
+Swift under test differs from the tree. Microphone RØDE VideoMic GO II, the
+input named in both launch lines. Right ⌘, push-to-talk. Config dir
+`~/.config/parrotflow-dev`, backed up to `vocabulary.yaml.bak-before-pr2-armb`
+and restored afterwards. Arm A 20:21:43–20:22:22, arm B 20:34:58–20:35:34, in
+that order, each after a verified fresh launch and a `--check-config` that
+printed the right line for its arm. **No correction was accepted at any point**,
+so both arms ran the same `transcription.replacements` table.
+
+| # | Said | Today's config (arm A) | `acoustic: false` (arm B) |
 |---|---|---|---|
-| 1 | _ | _ | _ |
-| 2 | _ | _ | _ |
-| 3 | _ | _ | _ |
-| 4 | _ | _ | _ |
-| 5 | _ | _ | _ |
-| 6 | _ | _ | _ |
-| 7 | _ | _ | _ |
-| 8 | _ | _ | _ |
+| 1 | in general in our data set | `in Redcrawl in our dataset.` ✗ | `In general in our dataset.` ✓ |
+| 2 | you don't need to update the design | `You don't need to update the design.` ✓ | `You don't need to update the design.` ✓ |
+| 3 | the bedrock of civilization | `the Redrock civilization.` ✗ | `the bedrock of civil civilization.` ✓ on the term |
+| 4 | Let's praise Praisy's work | `Let's praise Praisy's work.` ✓ | `Let's praise Praise's work.` ✗ |
+| 5 | deployed on Vercel against the Versailles Castle | `Deployed on Vercel against the Vercel Castle.` ✗ | `deployed on Vercel against the Vercel Gastle.` ✗ |
+| 6 | Matthieu's work | `Matthieu work.` ✗ | `Matthieu's work.` ✓ |
+| 7 | Let's praise Matthieu's work | `Let's Praisy Matthieu work.` ✗ | `Let's praise Matthieu's work.` ✓ |
+| 8 | Let's praise Antonio's work | `Let's praise Antonio's work.` ✓ | `Let's praise Antonio's work.` ✓ |
 
-The `vocabulary judge:` line per sentence per arm, from `~/pr2/*.log`:
+**Two decoder faults are scored as passes, and here is why.** Arm B's sentence 3
+is `civil civilization` and its sentence 5 ends in `Gastle`. Neither word is a
+vocabulary term, neither has a vocabulary log line against it, and arm B's
+sentence 3 logged no vocabulary activity at all. They are the decoder stuttering
+and mishearing an ordinary word. This PR measures what the vocabulary pass does,
+so both are scored on the term: `bedrock` survived, and `Gastle` is not the
+reason sentence 5 is wrong.
+
+#### Arm A — today's config, `acoustic: true`
+
+Every vocabulary line, copied out of `~/Library/Logs/ParrotFlow-Dev.log` at the
+time. The log truncates at 1 MB (`Log.swift:44-45`) and the machine is in daily
+use, so this is the record.
 
 ```
-today            1  …
-today            2  …
-today            3  …
-today            4  …
-today            5  …
-today            6  …
-today            7  …
-today            8  …
+1  vocabulary: "general" -> "Redcrawl" proposed (raw -7.88 vs -8.12, bonus 5.85) (CTC-vs-CTC: 'Redcrawl'=-2.03 > 'general'=-8.12)
+   vocabulary: "general" -> "Redcrawl" also offered (span 0.47)
+   vocabulary: "dataset" -> "Praisy" heard in the audio (spotter -4.48)
+   vocabulary judge: 2 slot(s) from 3 proposal(s)
+   pipeline: vocabulary rewrote the transcript
+       before: in general in our dataset.
+       after:  in Redcrawl in our dataset.
 
-acoustic: false  1  …
-acoustic: false  2  …
-acoustic: false  3  …
-acoustic: false  4  …
-acoustic: false  5  …
-acoustic: false  6  …
-acoustic: false  7  …
-acoustic: false  8  …
+2  vocabulary: "update" -> "Supabase" proposed (raw -5.47 vs -7.18, bonus 2.88) (CTC-vs-CTC: 'Supabase'=-2.59 > 'update'=-7.18)
+   vocabulary judge: 1 slot(s) from 1 proposal(s)
+
+3  vocabulary: "bedrock" -> "Redrock" proposed (raw -12.68 vs -12.62, bonus 2.88) (CTC-vs-CTC: 'Redrock'=-9.80 > 'bedrock'=-12.62)
+   vocabulary: "bedrock" -> "Redrock" also offered (span 0.86)
+   vocabulary: "bedrock" -> "Redrock's" also offered (span 0.70)
+   vocabulary: "bedrock of" -> "Redrock" also offered (span 0.59)
+   vocabulary: "bedrock of" -> "Redrock's" also offered (span 0.63)
+   vocabulary judge: 1 slot(s) from 5 proposal(s)
+   pipeline: vocabulary rewrote the transcript
+       before: the bedrock of civilization.
+       after:  the Redrock civilization.
+
+4  vocabulary: "praise" -> "Praisy" proposed (raw -13.65 vs -14.07, bonus 2.88) (CTC-vs-CTC: 'Praisy'=-10.77 > 'praise'=-14.07)
+   vocabulary: "praise" -> "Praisy" also offered (span 0.83)
+   vocabulary: "praise" -> "Praisy's" also offered (span 0.66)
+   vocabulary judge: 2 slot(s) from 4 proposal(s)
+
+5  vocabulary judge: 2 slot(s) from 2 proposal(s)
+
+6  vocabulary: "Mathieu's" -> "Matthieu" applied (raw -12.53 vs -13.39, bonus 5.49) (CTC-vs-CTC: 'Matthieu'=-7.04 > 'Mathieu's'=-13.39)
+   vocabulary judge: 0 slot(s) from 0 proposal(s)
+
+7  vocabulary: "praise" -> "Praisy" proposed (raw -10.12 vs -9.37, bonus 2.88) (CTC-vs-CTC: 'Praisy'=-7.24 > 'praise'=-9.37)
+   vocabulary: "Mathieu's" -> "Matthieu" applied (raw -12.08 vs -12.76, bonus 5.49) (CTC-vs-CTC: 'Matthieu'=-6.58 > 'Mathieu's'=-12.76)
+   vocabulary: "praise" -> "Praisy" also offered (span 0.83)
+   vocabulary: "praise" -> "Praisy's" also offered (span 0.66)
+   vocabulary judge: 1 slot(s) from 3 proposal(s)
+   pipeline: vocabulary rewrote the transcript
+       before: Let's praise Matthieu work.
+       after:  Let's Praisy Matthieu work.
+
+8  vocabulary: "praise" -> "Praisy" proposed (raw -10.53 vs -11.21, bonus 2.88) (CTC-vs-CTC: 'Praisy'=-7.65 > 'praise'=-11.21)
+   vocabulary: "praise" -> "Praisy" also offered (span 0.83)
+   vocabulary: "praise" -> "Praisy's" also offered (span 0.66)
+   vocabulary judge: 1 slot(s) from 3 proposal(s)
 ```
 
-**Verdict.** _ Did 1–3 come out as ordinary English under `acoustic: false`? Did
-4, 6 and 7 still get their names? Did 5 fail the way PR 1 predicts, and only
-that way?
+**The judge refused correctly on 2, 4 and 8.** Each had a wrong proposal on the
+menu — `Supabase` over "update", `Praisy` over "praise" twice — and each came
+out as ordinary English. The judge is not what failed on those three. It failed
+on 5 and 7, and it was never asked on 6.
+
+**Part 1's AUC 0.318 finding reproduced live, with the two mechanisms
+separated.** Seven proposals carry both raw scores. Six of the seven are wrong —
+only sentence 6's `Matthieu` is a name that was actually said.
+
+| # | proposal | raw, term | raw, word | bonus | boosted | raw prefers | correct? |
+|---|---|---|---|---|---|---|---|
+| 1 | `general` → `Redcrawl` | −7.88 | −8.12 | 5.85 | −2.03 | the term, by 0.24 | no |
+| 2 | `update` → `Supabase` | −5.47 | −7.18 | 2.88 | −2.59 | the term, by 1.71 | no |
+| 3 | `bedrock` → `Redrock` | −12.68 | −12.62 | 2.88 | −9.80 | **the word, by 0.06** | no |
+| 4 | `praise` → `Praisy` | −13.65 | −14.07 | 2.88 | −10.77 | the term, by 0.42 | no |
+| 6 | `Mathieu's` → `Matthieu` | −12.53 | −13.39 | 5.49 | −7.04 | the term, by 0.86 | yes |
+| 7 | `praise` → `Praisy` | −10.12 | −9.37 | 2.88 | −7.24 | **the word, by 0.75** | no |
+| 8 | `praise` → `Praisy` | −10.53 | −11.21 | 2.88 | −7.65 | the term, by 0.68 | no |
+
+Read it as two separate failures.
+
+**The raw score is not evidence.** On 1, 2, 4 and 8 the term beats the word on
+the raw number, before any bonus — and on all four the term is wrong. The margin
+does not help either: sentence 2's 1.71 is the largest in the table and it is a
+wrong proposal, while the only correct proposal sits at 0.86. This is the shape
+of AUC 0.318, on live audio, in the direction Part 1 measured.
+
+**On 3 and 7 the bonus alone made the proposal.** The audio prefers what the
+decoder wrote — by 0.06 on `bedrock`, by 0.75 on `praise` — and the flat 2.88
+for being in the vocabulary flips it. FluidAudio's `shouldReplace` runs on the
+boosted number (`VocabularyRescorer+TokenEvaluation.swift:109-113`), so these
+two proposals exist only because of the bonus, and both are wrong. Sentence 3 is
+the one where the rewrite then landed: the judge took the `bedrock of` →
+`Redrock` span variant, which is why `of` is missing from the output as well.
+
+**Sentence 5 has no acoustic proposal line at all.** Its two proposals are both
+rule parts. The `replacements` stage substitutes without logging anything
+(`Pipeline.swift:780-794` — it returns `count` and `changes` and writes no
+`Log.write`), so `Vercel: heard: [Versal, Versailles, Russell]` firing twice is
+silent. `ruleParts` then found `Vercel` standing twice, had a real `before` from
+the acoustic pass, attributed both, and opened two slots. The judge kept
+`Vercel` in both. **Under today's config sentence 5 is a judge failure on a full
+menu.**
+
+**Sentence 4 needed a rule as well as the audio.** The judge counted 4 proposals
+from 3 acoustic log lines. Acoustic proposals can only be fewer than their log
+lines, never more — the rescorer's line is written before the `moved` guard
+(`Vocabulary.swift:677-694`), span variants are written after theirs
+(`Vocabulary.swift:710-721`), and applied proposals never reach the judge
+(`VocabularyJudge.swift:191`). So at least one of the four is a rule part, which
+means a `Praisy` rendering was in the decode and the `heard:` list fixed it.
+Hold that against arm B's sentence 4.
+
+#### Arm B — `acoustic: false`
+
+Before the first sentence, `--check-config` printed the `acoustic: false` line —
+"11 names are only matched by their pronunciation rules" — and the launch line
+for this arm is `build: 78d7ba2   input=RØDE VideoMic GO II   hotkey=Right ⌘`.
+
+Sentences 1, 2, 3, 4 and 8 logged one line each and nothing else:
+
+```
+pipeline: skipped vocabulary — when vocabulary.count > 0 did not match (vocabulary.count = 0)
+```
+
+No proposal, no rule, no judge. Sentences 6 and 7 logged `vocabulary judge: 1
+slot(s) from 1 proposal(s)` and both came out right. Sentence 5 logged this:
+
+```
+vocabulary judge: "Vercel" stands 2 time(s) and no acoustic pass ran, so which one "Versailles" became cannot be told; that reading is not offered
+vocabulary judge: "Vercel" stands 2 time(s) and no acoustic pass ran, so which one "Versal" became cannot be told; that reading is not offered
+vocabulary judge: 0 slot(s) from 0 proposal(s)
+```
+
+**The collisions are gone.** 1, 2 and 3 write no term. That is the result PR 2
+was for, and it is what the offline `acoustic: false` arm predicted: the
+controls come back whole.
+
+**PR 1's attribution is confirmed live, verbatim.** PR 1 derived that log line
+from an offline replay of a corpus clip and wrote it into this section as a
+prediction. Arm B produced it, word for word, on a sentence PR 1 never saw:
+
+```
+PR 1, from replay:   vocabulary judge: "Vercel" stands 2 time(s) and no acoustic
+                     pass ran, so which one "Versailles" became cannot be told;
+                     that reading is not offered
+                     vocabulary judge: 0 slot(s) from 0 proposal(s)
+
+PR 2, arm B, live:   vocabulary judge: "Vercel" stands 2 time(s) and no acoustic
+                     pass ran, so which one "Versailles" became cannot be told;
+                     that reading is not offered
+                     vocabulary judge: "Vercel" stands 2 time(s) and no acoustic
+                     pass ran, so which one "Versal" became cannot be told; that
+                     reading is not offered
+                     vocabulary judge: 0 slot(s) from 0 proposal(s)
+```
+
+Live it fires twice, because the decoder wrote two different renderings —
+`Versailles` and `Versal` — and both rules produced a `Vercel`. Two rules, two
+occurrences, and `ruleParts` can attribute neither without a `before`.
+
+**This raises the `ruleParts` fix from an inference to a reproduced defect.** It
+is about five lines: take the pre-rules transcript from the `replacements`
+stage, which always has it, instead of from `findings?.text`
+(`Pipeline.swift:917-920`), which is nil whenever the acoustic pass did not run.
+It is still not in this PR. It is now a defect with a live repro rather than a
+reading of the code.
+
+**The possessive is confirmed by removal.** Sentences 6 and 7 come out right
+here, where arm A gave `Matthieu work.` and `Let's Praisy Matthieu work.` The
+same name, the same speaker, the same build, four minutes apart. What changed is
+that arm B has no acoustic substitution, so the name arrives from
+`Matthieu: heard: [Mathieu, Matthew]` as a text rule, and a text rule matches
+`\bMathieu\b` inside `Mathieu's` and leaves the `'s` where it was. PR 9 has the
+mechanism and the code.
+
+#### The falsifier fired: `Praisy` on sentence 4
+
+**A name the rules are supposed to deliver did not arrive.** That is PR 2's
+falsifier, stated above, and it fired. Arm B's sentence 4 logged
+`vocabulary.count = 0` — no rule matched anything in it — and came out
+`Let's praise Praise's work.`
+
+The decode that time was `Praise's`. `Praisy`'s `heard:` list holds `Praises`
+among fourteen renderings, and `\bPraises\b` does not match `Praise's`. Arm A's
+sentence 4 is the contrast: the decoder produced a rendering the list does
+cover, a rule fired, and the sentence came out right. **So the rule table is not
+"not delivering `Praisy`" — it covers the renderings that have been seen, and it
+missed this one.** With the acoustic path on, the acoustic proposal is a second
+route to the same name. With it off there is only the list.
+
+**What this does not overturn.** Not the headline. 3 of 8 against 6 of 8 live,
+and offline `acoustic: false` scores 100 against today's 88 (PR 3) with 0 losses
+against 17. One sentence does not move that, and this sentence is one clip.
+
+**What it does mean.** Switching the acoustic path off is not free, and PR 1
+already knew that — it cost 2 wins offline, on `Versailles`. This is a third
+kind of cost, on a different term, and it means the plan's "the rules earn the
++18" needs a rider: **on `Praisy`, some of the wins come from the acoustic path
+alone**, because the rule table can only hold renderings somebody has already
+seen written down.
+
+**No `heard:` entry can close this one.** The rendering that was missed is
+`Praise's` — the ordinary English word plus a possessive. `Praisy: heard:
+praise` would rewrite sentence 8's `Let's praise Antonio's work` and every other
+ordinary "praise" this speaker ever dictates. Part 1 §7 says exactly this:
+`Praisy: heard: praise` and `Vercel: heard: versal` look identical on the page
+and are not the same risk. So `Praisy` is the term where only the audio can
+separate the name from the word — and round 7 measured it as the hardest term in
+the set, AUC 0.869 (§2). **This is PR 8's problem, met live.** It is also the
+case PR 6 has to be good at, because a clip bank is the only evidence source
+that can tell `Praise's` from `praise` without a rule that fires
+unconditionally.
+
+#### Verdict
+
+**Confirmed.** `acoustic: false` removes the collision failures live. Sentences
+1, 2 and 3 write no term under it, and the log shows the pass never ran. That is
+PR 2's main question and the answer is yes.
+
+**Confirmed, as a bonus.** PR 1's attribution of its two-clip gap to a nil
+`before` at `Pipeline.swift:920` reproduces live, verbatim, on a sentence it
+never saw.
+
+**Falsified.** "The rules still deliver the names they are supposed to" is false
+as stated. `Praisy` did not arrive on sentence 4 under `acoustic: false`,
+because the decoder wrote a rendering no `heard:` entry covers and none safely
+could.
+
+**Left open.** Sentence 5 under today's config: the judge got a two-slot menu
+with both occurrences attributed, and picked `Vercel` twice. That is the judge
+failing with everything it needs, and no arm here diagnoses it further. Also
+open: how often the `Praisy` case happens. One clip is not a rate, and nothing
+in this run measures one.
+
+**What PR 2 could not do.** It could not test PR 1's veto arm. That needs
+`ReferenceMatch.swift` and `PARROTFLOW_REFERENCE_MATCH` from
+`origin/proto/reference-matching` built and installed, which is out of scope
+here and was not done.
 
 ## PR 3 — land the harnesses on `main`
 
@@ -1634,6 +1947,17 @@ is off, the damage that remains is a term whose rendering is an ordinary word.
 `Praisy` is "praise" in this mouth. Sound cannot separate them, the rules fire on
 the spelling, and the judge scores 0 of 8 on exactly this class.
 
+**PR 2 met it live, and it cuts both ways.** Under today's config the judge
+correctly refused `Praisy` over "praise" on two sentences and wrongly took it on
+a third. Under `acoustic: false` the same term was **not delivered** on the
+sentence that needed it: the decoder wrote `Praise's`, no `heard:` entry
+matched, and the sentence came out with the ordinary word. So this term loses
+under both settings, in opposite directions, and no `heard:` entry can fix it —
+`Praisy: heard: praise` would rewrite every ordinary "praise" (§7). Round 7
+already ranked it the hardest term in the set at AUC 0.869 (§2). Any answer here
+is a piece of evidence about the sound, not a rule, which makes PR 6's clip bank
+the only candidate on the table.
+
 **Start with a measurement, not a design.** Two questions, in order:
 
 1. How many terms are in this class, for this speaker and in general? The
@@ -1646,9 +1970,83 @@ the spelling, and the judge scores 0 of 8 on exactly this class.
 framings, two routers, two menu shapes and a score block have all been measured
 on this class and none moved it.
 
-## PR 9 — the possessive the decoder drops
+## PR 9 — the possessive, and there are two of them
 
-**Unscoped and unmeasured. Do not start it with a design.**
+**Two cases with the same symptom. One is measured with a named mechanism, the
+other is one transcript and an empty log.** They produce the same wrong
+sentence, which is how this section came to describe only one of them. Do not
+fix case A and report case B as done.
+
+### Case A — the substitution eats it. Measured.
+
+PR 2's arm A, sentences 6 and 7:
+
+```
+6  vocabulary: "Mathieu's" -> "Matthieu" applied (raw -12.53 vs -13.39, bonus 5.49)
+   vocabulary judge: 0 slot(s) from 0 proposal(s)
+   transcribed: Matthieu work.
+
+7  vocabulary: "Mathieu's" -> "Matthieu" applied (raw -12.08 vs -12.76, bonus 5.49)
+   transcribed: Let's Praisy Matthieu work.
+```
+
+**The decoder wrote `Mathieu's`, with the `'s`.** It is right there in the log
+line, as the word the rescorer matched. The pass matched the whole token,
+possessive included, and wrote the bare term back. The `'s` is lost in the
+replacement, not in the decoding.
+
+**Confirmed by removal, in the same session.** Arm B, four minutes later, same
+build and same speaker: `Matthieu's work.` and `Let's praise Matthieu's work.`
+With the acoustic path off the name arrives from `Matthieu: heard: [Mathieu,
+Matthew]` as a text rule, and `Replacements.exact` builds
+`\bMathieu\b` (`Config.swift:1320-1325`), which matches inside `Mathieu's` and
+leaves the suffix alone. Take the substitution away and the possessive survives.
+
+**The mechanism, in one function.** `Vocabulary.inflected`
+(`Vocabulary.swift:456-465`) exists to prevent exactly this — its own comment
+says so, citing `Mirza's` → `Mirza`. It only fires when the decoded stem is
+spelled like the term:
+
+```swift
+let stem = String(lower.dropLast(suffix.count))
+if stem == term.lowercased() { return term + suffix }
+```
+
+`mathieu` is not `matthieu`, so the guard fails and the bare term comes back.
+**A substitution only runs because the decoder spelled the name wrong, so this
+guard fails on every case it is needed for.** It carries the possessive only
+where nothing needed carrying.
+
+Repro — the function copied out and run alone, no build required:
+
+```
+term=Matthieu  heard=Mathieu's   ->  Matthieu     ← the live case
+term=Matthieu  heard=Matthew's   ->  Matthieu
+term=Praisy    heard=praise's    ->  Praisy
+term=Matthieu  heard=Matthieu's  ->  Matthieu's   ← the only shape it handles
+term=Mirza     heard=Mirza's     ->  Mirza's
+```
+
+The rest of the path agrees and adds nothing back. `locate` finds the span by
+the rescorer's own `originalWord`, which is `Mathieu's`
+(`Vocabulary.swift:769`), and `bounded` accepts it because the next character is
+a space (`Vocabulary.swift:309-320`) — so the possessive is inside the matched
+range. `trailingMarks` restores `.,?!:;` and no apostrophe
+(`Vocabulary.swift:477-480`).
+
+**No judge can catch it.** `autoApplies` returned true
+(`Vocabulary.swift:509-523`: `Mathieus` is not a real word and the term wins on
+raw score), and `VocabularyJudge.acousticParts` drops every applied proposal at
+`VocabularyJudge.swift:191`. That is why sentence 6 logs `0 slot(s) from 0
+proposal(s)` on a dictation where a name was rewritten.
+
+**What case A needs.** Not a design — the mechanism is named. It needs a test on
+`inflected`, and a count of how often the pass writes a name over a possessive
+across the archive, so the fix is sized against something. The guard asks
+whether the decoded stem equals the term, when what it has already been told is
+that the rescorer matched them.
+
+### Case B — the decoder drops it. Unmeasured.
 
 When the decoder spells a term correctly, nothing is proposed, no slot opens and
 the judge is never asked. "Let's praise Matthieu's work" came out as "Let's
@@ -1660,6 +2058,9 @@ the `'s` is audible in the recording. Start there, then count the cases across
 the archive. Only then choose between opening a possessive slot inside the pass
 and treating it as ordinary dictation grammar outside it — the second is a larger
 stage and needs its own eval set.
+
+**Telling them apart is free.** Case A logs `-> "<Term>" applied` on a word that
+ends in `'s`. Case B logs nothing at all.
 
 ## Dead ends — do not retry these
 
