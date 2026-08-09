@@ -1236,15 +1236,32 @@ microphone.** Not from a replay, not from `say`, not from any text-to-speech. A
 previous session tried `say` and every CTC frame came back blank, which
 invalidated a whole round.
 
-**Run.** Date 2026-08-09. Build stamp `78d7ba2`, from `--version` and from the
-`build:` line of each arm's launch — the same commit as `origin/main`, so no
-Swift under test differs from the tree. Microphone RØDE VideoMic GO II, the
-input named in both launch lines. Right ⌘, push-to-talk. Config dir
-`~/.config/parrotflow-dev`, backed up to `vocabulary.yaml.bak-before-pr2-armb`
-and restored afterwards. Arm A 20:21:43–20:22:22, arm B 20:34:58–20:35:34, in
-that order, each after a verified fresh launch and a `--check-config` that
-printed the right line for its arm. **No correction was accepted at any point**,
-so both arms ran the same `transcription.replacements` table.
+**Run.** Date 2026-08-09, config dir `~/.config/parrotflow-dev`. Arm A
+20:21:43–20:22:22, arm B 20:34:58–20:35:34, in that order. Each arm started with
+a fresh launch, and each launch wrote its own stamp, its own input device and
+its own reading of the vocabulary config:
+
+```
+20:21:06  build: 78d7ba2
+20:21:06  config: vocabulary: offered at similarity 0.5 and up, dropped when the
+          audio argues against it by more than 3.0 nats — Arexvy, Claude, …
+20:21:06  launched — hotkey=Right ⌘ mode=push-to-talk mic=Granted
+          accessibility=Granted input=RØDE VideoMic GO II
+
+20:34:28  build: 78d7ba2
+20:34:28  config: vocabulary: `acoustic: false`, so 11 names are only matched by
+          their pronunciation rules
+20:34:28  launched — hotkey=Right ⌘ mode=push-to-talk mic=Granted
+          accessibility=Granted input=RØDE VideoMic GO II
+```
+
+Those are the *running process* saying what it read, which is what part 1 §2 asks
+for — `--check-config` was also run before arm B, and it is a separate process
+reading the file. `78d7ba2` is `origin/main`, so no Swift under test differs from
+the tree. The live `vocabulary.yaml` was backed up to
+`vocabulary.yaml.bak-before-pr2-armb`, one line changed, and restored afterwards.
+**No correction was accepted at any point**, so both arms ran the same
+`transcription.replacements` table.
 
 | # | Said | Today's config (arm A) | `acoustic: false` (arm B) |
 |---|---|---|---|
@@ -1373,9 +1390,8 @@ Hold that against arm B's sentence 4.
 
 #### Arm B — `acoustic: false`
 
-Before the first sentence, `--check-config` printed the `acoustic: false` line —
-"11 names are only matched by their pronunciation rules" — and the launch line
-for this arm is `build: 78d7ba2   input=RØDE VideoMic GO II   hotkey=Right ⌘`.
+The launch quoted above is this arm's: the running process read
+`acoustic: false` at 20:34:28, thirty seconds before the first sentence.
 
 Sentences 1, 2, 3, 4 and 8 logged one line each and nothing else:
 
