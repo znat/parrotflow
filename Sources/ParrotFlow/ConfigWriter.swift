@@ -19,12 +19,57 @@ enum ConfigWriter {
         }
     }
 
-    /// Records that `heard` should be written as `corrected`.
-    static func addReplacement(heard: String, corrected: String) throws {
+    /// Records that `heard` should be written as `corrected`. False when
+    /// nothing was written.
+    ///
+    /// **A revert writes no rule.** When `heard` names a vocabulary term and
+    /// `corrected` does not, the speaker is taking the term back: the app wrote
+    /// `Praisy`, they meant "praise". Writing `"praise": ["Praisy"]` here would
+    /// rewrite *every* `Praisy` into "praise" from then on, correct ones
+    /// included — one revert silently disabling the term. And a rule in
+    /// `config.yaml` is one `--forget` cannot reach, so the only way back out
+    /// was to find it by hand.
+    ///
+    /// The gate sits here rather than only in the caller because this is the
+    /// last function before the file, and all three correction paths reach it.
+    /// A path added later cannot bring the bug back.
+    @discardableResult
+    static func addReplacement(heard: String, corrected: String) throws -> Bool {
+        if let term = revertedTerm(heard: heard, corrected: corrected) {
+            Log.write("correction: \"\(heard)\" -> \"\(corrected)\" takes back the term"
+                + " \(term), so no replacement rule was written — a rule here would"
+                + " rewrite every \(term) into \"\(corrected)\"")
+            return false
+        }
         let url = ConfigStore.fileURL
         let original = try String(contentsOf: url, encoding: .utf8)
         let updated = try insert(heard: heard, corrected: corrected, into: original)
         try updated.write(to: url, atomically: true, encoding: .utf8)
+        return true
+    }
+
+    /// The vocabulary term a correction takes back, when it takes one back.
+    ///
+    /// Two conditions, and both matter. `heard` has to name a term, or this is
+    /// an ordinary correction of an ordinary word. And `corrected` has to name
+    /// no term at all: `Supabase` corrected into `Redcrawl` is one term written
+    /// where another was said, which is a rendering worth recording, not a
+    /// statement that the vocabulary was wrong to fire.
+    ///
+    /// - Parameter vocabulary: the table to ask, when the caller already has
+    ///   one. Read from disk otherwise, which is what the three correction
+    ///   paths do.
+    static func revertedTerm(
+        heard: String, corrected: String, in vocabulary: Config.Vocabulary? = nil
+    ) -> String? {
+        let terms = (vocabulary ?? ConfigStore.loadVocabulary()).terms.keys
+        guard let term = terms.first(where: {
+            $0.caseInsensitiveCompare(heard) == .orderedSame
+        }) else { return nil }
+        guard !terms.contains(where: {
+            $0.caseInsensitiveCompare(corrected) == .orderedSame
+        }) else { return nil }
+        return term
     }
 
     /// Splices the mishearing into the list under its target spelling, adding
