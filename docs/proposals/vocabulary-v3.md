@@ -1640,8 +1640,9 @@ Each was measured. One line each so nobody spends a day rediscovering it.
   rung is cheap in compute, because that encoder already runs on every
   dictation. It is not free in plumbing: nothing in the app reads encoder
   states, `CtcModels.downloadAndLoad()` exposes none, and the only frame-level
-  dump that exists is the CTC head's per-frame distribution
-  (`PARROTFLOW_LOGPROB_DUMP`, `origin/spike/onset-pilot`). Measure the middle
+  dump that exists is the CTC head's per-frame log-probabilities
+  (`PARROTFLOW_LOGPROB_DUMP`, on `origin/spike/ctc-06b` and
+  `origin/spike/onset-pilot`). Measure the middle
   rung on round 7's own two sets before paying for the top one.
 - **Synthetic cold-start seeding.** Untested proposal. A term with no recording
   has no bank at all — `Redcrawl` was in that state until 2026-08-09. Seed it
