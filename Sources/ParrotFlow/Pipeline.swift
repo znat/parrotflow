@@ -788,9 +788,24 @@ struct Pipeline: Equatable, Codable {
             // this one did. A stage handed only the finished sentence cannot
             // tell which words were rewritten, and guessing is how a judge
             // starts reverting things nobody changed.
+            //
+            // `before` is the sentence this stage was handed. `changes` says
+            // which rules fired and not *where*, so the judge needs the earlier
+            // text to tell one occurrence of a term from another. It used to
+            // take that from the acoustic pass, which does not run under
+            // `vocabulary.acoustic: false` — a path that has audio and no
+            // earlier text. This stage always has it.
+            //
+            // Two `replacements` steps in one pipeline publish this twice and
+            // the second wins, exactly as `changes` already does. That is safe
+            // because the two move together: a reader gets the last step's
+            // changes beside the last step's input, which is the pair it needs.
+            // What it does not get is the first step's changes, and that was
+            // already true before this line existed.
             return StageResult(text: done.text, vars: [
                 "count": .int(done.count),
                 "changes": .string(done.changes),
+                "before": .string(text),
             ])
         case .fuzzy:
             // From the rules, not from the table's keys. Fuzzy matching
@@ -912,12 +927,23 @@ struct Pipeline: Equatable, Codable {
         // Both sources. The acoustic pass proposes with positions; a
         // `replacements` rule publishes none, so its substitutions are found by
         // searching for the term and told apart from the terms the decoder
-        // already had by comparing against the text the pass returned.
+        // already had by comparing against the text that stage was handed.
+        //
+        // From `replacements` and not from the acoustic pass, because the pass
+        // may not have run. `Vocabulary.wanted` gates it on
+        // `vocabulary.acoustic`, so with that off `findings` is nil and a term
+        // standing twice could not be attributed at all. The two texts are the
+        // same string whenever both exist — no stage that edits text may sit
+        // above `vocabulary` except `replacements` itself — so this changes
+        // nothing on the path where the pass does run. `findings?.text` stays
+        // as the fallback for a pipeline with no `replacements` step in it.
         var rules = ""
+        var beforeRules: String?
         if case .string(let wrote)? = scope["replacements.changes"] { rules = wrote }
+        if case .string(let handed)? = scope["replacements.before"] { beforeRules = handed }
         let parts = VocabularyJudge.acousticParts(
             findings?.proposals ?? [], in: text, measuredOn: findings?.text ?? text
-        ) + VocabularyJudge.ruleParts(rules, in: text, before: findings?.text)
+        ) + VocabularyJudge.ruleParts(rules, in: text, before: beforeRules ?? findings?.text)
 
         let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
         // Two numbers on every run, not only when the count is fatal.

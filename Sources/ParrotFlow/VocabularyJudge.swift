@@ -279,16 +279,19 @@ enum VocabularyJudge {
     /// "deployed on Versailles" as the decoder's own reading, which it never
     /// was.
     ///
-    /// `before` is the transcript as the acoustic pass returned it, which is
-    /// what `replacements` was handed, and it says which occurrence is which.
-    /// A rule rewrites in place and reorders nothing, so the terms standing in
-    /// the text now are, in order, the occurrences of `heard` and of `term` in
-    /// `before` — and only the first kind is a substitution to offer back. See
-    /// `rewritten(_:_:in:became:)`.
+    /// `before` is the transcript `replacements` was handed, and it says which
+    /// occurrence is which. A rule rewrites in place and reorders nothing, so
+    /// the terms standing in the text now are, in order, the occurrences of
+    /// `heard` and of `term` in `before` — and only the first kind is a
+    /// substitution to offer back. See `rewritten(_:_:in:became:)`.
     ///
     /// When the two do not line up, some other rule wrote the term as well and
     /// nothing here can say which occurrence came from where. Then none of them
-    /// are offered, and the log says so.
+    /// are offered, and the log says so. That is the common case for two
+    /// renderings of one term in one sentence — `Versal` and `Versailles` both
+    /// becoming `Vercel` — because each pair is counted on its own and each
+    /// accounts for one of the two terms standing. A `before` does not decide
+    /// that shape; only reading the pairs per term would.
     ///
     /// A rule whose source is a pattern is skipped. `/(\w+) dot (\w+)/` names
     /// no spelling to offer back, and putting the pattern on a menu would ask
@@ -305,8 +308,12 @@ enum VocabularyJudge {
             else { continue }
             let stands = Vocabulary.spans(of: term, in: text, ignoringCase: true)
             guard let before else {
-                // No acoustic pass ran, so there is no earlier text to compare
-                // against — `--pipeline`, `--replace`, any path with no audio.
+                // No earlier text to compare against. `replacements` publishes
+                // it whenever that stage ran, so this is now only a pipeline
+                // with a `vocabulary:` stage and no `replacements` above it —
+                // where a rule pair can still arrive from a scope seeded
+                // elsewhere. It used to be every path with no audio, and that
+                // cost the judge a reading under `vocabulary.acoustic: false`.
                 // One occurrence is still decidable without it: the rule is in
                 // `changes`, so it fired at least once, and a pre-existing term
                 // would be a second occurrence. More than one and nothing here

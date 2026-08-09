@@ -500,6 +500,72 @@ cases:
       context.ok: false
       context.changed: false
 
+  # --- the name judge, on what a `replacements` rule did -----------------------
+  #
+  # `--pipeline` has no audio, so these are the path that used to have no earlier
+  # text to compare against. `replacements` publishes its input as
+  # `replacements.before`, and that is what says which `Vercel` a rule wrote.
+  # `vocabulary.slots` counts the places the stage found. See
+  # tests/pipelines/vocabulary-rules.yaml for why no model is called.
+
+  # The case the fix is for. The rule rewrites one `Versailles`, the decoder had
+  # already written the other `Vercel`, and the term now stands twice. Without
+  # the earlier text this offered nothing and logged that it could not tell them
+  # apart. One slot, on the occurrence the rule made.
+  - name: a rule is attributed when the term it wrote stands twice
+    pipeline: vocabulary-rules
+    input: a list of possible alternatives for Versailles, such as Vercel
+    expect: a list of possible alternatives for Vercel, such as Vercel
+    expect_vars:
+      replacements.before: a list of possible alternatives for Versailles, such as Vercel
+      replacements.changes: Versailles -> Vercel
+      vocabulary.slots: 1
+
+  # One occurrence was decidable without the earlier text and still is. Here so
+  # that the path which already worked is held, not only the one that did not.
+  - name: a rule is attributed when the term it wrote stands once
+    pipeline: vocabulary-rules
+    input: our app is deployed on Versailles
+    expect: our app is deployed on Vercel
+    expect_vars:
+      vocabulary.slots: 1
+
+  # A term the decoder wrote itself is not a substitution. No rule fired, so
+  # there is nothing to offer back and no menu to build.
+  - name: a term nothing rewrote opens no slot
+    pipeline: vocabulary-rules
+    input: our app is deployed on Vercel
+    expect: unchanged
+    expect_vars:
+      replacements.changes: ""
+      vocabulary.slots: 0
+
+  # Two renderings of one term in one sentence, and the stage declines. Each
+  # pair in `changes` is counted on its own, so each accounts for one of the two
+  # terms standing and neither can claim its own. The earlier text does not
+  # settle this shape; only reading the pairs per term would. This is the live
+  # sentence from the 2026-08-09 dictation pass, and it is still not attributed.
+  - name: two rules writing one term in one sentence decline rather than guess
+    pipeline: vocabulary-rules-two-renderings
+    input: deployed on Versal against the Versailles Castle
+    expect: deployed on Vercel against the Vercel Castle
+    expect_vars:
+      vocabulary.slots: 0
+
+  # Two `replacements` steps, which a pipeline may have. `before` and `changes`
+  # are both the second step's, so they still describe the same run. The second
+  # step finds nothing left to rewrite, so it publishes no changes and the judge
+  # is offered nothing — the first step's changes are not readable from here,
+  # and never were.
+  - name: a second replacements step republishes its own input
+    pipeline: vocabulary-rules-twice
+    input: a list of possible alternatives for Versailles, such as Vercel
+    expect: a list of possible alternatives for Vercel, such as Vercel
+    expect_vars:
+      replacements.before: a list of possible alternatives for Vercel, such as Vercel
+      replacements.changes: ""
+      vocabulary.slots: 0
+
 # Pipelines that must not load at all.
 #
 # Scored separately because the property is different: these never reach a

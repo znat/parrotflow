@@ -1,0 +1,11 @@
+# The same stage, with two renderings of one term in one sentence.
+#
+# Separate from `vocabulary-rules.yaml` because the table is what differs: two
+# rules write `Vercel` here, and each is counted on its own. See the cases.
+languages: [en]
+replacements:
+  Vercel: [Versailles, Versal]
+pipeline:
+  - replacements
+  - vocabulary: ../../examples/prompts/verify_names.md
+    max_readings: 1

@@ -1,0 +1,14 @@
+# Two `replacements` steps above the judge, which a pipeline is allowed to have.
+#
+# Both steps publish under the same namespace and the second wins, for `before`
+# exactly as for `changes`. The pair stays consistent — the judge reads the last
+# step's changes beside the last step's input — and the first step's changes are
+# not readable at all, which was already true before `before` existed.
+languages: [en]
+replacements:
+  Vercel: [Versailles]
+pipeline:
+  - replacements
+  - replacements
+  - vocabulary: ../../examples/prompts/verify_names.md
+    max_readings: 1
