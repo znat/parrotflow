@@ -2344,9 +2344,48 @@ is the version with no generator in front of it, and it is the blind control
 part 1 §2 asks for: if the bank behind the spotter does no better than the bank
 on its own, the spotter is contributing nothing.
 
-**Changes.** Offline first, in the same script 6a extends
-(`scripts/reference-matching.py` on `origin/spike/exemplars-round-2`). No app
-change until the false-positive number says there is a point.
+**Where the raw hits come from, and how they can be got wrong.** This has to be
+stated, because there are three different populations here that all look like
+"the spotter's output" and measuring the wrong one is silent.
+
+The population 6d wants is `spotted.detections` as
+`spotKeywordsWithLogProbs(audioSamples:customVocabulary:minScore: nil)` returns
+it (`Vocabulary.swift:551-553`) — every hit, unfiltered. What must **not** be
+substituted for it:
+
+- **Post-gate spans.** `acousticSpans` applies three gates before anything is
+  proposed — the best term per stretch of audio, nothing already proposed, and
+  nothing sitting on an ordinary word (`Vocabulary.swift:788-792`). Those gates
+  are part of what 6d is replacing, so their output is the wrong population.
+  `Vocabulary.spotterFloor` is a fourth filter on the same output.
+- **`--spot`'s detections.** `SpotCommand` calls the same method with
+  `minScore: -20` and builds its context from `--terms` or the bare term list,
+  where `Vocabulary.prepare` registers the pronunciations too. Same shape,
+  different population.
+- **Word spans from `trace.jsonl`.** Those are the second arm, the blind
+  control. Not the first.
+
+**What exists today and what does not.** `PARROTFLOW_SPOTTER_DUMP=1` writes
+every detection as `spotter: <term> <score> at <start>s-<end>s`
+(`Vocabulary.swift:559-566`), and the decoder's own word spans as
+`word <text> <start>-<end>` (`Vocabulary.swift:540-544`). That is the right
+population. It goes to the app log, which truncates at 1 MB — about fifteen
+minutes — so 141 clips cannot be collected from it after the fact (part 1 §5).
+
+**So 6d starts with a dump, and that is part of its cost.** Give
+`PARROTFLOW_SPOTTER_DUMP` a path as well as its current on/off meaning, and
+write one row per detection — clip, term, score, start, end — with the word
+spans alongside. `PARROTFLOW_REFERENCE_DUMP` on
+`origin/proto/reference-matching` is the model: an environment variable holding
+a path, one tab-separated row appended per event
+(`ReferenceMatch.swift:50-52`, `:276-286`). It is a few lines of Swift and it is
+the only Swift 6d needs before the sweep.
+
+**Changes.** Offline, in the same script 6a extends
+(`scripts/reference-matching.py` on `origin/spike/exemplars-round-2`), plus the
+spotter dump described above. **That dump is the only app change, and it decides
+nothing** — it writes a file. No change to what the app does with a proposal
+until the false-positive number says there is a point.
 
 **Size.** Under 200 lines of Python for the false-positive sweep. Unknown after
 that, and do not scope it before the number. Note the cost: round 7's 122
