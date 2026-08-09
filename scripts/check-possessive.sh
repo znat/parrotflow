@@ -61,6 +61,14 @@ for case in yaml.safe_load(open(sys.argv[1]))["cases"]:
 ' "$ROOT/tests/possessive-cases.yaml")
 
 echo
+# A set that read no cases is not a passing run. Nothing above fails when the
+# case file is missing or will not parse: the loop simply never runs, and
+# `0 = 0` reports green. That is the one failure this script must not have.
+if [ "$total" -eq 0 ]; then
+  echo "  ✗ no cases read from tests/possessive-cases.yaml"
+  exit 1
+fi
+
 printf '  %d/%d  (tests/possessive-cases.yaml)\n' "$pass" "$total"
 [ "$invented" -gt 0 ] && printf '    %d invented a suffix  ← the expensive direction\n' "$invented"
 [ "$dropped"  -gt 0 ] && printf '    %d dropped a suffix\n' "$dropped"
