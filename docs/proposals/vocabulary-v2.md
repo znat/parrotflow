@@ -512,6 +512,37 @@ blank form carrying the *shipped* question, so form is separated from content
 — this spike changed both at once and cannot say what the blanks would be
 worth on their own.
 
+**F20 — audio compared to recordings separates; audio compared to a spelling
+does not (spike, 2026-08-09).** Same proposals as F19, condition `cbw0`, the
+four terms that have recordings in `tests/acoustic/`. F19 is round 5, on
+`spike/raw-score-separation` and not merged; this finding takes the next ID so
+the two do not collide when it lands. Instead of scoring the
+term's spelling against the span, compare the span to the speaker saying the
+term: MFCCs, DTW, nearest recording. **AUC(A vs B) 0.812**, against **0.333**
+for the raw acoustic score on the same 30 A / 46 B. Chance is 0.500.
+
+The control holds. The matched term is nearer than a different term on 27 of
+30 A spans (90%) and 37 of 46 B spans (80%). `mismatched − matched`, which
+cancels anything generic about the span, still separates at 0.755. Length is
+not the explanation: with the length gap held equal inside each pair the
+distance separates at 0.891, and with the distance held equal the length gap
+falls to 0.370.
+
+Two things must be said with the number. **It is one term.** 21 of the 30 A
+spans are `Praisy`, which has 17 recordings and scores 0.882; `Vercel` agrees
+at 0.800 on 6 against 5; `Matthieu`, with 2 recordings, is 0.556. **And it is
+the wrong terms.** `Redcrawl` has no recording and `Supabase` has one, so the
+23 dropped rows include every failure this project actually pays for. The
+recordings were also mined from these same clips, so each is traced to its
+source clip by its samples and held out when the proposal comes from that clip
+— without that the A group scores against copies of itself.
+
+Not a decision rule. The ranges overlap and the scale differs per term:
+`Matthieu`'s whole A range sits above `Praisy`'s whole B range. Anything built
+on this normalises per term. → record ten readings each of the terms that have
+none, re-measure, and only then choose a representation. Round 6 in
+[judge-framings.md](judge-framings.md), `scripts/reference-matching.py`.
+
 ---
 
 ## Build order

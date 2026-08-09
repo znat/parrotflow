@@ -726,3 +726,179 @@ not building the menu at all before tuning anything else.
 Measured with `scripts/gap-signal.py`. No model call, no build, no install. The
 cache predates PR #70, so none of the 15 live collisions of 2026-08-08 are in
 it.
+
+---
+
+# Round 6 — compare the audio to recordings, not to a spelling
+
+**A span sits closer to a recording of the term when the term was said.
+AUC(A vs B) is 0.812 on plain MFCC + DTW, against 0.333 for the raw acoustic
+score on the same rows. The control holds: the matched term is the nearer of
+the two on 27 of 30 A spans, and length does not explain it. Four terms only,
+21 of the 30 A spans are `Praisy`, and `Redcrawl` — the term costing clips —
+has no recording at all.**
+
+Round 5 (`spike/raw-score-separation`, not merged) measured the acoustic
+evidence with the vocabulary bonus taken out and found it inverted: AUC 0.318
+separating "the term was said" from "the term was not said". Every acoustic
+number tried so far scores a **spelling** against audio. The decoder is asked
+what it thinks of `Praisy` as a string, and its answer turns out to be worse
+than nothing.
+
+This round asks the other question. The archive holds the speaker actually
+saying these names, cut by `scripts/mine-pronunciations.py`. Compare the span
+to those, and no spelling is involved.
+
+## The set
+
+Round 5's proposals, condition `cbw0`, deduplicated its way — one row per
+clip, term stem, word range and kind. Restricted to the four terms that have
+any recording.
+
+| term | recordings | A | B |
+|---|---|---|---|
+| Praisy | 17 | 21 | 37 |
+| Vercel | 7 | 6 | 5 |
+| Matthieu | 2 | 3 | 3 |
+| Supabase | 1 | 0 | 1 |
+| **total** | **27** | **30** | **46** |
+
+23 rows dropped from round 5's 33 A / 66 B. 21 for a term with no recording —
+`Claude` ×5, `Tasmeen` ×4, `Mirza` ×4, `Redcrawl` ×3, `Ollama` ×3, `Redrock`,
+`Arexvy`. 2 for the hold-out below, both `Supabase`, and one of those is the
+only A case that lost its evidence: `Supabase` has one recording and it was
+cut from the same clip.
+
+**The recordings were mined from these same clips**, so a recording can be the
+very span it is compared against. Each one is traced back to its source clip by
+searching the archive for its exact samples — the filename does not carry it —
+and any recording from the proposal's own clip is held out. Without that step
+the A group scores against copies of itself. It costs `Praisy` 1 recording of
+17 on the clips that carry one, and it costs `Supabase` its only A case.
+
+## The measurement
+
+Cut the span, padded 0.05s each side, the same cut `mine-pronunciations.py`
+makes. 12 MFCCs at 25ms/10ms, c0 dropped, mean and variance normalised over
+the segment. DTW with a symmetric step pattern, normalised by n + m. Take the
+nearest recording. `scripts/reference-matching.py`, numpy and the standard
+library, about eighty lines of signal processing written out rather than a
+librosa dependency.
+
+## The headline
+
+| | AUC(A vs B) |
+|---|---|
+| chance | 0.500 |
+| the raw acoustic score, round 5, all 33 A / 66 B | 0.318 |
+| **the raw acoustic score on these same 30 / 46** | **0.333** |
+| the spotter score on its own path, round 5 | 0.814 |
+| **nearest recording of the term** | **0.812** |
+| mean over the recordings of the term | 0.795 |
+
+Per term, and this is where the result is thin:
+
+| term | A / B | AUC |
+|---|---|---|
+| Praisy | 21 / 37 | 0.882 |
+| Vercel | 6 / 5 | 0.800 |
+| Matthieu | 3 / 3 | 0.556 |
+| Supabase | 0 / 1 | no pair |
+
+`Praisy` is 70% of the A group and carries the number. `Vercel` agrees on 6
+against 5. `Matthieu` has 2 recordings and 3 A spans and says nothing either
+way. **This is one term measured well and one term measured badly.**
+
+## The control — does it discriminate, or is any recording as good?
+
+Distance from each span to recordings of a *different* term:
+
+| | AUC(matched vs mismatched) | matched is nearer |
+|---|---|---|
+| group A, n=30 | 0.893 | 27/30 (90%) |
+| group B, n=46 | 0.762 | 37/46 (80%) |
+
+Chance is 50%. The right term wins, so the distance is about the term and not
+about the audio being clean. Group B being above chance too is what you would
+expect: a span only becomes a B proposal because the spotter thought it sounded
+like the term.
+
+## Two rival explanations, measured
+
+**1. The A spans are just cleaner speech, and any recording would do.** The
+mismatched distance alone separates A from B at 0.670, so some of the 0.812 is
+generic. The part that is not: `mismatched − matched` cancels whatever is
+generic in the pair and still separates A from B at **0.755**.
+
+**2. It is length.** DTW pays for stretching, and a name has a length.
+
+| | AUC(A vs B) |
+|---|---|
+| span duration alone | 0.472 |
+| \|span − nearest recording\| | 0.604 |
+| **the distance, with the length gap held equal ±0.05s** (385 pairs) | **0.891** |
+| the length gap, with the distance held equal ±0.10 (207 pairs) | 0.370 |
+
+Hold length fixed inside each A/B pair and the distance is undiminished. Hold
+the distance fixed and length falls below chance. Length is not doing the work.
+
+## The distances
+
+| | n | min | q1 | med | q3 | max |
+|---|---|---|---|---|---|---|
+| A nearest matched | 30 | 2.328 | 2.593 | 2.905 | 3.184 | 3.442 |
+| B nearest matched | 46 | 2.717 | 3.141 | 3.279 | 3.391 | 3.565 |
+| A nearest mismatched | 30 | 2.992 | 3.254 | 3.347 | 3.415 | 3.573 |
+| B nearest mismatched | 46 | 3.128 | 3.338 | 3.424 | 3.501 | 3.696 |
+| A Praisy | 21 | 2.328 | 2.471 | 2.698 | 3.078 | 3.348 |
+| B Praisy | 37 | 2.717 | 3.119 | 3.282 | 3.383 | 3.565 |
+| A Vercel | 6 | 2.883 | 2.933 | 2.978 | 3.151 | 3.328 |
+| B Vercel | 5 | 3.041 | 3.142 | 3.222 | 3.253 | 3.376 |
+| A Matthieu | 3 | 3.218 | 3.330 | 3.442 | 3.442 | 3.442 |
+| B Matthieu | 3 | 3.275 | 3.337 | 3.398 | 3.434 | 3.470 |
+
+The ranges overlap. This is a separation, not a decision rule: no threshold on
+the raw distance is clean, and the scales differ per term — `Matthieu`'s whole
+A range sits above `Praisy`'s whole B range. Anything built on this has to
+normalise per term, against that term's own recordings.
+
+## Does the nearest recording's identity carry anything?
+
+Nearly free to ask, and the answer is no. The 21 `Praisy` A spans spread over
+10 of the 16 available recordings, the 37 B spans over 13. The top recording
+takes 4 of 21 in A and 6 of 37 in B. A spans do not converge on a few
+canonical readings, so there is no shortlist to prune to.
+
+## The limitation, plainly
+
+`Redcrawl` has zero recordings and `Supabase` has one. Those are the terms
+actually costing clips — F5's `update→Supabase` and `general→Redcrawl`, round
+4's canonical `00-14-39`. **This round measures the method, not the failures
+that matter.** It says the idea works on a name with 17 recordings. It does not
+say what happens on a name with two, and `Matthieu` at 0.556 is a hint that the
+answer may be "nothing".
+
+## Recommendation
+
+**Measure it on the terms that fail, which means recording them first.** Ten
+readings of `Redcrawl`, `Redrock`, `Supabase`, `Tasmeen`, `Mirza`, `Claude`
+and `Arexvy` would put 23 of the dropped rows back and turn a four-term result
+into a vocabulary-wide one. `tests/acoustic/reading.json` on
+`feat/vocabulary-skills-only` is already a reading script of this shape; it
+covers the wrong terms.
+
+**Do not ship MFCC + DTW.** It is the crudest form of this idea and it was
+chosen to be cheap. If a few recordings per term is the design, the same
+comparison over a speech encoder's frames — or a learned embedding with one
+vector per recording and a cosine — is both stronger and cheaper at run time
+than a dynamic program per recording per span.
+
+**The two signals are not the same signal.** The raw acoustic score is 0.333
+on these rows and the reference distance is 0.812, so what one gets wrong the
+other does not. A naive rank-average of the two lands at 0.599, worse than the
+distance alone, which is what you get from averaging a good predictor with an
+inverted one. Use the distance; do not blend it.
+
+Measured with `scripts/reference-matching.py`. Per-proposal distances in
+[reference-matching-distances.md](reference-matching-distances.md). No model
+call, no decoder, no build, no install — it reads wavs and does arithmetic.
