@@ -1,6 +1,43 @@
 import FluidAudio
 import Foundation
 
+/// Which CTC model decides names.
+///
+/// The transcript is written by `parakeet-tdt-0.6b-v3`. The names are decided
+/// by a second, smaller model — the one `CtcKeywordSpotter` and
+/// `VocabularyRescorer` score against. That model was `parakeet-ctc-110m` by
+/// default and nothing had ever asked whether the default was right.
+///
+/// `PARROTFLOW_CTC_MODEL=110m|0.6b` picks it. The default stays `110m`, so a
+/// user who sets nothing gets exactly what shipped. The variable exists so the
+/// two can be A/B'd from one build instead of two: re-harvesting a menu cache
+/// under each model is the only way to compare them, and that means running the
+/// same binary twice.
+///
+/// A note from FluidAudio's own `CtcModelVariant`: greedy decoding is broken on
+/// both — 113% WER on 110m, 158% on 0.6b. Neither is used that way here. This
+/// pass only ever scores a known spelling against a stretch of audio, which is
+/// the constrained-CTC path FluidAudio recommends.
+enum CtcChoice {
+
+    static let variable = "PARROTFLOW_CTC_MODEL"
+
+    /// The variant named by the environment, or `.ctc110m`.
+    ///
+    /// An unknown value falls back rather than throwing. This is a diagnostic
+    /// switch, and a typo that silently transcribes is better than one that
+    /// stops a user's dictation.
+    static var variant: CtcModelVariant {
+        switch ProcessInfo.processInfo.environment[variable]?.lowercased() {
+        case "0.6b", "06b", "ctc06b": return .ctc06b
+        case "110m", "ctc110m", .none: return .ctc110m
+        case .some(let other):
+            Log.write("vocabulary: unknown \(variable)=\"\(other)\"; using 110m")
+            return .ctc110m
+        }
+    }
+}
+
 /// Finds the names in `vocabulary:` in a transcript that got them wrong, by
 /// matching sound rather than spelling — and, for all but the certain ones,
 /// offers them rather than writing them.
@@ -76,6 +113,14 @@ actor Vocabulary {
     /// that moves whenever somebody corrects a name.
     private var termCount = 0
 
+    /// Pilot only, for `PARROTFLOW_LOGPROB_DUMP`. The CTC token table, the
+    /// blank id and the tokeniser, kept from `prepare` so the dump can name
+    /// the tokens it prints and price a candidate's own tokens per frame.
+    /// Nothing in the pass reads these.
+    private var tokenNames: [Int: String] = [:]
+    private var blankId = 0
+    private var ctcTokenizer: CtcTokenizer?
+
     /// FluidAudio's recommended short-vocabulary opt-ins, from the #702 note.
     private static let rescorerConfig = VocabularyRescorer.Config(
         shortTermCbwTaperPivot: 5,
@@ -103,9 +148,14 @@ actor Vocabulary {
         guard signature != loadedFor || rescorer == nil else { return }
 
         progress?("vocabulary model")
-        let models = try await CtcModels.downloadAndLoad()
-        let directory = CtcModels.defaultCacheDirectory(for: .ctc110m)
+        let variant = CtcChoice.variant
+        let models = try await CtcModels.downloadAndLoad(variant: variant)
+        let directory = CtcModels.defaultCacheDirectory(for: variant)
         let tokenizer = try await CtcTokenizer.load(from: directory)
+        // Pilot only — see `dumpLogProbs`.
+        self.tokenNames = models.vocabulary
+        self.blankId = models.vocabulary.count
+        self.ctcTokenizer = tokenizer
 
         // Pre-tokenising is what makes the spotter fire at all. A term built
         // from text alone carries no CTC token ids and is skipped in silence.
@@ -591,6 +641,21 @@ actor Vocabulary {
                 spotted.detections, in: text, timings: tokenTimings,
                 known: Set(context.terms.map { $0.text.lowercased() }), avoiding: found.map(\.range)
             )
+            // Pilot only. Off unless the env var names a file.
+            if let path = ProcessInfo.processInfo.environment["PARROTFLOW_LOGPROB_DUMP"] {
+                let spans = found.map {
+                    (range: $0.range, heard: $0.change.originalWord,
+                     term: $0.change.replacementWord ?? "",
+                     note: String(format: "rescorer: heard %.2f, term %.2f (boosted)",
+                                  $0.change.originalScore, $0.change.replacementScore ?? 0))
+                } + heardSpans.map {
+                    (range: $0.range, heard: String(text[$0.range]), term: $0.term,
+                     note: String(format: "spotter: %.2f", $0.score))
+                }
+                dumpLogProbs(to: path, text: text, spans: spans, timings: tokenTimings,
+                             logProbs: spotted.logProbs, frameDuration: spotted.frameDuration)
+            }
+
             let wider = Self.widerSpans(
                 in: text,
                 anchors: found.map { ($0.range, $0.change.replacementWord ?? "") }
@@ -749,6 +814,73 @@ actor Vocabulary {
         } catch {
             Log.write("vocabulary: \(error.localizedDescription); left as decoded")
             return .unchanged(text)
+        }
+    }
+
+    // MARK: - Pilot diagnostic (spike/onset-pilot, not product)
+
+    /// `PARROTFLOW_LOGPROB_DUMP=<path>` — the per-frame CTC log-probabilities
+    /// under every span this pass proposed something for.
+    ///
+    /// The question it exists to answer: a proposal is decided on a score
+    /// *summed* over the whole span, and two words that differ by one
+    /// consonant differ in two or three frames. "bedrock" against "Redrock"
+    /// summed to −12.68 against −12.29 — a 0.39 gap over ~10 frames, which is
+    /// the onset evidence divided by the frames that carry none. This prints
+    /// the frames so the onset can be read on its own.
+    ///
+    /// Per frame: the index, the time, the top 8 non-blank tokens, and the
+    /// log-probability of each token in the tokenisation of the decoded word
+    /// and of the term. Those last two are the comparison; the top 8 is there
+    /// to show what else was in contention.
+    private func dumpLogProbs(
+        to path: String, text: String,
+        spans: [(range: Range<String.Index>, heard: String, term: String, note: String)],
+        timings: [TokenTiming], logProbs: [[Float]], frameDuration: Double
+    ) {
+        let spoken = Self.words(from: timings, in: text)
+        func name(_ id: Int) -> String {
+            tokenNames[id].map { $0.replacingOccurrences(of: " ", with: "_") } ?? "<\(id)>"
+        }
+        var out = "\n### \(text)\n"
+        for span in spans {
+            let hits = spoken.filter { $0.range.overlaps(span.range) }
+            guard let start = hits.map(\.start).min(),
+                  let end = hits.map(\.end).max() else { continue }
+            // One frame past the end: `end / frameDuration` truncates, so the
+            // last frame of the word is otherwise dropped.
+            let first = max(0, Int(start / frameDuration))
+            let last = min(logProbs.count, Int(end / frameDuration) + 1)
+            out += String(format: "\n== \"%@\" -> \"%@\"  %.2fs–%.2fs  frames %d–%d  %@\n",
+                          span.heard, span.term, start, end, first, last - 1, span.note)
+            let probes = ctcTokenizer.map { t in
+                [(span.heard, t.encode(span.heard)), (span.term, t.encode(span.term))]
+            } ?? []
+            for (word, ids) in probes {
+                out += "   \(word) = \(ids.map { "\(name($0))#\($0)" }.joined(separator: " "))\n"
+            }
+            for frame in first..<max(first, last) {
+                let row = logProbs[frame]
+                let top = row.enumerated().filter { $0.offset != blankId }
+                    .sorted { $0.element > $1.element }.prefix(8)
+                let cells = top.map { String(format: "%@ %.2f", name($0.offset), $0.element) }
+                var line = String(format: "   f%-4d %5.2fs  %@", frame,
+                                  Double(frame) * frameDuration, cells.joined(separator: "  "))
+                for (word, ids) in probes {
+                    let scores = ids.map {
+                        String(format: "%.2f", row.indices.contains($0) ? row[$0] : -99)
+                    }
+                    line += "  | \(word) \(scores.joined(separator: " "))"
+                }
+                out += line + "\n"
+            }
+        }
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(Data(out.utf8))
+            try? handle.close()
+        } else {
+            try? out.write(toFile: path, atomically: true, encoding: .utf8)
         }
     }
 
