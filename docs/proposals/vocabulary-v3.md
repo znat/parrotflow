@@ -1474,8 +1474,8 @@ mechanism and the code.
 
 **A name the rules are supposed to deliver did not arrive.** That is PR 2's
 falsifier, stated above, and it fired. Arm B's sentence 4 logged
-`vocabulary.count = 0` — no rule matched anything in it — and came out
-`Let's praise Praise's work.`
+`vocabulary.count = 0` — no rule with a vocabulary term as its target fired on
+it — and came out `Let's praise Praise's work.`
 
 The decode that time was `Praise's`. `Praisy`'s `heard:` list holds `Praises`
 among fourteen renderings, and `\bPraises\b` does not match `Praise's`, so no
