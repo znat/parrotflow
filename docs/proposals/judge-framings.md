@@ -914,8 +914,9 @@ more — all 33 A / 66 B are measured for the first time. But that set still has
 no A row for `Redcrawl`, so the terms that matter are answered on a second set
 read straight off the labels of the 48 clips: `Redcrawl` 0.966 over 8 A / 63 B,
 `Supabase` 1.000 over 9 A / 62 B, pooled 0.935 over 63 A / 718 B. The control
-holds in both directions — the name said is nearer its own recordings on 92% of
-A spans and on 2% of B spans. Of the 8 words the app actually wrote a name over
+holds in both directions: a span is nearer the recordings of the name in
+question than of any other name on 92% of A spans, where the name was said, and
+on 2% of B spans, where it was not. Of the 8 words the app actually wrote a name over
 in these clips, 7 sit farther from that name than every real utterance of it,
 and the eighth is farther than 5 of 6.**
 
