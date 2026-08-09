@@ -206,7 +206,21 @@ def check_config(arm, dump):
 
 
 def transcribe(wav, arm, dump):
-    """One clip through the app under one arm. Returns the final transcript."""
+    """One clip through the app under one arm. Returns the final transcript.
+
+    A replay that did not happen is not a wrong answer, and the difference has
+    to be kept. The app exits 0 and prints a transcript block whenever it ran;
+    a non-zero exit, or no block at all, means there is no measurement for this
+    clip. Scoring that as "the arm got it wrong" would move a real count by a
+    real clip for a reason that has nothing to do with the arm, and nothing in
+    the report would say so — which is how a harness lies quietly. So it stops.
+    `--out` is written every clip, so an abort at clip 90 of 141 still leaves
+    90 clips of evidence behind.
+
+    A clip that decodes to nothing is a different thing and is a measurement:
+    the app prints its block with `(empty)` in it, which no label matches, so
+    the clip counts wrong under that arm. That is the answer, not a failure.
+    """
     done = subprocess.run(
         [recall.APP, "--transcribe", str(recall.CLIPS / wav)],
         capture_output=True, text=True, env=environment_for(arm, dump),
@@ -217,7 +231,12 @@ def transcribe(wav, arm, dump):
     for i, line in enumerate(lines):
         if "transcript" in line and "─" in line and i + 1 < len(lines):
             final = lines[i + 1].strip()
-    return final or ""
+    if done.returncode != 0 or final is None:
+        why = (f"exit {done.returncode}" if done.returncode
+               else "no transcript in its output")
+        raise SystemExit(f"✗ arm {arm['name']} on {wav}: the app gave {why}\n"
+                         + (done.stdout + done.stderr).strip())
+    return final
 
 
 def main():
