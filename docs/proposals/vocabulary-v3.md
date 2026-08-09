@@ -9,7 +9,9 @@ acoustic pass makes — and keeping the `heard:` replacement tables — scores 1
 correct against today's 84. All 27 of today's wins survive it, and all 19 of its
 losses go. The acoustic proposal path buys no wins the rules do not already
 deliver. **The first thing to do is switch it off and confirm that on live
-dictation.** It is a config change, not a feature.
+dictation.** It is nearly a config change: PR 1 measured `acoustic: false` and
+it lands on the control arm everywhere except two clips, which it costs. The
+switch is not free and the reason is in PR 1's result.
 
 **The second headline: keep the clip bank and develop it.** The blind control
 killed the *rejection filter as built*, not the recordings under it. The signal
@@ -529,6 +531,12 @@ the name than every real utterance of it. The signal is there and the rule threw
 it away. PR 6 is the attempt to build a rule worth the evidence, and this table
 is what it has to beat.
 
+**Reproduced 2026-08-09 by PR 1**, same build and same command with a fifth arm
+added. Off 76, today 85, tuned filter 104, veto 102. Today's arm flipped 3 clips
+and the filter 1, so the one-clip differences on today and the veto are replay
+noise. The table above stays as the prototype recorded it; PR 1's result block
+carries the reproduction and the new arm.
+
 ## The open item, resolved: the `Mathieu` veto
 
 The prototype logged:
@@ -579,6 +587,150 @@ the control arm's numbers: 103 correct, 27 wins, 0 losses, controls back to 56.
 the same thing by two routes — the veto drops proposals before `autoApplies`, and
 `acoustic: false` stops them existing — so a gap means one of them does something
 extra. Find out which before going further.
+
+### Result, measured 2026-08-09
+
+**The falsifier fired. The gap is two clips wide and it is explained.**
+`acoustic: false` does not reproduce the veto arm. It matches on the controls
+and on the losses. It gives up two wins.
+
+141 labelled clips, `--runs 3`, majority of three replays, `gemma4:e4b-mlx` and
+nothing else loaded, built from `origin/proto/reference-matching` at `ad9f3c0`
+and never installed. Wins and losses are against the `off` arm.
+
+| arm | correct | wins | losses | net | flips |
+|---|---|---|---|---|---|
+| off (empty `terms:`) | 76 | — | — | — | 0 |
+| today | 85 | 28 | 19 | +9 | 3 |
+| tuned filter (tol 1.00) | 104 | 32 | 4 | +28 | 1 |
+| veto everything (tol 0.01) | 102 | 26 | 0 | +26 | 0 |
+| **`acoustic: false`** | **100** | **24** | **0** | **+24** | **0** |
+
+The four published arms reproduce: 76 exact, 85 against 84, 104 exact, 102
+against 103. Today flipped 3 clips and the filter 1, so a clip either way is
+replay noise.
+
+By class:
+
+| class | clips | off | today | tuned filter | veto | `acoustic: false` |
+|---|---|---|---|---|---|---|
+| about a term | 68 | 20 | 38 | 50 | 46 | 44 |
+| controls | 73 | 56 | 47 | 54 | 56 | **56** |
+
+**The controls land where the plan predicted.** 56, all 9 given back, none lost.
+The whole gap is on term clips.
+
+Head to head, `veto → acoustic: false`: **0 wins, 2 losses.** Neither arm flipped
+on any clip over three replays, so two clips is not replay noise.
+
+**Both clips are the same sentence shape.** `Vercel` stands twice and one of the
+two came from a `heard:` rule.
+
+| | |
+|---|---|
+| said | And then you have a list of possible alternatives for Versailles, such as Vercel. |
+| veto | And then you have a list of possible alternatives for Versailles, such as Vercel. |
+| `acoustic: false` | And then you have a list of possible alternatives for **Vercel**, such as Vercel. |
+
+| | |
+|---|---|
+| said | … we are visiting the Versailles castle while our app is being deployed on Vercel. |
+| veto | … we are visiting the Versailles castle while our app is being deployed on Vercel. |
+| `acoustic: false` | … we are visiting the **Vercel** castle while our app is being deployed on Vercel. |
+
+**Where the two routes diverge, and it is not the veto.** `Vocabulary.wanted`
+gates the whole pass on `config.vocabulary.acoustic && !terms.isEmpty`
+(`Vocabulary.swift:89`), so `acoustic: false` produces no `Vocabulary.Outcome`
+at all. The veto arm still runs the pass. It drops every proposal inside
+`ReferenceMatch` and returns an `Outcome` anyway.
+
+That `Outcome` carries one thing the judge needs. `Pipeline.swift:920` passes
+`findings?.text` — the transcript as it stood before the rules — into
+`VocabularyJudge.ruleParts`, which uses it to work out which occurrence of a
+term a `heard:` rule wrote. With `findings` nil and the term standing more than
+once, it can offer nothing. Replaying one gap clip under each arm:
+
+```
+acoustic: false
+  vocabulary judge: "Vercel" stands 2 time(s) and no acoustic pass ran, so
+  which one "Versailles" became cannot be told; that reading is not offered
+  vocabulary judge: 0 slot(s) from 0 proposal(s)
+
+veto
+  vocabulary judge: 2 slot(s) from 2 proposal(s) — "Vercel" (Vercel), "Vercel" (Vercel)
+```
+
+So `acoustic: false` switches off the acoustic proposals and, as a side effect,
+the judge's ability to revert a rule that fired twice in one sentence.
+`Vercel: heard: [Versailles]` is the only rule on this corpus that does.
+
+**What it costs the plan.** Two wins out of 141, both `Versailles`. The headline
+survives: the acoustic path still buys no wins the rules do not deliver,
+switching it off still gives all 9 damaged controls back, and it still removes
+all 19 losses. What changes is that the switch is not free, and the fix is
+product code rather than config. `ruleParts` should take the pre-rules
+transcript from the `replacements` stage, which always has it, instead of from
+the acoustic pass, which may not run. **That is not in this PR.** PR 2 should
+watch for it live: sentence 5 of the standing regression list — "deployed on
+Vercel against the Versailles Castle" — is exactly this shape.
+
+**Cost.** 2115 transcriptions, 26 minutes of wall clock at 10.7 s/clip. The
+"half a day of machine time" above is wrong by an order of magnitude, and a
+cheaper screen-then-confirm design was considered and dropped for being slower
+than the full run.
+
+**Do not read 102 and 100 as precise.** Every arm here rests on recordings mined
+from the corpus it is measured on, and the tolerance was tuned on the clips it
+is reported on. Part 1 §7: the true numbers are worse than these by an unknown
+margin.
+
+### How to reproduce
+
+Three scratch config directories, copied from `~/.config/parrotflow-dev`. Never
+run against the live one.
+
+| dir | `vocabulary.yaml` |
+|---|---|
+| `cfg-on` | unchanged, `acoustic: true` |
+| `cfg-off` | everything from `terms:` down replaced by `terms: {}` |
+| `cfg-noacoustic` | the one line `acoustic: true` changed to `acoustic: false`, every term and every `heard:` list left in place |
+
+Each directory holds `config.yaml`, `vocabulary.yaml`, `verify_names.md`,
+`transforms/` and `voice/`. The reference-matching arms read
+`voice/samples/<Term>/`, so it has to be there. None of it is committed —
+`scripts/check-no-voice.sh` on `main` refuses a commit carrying any of it.
+
+Append this to each copy of `config.yaml`, or 2115 replays append to the
+speaker's own `trace.jsonl`:
+
+```yaml
+audio:
+  output_dir: /some/scratch/dir
+```
+
+Check each arm parses before starting. `cfg-noacoustic` must print
+`vocabulary: acoustic: false, so 11 names are only matched by their
+pronunciation rules` (`Config.swift:1830-1831`):
+
+```sh
+PARROTFLOW_CONFIG_DIR=$S/cfg-noacoustic \
+  .build/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --check-config
+```
+
+Then, from a checkout of `origin/proto/reference-matching`:
+
+```sh
+make app                                   # never `make install`
+
+python3 scripts/reference-ablation.py --runs 3 --out arms.json \
+  --arm "off=$S/cfg-off" \
+  --arm "today=$S/cfg-on" \
+  --arm "filtered=$S/cfg-on,PARROTFLOW_REFERENCE_MATCH=1,PARROTFLOW_REFERENCE_TOL=1.00" \
+  --arm "veto=$S/cfg-on,PARROTFLOW_REFERENCE_MATCH=1,PARROTFLOW_REFERENCE_TOL=0.01" \
+  --arm "noacoustic=$S/cfg-noacoustic"
+```
+
+`reference-ablation.py` exists only on that branch. PR 3 lands it on `main`.
 
 ## PR 2 — confirm it on live dictation
 
