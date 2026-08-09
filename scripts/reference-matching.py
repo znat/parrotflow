@@ -860,7 +860,10 @@ def poison_matrices(exemplars, spans, cache):
         # No pickle: everything in here is a number or a fixed-width unicode
         # array, so this reads a cache written by this script and nothing else.
         blob = np.load(cache)
-        if str(blob["stamp"]) == stamp:
+        # A cache written before the fingerprint existed has no `stamp`, and
+        # asking for one raises rather than rebuilding. Anything this script
+        # cannot vouch for is rebuilt, never trusted.
+        if {"stamp", "se", "ee"} <= set(blob.files) and str(blob["stamp"]) == stamp:
             return blob["se"], blob["ee"]
         print("  the cache does not match this audio; rebuilding", file=sys.stderr)
     se = np.zeros((len(spans), len(exemplars)))
@@ -958,6 +961,7 @@ def poison_report(source_name, cache, robust, injected):
         print(f"  {len(index)} recording(s) are in scope. `--source all` keeps "
               "every one of them.", file=sys.stderr)
         return None
+    poison = index[injected]           # checked above; never looked up again
     se, ee = poison_matrices(exemplars, spans, cache)
     by_term = banks(exemplars)
     where = "the 90th percentile" if robust else "the maximum"
@@ -986,14 +990,14 @@ def poison_report(source_name, cache, robust, injected):
             keep = [i for i in by_term[term] if exemplars[i]["name"] != bad]
             after = arm(keep, exemplars, spans, se, ee, term, robust)
             label, moved = f"{term} - {Path(bad).name[:14]}", bad
-        elif index[injected] in by_term[term]:
+        elif poison in by_term[term]:
             # Injecting a recording the folder already holds would put the same
             # index in the bank twice, and a leave-one-out distance cannot see
             # the difference between the copy and the original.
             print(f"  {term:<26} skipped: {injected} is already in this folder")
             continue
         else:
-            after = arm(by_term[term] + [index[injected]], exemplars, spans,
+            after = arm(by_term[term] + [poison], exemplars, spans,
                         se, ee, term, robust)
             label, moved = f"{term} + {Path(injected).name[:14]}", injected
         print(f"  {label:<26} {base['recordings']:>3}->{after['recordings']:<3}  "
