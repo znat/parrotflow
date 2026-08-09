@@ -740,25 +740,277 @@ python3 scripts/reference-ablation.py --runs 3 --out arms.json \
 scores from the same distribution, but nothing about the *rules* path has been
 checked live since it became load-bearing.
 
-**HUMAN.** Dictate the standing regression sentences on a build whose stamp
-matches the tree, with `acoustic: false` and with today's config, and paste both
-transcripts:
+**HUMAN.** Dictate the standing regression sentences twice — once with today's
+config, once with `acoustic: false` — on a build whose stamp matches the tree.
+The runbook below is the whole procedure. Paste both transcripts into the result
+block.
 
-1. "in general in our data set" — must not become Redcrawl
-2. "you don't need to update the design" — must not become Supabase
-3. "the bedrock of civilization" — must not become Redrock
-4. "Let's praise Praisy's work"
-5. "deployed on Vercel against the Versailles Castle", one sentence
-6. "Matthieu's work"
-7. "Let's praise Matthieu's work" — the `'s` must survive
-8. "Let's praise Antonio's work" — the control, not a vocabulary term
+**PR 1 changed one expectation.** Sentence 5 is the shape PR 1's gap clips have:
+`Vercel` standing twice with one occurrence written by the `heard: Versailles`
+rule. Offline, `acoustic: false` gets that sentence wrong. So this pass has a
+predicted failure as well as predicted passes, which makes it a stronger test —
+it confirms an offline finding live instead of only looking for absence of
+damage.
 
-**Verified by** 1–3 coming out as ordinary English under `acoustic: false`, and
-4–6 still getting their names from the rules.
+**Verified by** 1–3 coming out as ordinary English under `acoustic: false`,
+4, 6 and 7 still getting their names from the rules, and sentence 5 failing
+exactly as PR 1 predicts — `Vercel … Vercel Castle` under `acoustic: false`,
+correct under today's config.
 
-**Falsified if** a name the rules are supposed to deliver stops arriving. Then
-the rules cover less than the replay says and the acoustic path is doing
-something the ablation did not attribute to it.
+**Falsified if** a name the rules are supposed to deliver stops arriving, other
+than sentence 5's second `Vercel`. Then the rules cover less than the replay
+says and the acoustic path is doing something the ablation did not attribute to
+it. **Also falsified if sentence 5 comes out right under `acoustic: false`** —
+that would mean PR 1's attribution to `Pipeline.swift:920` and
+`VocabularyJudge.swift:307-323` is wrong, and the two-clip gap has another
+cause.
+
+### The runbook
+
+Sixteen dictations, two arms, about twenty minutes. Nothing here touches product
+code. It edits one line of your live `vocabulary.yaml` and puts it back at
+step 9.
+
+**Do not accept a correction during the pass.** A correction adds a rule to
+`transcription.replacements` in `config.yaml`
+(`ConfigWriter.addReplacement:23-28`), the app reloads on the save, and from
+that point the two arms are running different rules. The transcripts stop being
+comparable. If you correct something by accident, note it and redo both arms.
+
+**1. Check the installed build against the tree first.** PR 2 changes no Swift,
+so the code under test is `origin/main`. Often the installed app already matches
+and steps 2 and 3 are unnecessary.
+
+```sh
+/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --version
+git -C ~/Documents/parrotflow rev-parse --short origin/main
+```
+
+The two strings must be equal, and the first must not end in `-dirty`. On
+2026-08-09 both printed `78d7ba2`. If they match, go to step 4.
+
+**2. Build a stamped build.** In a scratch worktree, so the stamp is a clean
+hash and your working branch is left alone. `.claude/worktrees/` is in
+`.gitignore`, so the tree is clean and `build-app.sh` adds no `-dirty`.
+
+```sh
+cd ~/Documents/parrotflow
+git worktree add .claude/worktrees/pr2-build origin/main
+cd .claude/worktrees/pr2-build
+make app          # prints "==> Build stamp: <hash>"
+```
+
+**3. Install it and re-check the stamp.** `make install` stops the running app,
+copies the bundle to `/Applications` and relaunches it.
+
+```sh
+cd ~/Documents/parrotflow/.claude/worktrees/pr2-build
+make install
+/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --version
+grep "build: " ~/Library/Logs/ParrotFlow-Dev.log | tail -1
+```
+
+`--version` and the log's launch line must both give the hash `make app`
+printed. Part 1 §2: a stale `/Applications` bundle once produced a whole round
+of wrong conclusions. Never launch the binary with no flag — a bare run starts a
+second instance that takes your dictation.
+
+**4. Back up the live vocabulary before touching it.**
+
+```sh
+cd ~/.config/parrotflow-dev
+cp vocabulary.yaml vocabulary.yaml.bak-before-pr2-live
+```
+
+The `.bak-before-<thing>` name is the convention already in that directory.
+
+**5. Arm A is today's config, which is what is live.** Confirm it and confirm
+the app agrees:
+
+```sh
+grep -n '^acoustic:' ~/.config/parrotflow-dev/vocabulary.yaml
+/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --check-config | grep vocabulary
+```
+
+`grep` must print `32:acoustic: true`. `--check-config` must print these three
+lines, wrapped here to fit:
+
+```
+  · vocabulary: 11 terms in vocabulary.yaml, 11 matched by sound, 37 by rule
+  · vocabulary: offered at similarity 0.5 and up, dropped when the audio argues
+    against it by more than 3.0 nats — Arexvy, Claude, Matthieu, Mirza, Ollama,
+    Praisy, Redcrawl, Redrock, Supabase, Tasmeen, Vercel
+  · vocabulary: 37 pronunciation(s) searched for by sound as well as matched exactly
+```
+
+**6. Dictate the eight sentences into a scratch file.**
+
+```sh
+mkdir -p ~/pr2 && touch ~/pr2/today.txt && open -a TextEdit ~/pr2/today.txt
+```
+
+Hold Right ⌘ — the dev build's push-to-talk key, `AppVariant.defaultHotkey` —
+say one sentence, release. One sentence per line, in the order of the table in
+*What each sentence is for* below. Say them normally. Do not correct anything.
+
+**7. Copy the log lines out now, before the second arm.** The log truncates to
+zero at 1 MB (`Log.swift:44-45`), which is about fifteen minutes of activity. Do
+not plan to grep it after all sixteen dictations.
+
+```sh
+grep -E "transcribed:|vocabulary judge:|vocabulary rewrote" \
+  ~/Library/Logs/ParrotFlow-Dev.log | tail -40 > ~/pr2/today.log
+```
+
+`transcribed:` is the final text, after the pipeline and just before it is
+inserted (`AppDelegate.swift:2009`). The `vocabulary judge:` lines are what
+`Pipeline.swift:934` and `VocabularyJudge.swift:320-328` write.
+
+**8. Arm B — switch the acoustic path off, and dictate the same eight.**
+
+```sh
+cd ~/.config/parrotflow-dev
+sed -i '' 's/^acoustic: true$/acoustic: false/' vocabulary.yaml
+grep -n '^acoustic:' vocabulary.yaml        # must print 32:acoustic: false
+/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --check-config | grep vocabulary
+```
+
+No restart. `AppDelegate.watchConfig` watches `vocabulary.yaml` and reloads on
+save. `--check-config` must now print:
+
+```
+  · vocabulary: 11 terms in vocabulary.yaml, 11 matched by sound, 37 by rule
+  · vocabulary: `acoustic: false`, so 11 names are only matched by their
+    pronunciation rules
+```
+
+The "offered at similarity" line and the "37 pronunciation(s) searched for by
+sound" line are gone. The first line does not change: it counts terms in the
+file, not what runs. If you still see "offered at similarity", the edit did not
+land — stop.
+
+Then dictate the same eight sentences and copy the lines out again:
+
+```sh
+touch ~/pr2/noacoustic.txt && open -a TextEdit ~/pr2/noacoustic.txt
+# dictate, then:
+grep -E "transcribed:|vocabulary judge:|vocabulary rewrote" \
+  ~/Library/Logs/ParrotFlow-Dev.log | tail -40 > ~/pr2/noacoustic.log
+```
+
+**9. Put the vocabulary back, and check that it went back.**
+
+```sh
+cp ~/.config/parrotflow-dev/vocabulary.yaml.bak-before-pr2-live \
+   ~/.config/parrotflow-dev/vocabulary.yaml
+grep -n '^acoustic:' ~/.config/parrotflow-dev/vocabulary.yaml   # 32:acoustic: true
+/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --check-config | grep "offered at similarity"
+```
+
+The last command must print a line. If it prints nothing you are still on
+`acoustic: false`.
+
+**10. Fill in the result block**, then remove the build worktree if you made
+one: `git worktree remove .claude/worktrees/pr2-build`.
+
+Nothing from `~/pr2/` gets committed except the sixteen transcripts of the eight
+scripted sentences. No `.wav`, no `voice/`, no copy of `config.yaml` or
+`vocabulary.yaml`.
+
+### What each sentence is for
+
+`acoustic: false` keeps every term and every `heard:` list. It only stops the
+audio search proposing names. So a name can still arrive by rule, and an
+ordinary word can no longer be overwritten by the spotter.
+
+| # | Say | Under `acoustic: false` | Under today's config | Diagnostic for |
+|---|---|---|---|---|
+| 1 | in general in our data set | plain English, no `Redcrawl` | may write `Redcrawl` | the controls given back |
+| 2 | you don't need to update the design | plain English, no `Supabase` | may write `Supabase` | the controls given back |
+| 3 | the bedrock of civilization | plain English, no `Redrock` | may write `Redrock` | the controls given back |
+| 4 | Let's praise Praisy's work | `Praisy's` | `Praisy's` | a rule delivering the hardest term |
+| 5 | deployed on Vercel against the Versailles Castle | **`Vercel … Vercel Castle`, the predicted failure** | `Vercel … Versailles Castle` | both arms — the only row where they must differ |
+| 6 | Matthieu's work | `Matthieu's` | `Matthieu's` | a rule delivering a name alone |
+| 7 | Let's praise Matthieu's work | `Matthieu's`, `'s` intact | same | the possessive, and "praise" left alone |
+| 8 | Let's praise Antonio's work | `Antonio's`, no term written | same | neither arm — it catches damage from elsewhere |
+
+Say sentence 5 as one sentence. Sentences 7 and 8 both contain "praise", the
+word this speaker's `Praisy` sounds like, so both also check that it stays an
+ordinary word.
+
+Rows 1–3 are the collision cases. None of them can be written by a rule:
+`Redcrawl`'s renderings are "red crawl" and four spellings of it, `Supabase`'s
+are "super base", "superbees" and "superbase", and `Redrock`'s is "red rock",
+which does not match inside "bedrock". Only the audio search can put a name
+there, so `acoustic: false` must leave all three alone. Under today's config
+they are three of the 9 controls the pass damages.
+
+Rows 4, 6 and 7 are the rules-still-deliver cases. The name has to arrive from
+the `heard:` list with no audio search behind it.
+
+**Row 5 is the predicted failure, and it comes from PR 1.** The
+`heard: Versailles` rule fires, so `Vercel` then stands twice in one sentence.
+`Vocabulary.wanted` gated the pass off (`Vocabulary.swift:89`), so there is no
+`Outcome`, so `Pipeline.swift:920` hands `ruleParts` a nil `before` and the
+judge cannot tell which occurrence the rule wrote. It offers nothing and the
+castle stays `Vercel`. The log line to look for:
+
+```
+vocabulary judge: "Vercel" stands 2 time(s) and no acoustic pass ran, so which
+one "Versailles" became cannot be told; that reading is not offered
+vocabulary judge: 0 slot(s) from 0 proposal(s)
+```
+
+Under today's config the same sentence should log `2 slot(s) from 2
+proposal(s)` and come out with the castle.
+
+### Result — awaiting the human
+
+**Nothing here is measured yet.** Do not fill this in from a replay, from `say`,
+or from any text-to-speech. A previous session tried `say` and every CTC frame
+came back blank, which invalidated a whole round. These sixteen transcripts can
+only come from a person talking into a microphone.
+
+**Run.** Date: _. Build stamp from `--version`: _. Config dir:
+`~/.config/parrotflow-dev`. Arm order: today's config first, then
+`acoustic: false`.
+
+| # | Under today's config | Under `acoustic: false` | Verdict |
+|---|---|---|---|
+| 1 | _ | _ | _ |
+| 2 | _ | _ | _ |
+| 3 | _ | _ | _ |
+| 4 | _ | _ | _ |
+| 5 | _ | _ | _ |
+| 6 | _ | _ | _ |
+| 7 | _ | _ | _ |
+| 8 | _ | _ | _ |
+
+The `vocabulary judge:` line per sentence per arm, from `~/pr2/*.log`:
+
+```
+today            1  …
+today            2  …
+today            3  …
+today            4  …
+today            5  …
+today            6  …
+today            7  …
+today            8  …
+
+acoustic: false  1  …
+acoustic: false  2  …
+acoustic: false  3  …
+acoustic: false  4  …
+acoustic: false  5  …
+acoustic: false  6  …
+acoustic: false  7  …
+acoustic: false  8  …
+```
+
+**Verdict.** _ Did 1–3 come out as ordinary English under `acoustic: false`? Did
+4, 6 and 7 still get their names? Did 5 fail the way PR 1 predicts, and only
+that way?
 
 ## PR 3 — land the harnesses on `main`
 
