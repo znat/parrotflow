@@ -268,7 +268,7 @@ is not — which is exactly what `10-12-37` needs and what a menu of whole
 sentences cannot express. It also makes the cost linear in slots instead of
 the product PR 6 had to cap at two.
 
-Recorded as F17 in [vocabulary-v2.md](vocabulary-v2.md).
+Recorded in [vocabulary-v3.md](vocabulary-v3.md), which replaced vocabulary-v2.md.
 
 ---
 
@@ -578,7 +578,7 @@ patch.
    what the speaker said, no rule on that class can be falsified, and none
    should be shipped. That is a gap for `menu-cases.yaml` to fill.
 
-Recorded as F18 in [vocabulary-v2.md](vocabulary-v2.md).
+Recorded in [vocabulary-v3.md](vocabulary-v3.md), which replaced vocabulary-v2.md.
 
 ---
 
