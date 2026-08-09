@@ -80,6 +80,7 @@ from librosa: forty lines against a heavy dependency for a spike.
 **No model call anywhere.** No app, no decoder, no Ollama. Reads wavs.
 """
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -826,6 +827,26 @@ def poison_rows(source_name="all"):
     return exemplars, spans
 
 
+def fingerprint(exemplars, spans):
+    """A hash of the exact audio these matrices were computed from.
+
+    Names and counts are not enough. A recording can be replaced without its
+    path changing, and a span can move without the number of spans changing;
+    either would make a cached matrix describe different audio while still
+    looking valid. So the MFCCs themselves go into the digest, in order, with
+    the identity of the row they belong to. Any change anywhere rebuilds.
+    """
+    digest = hashlib.sha256()
+    for e in exemplars:
+        digest.update(f"E|{e['name']}|{e['term']}|{e['from']}|".encode())
+        digest.update(np.ascontiguousarray(e["mfcc"], dtype=np.float64).tobytes())
+    for s in spans:
+        digest.update(
+            f"S|{s['wav']}|{s['set']}|{s['stem']}|{s.get('group', '')}|".encode())
+        digest.update(np.ascontiguousarray(s["mfcc"], dtype=np.float64).tobytes())
+    return digest.hexdigest()
+
+
 def poison_matrices(exemplars, spans, cache):
     """Every span-to-recording and recording-to-recording distance, once.
 
@@ -834,13 +855,14 @@ def poison_matrices(exemplars, spans, cache):
     after that is indexing, which is what makes twenty-odd arms affordable.
     """
     names = [e["name"] for e in exemplars]
+    stamp = fingerprint(exemplars, spans)
     if cache and Path(cache).exists():
-        # No pickle: the names go in as a fixed-width unicode array, so this
-        # reads a cache written by this script and nothing else.
+        # No pickle: everything in here is a number or a fixed-width unicode
+        # array, so this reads a cache written by this script and nothing else.
         blob = np.load(cache)
-        if [str(n) for n in blob["names"]] == names and int(blob["spans"]) == len(spans):
+        if str(blob["stamp"]) == stamp:
             return blob["se"], blob["ee"]
-        print("  the cache does not match this data; rebuilding", file=sys.stderr)
+        print("  the cache does not match this audio; rebuilding", file=sys.stderr)
     se = np.zeros((len(spans), len(exemplars)))
     for i, s in enumerate(spans):
         for j, e in enumerate(exemplars):
@@ -852,7 +874,8 @@ def poison_matrices(exemplars, spans, cache):
             ee[i, j] = ee[j, i] = dtw(exemplars[i]["mfcc"], exemplars[j]["mfcc"])
         print(f"  recordings {i + 1}/{len(exemplars)}", end="\r", file=sys.stderr)
     if cache:
-        np.savez(cache, names=np.array(names), spans=len(spans), se=se, ee=ee)
+        np.savez(cache, stamp=stamp, names=np.array(names), spans=len(spans),
+                 se=se, ee=ee)
     return se, ee
 
 
@@ -925,9 +948,18 @@ def banks(exemplars):
 
 def poison_report(source_name, cache, robust, injected):
     exemplars, spans = poison_rows(source_name)
+    index = {e["name"]: i for i, e in enumerate(exemplars)}
+    if injected not in index:
+        # `--source` drops recordings, and `--inject` is a path somebody typed.
+        # Say which one is wrong rather than raising a KeyError halfway through
+        # a nine-minute run.
+        print(f"✗ no recording {injected} under source {source_name}.",
+              file=sys.stderr)
+        print(f"  {len(index)} recording(s) are in scope. `--source all` keeps "
+              "every one of them.", file=sys.stderr)
+        return None
     se, ee = poison_matrices(exemplars, spans, cache)
     by_term = banks(exemplars)
-    index = {e["name"]: i for i, e in enumerate(exemplars)}
     where = "the 90th percentile" if robust else "the maximum"
 
     print(f"\n=== 6a: what one bad clip costs ===  spread is {where} of the")
@@ -954,6 +986,12 @@ def poison_report(source_name, cache, robust, injected):
             keep = [i for i in by_term[term] if exemplars[i]["name"] != bad]
             after = arm(keep, exemplars, spans, se, ee, term, robust)
             label, moved = f"{term} - {Path(bad).name[:14]}", bad
+        elif index[injected] in by_term[term]:
+            # Injecting a recording the folder already holds would put the same
+            # index in the bank twice, and a leave-one-out distance cannot see
+            # the difference between the copy and the original.
+            print(f"  {term:<26} skipped: {injected} is already in this folder")
+            continue
         else:
             after = arm(by_term[term] + [index[injected]], exemplars, spans,
                         se, ee, term, robust)
@@ -1103,8 +1141,10 @@ def main():
                          "cluster one clip at a time")
     args = ap.parse_args()
     if args.poison or args.pronunciation:
-        _, exemplars, spans, se, ee = poison_report(
-            args.source, args.cache, args.robust, args.inject)
+        got = poison_report(args.source, args.cache, args.robust, args.inject)
+        if got is None:
+            return 2
+        _, exemplars, spans, se, ee = got
         if args.pronunciation:
             poison_pronunciation(exemplars, spans, se, ee, args.robust,
                                  pronunciation_split(exemplars))
