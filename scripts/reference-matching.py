@@ -5,6 +5,17 @@
     scripts/reference-matching.py --table FILE     # the per-proposal distances
     scripts/reference-matching.py --source round6  # only round 6's recordings
     scripts/reference-matching.py --poison         # PR 6a, below
+    scripts/reference-matching.py --subsample      # PR 6e, below
+
+**PR 6e lives under `--subsample`.** It asks how many recordings a bank needs
+before it may decide. For each term it draws random subsets of that term's
+folder at n = 2, 3, 5, 8, 12 and re-scores the same spans against the smaller
+bank, many draws per n, and reports the median and the range. It reports the
+AUC and the rule's own veto counts side by side, because 6a found the AUC
+cannot see the threshold: `spread` is one number per term, so it divides out
+of any ranking inside that term. The veto counts are what an abstain rule is
+about. Subsampling measures how *this* bank degrades — not how a new term with
+n clips behaves, which nothing here can measure.
 
 **PR 6a lives at the bottom of this file, under `--poison`.** It asks a
 different question from the rest: not how well the distance separates, but how
@@ -81,8 +92,11 @@ from librosa: forty lines against a heavy dependency for a spike.
 """
 import argparse
 import hashlib
+import itertools
 import json
+import math
 import os
+import random
 import re
 import statistics
 import subprocess
@@ -893,13 +907,19 @@ def summarise(values, robust):
     return quantile(values, 0.9) if robust else max(values)
 
 
-def arm(bank, exemplars, spans, se, ee, term, robust, tolerance=1.0):
+def arm(bank, exemplars, spans, se, ee, term, robust, tolerance=1.0, floor=3):
     """One term, one bank of recordings: its AUC, its spread and its veto.
 
     `bank` is the list of exemplar indices that count as recordings of the
     term. The per-clip hold-out is applied inside, the same way
     `measure_scripted` and `ReferenceMatch.verdict` apply it: a span never
     scores against a recording cut from its own clip.
+
+    `floor` is the abstain rule: under this many usable recordings the bank
+    does not decide and the span is scored by nobody. `ReferenceMatch.verdict`
+    abstains under three, which is the default here. 6e sweeps it, so it is a
+    parameter and not a literal — a curve of what the rule does at n=2 cannot
+    be drawn by a rule that refuses to run at n=2.
     """
     out = {"term": term, "recordings": len(bank)}
     # The spread over the whole bank, with nothing held out. This is the number
@@ -909,6 +929,10 @@ def arm(bank, exemplars, spans, se, ee, term, robust, tolerance=1.0):
 
     rows = {"scripted": {"A": [], "B": []}, "proposals": {"A": [], "B": []}}
     veto = {"A": [0, 0], "B": [0, 0]}
+    # Most spans hold nothing out, so most of them share one `usable` set and
+    # one width. 6e calls this function tens of thousands of times; recomputing
+    # an O(n²) leave-one-out per span is the whole cost. Same numbers, memoised.
+    widths = {}
     for k, s in enumerate(spans):
         if s["set"] == "scripted":
             group = "A" if s["stem"] == term else "B"
@@ -921,10 +945,13 @@ def arm(bank, exemplars, spans, se, ee, term, robust, tolerance=1.0):
             continue
         distance = min(se[k][i] for i in usable)
         rows[s["set"]][group].append(distance)
-        if len(usable) < 3:
-            continue                       # ReferenceMatch abstains under three
-        held = [min(ee[i][j] for j in usable if j != i) for i in usable]
-        width = summarise(held, robust)
+        if len(usable) < floor:
+            continue                       # the bank abstains: too few clips
+        key = tuple(usable)
+        if key not in widths:
+            held = [min(ee[i][j] for j in usable if j != i) for i in usable]
+            widths[key] = summarise(held, robust)
+        width = widths[key]
         if not (width > 0):
             continue
         veto[group][1] += 1
@@ -1116,6 +1143,340 @@ def poison_pronunciation(exemplars, spans, se, ee, robust, split):
               f"{got['veto']['A'][0]}/{got['veto']['A'][1]}")
 
 
+# --------------------------------------------------- the subsample arm, PR 6e
+
+def subsets(count, size, draws, rng):
+    """`draws` distinct subsets of `size` indices out of `count`.
+
+    Exhaustive when there are few enough. `Claude` has six recordings, so at
+    n=5 there are six possible banks in total; drawing 200 of them would
+    report the same six subsets with invented weights. Above the cut it
+    samples without replacement, so no bank is counted twice.
+    """
+    total = math.comb(count, size)
+    if total <= draws:
+        return [list(pick) for pick in itertools.combinations(range(count), size)]
+    seen, out = set(), []
+    while len(out) < draws:
+        pick = tuple(sorted(rng.sample(range(count), size)))
+        if pick in seen:
+            continue
+        seen.add(pick)
+        out.append(list(pick))
+    return out
+
+
+def band(values):
+    """median and range, the only honest summary of a set of draws.
+
+    §2's rule about single runs applies to sampling too. Which two clips you
+    happen to pick decides the answer at n=2, so one draw is worth nothing.
+    """
+    got = [v for v in values if v == v]
+    if not got:
+        return float("nan"), float("nan"), float("nan")
+    return statistics.median(got), min(got), max(got)
+
+
+def inner(values):
+    """The 10th and 90th percentile of the draws, beside the outer range.
+
+    A min-max range over 200 draws is set by two draws. It says how bad it can
+    get, which is the question here, but it says nothing about how often. The
+    inner band says that.
+    """
+    got = [v for v in values if v == v]
+    if not got:
+        return float("nan"), float("nan")
+    return quantile(got, 0.1), quantile(got, 0.9)
+
+
+def share(values, test):
+    """What fraction of the draws satisfy `test`, as a percentage."""
+    got = [v for v in values if v == v]
+    if not got:
+        return float("nan")
+    return sum(1 for v in got if test(v)) / len(got) * 100
+
+
+def subsample_report(source_name, cache, robust, ns, draws, seed, floor,
+                     tolerance, csv=None):
+    """6e: per-term AUC and per-term veto against the number of recordings.
+
+    For each term, take random subsets of its bank at each n, and score the
+    same spans against the smaller bank. The per-clip hold-out runs inside
+    `arm` exactly as before, so a subsampled bank can still lose a recording
+    to the span it is judging.
+
+    Two numbers per point, because 6a found they disagree. The AUC ranks spans
+    inside one term, and `spread` is a constant inside one term, so the AUC
+    cannot see the threshold at all. The veto counts are the rule's own
+    decision, and they are what an abstain rule is for.
+    """
+    exemplars, spans = poison_rows(source_name)
+    se, ee = poison_matrices(exemplars, spans, cache)
+    by_term = banks(exemplars)
+    where = "the 90th percentile" if robust else "the maximum"
+
+    print(f"\n=== 6e: the abstain curve ===  spread is {where} of the")
+    print("  leave-one-out distances. `veto B` is spans the rule drops where the")
+    print("  term was NOT said — true rejections, the rule working. `veto A` is")
+    print("  the same rule dropping a span where the term WAS said — false")
+    print(f"  rejections, the rule costing. Tolerance {tolerance}, abstain under")
+    print(f"  {floor} usable recordings, seed {seed}, up to {draws} draws per point.")
+    print(f"  {len(exemplars)} recordings, {len(spans)} spans, source {source_name}.")
+    print("\n  Every cell is a median over the draws with a band, never one draw.")
+    print("  AUC carries its full range. The veto rates carry the inner 10–90")
+    print("  band, because a min-max over 200 draws is set by two of them.")
+    print(f"  `dis` is how often a draw leaves the rule disarmed — under "
+          f"{DISARMED:.0f}% of the")
+    print("  true rejections it should make. `cost` is how often a draw throws")
+    print(f"  away more than {OVERCOST:.0f}% of the spans where the term really "
+          "was said.")
+
+    curves = defaultdict(dict)               # term -> n -> list of AUCs
+    vetoes = defaultdict(dict)               # term -> n -> list of arm results
+    full_bank = {}
+    sizes = {}
+    for term in sorted(by_term):
+        bank = by_term[term]
+        sizes[term] = len(bank)
+        full = arm(bank, exemplars, spans, se, ee, term, robust,
+                   tolerance=tolerance, floor=floor)
+        # `Praisy` and `Vercel` have no scripted recording and so no A row on
+        # the scripted set. The proposal set is the only place they rank at all.
+        which = "scripted" if full["n_scripted"][0] else "proposals"
+        full_bank[term] = (full, which)
+        print(f"\n  {term}  —  {len(bank)} recordings, AUC on the {which} set, "
+              f"{full['n_' + which][0]} A / {full['n_' + which][1]} B at full bank")
+        print(f"  {'n':>4} {'draws':>6}  {'AUC med [min-max]':^25}  "
+              f"{'veto B %':^22} {'dis':>4}  {'veto A %':^22} {'cost':>4}  "
+              f"{'spread':^9}")
+        # The whole bank is the row 6a reports, and it is the reference every
+        # subsample is read against. Adding it twice when it is already in `ns`
+        # would print the same single draw as if it were two measurements.
+        for n in sorted({x for x in ns if x <= len(bank)} | {len(bank)}):
+            rng = random.Random(f"{seed}|{term}|{n}")
+            picks = subsets(len(bank), n, draws, rng)
+            got = [arm([bank[i] for i in pick], exemplars, spans, se, ee, term,
+                       robust, tolerance=tolerance, floor=floor)
+                   for pick in picks]
+            aucs = [g[f"auc_{which}"] for g in got]
+            curves[term][n] = aucs
+            vetoes[term][n] = got
+            label = f"{n}" + ("*" if n == len(bank) else "")
+            print(f"  {label:>4} {len(picks):>6}  "
+                  f"{fmt_band(band(aucs), '.3f'):<25}  "
+                  f"{fmt_veto(got, 'B')}  {fmt_veto(got, 'A')}  "
+                  f"{fmt_one(band([g['spread'] for g in got])[0], '.3f'):>9}")
+        print("  * the whole bank: one draw, and the row 6a's tables report")
+
+    print("\n=== the cohorts ===  a mean over a changing set of terms is not a")
+    print("  curve. These are fixed sets: every term in a cohort reaches every n")
+    print("  in its row, so the columns compare.")
+    # One block per distinct set of terms, not one per n. Every n between 2 and
+    # 5 keeps the same eleven terms, so they are one cohort with four rows and
+    # not four cohorts. The block is labelled by the largest n they all reach.
+    seen = {}
+    for floor_n in ns:
+        members = tuple(sorted(t for t in sizes if sizes[t] >= floor_n))
+        if members:
+            seen[members] = floor_n
+    for members, floor_n in seen.items():
+        print(f"\n  the {len(members)} terms with at least {floor_n} recordings: "
+              f"{', '.join(members)}")
+        print(f"  {'n':>4}  {'mean per-term AUC over the cohort':^25}")
+        for n in [x for x in ns if x <= floor_n]:
+            # One draw index per term, averaged. A term with fewer draws than
+            # the widest cycles, so every draw of the small bank is used and
+            # none is used twice before all of them are used once.
+            width = max(len(curves[t][n]) for t in members)
+            means = []
+            for r in range(width):
+                take = [curves[t][n][r % len(curves[t][n])] for t in members]
+                take = [v for v in take if v == v]
+                if take:
+                    means.append(sum(take) / len(take))
+            print(f"  {n:>4}  {fmt_band(band(means), '.3f')}")
+
+    print("\n=== the same cohorts, as the rule's own decision ===  6a's table,")
+    print("  one row per n. A whole cohort's banks are cut to n at once and the")
+    print("  rejections are summed, so this is directly comparable to 6a's")
+    print("  '554 true rejections' — and to the blind control under it.")
+    for members, floor_n in seen.items():
+        print(f"\n  the {len(members)} terms with at least {floor_n} recordings")
+        print(f"  {'n':>4}  {'true rejections (B)':^26}  "
+              f"{'false rejections (A)':^26}")
+        for n in [x for x in ns if x <= floor_n] + ["all"]:
+            pick = (lambda t: vetoes[t][sizes[t]]) if n == "all" \
+                else (lambda t: vetoes[t][n])
+            width = max(len(pick(t)) for t in members)
+            sums = {"A": [], "B": [], "dA": [], "dB": []}
+            for r in range(width):
+                draw = [pick(t)[r % len(pick(t))] for t in members]
+                for group in ("A", "B"):
+                    sums[group].append(sum(g["veto"][group][0] for g in draw))
+                    sums["d" + group].append(
+                        sum(g["veto"][group][1] for g in draw))
+            print(f"  {str(n):>4}  "
+                  f"{fmt_total(sums['B'], sums['dB']):^26}  "
+                  f"{fmt_total(sums['A'], sums['dA']):^26}")
+        print("  'all' is every term at its whole bank — the 6a row, one draw.")
+        print("  The denominator is the blind control: reject every span.")
+
+    print("\n=== the smallest n a term is safe at ===  safe means the rule is")
+    print(f"  disarmed in at most {SAFE_DIS:.0f}% of draws and throws away over "
+          f"{OVERCOST:.0f}% of")
+    print(f"  the true spans in at most {SAFE_COST:.0f}% of them, at this n and "
+          "every larger n")
+    print("  measured. Those two shares are a convention; the per-draw rates are")
+    print("  in the tables above and can be read against another one.")
+    print(f"\n  {'term':<10} {'rec':>4} {'safe n':>7}  {'full-bank AUC':>13}  "
+          f"{'full-bank spread':>17}")
+    safe = {}
+    for term in sorted(sizes):
+        got = [n for n in sorted(curves[term]) if n <= max(ns)]
+        answer = None
+        for i, n in enumerate(got):
+            if all(is_safe(vetoes[term][m]) for m in got[i:]):
+                answer = n
+                break
+        safe[term] = answer
+        full, which = full_bank[term]
+        print(f"  {term:<10} {sizes[term]:>4} "
+              f"{(str(answer) if answer else '> ' + str(max(got))):>7}  "
+              f"{fmt_one(full[f'auc_{which}'], '.3f'):>13}  "
+              f"{full['spread']:>17.3f}")
+    ranked = [t for t in sorted(sizes) if safe[t]]
+    if len(ranked) > 2:
+        counts = Counter(safe[t] for t in ranked)
+        print("\n  safe n takes "
+              f"{', '.join(f'{v} term(s) at {k}' for k, v in sorted(counts.items()))}")
+        print("  what predicts it, over the terms that reach a safe n:")
+        print(f"    Spearman(safe n, recordings)        "
+              f"{spearman([safe[t] for t in ranked], [sizes[t] for t in ranked]):+.2f}")
+        print(f"    Spearman(safe n, full-bank spread)  "
+              f"{spearman([safe[t] for t in ranked], [full_bank[t][0]['spread'] for t in ranked]):+.2f}")
+        print("  Read those two numbers as nothing. Safe n is nearly a constant")
+        print("  here, so almost every pair is a tie and the rank correlation is")
+        print("  carried by the one or two terms that differ. There is no")
+        print("  per-term threshold to predict, which is the result.")
+
+    if csv:
+        # The printed tables are for reading. This is for building the result
+        # block out of, so no number in it is transcribed by hand.
+        lines = ["statistic,term,recordings,n,draws,auc_set,auc_median,auc_min,"
+                 "auc_max,veto_b_median,veto_b_min,veto_b_max,veto_b_scored,"
+                 "veto_b_rate,veto_b_disarmed,veto_a_median,veto_a_min,"
+                 "veto_a_max,veto_a_scored,veto_a_rate,veto_a_overcost,spread"]
+        for term in sorted(sizes):
+            for n in sorted(curves[term]):
+                got = vetoes[term][n]
+                row = [where.split()[-1], term, sizes[term], n, len(got),
+                       full_bank[term][1]]
+                row += [f"{v:.4f}" for v in band(curves[term][n])]
+                for group, test in (("B", lambda r: r < DISARMED),
+                                    ("A", lambda r: r > OVERCOST)):
+                    counts = band([g["veto"][group][0] for g in got])
+                    scored = [g["veto"][group][1] for g in got]
+                    rates = [g["veto"][group][0] / g["veto"][group][1] * 100
+                             for g in got if g["veto"][group][1]]
+                    row += [f"{v:.0f}" for v in counts]
+                    row += [f"{statistics.median(scored):.0f}",
+                            f"{statistics.median(rates):.1f}" if rates else "",
+                            f"{share(rates, test):.1f}" if rates else ""]
+                row.append(f"{band([g['spread'] for g in got])[0]:.4f}")
+                lines.append(",".join(str(v) for v in row))
+        Path(csv).write_text("\n".join(lines) + "\n")
+        print(f"\n  wrote {csv}")
+
+
+# `safe` in the last table: the rule is disarmed in at most SAFE_DIS% of draws
+# and over-rejects in at most SAFE_COST% of them.
+SAFE_DIS = 10.0
+SAFE_COST = 5.0
+
+
+def is_safe(got):
+    rates = lambda group: [g["veto"][group][0] / g["veto"][group][1] * 100
+                           for g in got if g["veto"][group][1]]
+    b, a = rates("B"), rates("A")
+    if not b or not a:
+        return False
+    return (share(b, lambda r: r < DISARMED) <= SAFE_DIS
+            and share(a, lambda r: r > OVERCOST) <= SAFE_COST)
+
+
+def spearman(x, y):
+    """Rank correlation, ties averaged. Eleven points, so read the sign."""
+    def ranks(values):
+        order = sorted(range(len(values)), key=lambda i: values[i])
+        out = [0.0] * len(values)
+        i = 0
+        while i < len(order):
+            j = i
+            while j + 1 < len(order) and values[order[j + 1]] == values[order[i]]:
+                j += 1
+            for k in range(i, j + 1):
+                out[order[k]] = (i + j) / 2.0
+            i = j + 1
+        return out
+    rx, ry = ranks(x), ranks(y)
+    mx, my = sum(rx) / len(rx), sum(ry) / len(ry)
+    top = sum((a - mx) * (b - my) for a, b in zip(rx, ry))
+    left = sum((a - mx) ** 2 for a in rx) ** 0.5
+    right = sum((b - my) ** 2 for b in ry) ** 0.5
+    return top / (left * right) if left and right else float("nan")
+
+
+def fmt_total(counts, denominators):
+    got = band(counts)
+    return (f"{got[0]:.0f} [{got[1]:.0f}–{got[2]:.0f}] of "
+            f"{statistics.median(denominators):.0f}")
+
+
+# A draw is "disarmed" when the rule drops under this share of the spans it
+# should drop, and "costing" when it drops over this share of the spans where
+# the term really was said. Both are read off the rule's own decision, which is
+# the number 6a found an AUC cannot see. The thresholds are conventions, so the
+# per-draw rates are printed beside them and can be re-read against others.
+DISARMED = 25.0
+OVERCOST = 50.0
+
+
+def fmt_one(value, spec):
+    return format(value, spec) if value == value else "  -  "
+
+
+def fmt_band(triple, spec):
+    median, low, high = triple
+    if median != median:
+        return f"{'-':^25}"
+    return (f"{format(median, spec):>6} "
+            f"[{format(low, spec)}–{format(high, spec)}]")
+
+
+def fmt_veto(got, group):
+    """The rule's own decision at this n: how much it rejects, and how surely.
+
+    The denominator moves between draws, because the per-clip hold-out can take
+    a subsampled bank under the abstain floor and then that span is judged by
+    nobody. So the rate is computed inside each draw and summarised after,
+    never as one ratio of two medians.
+    """
+    scored = [g["veto"][group][1] for g in got]
+    if not any(scored):
+        return f"{'abstained':^22} {'-':>4}"
+    rates = [g["veto"][group][0] / g["veto"][group][1] * 100
+             for g in got if g["veto"][group][1]]
+    counts = band([g["veto"][group][0] for g in got])
+    low, high = inner(rates)
+    body = (f"{statistics.median(rates):>3.0f} [{low:.0f}-{high:.0f}] "
+            f"{counts[0]:.0f}/{statistics.median(scored):.0f}")
+    test = (lambda r: r < DISARMED) if group == "B" else (lambda r: r > OVERCOST)
+    return f"{body:^22} {share(rates, test):>3.0f}%"
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--table", metavar="FILE", help="write the per-proposal table")
@@ -1143,7 +1504,43 @@ def main():
     ap.add_argument("--pronunciation", action="store_true",
                     help="6a's second arm: fill a thin second pronunciation "
                          "cluster one clip at a time")
+    ap.add_argument("--subsample", action="store_true",
+                    help="6e: subsample each term's bank at several sizes and "
+                         "report AUC and veto against the number of recordings")
+    ap.add_argument("--ns", default="2,3,5,8,12",
+                    help="6e: the bank sizes to draw, comma separated")
+    ap.add_argument("--draws", type=int, default=200,
+                    help="6e: how many distinct subsets per point. Fewer are "
+                         "used when the bank has fewer subsets than that, and "
+                         "then every subset is measured")
+    ap.add_argument("--seed", default="6e-2026-08-10",
+                    help="6e: the sampling seed. Recorded in the output")
+    ap.add_argument("--floor", type=int, default=2,
+                    help="abstain under this many usable recordings. "
+                         "ReferenceMatch uses 3; 6e uses 2 so that n=2 has a "
+                         "decision to report at all. Two is the arithmetic "
+                         "minimum: one recording has no leave-one-out distance")
+    ap.add_argument("--tolerance", type=float, default=1.0,
+                    help="reject when distance > tolerance × spread")
+    ap.add_argument("--csv", default=None,
+                    help="6e: write every number in the tables to this file")
     args = ap.parse_args()
+    if args.subsample:
+        if args.floor < 2:
+            print("✗ --floor must be at least 2: a bank of one recording has "
+                  "no leave-one-out distance and so no spread", file=sys.stderr)
+            return 2
+        try:
+            ns = sorted({int(x) for x in args.ns.split(",") if x.strip()})
+        except ValueError:
+            print(f"✗ --ns wants integers, got {args.ns!r}", file=sys.stderr)
+            return 2
+        if not ns or ns[0] < 2:
+            print("✗ --ns wants sizes of 2 or more", file=sys.stderr)
+            return 2
+        subsample_report(args.source, args.cache, args.robust, ns, args.draws,
+                         args.seed, args.floor, args.tolerance, args.csv)
+        return 0
     if args.poison or args.pronunciation:
         got = poison_report(args.source, args.cache, args.robust, args.inject)
         if got is None:

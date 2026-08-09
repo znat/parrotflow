@@ -448,6 +448,16 @@ pair is a shortage of clips, not a verdict on the term: `Matthieu` was 0.556 on
 2 recordings in round 6 and is 1.000 on 11. PR 4 carries that number, because it
 is the argument for keeping the audio from every correction.
 
+**Measured, 6e: the floor is 5, and "must not reject" starts well above three.**
+Subsampling every term's bank says two recordings are indefensible for all
+eleven — 18% to 40% of two-clip banks throw away over half the term's own
+correct spans — and three are not safe either, at 4% to 15%. At five it is 0% to
+3.5%. Both statistics need the same five. **Each of the two numbers above is one
+draw and neither is the term.** `Matthieu` at 2 recordings has a median AUC of
+0.806 over its 55 possible pairs, running 0.605 to 0.935; `Supabase` at 2 runs
+0.636 to 0.998. 6e's result block, and its own caveat: subsampling a good bank
+is not the same as a new term's first five corrections.
+
 **Some terms have never once been proposed correctly, so they cannot be evaluated
 on the proposal set at all.** Five of eleven have no correct-proposal row in the
 whole spontaneous archive: `Redcrawl`, `Arexvy`, `Claude`, `Mirza`, `Redrock`.
@@ -2419,6 +2429,298 @@ the recordings were mined from the corpus they are scored on, so the curve is
 better than the truth by an unknown margin. It is the *shape* of the curve this
 is for, not the height.
 
+### Result, measured 2026-08-10
+
+**Abstain below five recordings, not three. One number covers ten of the eleven
+terms, and it is the same number for both statistics.** At n=3 a draw still
+throws away over half of a term's own correct spans between 4% and 11% of the
+time. At n=5 that is 0% to 2.5%. The prototype's floor of 3 was arithmetic —
+"two recordings give one distance" — and it is a floor on *computability*, not
+on usefulness. Usefulness arrives two clips later.
+
+**The falsifier half fired, and on the statistic that cannot see the
+decision.** It fires on the AUC clause: `Praisy` and `Vercel` do not flatten,
+they are still climbing at n=12. It does not fire on the clause that matters —
+the per-term decision curves agree closely, and one n describes ten of eleven
+terms. This is 6a's lesson again. 6a's falsifier was written against an AUC
+that cannot see `spread`; 6e's first clause is written against the same AUC. PR
+10's config key is the right shape. Its value is 5, not 3.
+
+No app, no build, no model, no Ollama. `scripts/reference-matching.py` with a
+`--subsample` arm on top of 6a's, 122 recordings, 170 spans, every distance
+already in 6a's `--cache`. Deterministic given the seed: `6e-2026-08-10`, up to
+200 distinct subsets per point, every subset enumerated where a bank has fewer
+than 200. Nothing under `~/.config/parrotflow-dev/` was written; the arms run on
+a copy.
+
+#### Both baselines reproduce
+
+`--set scripted --source all` gives `Supabase` 1.000, `Redrock` 0.993,
+`Tasmeen` 0.985, `Redcrawl` 0.966, `Mirza` 0.940, `Arexvy` 0.936, `Ollama`
+0.874, `Matthieu` 0.848, `Claude` 0.844, pooled **0.935** over 63 A and 718 B.
+The control is 0.832 on A and 0.076 on B, 58/63 and 13/718. Duration alone is
+0.535. 6a's `--poison` table reproduces byte for byte as well, including the
+554 → 228 true rejections. The archive is still 122 recordings over 11 terms.
+
+#### What the archive supports — the plan had this wrong
+
+6e's own text says "n = 12 exists for four terms and n = 8 for six". Counted:
+**n = 8 exists for seven terms and n = 12 for three.**
+
+| n | terms that reach it |
+|---|---|
+| 2, 3, 4, 5 | all eleven |
+| 6 | all eleven — `Claude` has exactly six |
+| 8 | seven: `Matthieu` 11, `Mirza` 15, `Praisy` 26, `Redcrawl` 8, `Supabase` 11, `Tasmeen` 8, `Vercel` 16 |
+| 12 | three: `Mirza` 15, `Praisy` 26, `Vercel` 16 |
+
+`Claude` cannot reach n = 8, as the plan says.
+
+#### The AUC curve, per term
+
+Median over the draws, with the full range under it. `Praisy` and `Vercel` have
+no scripted A row, so they are on the proposal set and marked †. **The 90th
+percentile gives the identical table** — see below.
+
+| term | rec | n=2 | n=3 | n=4 | n=5 | n=6 | n=8 | n=12 | full |
+|---|---|---|---|---|---|---|---|---|---|
+| arexvy | 7 | 0.895 | 0.921 | 0.923 | 0.936 | 0.936 | — | — | 0.936 |
+| | | .862–1.000 | .887–1.000 | .897–1.000 | .913–.985 | .921–.985 | | | |
+| claude | 6 | **0.582** | **0.635** | 0.736 | 0.851 | — | — | — | 0.844 |
+| | | .480–.654 | .539–.759 | .610–.885 | .726–.867 | | | | |
+| matthieu | 11 | 0.806 | 0.842 | 0.850 | 0.855 | 0.853 | 0.853 | — | 0.848 |
+| | | .605–.935 | .594–.940 | .705–.931 | .757–.917 | .804–.897 | .815–.877 | | |
+| mirza | 15 | 0.950 | 0.954 | 0.954 | 0.952 | 0.950 | 0.948 | 0.943 | 0.940 |
+| | | .823–1.000 | .821–.996 | .871–.992 | .927–.992 | .927–.990 | .929–.974 | .929–.950 | |
+| ollama | 7 | 0.797 | 0.851 | 0.869 | 0.874 | 0.874 | — | — | 0.874 |
+| | | .562–.900 | .685–.903 | .697–.903 | .828–.892 | .854–.885 | | | |
+| praisy † | 26 | 0.736 | 0.761 | 0.770 | 0.789 | 0.798 | 0.804 | 0.827 | 0.869 |
+| | | .469–.851 | .476–.874 | .593–.882 | .642–.887 | .650–.887 | .704–.892 | .726–.898 | |
+| redcrawl | 8 | 0.955 | 0.966 | 0.964 | 0.962 | 0.963 | — | — | 0.966 |
+| | | .736–.998 | .818–1.000 | .867–1.000 | .879–1.000 | .897–1.000 | | | |
+| redrock | 7 | 0.866 | 0.917 | 0.951 | 0.973 | 0.993 | — | — | 0.993 |
+| | | .723–.980 | .779–.980 | .875–.996 | .920–.996 | .958–.996 | | | |
+| supabase | 11 | 0.946 | 0.962 | 0.973 | 0.979 | 0.989 | 0.996 | — | 1.000 |
+| | | .636–.998 | .733–1.000 | .842–1.000 | .880–1.000 | .898–1.000 | .927–1.000 | | |
+| tasmeen | 8 | 0.880 | 0.926 | 0.931 | 0.981 | 0.985 | — | — | 0.985 |
+| | | .726–.987 | .756–.995 | .803–.995 | .851–.995 | .869–.992 | | | |
+| vercel † | 16 | 0.700 | 0.767 | 0.767 | 0.800 | 0.833 | 0.833 | 0.900 | 0.933 |
+| | | .467–.933 | .500–.933 | .500–.933 | .600–.933 | .567–.933 | .633–.933 | .733–.933 | |
+
+† on the proposal set, 21 A / 37 B for `Praisy` and 6 A / 5 B for `Vercel`.
+`Vercel`'s AUC moves in steps of 1/30, so read its column as coarse.
+
+**Three things in that table.**
+
+**A single draw at n=2 is worth nothing, which is why nobody should have
+quoted `Matthieu` 0.556.** `Matthieu` at n=2 has a median of 0.806 and a range
+of 0.605 to 0.935. Round 6's 0.556 was one draw of two clips out of the 55
+possible. `Supabase` runs .636 to .998 at n=2 and `Claude` .480 to .654.
+`Praisy` and `Vercel` have draws below chance at n=2 *and* at n=3.
+
+**Nine of eleven flatten. `Praisy` and `Vercel` do not.** Both are still
+climbing at n=12, and both are the terms scored on the proposal set rather than
+the scripted one. Whether that is the term or the set, this experiment cannot
+say. `Redcrawl` is flat from n=2, `Mirza` from n=2, and `Mirza` *falls* slightly
+as clips arrive, 0.954 at n=3 against 0.940 at 15.
+
+**The median hides everything.** `Arexvy`'s median at n=2 is 0.895 against
+0.936 at its full seven. Read only that and n=2 looks nearly free. The range is
+what says otherwise, and the veto below says it louder.
+
+#### The decision, which is the number that decides abstain
+
+Two shares, per term and per n, at tolerance 1.00. **Disarmed**: the draw
+rejects under 25% of the B spans it should. **Cost**: the draw rejects over 50%
+of the A spans — the term really being said, thrown away. Both read off the
+rule's own verdict, which is what 6a found an AUC cannot see. Maximum on the
+left of each pair, 90th percentile on the right.
+
+| term | n=2 | n=3 | n=4 | n=5 | n=6 | n=8 |
+|---|---|---|---|---|---|---|
+| **disarmed %** | | | | | | |
+| arexvy | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | — |
+| claude | **60 / 60** | **90 / 55** | **46.7 / 26.7** | **16.7 / 16.7** | 0 / 0 | — |
+| matthieu | 12.7 / 12.7 | 7.9 / 1.2 | 1.5 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| mirza | 6.7 / 6.7 | 5 / 2 | 1.5 / 0.5 | 0 / 0 | 0 / 0 | 0 / 0 |
+| ollama | **33.3 / 33.3** | **40 / 17.1** | 17.1 / 2.9 | 4.8 / 0 | 0 / 0 | — |
+| praisy | **19.5 / 19.5** | 21.5 / 9 | 15 / 6.5 | 8.5 / 0.5 | 10.5 / 0.5 | 6 / 0.5 |
+| redcrawl | 3.6 / 3.6 | 1.8 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| redrock | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 | — |
+| supabase | 5.5 / 5.5 | 2.4 / 1.2 | 1 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| tasmeen | 10.7 / 10.7 | 16.1 / 0 | 5.7 / 0 | 1.8 / 0 | 0 / 0 | 0 / 0 |
+| vercel | 7.5 / 7.5 | 4 / 3.5 | 4.5 / 2 | 1.5 / 0 | 0.5 / 0 | 0 / 0 |
+| **cost %** | | | | | | |
+| arexvy | **28.6 / 28.6** | 5.7 / 5.7 | 0 / 0 | 0 / 0 | 0 / 0 | — |
+| claude | **40 / 40** | 10 / 10 | 0 / 0 | 0 / 0 | 0 / 0 | — |
+| matthieu | **27.3 / 27.3** | 7.3 / 7.9 | 2 / 2.5 | 0 / 0 | 0 / 0.5 | 0 / 0 |
+| mirza | **18.1 / 18.1** | 4 / 4 | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| ollama | **33.3 / 33.3** | 11.4 / 14.3 | 2.9 / 5.7 | 0 / 0 | 0 / 0 | — |
+| praisy | **30 / 30** | 11 / 15 | 7.5 / 9 | 2.5 / 3 | 0 / 0.5 | 0.5 / 0.5 |
+| redcrawl | **28.6 / 28.6** | 5.4 / 7.1 | 0 / 1.4 | 0 / 0 | 0 / 0 | 0 / 0 |
+| redrock | **38.1 / 38.1** | 11.4 / 14.3 | 2.9 / 5.7 | 0 / 0 | 0 / 0 | — |
+| supabase | **20 / 20** | 3.6 / 9.7 | 1.5 / 4 | 0 / 0.5 | 0 / 0 | 0 / 0 |
+| tasmeen | **25 / 25** | 7.1 / 8.9 | 1.4 / 2.9 | 0 / 0 | 0 / 0 | 0 / 0 |
+| vercel | **25 / 25** | 8 / 10.5 | 4.5 / 5 | 1.5 / 3.5 | 2 / 2.5 | 0 / 0.5 |
+
+**n=2 is indefensible for every term in the archive.** Between 18% and 40% of
+draws throw away over half of the term's own correct spans. That is one bank in
+four to one in three, on the tightest terms as much as the loosest — `Supabase`,
+which scores AUC 1.000 at eleven clips, is at 20%. Two clips is a coin flip
+about which two.
+
+**n=3 is not safe either, and this is what replaces the guess.** The cost share
+is 4% to 11% under the maximum and 4% to 15% under the 90th percentile.
+`Claude` is disarmed in 90% of its n=3 draws. The prototype abstains here.
+
+**n=5 is where both sides settle.** The worst cost share over eleven terms is
+2.5% under the maximum and 3.5% under the 90th percentile. The worst disarm
+share is `Claude` at 17% and then `Praisy` at 9% (maximum) or 0.5% (90th
+percentile).
+
+**`Claude` is the one term a single n does not cover.** It is only clean at
+n=6, which is its whole bank, so 6e cannot say whether 6 is `Claude`'s answer or
+just the end of its data. `Claude` is the shortest name in the set, has the
+fewest recordings, has the widest bank — spread 3.436 against `Supabase`'s
+2.919 — and is the one term the veto never worked well on: 26% of true
+rejections at its full bank against `Supabase`'s 97%. 6a already singled it out
+for the same reason.
+
+#### Pooled, in 6a's units
+
+Every term's bank cut to n at once, rejections summed. Median over the draws,
+range under it. n=2 to 5 is all eleven terms; the last two rows change the set
+and say so.
+
+| n | terms | true rejections (B) | false rejections (A) | maximum |
+|---|---|---|---|---|
+| 2 | 11 | 558 [323–703] of 773 | 26 [6–46] of 77 | |
+| 3 | 11 | 504 [361–628] of 784 | 22 [10–41] of 96 | |
+| 5 | 11 | 563 [415–652] of 784 | 16 [8–29] of 96 | |
+| all | 11 | **554** of 784 | **10** of 96 | ← 6a's row |
+| 8 | 7 | 377 [306–448] of 516 | 10 [4–19] of 70 | |
+| 12 | 3 | 172 [128–227] of 251 | 4 [2–10] of 35 | |
+
+The same three rows with the 90th percentile: 570 [419–668] at n=3, 622
+[523–707] at n=5, 649 at the full bank. The denominator column is the blind
+control — reject every span — and every arm here sits inside it.
+
+**The pooled true-rejection count is a trap and the range says why.** Its median
+barely moves: 558 at n=2, 554 at the full bank. A reader could conclude two
+clips are as good as twenty-six. The range is 323 to 703 at n=2 and a single
+number at the full bank. The count is not lower at n=2; it is unknowable at n=2.
+This is §2's "watch for a flat response curve" in another shape.
+
+#### The two statistics need the same abstain point
+
+**The AUC table is identical for the maximum and the 90th percentile, to every
+digit.** Verified by diffing the two runs. That is not a coincidence and it is
+not an experimental result — `spread` enters only the veto, never `distance`, so
+no ranking of spans inside a term can depend on it. It is 6a's arithmetic
+restated: the statistic is invisible to the AUC.
+
+**At n=2 the two statistics are the same statistic.** Two recordings give one
+leave-one-out distance, so the maximum of it and the 90th percentile of it are
+that one number. The n=2 rows of both runs are identical throughout, veto counts
+included. Anyone tuning a robust summary should know it has no effect at all
+until the third clip.
+
+**From n=3 the 90th percentile disarms less and costs slightly more.** It is
+uniformly better on the disarm side — `Tasmeen` 16% → 0% at n=3, `Ollama` 40% →
+17%, `Matthieu` 8% → 1%. It is a little worse on the cost side — `Supabase` 4% →
+10% at n=3, `Praisy` 11% → 15%. Both are the same trade 6a measured: the higher
+threshold rejects more, which catches more true rejections and more false ones.
+
+**So the abstain threshold does not differ between them, and that settles one
+6b question.** Both need about 5. The 90th percentile does not let the bank
+decide sooner. What it buys is a better decision at the same n — 6a's result —
+and it does not buy a lower floor. If 6b adopts it, the abstain key stays where
+6e puts it.
+
+#### Does one n work for all terms?
+
+**Yes, at n=5, for ten of eleven.** `Claude` is the exception and its own bank
+runs out at 6.
+
+**Clip count does not predict which terms need more.** `Arexvy` and `Redrock`
+have seven recordings each and are at 0% disarmed from n=2. `Ollama` also has
+seven and is at 40% at n=3. `Praisy` has twenty-six and is the second-worst term
+at every n.
+
+**The bank's own width predicts it better, and the evidence is thin.** Ranking
+terms by the smallest n at which both shares fall under a fixed bar gives
+Spearman +0.54 against the full-bank `spread` and −0.24 against the clip count.
+**Do not build on those two numbers.** The ranked variable takes three or four
+distinct values over eleven terms, so nearly every pair is a tie and one term
+moves the coefficient. The honest statement is the one above: one n covers ten
+of eleven, so there is almost nothing left to predict. The direction is the
+sensible one — `Claude` has the widest bank at 3.436 and needs the most clips,
+`Supabase` the tightest at 2.919 and needs the fewest — and `spread` is the
+right kind of predictor because it is computable from the clips alone, where a
+per-term AUC needs labelled spans a new term does not have.
+
+#### What is weak about this
+
+**It is in-sample in a second way, and this one is specific to 6e.**
+Part 1 §7's warning is that the recordings were mined from the corpus they are
+scored on. 6e adds another. **Subsampling a bank measures how *that* bank
+degrades. It does not measure how a *new* term with n clips behaves.** A
+subsample of `Praisy` at n=3 is three clips drawn from twenty-six that are
+already known to separate this corpus well — same speaker, same sessions, same
+microphone, mined by the same script from the same archive. A new term's first
+three clips come from three corrections in three unrelated sentences, on
+whatever days they happen, with nothing having checked that they are the term at
+all. **A real n=3 bank is worse than an n=3 subsample of a good bank, by an
+amount nobody here has measured.** So 5 is a lower bound on the abstain point,
+not an estimate of it. Measuring the real thing needs terms whose banks grew one
+correction at a time, which is PR 4's data and does not exist yet.
+
+**The thresholds in the decision table are conventions.** 25% for disarmed and
+50% for cost. The per-draw rates are in the script's output and can be read
+against another pair. The n=2 verdict survives any reasonable choice; the
+difference between n=4 and n=5 does not — `Praisy` moves between safe-at-5 and
+safe-at-8 under the maximum when a single grid point is added, because it sits
+on the bar.
+
+**The A denominator shrinks at small n.** The per-clip hold-out can take a
+subsampled bank under the abstain floor, and then that span is judged by nobody.
+`Arexvy` judges 4 A spans at n=2 against 6 at its full bank. So the cost share
+at n=2 is a share of four or five spans per term, not of six to ten. It is the
+noisiest column in the table and it is also the most extreme, which is a reason
+to read the direction and not the digits.
+
+**One seed.** `6e-2026-08-10`. Every point below 200 subsets is exhaustive and
+so seed-independent; the points at 200 draws are not. Nothing here rests on a
+gap of one or two draws.
+
+**Two terms are scored on the proposal set and nine on the scripted set.** They
+are not the same measurement, and the two terms that fail to flatten are exactly
+the two on the proposal set. 6e cannot separate those.
+
+**Rejection counts are not the ablation.** Same caveat as 6a. These say what the
+rule would drop on these spans. They do not say what the app would write.
+
+#### How to reproduce
+
+```sh
+S=$(mktemp -d) && cp -R ~/.config/parrotflow-dev/voice "$S/voice"   # read only
+
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/reference-matching.py \
+  --set scripted --source all                    # the baseline that must hold
+
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/reference-matching.py \
+  --poison --cache "$S/dist.npz"                 # builds the cache, ~5 minutes
+
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/reference-matching.py \
+  --subsample --ns 2,3,4,5,6,8,12 --cache "$S/dist.npz" --csv "$S/max.csv"
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/reference-matching.py \
+  --subsample --robust --ns 2,3,4,5,6,8,12 --cache "$S/dist.npz" --csv "$S/p90.csv"
+```
+
+The `--poison` run computes every distance once. The two `--subsample` runs
+index that cache and take about two seconds each. `--csv` writes every number
+in the tables above, so none of them is transcribed by hand.
+
 ## PR 7 — ask the speaker for fewer clips
 
 **Design the burden down instead of absorbing it.** Every clip in the bank
@@ -2656,7 +2958,9 @@ before this became real code".
    a term, because two recordings give one exemplar-to-exemplar distance and so
    no spread. Make that number a config key and print the abstaining terms in
    `--check-config`, so a speaker can see which of their terms the filter is
-   not deciding.
+   not deciding. **6e measured the value: 5, not 3.** Three is where a spread
+   becomes computable; five is where the decision stops depending on which
+   clips arrived. Read 6e's result before choosing the default.
 3. **One log line per decision.** The prototype writes two. The `dropped:` line
    says "audio prefers what was written by …" with a margin nobody computed,
    and the `reference:` line above it says the truth. The proto doc calls this
@@ -2922,8 +3226,10 @@ today has nothing behind it. The map is what covers a term's first days.
 after "about three corrections". That number is not supported. It came from the
 prototype's abstain floor of 3, which is about having a spread to compare
 against at all, and from `Matthieu` scoring 0.556 on 2 recordings in round 6 —
-one term at one count. **6e is the experiment that produces the real number.**
-Do not quote three.
+one term at one count. **6e ran and the number is 5.** It is a lower bound: a
+subsample of a good bank is not a new term's first five corrections, and 6e's
+result block says why. `Matthieu` at 2 recordings has a median AUC of 0.806 over
+its 55 possible pairs, so 0.556 was one draw and not the term.
 
 **Size.** No code of its own. It is a constraint on PR 10's abstain key and on
 whatever PR 13 ships.
