@@ -527,8 +527,12 @@ actor Vocabulary {
     ///
     /// Returns the text unchanged on every failure. A name that stays misheard
     /// is a worse transcript; a dictation that does not arrive is no transcript.
+    /// - Parameter clip: the file being replayed, when there is one. Only the
+    ///   reference-matching prototype reads it, to hold out a recording mined
+    ///   from this same clip. Nil during live dictation.
     func apply(
-        to text: String, samples: [Float], tokenTimings: [TokenTiming], config: Config
+        to text: String, samples: [Float], tokenTimings: [TokenTiming], config: Config,
+        clip: String? = nil
     ) async -> Outcome {
         // Above every guard below, on purpose (F11). The word dump is what
         // `scripts/mine-pronunciations.py` reads to learn how a name comes out,
@@ -597,6 +601,42 @@ actor Vocabulary {
                     + heardSpans.map { ($0.range, $0.term) }
             )
 
+            // PROTOTYPE — the reference-matching veto. Off unless
+            // `PARROTFLOW_REFERENCE_MATCH=1`, and measured without vetoing
+            // when only `PARROTFLOW_REFERENCE_DUMP` is set. It can remove a
+            // proposal and nothing else: see `ReferenceMatch`.
+            let spoken = Self.words(from: tokenTimings, in: text)
+            /// The seconds of audio a span of the transcript covers, from the
+            /// decoder's own word timings. Nil when no word overlaps it.
+            func seconds(of range: Range<String.Index>) -> (start: Double, end: Double)? {
+                let hits = spoken.filter { $0.range.overlaps(range) }
+                guard let start = hits.map(\.start).min(),
+                      let end = hits.map(\.end).max(), end > start
+                else { return nil }
+                return (start, end)
+            }
+            func vetoed(
+                term: String, heard: String, at range: Range<String.Index>
+            ) -> Bool {
+                guard ReferenceMatch.enabled || ReferenceMatch.dumpPath != nil,
+                      let (start, end) = seconds(of: range)
+                else { return false }
+                let verdict = ReferenceMatch.verdict(
+                    term: term, samples: samples, start: start, end: end, clip: clip
+                )
+                ReferenceMatch.dump(clip: clip, term: term, heard: heard,
+                                    start: start, end: end, verdict: verdict)
+                guard ReferenceMatch.enabled, case .reject(let distance, let spread, let n)
+                    = verdict
+                else { return false }
+                Log.write(String(
+                    format: "reference: \"%@\" -> \"%@\" vetoed — %.3f from the nearest"
+                        + " recording, the term's own spread is %.3f over %d",
+                    heard, term, distance, spread, n
+                ))
+                return true
+            }
+
             // Rebuilt from segments rather than edited in place. A
             // `String.Index` belongs to the string it came from, and reusing
             // one from `text` against a copy being mutated is undefined — it
@@ -616,7 +656,12 @@ actor Vocabulary {
                     baseCbw: cbw, tokenCount: tokenCounts[term] ?? 0
                 )
                 let raw = (change.replacementScore ?? 0) - bonus
-                let applies = Self.autoApplies(
+                // The veto is asked before `autoApplies`, not after. A
+                // proposal the pass writes without asking is exactly the kind
+                // this filter exists to catch, and a filter that only pruned
+                // the menu would leave every auto-applied overwrite standing.
+                let veto = vetoed(term: term, heard: change.originalWord, at: range)
+                let applies = !veto && Self.autoApplies(
                     heard: change.originalWord, term: term,
                     heardScore: change.originalScore, termScore: raw
                 )
@@ -636,7 +681,7 @@ actor Vocabulary {
                 // Dropped when the audio argues hard against it — neither
                 // applied nor offered. Kept in the list so the index still
                 // lines up with `found`.
-                let dropped = !applies && change.originalScore - raw > margin
+                let dropped = veto || (!applies && change.originalScore - raw > margin)
                 decided.append((raw, bonus, applies, dropped))
             }
             rebuilt += text[cursor...]
@@ -708,6 +753,7 @@ actor Vocabulary {
                 zip(found, decided).compactMap { ($0.1.applied || $0.1.dropped) ? nil : $0.0.range }
             ).union(heardSpans.map { $0.range })
             for span in wider where untouched.contains(where: { $0.overlaps(span.range) }) {
+                if vetoed(term: span.term, heard: span.heard, at: span.range) { continue }
                 guard let placed = moved(span.range, holding: span.heard) else { continue }
                 Log.write(
                     "vocabulary: \"\(span.heard)\" -> \"\(span.term)\" also offered"
@@ -727,6 +773,7 @@ actor Vocabulary {
             // not the word the decoder wrote, and there is no second number.
             for span in heardSpans {
                 let phrase = String(text[span.range])
+                if vetoed(term: span.term, heard: phrase, at: span.range) { continue }
                 guard let placed = moved(span.range, holding: phrase) else { continue }
                 Log.write(String(
                     format: "vocabulary: \"%@\" -> \"%@\" heard in the audio (spotter %.2f)",

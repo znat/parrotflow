@@ -186,7 +186,11 @@ actor Transcriber {
                     )
                     let outcome = await Vocabulary.shared.apply(
                         to: text, samples: samples,
-                        tokenTimings: result.tokenTimings ?? [], config: config
+                        tokenTimings: result.tokenTimings ?? [], config: config,
+                        // Prototype only. The reference-matching filter holds
+                        // out a recording mined from this same clip; a live
+                        // dictation has no name here and holds out nothing.
+                        clip: url.lastPathComponent
                     )
                     text = outcome.text
                     vocabularyCount = outcome.count

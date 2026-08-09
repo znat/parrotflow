@@ -72,6 +72,15 @@ if let index = arguments.firstIndex(of: "--record") {
     exit(RecordTestCommand.run(seconds: seconds ?? 3))
 }
 
+// Prototype only — see ReferenceMatch.selfTest.
+if let index = arguments.firstIndex(of: "--reference-selftest") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --reference-selftest <Term>")
+        exit(2)
+    }
+    exit(ReferenceMatch.selfTest(term: arguments[index + 1]))
+}
+
 if let index = arguments.firstIndex(of: "--transcribe") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --transcribe <file.wav> [--no-vocab]")
