@@ -726,3 +726,223 @@ not building the menu at all before tuning anything else.
 Measured with `scripts/gap-signal.py`. No model call, no build, no install. The
 cache predates PR #70, so none of the 15 live collisions of 2026-08-08 are in
 it.
+
+---
+
+# Round 5 — is the 110M CTC model the constraint?
+
+**Unanswered, because the bigger model is broken. `parakeet-ctc-0.6b-coreml`
+returns NaN on 64% of the frames under an uncertain span. It is not weaker
+evidence than the 110M model — on 62 of 91 spans it is no evidence at all, so
+there was never anything to compare. This rules out a model; it does not test
+the hypothesis, and it is not evidence that model size does not help.**
+
+Rounds 1-3 rewrote the judge's question and round 4 measured the evidence beside
+it. This round asks about the thing that produces the evidence. The transcript is
+written by `parakeet-tdt-0.6b-v3`, but the model that decides names — the one
+`CtcKeywordSpotter` and `VocabularyRescorer` score against — is
+`parakeet-ctc-110m`, five times smaller, chosen by the default argument of
+`CtcModels.downloadAndLoad()`. Nobody had asked whether the default was right.
+
+FluidAudio ships a bigger one. `PARROTFLOW_CTC_MODEL=110m|0.6b` now selects it,
+defaulting to `110m`, so the A/B is a flag rather than two builds.
+
+The five metrics were fixed before the run and are reported for both models.
+
+| | metric | 110m | 0.6b | moved? |
+|---|---|---|---|---|
+| 1 | frames entirely NaN | **0/1378 (0%)** | **471/732 (64%)** | worse |
+| 1 | spans with no usable frame | **0/144** | **62/91 (68%)** | worse |
+| 1 | best-of-two score, median | **-8.50** | **-16.49** (finite only) | worse |
+| 2 | argmax vs the constant | 33/66 vs **45/66** | 16/56 vs **39/56** | no |
+| 3 | hit rate monotone in gap | no | not measurable | no |
+| 4 | fixed / broken / regressed | 22 / 38 / 18 | **not measured** | — |
+| 5 | recall / picked | 112/141 / 86/141 | **not measured** | — |
+
+Metrics 4 and 5 were cancelled for 0.6b once metric 1 came back. They replay the
+whole clip set three times through a model that returns no evidence on two
+thirds of its frames, and the verdict rows would have measured the NaN, not the
+model. The 110m columns were run and are kept, because they re-record the gate
+baselines on the full set (below).
+
+## 1. Confidence — the leading indicator
+
+**It did not move toward zero. It stopped being a number.**
+
+`PARROTFLOW_LOGPROB_DUMP`, ported from `spike/onset-pilot`, prints the top 8
+non-blank tokens per frame under every span the pass proposed for. Over the 145
+labelled clips:
+
+| | 110m | 0.6b |
+|---|---|---|
+| spans dumped | 144 | 91 |
+| frames under them | 1378 | 732 |
+| frames where all 1024 tokens are NaN | **0** | **471 (64.3%)** |
+| spans with no usable frame at all | **0** | **62** |
+
+The NaN is not an edge artefact. The median NaN frame sits at 2.45s and the
+median usable frame at 6.94s, so it is spread through the clip.
+
+On the 29 spans that still produce numbers the distribution has collapsed rather
+than sharpened. Frame 44 of clip `17-47-45`, under "retry":
+
+    110m   f44   ▁in -6.35   , -6.90   . -7.34   ▁is -8.10  …
+    0.6b   f44   ross -0.01  _T -4.57   _hundred -7.33  th -8.27  …
+
+`ross -0.01` is near-certainty on a token nothing said. So the naive reading of
+this metric — best non-blank log-prob improved from -2.50 to -0.00 — is an
+artefact of that collapse. The median frame did not improve: -4.71 against
+-5.08.
+
+The scores the pass decides on moved the same way. **0 of 85 score lines
+saturate under 110m; 53 of 72 (74%) saturate under 0.6b** at multiples of
+`-FLT_MAX`, which is NaN carried through the rescorer's sum. The 19 finite ones
+have a median of -16.49 against 110m's -8.50.
+
+## 2. Does the score beat the constant?
+
+**No, under either model, and 0.6b is much further from it.**
+
+| cache | reachable | spans | scored | argmax | keep decoded |
+|---|---|---|---|---|---|
+| committed cache (round 4) | 53 | 77 | 57 | 28/57 (49%) | **34/57 (60%)** |
+| fresh 110m harvest | 60 | 88 | 66 | 33/66 (50%) | **45/66 (68%)** |
+| fresh 0.6b harvest | 57 | 76 | 56 | 16/56 (29%) | **39/56 (70%)** |
+
+The first row reproduces round 4 exactly from the committed cache, which is how
+the harness was checked before the comparison was trusted. **The 110m row is the
+one the 0.6b row must be read against**: both fresh caches cover the 145 clips
+of `tests/menu-cases.yaml`, while the committed cache covers 130 and predates
+PR #70. Re-harvesting moved the constant from 60% to 68%, so the round-4
+baseline is superseded for this set.
+
+Argmax under 0.6b is 29%, below the 41% of guessing a reading at random.
+
+## 3. Is the gap predictive?
+
+**Not measurable under 0.6b, and still not monotone under 110m.**
+
+Only 10 of 56 scored spans under 0.6b have a finite gap; the rest are
+differences between two sentinels and run to 2.6e38 nats. 47 of 56 "reach" the
+shipped `decide_above: 3.0`, which is the sentinel and not evidence. Ten spans
+over four buckets is a count, not a rate.
+
+Under the fresh 110m cache round 4's finding stands: 14/31, 6/12, 9/14, 4/9. No
+trend, and the widest bucket is argmax's worst against the constant.
+
+## Comparability — the spans both caches hold
+
+Changing the model changes which spans reach a menu, so the two runs above score
+different sets. Restricted to the **64 spans present in both**:
+
+| | spans | scored | argmax | keep decoded |
+|---|---|---|---|---|
+| 110m (shared) | 64 | 54 | **31/54 (57%)** | 38/54 (70%) |
+| 0.6b (shared) | 64 | 51 | **15/51 (29%)** | 38/51 (75%) |
+
+24 spans are 110m-only and 12 are 0.6b-only. **The intersection agrees with the
+full sets.** On the 26 shared spans where the two models disagree, 110m is right
+on 21 and 0.6b on 5.
+
+## The costs
+
+| | 110m | 0.6b |
+|---|---|---|
+| on disk | **99 MB** | **2.2 GB** (22x) |
+| first-run download | seconds | ~8 minutes |
+| model load, warm | 0.16-0.25s | 0.14-0.16s |
+
+The per-dictation latency delta was not measured. It was cancelled with metrics
+4 and 5: timing a model that returns NaN on most frames prices work nobody would
+ship. Load time is from the smoke runs and is not the number that would matter.
+
+## What is broken, and what is not
+
+It is **not** a tokenizer mismatch. Both `tokenizer.json` files use the
+SentencePiece `▁` boundary with the same ids — `▁are` is 111 in both — so
+`CtcTokenizer.encode` returns identical sequences for every term. The terms
+tokenise and the spans line up. The `vocab.json` files differ cosmetically, and
+that table only names ids in the dump.
+
+It is the encoder output, and FluidAudio says so itself in
+`CtcModels.swift:7-11`:
+
+    /// - ctc110m: Blank-dominant (CTC head is auxiliary loss), greedy produces ~113% WER
+    /// - ctc06b: CoreML conversion issue causes greedy to produce ~158% WER (should be ~14%)
+    ///
+    /// Recommended approach: Use TDT for transcription + CTC for vocabulary scoring
+    /// via constrained CTC rescoring.
+
+That last line is the path this pass already uses, which is exactly why the
+model was worth testing rather than dismissed on the warning. Measured, the
+conversion damage is not confined to greedy decoding: it reaches the per-frame
+log-probs the constrained path reads, as NaN.
+
+## What this settled, and what it did not
+
+**Settled: `parakeet-ctc-0.6b-coreml` is unusable as exported.** NaN on 471 of
+732 frames, 62 of 91 spans with no usable frame at all, 53 of 72 score lines
+saturated at multiples of `-FLT_MAX`. That is a fact about the export, and it is
+enough to keep the model out of the app.
+
+**Not settled: whether weak acoustic evidence is the binding constraint on the
+vocabulary pass.** That question is still open, because the larger model never
+produced usable evidence to compare against. Nothing here is evidence that CTC
+model size does not help. A broken export is not a null result, and it must not
+be filed as one.
+
+## Recommendation
+
+**Do not ship `parakeet-ctc-0.6b`, and do not read this as closing the
+model-size question.** The flag and both harnesses stay, so re-measuring is one
+command per model.
+
+**What would unblock the original question:** a working 0.6B CTC export, or the
+hybrid `parakeetTdtCtc110m` (`ModelNames.swift:55`) which is a third variant
+nothing here has tried, or reporting the NaN upstream to FluidInference and
+waiting for a re-export.
+
+**Meanwhile the next move is still the menu, not the model.** Round 4 asked what
+is lost by not building the menu at all. Nothing here changes that, and the
+re-harvest below makes the case stronger than round 4 could.
+
+## A correction to round 4, found on the way
+
+**On the better set the acoustic score is further behind the constant than
+round 4 reported, not closer.**
+
+Round 4 ran against the committed cache: 130 clips, harvested before PR #70. The
+110m re-harvest here covers the 145 of `tests/menu-cases.yaml`, block 3
+included. Same model, same code, larger set:
+
+| | round 4 (130 clips) | re-harvest (145 clips) |
+|---|---|---|
+| scored spans | 57 | 66 |
+| argmax raw score | 28/57 (49%) | 33/66 (50%) |
+| **keep what the decoder wrote** | **34/57 (60%)** | **45/66 (68%)** |
+| argmax's deficit | 11 points | **18 points** |
+
+Argmax stayed at chance. The constant gained 8 points. So the gap round 4 called
+"a predictor that loses to a constant" is wider on the fuller set, and round 4's
+conclusion is strengthened rather than qualified. **Quote the re-harvest row,
+not the committed one**, for anything measured against this set.
+
+The gate baselines were re-recorded on the same 145 clips at the same time, and
+they move too:
+
+| | documented (127 clips) | re-recorded (141 labelled) |
+|---|---|---|
+| `before-after.py --runs 3` | 20 fixed / 26 broken / 11 regressed / 70 kept | **22 / 38 / 18 / 63** |
+| `menu-recall.py --runs 3` | recall 102/127, picked 90/127 | **recall 112/141, picked 86/141** |
+
+Recall holds (80.3% → 79.4%) but picked falls (70.9% → 61.0%) and regressions
+rise (8.7% → 12.8%). Block 3 is harder than the set the floors were set on, so
+**the floors in the plan are floors for a set that no longer exists.** 2 clips
+flipped between runs in each harness (F12a).
+
+Measured against FluidAudio 0.15.5, `gemma4:e4b`, temperature 0, nothing else
+loaded, on the 145 labelled clips of `tests/menu-cases.yaml`. Build only, never
+installed.
+
+Recorded as F19 in [vocabulary-v2.md](vocabulary-v2.md). Full write-up in
+[ctc-06b-report.md](ctc-06b-report.md).

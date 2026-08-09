@@ -512,6 +512,74 @@ blank form carrying the *shipped* question, so form is separated from content
 — this spike changed both at once and cannot say what the blanks would be
 worth on their own.
 
+**F19 — the bigger CTC model returns NaN, so model size is not a lever anyone
+can pull (spike, 2026-08-09).** The transcript is written by
+`parakeet-tdt-0.6b-v3`, but names are decided by `parakeet-ctc-110m`, five
+times smaller, picked by the default argument of `CtcModels.downloadAndLoad()`.
+Nobody had asked whether that default was right. FluidAudio ships
+`parakeet-ctc-0.6b`; `PARROTFLOW_CTC_MODEL=110m|0.6b` now selects it, defaulting
+to `110m`.
+
+*The 0.6B CoreML export is broken, not merely worse.* Over the 145 labelled
+clips, **471 of 732 frames (64%) under an uncertain span come back NaN across
+all 1024 tokens, and 62 of 91 spans have no usable frame at all.** 110m has zero
+of either. NaN carried through the rescorer's sum saturates the score at
+multiples of `-FLT_MAX`: **53 of 72 score lines (74%) under 0.6b, 0 of 85 under
+110m.** The 19 finite ones have a median of -16.49 against 110m's -8.50.
+
+*It is not a tokenizer mismatch, which is the first thing to suspect and the
+first thing ruled out.* Both `tokenizer.json` files use the SentencePiece `▁`
+boundary with identical ids — `▁are` is 111 in both — so `CtcTokenizer.encode`
+returns the same sequence for every term under either model. The terms tokenise,
+the spotter fires, the spans line up. The `vocab.json` files do differ (the 0.6B
+writes a plain space where the 110M writes `▁`), which looks like the bug and is
+not: that table only names ids in a diagnostic dump. FluidAudio records the real
+fault itself in `CtcModels.swift:7-11` — "CoreML conversion issue causes greedy
+to produce ~158% WER (should be ~14%)" — while recommending the constrained-CTC
+path this pass already uses, which is why it was worth measuring rather than
+dismissing. The damage is not confined to greedy decoding: it reaches the
+per-frame log-probs the constrained path reads.
+
+*The primary metric got worse.* Argmax against "keep what the decoder wrote" is
+33/66 vs 45/66 under 110m and 16/56 vs 39/56 under 0.6b — 29% is below the 41%
+of guessing at random. On the 64 spans both caches hold, argmax is 31/54 under
+110m and 15/51 under 0.6b, and on the 26 shared spans where the models disagree
+110m is right on 21. The intersection agrees with the full sets. Metrics 4 and 5
+were cancelled for 0.6b: they would have measured the NaN, not the model.
+
+**What this did not settle.** Whether weak acoustic evidence is the binding
+constraint on the vocabulary pass is **still open**, because the larger model
+never produced usable evidence to compare against. This is not evidence that CTC
+model size does not help. Do not file a broken export as a null result.
+
+**Consequences.** Keep `parakeet-ctc-0.6b` out of the app; the cost would have
+been steep regardless at 2.2 GB against 99 MB and an eight-minute first download.
+Three things would unblock the original question: a working 0.6B CTC export, the
+untried hybrid `parakeetTdtCtc110m` (`ModelNames.swift:55`), or reporting the
+NaN upstream to FluidInference. The flag and the harnesses stay, so re-measuring
+is one command per model. Full write-up in
+[judge-framings.md](judge-framings.md) round 5 and
+[ctc-06b-report.md](ctc-06b-report.md).
+
+**F19a — the round-4 baseline was measured on the smaller set, and the fuller
+one is worse for the acoustic score (2026-08-09).** The committed cache covers
+130 clips and predates PR #70. A 110m re-harvest over the 145 of
+`tests/menu-cases.yaml` — same model, same code — puts argmax at 33/66 (50%)
+against the constant's 45/66 (68%). Round 4 reported 28/57 (49%) against 34/57
+(60%). Argmax stayed at chance and **the constant gained 8 points, so the
+acoustic score is 18 points behind doing nothing where round 4 measured 11.**
+The fuller set strengthens round 4's conclusion rather than softening it. Quote
+the re-harvest row, not the committed one.
+
+The gate baselines were re-recorded on the same clips at the same time:
+`before-after.py --runs 3` gives **22 fixed / 38 broken / 18 regressed / 63
+already right** against the documented 20/26/11/70, and `menu-recall.py --runs
+3` gives **recall 112/141, picked 86/141** against 102/127 and 90/127. Recall
+holds as a rate (80.3% → 79.4%), picked falls (70.9% → 61.0%) and regressions
+rise (8.7% → 12.8%). Block 3 is harder than the set the floors were set on, so
+**the floors in the plan describe a set that no longer exists** and want
+re-setting before they gate anything. 2 clips flipped in each harness (F12a).
+
 ---
 
 ## Build order
