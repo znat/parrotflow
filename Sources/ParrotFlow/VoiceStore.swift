@@ -232,11 +232,21 @@ enum VoiceStore {
         var files = sampleFiles(of: term)
         guard files.count > cap else { return [] }
 
-        // Which samples a person confirmed, from the observations that name
-        // them. A file with no observation is unconfirmed by default — it is
-        // audio nobody wrote anything down about.
+        // Which of *this term's* samples a person confirmed, from the
+        // observations that name them. A file with no observation is
+        // unconfirmed by default — it is audio nobody wrote anything down
+        // about.
+        //
+        // Filtered by term, and that is not tidiness. Sample names are only
+        // unique inside a term's folder, so `Praisy/00-praise.wav` and
+        // `Supabase/00-praise.wav` are both `00-praise.wav`. Matching on the
+        // bare name across every term would let one term's confirmed sample
+        // protect another term's unconfirmed one, and the cap would then delete
+        // a confirmed sample while keeping the audio nobody vouched for.
         var confirmed: Set<String> = []
-        for observation in observations() where observation.from == "correction" {
+        for observation in observations()
+        where observation.from == "correction"
+            && observation.term.caseInsensitiveCompare(term) == .orderedSame {
             if let sample = observation.sample {
                 confirmed.insert((sample as NSString).lastPathComponent)
             }

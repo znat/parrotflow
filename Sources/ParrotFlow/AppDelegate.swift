@@ -59,6 +59,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let correctionPanel = CorrectionPanel()
     private let previewPanel = PreviewPanel()
     private var pendingSelection: SelectionReader.Selection?
+    /// The dictation the open correction panel is about, taken when it opens.
+    ///
+    /// Not read from `lastRecording` at save time. The panel is the longest
+    /// wait in the app — it stays open for as long as somebody takes to think
+    /// about a spelling — and a dictation given in the meantime moves
+    /// `lastRecording`. Reading it late would cut the audio out of the wrong
+    /// clip and file it under the term, which is the one kind of bad sample
+    /// Part 1 §7 says widens a term's cloud and disarms its veto. The same
+    /// reason `pendingSelection` is snapshotted rather than re-read.
+    private var pendingClip: String?
     /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
     private var selectionAtPress: SelectionReader.Selection?
     /// Where the text was being typed when the hotkey went down, so a rule
@@ -1647,10 +1657,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write("command proposed rule: \(rule.heard) -> \(rule.corrected)")
             }
             pendingSelection = nil
+            pendingClip = lastRecording?.url.lastPathComponent
             correctionPanel.onSave = { [weak self] rules, text in
                 self?.saveCorrections(rules, correctedText: text)
             }
-            correctionPanel.onCancel = { [weak self] in self?.pendingSelection = nil }
+            correctionPanel.onCancel = { [weak self] in
+                self?.pendingSelection = nil
+                self?.pendingClip = nil
+            }
             correctionPanel.show(rules: rules)
         case .unrecognised(let text):
             Log.write("command not understood: \(text)")
@@ -1835,11 +1849,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Log.write("correction: selection = \(selection.map { "\"\($0.text)\"" } ?? "none")")
         pendingSelection = selection
+        pendingClip = lastRecording?.url.lastPathComponent
         correctionPanel.onSave = { [weak self] rules, correctedText in
             self?.saveCorrections(rules, correctedText: correctedText)
         }
         correctionPanel.onCancel = { [weak self] in
             self?.pendingSelection = nil
+            self?.pendingClip = nil
         }
         correctionPanel.show(selection: selection?.text ?? "")
     }
@@ -1876,13 +1892,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let outcome = try Corrections.learn(
                     heard: rule.heard, corrected: rule.corrected, via: "command",
-                    clip: lastRecording?.url.lastPathComponent
+                    clip: pendingClip
                 )
                 Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
                 logKept(outcome)
             } catch {
                 presentAlert(title: "Could not save the rule", message: error.localizedDescription)
                 pendingSelection = nil
+                pendingClip = nil
                 return
             }
         }
@@ -1930,6 +1947,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSPasteboard.general.setString(correctedText, forType: .string)
         }
         pendingSelection = nil
+        pendingClip = nil
         focusAtPress = nil
 
         if config.feedback.sound { NSSound(named: "Glass")?.play() }
@@ -2259,6 +2277,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// started somewhere else in the meantime moves that field. Reading it late
     /// would hand focus to the newer app and paste this sentence into it.
     ///
+    /// The clip is captured on the way in for exactly the same reason. The
+    /// dictation given while this panel was open moves `lastRecording`, and a
+    /// correction that read it late would cut its audio out of the wrong clip.
+    ///
     /// `proposed` is named apart from the panel's own `rules` on purpose. Both
     /// used to be called `rules`, and the closure's parameter shadowed this one
     /// — so the test for "was the panel opened on the sentence rather than on
@@ -2271,6 +2293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         destination: Destination, focus: SelectionReader.Selection?
     ) {
         pendingSelection = nil
+        let clip = lastRecording?.url.lastPathComponent
 
         /// Hand focus back before writing anything.
         ///
@@ -2292,7 +2315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 do {
                     let outcome = try Corrections.learn(
                         heard: rule.heard, corrected: rule.corrected, via: "panel",
-                        clip: self.lastRecording?.url.lastPathComponent
+                        clip: clip
                     )
                     Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
                     self.logKept(outcome)

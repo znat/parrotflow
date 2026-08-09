@@ -290,6 +290,35 @@ else
   printf '  ✗ and the term is back at the cap, 25 (got %s)\n' "$left"
 fi
 
+# A sample name is only unique inside its term's folder, so `Praisy` and
+# `Supabase` can both hold a `00-praise.wav`. Matching on the bare name across
+# terms let one term's confirmed sample protect another term's unconfirmed one,
+# and the cap then deleted the confirmed sample and kept the audio nobody
+# vouched for.
+printf '\n  the cap does not confuse two terms'"'"' samples\n'
+fresh
+mkdir -p "$WORK/voice/samples/Praisy" "$WORK/voice/samples/Supabase"
+for n in $(seq -w 0 24); do : > "$WORK/voice/samples/Praisy/$n-old.wav"; done
+# Only Supabase's copy of `00-old.wav` was ever confirmed. Praisy's is not, and
+# it is the oldest, so it is the one that has to go.
+: > "$WORK/voice/samples/Supabase/00-old.wav"
+printf '%s\n' \
+  '{"at":"2026-08-01T10:00:00Z","term":"Supabase","heard":"old","from":"correction","sample":"samples/Supabase/00-old.wav"}' \
+  > "$WORK/voice/observations.jsonl"
+clip twelve.wav
+traced twelve.wav en "praise" "praise:1.00:1.50"
+got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --learn praise Praisy 2>/dev/null)"
+wants "the other term's confirmation does not protect this one" \
+  "$got" "capped voice/samples/Praisy/00-old.wav"
+total=$((total + 1))
+if [ -f "$WORK/voice/samples/Supabase/00-old.wav" ]; then
+  pass=$((pass + 1)); printf '  ✓ and the other term is untouched\n'
+else
+  failed="$failed
+      the other term is untouched"
+  printf '  ✗ and the other term is untouched\n'
+fi
+
 # ── naming the clip, which is what the panel does ───────────────────────────
 printf '\n  the clip named outright\n'
 fresh
