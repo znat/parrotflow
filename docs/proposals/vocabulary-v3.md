@@ -2023,9 +2023,11 @@ replacement, not in the decoding.
 **Confirmed by removal, in the same session.** Arm B, four minutes later, same
 build and same speaker: `Matthieu's work.` and `Let's praise Matthieu's work.`
 With the acoustic path off the name arrives from `Matthieu: heard: [Mathieu,
-Matthew]` as a text rule, and `Replacements.exact` builds
-`\bMathieu\b` (`Config.swift:1320-1325`), which matches inside `Mathieu's` and
-leaves the suffix alone. Take the substitution away and the possessive survives.
+Matthew]` as a text rule. A literal rule compiles to `\bMathieu\b`
+(`Config.swift:1320-1325`) and `Replacements.exact` applies it
+(`Replacements.swift:88-106`). `\b` sits happily before an apostrophe, so the
+rule rewrites the name inside `Mathieu's` and leaves the suffix alone. Take the
+substitution away and the possessive survives.
 
 **The mechanism, in one function.** `Vocabulary.inflected`
 (`Vocabulary.swift:456-465`) exists to prevent exactly this — its own comment
@@ -2042,7 +2044,9 @@ if stem == term.lowercased() { return term + suffix }
 guard fails on every case it is needed for.** It carries the possessive only
 where nothing needed carrying.
 
-Repro — the function copied out and run alone, no build required:
+Repro, and it costs a minute: copy `inflected` into a file with `import
+Foundation`, print it over these five pairs, and run `swift <file>.swift`. No
+build, no app, no audio.
 
 ```
 term=Matthieu  heard=Mathieu's   ->  Matthieu     ← the live case
