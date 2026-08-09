@@ -24,6 +24,13 @@ to build a rule worth the evidence. Part 1 §7 says why a clip beats another tex
 rule. PR 6 says what to measure, and PR 6d is the one that asks whether the
 clips can replace the rules outright.
 
+**Where this is going, as a direction and not a result.** Part 2 opens with
+*The architecture this is heading for*: the spotter generates and decides
+nothing, the clip bank decides from positive and negative clips, the `heard:`
+map covers a term's first days, the judge is the fallback, and each part is
+switched on per term by evidence. PRs 11 to 15 break that into pieces.
+**None of them is measured.** Read them as proposals with falsifiers attached.
+
 **The bar, for anything built on the clips.** Beat the blind veto on the
 three-arm ablation. Not today's pass — the blind veto. A mechanism that cannot
 beat "veto everything" is not earning its complexity, whatever its AUC.
@@ -104,6 +111,28 @@ somebody has already written down. On one live sentence the decoder produced
 name did not arrive. On that term some of the wins come from the acoustic path
 alone. PR 8 is where that lives.
 
+**`heard:` matching is exact, whole-word and case-insensitive. There is no
+near-miss in it.** A literal rendering compiles to `\b<escaped source>\b`
+(`Config.swift:1320-1325`) and `Replacements.exact` runs it with
+`.caseInsensitive` (`Replacements.swift:89-91`). Every route to a rendering the
+list does not already hold lives inside the acoustic pass. The rescorer matches
+the decoded words against the vocabulary by edit distance, gated by
+`offer_below` (`Vocabulary.swift:26`, `Vocabulary.swift:580`), and the BK-tree
+behind it cannot return anything more than about three edits away — the code's
+own comment says "Versailles" is six edits from `Vercel` and is unreachable that
+way (`Vocabulary.swift:784-786`). The spotter is the only thing that reaches
+further, and it sits in the same pass.
+
+**So `acoustic: false` removes every inexact route to a term, and that is PR 2's
+`Praisy` loss.** `Praisy`'s list holds `Praises`. The decoder wrote `Praise's`.
+`\bPraises\b` does not match `Praise's`, so no rule could fire and the name did
+not arrive. That half is measured — PR 2's arm B logged `vocabulary.count = 0`
+on the sentence. **The other half is not measured.** `Praise's` is one edit from
+`Praises`, so the rescorer's edit-distance path could reach it, but arm A
+decoded that sentence differently and nobody has put `Praise's` through the
+acoustic path. Read it as the mechanism that would reach it, not as a run that
+did. PR 2's result block and PR 8.
+
 **Comparing audio to a spelling is inverted. Do not build on it.** Every
 acoustic number the pass computes asks the decoder what it thinks of a term as a
 *string*. With the vocabulary bonus removed, a term the speaker did **not** say
@@ -133,6 +162,34 @@ proposal blindly scores 103.** Head to head the measured filter wins 8 and loses
 blind vetoing is noise. It does not show the recordings are useless. The
 decision rule is the part that failed, and §7 names the mechanism that makes it
 fragile. PR 6 is the work.
+
+**The clip bank is wired inside the acoustic pass, so `acoustic: false` switches
+the veto off as well.** `Transcriber.swift:175` calls `Vocabulary.apply` only
+when `Vocabulary.wanted` is true, and `wanted` is
+`config.vocabulary.acoustic && !config.vocabularyTerms.isEmpty`
+(`Vocabulary.swift:88-90`). The prototype's veto is a local function defined
+inside `apply` — `vetoed`, at `Vocabulary.swift:604-637` on
+`origin/proto/reference-matching` — and it is called on the rescorer's proposals
+(`:663`), on the wider span readings (`:756`) and on the spotter's spans
+(`:776`). No `apply`, no veto.
+
+**So PR 1 and PR 6 are mutually exclusive as both are written, and this plan did
+not say so.** PR 1 turns the acoustic path off with one config line. PR 6b
+measures a better veto, which needs that path running to have anything to veto.
+PR 6 says "the acoustic path is on in that arm" and stops there; it never names
+the config line that makes the veto unreachable. Anything that keeps the bank as
+a gate has to either keep the pass on or move the bank out of `apply`. PR 13 is
+the second shape.
+
+**The clip bank has never gated a `heard:` rule substitution, in any arm.**
+Rules are applied by the `replacements` stage (`Pipeline.swift:780-794`) from
+`Config.vocabularyRules` (`Config.swift:532-538`). That stage runs in the
+pipeline, after the acoustic pass has already finished
+(`Transcriber.swift:175-216`). The veto runs inside the pass and only on
+acoustic proposals. So PR 2's sentence 5 — a rule writing `Vercel` over
+`Versailles` — is invisible to the clip bank, with the spotter on and the veto
+at its most aggressive. **Every clip-bank number in this plan is a number about
+acoustic proposals.** None of them says anything about a rule.
 
 **The bank also says *which* term, not only whether the term was said.** That is
 a different question and it has its own measurement. For every span, round 7
@@ -204,6 +261,32 @@ in the pass: on live dictation the `vocabulary` stage takes a median of **1213
 ms** (77 dictations, `stages[].vars.ms` in `trace.jsonl`). Replays give 559 ms,
 which is where the 575 ms figure in circulation comes from; it describes a warm
 model answering the same menus over and over.
+
+**Most of the time the judge is not discriminating. It is answering the same
+way.** PR 2's arm A, sentence 5, is the clearest single case: two slots, and it
+produced "Vercel … Vercel Castle" — the same answer at both. That is what
+"always keep the term" produces. The dead ends list says it three other ways.
+"Keep what the decoder wrote" beats argmax on the score block, 34 of 57 spans
+against 28. The shipped prompt scores 0 of 8 on the collision class. And
+deleting the term list from the prompt wins 4 of that class and loses 8 other
+cases, because the list is the only thing telling the judge `Praisy` is a
+spelling at all.
+
+**The mechanism is one prompt carrying two instructions.** It is asked to trust
+the term list, so a name the decoder mangled gets written. It is asked to
+distrust the term list, so an ordinary word does not get a name written over it.
+Those are the same question with opposite answers, and the prompt holds no
+evidence that separates them. Every framing measured so far picks a side and
+pays on the other. That is why the dead ends read as seven rounds of one result.
+
+**In arm B the judge changed nothing at all.** It ran on 2 of the 8 sentences, 6
+and 7, and both times said keep the term — which is the default. Five sentences
+never reached it: 1, 2, 3, 4 and 8 each logged `vocabulary.count = 0`. Sentence
+5 reached it and printed `0 slot(s) from 0 proposal(s)`, which is the
+`ruleParts` defect Fix A is for and not a decision. **Eight sentences dictated
+once is not a rate.** This says what the judge did on those eight. It does not
+say how often the judge decides anything, and nothing in this plan measures
+that.
 
 **The residue is a term whose rendering is an ordinary English word.** This
 speaker says `Praisy` as "praise", and 6 of the 26 recordings in
@@ -615,11 +698,13 @@ owed before anything built on the clips ships.
 
 ## How this lands
 
-Nothing in this plan is merged, and the branches form a seven-deep stack:
+Nothing in this plan is merged, and the branches form a deep stack:
 `docs/vocabulary-v3-clip-bank` (#74) → `test/acoustic-off-arm` (#75) →
 `test/live-acoustic-off` (#76) → `docs/clip-bank-evidence` (#77) →
 `feat/ablation-harnesses` (#78) → `test/arm-a-result` (#79) →
-`feat/corrections-keep-audio`.
+`docs/missing-prs` (#80) → `test/poison-a-clip` (#82) →
+`docs/architecture-from-evidence` → `docs/vocabulary-pipeline`.
+`feat/corrections-keep-audio` (#81) is a sibling off #79, not part of the line.
 
 **#74 to #79 can land as a block.** They are documents and Python harnesses.
 No Swift differs from `main` on any of them, so none can change what the app
@@ -632,6 +717,39 @@ the stack would gate them behind six documents.
 **A deep stack rebases every time its base moves.** Six rebases per landed
 change, and each one is a chance to lose a result block. That is the cost of
 adding to it, and the reason to land the block early.
+
+## The architecture this is heading for
+
+**This is a direction, not a measured result.** Nothing below has been built or
+scored. It is written down because the PRs after PR 10 only make sense against
+it, and because the alternative is five sections that each imply a different
+endpoint. Read every claim in it as a proposal. The measured facts are in part
+1.
+
+Five parts, each with one job:
+
+- **The spotter generates candidates and decides nothing.** It is a good
+  detector and a bad chooser — part 1 §1 and *Still open*. Take the choosing
+  away from it. 6d is where this is measured.
+- **The clip bank decides**, from the speaker's own recordings, positive and
+  negative. PR 6 and PR 11.
+- **The `heard:` map covers a term's first days**, then goes quiet. It is the
+  only thing that works with no clips at all. PR 14.
+- **The judge is the fallback**, for terms the bank cannot cover yet. It is
+  retired per term as coverage arrives, not switched off globally. PR 15.
+- **Each part is switched on per term, by evidence.** Part 1 §1: three terms
+  have never rescued a clip and have cost nine, while `Vercel` is 9 wins to 1.
+  Anything global is the wrong shape.
+
+**What this is answering.** Today the same mechanism both proposes a name and
+decides whether the name is right, and it is the same mechanism twice: a
+comparison between audio and a *spelling*. Part 1 §1 measured that comparison at
+AUC 0.318 — worse than chance. Splitting generate from decide lets the decision
+use a different kind of evidence, which is what the clip bank is.
+
+**What could kill it.** 6d's false-positive sweep, first. A generator that fires
+on ordinary words hands the bank a problem no decider can fix, and part 1 §1
+says nothing measured so far bears on that rate.
 
 ## What the prototype measured, and what it settled
 
@@ -1762,8 +1880,10 @@ and not a gate.
 `heard:` lists grow they will start overwriting ordinary words — §7 says why
 that is a matter of time, not of luck. A clip is the only evidence that could
 gate a text rule before it fires. Nobody has measured it, because today the
-rules are clean on this corpus. Do not schedule it. Know it is the reason the
-recordings keep their value even if 6b fails.
+rules are clean on this corpus. It is the reason the recordings keep their value
+even if 6b fails. **This paragraph said "do not schedule it". PR 2 changed
+that** — sentence 5 is a rule overwriting `Versailles`, live, and part 1 §1 now
+records that no arm has ever gated a rule with the bank. PR 13 is the section.
 
 Four experiments, in order. 6a, 6c and 6d's first step are offline on data
 already on disk. No build, no model, no Ollama for any of them. 6d asks a
@@ -2088,47 +2208,67 @@ explains. Then it still is not earning its complexity and PR 6 stops here. AUC
 going up while the ablation does not is the same trap the tuned filter fell
 into.
 
-### 6c — find the bad clips without labels
+### 6c — review a term's bank by ear, in groups
 
-Pruning is the other half of robustness, and it is the dangerous half. Getting
-it wrong deletes correct data.
+**Rewritten after 6a. What changed and why, before the design.** The old 6c hunted
+outliers: score each clip for suspicion, suspect a far singleton, delete it. 6a
+falsified that. Bad clips arrive in groups and vouch for each other, so
+leave-one-out flags real recordings instead — `Tasmeen`'s maximum is held by
+`01-tasmin.wav` and `Vercel`'s by `13-versal.wav`, both genuine, while the two
+bad clips §7 names rank 5th of 8 and 8th of 16. Removing `Vercel/09-brazil.wav`
+made the spread *worse*, 3.178 to 3.235, and cost 6 true rejections.
 
-**Changes.** A script that scores every clip in a term's folder for suspicion.
-Four signals, all cheap at 8 to 26 clips per term:
+**What survives from 6a.** The problem is real and large: one bad clip takes the
+veto from 554 true rejections to 228. Clustering before judging still matters,
+for the reason the old section gave — a second pronunciation is two real
+clusters, not one truth and one outlier. The bilingual verification criteria
+below are unchanged. What is dropped is ranking by distance from the pack, and
+deleting anything.
 
-- **Leave-one-out self-consistency.** A clip far from every other clip of the
-  term is suspect. This is `nearest` read per clip instead of reduced to one
-  number, so the rule already computes it.
-- **Cluster first. This is the part that must not be got wrong.** A speaker may
-  say one name two ways on purpose — `Matthieu` in French, or anglicised. That
-  is two real clusters, not one truth and one outlier. Keep any cluster with two
-  or more members. Suspect only a far singleton. The clusters are also what 6b's
-  per-cluster spread needs, so this is not only a pruning step.
+**This section is a design. Nothing in it is measured.**
+
+**Changes.** A review tool, not a pruner.
+
+- **Rank by provenance and duration, not by distance.** `from: correction`
+  outranks `from: mined`; a mined clip is a guess from a decode that may itself
+  have been wrong, and `Vercel/09-brazil.wav` is a mined one.
+  `VoiceStore.Observation.span` carries `[start, end]`, so a cut much shorter or
+  much longer than the term's typical span sorts to the top — that is usually a
+  bad cut rather than a bad pronunciation. Both fields exist today: PR 4 writes
+  them and `origin/feat/corrections-keep-audio` carries the code.
+- **Group the clips and show the groups.** These are half-second clips. Four of
+  them is under three seconds, so **play the whole group** and ask one question
+  about it. That is the difference between a review that takes a minute and one
+  nobody finishes.
+- **Let the group's own tightness decide how it is played.** The same
+  leave-one-out number, computed inside the group instead of over the term, says
+  whether the group is one thing. Tight enough, answer it as a unit. Loose,
+  play it clip by clip. **Do not assume a group is homogeneous.** One
+  mispronunciation can sit inside a tight group — that is exactly what 6a found
+  in `Tasmeen`, where four similar-sounding clips include `06-that'smeanssend`.
+- **Never delete.** Mark a group as not counted and leave the files where they
+  are. A clip is auditable by ear, so a mistake here is reversible by ear.
+  Deletion is not. This also removes the risk 6a measured: taking one clip out
+  of a group of bad clips can raise the spread.
 - **Label the clusters with `lang`.** Part 1 §3: the language is already in
-  `trace.jsonl` and PR 4 should carry it into every observation. It does not
-  decide anything — a French name can be said the French way in an English
-  sentence — but it names a cluster in words the speaker recognises and it says
-  whether coverage exists for each way the name is said.
-- **Provenance.** `from:` and `seen:` are already defined on
-  `origin/feat/vocabulary-v2-pr5` — `VoiceStore.Observation.from` and
-  `Config.Vocabulary.Pronunciation`, with sources `correction`, `mined`,
-  `calibration` and `legacy`. A clip from a confirmed correction outranks one
-  mined from a transcript that may itself have been wrong.
-  `Vercel/09-brazil.wav` is a mined one.
-- **Duration.** `VoiceStore.Observation.span` carries `[start, end]`. A cut much
-  shorter or much longer than the term's typical span is usually a bad cut, not
-  a bad pronunciation.
+  `trace.jsonl` and PR 4 carries it into every observation. It decides nothing —
+  a French name can be said the French way in an English sentence — but it names
+  a group in words the speaker recognises and it says whether coverage exists
+  for each way the name is said.
 
-**Size.** About 200 lines of Python, plus the recording session for the bimodal
-check.
+**Size.** About 200 lines of Python, plus playback, plus the recording session
+for the bimodal check.
 
-**Verified by** three things, and the last two matter more than the first:
+**Verified by** three things, unchanged from the old section except the first,
+and the last two still matter more:
 
-1. the known bad clips are flagged — `Vercel/09-brazil.wav`,
-   `Tasmeen/06-that'smeanssend.wav`;
+1. the known bad clips are surfaced for review — `Vercel/09-brazil.wav`,
+   `Tasmeen/06-that'smeanssend.wav`. **Surfaced, not flagged.** 6a showed
+   neither is an outlier, so this is a test of the ranking putting them in front
+   of a person, not of an automatic verdict;
 2. **a deliberately bilingual term keeps both clusters.** Build one: read
-   `Matthieu` both ways, several of each, and check that nothing in either
-   cluster is flagged. A method that fails this deletes correct data;
+   `Matthieu` both ways, several of each, and check that neither group is marked
+   not-counted. A method that fails this loses correct data;
 3. **and that term still vetoes.** Keeping both clusters is only half the job.
    Run the bilingual term through the ablation and check it still rejects a
    wrong proposal — with the per-cluster spread from 6b, it should; with one
@@ -2136,27 +2276,49 @@ check.
    clips and rejects nothing has failed**, and the first criterion alone would
    call that a pass.
 
-**Falsified if** either bilingual check fails, or if flagging is at chance
-against 6a's poisoned clips.
+**Falsified if** either bilingual check fails, or if the review surfaces so many
+groups that nobody would finish it. Measure the second before building the
+playback: count how many groups a term of 8 to 26 clips produces.
 
-**Open, and not decided here: should pruning ever be automatic?** The
-alternative is that nothing is ever deleted — the speaker is shown the suspect
-clip and confirms by ear. A clip is auditable, which is the one thing a text
-rule is not, so asking is cheap and honest. It is also one more interruption.
-Decide it once 6c has a false-flag rate, not before.
+**Resolved, and it was open: pruning is never automatic.** The old section left
+this to a false-flag rate. 6a supplies the answer instead — the statistic that
+would drive an automatic pruner deletes real recordings, and one of its two
+deletions made the bank worse. So the speaker confirms by ear, and the tool
+never removes a file.
 
-### 6d — can the bank *propose* a term, with no rule behind it?
+### 6d — the spotter generates, the bank decides
 
 **Nothing in this section is measured.** Every other number in part 1 and part 2
 has a branch and a table behind it. This one has none. Read it as a design for
 an experiment, not as a result.
 
-**The question.** Scan the spans of a sentence against the clip bank and propose
-a term when something lands close. Query by example, with no `heard:` rule and
-no spotter in front of it. This is the question that keeps coming back, and it
-is worth saying why it matters: if it works it retires the text rules, and §7 is
-the argument that the text rules are the part whose risk accumulates and cannot
-be read.
+**The question.** Propose a term from the audio, with no `heard:` rule behind
+it, and let the clip bank say whether the proposal is right. This is the
+question that keeps coming back, and it is worth saying why it matters: if it
+works it retires the text rules, and §7 is the argument that the text rules are
+the part whose risk accumulates and cannot be read.
+
+**Reframed after PR 2, and this is the change.** The original 6d scanned every
+span of every sentence against the bank — a generator built out of the bank
+itself. There is already a generator. **The spotter is a good detector and a bad
+chooser**, and the plan measured both halves: it separates "something is here"
+from "nothing is here" at 0.999 (*Still open*, the spotter-floor sweep), and the
+acoustic score it and the rescorer share separates right from wrong at AUC 0.318
+(part 1 §1). So take the choosing away from it. Keep the spotter as the
+generator and put the bank behind it as the decider.
+
+**This is cheaper than scanning every span, and by a lot.** The spotter
+over-generates by design — every term scores against every stretch of audio, so
+a 19-second clip yields about ninety hits (`Vocabulary.swift:788-789`). Ninety
+verdicts at the measured ~1 ms per proposal is under a tenth of a second, and it
+is bounded by the spotter's own output rather than by the word count. Scanning
+every span is bounded by nothing.
+
+**6d's warning still applies and is now the first measurement.** Every clip-bank
+number in this plan was measured on spans something had already flagged. Ninety
+hits per clip is the size of the gap between that and a real generator, and the
+same gap is what killed the acoustic path. So the sweep below runs first,
+against the spotter's hits, before anything is built.
 
 **The warning, and it is the whole difficulty.** AUC 0.935 and the 92%
 identification rate in part 1 §1 were both measured on spans that something had
@@ -2169,12 +2331,18 @@ ordinary words of the 48 scripted sentences were never scanned, so nothing
 measured so far bears on the false-positive rate of a proposer.
 
 **So the first thing 6d measures is that rate, before anything else is built.**
-Take the 141 labelled clips, enumerate every word span from the word timings in
-`trace.jsonl`, and count how many ordinary words land within an accept distance
-of some term. Report it per 1000 words and as the share of clips with at least
-one. The labels say where the real names are, so every other hit is a false
-positive. If the rate is not small, stop: nothing downstream survives it and the
-rest of 6d is not worth writing.
+Take the 141 labelled clips and score every spotter hit against the bank — every
+hit, not only the ones that survive today's three gates, because the gates are
+part of what is being replaced. Count how many ordinary words land within an
+accept distance of some term. Report it per 1000 words and as the share of clips
+with at least one. The labels say where the real names are, so every other hit
+is a false positive. If the rate is not small, stop: nothing downstream survives
+it and the rest of 6d is not worth writing.
+
+Run the same sweep over every word span from `trace.jsonl` as a second arm. That
+is the version with no generator in front of it, and it is the blind control
+part 1 §2 asks for: if the bank behind the spotter does no better than the bank
+on its own, the spotter is contributing nothing.
 
 **Changes.** Offline first, in the same script 6a extends
 (`scripts/reference-matching.py` on `origin/spike/exemplars-round-2`). No app
@@ -2202,6 +2370,54 @@ the clip bank rests on recordings mined from the corpus they are measured on. A
 proposer is scored over every word of that same corpus, so it has more surface
 for that flaw than any arm so far. Any number 6d produces needs a held-out set
 before it means anything.
+
+### 6e — the abstain curve: how many clips is enough?
+
+**This is an experiment, not a result. It replaces two guesses with a number.**
+
+**The question.** A bank with too few clips must not decide. Everything in this
+plan that needs that threshold has guessed at it. The prototype abstains below
+three recordings because two recordings give exactly one exemplar-to-exemplar
+distance and so no spread — that is arithmetic and it stands. Nothing says three
+is where the bank becomes *useful*. PR 10 already asks for the number to be a
+config key. PR 14 needs it to say when the map stops being the only evidence.
+
+**Correcting the record before it gets quoted.** An earlier draft of PR 14 said
+"about three corrections". That number came from two places and neither
+supports it: the prototype's abstain floor, which is about having a spread at
+all, and `Matthieu` scoring 0.556 at 2 recordings in round 6. One term at one
+count is an anecdote. Do not carry the number forward.
+
+**Changes.** None to the app. 6a's harness already computes per-term AUC with
+the per-clip hold-out, so this is a subsampling loop on top of it.
+
+**How.** For each term, draw random subsets of its bank at n = 2, 3, 5, 8, 12,
+several draws per n, and record per-term AUC against clip count. Keep the
+per-clip hold-out throughout. Plot AUC against n per term, and pooled. Read
+where the curve leaves chance and where it flattens.
+
+**What the archive can and cannot support.** It spans 6 clips (`Claude`) to 26
+(`Praisy`) over 11 terms. So n = 12 exists for four terms and n = 8 for six;
+the high end of the curve is thin and the report must say which terms are in
+each point rather than pooling silently. `Claude` cannot reach n = 8 at all.
+
+**Size.** Under 100 lines of Python on top of 6a. Offline, no app, no model,
+no Ollama. Under an hour of machine time — every distance is already cached by
+6a's `--cache`, so the arms are indexing.
+
+**Verified by** a curve per term and a pooled curve, with the number of terms at
+each n stated. The output is one threshold with an argument behind it.
+
+**Falsified if** the curves do not flatten, or if per-term curves disagree so
+much that no single n describes them. That is a real outcome and not a failure:
+part 1 §3 already found the distance scale differs per term, so a per-term
+threshold may be the honest answer. It would mean PR 10's config key is the
+wrong shape.
+
+**In-sample, like everything else here.** Part 1 §7's closing warning applies:
+the recordings were mined from the corpus they are scored on, so the curve is
+better than the truth by an unknown margin. It is the *shape* of the curve this
+is for, not the height.
 
 ## PR 7 — ask the speaker for fewer clips
 
@@ -2285,6 +2501,19 @@ under both settings, in opposite directions, and no `heard:` entry can fix it �
 already ranked it the hardest term in the set at AUC 0.869 (§3). Any answer here
 is a piece of evidence about the sound, not a rule, which makes PR 6's clip bank
 the only candidate on the table.
+
+**Part 1 §1 now states the rule half exactly, and it sharpens the problem.**
+`heard:` matching is exact, whole-word and case-insensitive, and every inexact
+route to a term lives in the acoustic pass. So `acoustic: false` does not merely
+remove a second route to `Praisy` — it removes the *only* route to any rendering
+nobody has written down. `Praise's` was one of those. The list can be extended,
+but not with "praise", and that is what makes this the residue.
+
+**PR 11 is the first thing that could give this term two sides.** `Praisy` and
+"praise" are one sound in this mouth, so a bank of `Praisy` clips answers
+nothing on its own. A bank of "praise" clips beside it makes the question a
+comparison. Whether that comparison separates anything is unmeasured, and this
+term is the one where it is most likely to fail.
 
 **Start with a measurement, not a design.** Two questions, in order:
 
@@ -2468,6 +2697,287 @@ different PR in a different order. **And treat a per-speaker tolerance as a
 warning, not a feature.** A key invites tuning, tuning on the clips you report
 on is the trap part 1 §2 is about, and a key with no defensible default should
 not be a key.
+
+## PR 11 — negative clips as a data type
+
+**Proposal. Nothing here is measured.** The design rests on one argument and one
+measured fact. The argument: a revert is labelled audio of the ordinary word,
+in this speaker's voice, at the exact span the system got wrong. The fact: part
+1 §1's `Praisy` case, where the term and an ordinary English word are the same
+sound, and no measurement of sound alone separates them. A negative clip is the
+only thing on the table that turns that into a comparison.
+
+**Today a revert is discarded.** PR 4 keeps the audio when a correction *makes*
+a name. When the speaker takes a name back — `Praisy` → "praise" — the app has
+a clip of the ordinary word, cut at the span that misfired, and it throws it
+away. That is the most informative correction there is.
+
+**Changes.**
+
+- **`voice/negatives/<Term>/`, a separate directory.** Not a flag on a file in
+  `samples/`. Four things walk `voice/samples/<Term>/` today and none of them
+  reads a flag: `scripts/reference-matching.py`, `scripts/mine-pronunciations.py`,
+  `scripts/vocab-ablation.py`'s config recipe, and `VoiceStore.samplesDirectory`
+  (`VoiceStore.swift:49`, `:135`, `:150`, `:192`). A negative dropped into
+  `samples/` is silently ingested as a positive by every one of them, and the
+  failure is invisible: the bank just gets worse. A directory they do not know
+  about cannot be misread.
+- **`polarity: positive | negative`, explicit on `VoiceStore.Observation`.**
+  Absent reads as positive, so every line written before this key exists still
+  parses — the same rule `lang`, `mic` and `build` already follow. It has to be
+  explicit rather than inferred from the directory, because the *meaning* of the
+  clip inverts. For a correction the clip **is** the term. For a revert the clip
+  **is not** the term. A reader that guesses from a path is one refactor away
+  from guessing wrong.
+- **`collides_with:` under the term in `vocabulary.yaml`.** Three fields per
+  entry: the `word`, how many times it was `reverted`, and how many `clips` are
+  behind it. **It is never matched and never substituted.** It is not a
+  rendering and must not become one — putting "praise" in `Praisy`'s
+  `pronunciations:` is exactly the rule part 1 §7 says would rewrite every
+  ordinary "praise". All it does is name which pair to compare against. **The
+  key parses today with no Swift change**: `Config.Term`'s `CodingKeys` are
+  `floor`, `heard` and `pronunciations` (`Config.swift:281`), and a keyed
+  container ignores what it is not asked for. So the file can carry the data
+  before anything reads it.
+- **Keyed on a pair, not on a term.** "praise" is a negative for `Praisy` and
+  means nothing to `Supabase`. The comparison a decider makes is "nearer my
+  `Praisy` clips or my 'praise' clips", and that question only exists for a
+  pair. A global pool of negatives answers a different question and answers it
+  badly.
+- **`--forget <term>` removes all four things**: pronunciations, samples,
+  negatives and the `collides_with` entry. `ForgetCommand.swift` already removes
+  the first two; this adds the other two. A term that can be taught and not
+  fully forgotten is a term whose data outlives the decision to keep it.
+
+**This is also where part 1 §6's confusables sweep lands.** That sweep runs the
+spotter for a term across the speaker's archive and reports which ordinary words
+it fires on. Today it has nowhere to write its answer. `collides_with:` is the
+place: the sweep proposes the pairs, reverts confirm them, and the `reverted`
+count says which pairs are real rather than theoretical. That also makes PR 7's
+first item readable off the file — a term with no `collides_with:` entry needs
+no clip bank.
+
+**Why the counts are on the entry.** `reverted` and `clips` are what say whether
+a pair is worth acting on. A pair reverted once with no clips behind it is a
+note. A pair reverted eight times with six clips is evidence. Without the
+counts, `collides_with:` is a list that only grows, which is the failure mode
+§7 describes for `heard:`.
+
+**Size.** Moderate. `VoiceStore`, `Corrections`, `ConfigWriter`,
+`ForgetCommand`, and a `--check-config` line naming the pairs. No decider reads
+any of it yet — PR 13 is the first thing that would.
+
+**Verified by** a simulated revert writing a clip under `voice/negatives/`, an
+observation carrying `polarity: negative`, a `collides_with:` entry with
+`reverted: 1`; `--forget` leaving none of the four behind and `--check-config`
+exiting clean; and every existing script producing byte-identical output on an
+archive that has negatives in it. That last one is the point of the separate
+directory and it is the check that would catch a regression.
+
+**Falsified if** reverts are too rare to build a bank from. Count them first, on
+the archive: `Trace` records corrections, so the number of reverts per term over
+the last months is countable today without writing anything. If a term collects
+one negative a month, the bank behind a pair never fills and PR 13's confirm
+direction has nothing to stand on.
+
+**One thing this does not fix.** A negative is evidence about a *sound*. It says
+nothing about a rule that fires on a spelling with no audio consulted. That is
+PR 13.
+
+## PR 12 — a revert never deletes a sample
+
+**Proposal, and it is a policy rather than a mechanism.** The Swift for the
+revert path lands separately, on `fix/revert-does-not-write-a-rule`. This
+section says what that path may and may not do to the clip bank.
+
+**The temptation is to delete a sample, and it is wrong.** A revert says the app
+wrote a name where the speaker meant an ordinary word. The instinct is that some
+recording taught it that. Nothing in `samples/` did. Samples feed the veto,
+which only ever *removes* proposals — part 1 §7: "a clip never fires. It adds
+nothing and promotes nothing." The thing that wrote the name is a rule or an
+acoustic proposal, and the log already names which.
+
+**A bad sample can contribute, indirectly, and 6a measured the limit of that.** A
+bad clip inflates `spread` and disarms the veto, so it can let a wrong proposal
+through. But 6a showed one revert cannot identify which clip: bad clips arrive in
+groups and are invisible to the maximum, the two clips §7 names rank 5th of 8 and
+8th of 16, and removing one of them made `Vercel`'s spread worse and cost 6 true
+rejections. The geometry points at legitimate recordings. **Deleting on a revert
+would delete the wrong file, and it would do it silently.**
+
+**Changes.** On a revert, three things and no deletion:
+
+1. **Blame the proposal the log already names.** The `vocabulary:` lines say
+   which mechanism wrote the term — a rescorer proposal, a spotter span, or a
+   `replacements` rule. Record that against the revert instead of guessing.
+2. **Reduce `seen:` on the rendering that fired, when a rule caused it.**
+   `ConfigWriter` counts `seen:` up on every correction
+   (`origin/feat/corrections-keep-audio`). A revert is the same evidence with
+   the sign flipped, and a rendering whose count goes down is one PR 4's
+   seen-once prune can reach.
+3. **Count the revert on the term.** N reverts on one term triggers a review of
+   that term — 6c's review, by ear, over groups. Not an automatic change.
+
+**Why not delete.** Same reason 6c stopped deleting. A clip is auditable by ear,
+so a mistake a person makes is reversible; a deletion is not. And an automatic
+deletion driven by a signal 6a showed to be wrong is the worst of both.
+
+**Size.** Small, and most of it is in the revert PR already. The `seen:`
+decrement is a few lines on top of `ConfigWriter.adding(pronunciation:)`.
+
+**Verified by** a simulated revert leaving every file in `voice/samples/<Term>/`
+in place, the rendering's `seen:` down by one, and the revert counted. Then the
+count from PR 11's falsifier: how many reverts a term actually collects, which
+is what sets N.
+
+**Falsified if** reverts turn out to be dominated by bad samples after all —
+that is, if 6c's review of a term with many reverts keeps finding bad clips.
+Then the indirect route is the main route and this policy is too cautious. 6a
+says it will not, but 6a measured injected clips and not reverts.
+
+## PR 13 — the clip bank as a gate on `heard:` rules
+
+**Proposal. Nothing is measured, and it is probably the highest-value idea
+here.** It is the only thing in the plan that addresses the failure part 1 §1
+now records: the clip bank has never gated a rule, in any arm, so PR 2's
+sentence 5 is invisible to it.
+
+**The shape.** A rule proposes on text. The bank confirms or refuses it on
+sound. The rule keeps its job — it is the thing that works with no clips at all
+— and it stops being the last word.
+
+**Two directions, and they carry very different risk.**
+
+- **Veto.** The span's audio is far from every recording of the term, so drop
+  the term reading. This only ever subtracts. Its worst case is the transcript
+  the decoder wrote, which part 1 §2 measures as right 60% of the time on scored
+  spans. Safe.
+- **Confirm.** The span's audio is as close as a genuine utterance, so drop the
+  *original* reading. This adds. Its worst case is a name nobody said, written
+  into a sentence, and nothing downstream undoes it. The speaker has to notice.
+
+**Negatives make confirming much safer, and that is why PR 11 comes first.**
+Without them, confirming needs an absolute threshold: "near enough to my `Vercel`
+clips". Part 1 §3 says the distance scale differs per term, so that threshold is
+per term and tuned, which is the trap part 1 §2 is about. With them it is a
+comparison — "nearer my `Vercel` clips than my `Versailles` clips" — and a
+comparison needs no scale.
+
+**Read this against sentence 5, because it sets the ceiling.** That sentence has
+two slots and four readings. **Veto alone takes it from four to two, not to
+one.** The `Vercel Castle` span is far from the `Vercel` bank, so its term
+reading goes; the correct `Vercel` span is near, so nothing there is removed and
+both of its readings stay. Only a confirming version removes `Versal` and
+collapses it to one. So the safe half of this PR does not finish the case that
+motivated it.
+
+**Changes.** The gate cannot live where the veto lives — part 1 §1: the veto is
+inside `Vocabulary.apply`, which `acoustic: false` switches off, and rules are
+applied later by the `replacements` stage. So either the bank moves out of
+`apply` into something the pipeline can call, or the gate runs as its own stage
+after `replacements`. The second is smaller and matches how `replacements`
+already publishes `changes` for a later stage to read. Offline first, in 6a's
+harness, before any of it.
+
+**Size.** Unknown, and do not scope it before the offline arm. The offline arm
+is small: `replacements.changes` says which rules fired and `trace.jsonl` has
+the word timings, so the spans are already available.
+
+**Verified by** the plan's standing bar — `vocab-ablation.py --runs 3` with arms
+`off`, `today`, `veto everything` and the gate, wins and losses separately, split
+by class. **And by the blind control for this mechanism specifically:** the arm
+that vetoes every rule-written term. Part 1 §2 exists because a mechanism that
+cannot beat its own blind version has not been shown to work, and "veto every
+rule" is a one-line arm.
+
+**Falsified if** the veto direction loses more term clips than it wins control
+clips. It has an obvious way to fail: `Praisy` is the word "praise" in this
+mouth, so a genuine `Praisy` and a genuine "praise" are the same audio, and a
+veto there is a coin flip. Measure per term, not pooled. **Also falsified for
+the confirm direction if** it writes any name on a control clip. Controls can
+only be damaged, so one is enough to stop it.
+
+## PR 14 — the `heard:` map is a bootstrap, and there is no cutover
+
+**Proposal.** It is a scheduling rule, not a mechanism, and it exists to stop
+someone building a switch.
+
+**The claim.** The `heard:` map keeps proposing forever. The clip bank starts
+gating a term as soon as it has enough clips to be trusted, and abstains before
+that. Nothing is ever switched off, and there is no date where behaviour changes.
+
+**Why no cutover.** A term with two clips behaves exactly as it does today: the
+map proposes, the bank abstains, the judge is the fallback. A term with twenty
+clips gets its proposals checked. Both states are live at once, per term, and a
+term moves between them by collecting clips. That is the "switched on per term
+by evidence" line in the architecture section, applied to the one part of the
+system that works with no evidence at all.
+
+**Why the map cannot retire.** Part 1 §1: `heard:` matching is the only
+mechanism that works with zero recordings, and a new term has zero. PR 7's item
+2 shows mining reaches most terms in an existing archive, but a name learnt
+today has nothing behind it. The map is what covers a term's first days.
+
+**Correct the record.** An earlier draft of this idea said the bank takes over
+after "about three corrections". That number is not supported. It came from the
+prototype's abstain floor of 3, which is about having a spread to compare
+against at all, and from `Matthieu` scoring 0.556 on 2 recordings in round 6 —
+one term at one count. **6e is the experiment that produces the real number.**
+Do not quote three.
+
+**Size.** No code of its own. It is a constraint on PR 10's abstain key and on
+whatever PR 13 ships.
+
+**Verified by** the abstain threshold being a config key with the terms below it
+named in `--check-config` (PR 10 already asks for that), and by an ablation arm
+where every term is under the threshold producing a transcript identical to
+today's, clip for clip.
+
+**Falsified if** running both at once costs clips — if a term whose bank is
+thin does worse with the bank abstaining than with the bank absent. That would
+mean abstaining is not neutral, and neutrality is the whole claim.
+
+## PR 15 — the judge on probation, with a blind control
+
+**This is a measurement, not a redesign. Do not try to improve the judge.** The
+dead ends list seven rounds of trying: ten framings, two routers, two menu
+shapes, a score block, a bigger model, a reranker and a fitted constant. None
+moved the class that matters.
+
+**The arm nobody has run.** `acoustic: false` **with** the `vocabulary:` stage in
+the pipeline, and `acoustic: false` **without** it, over the same 141 clips.
+Removing the stage is one line out of the pipeline list, and PR 3's harness runs
+config directories, so it is two scratch directories and one command.
+
+**Why this and not another framing.** It is the same discipline that killed the
+rejection filter. Part 1 §2: measure the version where the mechanism does
+nothing. Nobody has measured the judge doing nothing on the arm the plan wants
+to ship. Part 1 §1 says the judge costs a median of 1213 ms on live dictation
+and scores 0 of 8 on the failure class that is left; if the two arms tie, that
+is 1213 ms and a local model for nothing.
+
+**Gate it on Fix A.** Without the pre-rules text, `ruleParts` offers nothing on
+any sentence where a term stands more than once — PR 2's arm B logged exactly
+that. The judge would be tested with its one remaining job taken away, and the
+test would be unfair to it. Land Fix A, then run this.
+
+**Then retire it per term, not globally.** As PR 11 and PR 13 give a term both
+sides of its comparison, that term stops needing a menu. A term with no clips
+still does. The same per-term shape as everything else here.
+
+**Size.** No product code. Two config directories and one `vocab-ablation.py`
+run. Machine time is PR 3's 3.8 s/clip for two arms, so under ten minutes.
+
+**Verified by** `vocab-ablation.py --runs 3` with arms `off`,
+`acoustic: false`, and `acoustic: false` with the `vocabulary:` stage removed.
+Wins and losses separately, split by class, with the flip count. Part 1 §2: a
+single-run difference within 2 cases decides nothing.
+
+**Falsified if** removing the stage costs clips by more than the flip count
+explains. Then the judge is doing work on this arm and the question becomes how
+much, per term. **Note what a tie would mean**, because it is the likely outcome
+and it is worth naming in advance: the stage would be removable, and the plan
+would lose its only mechanism for terms the bank cannot cover.
 
 ## Two fixes that go straight to `main`
 
