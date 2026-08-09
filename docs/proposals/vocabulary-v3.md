@@ -327,9 +327,9 @@ recordings the same proposals were scored against:
 A term with no recording in a source cannot be scored from that source at all.
 `Praisy` and `Vercel` have no scripted recording, so the scripted row drops all
 69 of their proposals — 58 `Praisy` and 11 `Vercel` — including `Praisy`, the
-hardest term in the set at 0.869. That alone can explain the gap to 0.831. Do not quote 0.910 as evidence
-that a read line is worth more than a mined one; nobody has measured that on
-equal rows.
+hardest term in the set at 0.869. That alone can explain the gap to 0.831. Do
+not quote 0.910 as evidence that a read line is worth more than a mined one.
+Nobody has measured that on equal rows.
 
 **What the split does say.** Two things. Adding recordings raises the headline:
 27 recordings give 0.812, 122 give 0.874, and nothing is dropped any more.
