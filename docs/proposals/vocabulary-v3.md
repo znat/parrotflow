@@ -11,6 +11,18 @@ losses go. The acoustic proposal path buys no wins the rules do not already
 deliver. **The first thing to do is switch it off and confirm that on live
 dictation.** It is a config change, not a feature.
 
+**The second headline: keep the clip bank and develop it.** The blind control
+killed the *rejection filter as built*, not the recordings under it. The signal
+is real — AUC 0.935 pooled on a label-built set, `Supabase` 1.000, `Redcrawl`
+0.966, and 7 of the 8 words the app actually wrote a name over sit farther from
+that name than every real utterance of it. What failed is the decision rule.
+So the recordings stay, and the work is to build a rule worth the evidence.
+Part 1 §7 says why a clip beats another text rule. PR 6 says what to measure.
+
+**The bar, for anything built on the clips.** Beat the blind veto on the
+three-arm ablation. Not today's pass — the blind veto. A mechanism that cannot
+beat "veto everything" is not earning its complexity, whatever its AUC.
+
 **Read part 1 before writing any code.** It is the state of the world. Each item
 is a directive with its evidence attached, so you can check it or falsify it. It
 exists so nobody spends two more days re-measuring what is already known.
@@ -47,13 +59,27 @@ proposals. On the rescorer's own proposals a term that was said is at chance
 against a term absent from the sentence, 0.454. Round 5,
 `origin/spike/raw-score-separation`.
 
-**Comparing audio to the speaker's own recordings carries real signal — and it
-is not enough.** DTW over MFCCs against `voice/samples/<Term>/` separates a
+**Comparing audio to the speaker's own recordings carries real signal. The
+filter built on it did not beat a blunt instrument.** Two separate facts, and
+they are constantly confused.
+
+The signal: DTW over MFCCs against `voice/samples/<Term>/` separates a
 loss-decisive proposal from a win-decisive one at AUC 0.815, and separates "the
 term was said" from "the term was not said" at 0.874 on proposals and 0.935 on a
-label-built set. Wired in as a rejection filter it scores 104 of 141. **Vetoing
-every proposal blindly scores 103.** Head to head the measured filter wins 8 and
-loses 7. See the epitaph in part 2.
+label-built set — `Supabase` 1.000 over 9 A / 62 B, `Redcrawl` 0.966 over 8 A /
+63 B. Seven of the 8 words the app really did write a name over sit outside the
+entire range of real recordings of that name. Round 7,
+`origin/spike/exemplars-round-2`.
+
+The rule: wired in as a rejection filter it scores 104 of 141. **Vetoing every
+proposal blindly scores 103.** Head to head the measured filter wins 8 and loses
+7, and the tolerance curve is flat from 0.01 to 1.00.
+`origin/proto/reference-matching`.
+
+**What that does and does not show.** It shows the tuned filter's advantage over
+blind vetoing is noise. It does not show the recordings are useless. The
+decision rule is the part that failed, and §7 names the mechanism that makes it
+fragile. PR 6 is the work.
 
 **The LLM judge is wrong on the failure class that is left.** On the eight clips
 where an ordinary word was overwritten, the shipped prompt scores **0 of 8**, and
@@ -167,7 +193,8 @@ the judge prompt scored 38, 39, 40, 41 and 42 on the same 53 cases.
 ## 3. About the recordings
 
 Recordings are the one asset that gets better with use. Keep collecting them
-whatever decides.
+whatever decides. §7 says why they are a better place to put effort than another
+text rule, and where the rule built on them is fragile.
 
 **Exemplars carry the session, not just the word.** Scoring read speech against
 recordings from the same six minutes gives 0.920 pooled; against spontaneous
@@ -294,11 +321,81 @@ is a corpus. That produces the real confusable list for that term in that mouth,
 which is what both the `calibrate` and `vocabulary-corpus` skills are trying to
 guess. Build it before adding another spelling heuristic.
 
+## 7. Why a clip and not another text rule
+
+This is the design argument for keeping the recordings. It is an argument, not a
+measurement. Read it as the reason to run PR 6, not as its result.
+
+**A text rule is an instruction. A clip is evidence.** That difference decides
+how each one behaves as the vocabulary grows.
+
+**A rule fires unconditionally.** A `heard:` entry rewrites its string in every
+dictation from now on, whatever the sound was. It is right on the sentences it
+was written for. It is also on duty for every sentence nobody thought of.
+
+**A rule's risk accumulates and cannot be read.** `Praisy: heard: praise` and
+`Vercel: heard: versal` look the same on the page. One overwrites an ordinary
+English word and the other does not, and the list does not say which. §6 exists
+because nobody can read the answer off the list — it has to be measured against
+the speaker's archive.
+
+**`heard:` lists only grow.** A correction adds an entry. Nothing removes one.
+Today the rules are clean: with the acoustic path vetoed they give 27 wins and 0
+losses over 141 clips. That is a fact about 11 terms on one corpus, not a
+property of rules. The rules are safe here because the list is short.
+
+**A clip never fires.** It adds nothing and promotes nothing. Adding one moves a
+distance slightly. It can make a rejection better or worse; it cannot write a
+word into a sentence on its own.
+
+**A clip is auditable by ear. No text rule is.** You can play
+`voice/samples/Praisy/14-praise.wav` and hear that it is the word "praise". You
+cannot listen to `heard: praise`.
+
+**The catch: the rule as built is maximally sensitive to one bad clip.** State
+it exactly, because this is what PR 6 attacks. `ReferenceMatch.verdict` in
+`Sources/ParrotFlow/ReferenceMatch.swift` on `origin/proto/reference-matching`
+does four things:
+
+1. `distance` — the smallest DTW distance from the span to any usable recording
+   of the term. A `min` over recordings.
+2. `nearest` — for each recording, the distance to its nearest *other* recording.
+   Leave-one-out.
+3. `spread` — `nearest.max()`. The largest of those.
+4. reject when `distance > tolerance * spread`.
+
+**Step 3 is the weak point.** `spread` is a maximum, so one recording sets it.
+A clip that is not the term at all sits far from every real one, becomes the
+largest leave-one-out distance, and widens the cloud for every proposal of that
+term. **One bad clip disarms the veto for that whole term.** The code's own
+comment says so and names two, both mined automatically:
+`Vercel/09-brazil.wav` and `Tasmeen/06-that'smeanssend.wav`.
+
+**The query side is far safer, and that asymmetry matters.** `distance` is a
+`min`, so a bad clip only counts when it is the nearest thing to the span being
+judged. A bad clip is by definition unlike the term, so for a genuine utterance
+of the term it rarely wins that `min`. Almost all the exposure is in `spread`.
+
+**This argues for pruning and a robust statistic, not for a lower tolerance.**
+Lowering the tolerance to compensate eats correct proposals — see the `Mathieu`
+veto in part 2, where the filter starts rejecting true proposals below about
+0.94.
+
+**Do not overstate any of it.** Every number about the clip bank rests on
+recordings mined from the corpus they are measured on. The hold-out is per clip;
+there is no hold-out for the fact that the archive describes this corpus well.
+The tolerance was tuned on the clips it is reported on. **The true numbers are
+worse than the published ones and nobody knows by how much.** A held-out set is
+owed before anything built on the clips ships.
+
 ---
 
 # Part 2 — The build order
 
-## What the prototype measured, and what killed it
+## What the prototype measured, and what it settled
+
+**This table is the bar.** Every arm below is scored against it, and the arm to
+beat is the bottom one, not the second one.
 
 141 labelled clips, `--runs 3`, majority of three replays, `gemma4:e4b-mlx` and
 nothing else loaded, built but never installed.
@@ -333,6 +430,13 @@ keeps 2 wrong.
 **Almost every clip in the 8-versus-7 is `Praisy`** — the term this speaker
 pronounces as "praise". The measurement guesses on those, and guesses about half
 right.
+
+**What this does not say.** It does not say the recordings carry nothing. Round
+7 measured them separately, without a decision rule on top: AUC 0.935 pooled,
+`Supabase` 1.000, `Redcrawl` 0.966, and 7 of the 8 live overwrites farther from
+the name than every real utterance of it. The signal is there and the rule threw
+it away. PR 6 is the attempt to build a rule worth the evidence, and this table
+is what it has to beat.
 
 ## The open item, resolved: the `Mathieu` veto
 
@@ -478,7 +582,135 @@ over 11 terms, with the same per-term split.
 occurrences is near zero — that would mean the word timings do not survive the
 trace. Note that 456 of 2616 wavs have no trace entry.
 
-## PR 6 — the term that is an English word
+## PR 6 — a clip bank that survives a bad clip
+
+**This is the active line of work on the recordings.** The blind control killed
+the rejection filter as built. It did not kill the evidence under it. The
+question here is narrow: does a rule that is not decided by its worst clip beat
+the blind veto? If it does not, the clip bank stops being a decision mechanism
+and stays what PR 4 makes it — an asset that improves with use.
+
+**Read part 1 §7 first.** It states the mechanism this attacks:
+`ReferenceMatch.verdict` sets `spread` to `nearest.max()`, so one bad clip
+widens the cloud and disarms the veto for the whole term.
+
+**This does not contradict PR 1, and here is how the two settle.** PR 1 switches
+the acoustic proposal path off because the path as it stands costs 19 losses and
+buys nothing. PR 6b measures a better rule on the same three arms as the
+prototype, so the acoustic path is on in that arm — otherwise there is nothing
+to filter and no comparison with the 103 bar. Then one of two things happens.
+The rule beats 103, and the acoustic path stays on with the new rule instead of
+being switched off. Or it does not, PR 1 stands, and the clip bank is an asset
+and not a gate.
+
+**One use for the clips does not depend on that, and it is untested.** As the
+`heard:` lists grow they will start overwriting ordinary words — §7 says why
+that is a matter of time, not of luck. A clip is the only evidence that could
+gate a text rule before it fires. Nobody has measured it, because today the
+rules are clean on this corpus. Do not schedule it. Know it is the reason the
+recordings keep their value even if 6b fails.
+
+Three experiments, in order. 6a and 6c are offline on data already on disk. No
+build, no model, no Ollama for either of them.
+
+### 6a — how much does one bad clip cost?
+
+Sizes the problem before anything is designed. Nobody knows this number.
+
+**Changes.** None to the app. `scripts/reference-matching.py` on
+`origin/spike/exemplars-round-2` already computes per-term AUC with the per-clip
+hold-out. Add a `--poison` arm.
+
+**How.** For each of the 11 terms: record the AUC as it stands, add one clip of
+the wrong word to that term's folder, re-measure, and record `spread` before and
+after. The archive already holds real bad clips to use —
+`Vercel/09-brazil.wav`, `Tasmeen/06-that'smeanssend.wav`. Then repeat with 6b's
+robust statistic in place of the maximum.
+
+**Size.** Under 100 lines of Python. Offline.
+
+**Verified by** two numbers per term: how far AUC falls, and how far `spread`
+rises. The same pair with the robust statistic says how much robustness buys.
+
+**Falsified if** poisoning a term barely moves its AUC. Then `spread` is not the
+weak point, §7's argument is wrong, and 6b and 6c are not worth doing.
+
+### 6b — a rule that is not decided by one clip
+
+**Changes.** Two, measured apart and together.
+
+1. **Replace the maximum.** `spread` is `nearest.max()` today. Use the 90th
+   percentile of the leave-one-out distances instead, or another robust summary.
+   Round 7 swept nine summaries offline and found all but two within 0.015 AUC
+   of each other — but that sweep ran on a clean archive, which is exactly what
+   6a stops assuming.
+2. **Ask for k ≥ 2 near recordings.** `distance` is a `min` over recordings
+   today, so one clip decides the query side too. Require the span to be near
+   the k nearest instead. Expect little from it: §7 explains why the query side
+   is already fairly robust — a bad clip is unlike the term, so it rarely wins
+   the `min` for a genuine utterance. Measure it anyway. It is the other half of
+   the rule and it is a few lines.
+
+**Size.** Small in the prototype. `ReferenceMatch` already computes everything
+this needs.
+
+**Verified by** the three-arm ablation, not by AUC. `reference-ablation.py
+--runs 3` with arms `off`, `today`, `veto everything`, `new rule`. **The bar is
+the blind veto's 103, not today's 84.** Report wins and losses separately, split
+by class, with the flip count.
+
+**Falsified if** the new rule does not beat 103 by more than the flip count
+explains. Then it still is not earning its complexity and PR 6 stops here. AUC
+going up while the ablation does not is the same trap the tuned filter fell
+into.
+
+### 6c — find the bad clips without labels
+
+Pruning is the other half of robustness, and it is the dangerous half. Getting
+it wrong deletes correct data.
+
+**Changes.** A script that scores every clip in a term's folder for suspicion.
+Four signals, all cheap at 8 to 26 clips per term:
+
+- **Leave-one-out self-consistency.** A clip far from every other clip of the
+  term is suspect. This is `nearest` read per clip instead of reduced to one
+  number, so the rule already computes it.
+- **Cluster first. This is the part that must not be got wrong.** A speaker may
+  say one name two ways on purpose — `Matthieu` in French, or anglicised. That
+  is two real clusters, not one truth and one outlier. Keep any cluster with two
+  or more members. Suspect only a far singleton.
+- **Provenance.** `from:` and `seen:` are already defined on
+  `origin/feat/vocabulary-v2-pr5` — `VoiceStore.Observation.from` and
+  `Config.Vocabulary.Pronunciation`, with sources `correction`, `mined`,
+  `calibration` and `legacy`. A clip from a confirmed correction outranks one
+  mined from a transcript that may itself have been wrong.
+  `Vercel/09-brazil.wav` is a mined one.
+- **Duration.** `VoiceStore.Observation.span` carries `[start, end]`. A cut much
+  shorter or much longer than the term's typical span is usually a bad cut, not
+  a bad pronunciation.
+
+**Size.** About 200 lines of Python, plus the recording session for the bimodal
+check.
+
+**Verified by** two things, and the second matters more:
+
+1. the known bad clips are flagged — `Vercel/09-brazil.wav`,
+   `Tasmeen/06-that'smeanssend.wav`;
+2. **a deliberately bimodal term survives untouched.** Build one: read
+   `Matthieu` both ways, several of each, and check that nothing in either
+   cluster is flagged. A method that fails this deletes correct data. It is a
+   success criterion, not a nice-to-have.
+
+**Falsified if** the bimodal check fails, or if flagging is at chance against
+6a's poisoned clips.
+
+**Open, and not decided here: should pruning ever be automatic?** The
+alternative is that nothing is ever deleted — the speaker is shown the suspect
+clip and confirms by ear. A clip is auditable, which is the one thing a text
+rule is not, so asking is cheap and honest. It is also one more interruption.
+Decide it once 6c has a false-flag rate, not before.
+
+## PR 7 — the term that is an English word
 
 **This is the problem that is left, and it is unsolved.** After the acoustic path
 is off, the damage that remains is a term whose rendering is an ordinary word.
@@ -497,7 +729,7 @@ the spelling, and the judge scores 0 of 8 on exactly this class.
 framings, two routers, two menu shapes and a score block have all been measured
 on this class and none moved it.
 
-## PR 7 — the possessive the decoder drops
+## PR 8 — the possessive the decoder drops
 
 **Unscoped and unmeasured. Do not start it with a design.**
 
@@ -516,10 +748,13 @@ stage and needs its own eval set.
 
 Each was measured. One line each so nobody spends a day rediscovering it.
 
-- **Reference matching as a rejection filter.** AUC 0.815 is real signal, and it
-  is not enough: vetoing every proposal blindly scores 103 against the tuned
-  filter's 104, head to head 8 wins against 7 losses, and the tolerance curve is
-  flat from 0.01 to 1.00. `origin/proto/reference-matching`.
+- **The rejection filter exactly as built — `distance > tolerance × max`
+  leave-one-out spread, one tolerance, tuned on its own clips.** Vetoing every
+  proposal blindly scores 103 against its 104, head to head 8 wins against 7
+  losses, and the tolerance curve is flat from 0.01 to 1.00.
+  `origin/proto/reference-matching`. **This is a dead end for the rule, not for
+  the recordings** — the distance separates at AUC 0.935 on a label-built set.
+  The successor is PR 6, and it has to beat 103.
 - **Rewording the judge prompt.** Ten framings, 35 to 42 on 53 tuned cases, where
   five wordings of a single sentence already span 38 to 42. Round 1, on `main`.
 - **Deleting the term list from the prompt.** Wins 4 of the collision class and
@@ -561,12 +796,28 @@ Each was measured. One line each so nobody spends a day rediscovering it.
 - **A stronger representation than MFCC + DTW** — one vector per recording from a
   speech encoder, compared by cosine. Rounds 6 and 7 both recommend it. Cost is
   not the reason to want it: the dynamic program measured at about 1 ms per
-  proposal. Only worth revisiting if a use for the distance survives PR 6.
-- **"Too close, ask the user"** on a reranker's margins. Its own proposal.
+  proposal. Worth revisiting once PR 6 says whether a rule on the distance beats
+  the blind veto — a better representation cannot rescue a rule that does not.
+- **"Too close, ask the user"** on a reranker's margins. Its own proposal. The
+  same question comes back in PR 6c for a suspect clip, where it is easier: a
+  clip can be played back and confirmed by ear.
 
 ---
 
 # Part 3 — Cleanup this work owes
+
+**The `general → Redcrawl` verdict was never recorded. Replay that one clip.**
+It is the canonical failure — sentence 1 of the standing regression list — and
+it deserves a measured answer, not an inference. Offline, round 7 put it at
+distance **3.328**, nearer than **0 of 8** real recordings of `Redcrawl`, so the
+filter should reject it. End to end, the prototype log carries no verdict for
+it. What survives in `~/Library/Logs/ParrotFlow-Dev.log` is two distinct
+`crawl → Redcrawl` vetoes — `"crawl"` at 3.177 and `"crawl."` at 3.511, both
+against a spread of 3.098 over 8 recordings — and the string `general` does not
+appear anywhere in the file. The log truncates at 1 MB
+(`Log.swift:44-45`) and the early part of that run is gone, so absence proves
+nothing. **Replay the clip with the prototype build, capture the `reference:`
+line to a file rather than the log, and record the verdict.**
 
 **`decide_above` never fires. Delete it.** It drops a rescorer proposal when the
 decoded word beats the de-boosted term by more than 3.0 nats
@@ -615,10 +866,12 @@ the sweep on 141 clips with `--runs 3`.
 | `spike/ctc-06b` | **No.** The NaN result, `ctc-06b-report.md` and the re-recorded gate baselines exist only there. |
 | `spike/raw-score-separation` | **No.** The AUC 0.318 result, `PARROTFLOW_CBW` and the spotter-floor sweep exist only there. |
 | `spike/reference-matching` | **No.** Round 6, `scripts/reference-matching.py` and the per-proposal distance table exist only there. |
-| `spike/exemplars-round-2` | **No.** Round 7, the 48 scripted clips, the mining changes and the 122-recording corpus exist only there. The most valuable unmerged branch. |
+| `spike/exemplars-round-2` | **No.** Round 7, the 48 scripted clips, the mining changes and the 122-recording corpus exist only there. The most valuable unmerged branch, and PR 6a starts from its `scripts/reference-matching.py`. |
 | `experiment/does-vocabulary-pay` | **No.** The ablation, `vocab-ablation.py`, `vocab-losses.py` and the 19-loss list exist only there. |
-| `proto/reference-matching` | **No.** The prototype and the control arm that settled this plan's direction. |
+| `proto/reference-matching` | **No.** The prototype and the control arm that settled this plan's direction. PR 6b changes `ReferenceMatch.swift`, which exists only here. |
 | `spike/onset-pilot` | **No.** Code only — `PARROTFLOW_LOGPROB_DUMP`. Already re-ported into `spike/ctc-06b`, so nothing is lost if that one survives. |
 
 Eight of the nine carry something that exists nowhere else. Land the findings —
-as documents, harnesses and this plan's PRs — before deleting any branch.
+as documents, harnesses and this plan's PRs — before deleting any branch. Two of
+them, `exemplars-round-2` and `proto/reference-matching`, are now live
+dependencies of PR 6 rather than history.
