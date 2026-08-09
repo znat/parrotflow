@@ -726,3 +726,224 @@ not building the menu at all before tuning anything else.
 Measured with `scripts/gap-signal.py`. No model call, no build, no install. The
 cache predates PR #70, so none of the 15 live collisions of 2026-08-08 are in
 it.
+
+---
+
+# Round 5 — does the vocabulary pass pay for itself?
+
+**Marginal. 28 wins, 19 losses, net +9 over 141 clips. It is +18 on the 68
+clips that are about a term and −9 on the 73 controls, and every one of the 19
+losses is an overwrite. The pass earns its place on names and pays for it in
+ordinary speech.**
+
+Four rounds tuned the judge. Nobody had asked the question under it: is the
+sentence better with the pass than without it? The judge only exists because
+the pass proposes, so a pass that is net negative makes every prompt question
+moot.
+
+Pre-registered before the run, and not moved:
+
+| | |
+|---|---|
+| wins | vocab-on right, vocab-off wrong |
+| losses | vocab-off right, vocab-on wrong |
+| net | wins − losses |
+| split | the 68 term clips and the 73 controls, separately |
+
+Decision rule, also written first: net over +15 and the pass earns its place;
+net 0 to +15 and it is marginal, with proposing less as the lever; net at or
+below 0 and it costs more than it gives. **The data lands in the middle band.**
+
+## The result
+
+`scripts/vocab-ablation.py`, 141 labelled clips of `tests/menu-cases.yaml`,
+three replays per arm per clip, majority verdict, build `78d7ba2`, one config
+directory per arm.
+
+| | clips | wins | losses | net | flips |
+|---|---|---|---|---|---|
+| all | 141 | 28 | 19 | **+9** | 5 |
+| about a term | 68 | 28 | 10 | **+18** | 3 |
+| controls | 73 | **0** | 9 | **−9** | 2 |
+
+Exact-match totals behind those: 85/141 with the pass, 76/141 without. On the
+term clips 38/68 against 20/68; on the controls 47/73 against 56/73. The two
+arms produce the same text on 72 of the 141 clips, so the pass touches 69.
+
+**The controls have no wins at all.** Not few — none. Every clip the pass
+touches among the 73 clips that contain no vocabulary term is a clip it makes
+worse. That column is the whole argument for proposing less, and it needs no
+model and no prompt to act on.
+
+## Is +9 inside the noise?
+
+Replay is nondeterministic (F12a), so each clip was replayed three times per
+arm. **Five clips of 141 disagreed with themselves**, and only one of them
+carries the verdict it flipped into:
+
+| clip | on | off | verdict | class |
+|---|---|---|---|---|
+| `17-38-44` | 1/3 | 0/3 | same | term |
+| `14-19-36` | 2/3 | 3/3 | same | control |
+| `09-35-01` | 1/3 | 0/3 | same | term |
+| `14-11-48` | 1/3 | 0/3 | same | term |
+| `13-09-46` | 1/3 | 3/3 | **loss** | control |
+
+Resolve all five the other way and net moves between +8 and +13. **+9 survives
+the flip count.** It does not survive as a big number: the band it is in is 0
+to +15, and it sits in the middle of it either way.
+
+## Switching the pass off honestly
+
+**`--transcribe --no-vocab` is not the off arm, and anything measured with it
+has measured a third of the pass.** It sets `config.vocabulary.acoustic =
+false` and stops. The `heard:` lists still become `Config.vocabularyRules`, so
+the `replacements` stage still writes names; those rules still raise
+`vocabulary.count` in `Pipeline.swift`, so the `vocabulary:` judge stage still
+fires and still writes names.
+
+Measured on clip `17-39-40`, one command each:
+
+```
+full pass    So Matthieu and Mirza … about the Vercel Castle … deployed on Vercel.
+--no-vocab   So Matthieu and Mirza … about the Vercel Castle … deployed on Vercel.
+terms: (empty)   So Mathieu and Mirza … about the Versailles Castle … deployed on Versailles.
+```
+
+`--no-vocab` is byte-identical to the full pass here. Both name substitutions
+it was supposed to remove survive it.
+
+The off arm is a scratch `PARROTFLOW_CONFIG_DIR` whose `vocabulary.yaml` has
+an empty `terms:`. No terms means no acoustic context, no rules, and
+`vocabulary.count == 0`, so the stage's `when:` skips it. Everything else —
+the replacement table in `config.yaml`, the pipeline, the model, the build —
+is the same file in both arms.
+
+```sh
+cp -R ~/.config/parrotflow-dev /tmp/cfg-on
+cp -R ~/.config/parrotflow-dev /tmp/cfg-off
+printf 'acoustic: false\n\nterms:\n' > /tmp/cfg-off/vocabulary.yaml
+python3 scripts/vocab-ablation.py --on /tmp/cfg-on --off /tmp/cfg-off \
+    --runs 3 --out /tmp/ablation.json
+python3 scripts/vocab-losses.py /tmp/ablation.json \
+    --vocabulary /tmp/cfg-on/vocabulary.yaml --out tests/vocabulary-losses.txt
+```
+
+## The losses — all 19 are overwrites
+
+Every loss is listed in [tests/vocabulary-losses.txt](../../tests/vocabulary-losses.txt)
+with the label, the vocab-off text and the vocab-on text.
+
+**19 overwrites, 0 anything else.** In all 19 the vocab-off transcript equals
+the hand label exactly and the pass wrote a vocabulary term over an ordinary
+word the speaker meant. There is no second failure mode. The pass never broke
+a clip by leaving a name half-corrected, never truncated a sentence, never
+lost a clip to a slow judge. It has one way of costing a clip, and it is the
+one F17 and F18 already named.
+
+The shape, unchanged from the standing regression sentences:
+
+```
+said  You don't need to update the design.
+on    You don't need to Supabase the design.
+
+said  The team deserves praise for shipping that fast.
+on    The team deserves Praisy shipping that fast.
+
+said  I mean in general in our data.
+on    I mean in Redcrawl in our data.
+```
+
+## Per term, which is where the lever is
+
+Losses are counted by the term written into the transcript. Wins are counted
+by the term standing in the label, so a clip with two terms counts twice in
+both columns.
+
+| term | wins | losses |
+|---|---|---|
+| Praisy | 18 | 8 |
+| Vercel | 9 | 1 |
+| Matthieu | 3 | 3 |
+| Mirza | 1 | 1 |
+| Arexvy | 1 | 2 |
+| Tasmeen | 1 | 0 |
+| **Redcrawl** | **0** | **4** |
+| **Supabase** | **0** | **4** |
+| **Ollama** | **0** | **1** |
+| Claude | 0 | 0 |
+| Redrock | 0 | 0 |
+
+`Vercel` is the pass working: 9 clips rescued, 1 lost. `Praisy` is the pass
+being a coin with a good bias: 18 to 8. **`Redcrawl`, `Supabase` and `Ollama`
+have never rescued a clip in this set and have cost 9 between them.** Six of
+the 19 losses are caused by those three terms alone, with no other term
+involved.
+
+## Recommendation
+
+**Do not switch the pass off. Make it propose less, and start with the terms
+that have never won.** Net +9 is real and it is small, and it is the sum of a
+pass that is worth +18 where a name was spoken and −9 where none was. The
+second number is free to fix: a control has no term in it, so anything the
+pass writes there is wrong by construction, and nothing is given up by
+refusing to write it.
+
+The concrete first cut is the three zero-win terms. Whether the cut is a
+higher `offer_below` for them, `floor: off`, or dropping them from the by-ear
+list is a separate measurement — this round says which terms to measure, not
+which knob.
+
+**And re-run anything measured with `--no-vocab`.** Two scripts use it
+(`scripts/calibrate.py`, and `scripts/mine-pronunciations.py` documents why it
+avoids it). A calibration that thought it was reading the raw decoder was
+reading a transcript the rules had already corrected.
+
+Measured with `scripts/vocab-ablation.py` and `scripts/vocab-losses.py`,
+build `78d7ba2`, `gemma4:e4b-mlx` and nothing else loaded, no install.
+
+---
+
+# Round 5b — the last cheap acoustic route is closed
+
+**`parakeet-tdt-ctc-110m` is not a CTC head. There is nothing to A/B. The
+question of whether a different acoustic model gives better evidence stays
+open, and no model already on this machine can answer it.**
+
+Round 4 said the acoustic score block carries no signal, and the `spike/ctc-06b`
+report said the 0.6B CTC export returns NaN on 64% of frames. That left one
+model already downloaded and never tried:
+`~/Library/Application Support/FluidAudio/Models/parakeet-tdt-ctc-110m`.
+
+It is the transducer half of NVIDIA's hybrid checkpoint. `config.json` says
+`"model_type": "hybrid_tdt_ctc"`, and the whole directory is `Preprocessor`,
+`Decoder`, `JointDecision` and `parakeet_vocab.json`. The joint emits
+`token_id`, `token_prob`, `duration` — one decision per step, conditioned on
+what it has already emitted. The spotter needs the other thing:
+a posterior over all 1024 tokens at every frame, which comes from
+`CtcHead.mlmodelc`, and this directory has no copy of it. FluidAudio agrees:
+`CtcModelVariant` has two cases, and `.parakeetTdtCtc110m` is reachable only
+as an `AsrModelVersion`.
+
+Measured rather than read off the listing. `PARROTFLOW_CTC_MODEL=tdt-ctc-110m`
+was added as a third arm, pointing `CtcModels.loadDirect` at the directory:
+
+```
+$ PARROTFLOW_CTC_MODEL=tdt-ctc-110m ParrotFlow --spot <clip> --terms Redcrawl
+✗ ASR model 'MelSpectrogram' not found at: …/parakeet-tdt-ctc-110m/MelSpectrogram.mlmodelc
+```
+
+The arm is kept in `CtcChoice`, and kept failing. It costs three lines and it
+answers the question in one command for the next person who sees a 110M model
+sitting unused.
+
+Neither pre-registered metric is defined for it. There is no frame grid, so
+there is no all-NaN frame count and no best non-blank log-prob per span. The
+110m control was re-run on the same clip in the same build to show the harness
+is sound: 79 frames, **0 NaN**, and the `Redcrawl` span scores **−8.56**,
+which reproduces the −8.50 the spike recorded. `scripts/gap-signal.py` was not
+re-run — there is no second arm to compare it against.
+
+**Better acoustic evidence needs a model that is not on this machine.** That
+is a download and a conversion, not a flag, so it is no longer the cheap route
+and should be planned as its own piece of work.

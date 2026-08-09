@@ -8,32 +8,80 @@ import Foundation
 /// `VocabularyRescorer` score against. That model was `parakeet-ctc-110m` by
 /// default and nothing had ever asked whether the default was right.
 ///
-/// `PARROTFLOW_CTC_MODEL=110m|0.6b` picks it. The default stays `110m`, so a
-/// user who sets nothing gets exactly what shipped. The variable exists so the
-/// two can be A/B'd from one build instead of two: re-harvesting a menu cache
-/// under each model is the only way to compare them, and that means running the
-/// same binary twice.
+/// `PARROTFLOW_CTC_MODEL=110m|0.6b|tdt-ctc-110m` picks it. The default stays
+/// `110m`, so a user who sets nothing gets exactly what shipped. The variable
+/// exists so the arms can be A/B'd from one build instead of several:
+/// re-harvesting a menu cache under each model is the only way to compare
+/// them, and that means running the same binary twice.
 ///
 /// A note from FluidAudio's own `CtcModelVariant`: greedy decoding is broken on
-/// both — 113% WER on 110m, 158% on 0.6b. Neither is used that way here. This
-/// pass only ever scores a known spelling against a stretch of audio, which is
-/// the constrained-CTC path FluidAudio recommends.
+/// both CTC exports — 113% WER on 110m, 158% on 0.6b. Neither is used that way
+/// here. This pass only ever scores a known spelling against a stretch of
+/// audio, which is the constrained-CTC path FluidAudio recommends.
+///
+/// ## `tdt-ctc-110m` is a third arm that does not exist
+///
+/// `parakeet-tdt-ctc-110m` is already in the shared models directory, so it
+/// looked like a free third head to try. It is not a CTC head. The export on
+/// disk is `Preprocessor` + `Decoder` + `JointDecision`, the transducer half
+/// of NVIDIA's hybrid checkpoint, and its joint emits `token_id`,
+/// `token_prob`, `duration` — one decision per step, conditioned on what it
+/// already emitted. The spotter needs the other thing: a posterior over the
+/// whole vocabulary at every frame, which is what `CtcHead.mlmodelc` produces
+/// and this directory has no copy of. FluidAudio agrees — `CtcModelVariant`
+/// has two cases, and `.parakeetTdtCtc110m` is reachable only as an
+/// `AsrModelVersion`.
+///
+/// The arm is kept anyway, and it is kept failing. It names the directory and
+/// asks `CtcModels.loadDirect` for it, which is the measurement: run it and
+/// the error names the file that is missing, so the next person to think this
+/// model is free gets an answer in one command instead of a download.
 enum CtcChoice {
 
     static let variable = "PARROTFLOW_CTC_MODEL"
 
-    /// The variant named by the environment, or `.ctc110m`.
+    /// What the environment asked for.
+    enum Arm {
+        /// One of FluidAudio's two CTC exports, downloaded on demand.
+        case shipped(CtcModelVariant)
+        /// A directory of CoreML bundles, loaded as-is and never downloaded.
+        case directory(URL, CtcModelVariant)
+    }
+
+    /// The arm named by the environment, or the shipped `.ctc110m`.
     ///
     /// An unknown value falls back rather than throwing. This is a diagnostic
     /// switch, and a typo that silently transcribes is better than one that
     /// stops a user's dictation.
-    static var variant: CtcModelVariant {
+    static var arm: Arm {
         switch ProcessInfo.processInfo.environment[variable]?.lowercased() {
-        case "0.6b", "06b", "ctc06b": return .ctc06b
-        case "110m", "ctc110m", .none: return .ctc110m
+        case "0.6b", "06b", "ctc06b": return .shipped(.ctc06b)
+        case "110m", "ctc110m", .none: return .shipped(.ctc110m)
+        case "tdt-ctc-110m", "tdtctc110m":
+            // Reported as `.ctc110m` because every number downstream is keyed
+            // by variant and this one has no key of its own. Nothing gets that
+            // far: the load throws first.
+            return .directory(
+                CtcModels.defaultCacheDirectory(for: .ctc110m)
+                    .deletingLastPathComponent()
+                    .appendingPathComponent("parakeet-tdt-ctc-110m"),
+                .ctc110m
+            )
         case .some(let other):
             Log.write("vocabulary: unknown \(variable)=\"\(other)\"; using 110m")
-            return .ctc110m
+            return .shipped(.ctc110m)
+        }
+    }
+
+    /// The models and the directory the tokeniser is read from.
+    static func load() async throws -> (models: CtcModels, directory: URL) {
+        switch arm {
+        case .shipped(let variant):
+            return (try await CtcModels.downloadAndLoad(variant: variant),
+                    CtcModels.defaultCacheDirectory(for: variant))
+        case .directory(let url, let variant):
+            Log.write("vocabulary: loading CTC models from \(url.path)")
+            return (try await CtcModels.loadDirect(from: url, variant: variant), url)
         }
     }
 }
@@ -148,9 +196,7 @@ actor Vocabulary {
         guard signature != loadedFor || rescorer == nil else { return }
 
         progress?("vocabulary model")
-        let variant = CtcChoice.variant
-        let models = try await CtcModels.downloadAndLoad(variant: variant)
-        let directory = CtcModels.defaultCacheDirectory(for: variant)
+        let (models, directory) = try await CtcChoice.load()
         let tokenizer = try await CtcTokenizer.load(from: directory)
         // Pilot only — see `dumpLogProbs`.
         self.tokenNames = models.vocabulary

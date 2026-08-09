@@ -56,9 +56,7 @@ enum SpotCommand {
             return
         }
         print("loading CTC…")
-        let variant = CtcChoice.variant
-        let models = try await CtcModels.downloadAndLoad(variant: variant)
-        let directory = CtcModels.defaultCacheDirectory(for: variant)
+        let (models, directory) = try await CtcChoice.load()
         let tokenizer = try await CtcTokenizer.load(from: directory)
 
         // Every term is asked for by name. Note what goes in: token ids, not a
@@ -247,10 +245,8 @@ enum SpotEvalCommand {
 
         let asrModels = try await AsrModels.downloadAndLoad()
         let asr = AsrManager(models: asrModels)
-        let ctcVariant = CtcChoice.variant
-        let ctc = try await CtcModels.downloadAndLoad(variant: ctcVariant)
-        let tokenizer = try await CtcTokenizer.load(
-            from: CtcModels.defaultCacheDirectory(for: ctcVariant))
+        let (ctc, ctcDirectory) = try await CtcChoice.load()
+        let tokenizer = try await CtcTokenizer.load(from: ctcDirectory)
         let built = terms.compactMap { term -> CustomVocabularyTerm? in
             let ids = tokenizer.encode(term)
             return ids.isEmpty ? nil : CustomVocabularyTerm(text: term, ctcTokenIds: ids)

@@ -1,0 +1,111 @@
+Every clip the vocabulary pass took away.
+
+`off` is the transcript with the whole pass switched off — no acoustic
+search, no `heard:` rules, no judge. `on` is the shipped pass. Both are
+replays of the same audio through the same build, majority of 3 runs.
+Written by scripts/vocab-losses.py.
+
+19 losses, against 28 wins over 141 clips.
+
+19 overwrites — a term written over a word the speaker meant.
+0 other — the pass broke the clip without writing a term in.
+
+========================================================================
+OVERWRITES  (19)
+========================================================================
+
+parrotflow-2026-08-07T17-47-45.wav  [term]  wrote: Arexvy, Redcrawl
+  said: Oh I get it. So yes, instead we want to have a retry. And then if the retry fails, we want the crawl to fail.
+  off:  Oh I get it. So yes, instead we want to have a retry. And then if the retry fails, we want the crawl to fail.
+  on:   Oh I get it. So yes, instead we want to have a retry. And then if the Arexvy fails, we want the Redcrawl to fail.
+
+parrotflow-2026-08-07T16-12-20.wav  [term]  wrote: Praisy
+  said: So the acoustic pass found praise.
+  off:  So the acoustic pass found praise.
+  on:   So the acoustic pass found Praisy.
+
+parrotflow-2026-08-06T09-10-32.wav  [control]  wrote: Mirza
+  said: Il faut geler le budget avant lundi, sinon Mira va râler.
+  off:  Il faut geler le budget avant lundi, sinon Mira va râler.
+  on:   Il faut geler le budget avant lundi, sinon Mirza râler.
+
+parrotflow-2026-08-08T01-02-23.wav  [term]  wrote: Supabase
+  said: You don't need to update the design.
+  off:  You don't need to update the design.
+  on:   You don't need to Supabase the design.
+
+parrotflow-2026-08-04T11-19-17.wav  [control]  wrote: Praisy
+  said: Chain is a langsmith proprietary term.
+  off:  Chain is a langsmith proprietary term.
+  on:   Chain is a langsmith Praisy term.
+
+parrotflow-2026-08-05T16-45-13.wav  [control]  wrote: Matthieu
+  said: So it works on sound right so how does it match words heard with terms in the vocabulary.
+  off:  So it works on sound right so how does it match words heard with terms in the vocabulary.
+  on:   So it works on sound right so how does it Matthieu's heard with terms in the vocabulary.
+
+parrotflow-2026-08-06T14-04-21.wav  [control]  wrote: Redcrawl, Praisy, Supabase
+  said: Hi Jess. I was able to use your your comments and explanations to update the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries crawl file and evaluation set.
+  off:  Hi Jess. I was able to use your your comments and explanations to update the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries crawl file and evaluation set.
+  on:   Hi Jess. I was able to use your your comments and Praisy to Supabase the skill I was working on so that the evaluation set it generates now is very faithful to yours. Only a couple of drifts. But I'll only know if it generalizes if you have a little bit Other full set of data queries Redcrawl file and evaluation set.
+
+parrotflow-2026-08-08T00-14-39.wav  [term]  wrote: Redcrawl
+  said: I mean in general in our data.
+  off:  I mean in general in our data.
+  on:   I mean in Redcrawl in our data.
+
+parrotflow-2026-08-06T11-10-43.wav  [control]  wrote: Ollama
+  said: Dude, I'm asking for a verbatim example, not an explanation.
+  off:  Dude, I'm asking for a verbatim example, not an explanation.
+  on:   Dude, I'm asking for a verbatim example, not an Ollama.
+
+parrotflow-2026-08-07T08-13-36.wav  [control]  wrote: Supabase
+  said: I'm trying to understand how did he how he went from one PR fruit to another? How many commits are specifically For the purpose of that PR it seems like there was a lot of rebase and force pushed involved.
+  off:  I'm trying to understand how did he how he went from one PR fruit to another? How many commits are specifically For the purpose of that PR it seems like there was a lot of rebase and force pushed involved.
+  on:   I'm trying to understand how did he how he went from one PR fruit to another? How many commits are specifically For the purpose of that PR it seems like there was a lot of Supabase and force pushed involved.
+
+parrotflow-2026-08-06T14-09-56.wav  [control]  wrote: Matthieu
+  said: Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near matches to my vocabulary terms.
+  off:  Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near matches to my vocabulary terms.
+  on:   Let's recalibrate some of the words in the vocabulary. Make me dictate a few sentences containing words that are near Matthieu to my vocabulary terms.
+
+parrotflow-2026-08-06T14-12-30.wav  [control]  wrote: Praisy
+  said: She deserves praise for finishing that so fast.
+  off:  She deserves praise for finishing that so fast.
+  on:   She deserves Praisy's finishing that so fast.
+
+parrotflow-2026-08-07T13-09-46.wav  [control]  wrote: Praisy
+  said: The team deserves praise for shipping that fast.
+  off:  The team deserves praise for shipping that fast.
+  on:   The team deserves Praisy shipping that fast.
+
+parrotflow-2026-08-08T16-18-00.wav  [term]  wrote: Redcrawl
+  said: If the retry fails, the crawl will fail.
+  off:  If the retry fails, the crawl will fail.
+  on:   If the retry fails, the Redcrawl will fail.
+
+parrotflow-2026-08-08T16-18-14.wav  [term]  wrote: Supabase
+  said: Explanations to update.
+  off:  Explanations to update.
+  on:   Explanations to Supabase.
+
+parrotflow-2026-08-08T16-18-37.wav  [term]  wrote: Matthieu
+  said: words that are near matches.
+  off:  words that are near matches.
+  on:   words that are near Matthieu.
+
+parrotflow-2026-08-08T16-19-02.wav  [term]  wrote: Praisy
+  said: They deserve praise for shipping.
+  off:  They deserve praise for shipping.
+  on:   They deserve Praisy's shipping.
+
+parrotflow-2026-08-08T17-39-32.wav  [term]  wrote: Praisy
+  said: As a side uh question, could we train a very small classifier Very lightweight, that could answer the question is this phonetic segment this vocabulary term?
+  off:  As a side uh question, could we train a very small classifier Very lightweight, that could answer the question is this phonetic segment this vocabulary term?
+  on:   As a side uh question, could we Praisy a very small classifier Very lightweight, that could answer the question is this phonetic segment this vocabulary term?
+
+parrotflow-2026-08-08T17-40-19.wav  [term]  wrote: Arexvy, Vercel, Praisy
+  said: I ask another region to make some research about this. Not too much high level. So what I'm understanding is like could we train uh not an LLM of course it's too heavy, but something that can run very fast on CPU.
+  off:  I ask another region to make some research about this. Not too much high level. So what I'm understanding is like could we train uh not an LLM of course it's too heavy, but something that can run very fast on CPU.
+  on:   I ask another region to make some research about this. Not too much high Vercel. So what I'm understanding is like could we Praisy uh not an LLM of course it's too Arexvy, but something that can run very fast on CPU.
+

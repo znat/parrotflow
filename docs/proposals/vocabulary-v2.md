@@ -512,6 +512,43 @@ blank form carrying the *shipped* question, so form is separated from content
 — this spike changed both at once and cannot say what the blanks would be
 worth on their own.
 
+**F19 — the pass is net +9, and every loss is an overwrite (2026-08-09).**
+The first measurement of the pass against no pass at all. 141 labelled clips,
+three replays per arm, build `78d7ba2`: **28 wins, 19 losses, net +9**. Split
+as the plan asks — **+18 on the 68 clips about a term, −9 on the 73
+controls** — and the controls have **zero wins**, so every control the pass
+touches it makes worse. Five clips flipped between runs and only one carries
+its verdict, so net lands between +8 and +13 however they resolve. **All 19
+losses are overwrites**, a term written over an ordinary word; there is no
+second failure mode. Per term, `Vercel` is 9 wins to 1 loss and `Praisy` 18 to
+8, while **`Redcrawl`, `Supabase` and `Ollama` have 0 wins and 9 losses
+between them**, 6 of the losses with no other term involved. Marginal by the
+pre-registered rule, and the lever is proposing less.
+→ [judge-framings.md](judge-framings.md#round-5--does-the-vocabulary-pass-pay-for-itself),
+loss list in [tests/vocabulary-losses.txt](../../tests/vocabulary-losses.txt).
+
+**F20 — `--no-vocab` disables a third of the pass (2026-08-09).**
+`TranscribeCommand` sets `config.vocabulary.acoustic = false` and nothing
+else. The `heard:` lists still become `Config.vocabularyRules`, so
+`replacements` still writes names; those rules still raise `vocabulary.count`,
+so the `vocabulary:` stage still fires. On clip `17-39-40` the flag changes
+nothing at all — `Mathieu`→`Matthieu` and `Versailles`→`Vercel` both survive
+it. **The whole pass is switched off by an empty `terms:` in
+`vocabulary.yaml`**, which removes the context, the rules and the judge's
+trigger together. Anything measured with `--no-vocab` and described as "the
+raw decoder" measured a corrected transcript; `scripts/calibrate.py` uses it.
+
+**F21 — `parakeet-tdt-ctc-110m` is not a CTC head (2026-08-09).** The last
+undownloaded-cost acoustic arm does not exist. The export in the shared models
+directory is `Preprocessor` + `Decoder` + `JointDecision`, the transducer half
+of the hybrid checkpoint; its joint emits one decision per step, not a
+posterior over the vocabulary per frame, and there is no `CtcHead.mlmodelc`.
+`PARROTFLOW_CTC_MODEL=tdt-ctc-110m` was added as an arm and fails at load on
+the missing `MelSpectrogram.mlmodelc`. Neither pre-registered metric is
+defined for it. The 110m control re-measured in the same build: 79 frames,
+0 NaN, `Redcrawl` span at −8.56, reproducing the spike's −8.50. **Better
+acoustic evidence now needs a model that is not on this machine.**
+
 ---
 
 ## Build order
