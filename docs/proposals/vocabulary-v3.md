@@ -921,8 +921,10 @@ got their names. The falsifier fired on sentence 4. See the result block.
 ### The runbook
 
 **Both arms are run — see the result block.** This is kept as written so the
-pass can be redone on a later build. It was followed as written on 2026-08-09,
-including the relaunch and the `--check-config` grep before each arm.
+pass can be redone on a later build. It was followed on 2026-08-09, including
+the relaunch before each arm. The result block quotes what the *running process*
+logged at each launch, which is the stronger check and the one to prefer if the
+two ever disagree.
 
 Sixteen dictations, two arms, about twenty minutes. Nothing here touches product
 code. It edits one line of your live `vocabulary.yaml` and puts it back at
@@ -1384,9 +1386,13 @@ from 3 acoustic log lines. Acoustic proposals can only be fewer than their log
 lines, never more — the rescorer's line is written before the `moved` guard
 (`Vocabulary.swift:677-694`), span variants are written after theirs
 (`Vocabulary.swift:710-721`), and applied proposals never reach the judge
-(`VocabularyJudge.swift:191`). So at least one of the four is a rule part, which
-means a `Praisy` rendering was in the decode and the `heard:` list fixed it.
-Hold that against arm B's sentence 4.
+(`VocabularyJudge.swift:191`). So at least one of the four is a rule part: a
+`replacements` rule fired on this sentence, and the only vocabulary term standing
+in the output is `Praisy`. Read it as a `Praisy` rendering in the decode that the
+`heard:` list fixed. It is an inference from the counts, not a logged
+substitution — the `replacements` stage logs nothing — so treat it as strong and
+not certain. Hold it against arm B's sentence 4, where the same sentence logged
+`vocabulary.count = 0`.
 
 #### Arm B — `acoustic: false`
 
@@ -1458,19 +1464,20 @@ falsifier, stated above, and it fired. Arm B's sentence 4 logged
 `Let's praise Praise's work.`
 
 The decode that time was `Praise's`. `Praisy`'s `heard:` list holds `Praises`
-among fourteen renderings, and `\bPraises\b` does not match `Praise's`. Arm A's
-sentence 4 is the contrast: the decoder produced a rendering the list does
-cover, a rule fired, and the sentence came out right. **So the rule table is not
-"not delivering `Praisy`" — it covers the renderings that have been seen, and it
-missed this one.** With the acoustic path on, the acoustic proposal is a second
-route to the same name. With it off there is only the list.
+among fourteen renderings, and `\bPraises\b` does not match `Praise's`, so no
+rule could fire. Arm A's sentence 4 is the contrast: a rule did fire there, on
+the count argument above, and the sentence came out right. **So the rule table
+is not "not delivering `Praisy`" — it covers the renderings that have been
+written down, and this decode was not one of them.** With the acoustic path on,
+the acoustic proposal is a second route to the same name. With it off there is
+only the list.
 
 **What this does not overturn.** Not the headline. 3 of 8 against 6 of 8 live,
-and offline `acoustic: false` scores 100 against today's 88 (PR 3) with 0 losses
-against 17. One sentence does not move that, and this sentence is one clip.
+and offline PR 1 measured `acoustic: false` at 100 correct with 0 losses against
+today's 85 with 19. One sentence does not move that, and this is one clip.
 
 **What it does mean.** Switching the acoustic path off is not free, and PR 1
-already knew that — it cost 2 wins offline, on `Versailles`. This is a third
+already knew that — it cost 2 wins offline, on `Versailles`. This is a second
 kind of cost, on a different term, and it means the plan's "the rules earn the
 +18" needs a rider: **on `Praisy`, some of the wins come from the acoustic path
 alone**, because the rule table can only hold renderings somebody has already
