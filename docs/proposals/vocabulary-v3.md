@@ -597,6 +597,26 @@ owed before anything built on the clips ships.
 
 # Part 2 — The build order
 
+## How this lands
+
+Nothing in this plan is merged, and the branches form a seven-deep stack:
+`docs/vocabulary-v3-clip-bank` (#74) → `test/acoustic-off-arm` (#75) →
+`test/live-acoustic-off` (#76) → `docs/clip-bank-evidence` (#77) →
+`feat/ablation-harnesses` (#78) → `test/arm-a-result` (#79) →
+`feat/corrections-keep-audio`.
+
+**#74 to #79 can land as a block.** They are documents and Python harnesses.
+No Swift differs from `main` on any of them, so none can change what the app
+does, and reviewing them one merge at a time buys nothing.
+
+**The two fixes below target `main` directly.** They are Swift, they are five
+lines and three lines, and neither depends on the clip bank. Putting them in
+the stack would gate them behind six documents.
+
+**A deep stack rebases every time its base moves.** Six rebases per landed
+change, and each one is a chance to lose a result block. That is the cost of
+adding to it, and the reason to land the block early.
+
 ## What the prototype measured, and what it settled
 
 **This table is the bar.** Every arm below is scored against it, and the arm to
@@ -2102,6 +2122,226 @@ stage and needs its own eval set.
 
 **Telling them apart is free.** Case A logs `-> "<Term>" applied` on a word that
 ends in `'s`. Case B logs nothing at all.
+
+## PR 10 — ship the filter
+
+**Gated. Do not start this until PR 6b produces a rule that beats the blind
+veto's 103, and until that win holds on a held-out set.** Both conditions, not
+either. The bar is the blind veto and not today's pass — part 1 §2. The
+hold-out is the second condition because part 1 §7 closes by saying every
+published number here is in-sample and "the true numbers are worse than the
+published ones and nobody knows by how much". PR 4 is what makes a hold-out
+possible: it records the source clip of every recording a correction writes, so
+a split by clip is available for the first time.
+
+**Why this section exists.** PR 6a to 6d are experiments on the clip bank. None
+of them puts `ReferenceMatch` into the product, and the plan had no PR that
+did. This one names that work so its cost is visible before 6b starts. It is
+not a design for the rule — 6b picks the rule.
+
+**Changes.** Five things the prototype on `origin/proto/reference-matching`
+does not have. Each is named in its own
+`docs/proposals/reference-matching-proto.md`, under "What would have to change
+before this became real code".
+
+1. **Config, not environment.** `PARROTFLOW_REFERENCE_MATCH` and
+   `PARROTFLOW_REFERENCE_TOL` are environment variables. The tolerance belongs
+   in `vocabulary.yaml` beside `decide_above` and the other knobs, and the
+   switch belongs there too. Keep `PARROTFLOW_REFERENCE_DUMP` as an environment
+   variable: it measures every proposal without vetoing anything, which is how
+   the tolerance was swept, and that is a harness tool rather than a setting.
+2. **Defined behaviour on an empty or thin bank.** Nothing says what happens
+   when `voice/samples/` is empty. It must mean the filter does nothing, never
+   that everything is vetoed. The prototype abstains below three recordings for
+   a term, because two recordings give one exemplar-to-exemplar distance and so
+   no spread. Make that number a config key and print the abstaining terms in
+   `--check-config`, so a speaker can see which of their terms the filter is
+   not deciding.
+3. **One log line per decision.** The prototype writes two. The `dropped:` line
+   says "audio prefers what was written by …" with a margin nobody computed,
+   and the `reference:` line above it says the truth. The proto doc calls this
+   a prototype tell. Fix the `dropped:` path to state the real reason.
+4. **Tests.** `ReferenceMatch` has none. `--reference-selftest <Term>` checks
+   the MFCC and DTW port against the numpy original to 1e-6 over 346 pairs,
+   which is worth keeping, but it is a developer command and not a test.
+   `verdict` needs cases for abstain, reject, keep, and an empty bank.
+5. **Migration.** A `vocabulary.yaml` written before these keys exist must keep
+   working, and enabling the filter must not change a transcript for a speaker
+   with no recordings.
+
+**Why.** Everything above is the difference between a branch that measures well
+and code somebody else's dictation depends on. It is listed as one PR because
+none of it is worth doing until 6b says there is a rule to ship, and all of it
+is needed the moment there is.
+
+**Size.** Moderate. Swift in `ReferenceMatch.swift`, `Config.swift` and
+`Vocabulary.apply`, plus tests and a `--check-config` line. The signal-processing
+port itself is done and exact, so none of the hard arithmetic is in this PR.
+
+**Verified by** four things.
+
+- `vocab-ablation.py --runs 3` with arms `off`, `today`, `veto everything` and
+  the shipped rule, on the held-out split, with the shipped rule beating 103 by
+  more than the flip count explains. Wins and losses separately, split by class.
+- An empty `voice/samples/` giving a transcript identical to today's arm, clip
+  for clip over the 141, with the filter switched on.
+- `--check-config` naming every term below the abstain threshold.
+- One `reference:` line per verdict, and no `dropped:` line contradicting it.
+
+**Falsified if** the in-sample win over 103 does not survive the held-out
+split. Then PR 6b measured the corpus and not the rule, and nothing ships.
+**Also falsified if** the abstain rule makes the filter inert in practice: if a
+fresh speaker's terms mostly sit under three recordings, this ships a config
+key that does nothing until PR 4 and PR 7 have run for weeks, and that is a
+different PR in a different order. **And treat a per-speaker tolerance as a
+warning, not a feature.** A key invites tuning, tuning on the clips you report
+on is the trap part 1 §2 is about, and a key with no defensible default should
+not be a key.
+
+## Two fixes that go straight to `main`
+
+**Both target `main` directly and neither belongs in the stack.** They are
+Swift, they are small, and they depend on nothing in the clip bank or in each
+other. Both have a live repro in PR 2's result block, from the dictation pass
+of 2026-08-09.
+
+**Their relation to PR 9.** Fix B is the change PR 9's case A asks for. PR 9
+names the mechanism and asks for a test and a count; Fix B is the code. It does
+nothing for PR 9's case B, where the decoder drops the `'s` and no proposal is
+made at all. Fix A is not PR 9 at all — it is attribution, not possessives.
+They arrived in the same dictation pass and that is all they share.
+
+**Two sentences dictated once show a mechanism. They do not measure a rate.**
+Neither fix has a number saying how often its bug costs a clip. Both have a
+log line saying exactly why it does.
+
+### Fix A — `ruleParts` takes the pre-rules transcript from `replacements`
+
+**Changes.** `Pipeline.swift:920` passes `findings?.text` into
+`VocabularyJudge.ruleParts` as `before`. `findings` is the acoustic pass's
+`Vocabulary.Outcome`, and `Vocabulary.wanted` gates that whole pass on
+`config.vocabulary.acoustic` (`Vocabulary.swift:88-90`). So under
+`acoustic: false` there is no `Outcome`, `before` is nil, and
+`VocabularyJudge.swift:307-323` cannot tell which occurrence of a term a
+`heard:` rule wrote. With the term standing more than once it offers nothing.
+
+Take the text from the `replacements` stage instead. That stage is handed the
+pre-rules transcript as its input and already publishes `count` and `changes`
+computed from it (`Pipeline.swift:779-794`). Publish the input text as well,
+and read it at `Pipeline.swift:917-920` beside `replacements.changes`, keeping
+`findings?.text` as the fallback. About five lines.
+
+**Why.** The judge loses a reading it could have had, and it loses it on the
+one path the app now wants to run. The existing comment at
+`VocabularyJudge.swift:307-313` explains why the bug is there — it anticipated
+a nil `before` on paths that have no audio at all:
+
+> No acoustic pass ran, so there is no earlier text to compare against —
+> `--pipeline`, `--replace`, any path with no audio.
+
+Nobody anticipated a path that has audio and no acoustic pass. `acoustic:
+false` is that path, and PR 1 is the plan to make it the default.
+
+The live repro is PR 2 arm B, sentence 5, "deployed on Vercel against the
+Versailles Castle":
+
+```
+vocabulary judge: "Vercel" stands 2 time(s) and no acoustic pass ran, so which one "Versailles" became cannot be told; that reading is not offered
+vocabulary judge: "Vercel" stands 2 time(s) and no acoustic pass ran, so which one "Versal" became cannot be told; that reading is not offered
+vocabulary judge: 0 slot(s) from 0 proposal(s)
+```
+
+`vocabulary.count` reached 2 on that sentence, so both rules did fire. The zero
+is the attribution failing, not the rules.
+
+**Size.** About five lines, plus a test on `ruleParts` with a `before` and a
+term standing twice.
+
+**Verified by** two things. A test that gives `ruleParts` a real `before` from
+`replacements` with the term standing twice, and gets both occurrences
+attributed. And `vocab-ablation.py --runs 3` moving the `acoustic: false` arm
+from PR 1's 100 to the veto arm's 102 — the two clips PR 1 measured as the gap
+are both this shape.
+
+**Falsified if** the `acoustic: false` arm does not close that gap. Then PR 1's
+attribution is incomplete and something else costs those two clips. **Also
+falsified if** `replacements.before` is not the pre-rules text on some path. A
+pipeline with two `replacements` steps publishes the second step's input under
+the same name, exactly as `changes` already does, and the judge would then
+attribute against a partly-rewritten transcript. Check what the shipped
+pipeline runs before making it the source; a `findings?.text` fallback does not
+help when the wrong value is present rather than absent. **And watch what the
+new slots are used for.** PR 2's arm A measured sentence 5 wrong with a full
+two-slot menu, so correct attribution is necessary and not sufficient. If the
+extra slots cost more clips in the ablation than they win, the fix is the wrong
+shape.
+
+### Fix B — `Vocabulary.inflected` carries the possessive
+
+**Changes.** `Vocabulary.swift:456-465` reads:
+
+```swift
+for suffix in ["'s", "\u{2019}s"] where lower.hasSuffix(suffix) {
+    let stem = String(lower.dropLast(suffix.count))
+    if stem == term.lowercased() { return term + suffix }
+}
+return term
+```
+
+Drop the `stem == term.lowercased()` test. Carry the suffix whenever the
+matched token ends in `'s` or `’s` and the stem is not empty. Three lines, plus
+a rewrite of the comment above it to say what the guard was defending against.
+
+**Why.** The function exists to carry a possessive across a substitution, and
+the guard makes it fire only where nothing needed carrying. A substitution runs
+*because* the decoder spelled the name differently, so the stem is almost never
+the term. `mathieu` is not `matthieu`, the guard fails, the bare term comes
+back, and the `'s` is gone. Verified standalone on 2026-08-09, no build and no
+audio:
+
+```
+term=Matthieu  heard=Mathieu's   ->  Matthieu     ← the live case
+term=Matthieu  heard=Matthew's   ->  Matthieu
+term=Praisy    heard=praise's    ->  Praisy
+term=Matthieu  heard=Matthieu's  ->  Matthieu's   ← the only shape it handles
+term=Mirza     heard=Mirza's     ->  Mirza's
+```
+
+The live repro is PR 2 arm A: "Matthieu's work" came out `Matthieu work.`, and
+"Let's praise Matthieu's work" came out `Let's Praisy Matthieu work.` Both were
+correct under `acoustic: false` four minutes later, because no substitution ran
+and the text rule left the suffix alone.
+
+Nothing downstream catches it. `autoApplies` returned true
+(`Vocabulary.swift:509-523`) and `VocabularyJudge.acousticParts` drops every
+applied proposal (`VocabularyJudge.swift:191`). That is why arm A's sentence 6
+logged `0 slot(s) from 0 proposal(s)` on a dictation where a name had just been
+rewritten.
+
+**Size.** Three lines and a test.
+
+**Verified by** a unit test over the five pairs above, where the first three
+must now keep the `'s` and the last two must still keep it. Then
+`vocab-ablation.py --runs 3`: the labels contain possessives, so clips should
+move to correct and none should move wrong. PR 9 also asks for a count of how
+often the pass writes a name over a token ending in `'s` across the archive.
+Do that count with the fix, not after it — it is what sizes the fix and what
+the falsifiers below are read against.
+
+**Falsified if** the ablation loses clips. The narrow guard is deliberate: the
+comment says "A word that merely ends in the same letters is not a name plus a
+suffix", so a looser rule can write a possessive that was never said.
+**Specifically falsified by a contraction.** The rescorer matches a whole
+token, and `let's`, `it's` and `he's` end in `'s` without being possessives. If
+a term is ever proposed over one of those, today's output is `Praisy` and the
+fixed output is `Praisy's` — worse, not better. PR 2's arm A sentence 7 shows
+the pass overwriting the word right next to a `Let's`, so this is not
+hypothetical. Count how often the matched token is a contraction before
+shipping; if that count is not zero on the archive, the fix needs an exclusion
+and not the loose rule. **Also falsified if** the archive holds tokens ending
+in `'s` where the speaker said no possessive. Fix B assumes the decoder heard
+the `'s`, because it is in the token the rescorer matched. Where it did not,
+the fix carries a decoder error forward instead of dropping it.
 
 ## Dead ends — do not retry these
 
