@@ -835,7 +835,8 @@ python3 scripts/reference-ablation.py --runs 3 --out arms.json \
   --arm "noacoustic=$S/cfg-noacoustic"
 ```
 
-`reference-ablation.py` exists only on that branch. PR 3 lands it on `main`.
+`reference-ablation.py` exists only on that branch. PR 3 lands it as
+`scripts/vocab-ablation.py`, with the same arm syntax.
 
 ## PR 2 — confirm it on live dictation
 
@@ -1186,14 +1187,26 @@ that way?
 
 ## PR 3 — land the harnesses on `main`
 
-**Changes.** Ports `vocab-ablation.py` and `vocab-losses.py` from
-`origin/experiment/does-vocabulary-pay` and `reference-ablation.py` from
-`origin/proto/reference-matching` into `scripts/`. Arms are
-`name=CONFIG_DIR[,VAR=VALUE]`, every pair reported against every other, wins and
-losses separately, split by class, majority of `--runs N` with a flip count.
-Documents the three off arms from part 1.
+**Changes.** Two harnesses in `scripts/`, not three. `vocab-ablation.py` is
+`reference-ablation.py` from `origin/proto/reference-matching` with the two-arm
+`vocab-ablation.py` from `origin/experiment/does-vocabulary-pay` folded into it
+— the second was the first with N fixed at 2, so keeping both would have been
+one harness maintained twice. Arms are `name=CONFIG_DIR[,VAR=VALUE]`, every pair
+reported against every other, wins and losses separately, split by class,
+majority of `--runs N` with a flip count. `vocab-losses.py` stays its own
+script: listing the losing clips and classing each as an overwrite or not is a
+different job, and it now takes the two arm names because the harness runs any
+number.
 
-**Size.** About 450 lines of Python. No Swift, no behaviour change.
+Two things PR 1 wanted and did not have. `--only FILE` takes a list of wav
+names, so a second pass can re-run just the clips that disagreed.
+`--check-config` runs under every arm before the first clip, so a config
+directory the app would refuse costs a second instead of the rest of the run. The docstrings carry the
+three off arms from part 1 and the scratch config recipe, `audio.output_dir`
+included.
+
+**Size.** About 450 lines of Python across the two files. No Swift, no
+behaviour change.
 
 **Verified by** reproducing the published baseline: vocabulary off 76/141, today
 84/141, 27 wins and 19 losses, 5 clips flipping.
@@ -1201,6 +1214,75 @@ Documents the three off arms from part 1.
 **Falsified if** the off arm is not near 76, or wins and losses swing further
 than the flip count explains. Then the archive or the case set has moved and
 nothing downstream can be trusted.
+
+### Result, measured 2026-08-09
+
+**The falsifier did not fire. The off arm reproduces exactly, in every block.**
+
+141 labelled clips, `--runs 3`, majority of three replays, `gemma4:e4b-mlx` and
+nothing else loaded, built from `feat/ablation-harnesses` at `d7252a8` and never
+installed. That build is `main` at `78d7ba2` plus this plan and these two
+scripts, so no Swift differs from `main`. Wins and losses are against the `off`
+arm.
+
+| arm | correct | wins | losses | net | flips |
+|---|---|---|---|---|---|
+| off (empty `terms:`) | 76 | — | — | — | 0 |
+| today | 88 | 29 | 17 | +12 | 2 |
+
+By class:
+
+| class | clips | off | today |
+|---|---|---|---|
+| about a term | 68 | 20 | 39 |
+| controls | 73 | 56 | 49 |
+
+**The off arm is exact in all three blocks.** 76 of 141, 20 of the 68 term
+clips, 56 of the 73 controls — the prototype's numbers to the clip — and it
+flipped on nothing over three replays. It is the arm with no acoustic pass and
+no judge call in it, so that is what it should do. The archive and the case set
+have not moved.
+
+**Today's arm is three clips above PR 1 and four above the published table.**
+88 against 85 and 84, 29 wins against 28 and 27, 17 losses against 19 and 19.
+The same arm flipped 8 clips in the prototype's run, 3 in PR 1's and 2 here, so
+a four-clip move is inside the noise those three runs measured between them.
+Nothing else moved: the same 141 clips, the same config files, and the
+prototype's extra Swift is gated on `PARROTFLOW_REFERENCE_MATCH`, which no arm
+here sets.
+
+**Both headline shapes hold.** All 17 losses are overwrites — a term written
+over an ordinary word the speaker meant — and none is anything else, which is
+what part 1 §1 says of the 19. And the controls take **0 wins and 7 losses**:
+the pass still wins nothing on the clips it can only damage. Counted by the
+name written, the losses are `Praisy` 7, `Redcrawl` 5, `Supabase` 3, `Vercel`,
+`Matthieu` and `Arexvy` 2 each, `Ollama` and `Mirza` 1 each — `Redcrawl`,
+`Supabase` and `Ollama` again costing clips and rescuing none.
+
+**Cost.** 846 transcriptions, 9 minutes of wall clock at 3.8 s/clip for two
+arms. PR 1's 10.7 s/clip was five arms over the same clips.
+
+**Only the two arms `main` can run were scored.** The reference-matching arms
+need `ReferenceMatch.swift`, which exists only on
+`origin/proto/reference-matching`. The harness's support for `VAR=VALUE` arms is
+ported and unexercised here; PR 1's command line is the test of it, and it ran
+against the same code.
+
+### How to reproduce
+
+Two scratch config directories, copied from `~/.config/parrotflow-dev`. Never
+run against the live one. The recipe is in the script's docstring; PR 1's
+version above adds the third directory.
+
+```sh
+make app                                   # never `make install`
+
+python3 scripts/vocab-ablation.py --runs 3 --out arms.json \
+  --arm "off=$S/cfg-off" \
+  --arm "today=$S/cfg-on"
+
+python3 scripts/vocab-losses.py arms.json --vocabulary $S/cfg-on/vocabulary.yaml
+```
 
 ## PR 4 — a correction keeps the audio
 
@@ -1355,7 +1437,7 @@ weak point, §7's argument is wrong, and 6b and 6c are not worth doing.
 **Size.** Small in the prototype for 1 and 2. `ReferenceMatch` already computes
 everything they need. 3 waits on 6c.
 
-**Verified by** the three-arm ablation, not by AUC. `reference-ablation.py
+**Verified by** the three-arm ablation, not by AUC. `vocab-ablation.py
 --runs 3` with arms `off`, `today`, `veto everything`, `new rule`. **The bar is
 the blind veto's 103, not today's 84.** Report wins and losses separately, split
 by class, with the flip count.
@@ -1463,7 +1545,7 @@ recordings over 781 span-term pairs took four minutes of a dynamic program.
 Scoring every span of every sentence multiplies that by the number of words, so
 6d is also the first place the representation ladder in *Still open* would pay.
 
-**Verified by** the plan's standing bar — `reference-ablation.py --runs 3` with
+**Verified by** the plan's standing bar — `vocab-ablation.py --runs 3` with
 arms `off`, `today`, `veto everything` and the proposer, beating the blind
 veto's 103 by more than the flip count explains. **And beaten as a proposer**,
 which means wins and losses against the `off` arm reported separately, never
@@ -1737,8 +1819,8 @@ the sweep on 141 clips with `--runs 3`.
 | `spike/raw-score-separation` | **No.** The AUC 0.318 result, `PARROTFLOW_CBW` and the spotter-floor sweep exist only there. |
 | `spike/reference-matching` | **No.** Round 6, `scripts/reference-matching.py` and the per-proposal distance table exist only there. |
 | `spike/exemplars-round-2` | **No.** Round 7, the 48 scripted clips, the mining changes and the 122-recording corpus exist only there. The most valuable unmerged branch, and PR 6a starts from its `scripts/reference-matching.py`. |
-| `experiment/does-vocabulary-pay` | **No.** The ablation, `vocab-ablation.py`, `vocab-losses.py` and the 19-loss list exist only there. |
-| `proto/reference-matching` | **No.** The prototype and the control arm that settled this plan's direction. PR 6b changes `ReferenceMatch.swift`, which exists only here. |
+| `experiment/does-vocabulary-pay` | **No.** The ablation, `vocab-ablation.py`, `vocab-losses.py` and the 19-loss list exist only there. PR 3 lands both harnesses. |
+| `proto/reference-matching` | **No.** The prototype and the control arm that settled this plan's direction. PR 6b changes `ReferenceMatch.swift`, which exists only here. PR 3 lands `reference-ablation.py`, merged into `vocab-ablation.py`. |
 | `spike/onset-pilot` | **No.** Code only — `PARROTFLOW_LOGPROB_DUMP`. Already re-ported into `spike/ctc-06b`, so nothing is lost if that one survives. |
 
 Eight of the nine carry something that exists nowhere else. Land the findings —
