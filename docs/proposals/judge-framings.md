@@ -726,3 +726,398 @@ not building the menu at all before tuning anything else.
 Measured with `scripts/gap-signal.py`. No model call, no build, no install. The
 cache predates PR #70, so none of the 15 live collisions of 2026-08-08 are in
 it.
+
+---
+
+# Round 5 — the raw score with the bonus switched off
+
+**It cannot reject a wrong term. With the vocabulary bonus at zero, a term the
+speaker did not say scores *higher* than a term they did — AUC 0.318 — and a
+term they did say is indistinguishable from a term that is not in the sentence
+at all — AUC 0.454 against the noise floor, where 0.5 is a coin.**
+
+**One number here is still worth acting on, and it is a floor rather than a
+rule.** The two paths behave differently and only one carries a gap. On the
+rescorer path nothing separates, on any statistic. On the spotter path its own
+score separates well enough that today's `spotterFloor` of -5.0 is too low:
+-4.25 removes 28 of 92 wrong proposals and loses none of the 39 right ones. It
+is a loudness gate, it fixes one clip of the collision class out of eight, and
+it needs a per-case measurement before anyone moves it. It has its own section
+below.
+
+Round 4 measured the score block the judge is shown and found it worthless. The
+obvious objection was that the block is contaminated: the rescorer decides on
+the boosted score, so the numbers reaching a menu are the residue of a decision
+the bonus already took. Round 5 removes the bonus and asks the question again on
+the raw number, over all 145 clips of `tests/menu-cases.yaml` rather than the 53
+cached menus.
+
+Measured with `scripts/raw-score-separation.py` against
+`tests/raw-score-separation.json`. No judge, no Ollama, no menu, no model call
+anywhere: the sweep runs with a scratch `PARROTFLOW_CONFIG_DIR` whose pipeline
+has no `vocabulary:` stage. Build only, no install. The per-proposal data is in
+[raw-score-separation.md](raw-score-separation.md).
+
+## What was built
+
+`PARROTFLOW_CBW` overrides the vocabulary bonus. Unset it is FluidAudio's
+`cbw: 4.5` and nothing changes for the user; set to 0 the rescorer compares raw
+score against raw score.
+
+**That is a different pass, not a quieter one.** `shouldReplace` is FluidAudio's
+and it is computed on the boosted score —
+`VocabularyRescorer+TokenEvaluation.swift:109-113`. At cbw 0 the test becomes
+`rawVocabScore > originalCtcScore`, so a candidate only surfaces where the audio
+already preferred the term. **Which candidates exist at all changes, and the
+count is itself a result.**
+
+| | rescorer | applied | proposed | dropped | spotter | wider | total |
+|---|---|---|---|---|---|---|---|
+| today, cbw 4.5 | 111 | 14 | 95 | 2 | 33 | 195 | **339** |
+| cbw 0 | 59 | 18 | 41 | 0 | 41 | 101 | **201** |
+
+Rescorer proposals nearly halve. Two things move the other way and both follow
+from the same test. More proposals auto-apply (14 → 18), because at cbw 0 a
+surviving candidate has already beaten the decoded word on the raw score, which
+is half of what `autoApplies` asks. And the spotter path finds more (33 → 41),
+because it only takes spans the rescorer did not claim.
+
+`PARROTFLOW_SPOTTER_DUMP` now also writes one machine-readable line per
+proposal — kind, verdict, the decoded word and its score, the term and its
+score, the gap, the word indices and the seconds — on the same axis as the
+`word` and `spotter:` lines it already wrote. That is the whole mechanism; no
+second one was added.
+
+*Nothing changed for the user.* With `PARROTFLOW_CBW` unset the override is the
+old expression, and every dump line is behind the env var. Checked rather than
+argued: three clips through the installed `78d7ba2` and through this branch's
+build, same scratch config, same `vocabulary:` lines on two of the three. The
+third differed, and five replays per binary show why — the *installed* binary
+produces both readings of `Superbase` → `Supabase` on the same file, four
+`proposed` and one `applied`, with the raw score moving 2.7 nats. That is F12a,
+not the change.
+
+*No model was called.* The scratch config has no `vocabulary:` stage and
+`llm.enabled: false`. An Ollama server was running on the machine for unrelated
+work and was left alone; nothing in this round can reach it.
+
+## The three groups
+
+Over every proposal the pass makes:
+
+- **A — the term was said.** The label puts the term at this span.
+- **B — the term was NOT said.** The label puts an ordinary word there. These
+  are the failures.
+- **C — random terms.** Every other vocabulary term the spotter scored over the
+  same span, restricted to terms that appear nowhere in that clip's label. This
+  is what a gap looks like when the term is definitely absent.
+
+**The rule for A against B.** The decoder's words are aligned to the label's
+words with `difflib`. A proposal covers decoded words *i..j*. Every covered word
+inside an `equal` block means the label kept what the decoder wrote, so the
+speaker said the ordinary word: **B**. Inside a `replace` block, only the label
+words that block puts *at that position* are read — a term somewhere else in the
+sentence is not a term belonging at this span. The term in the aligned window is
+**A**, the term nowhere in the block is **B**, and the term in the block but at
+another position with the block too long to pin is **unclear**.
+
+**Unclear is 2 of 101 at cbw 0 and 4 of 135 today, and every one of them is a
+clip with no `said:` label at all.** No proposal was forced into a group by an
+alignment nobody could check.
+
+**The statistic is the spotter's raw score for the term over the span, in nats
+per token.** It has to be one number on one scale for all three groups, and
+group C has no decoded-word score to subtract because nothing ever proposed
+those terms. Both numbers come out of the same dynamic program,
+`CtcDPAlgorithm`, normalised by the term's token count; the rescorer scores over
+a window it is given and the spotter finds its own, and that difference in
+window is the one seam in the comparison. The rescorer's gap — the number the
+judge is actually shown — is reported beside it for the two groups that have
+one.
+
+## The distributions, cbw 0
+
+101 distinct proposals over 63 clips, each the median of the replays it appeared
+in. A 33, B 66, unclear 2.
+
+| group | n | min | q1 | median | q3 | max |
+|---|---:|---:|---:|---:|---:|---:|
+| A term was said | 33 | -12.27 | -10.49 | **-6.81** | -5.04 | -2.28 |
+| B term was NOT said | 66 | -11.58 | -6.45 | **-4.88** | -4.58 | -2.51 |
+| C random terms | 917 | -14.04 | -9.07 | **-7.10** | -6.40 | -4.23 |
+
+Counts per nat, each column scaled to its own tallest bar:
+
+```
+        A (33)                  B (66)                  C (917)
+ -13 |#                      |                       |###
+ -12 |####                   |#                      |###########
+ -11 |#####                  |#####                  |#########
+ -10 |##                     |##                     |########
+  -9 |##                     |###                    |#########
+  -8 |##                     |##                     |#########################
+  -7 |##                     |########               |########################################
+  -6 |########               |###                    |#################
+  -5 |###                    |####################################|  #
+  -4 |####                   |#####                  |
+  -3 |#                      |#                      |
+```
+
+**B sits above A, not apart from it.** The median of a wrongly proposed term is
+1.9 nats *better* than the median of a correctly proposed one.
+
+## Overlap — the whole question
+
+| | share |
+|---|---|
+| B inside A's range | **100%** |
+| B inside C's range | **88%** |
+| A inside C's range | 85% |
+
+Every wrong proposal falls inside the range of the right ones. Nearly nine in
+ten fall inside the range of terms that are definitely not in the sentence.
+
+## Separability
+
+AUC of the score telling one group from another. 0.5 is a coin. Above 0.5 means
+the first group scores higher.
+
+| | cbw 0 | today |
+|---|---|---|
+| AUC(A vs B), all proposals | **0.318** | 0.379 |
+| AUC(A vs C), all proposals | 0.570 | 0.587 |
+| AUC(B vs C), all proposals | 0.811 | 0.732 |
+| AUC(A vs B), **rescorer only** | 0.425 | 0.459 |
+| AUC(A vs C), **rescorer only** | **0.454** | 0.540 |
+| AUC(B vs C), **rescorer only** | 0.526 | 0.589 |
+| AUC(A vs B), the rescorer's gap | 0.593 | 0.668 |
+
+Read the rescorer rows, not the "all" rows. Spotter-path proposals only exist
+above `spotterFloor` at -5.0 while group C is almost entirely below it, so their
+AUC(A vs C) of 0.999 is the floor reporting itself. It is not a signal: B scores
+0.997 against C on the same rows, which says the floor selects loud spans and
+not correct ones.
+
+**On the rescorer's own proposals, with the bonus off, a term that was said is
+at chance against a term that is not in the sentence: 0.454, with 100% of A
+inside C's range.** A term that was *not* said does no worse, at 0.526. The
+score is not identifying anything specific, so there is nothing to reject on.
+
+The gap — raw term minus raw decoded word — is the only column above chance, and
+it is thin. At cbw 0 it is 0.593, A median 1.00 against B median 0.51, with 73%
+of B inside A's range. And it is truncated by construction: at cbw 0 nothing
+surfaces unless the gap is already positive, so 30 A and 30 B all sit between
+0.01 and 2.44.
+
+**A threshold cannot beat a constant.** Fitted and scored on the same rows,
+which is the most flattering number available:
+
+| | best cut | always say the bigger group |
+|---|---|---|
+| spotter score, rescorer proposals | 31/52 (60%) | 26/52 (50%) |
+| the rescorer's gap | 38/60 (63%) | 30/60 (50%) |
+
+Five to six cases of in-sample gain on about sixty, with no held-out set. That
+is round 4's finding again on the raw number: a predictor that barely beats a
+constant when it is allowed to see the answer carries no signal.
+
+## The two paths are not the same, and one of them has a usable floor
+
+The AUCs above are computed per path for a reason. **A proposal reaches a menu
+two ways, and only one of them carries a gap.**
+
+- The **rescorer** matches spelling and scores both the decoded word and the
+  term. It has a gap. At cbw 0, 54 of the 101 scored proposals are its.
+- The **spotter** replaces a span because the CTC search heard the term there.
+  It has no decoded-word score and never had one — `Vocabulary.apply` writes
+  `heardScore: nil` because the spotter scored the term, not the word standing
+  there. It makes the other 47, and **it is where most failures live: 40 of the
+  66 B at cbw 0, 32 of the 92 today.**
+
+So the gap AUC never saw the majority of the failures. Asked separately:
+
+| statistic | path | A n | B n | AUC(A vs B) |
+|---|---|---:|---:|---|
+| the gap | rescorer | 30 | 30 | 0.593 |
+| raw term score, per token | rescorer | 30 | 30 | **0.487** |
+| spotter score at the span | rescorer | 26 | 26 | 0.425 |
+| spotter score at the span | spotter | 7 | 40 | **0.814** |
+
+At today's cbw the same two rows are 0.457 and 0.945.
+
+**Per-token normalisation is not doing the work.** The `spot` column is
+normalised by the term's token count and the gap is not, so the fourth question
+was whether that alone explains the difference. It does not: the rescorer's own
+raw term score is per token and needs no subtraction, and it scores **0.487** —
+a coin. On the rescorer path nothing separates, on any of the three statistics.
+
+### The floor
+
+The spotter path already gates on its own score. `Vocabulary.spotterFloor` is
+-5.0 and it admits every B in the table. Moving it, on the spotter path's 47
+proposals at cbw 0:
+
+| floor | A kept | B kept | B cut | A cut |
+|---|---|---|---:|---:|
+| **-5.00** (today) | 7/7 | 40/40 | 0 | 0 |
+| -4.75 | 6/7 | 24/40 | 16 | 1 |
+| -4.50 | 6/7 | 14/40 | 26 | 1 |
+| **-4.25** | **6/7** | **7/40** | **33** | **1** |
+| -4.00 | 5/7 | 5/40 | 35 | 2 |
+| -3.75 | 3/7 | 3/40 | 37 | 4 |
+| -3.50 | 3/7 | 1/40 | 39 | 4 |
+
+At today's cbw, where the shipped app lives, it is better: **-4.25 keeps 4 of 4
+right and cuts 28 of 32 wrong.**
+
+Both paths together, since a case is decided by every proposal on it:
+
+| | A kept | B kept |
+|---|---|---|
+| cbw 0, floor -4.25 | 32/33 | 33/66 |
+| **today, floor -4.25** | **39/39** | **64/92** |
+
+At today's setting nothing correct is lost and 28 wrong readings never reach a
+menu. The one right proposal lost at cbw 0 is `Praisy` over "Pressy" at -4.94 on
+`17-38-44`, and it is that clip's only proposal — so the clip loses its reading
+entirely. At today's cbw the rescorer also proposes there and the clip survives.
+
+Below -5.0 these runs have no data. `acousticSpans` drops a detection under the
+floor before anything logs it, so a lower floor admits spans this sweep never
+scored. -5.5 and -5.25 would need their own runs.
+
+### Why this is a smaller finding than it looks
+
+**It is a loudness gate, not a rejection rule.** The same rows give
+AUC(A vs C) = 0.999 *and* AUC(B vs C) = 0.997: the spotter score separates
+"something is here" from "nothing is here", and does that almost perfectly. It
+does not separate "the right thing is here" from "the wrong thing is here". What
+a higher floor removes is the quiet bulk. What it cannot remove is a wrong
+proposal that is loud — and those are the ones that cost cases.
+
+The top of the distribution says it in two lines. The best-scoring proposal in
+the whole set is `Vercel` over "Versailles" at **-2.28**, correct. The second
+best is `Vercel` over "universal" at **-2.51**, wrong, **in the same clip**. No
+floor separates those two.
+
+**It fixes one clip of the collision class.** Of the eight clips PR #68 recorded
+as regressed, only three carry a spotter-path proposal at all, and a -4.25 floor
+removes all three: `14-04-21`, `14-09-56`, `11-19-17`. Only `11-19-17`
+("proprietary" → `Praisy`) is actually fixed by it, because it is the clip's
+only proposal. The other two still carry a rescorer-path wrong reading the floor
+cannot touch — `crawl` → `Redcrawl` and `matches` → `Matthieu`. **Seven of the
+eight fail on the path where nothing separates.**
+
+**And it is in-sample.** 47 spotter proposals, fitted and scored on the same
+rows, no held-out set. The floor's existing sweep in `Vocabulary.spotterFloor`
+was run on `menu-recall.py` per *case* and stopped at -4.8 with a plateau from
+-5.0; -4.25 is outside what that measured. Proposal counts are not recall, and
+`spotterFloor` also gates `spottedAnything`, which decides whether the pass
+produces anything at all on a clip where the rescorer found nothing. Raising it
+can silence a whole clip. **Nobody should move this number without running
+`menu-recall.py --runs 3` across the range.**
+
+## Per term
+
+The ablation found `Redcrawl`, `Supabase` and `Ollama` with 0 wins and 9 losses
+between them. Their gaps do not look different. cbw 0, spotter score at the
+span:
+
+| term | A n | A med | B n | B med | C n | C med | AUC A/B | AUC A/C | AUC B/C |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Arexvy | 0 | — | 1 | -9.55 | 91 | -7.25 | — | — | 0.23 |
+| Claude | 0 | — | 5 | -4.73 | 90 | -6.93 | — | — | 0.83 |
+| Matthieu | 3 | -5.81 | 3 | -4.98 | 88 | -7.30 | 0.33 | 0.85 | 0.79 |
+| Mirza | 0 | — | 4 | -5.28 | 79 | -6.67 | — | — | 0.77 |
+| Ollama | 1 | -11.99 | 2 | **-4.57** | 88 | -6.83 | 0.00 | 0.01 | **1.00** |
+| Praisy | 21 | -8.00 | 37 | -4.84 | 41 | -6.40 | 0.32 | 0.47 | 0.77 |
+| Redcrawl | 0 | — | 3 | -6.15 | 96 | -6.79 | — | — | 0.70 |
+| Redrock | 0 | — | 1 | -6.98 | 84 | -7.78 | — | — | 0.86 |
+| Supabase | 1 | -4.94 | 2 | -7.43 | 89 | -7.78 | 0.50 | 1.00 | 0.56 |
+| Tasmeen | 1 | -11.35 | 3 | -4.89 | 94 | -6.70 | 0.00 | 0.05 | 0.99 |
+| Vercel | 6 | -5.80 | 5 | -4.83 | 77 | -7.05 | 0.37 | 0.72 | 0.83 |
+
+Three things, and none of them is a difference between those three terms and the
+other two.
+
+**The three terms have almost no A cases in this set.** `Redcrawl` 0 of 3,
+`Supabase` 1 of 3, `Ollama` 1 of 3. Nothing here can say whether their gaps look
+different from `Praisy`'s when they are right, because they are almost never
+right.
+
+**Their wrong proposals are not quiet.** `Ollama`'s B median is -4.57 and
+`Praisy`'s A median is -8.00: the wrong `Ollama` is heard 3.4 nats more clearly
+than the average correct `Praisy`. `Redcrawl`'s B median of -6.15 sits 0.64 nats
+above its own noise floor of -6.79, which is not a distance a rule can act on.
+
+**The last column is the damning one.** AUC(B vs C) is 1.00 for `Ollama`, 0.99
+for `Tasmeen`, 0.83 for `Claude` and `Vercel`. For those names the score does
+not merely fail to reject a wrong proposal — it endorses it, ranking the wrong
+term above every term that is genuinely absent.
+
+`Praisy` is the exception that explains the mechanism. Its AUC(A vs C) is 0.47:
+a correct `Praisy` is at chance against a `Praisy` scored over a span where it
+was never spoken. It carries fourteen registered renderings, so every span in
+every clip gets fourteen draws for that name and the best of fourteen is high
+everywhere. That is the effect `Vocabulary.spotterFloor` documents, measured
+here as an AUC.
+
+## Run to run — F12a
+
+Every clip was replayed three times in each condition, 870 replays in all.
+
+| condition | quantity | n | median spread | q3 | max | over 1 nat |
+|---|---|---:|---:|---:|---:|---:|
+| cbw 0 | gap | 57 | 0.00 | 0.01 | 0.67 | 0% |
+| cbw 0 | spotter score | 87 | 0.00 | 0.00 | 1.70 | 2% |
+| cbw 0 | term score | 94 | 0.00 | 0.00 | **5.70** | 5% |
+| today | gap | 111 | 0.00 | 0.01 | 2.40 | 3% |
+| today | spotter score | 127 | 0.00 | 0.00 | 3.11 | 3% |
+| today | term score | 140 | 0.00 | 0.00 | **8.12** | 4% |
+
+Most replays are exact. **The tail is not, and the tail is larger than the
+effect.** About one proposal in twenty moves more than a nat between replays,
+and the worst moves 5.7 nats at cbw 0 and 8.1 today — against an A-versus-B
+separation of 0.49 nats on the gap and 1.9 nats on the spotter score, the latter
+in the wrong direction. On top of that, **13 of 107 proposals at cbw 0 and 8 of
+148 today do not appear in all three runs at all**: the same audio, replayed,
+proposes a different thing.
+
+So the settled part of the answer does not need the AUCs. For the fifth of
+proposals where a threshold would have to be close, the number moves further
+between two replays of the same file than the two classes are apart.
+
+## Recommendation
+
+**Do not build a rejection rule on the acoustic score, at any bonus.** Round 4
+showed the score block does not predict the answer; round 5 shows the number
+underneath it does not identify the term either. A wrongly proposed term looks
+exactly like a randomly chosen one, and often better than a correct one. On the
+rescorer path — the majority of proposals — all three statistics tried are at
+chance: the gap 0.593, the raw term score per token 0.487, the spotter score
+0.425.
+
+**The bonus is not the bug, and taking it out costs recall.** At cbw 0 the
+rescorer makes 59 proposals instead of 111, and the ones it drops are not the
+wrong ones — the same two-to-one mix of failures to successes survives. Keep
+`cbw` where it is. `PARROTFLOW_CBW` stays as a measurement tool, defaulting to
+today's value.
+
+**One thing here is worth acting on, and it is a floor rather than a rule.**
+`Vocabulary.spotterFloor` is -5.0 and admits every wrong spotter-path proposal
+in this set. At -4.25 the whole set goes from 39 right and 92 wrong to 39 right
+and 64 wrong: 28 wrong readings never reach a menu and nothing correct is lost.
+That is a menu-size lever, not a fix — it is a loudness gate, it fixes one clip
+of the collision class out of eight, and the two highest-scoring proposals in
+the whole set are a correct `Vercel` at -2.28 and a wrong `Vercel` at -2.51 in
+the same clip. **Measure it with `menu-recall.py --runs 3` per case before
+moving it**, because proposal counts are not recall and the same number gates
+whether the pass produces anything at all.
+
+The rest of what is left to measure is what round 4 pointed at. The only
+rescorer-path column above chance is the *gap* against the decoded word, at AUC
+0.59-0.67 — weak, but it is the only number that knows what else was on the
+audio. Every absolute level is at chance except as a presence test. If anything
+acoustic is worth another attempt it is a comparison, never a level.
+
+Recorded as F19 in [vocabulary-v2.md](vocabulary-v2.md).

@@ -408,6 +408,23 @@ actor Vocabulary {
             .flatMap(Float.init) ?? config.vocabulary.decideAbove
     }
 
+    /// The vocabulary bonus, in nats, added to the term's side of every
+    /// comparison the rescorer makes.
+    ///
+    /// The number is FluidAudio's — `cbw: 4.5` at every vocabulary size today.
+    /// It asks for the number of *terms*, not the size of the context; see
+    /// `termCount` for what F9 claimed here and what measured.
+    ///
+    /// `PARROTFLOW_CBW` overrides it. At 0 the rescorer compares raw score
+    /// against raw score, so nothing is proposed unless the audio already
+    /// preferred the term. That is a different pass, not a quieter one: it
+    /// makes 59 proposals where today's makes 111, and rejects no better
+    /// (F19). Unset, the user's app behaves exactly as before.
+    static func contextBiasingWeight(forVocabSize size: Int) -> Float {
+        ProcessInfo.processInfo.environment["PARROTFLOW_CBW"].flatMap(Float.init)
+            ?? ContextBiasingConstants.rescorerConfig(forVocabSize: size).cbw
+    }
+
     /// How well the spotter has to hear a term before its span is offered.
     ///
     /// Raised from -5.5 to -5.0 when pronunciations arrived, and the reason is
@@ -537,7 +554,13 @@ actor Vocabulary {
         // widen a term the pass already found, and the clips that matter most
         // are the ones where nothing fired at all. Nothing here needs the
         // spotter: the words and their times come out of the decoder.
-        if ProcessInfo.processInfo.environment["PARROTFLOW_SPOTTER_DUMP"] != nil {
+        let dumping = ProcessInfo.processInfo.environment["PARROTFLOW_SPOTTER_DUMP"] != nil
+        if dumping {
+            // The decoder's own sentence, before anything here touched it. The
+            // `word` lines below index into this one, and so do the `dump
+            // proposal` lines; a reader that only has the final transcript
+            // cannot tell which words were the decoder's.
+            Log.write("dump decoded \(text)")
             for word in Self.words(from: tokenTimings, in: text) {
                 Log.write(String(format: "  word %@ %.2f-%.2f",
                                  String(text[word.range]), word.start, word.end))
@@ -565,11 +588,7 @@ actor Vocabulary {
                 }
             }
 
-            // The number of *terms*, not the size of the context — see
-            // `termCount` for what F9 claimed here and what measures (F9).
-            let cbw = ContextBiasingConstants.rescorerConfig(
-                forVocabSize: termCount
-            ).cbw
+            let cbw = Self.contextBiasingWeight(forVocabSize: termCount)
             let result = rescorer.ctcTokenRescore(
                 transcript: text,
                 tokenTimings: tokenTimings,
@@ -665,7 +684,19 @@ actor Vocabulary {
             // and the log is where that gets settled.
             var made: [String] = []
             var proposals: [Proposal] = []
+            let spokenWords = dumping ? Self.words(from: tokenTimings, in: text) : []
             for ((range, change), verdict) in zip(found, decided) {
+                if dumping {
+                    Self.dumpProposal(
+                        kind: "rescorer",
+                        verdict: verdict.dropped ? "dropped"
+                            : (verdict.applied ? "applied" : "proposed"),
+                        range: range, in: text, words: spokenWords,
+                        heard: change.originalWord, heardScore: change.originalScore,
+                        term: change.replacementWord ?? "", termScore: verdict.raw,
+                        bonus: verdict.bonus
+                    )
+                }
                 if verdict.dropped {
                     Log.write(String(
                         format: "vocabulary: \"%@\" -> \"%@\" dropped, audio prefers what was written by %.2f",
@@ -708,6 +739,14 @@ actor Vocabulary {
                 zip(found, decided).compactMap { ($0.1.applied || $0.1.dropped) ? nil : $0.0.range }
             ).union(heardSpans.map { $0.range })
             for span in wider where untouched.contains(where: { $0.overlaps(span.range) }) {
+                if dumping {
+                    Self.dumpProposal(
+                        kind: "wider", verdict: "proposed",
+                        range: span.range, in: text, words: spokenWords,
+                        heard: span.heard, heardScore: nil,
+                        term: span.term, termScore: nil, bonus: nil
+                    )
+                }
                 guard let placed = moved(span.range, holding: span.heard) else { continue }
                 Log.write(
                     "vocabulary: \"\(span.heard)\" -> \"\(span.term)\" also offered"
@@ -727,6 +766,14 @@ actor Vocabulary {
             // not the word the decoder wrote, and there is no second number.
             for span in heardSpans {
                 let phrase = String(text[span.range])
+                if dumping {
+                    Self.dumpProposal(
+                        kind: "spotter", verdict: "proposed",
+                        range: span.range, in: text, words: spokenWords,
+                        heard: phrase, heardScore: nil,
+                        term: span.term, termScore: span.score, bonus: nil
+                    )
+                }
                 guard let placed = moved(span.range, holding: phrase) else { continue }
                 Log.write(String(
                     format: "vocabulary: \"%@\" -> \"%@\" heard in the audio (spotter %.2f)",
@@ -750,6 +797,45 @@ actor Vocabulary {
             Log.write("vocabulary: \(error.localizedDescription); left as decoded")
             return .unchanged(text)
         }
+    }
+
+    /// One machine-readable line per proposal, under `PARROTFLOW_SPOTTER_DUMP`.
+    ///
+    /// The human line beside it says what happened. This one says it in fields
+    /// a script can join to the `word` and `spotter:` lines from the same run:
+    /// same word indices, same seconds, same decoded text. Nothing else can
+    /// put a proposal, the word it sits on and every other term the spotter
+    /// scored there on one axis.
+    ///
+    /// `none` where a number does not exist. Zero is a real score in nats and
+    /// must never stand in for a missing one (F6).
+    private static func dumpProposal(
+        kind: String, verdict: String, range: Range<String.Index>, in text: String,
+        words: [(range: Range<String.Index>, start: Double, end: Double)],
+        heard: String, heardScore: Float?, term: String, termScore: Float?, bonus: Float?
+    ) {
+        let covered = words.indices.filter { words[$0].range.overlaps(range) }
+        func number(_ value: Float?) -> String {
+            value.map { String(format: "%.4f", $0) } ?? "none"
+        }
+        func quoted(_ value: String) -> String {
+            "\"\(value.replacingOccurrences(of: "\"", with: "'"))\""
+        }
+        let span = covered.first.map { first in
+            String(format: "words=%d-%d at=%.2f-%.2f",
+                   first, covered.last ?? first, words[first].start,
+                   words[covered.last ?? first].end)
+        } ?? "words=none at=none"
+        let gap: Float? = {
+            guard let termScore, let heardScore else { return nil }
+            return termScore - heardScore
+        }()
+        Log.write([
+            "dump proposal", "kind=\(kind)", "verdict=\(verdict)", span,
+            "heard=\(quoted(heard))", "heard_score=\(number(heardScore))",
+            "term=\(quoted(term))", "term_score=\(number(termScore))",
+            "gap=\(number(gap))", "bonus=\(number(bonus))",
+        ].joined(separator: " "))
     }
 
     // MARK: - Where the rescorer's replacements sit
