@@ -829,24 +829,33 @@ the app agrees:
 
 ```sh
 grep -n '^acoustic:' ~/.config/parrotflow-dev/vocabulary.yaml
-/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --check-config | grep vocabulary
+/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --check-config \
+  | grep -E "offered at similarity|acoustic: false"
 ```
 
-`grep` must print `32:acoustic: true`. `--check-config` must print these three
-lines, wrapped here to fit:
+`grep` on the file must print `32:acoustic: true`. `--check-config` must print
+one line, and it must be the "offered at similarity" one — wrapped here to fit:
 
 ```
-  · vocabulary: 11 terms in vocabulary.yaml, 11 matched by sound, 37 by rule
   · vocabulary: offered at similarity 0.5 and up, dropped when the audio argues
     against it by more than 3.0 nats — Arexvy, Claude, Matthieu, Mirza, Ollama,
     Praisy, Redcrawl, Redrock, Supabase, Tasmeen, Vercel
+```
+
+Two more lines carry the counts and are worth a glance:
+
+```
+  · vocabulary: 11 terms in vocabulary.yaml, 11 matched by sound, 37 by rule
   · vocabulary: 37 pronunciation(s) searched for by sound as well as matched exactly
 ```
 
-**6. Dictate the eight sentences into a scratch file.**
+**6. Mark the log, then dictate the eight sentences into a scratch file.** The
+mark is how you get this arm's lines and nobody else's.
 
 ```sh
-mkdir -p ~/pr2 && touch ~/pr2/today.txt && open -a TextEdit ~/pr2/today.txt
+mkdir -p ~/pr2
+wc -l < ~/Library/Logs/ParrotFlow-Dev.log > ~/pr2/today.mark
+touch ~/pr2/today.txt && open -a TextEdit ~/pr2/today.txt
 ```
 
 Hold Right ⌘ — the dev build's push-to-talk key, `AppVariant.defaultHotkey` —
@@ -858,8 +867,17 @@ zero at 1 MB (`Log.swift:44-45`), which is about fifteen minutes of activity. Do
 not plan to grep it after all sixteen dictations.
 
 ```sh
-grep -E "transcribed:|vocabulary judge:|vocabulary rewrote" \
-  ~/Library/Logs/ParrotFlow-Dev.log | tail -40 > ~/pr2/today.log
+tail -n +$(( $(cat ~/pr2/today.mark) + 1 )) ~/Library/Logs/ParrotFlow-Dev.log \
+  | grep -E "transcribed:|vocabulary judge:|vocabulary rewrote" > ~/pr2/today.log
+wc -l < ~/pr2/today.log
+```
+
+Expect at least 8 lines, one `transcribed:` per sentence. If the file is short
+or empty, check whether the log truncated during the arm:
+
+```sh
+[ "$(wc -l < ~/Library/Logs/ParrotFlow-Dev.log)" -lt "$(cat ~/pr2/today.mark)" ] \
+  && echo "the log truncated — redo this arm"
 ```
 
 `transcribed:` is the final text, after the pipeline and just before it is
@@ -872,30 +890,33 @@ inserted (`AppDelegate.swift:2009`). The `vocabulary judge:` lines are what
 cd ~/.config/parrotflow-dev
 sed -i '' 's/^acoustic: true$/acoustic: false/' vocabulary.yaml
 grep -n '^acoustic:' vocabulary.yaml        # must print 32:acoustic: false
-/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --check-config | grep vocabulary
+/Applications/ParrotFlowDev.app/Contents/MacOS/ParrotFlow --check-config \
+  | grep -E "offered at similarity|acoustic: false"
 ```
 
 No restart. `AppDelegate.watchConfig` watches `vocabulary.yaml` and reloads on
-save. `--check-config` must now print:
+save. The same `grep` must now print one line, and it must be the other one:
 
 ```
-  · vocabulary: 11 terms in vocabulary.yaml, 11 matched by sound, 37 by rule
   · vocabulary: `acoustic: false`, so 11 names are only matched by their
     pronunciation rules
 ```
 
-The "offered at similarity" line and the "37 pronunciation(s) searched for by
-sound" line are gone. The first line does not change: it counts terms in the
-file, not what runs. If you still see "offered at similarity", the edit did not
-land — stop.
+If "offered at similarity" is still there, the edit did not land — stop. The
+"37 pronunciation(s) searched for by sound" line also disappears; it is gated on
+`acoustic` too (`Config.swift:1840`). The `11 terms … 11 matched by sound, 37 by
+rule` line does **not** change. It counts what is in the file, not what runs.
 
-Then dictate the same eight sentences and copy the lines out again:
+Then mark the log again, dictate the same eight sentences, and copy the lines
+out with the same two commands:
 
 ```sh
+wc -l < ~/Library/Logs/ParrotFlow-Dev.log > ~/pr2/noacoustic.mark
 touch ~/pr2/noacoustic.txt && open -a TextEdit ~/pr2/noacoustic.txt
-# dictate, then:
-grep -E "transcribed:|vocabulary judge:|vocabulary rewrote" \
-  ~/Library/Logs/ParrotFlow-Dev.log | tail -40 > ~/pr2/noacoustic.log
+# dictate the eight, then:
+tail -n +$(( $(cat ~/pr2/noacoustic.mark) + 1 )) ~/Library/Logs/ParrotFlow-Dev.log \
+  | grep -E "transcribed:|vocabulary judge:|vocabulary rewrote" > ~/pr2/noacoustic.log
+wc -l < ~/pr2/noacoustic.log
 ```
 
 **9. Put the vocabulary back, and check that it went back.**
