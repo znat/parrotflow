@@ -1407,8 +1407,15 @@ Sentences 1, 2, 3, 4 and 8 logged one line each and nothing else:
 pipeline: skipped vocabulary — when vocabulary.count > 0 did not match (vocabulary.count = 0)
 ```
 
-No proposal, no rule, no judge. Sentences 6 and 7 logged `vocabulary judge: 1
-slot(s) from 1 proposal(s)` and both came out right. Sentence 5 logged this:
+**That line is itself a measurement, not an absence.** `vocabulary.count` counts
+acoustic proposals *and* `replacements` rules whose target is a vocabulary term
+(`Pipeline.swift:708-732`). With the acoustic path off it counts rules only. So
+`vocabulary.count = 0` says no `heard:` rule fired on that sentence — which is
+the whole of the evidence about sentence 4 below.
+
+Sentences 6 and 7 logged `vocabulary judge: 1 slot(s) from 1 proposal(s)` and
+both came out right: the `Mathieu` rule fired, the count reached 1, and the judge
+was offered the decoded word back and kept the name. Sentence 5 logged this:
 
 ```
 vocabulary judge: "Vercel" stands 2 time(s) and no acoustic pass ran, so which one "Versailles" became cannot be told; that reading is not offered
@@ -1442,6 +1449,11 @@ PR 2, arm B, live:   vocabulary judge: "Vercel" stands 2 time(s) and no acoustic
 Live it fires twice, because the decoder wrote two different renderings —
 `Versailles` and `Versal` — and both rules produced a `Vercel`. Two rules, two
 occurrences, and `ruleParts` can attribute neither without a `before`.
+
+Note what the judge stage running at all proves here. `vocabulary.count` reached
+2, so both rules did fire; the `0 slot(s) from 0 proposal(s)` is the attribution
+failing, not the rules failing. That is the difference between sentence 5 and
+sentence 4, and the log states it without any inference.
 
 **This raises the `ruleParts` fix from an inference to a reproduced defect.** It
 is about five lines: take the pre-rules transcript from the `replacements`
