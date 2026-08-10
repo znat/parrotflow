@@ -13,6 +13,10 @@
 # pass wrote it, which is where every other failure in this stage lands too.
 # The first is the direction worth watching.
 #
+# The same cases run twice: once through the app, and once through the copy of
+# the parser `scripts/judge-verdicts.py` carries. A harness that reads a reply
+# differently scores a decision the app never made.
+#
 # Runs against a scratch PARROTFLOW_CONFIG_DIR, so it says nothing about the
 # config on the machine and scores the same anywhere. `--verdicts` reads no
 # config, but the binary creates one on any path that loads it.
@@ -69,4 +73,32 @@ fi
 printf '  %d/%d  (tests/verdict-cases.yaml)\n' "$pass" "$total"
 [ "$lost" -gt 0 ] && printf '    %d undid a substitution the reply did not  ← the expensive direction\n' "$lost"
 [ "$kept" -gt 0 ] && printf '    %d kept a substitution the reply undid\n' "$kept"
-[ "$pass" = "$total" ]
+[ "$pass" = "$total" ] || exit 1
+
+# The same cases through the harness's own copy of the parser.
+#
+# `scripts/judge-verdicts.py` cannot link the app, so it ports this function.
+# A port that reads a reply differently scores a decision the app would never
+# make, and every number in the measurement would be about a judge nobody runs.
+echo
+python3 - "$ROOT" <<'PY'
+import importlib.util, pathlib, sys, yaml
+root = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("jv", root / "scripts/judge-verdicts.py")
+harness = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(harness)
+
+cases = yaml.safe_load((root / "tests/verdict-cases.yaml").read_text())["cases"]
+wrong = [c for c in cases
+         if " ".join(harness.parse(c["reply"], c["count"])) != c["expect"]]
+for case in wrong:
+    got = " ".join(harness.parse(case["reply"], case["count"]))
+    print(f"  ✗ {case['name']}: the harness reads [{got}], the app reads [{case['expect']}]")
+if not cases:
+    print("  ✗ no cases read from tests/verdict-cases.yaml")
+    sys.exit(1)
+if wrong:
+    sys.exit(1)
+print(f"  ✓ scripts/judge-verdicts.py reads a reply the way the app does"
+      f"  ({len(cases)} cases)")
+PY
