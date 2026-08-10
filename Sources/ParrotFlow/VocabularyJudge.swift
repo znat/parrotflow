@@ -40,13 +40,16 @@ import Foundation
 ///
 /// ## Why the prompt is not a file any more
 ///
-/// It was `examples/prompts/verify_names.md`, named by the pipeline entry and
-/// owned by the user. Nobody should own this one. It is not a matter of taste
-/// — a wording is right or wrong against a measurement, five wordings of one
-/// sentence in the old prompt scored 38, 39, 40, 41 and 42 on the same cases,
-/// and the shape the text has to keep is decided by the parser below it. So it
-/// is compiled in, and `- vocabulary: <file>` still parses with the file
-/// ignored, said out loud by `--check-config`.
+/// It was a file the pipeline entry named and the user owned. Nobody should
+/// own this one. It is not a matter of taste — a wording is right or wrong
+/// against a measurement, five wordings of one sentence in the old prompt
+/// scored 38, 39, 40, 41 and 42 on the same cases, and the shape the text has
+/// to keep is decided by the parser below it.
+///
+/// So it is compiled in, and a config still naming a file is **refused**
+/// rather than warned about. A warning leaves a filename in a config doing
+/// nothing, and somebody who edits that file and sees the judge behave exactly
+/// as before has no way to find out why.
 enum VocabularyJudge {
 
     /// What the model is asked, minus the sentence.
@@ -153,6 +156,13 @@ enum VocabularyJudge {
         /// See `slots(in:from:caps:)` for which two survive.
         var perTerm = 2
 
+        /// `max_readings:`, kept only so it can be refused by name.
+        ///
+        /// It capped a lettered menu. There is no menu, so the number would do
+        /// nothing — and a number in a config file doing nothing is the
+        /// failure this whole type's `problems` exists to prevent.
+        var readings: Int?
+
         static let standard = Caps()
 
         /// Two readings a place, whatever was typed. A verdict has two sides.
@@ -161,12 +171,31 @@ enum VocabularyJudge {
         /// What is wrong with these numbers, in the words `--check-config`
         /// uses. A cap of zero silences the stage on every transcript, which
         /// reads as the judge being broken rather than as a number being wrong.
+        ///
+        /// **Refused, not clamped.** A number quietly rounded down is a
+        /// configuration that says one thing and does another, and the person
+        /// who typed it learns nothing. Both cases below were found by review:
+        /// `max_per_slot: 3` built a third reading that `changes(in:from:)`
+        /// then dropped without a word, and `max_readings:` was read and
+        /// ignored.
         var problems: [String] {
             var found: [String] = []
             for (name, value) in [
                 ("max_slots", slots), ("max_per_slot", perSlot), ("max_per_term", perTerm),
             ] where value < 1 {
                 found.append("vocabulary: \(name) is \(value) — it has to be at least 1")
+            }
+            if perSlot > Self.readingCeiling {
+                found.append("vocabulary: max_per_slot is \(perSlot), and the judge answers"
+                    + " KEEP or REVERT — \(Self.readingCeiling) is the most a place can"
+                    + " offer. Anything past the second reading would be built and never"
+                    + " shown")
+            }
+            if let readings {
+                found.append("vocabulary: max_readings is \(readings) and nothing reads it."
+                    + " It capped a lettered menu of whole sentences; the judge answers one"
+                    + " change at a time now. Delete the line — `max_slots` is the cap that"
+                    + " is left")
             }
             return found
         }

@@ -1,0 +1,12 @@
+# A vocabulary stage naming a prompt file.
+#
+# Every config written before the prompt was compiled in says this. It is
+# refused rather than warned about: a warning leaves a filename in a config
+# doing nothing, and somebody editing that file and seeing the judge behave
+# exactly as before has no way to find out why.
+#
+# The fix is one word — delete the filename.
+languages: [en]
+pipeline:
+  - replacements
+  - vocabulary: verify_names.md

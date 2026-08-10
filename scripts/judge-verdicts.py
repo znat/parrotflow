@@ -58,9 +58,12 @@ import sys
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+# `scripts/` is not on the path when a check script loads this by file path.
+sys.path.insert(0, str(ROOT / "scripts"))
+from retired_prompt import RETIRED_PROMPT  # noqa: E402
+
 CASES = ROOT / "tests/judge-verdicts.json"
 MENUS = ROOT / "tests/judge-menus.json"
-RETIRED = ROOT / "tests/fixtures/retired-menu-prompt.md"
 LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 TUNED_ON = {
@@ -184,7 +187,7 @@ def chosen(reply, count):
 def run_shipped(case, model, endpoint):
     sentences, combos = menu(case)
     terms = ", ".join(sorted({c["now"] for c in case["changes"]}))
-    system = RETIRED.read_text().split("-->", 1)[-1].strip().replace("{terms}", terms)
+    system = RETIRED_PROMPT.strip().replace("{terms}", terms)
     listed = "\n".join(f"{LETTERS[i]}. {s}" for i, s in enumerate(sentences))
     reply = ask(system, listed + "\n\nWhich letter?", model, endpoint, 8)
     pick = chosen(reply, len(sentences))

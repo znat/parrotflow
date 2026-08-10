@@ -41,9 +41,9 @@ struct Pipeline: Equatable, Codable {
         /// What is on screen around the field, published as `context.*` and
         /// never written into the transcript. Terminals only — see `Context`.
         case context
-        /// The names the acoustic pass was unsure about, put to a model as a
-        /// menu of whole sentences — see `VocabularyJudge`. Named by a prompt
-        /// file, `- vocabulary: verify_names.md`.
+        /// Every substitution the vocabulary pass made, put to a model one
+        /// at a time — see `VocabularyJudge`. The pipeline entry is
+        /// `- vocabulary`, with no prompt file: the prompt is compiled in.
         case vocabulary
         /// One of the entries in `transforms:`, run over the whole
         /// transcript. The only stage that names something outside itself, and
@@ -114,10 +114,9 @@ struct Pipeline: Equatable, Codable {
         var transform: String?
         /// The prompt file a `vocabulary` stage used to ask with.
         ///
-        /// Read and ignored. The prompt is compiled in — see
-        /// `VocabularyJudge.prompt` for why nobody should own it — and this is
-        /// kept so a config written before that still loads. `--check-config`
-        /// says the file is ignored rather than leaving it to be discovered.
+        /// Read only so `validate` can refuse it by name. The prompt is
+        /// compiled in — see `VocabularyJudge.prompt` for why nobody should
+        /// own it — and nothing else looks at this.
         var prompt: String?
         /// How many places may be judged at once — see `VocabularyJudge.Caps`.
         /// Absent on every other stage.
@@ -306,9 +305,18 @@ struct Pipeline: Equatable, Codable {
         for step in steps where step.stage == .transform && (step.transform ?? "").isEmpty {
             problems.append("a prompt stage names no prompt — write `- prompt: <name>`")
         }
-        // No check that a prompt file is named. It used to be required and is
-        // now ignored, so `- vocabulary` on its own is the spelling to use.
         for step in steps where step.stage == .vocabulary {
+            // The prompt is compiled in. A config still naming a file is
+            // refused rather than warned about: a warning leaves a filename in
+            // a config doing nothing, and the person who edits that file and
+            // sees the judge behave exactly as before has no way to find out
+            // why. Refusing says it once, at load, where they typed it.
+            if let named = step.prompt, !named.isEmpty {
+                problems.append("pipelines: `- vocabulary: \(named)` names a prompt file."
+                    + " The prompt is part of the app now — a wording is right or wrong"
+                    + " against a measurement, not a matter of taste. Delete the filename"
+                    + " and write `- vocabulary`")
+            }
             problems += step.caps?.problems ?? []
         }
         problems += vocabularyOrderProblems()

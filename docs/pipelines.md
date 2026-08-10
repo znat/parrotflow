@@ -56,11 +56,22 @@ name or a mapping, and it cannot be both:
   max_per_term: 2     # optional; places in one sentence about the same name
 ```
 
-**There is no prompt file.** It used to name one and you owned it. Nobody
-should own this one: a wording is right or wrong against a measurement, not a
-matter of taste, and five wordings of one sentence in the old prompt scored 38,
-39, 40, 41 and 42 on the same cases. `- vocabulary: <file>` still loads so an
-older config keeps working, and `--check-config` says the file is ignored.
+`max_per_slot` cannot go above 2. A verdict has two sides, so a place offers
+what the decoder wrote and one alternative; a third reading would be built and
+never shown. Refused rather than rounded down, because a number that says one
+thing and does another teaches nobody anything.
+
+**There is no prompt file, and naming one is an error.** It used to name one
+and you owned it. Nobody should own this one: a wording is right or wrong
+against a measurement, not a matter of taste, and five wordings of one sentence
+in the old prompt scored 38, 39, 40, 41 and 42 on the same cases.
+
+If your pipeline says `- vocabulary: verify_names.md`, delete the filename. The
+config will not load until you do. It is refused rather than ignored because a
+filename that loads and does nothing is worse: you would edit that file, see
+the judge behave exactly as before, and have nothing to tell you why.
+`max_readings:` is refused for the same reason — it capped the lettered menu,
+which is gone.
 
 It shows the model the sentence the recogniser wrote, the same sentence after
 the pass, and a numbered list of what changed. It takes one KEEP or REVERT per

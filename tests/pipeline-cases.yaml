@@ -582,19 +582,6 @@ cases:
       replacements.changes: ""
       vocabulary.slots: 0
 
-  # --- the stage's own syntax, and the config that predates it ----------------
-
-  # `- vocabulary: <file>` is what every config written before the prompt was
-  # compiled in says. It still loads, the stage still runs, and the file is not
-  # read — the one here does not exist, which is the point. `--check-config`
-  # says the file is ignored; that sentence is not a pipeline case.
-  - name: a vocabulary stage naming a prompt file still runs, and ignores it
-    pipeline: vocabulary-legacy-prompt
-    input: our app is deployed on Versailles
-    expect: our app is deployed on Vercel
-    expect_vars:
-      vocabulary.slots: 1
-
   # --- fuzzy renderings --------------------------------------------------------
   #
   # See tests/pipelines/vocabulary-fuzzy.yaml. Two mechanisms under one option:
@@ -702,3 +689,21 @@ refused:
   - name: a cap of zero is refused and named
     pipeline: vocabulary-cap-zero
     expect_problem: max_per_term is 0
+
+  # The prompt is compiled in. Every config written before that names a file,
+  # and the file is refused rather than ignored — see the fixture.
+  - name: a vocabulary stage naming a prompt file is refused
+    pipeline: vocabulary-prompt-file
+    expect_problem: names a prompt file
+
+  # A verdict has two sides, so a place cannot offer three readings. Found by
+  # review on #102: the third was built and then silently dropped.
+  - name: more readings a place than a verdict can express is refused
+    pipeline: vocabulary-per-slot-three
+    expect_problem: max_per_slot is 3
+
+  # The same failure in the other retired knob: a number that loads and does
+  # nothing, because the menu it capped is gone.
+  - name: a cap on the retired menu is refused
+    pipeline: vocabulary-max-readings
+    expect_problem: max_readings is 16

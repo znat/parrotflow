@@ -32,27 +32,27 @@ in the app's menu order and its score block is trimmed to the lines that still
 separate two shortlisted options (F7). With `--framing all`, the shortlist is
 built from the framing with the best top-3, and the run says which.
 
-NOTE — this scores the **retired** menu prompt.
-
-The judge does not ask a menu any more. It shows the sentence before and after
-the pass and takes one KEEP or REVERT per substitution; the prompt is compiled
-in and `scripts/judge-verdicts.py` is what scores it. This script and its
-cached menus are kept as the baseline, because every earlier round of this work
-was scored here and a number with nothing to compare it to says nothing.
-
-`--harvest` no longer works against the app: the dump it scrapes is the new
-exchange, not a lettered menu. The committed cache in `tests/judge-menus.json`
-still replays.
+NOTE — this scores the **retired** menu prompt, `scripts/retired_prompt.py`.
+The judge takes one KEEP or REVERT per substitution now and `judge-verdicts.py`
+scores it; this is kept as the baseline every earlier round was measured
+against. `--harvest` no longer matches the app's dump; the committed cache in
+`tests/judge-menus.json` still replays.
 """
 import argparse
 import json
 import re
+import pathlib
 import string
 import sys
 from pathlib import Path
 from importlib.machinery import SourceFileLoader
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# `scripts/` is not always on the path; this file may be loaded by path.
+sys.path.insert(0, str(ROOT / "scripts"))
+from retired_prompt import RETIRED_PROMPT  # noqa: E402
+
 CACHE = ROOT / "tests/judge-menus.json"
 recall = SourceFileLoader("recall", str(ROOT / "scripts/menu-recall.py")).load_module()
 # For `ask` and for F6's sentinel rule, which is defined once, there.
@@ -133,6 +133,7 @@ FRAMINGS = {
 # `mxbai_rerank/mxbai_rerank_v2.py`. The instruction is the only part meant to
 # be rewritten. The yes/no token ids come from each repo's `1_LogitScore`
 # rather than from re-encoding, which is where an off-by-one hides.
+
 
 def qwen3_prompt(instruct, query, document):
     system = ('Judge whether the Document meets the requirements based on the '
@@ -368,7 +369,7 @@ def main():
         # out sixteen options reliably, but it can pick from three. Neither
         # number below is worth anything on its own — `ceiling` is what the
         # shortlist left reachable, and `picked` is what the judge did with it.
-        prompt = (ROOT / "tests/fixtures/retired-menu-prompt.md").read_text().strip()
+        prompt = RETIRED_PROMPT.strip()
         n = args.stage2
         ceiling = kept = 0
         ceiling_chance = picked_chance = 0.0

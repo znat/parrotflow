@@ -27,7 +27,10 @@ indent = min((len(l) - len(l.lstrip()) for l in lines if l.strip()), default=0)
 compiled = "\n".join(line[indent:] if line.strip() else "" for line in lines).strip()
 
 harness = (root / "scripts/judge-verdicts.py").read_text()
-scored = harness.split('PROMPT = """', 1)[1].split('"""', 1)[0].strip()
+# Anchored at the start of a line. The harness also carries RETIRED_PROMPT, and
+# a bare substring split matches that one first — which compared the shipped
+# prompt against the retired one and failed for the wrong reason.
+scored = harness.split('\nPROMPT = """', 1)[1].split('"""', 1)[0].strip()
 
 if compiled == scored:
     print("  ✓ scripts/judge-verdicts.py scores the prompt the app compiles in")

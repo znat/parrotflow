@@ -1,16 +1,22 @@
-<!--
-The retired menu prompt. The app does not read this file — the judge's prompt
-is compiled in (`VocabularyJudge.prompt`), and this asks a different question:
-it puts whole sentences on a lettered menu and takes one letter back.
+"""The prompt the name judge asked before it took verdicts.
 
-Kept because it is the baseline every earlier round was scored against, and
-`scripts/judge-verdicts.py` still runs it as an arm. On the 74 substitutions of
-the 2026-08-10 session it scores 29 against the shipped prompt's 62.
+The baseline every earlier round of this work was scored against, and the
+`shipped` arm of `judge-verdicts.py`. It asks a different question: whole
+sentences on a lettered menu, one letter back.
 
-Moved out of `examples/prompts/` so nobody installs it. It is a measurement
-fixture now, not something to own.
--->
+It is a Python module and not a file in `examples/` because the app refuses a
+config that names a prompt file, and a prompt sitting in the tree as prose is
+one somebody copies into their config anyway.
 
+The paragraph about score gaps is part of why it was retired. It tells the
+model a gap over about 4 means the sound can decide; the largest gap in the
+data is 2.72.
+
+Four harnesses read it — `judge-verdicts.py`, `tune-judge.py`,
+`judge-framings.py` and `rerank-judge.py` — and one copy is the point.
+"""
+
+RETIRED_PROMPT = """\
 The user dictates text. The speech recogniser mangles names they use often.
 Their vocabulary includes: {terms} — colleagues, products and tools they talk
 about every day.
@@ -35,3 +41,4 @@ that makes no sense should overrule it.
 
 Pick the reading that makes sense as a sentence, unless the sound says
 otherwise by more than about 4. Answer with its letter only.
+"""

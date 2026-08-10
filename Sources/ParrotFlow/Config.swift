@@ -1172,12 +1172,6 @@ struct Config: Decodable, Equatable {
         /// "grammar is not a stage" is not what went wrong.
         var contradictoryEntries: [String] = []
 
-        /// Whether any `vocabulary` entry set `max_readings:`. It capped a
-        /// lettered menu and there is no menu now, so it is read and dropped —
-        /// recorded here so `--check-config` can say so rather than leave a
-        /// number in a config file doing nothing.
-        var namesReadings = false
-
         /// One rule per mishearing, flattened for the substitution pass.
         var rules: [Rule] { Self.rules(from: replacements) }
 
@@ -1233,8 +1227,6 @@ struct Config: Decodable, Equatable {
             var app: String?
             /// `stage:` and `transform:`/`prompt:`/`vocabulary:` on one entry.
             var namesBoth = false
-            /// `max_readings:` on a vocabulary entry, which nothing reads now.
-            var namesReadings = false
 
             private enum CodingKeys: String, CodingKey {
                 case stage, transform, prompt, vocabulary, fuzzy, when, unless, app
@@ -1285,11 +1277,10 @@ struct Config: Decodable, Equatable {
                     if let perTerm = try c.decodeIfPresent(Int.self, forKey: .maxPerTerm) {
                         caps.perTerm = perTerm
                     }
+                    // Read only so `Caps.problems` can refuse it by name.
+                    caps.readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings)
                     self.caps = caps
                     fuzzy = try c.decodeIfPresent(Bool.self, forKey: .fuzzy)
-                    // Decoded only so `--check-config` can say it is ignored.
-                    // There is no menu to cap any more.
-                    namesReadings = try c.decodeIfPresent(Int.self, forKey: .maxReadings) != nil
                 }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
@@ -1423,7 +1414,6 @@ struct Config: Decodable, Equatable {
                                 unknownStages.append(entry.name)
                                 return nil
                             }
-                            if entry.namesReadings { namesReadings = true }
                             if entry.namesBoth {
                                 // Silently preferring one would delete a stage
                                 // the config asked for.
@@ -1800,25 +1790,6 @@ struct Config: Decodable, Equatable {
                 + " The app does this itself now — write `- vocabulary`")
         }
 
-        // The prompt is compiled in. A config that still names a file keeps
-        // working and the file is not read, which is worth saying out loud:
-        // editing it and seeing nothing change is the failure this line is
-        // here to prevent. Said once, whatever the file is called.
-        let steps = transcription.languages.flatMap {
-            Pipeline.resolved(config: self, language: $0).steps
-        }
-        let named = steps.first { $0.stage == .vocabulary && !($0.prompt ?? "").isEmpty }
-        if transcription.namesReadings {
-            said.append("pipelines: `max_readings:` on a vocabulary stage is ignored."
-                + " It capped a lettered menu, and the judge answers one change at a"
-                + " time now. `max_slots` is the cap that is left")
-        }
-        if let named, let file = named.prompt {
-            said.append("pipelines: `- vocabulary: \(file)` still loads and the file is"
-                + " ignored. The prompt is part of the app now — a wording is right or"
-                + " wrong against a measurement, not a matter of taste. Write"
-                + " `- vocabulary`")
-        }
 
         // The vocabulary is learnt rather than written, so it is the part of
         // the configuration nobody remembers the contents of. Printed in full.

@@ -8,12 +8,9 @@
 # Refused at load instead, by name, so the person who typed it learns which
 # number they typed. `max_per_term` is the one here because it is the newest;
 # the same check covers `max_slots` and `max_per_slot`.
-#
-# Written the old way on purpose — `- vocabulary: <file>` with a cap beside it
-# — because a config that predates the compiled-in prompt still has to be
-# refused for the number, not accepted because the filename distracted it.
+
 languages: [en]
 pipeline:
   - replacements
-  - vocabulary: verify_names.md
+  - stage: vocabulary
     max_per_term: 0
