@@ -107,17 +107,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// What was focused when the key went down. The same element `focus`
         /// carries, held here as well so the offer needs nothing but the press.
         let element: AXUIElement?
-        /// The pane's text before a word was said, for an app that gave no
-        /// caret. Nil everywhere else — see `screenAtPress`.
-        let pane: String?
     }
 
     /// The focused element's text as it was at the press, for an app that gave
     /// no caret. What changed in it afterwards is where the words went.
     ///
     /// Nil whenever there was a caret to aim at, so the search below only ever
-    /// runs for the apps that need it. Read out of here once, into the `Press`
-    /// of the dictation that took it, and never again.
+    /// runs for the apps that need it.
+    ///
+    /// Stamped with the press that took it, and read by that press alone. Not
+    /// frozen onto the `Press` the way the element is: the copy runs on a
+    /// background queue and a short dictation can be transcribed before it
+    /// lands, so frozen early it would be frozen empty. The run is unique to
+    /// one press, so matching on it is the same guarantee, made later.
     private var screenAtPress: (run: Int, text: String)?
 
     /// Bumped by every press that starts a dictation. It is what a `Press`
@@ -1075,10 +1077,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // And the press itself, frozen the same way and for the same reason.
         // `pressRun` is still this dictation's here: a press that ends a
         // recording does not bump it — see `handleHotKeyPress`.
-        let press = Press(
-            run: pressRun, element: focus?.element,
-            pane: screenAtPress.flatMap { $0.run == pressRun ? $0.text : nil }
-        )
+        let press = Press(run: pressRun, element: focus?.element)
         Task { [weak self] in
             do {
                 // "Transcribing…" is the truth until the decoder is done, and
@@ -1877,11 +1876,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerPressRun = press.run
         pill.offer(key, for: Self.offerSeconds)
 
-        // Carried on the press, and set only when that press found no caret. A
+        // Taken at the press, and only when that press found no caret. Matched
+        // by run, so it is this dictation's own pane and nobody else's. A
         // remembered anchor is still a guess, and this is what replaces it with
         // the answer.
-        if let pane = press.pane, let element = press.element {
-            findWhereTheWordsLanded(comparedWith: pane, in: element, for: press)
+        if let screen = screenAtPress, screen.run == press.run, let element = press.element {
+            findWhereTheWordsLanded(comparedWith: screen.text, in: element, for: press)
         }
     }
 
