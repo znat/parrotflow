@@ -1,0 +1,21 @@
+# The name judge reading what a `replacements` rule did, with no audio at all.
+#
+# What is scored is attribution: which occurrence of a term a rule wrote.
+# `vocabulary.slots` is the number, and it is the one thing about this stage a
+# fixture can assert — the answer comes from a model and is not deterministic.
+#
+# `max_readings: 1` is how no model is called. The menu is cut to the decoder's
+# own sentence, the stage returns the transcript it was handed, and the run is
+# the same with Ollama up or down. Every case here scores the places the stage
+# found, never what was chosen at them.
+#
+# The prompt is the shipped one, by relative path, because the stage refuses to
+# run without a readable prompt file and a fixture with its own copy would be a
+# second thing to keep in step.
+languages: [en]
+replacements:
+  Vercel: [Versailles]
+pipeline:
+  - replacements
+  - vocabulary: ../../examples/prompts/verify_names.md
+    max_readings: 1
