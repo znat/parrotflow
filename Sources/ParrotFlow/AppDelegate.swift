@@ -1892,11 +1892,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               !text.isEmpty else { return }
 
         // Two dictations can finish out of order — a long prompt stage on the
-        // first, none on the second. The newer one's offer is the one under the
-        // words you are looking at, so an older one arriving after it does not
-        // take the pill back off it.
-        if offerIsUp, let owner = offerPressRun, owner > press.run {
-            Log.write("offer: a newer dictation already has the pill")
+        // first, none on the second. The newer one's offer is the one about the
+        // words you are looking at, so an older one arriving after it never
+        // gets the pill: not while that offer is up, and not after it has
+        // expired either, because reappearing to talk about older text is the
+        // same mistake made a few seconds later. `offerPressRun` is cleared by
+        // the next press, which is what ends the ordering.
+        if let owner = offerPressRun, owner > press.run {
+            Log.write("offer: a newer dictation has already had the pill")
             return
         }
 
