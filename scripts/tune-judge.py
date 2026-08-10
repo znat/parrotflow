@@ -166,12 +166,12 @@ def ask(model, system, options, scores="", logprobs=False, lead=""):
 
 
 def chosen(reply, count):
-    """The letter a reply names, read exactly as the app reads it.
+    """The letter a reply names, the way the retired judge read it.
 
-    This is `VocabularyJudge.chosen` in Sources/, in Python. The two must agree:
-    a harness that reads "Option B" as O while the app reads it as B is scoring
-    a choice the app never made, and every baseline in this file would then
-    describe a judge nobody ships.
+    It was `VocabularyJudge.chosen`, and that function is gone — the app takes
+    KEEP or REVERT now, not a letter. Kept here unchanged because the baselines
+    in this file were measured with it, and rereading old replies by a new rule
+    would move numbers that are supposed to be fixed points.
 
     A letter standing on its own is the answer. `I` goes last among those,
     because it is the one letter of the alphabet that is also an English word —
