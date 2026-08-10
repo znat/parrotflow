@@ -466,7 +466,7 @@ struct Surface {
     /// Nil rather than a refusal when the walk is too long to be worth taking,
     /// so the caller can fall through to its own last resort.
     private func writeByWalkingTheCaret(
-        _ target: NSRange, replacement: String, fragment: String, undo: Undo
+        _ target: NSRange, replacement: String, fragment: Fragment, undo: Undo
     ) -> Outcome? {
         guard var caret = caretOffset() else {
             Log.write("surface: the app will not say where the caret is; cannot walk to the span")
@@ -592,7 +592,7 @@ struct Surface {
     /// Reading once after a guessed delay measures the delay, not the write, and
     /// concluding failure from that is worse than not checking at all: the
     /// recovery then destroys work that was fine.
-    private func settled(on fragment: String) -> Bool {
+    private func settled(on fragment: Fragment) -> Bool {
         // Two and a half seconds, not one.
         //
         // Measured in Outlook: the paste landed and was on screen, and this
@@ -614,7 +614,7 @@ struct Surface {
         // this check being too literal, and neither is a paste that went to the
         // wrong place.
         if let value = SelectionReader.visibleText(of: element) {
-            let replacement = fragment.trimmingCharacters(in: .whitespacesAndNewlines)
+            let replacement = fragment.text.trimmingCharacters(in: .whitespacesAndNewlines)
             Log.write(folded(value).contains(folded(replacement))
                 ? "surface: the text is there but not in the context expected;"
                     + " the read-back is stricter than the edit"
@@ -646,10 +646,12 @@ struct Surface {
     /// text really does repeat itself, the window grows until it does not.
     ///
     /// Folded, because the folded text is what `landed` compares. Capped at the
-    /// whole text before the span, which is as positional as this can get.
+    /// whole text before the span — at which point the leading context reaches
+    /// the start of the value, and `atStart` says so rather than pretending a
+    /// contains still places it.
     private func fragment(
         around range: Range<String.Index>, replacement: String, in updated: String
-    ) -> String {
+    ) -> Fragment {
         let before = content[..<range.lowerBound]
         let beforeCount = before.count
         let trailing = String(content[range.upperBound...].prefix(12))
@@ -658,11 +660,28 @@ struct Surface {
         var context = 12
         while true {
             let leading = String(before.suffix(context))
-            if context >= beforeCount || standsAlone(folded(leading), in: target) {
-                return leading + replacement + trailing
+            // Nothing left to widen with, so the value's own start is the
+            // anchor. This is also the span that begins the field, where there
+            // is no leading context at all and a contains would accept the same
+            // words written anywhere further down.
+            if context >= beforeCount {
+                return Fragment(text: leading + replacement + trailing, atStart: true)
+            }
+            if standsAlone(folded(leading), in: target) {
+                return Fragment(text: leading + replacement + trailing, atStart: false)
             }
             context *= 2
         }
+    }
+
+    /// The text the value must hold for the edit to have happened, and where.
+    private struct Fragment {
+        let text: String
+        /// The leading context reaches the start of the content, so the value
+        /// has to *begin* with this. Containing it is not enough: a span at
+        /// offset zero has nothing in front of it to be recognised by, and an
+        /// identical run later in the field would answer for it.
+        let atStart: Bool
     }
 
     /// Whether `needle` stands in exactly one place in `text`.
@@ -671,9 +690,15 @@ struct Surface {
         return text.range(of: needle, range: first.upperBound..<text.endIndex) == nil
     }
 
-    private func landed(_ fragment: String) -> Bool {
+    private func landed(_ fragment: Fragment) -> Bool {
         guard let value = SelectionReader.visibleText(of: element) else { return false }
-        return folded(value).contains(folded(fragment))
+        let text = folded(value)
+        let needle = folded(fragment.text)
+        guard fragment.atStart else { return text.contains(needle) }
+        // Leading whitespace on both sides, because a rich-text editor can put
+        // a blank line above what it holds and that is not a failed write.
+        return text.drop(while: \.isWhitespace)
+            .starts(with: needle.drop(while: \.isWhitespace))
     }
 
     /// Typographic substitution is not a failed write. Most apps turn a straight
