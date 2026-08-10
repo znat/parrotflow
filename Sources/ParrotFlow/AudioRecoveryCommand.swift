@@ -59,16 +59,17 @@ enum AudioRecoveryCommand {
 
         print("")
         print("Capture after a device change")
-        failures += checkCaptureSurvivesTheChange(config: config) ? 0 : 1
-        failures += checkStaleFormatIsReported(config: config) ? 0 : 1
+        var capture = 0
+        capture += checkCaptureSurvivesTheChange(config: config) ? 0 : 1
+        capture += checkStaleFormatIsReported(config: config) ? 0 : 1
+        capture += checkPartialLossIsRefused(config: config) ? 0 : 1
+        capture += checkOneLostBufferIsForgiven(config: config) ? 0 : 1
+        failures += capture
 
+        let total = cases.count + 4
         print("")
-        if failures == 0 {
-            print("  \(cases.count + 2)/\(cases.count + 2)")
-            return 0
-        }
-        print("  \(cases.count + 2 - failures)/\(cases.count + 2)")
-        return 1
+        print("  \(total - failures)/\(total)")
+        return failures == 0 ? 0 : 1
     }
 
     /// What the two sides of the comparison say about the microphone in front
@@ -252,6 +253,91 @@ enum AudioRecoveryCommand {
         }
         print("  ✓ \("a stale format is reported, not swallowed".padding(toLength: 46, withPad: " ", startingAt: 0)) \"\(reported)\"")
         return true
+    }
+
+    /// How much audio one refused buffer below is worth: 4096 frames at 48 kHz,
+    /// 85 ms. Worked out here from the buffer rather than read off the recorder,
+    /// so the expected number and the measured one come from different places.
+    private static let lostPerBuffer: Double = 4096 / 48000
+
+    /// A recording that lost more than `droppedAudioTolerance` is not handed on.
+    ///
+    /// Good buffers first, then buffers at a format the converter cannot use —
+    /// a device that changed halfway through a sentence. What is on disk is the
+    /// first half. Transcribing it would type half a sentence with nothing to
+    /// say which half is missing.
+    private static func checkPartialLossIsRefused(config: Config) -> Bool {
+        let buffers = 8
+        let name = String(
+            format: "a clip that lost %.2fs is not transcribed",
+            Double(buffers) * lostPerBuffer
+        )
+        let outcome = recordThenLose(buffers: buffers, config: config)
+        if let recording = outcome.recording {
+            try? FileManager.default.removeItem(at: recording.url)
+            return say(false, name, "it was handed on anyway")
+        }
+        guard let reported = outcome.reported else {
+            return say(false, name, "nothing was said")
+        }
+        return say(true, name, "\"\(reported)\"")
+    }
+
+    /// And one that lost a single buffer still is.
+    ///
+    /// This is the ordinary headset disconnect. The recording is stopped by the
+    /// device change, and one buffer can arrive in the new format before that
+    /// stop reaches the main queue. Every word is in the part that was written,
+    /// so refusing the clip would cost the whole dictation to save nothing.
+    private static func checkOneLostBufferIsForgiven(config: Config) -> Bool {
+        let name = String(
+            format: "a clip that lost %.2fs is still transcribed", lostPerBuffer
+        )
+        let outcome = recordThenLose(buffers: 1, config: config)
+        guard let recording = outcome.recording else {
+            return say(false, name, "it was refused")
+        }
+        try? FileManager.default.removeItem(at: recording.url)
+        guard recording.rms >= Recorder.silenceFloor else {
+            return say(false, name, String(format: "rms %.5f", recording.rms))
+        }
+        return say(true, name, String(format: "rms %.3f", recording.rms))
+    }
+
+    /// Twenty good buffers, then `buffers` at a format the converter refuses.
+    private static func recordThenLose(
+        buffers: Int, config: Config
+    ) -> (recording: Recorder.Recording?, reported: String?) {
+        guard let live = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: 24000, channels: 1, interleaved: false
+        ), let other = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false
+        ) else {
+            return (nil, nil)
+        }
+
+        let recorder = Recorder()
+        var reported: String?
+        recorder.onCaptureProblem = { reported = $0 }
+        recorder.currentInput = { nil }
+
+        guard (try? recorder.openCapture(
+            inputFormat: live, config: config, markRecording: true
+        )) != nil else {
+            return (nil, nil)
+        }
+        for _ in 0..<20 { recorder.process(buffer: tone(live, frames: 4096)) }
+        for _ in 0..<buffers { recorder.process(buffer: tone(other, frames: 4096)) }
+
+        let recording = recorder.stop(config: config)
+        settle(untilTrue: { reported != nil }, seconds: 1)
+        return (recording, reported)
+    }
+
+    private static func say(_ ok: Bool, _ name: String, _ detail: String) -> Bool {
+        let padded = name.padding(toLength: 46, withPad: " ", startingAt: 0)
+        print("  \(ok ? "✓" : "✗") \(padded) \(detail)")
+        return ok
     }
 
     // MARK: - Helpers

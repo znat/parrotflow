@@ -120,6 +120,23 @@ final class Recorder {
     /// silence: it cannot fire on speech and cannot miss a dead clip.
     static let silenceFloor: Float = 0.001
 
+    /// How much lost audio a clip can carry and still be worth transcribing.
+    ///
+    /// Neither zero nor unbounded, and both ends have a cost.
+    ///
+    /// Not zero, because a device change ends a recording through
+    /// `onUnexpectedStop`, and the tap can deliver a buffer in the new format
+    /// before that hop reaches the main queue — one 4096-frame buffer, about
+    /// 85 ms at 48 kHz and 170 ms at 24 kHz. Refusing a whole dictation over
+    /// that would throw away every word of a take whose words all arrived, on
+    /// every headset that disconnects itself.
+    ///
+    /// Not unbounded, because past a certain hole the transcript is a sentence
+    /// with words missing and nothing to say which — the failure this file is
+    /// about, delivered as text instead of as nothing. 0.3s is two of those
+    /// buffers and no more.
+    static let droppedAudioTolerance: TimeInterval = 0.3
+
     /// How long a hotkey press waits for an engine that is still being built.
     ///
     /// A settled device rebuilds in about 0.1s, so this covers every rebuild
@@ -193,16 +210,18 @@ final class Recorder {
     private var targetFormat: AVAudioFormat?
     private var currentURL: URL?
     private var smoothedLevel: Float = 0
-    /// Frames written, sum of squares, buffers the converter refused and buffers
-    /// the file refused — all guarded by `writeLock`, so `stop` reads totals
-    /// that match the file it is about to hand back.
+    /// What reached disk, what did not, and why — all guarded by `writeLock`, so
+    /// `stop` reads totals that match the file it is about to hand back.
     ///
     /// `capturedFrames` counts what reached disk, not what reached the
-    /// converter. The two are the same until a write fails, and on that day the
-    /// difference is a clip that reports a healthy level and holds less audio
-    /// than was spoken.
+    /// converter. The two are the same until something fails, and on that day
+    /// the difference is a clip that reports a healthy level and holds less
+    /// audio than was spoken. `droppedFrames` is that difference, in frames at
+    /// the output rate, so `stop` can say how many seconds went missing rather
+    /// than how many buffers.
     private var capturedFrames: Int64 = 0
     private var capturedEnergy: Double = 0
+    private var droppedFrames: Int64 = 0
     private var refusedBuffers: Int = 0
     private var failedWrites: Int = 0
 
@@ -358,6 +377,7 @@ final class Recorder {
         writeLock.lock()
         capturedFrames = 0
         capturedEnergy = 0
+        droppedFrames = 0
         refusedBuffers = 0
         failedWrites = 0
         writeLock.unlock()
@@ -399,6 +419,7 @@ final class Recorder {
         let energy = capturedEnergy
         let refused = refusedBuffers
         let failed = failedWrites
+        let dropped = droppedFrames
         writeLock.unlock()
 
         teardown()
@@ -437,20 +458,30 @@ final class Recorder {
             return nil
         }
 
-        // Some buffers were converted and never reached the file. What is on
-        // disk is shorter than what was said, so transcribing it would type a
-        // sentence with words missing and nothing to say which ones — the
-        // silent failure this whole change is about, delivered as text instead
-        // of as nothing. It is not handed on.
+        // Audio that was spoken and is not in the file. Two ways to lose it and
+        // the same consequence: the converter refused a buffer because its
+        // input format is no longer the device's, or the file refused a write.
+        // Both leave the clip shorter than what was said.
+        //
+        // Always said out loud, however little was lost — the whole point of
+        // #95 is that this used to be the silent path.
+        let lost = Double(dropped) / config.audio.sampleRate
+        if dropped > 0 {
+            Log.write(String(
+                format: "recording lost %.2fs — %d buffer(s) refused by the converter,"
+                + " %d by the file", lost, refused, failed
+            ))
+        }
+        // Past the tolerance the hole is big enough to be a word, and a
+        // transcript with a word missing and nothing to say which one is the
+        // failure this file is about, delivered as text instead of as nothing.
+        // So it is not handed on.
         //
         // The file stays where it is. It is the evidence of what went wrong,
         // and deleting it is the opposite of useful — the same reason
         // `cancelDictation` leaves a cancelled clip alone.
-        if failed > 0 {
-            Log.write(
-                "recording dropped \(failed) buffer(s) on the way to the file — "
-                + "\(url.lastPathComponent) is short and will not be transcribed"
-            )
+        if lost > Self.droppedAudioTolerance {
+            Log.write("\(url.lastPathComponent) is short and will not be transcribed")
             report("Part of that recording was lost. Say it again.")
             return nil
         }
@@ -535,8 +566,13 @@ final class Recorder {
             // so a length check cannot see it — measured 3754 frames at rms
             // 0.00000 converting a 24 kHz buffer through a 48 kHz converter.
             // Counted rather than dropped in silence: this is #95.
+            //
+            // The frame count comes from the input buffer and the ratio, not
+            // from `outBuffer`, whose length on this path describes a
+            // conversion that did not happen.
             writeLock.lock()
             refusedBuffers += 1
+            droppedFrames += Int64(Double(buffer.frameLength) * ratio)
             writeLock.unlock()
             return
         }
@@ -558,6 +594,7 @@ final class Recorder {
                 capturedEnergy += Double(rms) * Double(rms) * Double(outBuffer.frameLength)
             } catch {
                 failedWrites += 1
+                droppedFrames += Int64(outBuffer.frameLength)
             }
         }
         writeLock.unlock()
