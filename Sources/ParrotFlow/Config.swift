@@ -65,32 +65,6 @@ struct Config: Decodable, Equatable {
     /// It is maintained by the app rather than by hand — see `Vocabulary`.
     var vocabulary: Vocabulary = Vocabulary()
 
-    /// The directory this config was read from, when the decoder was told.
-    ///
-    /// A transform resolves its files through `TransformFolder`, which has a
-    /// name to hang them on. A `vocabulary:` stage has only a filename, so it
-    /// needs the directory itself. Nil for a `Config()` built in code, and
-    /// `ConfigStore.directory` is the answer then — see `promptFile`.
-    var directory: URL?
-
-    /// A prompt file a stage named, read.
-    ///
-    /// Relative to the directory the config came from, so a config carries its
-    /// prompts beside it the way it already carries its transforms. An absolute
-    /// path or one starting `~` is its own answer.
-    func promptFile(_ path: String) -> String? {
-        let written = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !written.isEmpty else { return nil }
-        let url: URL
-        if written.hasPrefix("/") || written.hasPrefix("~") {
-            url = URL(fileURLWithPath: (written as NSString).expandingTildeInPath)
-        } else {
-            url = (directory ?? ConfigStore.directory).appendingPathComponent(written)
-        }
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 
     enum CodingKeys: String, CodingKey {
         case hotkey, audio, feedback, transcription, llm, transforms, prompts, updates
@@ -1653,7 +1627,6 @@ struct Config: Decodable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init()
-        directory = decoder.userInfo[.configDirectory] as? URL
         if let hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) { self.hotkey = hotkey }
         if let audio = try c.decodeIfPresent(Audio.self, forKey: .audio) { self.audio = audio }
         if let feedback = try c.decodeIfPresent(Feedback.self, forKey: .feedback) { self.feedback = feedback }

@@ -132,11 +132,6 @@ enum PipelineCommand {
         config.transforms = fixture.transforms
         if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
         if let llm = fixture.llm { config.llm = llm }
-        // A relative path in a fixture is relative to the fixture, the same way
-        // a `command:` is. A `vocabulary:` stage names a prompt file that way,
-        // and without this it would be looked for beside whatever config this
-        // machine happens to have — which is the thing fixtures exist to avoid.
-        config.directory = url.deletingLastPathComponent()
 
         // The fixture's own table is checked too, not just its stage list — a
         // template naming a group the pattern never captures is refused here
