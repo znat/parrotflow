@@ -720,9 +720,12 @@ enum VocabularyJudge {
     /// Nothing is written here. Each match becomes one more change for the
     /// model to vote on.
     ///
-    /// - Parameter rules: every rule, vocabulary and otherwise. A pattern rule
-    ///   names no spelling to be near, and a deletion names no term, so both
-    ///   are skipped.
+    /// - Parameter rules: the vocabulary's rules — `Config.vocabularyRules`.
+    ///   Not `transcription.rules`: those are a table somebody wrote for
+    ///   themselves, and widening them by an edit is a different decision from
+    ///   widening a rendering the app learnt. A pattern rule names no spelling
+    ///   to be near, and a deletion names no term, so both are skipped here
+    ///   whatever is passed.
     static func fuzzyParts(
         in text: String, rules: [Config.Transcription.Rule], claimed: [Part]
     ) -> [Part] {
@@ -734,7 +737,11 @@ enum VocabularyJudge {
         var taken = claimed.map(\.range)
         let words = Replacements.wordRanges(in: text)
         for start in words.indices {
-            for count in 1...widest where start + count <= words.count {
+            // Widest window first. `red rock` should claim its span before a
+            // one-word rendering inside it does, and the check below is what
+            // stops the narrower one being offered afterwards.
+            for count in stride(from: widest, through: 1, by: -1)
+            where start + count <= words.count {
                 let span = words[start].lowerBound..<words[start + count - 1].upperBound
                 let word = String(text[span])
                 // A span another part owns is already a question. Overlapping
@@ -831,12 +838,26 @@ enum VocabularyJudge {
     /// this name belong here — so the sentence shown as `after` is the one
     /// where every change has been taken, whether the pass took it or not.
     /// That is also how it was measured.
+    ///
+    /// Left to right and never overlapping, checked here rather than assumed.
+    /// `sentences` and `applying` walk the list with one cursor, so a range
+    /// that starts before the previous one ended would slice the string
+    /// backwards and **trap** — losing the whole dictation, not one name.
+    /// `slots` merges overlaps already; this is what keeps that a local
+    /// property of `slots` instead of a rule every future caller has to know.
     static func changes(in text: String, from slots: [Slot]) -> [Change] {
-        slots.compactMap { slot in
-            guard slot.options.count > 1, slot.options[0] != slot.options[1] else { return nil }
-            return Change(range: slot.range, was: slot.options[0], now: slot.options[1],
-                          terms: slot.terms)
+        var built: [Change] = []
+        for slot in slots.sorted(by: { $0.range.lowerBound < $1.range.lowerBound }) {
+            guard slot.options.count > 1, slot.options[0] != slot.options[1] else { continue }
+            if let last = built.last, slot.range.lowerBound < last.range.upperBound {
+                Log.write("vocabulary judge: \"\(text[slot.range])\" overlaps the place"
+                    + " before it; not offered")
+                continue
+            }
+            built.append(Change(range: slot.range, was: slot.options[0],
+                                now: slot.options[1], terms: slot.terms))
         }
+        return built
     }
 
     /// The sentence with every change taken, and the one with none of them.
