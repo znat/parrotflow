@@ -369,28 +369,42 @@ def group_key(members, scores):
 def load_marks(path):
     """The groups already marked not-counted.
 
-    A file that does not parse stops the run. It must not read as an empty
-    list: the next `--mark` writes the whole file back, so treating a corrupt
-    file as "no marks" throws away every decision the speaker has made. Those
-    decisions came from listening, and nothing here can reconstruct them. A
-    missing file is different and is genuinely no marks.
+    Anything the file says that this cannot read stops the run — a bad parse, a
+    `not_counted` that is not a list, an entry that is not an object, an entry
+    with no clip names. It must not read as an empty list: the next `--mark`
+    writes the whole file back, so treating a corrupt file as "no marks" throws
+    away every decision the speaker has made. Those decisions came from
+    listening, and nothing here can reconstruct them. A missing file is
+    different and is genuinely no marks.
+
+    Refusing the whole file rather than the bad entry is the point. Dropping
+    one entry and saving would delete it, which is the same loss in smaller
+    pieces.
     """
+    def refuse(why):
+        print(f"✗ {path}: {why}", file=sys.stderr)
+        print("  It has not been changed. Fix it or move it aside; marking "
+              "now would overwrite every decision in it.", file=sys.stderr)
+        raise SystemExit(2)
+
     if not path or not Path(path).exists():
         return []
     try:
         blob = json.loads(Path(path).read_text())
     except ValueError as error:
-        print(f"✗ {path} is not readable JSON: {error}", file=sys.stderr)
-        print("  It has not been changed. Fix it or move it aside; marking "
-              "now would overwrite every decision in it.", file=sys.stderr)
-        raise SystemExit(2)
-    marks = blob.get("not_counted")
-    if not isinstance(marks, list):
-        print(f"✗ {path} has no `not_counted` list.", file=sys.stderr)
-        print("  It has not been changed. Same reason as above.",
-              file=sys.stderr)
-        raise SystemExit(2)
-    return marks
+        refuse(f"not readable JSON: {error}")
+    if not isinstance(blob, dict) or not isinstance(blob.get("not_counted"), list):
+        refuse("no `not_counted` list")
+    for n, mark in enumerate(blob["not_counted"]):
+        if not isinstance(mark, dict):
+            refuse(f"entry {n} is {type(mark).__name__}, not an object")
+        clips = mark.get("clips")
+        if not isinstance(clips, list) or not clips:
+            refuse(f"entry {n} ({mark.get('id') or mark.get('group') or '?'}) "
+                   "has no `clips` list")
+        if not all(isinstance(name, str) for name in clips):
+            refuse(f"entry {n} has a clip name that is not a string")
+    return blob["not_counted"]
 
 
 def save_marks(path, marks):
@@ -528,13 +542,15 @@ def report(clips, ee, terms, marks, out_dir, robust, marks_path):
 
 # ------------------------------------------------------- what a mark would cost
 
-def effect(clips, ee, marks, terms, veto_cache, robust):
+def effect(clips, ee, marks, terms, veto_cache, robust, with_veto):
     """What marking a group not-counted does, so the decision has a consequence.
 
-    Two levels. The spread is computable from the clips alone and is always
-    printed. The veto is the rule's own decision and needs labelled spans, so
-    it needs the harness data `reference-matching.py` uses; without it the
-    section says so and stops.
+    Two levels, and the second is opt-in for a reason. The spread comes off the
+    clips alone, is already computed, and is always printed. The veto is the
+    rule's own decision on labelled spans, which means a 170 × 122 distance
+    matrix — five minutes the first time, and it needs harness data the voice
+    store does not contain. Running it on every report would make marking one
+    group slow down every run after it, so it waits for `--veto`.
     """
     excluded = marked_names(marks)
     if not excluded:
@@ -557,6 +573,12 @@ def effect(clips, ee, marks, terms, veto_cache, robust):
         before, after = spread(bank, ee, robust), spread(kept, ee, robust)
         print(f"  {term:<12} {len(bank):>4} -> {len(kept):<4}  "
               f"{before:>7.3f} -> {after:<7.3f}")
+
+    if not with_veto:
+        print("\n  `--veto` adds what this does to the rule's own rejection")
+        print("  counts. It builds a 170 × 122 span matrix, so it is opt-in;")
+        print("  `--veto-cache FILE` keeps it between runs.")
+        return
 
     print("\n  and what that does to the rule, on the labelled spans")
     got = veto_arms(clips, marks, veto_cache, robust)
@@ -957,7 +979,7 @@ def main():
         save_marks(args.marks, marks)
         print(f"unmarked {gone} clip(s); they count again")
         effect(clips, ee, marks, sorted({c["term"] for c in clips}),
-               args.veto_cache, args.robust)
+               args.veto_cache, args.robust, args.veto)
         return 0
 
     if args.mark:
@@ -996,7 +1018,7 @@ def main():
         print(f"In production this file is `voice/excluded.json` beside "
               f"`observations.jsonl`, read by whatever builds a bank.")
         effect(clips, ee, marks, sorted({c["term"] for c in clips}),
-               args.veto_cache, args.robust)
+               args.veto_cache, args.robust, args.veto)
         return 0
 
     terms = sorted({c["term"] for c in clips})
@@ -1018,7 +1040,7 @@ def main():
 
     report(clips, ee, terms, marks, args.concat, args.robust, args.marks)
     if marks or args.veto:
-        effect(clips, ee, marks, terms, args.veto_cache, args.robust)
+        effect(clips, ee, marks, terms, args.veto_cache, args.robust, args.veto)
     return 0
 
 
