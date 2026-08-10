@@ -703,6 +703,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // next one would pick it up.
                     guard let self, self.pressRun == run, let before else { return }
                     self.screenAtPress = (run, before)
+
+                    // A short dictation can be transcribed and pasted before
+                    // this copy finishes, and then the offer went up without a
+                    // pane to compare against. This is the only other moment
+                    // the search can start, so it starts here — for this press
+                    // alone, and only while this press still owns the offer.
+                    guard self.offerIsUp, self.offerPressRun == run, let element
+                    else { return }
+                    self.findWhereTheWordsLanded(comparedWith: before, in: element, for: run)
                 }
             }
         }
@@ -1881,7 +1890,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // remembered anchor is still a guess, and this is what replaces it with
         // the answer.
         if let screen = screenAtPress, screen.run == press.run, let element = press.element {
-            findWhereTheWordsLanded(comparedWith: screen.text, in: element, for: press)
+            findWhereTheWordsLanded(comparedWith: screen.text, in: element, for: press.run)
         }
     }
 
@@ -1903,7 +1912,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// started while this one is still looking cannot redirect it — and the
     /// offer it moves has to still be the one that press raised.
     private func findWhereTheWordsLanded(
-        comparedWith before: String, in element: AXUIElement, for press: Press
+        comparedWith before: String, in element: AXUIElement, for run: Int
     ) {
         let deadline = Date().addingTimeInterval(0.5)
         // Off the main thread, because the thing being read can be enormous:
@@ -1919,7 +1928,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // offer may have expired, or another dictation may have raised
                 // its own — and then the pill this would move is not the one
                 // these words are under.
-                guard let self, self.offerIsUp, self.offerPressRun == press.run
+                guard let self, self.offerIsUp, self.offerPressRun == run
                 else { return }
                 switch outcome {
                 case .found(let found):
