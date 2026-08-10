@@ -49,10 +49,20 @@ enum CaretAnchor {
     }
 
     struct Found {
+        /// Where the pill goes: the caret's row, the pane's left edge and
+        /// width. See `across`.
+        ///
         /// In Cocoa screen coordinates — origin bottom-left, y upward. The
         /// accessibility API works top-left with y downward, and the flip
         /// happens here so no caller has to remember it.
         let rect: NSRect
+        /// The text's own rectangle, before the column was taken from the pane.
+        ///
+        /// Which display the pill belongs on is decided from this and not from
+        /// `rect`: a pane can straddle two monitors, the caret is only ever on
+        /// one of them, and the wider rectangle can have most of its area on
+        /// the monitor the words are not on. Same coordinates as `rect`.
+        let text: NSRect
         let source: Source
     }
 
@@ -82,7 +92,10 @@ enum CaretAnchor {
 
         if let selection = selectedRange(of: element), trust(selection, in: element),
            let rect = bounds(of: selection, in: element) {
-            return .found(Found(rect: flipped(across(rect, pane)), source: .caret))
+            let text = flipped(rect)
+            return .found(Found(
+                rect: across(text, pane.map(flipped)), text: text, source: .caret
+            ))
         }
 
         // The control's own rectangle, but only when it is small enough to be
@@ -91,7 +104,9 @@ enum CaretAnchor {
         // the *window*, halfway down the screen — a third place for the pill to
         // be, and less predictable than either of the other two.
         if let pane, pane.height <= 120 {
-            return .found(Found(rect: flipped(pane), source: .field))
+            // The box is standing in for the caret, so it is both.
+            let box = flipped(pane)
+            return .found(Found(rect: box, text: box, source: .field))
         }
         return .missed(pane == nil ? "no geometry" : "no caret, and the pane is too big to stand in for one")
     }
@@ -185,9 +200,12 @@ enum CaretAnchor {
     /// edge of the pane does not move. It is not where the caret is, and it is
     /// the same place on every dictation, which is the property that matters
     /// for a surface you glance at.
-    private static func across(_ rect: CGRect, _ pane: CGRect?) -> CGRect {
+    ///
+    /// Both rectangles are already flipped, and flipping only moves y, so
+    /// widening before the flip and after it give the same answer.
+    private static func across(_ rect: NSRect, _ pane: NSRect?) -> NSRect {
         guard let pane else { return rect }
-        return CGRect(x: pane.minX, y: rect.minY, width: pane.width, height: rect.height)
+        return NSRect(x: pane.minX, y: rect.minY, width: pane.width, height: rect.height)
     }
 
     /// Accessibility measures from the top-left of the primary display with y

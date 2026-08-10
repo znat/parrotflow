@@ -86,7 +86,7 @@ final class PillHUD {
     /// Where this dictation's words are going, set at the press by `aim(at:)`.
     /// Every state reads it while the pill is up, and `fadeOut` clears it, so
     /// one dictation never inherits the aim of the last.
-    private var near: NSRect?
+    private var near: CaretAnchor.Found?
 
     /// One number for the whole surface: the rise, the morph and the fade.
     ///
@@ -137,7 +137,7 @@ final class PillHUD {
     /// stayed where the dictation started is easier to explain than one that
     /// jumps halfway through.
     func aim(at anchor: CaretAnchor.Found?) {
-        near = anchor?.rect
+        near = anchor
         guard let anchor else { return }
         Log.write(String(
             format: "pill: %@ at %.0f,%.0f %.0fx%.0f",
@@ -364,10 +364,15 @@ final class PillHUD {
         // screen would put the pill on a display the words are not on. Worse,
         // the frame is recomputed on every state change, so the pill would
         // change monitors mid-dictation because the mouse was nudged.
+        //
+        // Chosen from `text` rather than from `rect`, because `rect` is as wide
+        // as the pane and a pane can straddle two monitors — most of it can be
+        // on the display the caret is not on. `beside` then clamps the pane's
+        // left edge into the screen that does hold the caret.
         if let near {
-            guard let visible = screen(showing: near)?.visibleFrame
+            guard let visible = screen(showing: near.text)?.visibleFrame
             else { return panel?.frame.origin ?? .zero }
-            return beside(near, size: size, on: visible)
+            return beside(near.rect, size: size, on: visible)
         }
         guard let visible = screenUnderPointer()?.visibleFrame
         else { return panel?.frame.origin ?? .zero }
