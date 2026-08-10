@@ -67,6 +67,12 @@ the pass, and a numbered list of what changed. It takes one KEEP or REVERT per
 change and puts the reverted words back itself. The model never writes the
 transcript, so it cannot tidy the grammar on the way past.
 
+**A place the pass only proposed is shown as a change too.** With
+`vocabulary.acoustic: true` the sound-matching pass hands over spans it has not
+written, and the text still holds the decoder's word there. The question is the
+same either way — does this name belong here — so `after` is the sentence with
+every change taken, whether the pass took it or not, and KEEP is what writes it.
+
 A rule in `replacements:` is judged too, so a name a rule wrote for a word you
 meant literally can be undone. The app works out which occurrences the rule
 wrote by comparing the transcript before and after it. When two rules write the

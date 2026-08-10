@@ -110,10 +110,10 @@ them both: strict enough to be safe it caught 2 of 20 misheard names, and loose
 enough to catch them "in general" became "in Redcrawl".
 
 **`offer_below`** is how far a decoded word's spelling may sit from a term and
-still reach the judge's menu, from 0 to 1, where 1.0 is the term written out
+still be put to the judge, from 0 to 1, where 1.0 is the term written out
 exactly. It decides what is looked at, not what is written. Being offered costs
-a line the model reads; being missed cannot be recovered downstream at any
-price, so it is set low.
+one more change the model answers about; being missed cannot be recovered
+downstream at any price, so it is set low.
 
 **`decide_above`** is how hard the audio has to argue against a reading, in
 nats, before the reading is dropped rather than offered. Raw scores: the
@@ -207,8 +207,8 @@ a term can be confused with:
 Pass only the languages you dictate in. "Praisy" is 0.83 from the English
 "praise" and 0.67 from the French "vrais", so the neighbourhood differs by 0.16
 depending on who is speaking. Under `offer_below` a close neighbour is no
-longer a word that gets overwritten — it is a second line on the menu, and the
-sentence picks.
+longer a word that gets overwritten — it is one more change the judge answers
+about, and the sentence decides.
 
 Two things to check that a word list does not tell you. `NSSpellChecker`
 accepts any all-caps run as a word, so `XQZPT` looks known — ask about the
@@ -232,7 +232,7 @@ out different — falls as the similarity rises:
 
 Measured on the pass that substituted. There was no setting that caught
 everything and broke nothing, which is the finding that split one number into
-two: a damaged clip at 0.65 is now a menu line, not a rewritten word.
+two: a damaged clip at 0.65 is now a question, not a rewritten word.
 
 #### `voice/` — what this machine has heard you say
 
@@ -266,29 +266,35 @@ resemble a term: "blocking merge" became "blocking Vercel".
 
 So the pass no longer substitutes what it is unsure about. It proposes, and the
 `vocabulary:` stage decides — see [The name
-judge](pipelines.md#the-name-judge). The stage builds every sentence the
-proposals allow, asks the local model to pick one by letter, and looks the
-letter up itself; the model never writes the transcript. It runs only when
-something was found — `when: vocabulary.count > 0` — which is about one
-dictation in twenty.
+judge](pipelines.md#the-name-judge). The stage shows the local model the
+sentence the recogniser wrote, the same sentence after the pass, and what
+changed, and takes one KEEP or REVERT per change; the model never writes the
+transcript. It runs only when something was found —
+`when: vocabulary.count > 0`.
 
-The numbers below are from the older shape, one YES/NO question per
-substitution. They are kept because they are what fixed the design: a per-word
-question cannot answer a sentence that says `Versailles` twice and means the
-palace once.
+**How often is not four percent.** Counting the first trace entry per clip, of
+the 190 live dictations whose pipeline had a `vocabulary` stage at all, the
+judge was asked on 77 — 41%. The 4% figure that was here divided by every live
+clip, and most of those predate the stage.
 
-Scored on `tests/judge-cases.yaml` when it held 58 proposals from real
-recordings. The file holds 59 now; the case added in PR 7 was not scored here:
+Scored on 74 substitutions from one speaker's own dictation, `--runs 3`, zero
+flips:
 
-| | approve | decline | overall | latency |
-| --- | --- | --- | --- | --- |
-| a spell-check gate, no model | 17/20 | 38/38 | 95% | 0.00s |
-| gemma4:e4b | 17/20 | 36/38 | 91% | 0.88s |
-| gemma4:12b | 19/20 | 35/38 | 93% | 1.88s |
+| | all | name was said | name was not |
+| --- | --- | --- | --- |
+| one KEEP or REVERT per change | 63/74 | 21/22 | 42/52 |
+| the retired lettered menu | 29/74 | 18/22 | 11/52 |
+| the stage switched off | 22/74 | 22/22 | 0/52 |
+| the vocabulary rules switched off | 52/74 | 0/22 | 52/52 |
 
-The gate scores higher and cannot do the job alone. Its rule is "never replace
-a real word", so it cannot fix `cloud` -> `Claude` or `Versailles` -> `Vercel`.
-Those need the sentence.
+The two bottom rows are the blind controls, and they are the point: a mechanism
+that does not beat its own blind version has not been shown to work. Run it
+with `scripts/judge-verdicts.py`.
+
+An earlier round measured a spell-check gate with no model at 95% on
+`tests/judge-cases.yaml`, above the model. It cannot do the job alone. Its rule
+is "never replace a real word", so it cannot fix `cloud` -> `Claude` or
+`Versailles` -> `Vercel`. Those need the sentence.
 
 Every exchange is written to `trace.jsonl` under the stage's variables, so a
 verdict can be replayed rather than guessed at.
