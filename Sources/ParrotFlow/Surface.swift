@@ -402,8 +402,10 @@ struct Surface {
         // The replacement in the company it is meant to keep. Checking for the
         // replacement alone would accept an append — "…the storethey're"
         // contains "they're" quite happily — so the surrounding characters are
-        // what make this a check rather than a formality.
-        let fragment = self.fragment(around: range, replacement: replacement)
+        // what make this a check rather than a formality. `updated` is what the
+        // value should read afterwards, and the fragment is widened against it
+        // until it names one place there.
+        let fragment = self.fragment(around: range, replacement: replacement, in: updated)
 
         // 1. Set the range, then write the text into it. Disturbs nothing, and
         //    is what a native field accepts.
@@ -623,14 +625,50 @@ struct Surface {
         return false
     }
 
-    /// The replacement with up to 12 characters of its surroundings on each
-    /// side — the shape the value must take for the edit to have happened in
-    /// the place it was asked to happen. An append does not produce it.
-    private func fragment(around range: Range<String.Index>, replacement: String) -> String {
-        let context = 12
-        return String(content[..<range.lowerBound].suffix(context))
-            + replacement
-            + String(content[range.upperBound...].prefix(context))
+    /// The replacement with its surroundings — the shape the value must take for
+    /// the edit to have happened in the place it was asked to happen. An append
+    /// does not produce it.
+    ///
+    /// Twelve characters after the replacement, and at least twelve before it.
+    /// The leading context is widened until it stands in exactly one place in
+    /// the text the edit should produce.
+    ///
+    /// Why widen. `landed` asks whether the value *contains* this, and a
+    /// contains cannot tell one place from another. Twelve characters repeat —
+    /// a list, a table, the same line quoted further down — and a paste that
+    /// misses and lands on the twin then satisfies the check while the place we
+    /// aimed at is untouched. That is the failure this file exists to prevent.
+    /// A leading context standing in one place pins the position, so the
+    /// contains is a question about position again.
+    ///
+    /// Ordinary prose is already unique after twelve characters, so this
+    /// usually returns on the first pass and nothing gets stricter. Where the
+    /// text really does repeat itself, the window grows until it does not.
+    ///
+    /// Folded, because the folded text is what `landed` compares. Capped at the
+    /// whole text before the span, which is as positional as this can get.
+    private func fragment(
+        around range: Range<String.Index>, replacement: String, in updated: String
+    ) -> String {
+        let before = content[..<range.lowerBound]
+        let beforeCount = before.count
+        let trailing = String(content[range.upperBound...].prefix(12))
+        let target = folded(updated)
+
+        var context = 12
+        while true {
+            let leading = String(before.suffix(context))
+            if context >= beforeCount || standsAlone(folded(leading), in: target) {
+                return leading + replacement + trailing
+            }
+            context *= 2
+        }
+    }
+
+    /// Whether `needle` stands in exactly one place in `text`.
+    private func standsAlone(_ needle: String, in text: String) -> Bool {
+        guard !needle.isEmpty, let first = text.range(of: needle) else { return false }
+        return text.range(of: needle, range: first.upperBound..<text.endIndex) == nil
     }
 
     private func landed(_ fragment: String) -> Bool {
