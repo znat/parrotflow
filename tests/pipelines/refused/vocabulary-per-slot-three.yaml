@@ -1,0 +1,13 @@
+# More readings a place than a verdict can express.
+#
+# The judge answers KEEP or REVERT, so a place offers what the decoder wrote
+# and one alternative. `max_per_slot: 3` builds a third reading that nothing
+# ever shows the model.
+#
+# Refused, not clamped. A number quietly rounded down is a configuration that
+# says one thing and does another. Found by review on #102.
+languages: [en]
+pipeline:
+  - replacements
+  - stage: vocabulary
+    max_per_slot: 3

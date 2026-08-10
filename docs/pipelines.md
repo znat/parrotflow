@@ -27,7 +27,7 @@ get every stage back — a missing section is silence, not a choice. Write
 | `fuzzy` | The same table against renderings you have not taught, so "super bays" reaches Supabase. Only words the spell checker does not know are eligible, which is what keeps "Excel" from becoming "Vercel". Needs `replacements` before it and says so if it does not have one, because on its own it swallows the preceding word. |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
-| `vocabulary` | The names the acoustic pass was unsure about, put to the local model as a menu of whole sentences — see [The name judge](#the-name-judge). Names a prompt file. |
+| `vocabulary` | Every substitution the vocabulary pass made, put to the local model one at a time — see [The name judge](#the-name-judge). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
 `numbers` rewrites transcripts that were already correct, so run `--numbers` on
@@ -35,60 +35,104 @@ a line to see exactly what it would do before leaving it in.
 
 ## The name judge
 
-`vocabulary:` decides which of the names the app was unsure about are really
-names. It is a stage rather than a transform because the evidence it needs —
-where each uncertain word sits, and how clearly each spelling was heard — is
-measured during transcription and cannot survive being written to a file.
+`vocabulary:` decides which of the substitutions the app made are really names.
+It is a stage rather than a transform because the evidence it needs — where
+each substituted word sits, and what the decoder wrote there — is measured
+during transcription and cannot survive being written to a file.
 
 ```yaml
-- vocabulary: verify_names.md
+- vocabulary
+```
+
+With anything to say about it, spell the stage out — a list entry is either a
+name or a mapping, and it cannot be both:
+
+```yaml
+- stage: vocabulary
   when: vocabulary.count > 0
-  max_slots: 4        # optional; past this many, keep what the decoder wrote
-  max_readings: 16    # optional; trim the menu to this
-  max_per_slot: 3     # optional; readings per place, the decoder's included
+  fuzzy: true         # optional; default. false matches renderings exactly
+  max_slots: 4        # optional; past this many, keep what the pass wrote
+  max_per_slot: 2     # optional; readings per place, the decoder's included
   max_per_term: 2     # optional; places in one sentence about the same name
 ```
 
-The filename is a prompt beside `config.yaml` — the only part you own. It must
-contain `{terms}`, which is replaced with the vocabulary terms the sentence is
-about. Everything else is mechanical: the app works out which words are
-uncertain, builds every sentence the readings allow, asks the model for a
-letter, and looks the letter up. The model never writes the transcript, so it
-cannot tidy the grammar on the way past.
+`max_per_slot` cannot go above 2. A verdict has two sides, so a place offers
+what the decoder wrote and one alternative; a third reading would be built and
+never shown. Refused rather than rounded down, because a number that says one
+thing and does another teaches nobody anything.
 
-A rule in `replacements:` is offered back too, so a name a rule wrote for a
-word you meant literally can be undone. The app works out which occurrences the
-rule wrote by comparing the transcript before and after it. When two rules
-write the same term into one sentence that comparison cannot say which is
-which, and then neither is offered — the log says so.
+**There is no prompt file, and naming one is an error.** It used to name one
+and you owned it. Nobody should own this one: a wording is right or wrong
+against a measurement, not a matter of taste, and five wordings of one sentence
+in the old prompt scored 38, 39, 40, 41 and 42 on the same cases.
 
-**`max_per_term` is the one to move if menus stop being built.** One name
-reaches a menu from four directions — a rule that already rewrote the text, the
-sound-matching pass, the wider spans it builds around a split name, and the
-keyword spotter hearing the name somewhere else in the clip. Nothing else caps
-the total, so a noisy name can spend every slot on its own and push the count
-past `max_slots`, at which point the whole menu is declined. The cap keeps the
-two best-evidenced places and says in the log which it dropped. Raise it when a
-name really does appear three times in one sentence.
+If your pipeline says `- vocabulary: verify_names.md`, delete the filename. The
+config will not load until you do. It is refused rather than ignored because a
+filename that loads and does nothing is worse: you would edit that file, see
+the judge behave exactly as before, and have nothing to tell you why.
+`max_readings:` is refused for the same reason — it capped the lettered menu,
+which is gone.
+
+It shows the model the sentence the recogniser wrote, the same sentence after
+the pass, and a numbered list of what changed. It takes one KEEP or REVERT per
+change and puts the reverted words back itself. The model never writes the
+transcript, so it cannot tidy the grammar on the way past.
+
+**A place the pass only proposed is shown as a change too.** With
+`vocabulary.acoustic: true` the sound-matching pass hands over spans it has not
+written, and the text still holds the decoder's word there. The question is the
+same either way — does this name belong here — so `after` is the sentence with
+every change taken, whether the pass took it or not, and KEEP is what writes it.
+
+A rule in `replacements:` is judged too, so a name a rule wrote for a word you
+meant literally can be undone. The app works out which occurrences the rule
+wrote by comparing the transcript before and after it. When two rules write the
+same term into one sentence that comparison cannot say which is which, and then
+neither is offered — the log says so.
+
+**`fuzzy:` widens what a `heard:` rendering matches.** On by default. Two
+things, and they are separate mechanisms:
+
+- A word spelled like a rendering but for its apostrophes *is* that rendering.
+  `Praises` in the list and `Praise's` in the transcript is a name lost for one
+  character, because `\bPraises\b` does not match an apostrophe.
+- A word one edit from a rendering, and only when no dictionary knows the word.
+  `Versel` opens a place; "praise" does not, even though it is one edit from
+  `Praises`.
+
+Neither writes anything. Each opens one more place for the model to decide, so
+the risk of the looser match is bounded by the judge rather than by the
+threshold. `fuzzy: false` puts matching back to exact and whole-word.
+
+**`max_per_term` is the one to move if nothing is being judged.** One name
+reaches the list from five directions — a rule that already rewrote the text,
+a fuzzy rendering, the sound-matching pass, the wider spans it builds around a
+split name, and the keyword spotter hearing the name somewhere else in the
+clip. Nothing else caps the total, so a noisy name can spend every place on its
+own and push the count past `max_slots`, at which point the whole sentence is
+declined. The cap keeps the two best-evidenced places and says in the log which
+it dropped. Raise it when a name really does appear three times in one
+sentence.
 
 `when: vocabulary.count > 0` is not optional in practice. Without it the stage
 costs a model call on every dictation, including the ones where nothing was
-uncertain.
+substituted.
 
 **Order matters, and the app refuses the wrong one.** The judge is given spans
 measured on the text the decoder produced. Put `replacements` above it — the
-judge offers a rule's substitution back as a reading, so the rules have to have
-fired — and everything that edits text below it. `--check-config` refuses a
-pipeline that puts `fuzzy`, `numbers` or a transform in between, because a span
-that has moved cannot be told from a span that was always wrong.
+judge offers a rule's substitution back, so the rules have to have fired — and
+everything that edits text below it. `--check-config` refuses a pipeline that
+puts `fuzzy`, `numbers` or a transform in between, because a span that has
+moved cannot be told from a span that was always wrong.
 
-When anything goes wrong — no prompt file, the model unreachable, a reply that
-names no option, more uncertain places than `max_slots` — the transcript ships
-exactly as it arrived and the reason is in the log.
+When anything goes wrong — the model unreachable, a reply naming no change,
+more places than `max_slots` — the transcript ships exactly as it arrived and
+the reason is in the log. Every failure lands the same way: what the pass wrote
+is what you get.
 
-It publishes `vocabulary.asked` (how many readings were on the menu),
-`vocabulary.slots`, `vocabulary.kept_as_decoded` (the places it left alone) and
-`vocabulary.judged` (the sentence it chose).
+It publishes `vocabulary.asked` (how many changes were put to the model),
+`vocabulary.slots`, `vocabulary.reverted` (the substitutions it undid, as
+`term -> word`) and `vocabulary.judged` (the sentence it settled on).
 
 ## Transforms
 

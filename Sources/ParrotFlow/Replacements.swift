@@ -204,7 +204,12 @@ enum Replacements {
 
     // MARK: - Helpers
 
-    private static func wordRanges(in text: String) -> [Range<String.Index>] {
+    /// Every word in the text, apostrophes included so `Praise's` is one word.
+    ///
+    /// Not private: `VocabularyJudge.fuzzyParts` walks the same words, and two
+    /// definitions of "a word" in one transcript is how a span ends up in one
+    /// pass and not the other.
+    static func wordRanges(in text: String) -> [Range<String.Index>] {
         guard let pattern = try? NSRegularExpression(pattern: "[\\p{L}\\p{N}']+") else { return [] }
         return pattern
             .matches(in: text, range: NSRange(text.startIndex..., in: text))

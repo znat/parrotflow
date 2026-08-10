@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+# Scores `VocabularyJudge.verdicts` against tests/verdict-cases.yaml.
+#
+#   scripts/check-verdicts.sh
+#
+# The question is what the judge reads out of a model's reply. A reply read
+# wrongly is a name written into somebody's sentence, or a name taken out of
+# one, with no menu behind it and nothing that says so.
+#
+# Failures are split, because they are not equally expensive. Reading REVERT
+# where the model said KEEP takes a name the pass had right out of the
+# transcript. Reading KEEP where it said REVERT leaves the transcript as the
+# pass wrote it, which is where every other failure in this stage lands too.
+# The first is the direction worth watching.
+#
+# Runs against a scratch PARROTFLOW_CONFIG_DIR, so it says nothing about the
+# config on the machine and scores the same anywhere. `--verdicts` reads no
+# config, but the binary creates one on any path that loads it.
+set -uo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BIN="$ROOT/.build/release/ParrotFlow"
+[ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
+
+CONFIG="$(mktemp -d -t parrotflow-verdicts)"
+trap 'rm -rf "$CONFIG"' EXIT
+export PARROTFLOW_CONFIG_DIR="$CONFIG"
+
+pass=0; total=0; lost=0; kept=0
+
+# Unit separator, not a tab. A tab is whitespace, so bash collapses two of
+# them into one and the empty-reply case arrives with its fields shifted along.
+while IFS=$'\x1f' read -r name count reply expect; do
+  [ -z "$name" ] && continue
+  total=$((total + 1))
+  # The reply arrives with newlines escaped, because a case is one line here.
+  got="$("$BIN" --verdicts "$count" "$(printf '%b' "$reply")" 2>/dev/null)"
+
+  if [ "$got" = "$expect" ]; then
+    pass=$((pass + 1))
+    printf '  ✓ %-46s %s\n' "$name" "$got"
+    continue
+  fi
+
+  # Which direction it went wrong in, counted from the words themselves: a
+  # REVERT this read where the case wanted KEEP is a name lost.
+  if [ "$(printf '%s' "$got" | grep -o REVERT | wc -l)" \
+     -gt "$(printf '%s' "$expect" | grep -o REVERT | wc -l)" ]; then
+    lost=$((lost + 1)); why="undid a substitution the reply did not"
+  else
+    kept=$((kept + 1)); why="kept a substitution the reply undid"
+  fi
+  printf '  ✗ %-46s got [%s], want [%s]  (%s)\n' "$name" "$got" "$expect" "$why"
+done < <(python3 -c '
+import sys, yaml
+for case in yaml.safe_load(open(sys.argv[1]))["cases"]:
+    reply = case["reply"].replace("\\", "\\\\").replace("\n", "\\n")
+    print("\x1f".join([case["name"], str(case["count"]), reply, case["expect"]]))
+' "$ROOT/tests/verdict-cases.yaml")
+
+echo
+# A set that read no cases is not a passing run. Nothing above fails when the
+# case file is missing or will not parse: the loop simply never runs, and
+# `0 = 0` reports green. That is the one failure this script must not have.
+if [ "$total" -eq 0 ]; then
+  echo "  ✗ no cases read from tests/verdict-cases.yaml"
+  exit 1
+fi
+
+printf '  %d/%d  (tests/verdict-cases.yaml)\n' "$pass" "$total"
+[ "$lost" -gt 0 ] && printf '    %d undid a substitution the reply did not  ← the expensive direction\n' "$lost"
+[ "$kept" -gt 0 ] && printf '    %d kept a substitution the reply undid\n' "$kept"
+[ "$pass" = "$total" ]

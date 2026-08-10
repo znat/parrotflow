@@ -582,6 +582,68 @@ cases:
       replacements.changes: ""
       vocabulary.slots: 0
 
+  # --- fuzzy renderings --------------------------------------------------------
+  #
+  # See tests/pipelines/vocabulary-fuzzy.yaml. Two mechanisms under one option:
+  # a word spelled like a rendering but for its apostrophes, and a word one
+  # edit away that no dictionary knows.
+
+  # `vocabulary.count` matters as much as the place does. It is what
+  # `when: vocabulary.count > 0` reads, so a term that only a fuzzy match
+  # reaches has to raise it — otherwise the stage this option is for never runs
+  # in the config anybody actually has.
+  - name: a rendering an apostrophe away opens a place, and counts
+    pipeline: vocabulary-fuzzy
+    input: She deserves Praise's work
+    expect: unchanged
+    expect_vars:
+      replacements.changes: ""
+      vocabulary.changes: ""
+      vocabulary.count: 1
+      vocabulary.slots: 1
+
+  - name: the same rendering, matched exactly, opens none and counts none
+    pipeline: vocabulary-exact
+    input: She deserves Praise's work
+    expect: unchanged
+    expect_vars:
+      vocabulary.count: 0
+      vocabulary.slots: 0
+
+  - name: a rendering one edit away opens a place
+    pipeline: vocabulary-fuzzy
+    input: our app is deployed on Versel
+    expect: unchanged
+    expect_vars:
+      vocabulary.slots: 1
+
+  - name: one edit away, matched exactly, opens none
+    pipeline: vocabulary-exact
+    input: our app is deployed on Versel
+    expect: unchanged
+    expect_vars:
+      vocabulary.slots: 0
+
+  # The gate that makes one edit affordable. "praise" is one edit from
+  # `Praises` and is a word this speaker says 111 times in their own archive.
+  # The spell checker knows it, so nothing here touches it.
+  - name: a word the dictionary knows is never matched by edit distance
+    pipeline: vocabulary-fuzzy
+    input: We should praise the work that was done
+    expect: unchanged
+    expect_vars:
+      vocabulary.slots: 0
+
+  # A rule that fired already owns its span, and the term it wrote is not then
+  # matched back against the rendering it came from.
+  - name: a rule that fired is not offered a second time by the fuzzy pass
+    pipeline: vocabulary-fuzzy
+    input: our app is deployed on Versal
+    expect: our app is deployed on Vercel
+    expect_vars:
+      replacements.changes: Versal -> Vercel
+      vocabulary.slots: 1
+
 # Pipelines that must not load at all.
 #
 # Scored separately because the property is different: these never reach a
@@ -622,12 +684,26 @@ refused:
     pipeline: vocabulary-after-edit
     expect_problem: which rewrite the transcript
 
-  - name: a name judge with no prompt file is refused
-    pipeline: vocabulary-no-prompt
-    expect_problem: names no prompt file
-
   # A cap below 1 silences the stage on every transcript. Refused by name, so
-  # the reader learns which of the four numbers they typed.
-  - name: a menu cap of zero is refused and named
+  # the reader learns which of the numbers they typed.
+  - name: a cap of zero is refused and named
     pipeline: vocabulary-cap-zero
     expect_problem: max_per_term is 0
+
+  # The prompt is compiled in. Every config written before that names a file,
+  # and the file is refused rather than ignored — see the fixture.
+  - name: a vocabulary stage naming a prompt file is refused
+    pipeline: vocabulary-prompt-file
+    expect_problem: names a prompt file
+
+  # A verdict has two sides, so a place cannot offer three readings. Found by
+  # review on #102: the third was built and then silently dropped.
+  - name: more readings a place than a verdict can express is refused
+    pipeline: vocabulary-per-slot-three
+    expect_problem: max_per_slot is 3
+
+  # The same failure in the other retired knob: a number that loads and does
+  # nothing, because the menu it capped is gone.
+  - name: a cap on the retired menu is refused
+    pipeline: vocabulary-max-readings
+    expect_problem: max_readings is 16

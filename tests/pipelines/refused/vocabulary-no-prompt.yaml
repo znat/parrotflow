@@ -1,9 +1,0 @@
-# A name judge with no prompt to ask with.
-#
-# `- stage: vocabulary` parses, so without this the stage would sit in the
-# pipeline and decline on every transcript — which reads as the judge being
-# broken rather than as a line missing a filename.
-languages: [en]
-pipeline:
-  - replacements
-  - stage: vocabulary

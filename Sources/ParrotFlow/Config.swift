@@ -65,32 +65,6 @@ struct Config: Decodable, Equatable {
     /// It is maintained by the app rather than by hand — see `Vocabulary`.
     var vocabulary: Vocabulary = Vocabulary()
 
-    /// The directory this config was read from, when the decoder was told.
-    ///
-    /// A transform resolves its files through `TransformFolder`, which has a
-    /// name to hang them on. A `vocabulary:` stage has only a filename, so it
-    /// needs the directory itself. Nil for a `Config()` built in code, and
-    /// `ConfigStore.directory` is the answer then — see `promptFile`.
-    var directory: URL?
-
-    /// A prompt file a stage named, read.
-    ///
-    /// Relative to the directory the config came from, so a config carries its
-    /// prompts beside it the way it already carries its transforms. An absolute
-    /// path or one starting `~` is its own answer.
-    func promptFile(_ path: String) -> String? {
-        let written = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !written.isEmpty else { return nil }
-        let url: URL
-        if written.hasPrefix("/") || written.hasPrefix("~") {
-            url = URL(fileURLWithPath: (written as NSString).expandingTildeInPath)
-        } else {
-            url = (directory ?? ConfigStore.directory).appendingPathComponent(written)
-        }
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
-    }
 
     enum CodingKeys: String, CodingKey {
         case hotkey, audio, feedback, transcription, llm, transforms, prompts, updates
@@ -1237,14 +1211,17 @@ struct Config: Decodable, Equatable {
         /// needs the second key, and a form that repeats itself is a form
         /// people mistype.
         ///
-        ///     - vocabulary: verify_names.md
+        ///     - vocabulary
+        ///     - stage: vocabulary
         ///       when: vocabulary.count > 0
+        ///       fuzzy: false
         ///       max_slots: 4
         struct PipelineEntry: Decodable {
             let name: String
             var transform: String?
             var prompt: String?
             var caps: VocabularyJudge.Caps?
+            var fuzzy: Bool?
             var when: String?
             var unless: String?
             var app: String?
@@ -1252,7 +1229,7 @@ struct Config: Decodable, Equatable {
             var namesBoth = false
 
             private enum CodingKeys: String, CodingKey {
-                case stage, transform, prompt, vocabulary, when, unless, app
+                case stage, transform, prompt, vocabulary, fuzzy, when, unless, app
                 case maxSlots = "max_slots"
                 case maxReadings = "max_readings"
                 case maxPerSlot = "max_per_slot"
@@ -1272,22 +1249,6 @@ struct Config: Decodable, Equatable {
                 if let judged {
                     name = "vocabulary"
                     prompt = judged
-                    var caps = VocabularyJudge.Caps.standard
-                    // Each optional and each on its own: a person raising the
-                    // menu ceiling should not have to restate the rest.
-                    if let slots = try c.decodeIfPresent(Int.self, forKey: .maxSlots) {
-                        caps.slots = slots
-                    }
-                    if let readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings) {
-                        caps.readings = readings
-                    }
-                    if let perSlot = try c.decodeIfPresent(Int.self, forKey: .maxPerSlot) {
-                        caps.perSlot = perSlot
-                    }
-                    if let perTerm = try c.decodeIfPresent(Int.self, forKey: .maxPerTerm) {
-                        caps.perTerm = perTerm
-                    }
-                    self.caps = caps
                     namesBoth = stage != nil || named != nil
                 } else if let named {
                     name = "transform"
@@ -1298,6 +1259,28 @@ struct Config: Decodable, Equatable {
                     namesBoth = stage != nil
                 } else {
                     name = stage ?? ""
+                }
+                // Read off the resolved name rather than off the `vocabulary:`
+                // key, because the key is how the stage used to be spelled and
+                // `- stage: vocabulary` is how it is spelled now that there is
+                // no file to name.
+                if name.caseInsensitiveCompare("vocabulary") == .orderedSame {
+                    var caps = VocabularyJudge.Caps.standard
+                    // Each optional and each on its own: a person raising one
+                    // ceiling should not have to restate the rest.
+                    if let slots = try c.decodeIfPresent(Int.self, forKey: .maxSlots) {
+                        caps.slots = slots
+                    }
+                    if let perSlot = try c.decodeIfPresent(Int.self, forKey: .maxPerSlot) {
+                        caps.perSlot = perSlot
+                    }
+                    if let perTerm = try c.decodeIfPresent(Int.self, forKey: .maxPerTerm) {
+                        caps.perTerm = perTerm
+                    }
+                    // Read only so `Caps.problems` can refuse it by name.
+                    caps.readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings)
+                    self.caps = caps
+                    fuzzy = try c.decodeIfPresent(Bool.self, forKey: .fuzzy)
                 }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
@@ -1442,7 +1425,8 @@ struct Config: Decodable, Equatable {
                             return Pipeline.Step(
                                 stage: stage, transform: entry.transform,
                                 prompt: entry.prompt, caps: entry.caps,
-                                when: entry.when, unless: entry.unless, app: entry.app
+                                fuzzy: entry.fuzzy, when: entry.when,
+                                unless: entry.unless, app: entry.app
                             )
                         }
                         let key = language.lowercased()
@@ -1633,7 +1617,6 @@ struct Config: Decodable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         self.init()
-        directory = decoder.userInfo[.configDirectory] as? URL
         if let hotkey = try c.decodeIfPresent(Hotkey.self, forKey: .hotkey) { self.hotkey = hotkey }
         if let audio = try c.decodeIfPresent(Audio.self, forKey: .audio) { self.audio = audio }
         if let feedback = try c.decodeIfPresent(Feedback.self, forKey: .feedback) { self.feedback = feedback }
@@ -1804,9 +1787,9 @@ struct Config: Decodable, Equatable {
         }
         if legacyJudge {
             said.append("pipelines: `- transform: verify_names` is the old name judge."
-                + " The app does this itself now — write `- vocabulary: verify_names.md`,"
-                + " with the prompt file beside config.yaml")
+                + " The app does this itself now — write `- vocabulary`")
         }
+
 
         // The vocabulary is learnt rather than written, so it is the part of
         // the configuration nobody remembers the contents of. Printed in full.

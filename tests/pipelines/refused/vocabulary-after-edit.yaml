@@ -12,4 +12,4 @@ languages: [en]
 pipeline:
   - replacements
   - numbers
-  - vocabulary: verify_names.md
+  - vocabulary
