@@ -193,12 +193,18 @@ final class Recorder {
     private var targetFormat: AVAudioFormat?
     private var currentURL: URL?
     private var smoothedLevel: Float = 0
-    /// Frames written, sum of squares, and buffers the converter refused — all
-    /// guarded by `writeLock`, so `stop` reads totals that match the file it is
-    /// about to hand back.
+    /// Frames written, sum of squares, buffers the converter refused and buffers
+    /// the file refused — all guarded by `writeLock`, so `stop` reads totals
+    /// that match the file it is about to hand back.
+    ///
+    /// `capturedFrames` counts what reached disk, not what reached the
+    /// converter. The two are the same until a write fails, and on that day the
+    /// difference is a clip that reports a healthy level and holds less audio
+    /// than was spoken.
     private var capturedFrames: Int64 = 0
     private var capturedEnergy: Double = 0
     private var refusedBuffers: Int = 0
+    private var failedWrites: Int = 0
 
     init() {
         observeConfigurationChanges(on: engine)
@@ -353,6 +359,7 @@ final class Recorder {
         capturedFrames = 0
         capturedEnergy = 0
         refusedBuffers = 0
+        failedWrites = 0
         writeLock.unlock()
 
         if markRecording { beginRecording() }
@@ -386,6 +393,7 @@ final class Recorder {
         let frames = capturedFrames
         let energy = capturedEnergy
         let refused = refusedBuffers
+        let failed = failedWrites
         writeLock.unlock()
 
         teardown()
@@ -403,14 +411,20 @@ final class Recorder {
             return nil
         }
 
-        // Nothing at all. The engine was bound to a device that is no longer
-        // there, or to a format that device has left — `refused` tells the two
-        // apart, because a format the converter cannot use is the one that
-        // reports an error on every buffer.
+        // Nothing landed on disk. Three ways to get here, and the counters say
+        // which: the file refused every write, the converter refused every
+        // buffer because its input format is not the device's, or the
+        // microphone sent nothing at all.
         if frames == 0 {
-            let why = refused > 0
-                ? "the converter refused all \(refused) buffer(s) — its input format is not the device's"
-                : "the microphone delivered nothing"
+            let why: String
+            if failed > 0 {
+                why = "none of the \(failed) buffer(s) could be written to the file"
+            } else if refused > 0 {
+                why = "the converter refused all \(refused) buffer(s)"
+                    + " — its input format is not the device's"
+            } else {
+                why = "the microphone delivered nothing"
+            }
             Log.write("recording captured 0 frames — \(why)")
             try? FileManager.default.removeItem(at: url)
             report("Recorded nothing — the microphone was not ready. Press again.")
@@ -419,11 +433,17 @@ final class Recorder {
         }
 
         let rms = Float((energy / Double(frames)).squareRoot())
-        if rms < Self.silenceFloor {
-            // Frames arrived and they are all silence. A different fault from
-            // the one above — a muted device, the wrong microphone, a headset
-            // that connected without its microphone — and the same cost to the
-            // person talking, so it gets the same treatment.
+        if failed > 0 {
+            // Some buffers were converted and never reached the file. What is on
+            // disk is shorter than what was said, and a transcript of it would
+            // be missing words with nothing to say which ones.
+            Log.write("recording dropped \(failed) buffer(s) on the way to the file")
+            report("Part of that recording could not be written to disk.")
+        } else if rms < Self.silenceFloor {
+            // Frames arrived and they are all silence. A different fault again —
+            // a muted device, the wrong microphone, a headset that connected
+            // without its microphone — and the same cost to the person talking,
+            // so it gets the same treatment.
             Log.write(String(format: "recording is silence — rms %.5f over %.2fs", rms, duration))
             report("Recorded silence — check which microphone is selected.")
         } else {
@@ -508,9 +528,21 @@ final class Recorder {
         let rms = Self.rootMeanSquare(of: outBuffer)
 
         writeLock.lock()
-        try? audioFile?.write(from: outBuffer)
-        capturedFrames += Int64(outBuffer.frameLength)
-        capturedEnergy += Double(rms) * Double(rms) * Double(outBuffer.frameLength)
+        // Counted only once it is on disk. Counting a buffer the file refused
+        // would let `stop` report a healthy RMS over a clip that is empty or
+        // short, and hand it to transcription — a silent failure of exactly
+        // the kind this change exists to end, one layer along.
+        // No file at all is a buffer arriving after `teardown`, not a failure:
+        // the recording is already over and `stop` has read these totals.
+        if let audioFile {
+            do {
+                try audioFile.write(from: outBuffer)
+                capturedFrames += Int64(outBuffer.frameLength)
+                capturedEnergy += Double(rms) * Double(rms) * Double(outBuffer.frameLength)
+            } catch {
+                failedWrites += 1
+            }
+        }
         writeLock.unlock()
 
         publishLevel(rms)
