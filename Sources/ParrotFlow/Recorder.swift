@@ -630,21 +630,29 @@ final class Recorder {
         rebuildGroup.enter()
         let started = Date()
 
+        // Held strongly and left in a `defer`, so the group empties however this
+        // block ends — including with the recorder already gone. A rebuild that
+        // finishes without leaving it makes every later press wait 1.5s and
+        // then refuse, forever, which is the wedge this whole change is about.
+        let group = rebuildGroup
         engineQueue.async { [weak self] in
+            defer {
+                self?.finishRebuilding()
+                group.leave()
+            }
             let fresh = AVAudioEngine()
             // The expensive line: instantiating the input node opens the
             // device. Everything after it is cheap.
             _ = fresh.inputNode.outputFormat(forBus: 0)
             fresh.prepare()
-            // If the recorder is gone nobody is left to wait on the group, so
-            // skipping `leave()` here strands nothing.
-            guard let self else { return }
-            self.adopt(fresh, took: Date().timeIntervalSince(started))
-            self.stateLock.lock()
-            self.rebuilding = false
-            self.stateLock.unlock()
-            self.rebuildGroup.leave()
+            self?.adopt(fresh, took: Date().timeIntervalSince(started))
         }
+    }
+
+    private func finishRebuilding() {
+        stateLock.lock()
+        rebuilding = false
+        stateLock.unlock()
     }
 
     /// Waits for an engine that is still being built, and gives up in time to
