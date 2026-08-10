@@ -124,6 +124,11 @@ enum PeekCommand {
         }
         report("selected  \(selected.map { "\"\(preview($0))\"" } ?? "none")")
         report("range     \(rangeDescription(of: element))")
+        // Whether the pill can be put next to the text rather than at a fixed
+        // place on the display. Optional, so this is the line that says which
+        // apps it will work in — see `caretDescription`.
+        report("caret     \(caretDescription(of: element))")
+        report("field     \(fieldDescription(of: element))")
 
         // What the write path will actually be handed. Everything above is raw
         // accessibility; this is the one coordinate space the app edits in, and
@@ -295,6 +300,91 @@ enum PeekCommand {
         var range = CFRange()
         guard AXValueGetValue(wrapped as! AXValue, .cfRange, &range) else { return "unreadable" }
         return "location \(range.location), length \(range.length)"
+    }
+
+    /// Where the caret is on screen, if the app will say.
+    ///
+    /// `kAXBoundsForRange` is a parameterized attribute: hand it the selected
+    /// range and it hands back a screen rect. It is the only way to put a
+    /// surface next to the text rather than at a fixed place on the display,
+    /// and it is optional — an app that draws its own glyphs usually has no
+    /// text tree to answer from, which is most terminals that are not
+    /// Terminal.app or iTerm2.
+    ///
+    /// Reported here rather than measured in a scratch binary because
+    /// Accessibility is granted per app: this one already has it, and a
+    /// freshly built probe run from a terminal only works if that terminal was
+    /// granted too.
+    ///
+    /// The rect is in accessibility's coordinates — origin top-left of the
+    /// primary display, y growing downward. `NSWindow` wants bottom-left, so
+    /// anything that consumes this has a flip to do first. `CaretAnchor` does.
+    private static func caretDescription(of element: AXUIElement) -> String {
+        var names: CFArray?
+        let advertised = AXUIElementCopyParameterizedAttributeNames(element, &names) == .success
+            ? ((names as? [String]) ?? []) : []
+        let listed = advertised.contains(kAXBoundsForRangeParameterizedAttribute as String)
+
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXSelectedTextRangeAttribute as CFString, &value
+        ) == .success, let wrapped = value, CFGetTypeID(wrapped) == AXValueGetTypeID()
+        else { return "no — no selected range to ask about (advertised: \(listed))" }
+
+        var range = CFRange()
+        guard AXValueGetValue(wrapped as! AXValue, .cfRange, &range) else {
+            return "no — the range is unreadable (advertised: \(listed))"
+        }
+
+        // Length zero is a caret rather than a selection, and some apps answer
+        // an empty rect for it. Asking for one character covers both.
+        var asked = CFRange(location: range.location, length: max(1, range.length))
+        guard let parameter = AXValueCreate(.cfRange, &asked) else { return "no — cannot ask" }
+
+        var bounds: CFTypeRef?
+        let error = AXUIElementCopyParameterizedAttributeValue(
+            element, kAXBoundsForRangeParameterizedAttribute as CFString, parameter, &bounds
+        )
+        guard error == .success, let box = bounds, CFGetTypeID(box) == AXValueGetTypeID() else {
+            return "no — AXError \(error.rawValue) (advertised: \(listed))"
+        }
+
+        var rect = CGRect.zero
+        guard AXValueGetValue(box as! AXValue, .cgRect, &rect) else {
+            return "no — answered, but not a rect"
+        }
+        guard rect.width > 0 || rect.height > 0 else {
+            return "no — answered an empty rect at \(Int(rect.minX)),\(Int(rect.minY))"
+        }
+        return String(
+            format: "yes — %d,%d %dx%d",
+            Int(rect.minX), Int(rect.minY), Int(rect.width), Int(rect.height)
+        )
+    }
+
+    /// The fallback if there is no caret: the focused field's own rectangle.
+    /// Enough to put a surface under a one-line input, useless for a document —
+    /// which is why `CaretAnchor` only takes it under 120pt tall.
+    private static func fieldDescription(of element: AXUIElement) -> String {
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        var position: CFTypeRef?
+        var extent: CFTypeRef?
+        let gotPosition = AXUIElementCopyAttributeValue(
+            element, kAXPositionAttribute as CFString, &position
+        ) == .success, gotSize = AXUIElementCopyAttributeValue(
+            element, kAXSizeAttribute as CFString, &extent
+        ) == .success
+        guard gotPosition, gotSize,
+              let positionValue = position, CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              let extentValue = extent, CFGetTypeID(extentValue) == AXValueGetTypeID(),
+              AXValueGetValue(positionValue as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(extentValue as! AXValue, .cgSize, &size)
+        else { return "unavailable" }
+        return String(
+            format: "%d,%d %dx%d",
+            Int(origin.x), Int(origin.y), Int(size.width), Int(size.height)
+        )
     }
 
     private static func preview(_ text: String) -> String {

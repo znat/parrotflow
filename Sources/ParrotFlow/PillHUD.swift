@@ -83,6 +83,11 @@ final class PillHUD {
     private var pendingDismiss: DispatchWorkItem?
     private var isFading = false
 
+    /// Where this dictation's words are going, set at the press by `aim(at:)`.
+    /// Every state reads it while the pill is up, and `fadeOut` clears it, so
+    /// one dictation never inherits the aim of the last.
+    private var near: NSRect?
+
     /// One number for the whole surface: the rise, the morph and the fade.
     ///
     /// The panel frame animates in AppKit and the words crossfade in SwiftUI,
@@ -119,6 +124,28 @@ final class PillHUD {
         set(.offer(label), for: duration)
     }
 
+    /// Point the pill at where the words are going, for this dictation.
+    ///
+    /// Set once, at the press, and read by every state until the pill goes
+    /// away: the recording, the transcribing, and the offer all appear in the
+    /// same place, so nothing moves while you are watching it. Nil puts it back
+    /// at the bottom of the screen, which is where it opened before any of
+    /// this and is the whole of the fallback.
+    ///
+    /// Not re-read later, deliberately. Scroll the window or move focus while
+    /// you are talking and the anchor is stale — but you moved, and a pill that
+    /// stayed where the dictation started is easier to explain than one that
+    /// jumps halfway through.
+    func aim(at anchor: CaretAnchor.Found?) {
+        near = anchor?.rect
+        guard let anchor else { return }
+        Log.write(String(
+            format: "pill: %@ at %.0f,%.0f %.0fx%.0f",
+            anchor.source.rawValue,
+            anchor.rect.minX, anchor.rect.minY, anchor.rect.width, anchor.rect.height
+        ))
+    }
+
     // MARK: - Coming and going
 
     /// Put a state on screen, and take the surface away again after `duration`.
@@ -152,7 +179,7 @@ final class PillHUD {
             morph(to: size)
         } else {
             panel.setContentSize(size)
-            panel.setFrameOrigin(anchor(width: size.width))
+            panel.setFrameOrigin(anchor(size))
             fadeIn(panel)
         }
 
@@ -223,6 +250,11 @@ final class PillHUD {
         } completionHandler: { [weak self] in
             guard let self, self.isFading else { return }
             self.isFading = false
+            // The aim belonged to the dictation that has just ended. A notice
+            // raised later — a config reloaded, an update ready — is about the
+            // app rather than about a place in somebody's document, and would
+            // otherwise inherit a caret that has long since moved.
+            self.near = nil
             panel.orderOut(nil)
             // Back to full strength while off screen, or the next appearance
             // starts from a panel that is already invisible and stays that way.
@@ -239,7 +271,7 @@ final class PillHUD {
     /// resting on.
     private func morph(to size: NSSize) {
         guard let panel else { return }
-        let frame = NSRect(origin: anchor(width: size.width), size: size)
+        let frame = NSRect(origin: anchor(size), size: size)
         guard frame != panel.frame else { return }
 
         NSAnimationContext.runAnimationGroup { context in
@@ -306,23 +338,68 @@ final class PillHUD {
         self.panel = panel
     }
 
-    /// Where a pill of this window width sits: the capsule centred, 96pt off
-    /// the bottom, on the screen the pointer is on — which is the screen you
-    /// are typing into.
+    /// Where a pill of this window size sits: next to the words when this
+    /// dictation has an anchor, and otherwise the capsule centred 96pt off the
+    /// bottom, on the screen the pointer is on — which is the screen you are
+    /// typing into.
     ///
-    /// `width` is the window's, bleed included, so the margin is taken back off
+    /// `size` is the window's, bleed included, so the margin is taken back off
     /// both axes: what has to land at 96pt is the capsule you can see, not the
     /// transparent border the glow spills into.
     ///
     /// Recomputed at every state rather than once at the first show, so a pill
     /// that grows stays centred and one that arrives after you have moved to
     /// the other monitor arrives on that one.
-    private func anchor(width: CGFloat) -> NSPoint {
+    private func anchor(_ size: NSSize) -> NSPoint {
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
         guard let visible = screen?.visibleFrame else { return panel?.frame.origin ?? .zero }
-        return NSPoint(x: visible.midX - width / 2,
+
+        // Every state of a dictation that has an anchor, not just the last one.
+        // The point of aiming the pill is that it says where the words are
+        // going *before* they go there, and a pill that pointed at the caret
+        // only once the words had landed would be reporting rather than
+        // telling you.
+        if let near {
+            return beside(near, size: size, on: visible)
+        }
+        return NSPoint(x: visible.midX - size.width / 2,
                        y: visible.minY + 96 - PillMetrics.bleed)
+    }
+
+    /// Under the line the words are going to land on, at the left edge of the
+    /// pane.
+    ///
+    /// Under rather than over because that is where you are looking and a
+    /// surface above it covers what you just wrote. When there is no room below
+    /// — the last line of a full-height window — it goes above instead, which
+    /// is the one case where covering something is better than being cut off.
+    ///
+    /// The row is the caret's; the column is not. Two versions of this chased
+    /// the horizontal position — centred on the text, then aligned to where it
+    /// starts — and both moved for reasons invisible from outside: what an app
+    /// returns for a range is a line in one app and a cell in another, a
+    /// wrapped sentence starts somewhere other than where it appears to, and a
+    /// terminal's column width can only be guessed. Correct each time,
+    /// arbitrary-looking every time. The left edge of the pane is not where the
+    /// caret is and is the same place on every dictation, which is the property
+    /// that matters for something on screen for two seconds.
+    ///
+    /// `bleed` is taken off because it is transparent: what has to line up with
+    /// the pane is the capsule, not the window the glow spills into.
+    private func beside(_ target: NSRect, size: NSSize, on visible: NSRect) -> NSPoint {
+        let gap: CGFloat = 10
+
+        var y = target.minY - gap - size.height + PillMetrics.bleed
+        if y < visible.minY {
+            y = target.maxY + gap - PillMetrics.bleed
+        }
+        let x = target.minX - PillMetrics.bleed
+
+        return NSPoint(
+            x: min(max(x, visible.minX), visible.maxX - size.width),
+            y: min(max(y, visible.minY), visible.maxY - size.height)
+        )
     }
 }
 
