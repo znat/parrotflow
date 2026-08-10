@@ -219,6 +219,7 @@ final class Recorder {
     /// This does not open the input stream — the orange mic indicator stays off
     /// until `start()` actually runs the engine.
     func warmUp() {
+        let engine = currentEngine()
         _ = engine.inputNode.outputFormat(forBus: 0)
         engine.prepare()
         stateLock.lock()
