@@ -1,3 +1,16 @@
+<!--
+The retired menu prompt. The app does not read this file — the judge's prompt
+is compiled in (`VocabularyJudge.prompt`), and this asks a different question:
+it puts whole sentences on a lettered menu and takes one letter back.
+
+Kept because it is the baseline every earlier round was scored against, and
+`scripts/judge-verdicts.py` still runs it as an arm. On the 74 substitutions of
+the 2026-08-10 session it scores 29 against the shipped prompt's 62.
+
+Moved out of `examples/prompts/` so nobody installs it. It is a measurement
+fixture now, not something to own.
+-->
+
 The user dictates text. The speech recogniser mangles names they use often.
 Their vocabulary includes: {terms} — colleagues, products and tools they talk
 about every day.

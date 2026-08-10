@@ -34,9 +34,18 @@ enum PipelineCommand {
         /// Its own `transforms:`, decoded by `Config` rather than re-read here,
         /// so a fixture cannot disagree with a config about what a transform is.
         var transforms: [Config.Transform] = []
+        /// Its own vocabulary. Only the `vocabulary` stage reads it, and only
+        /// for the `heard:` renderings — a fixture cannot make a sound, so
+        /// there is nothing here for the acoustic half.
+        var vocabulary: Config.Vocabulary?
+        /// Its own `llm:`. One fixture needs `enabled: false`, which is how a
+        /// vocabulary case asserts what the stage found without asking a model
+        /// what to do about it — the answer comes from a model and is not
+        /// deterministic, so it is not a thing a case set can hold.
+        var llm: Config.LLM?
 
         enum CodingKeys: String, CodingKey {
-            case languages, replacements, pipeline, transforms
+            case languages, replacements, pipeline, transforms, vocabulary, llm
         }
 
         init(from decoder: Decoder) throws {
@@ -54,6 +63,8 @@ enum PipelineCommand {
                 let nested = try c.superDecoder(forKey: .transforms)
                 transforms = try Config.transforms(from: nested)
             }
+            vocabulary = try c.decodeIfPresent(Config.Vocabulary.self, forKey: .vocabulary)
+            llm = try c.decodeIfPresent(Config.LLM.self, forKey: .llm)
         }
     }
 
@@ -104,7 +115,7 @@ enum PipelineCommand {
             }
             return Pipeline.Step(
                 stage: stage, transform: entry.transform, prompt: entry.prompt,
-                caps: entry.caps, when: entry.when,
+                caps: entry.caps, fuzzy: entry.fuzzy, when: entry.when,
                 unless: entry.unless, app: entry.app
             )
         }
@@ -119,6 +130,8 @@ enum PipelineCommand {
         config.transcription.replacements = fixture.replacements
         config.transcription.pipelines = ["default": pipeline]
         config.transforms = fixture.transforms
+        if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
+        if let llm = fixture.llm { config.llm = llm }
         // A relative path in a fixture is relative to the fixture, the same way
         // a `command:` is. A `vocabulary:` stage names a prompt file that way,
         // and without this it would be looked for beside whatever config this

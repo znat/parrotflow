@@ -21,6 +21,18 @@ and leaving them in hides the difference between prompts behind a constant.
 menu sizes. Half the cached menus hold two options, so guessing gets 8.1/28,
 not the 2 that a menu of sixteen would suggest. A total with no chance beside
 it says nothing (F13).
+
+NOTE — this scores the **retired** menu prompt.
+
+The judge does not ask a menu any more. It shows the sentence before and after
+the pass and takes one KEEP or REVERT per substitution; the prompt is compiled
+in and `scripts/judge-verdicts.py` is what scores it. This script and its
+cached menus are kept as the baseline, because every earlier round of this work
+was scored here and a number with nothing to compare it to says nothing.
+
+`--harvest` no longer works against the app: the dump it scrapes is the new
+exchange, not a lettered menu. The committed cache in `tests/judge-menus.json`
+still replays.
 """
 import argparse
 import json
@@ -35,7 +47,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "tests/judge-menus.json"
-PROMPT = ROOT / "examples/prompts/verify_names.md"
+PROMPT = ROOT / "tests/fixtures/retired-menu-prompt.md"
 CLIPS = Path.home() / "Recordings/ParrotFlow Dev"
 ENDPOINT = os.environ.get("PARROTFLOW_LLM_ENDPOINT", "http://localhost:11434") + "/api/chat"
 

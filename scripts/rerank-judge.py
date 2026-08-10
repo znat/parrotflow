@@ -31,6 +31,18 @@ top-3 of 19/28 is worse than guessing (F13).
 in the app's menu order and its score block is trimmed to the lines that still
 separate two shortlisted options (F7). With `--framing all`, the shortlist is
 built from the framing with the best top-3, and the run says which.
+
+NOTE — this scores the **retired** menu prompt.
+
+The judge does not ask a menu any more. It shows the sentence before and after
+the pass and takes one KEEP or REVERT per substitution; the prompt is compiled
+in and `scripts/judge-verdicts.py` is what scores it. This script and its
+cached menus are kept as the baseline, because every earlier round of this work
+was scored here and a number with nothing to compare it to says nothing.
+
+`--harvest` no longer works against the app: the dump it scrapes is the new
+exchange, not a lettered menu. The committed cache in `tests/judge-menus.json`
+still replays.
 """
 import argparse
 import json
@@ -356,7 +368,7 @@ def main():
         # out sixteen options reliably, but it can pick from three. Neither
         # number below is worth anything on its own — `ceiling` is what the
         # shortlist left reachable, and `picked` is what the judge did with it.
-        prompt = (ROOT / "examples/prompts/verify_names.md").read_text().strip()
+        prompt = (ROOT / "tests/fixtures/retired-menu-prompt.md").read_text().strip()
         n = args.stage2
         ceiling = kept = 0
         ceiling_chance = picked_chance = 0.0

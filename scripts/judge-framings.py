@@ -34,6 +34,18 @@ with the acoustic margin, and an NLTagger part-of-speech signal. The first two
 are not prompt changes — the stage composes whole sentences today, so a blank
 means rewriting how `VocabularyJudge` builds its question. `FRAMINGS` is a
 plain registry so they can be added beside these without moving anything.
+
+NOTE — this scores the **retired** menu prompt.
+
+The judge does not ask a menu any more. It shows the sentence before and after
+the pass and takes one KEEP or REVERT per substitution; the prompt is compiled
+in and `scripts/judge-verdicts.py` is what scores it. This script and its
+cached menus are kept as the baseline, because every earlier round of this work
+was scored here and a number with nothing to compare it to says nothing.
+
+`--harvest` no longer works against the app: the dump it scrapes is the new
+exchange, not a lettered menu. The committed cache in `tests/judge-menus.json`
+still replays.
 """
 import argparse
 import json
@@ -45,7 +57,7 @@ from importlib.machinery import SourceFileLoader
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "tests/judge-menus.json"
-PROMPT = ROOT / "examples/prompts/verify_names.md"
+PROMPT = ROOT / "tests/fixtures/retired-menu-prompt.md"
 KINDS = ROOT / "tests/term-kinds.yaml"
 ENDPOINT = os.environ.get("PARROTFLOW_LLM_ENDPOINT", "http://localhost:11434") + "/api/chat"
 

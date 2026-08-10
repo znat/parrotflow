@@ -1,0 +1,32 @@
+# The same renderings, matched exactly and only exactly.
+#
+# Two ways in, and they are different mechanisms.
+#
+# **Apostrophes are not spelling.** `Praises` is in the list, the decoder wrote
+# `Praise's`, and `\bPraises\b` does not match an apostrophe — so no rule can
+# fire and the name is lost for one character. That is a measured loss, not a
+# hypothetical: it is what `acoustic: false` cost on live dictation.
+#
+# **One edit, and only onto a word no dictionary knows.** `Versel` is not a
+# word and is one edit from `Versal`, so it opens a place. "praise" *is* a
+# word, and is also one edit from `Praises` — the gate is the only thing
+# between this option and writing a name over it 111 times in one archive.
+#
+# `fuzzy: false` puts matching back to exact and whole-word, which is what it
+# was before this option existed. Every sentence that opens a place in
+# tests/pipelines/vocabulary-fuzzy.yaml opens none here.
+#
+# See tests/pipelines/vocabulary-rules.yaml for `llm: {enabled: false}`.
+llm:
+  enabled: false
+languages: [en]
+vocabulary:
+  terms:
+    Praisy:
+      heard: [Praises]
+    Vercel:
+      heard: [Versal]
+pipeline:
+  - replacements
+  - stage: vocabulary
+    fuzzy: false

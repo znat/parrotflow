@@ -112,17 +112,27 @@ struct Pipeline: Equatable, Codable {
         /// nothing to run is a config error rather than a stage that quietly
         /// does nothing.
         var transform: String?
-        /// The prompt file a `vocabulary` stage asks with, resolved against the
-        /// directory the config was read from. Absolute paths and `~` are their
-        /// own answer.
+        /// The prompt file a `vocabulary` stage used to ask with.
         ///
-        /// Not `transform:`. That name is the namespace a stage's variables are
-        /// filed under, and filing a stage's facts under `verify_names.md`
-        /// would put a filename in every condition that reads them.
+        /// Read and ignored. The prompt is compiled in — see
+        /// `VocabularyJudge.prompt` for why nobody should own it — and this is
+        /// kept so a config written before that still loads. `--check-config`
+        /// says the file is ignored rather than leaving it to be discovered.
         var prompt: String?
-        /// How large the menu may get — see `VocabularyJudge.Caps`. Absent on
-        /// every other stage.
+        /// How many places may be judged at once — see `VocabularyJudge.Caps`.
+        /// Absent on every other stage.
         var caps: VocabularyJudge.Caps?
+        /// Whether a `heard:` rendering also matches one edit away, for a
+        /// `vocabulary` stage. Absent means true.
+        ///
+        /// Optional rather than defaulted so that "not written" and "written
+        /// false" stay tellable apart — the seeded config writes the key only
+        /// when it is off.
+        ///
+        /// Not the `fuzzy` *stage*, which is a different mechanism: that one
+        /// matches the text against rule replacements after the exact pass,
+        /// and never sees a vocabulary rendering at all.
+        var fuzzy: Bool?
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -296,11 +306,9 @@ struct Pipeline: Equatable, Codable {
         for step in steps where step.stage == .transform && (step.transform ?? "").isEmpty {
             problems.append("a prompt stage names no prompt — write `- prompt: <name>`")
         }
+        // No check that a prompt file is named. It used to be required and is
+        // now ignored, so `- vocabulary` on its own is the spelling to use.
         for step in steps where step.stage == .vocabulary {
-            if (step.prompt ?? "").isEmpty {
-                problems.append("a vocabulary stage names no prompt file"
-                    + " — write `- vocabulary: <file.md>`")
-            }
             problems += step.caps?.problems ?? []
         }
         problems += vocabularyOrderProblems()
@@ -713,21 +721,43 @@ struct Pipeline: Equatable, Codable {
             // starts; a rule whose target is a vocabulary term adds to it here.
             if step.stage == .replacements, case .string(let wrote)? = result.vars["changes"] {
                 let known = Set(config.vocabulary.terms.keys)
-                let hits = wrote.split(separator: ";").filter { pair in
+                var hits = wrote.split(separator: ";").filter { pair in
                     guard let arrow = pair.range(of: "->") else { return false }
                     return known.contains(
                         pair[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
                     )
                 }.count
+                // A rendering the exact rules could not reach counts as well.
+                // `when: vocabulary.count > 0` is what keeps the judge off the
+                // dictations with no name in them, so a term that arrives only
+                // by a fuzzy match has to raise the count here or the stage it
+                // is for never runs — which would make `fuzzy` unreachable in
+                // the config everybody has.
+                //
+                // Counted twice, once here and once in the judge, because a
+                // `Range<String.Index>` cannot travel through a variable (F13)
+                // and nothing edits the text between the two stages. The
+                // second scan is a dictionary lookup per span and the spell
+                // checker behind it is cached.
+                if steps.contains(where: { $0.stage == .vocabulary && ($0.fuzzy ?? true) }) {
+                    hits += VocabularyJudge.fuzzyParts(
+                        in: output, rules: config.vocabularyRules, claimed: []
+                    ).count
+                }
                 if hits > 0 {
                     let before: Int
                     if case .int(let had)? = scope["vocabulary.count"] { before = had }
                     else { before = 0 }
                     scope.set("vocabulary.count", .int(before + hits))
-                    if case .string(let had)? = scope["vocabulary.changes"], !had.isEmpty {
-                        scope.set("vocabulary.changes", .string(had + "; " + wrote))
-                    } else {
-                        scope.set("vocabulary.changes", .string(wrote))
+                    // Only what a rule actually wrote. A fuzzy match has
+                    // rewritten nothing yet, so reporting it as a change would
+                    // put a substitution nobody made into the trace.
+                    if !wrote.isEmpty {
+                        if case .string(let had)? = scope["vocabulary.changes"], !had.isEmpty {
+                            scope.set("vocabulary.changes", .string(had + "; " + wrote))
+                        } else {
+                            scope.set("vocabulary.changes", .string(wrote))
+                        }
                     }
                 }
             }
@@ -898,15 +928,17 @@ struct Pipeline: Equatable, Codable {
         }
     }
 
-    /// The names the acoustic pass was unsure about, put to a model as a menu.
+    /// Every substitution the vocabulary pass made, put to a model one at a
+    /// time.
     ///
     /// Fails closed at every step. The transcript that arrives here is what
-    /// ships if anything at all goes wrong — no prompt file, no proposals, too
-    /// many slots, Ollama down, an unreadable reply. Losing the judge costs a
-    /// name; losing the sentence costs the sentence.
+    /// ships if anything at all goes wrong — no proposals, too many places,
+    /// Ollama down, an unreadable reply. Losing the judge costs a name; losing
+    /// the sentence costs the sentence.
     ///
-    /// The mechanics are in `VocabularyJudge`. This is the wiring: where the
-    /// prompt file is, what the model is, and which variables come back.
+    /// The mechanics are in `VocabularyJudge`. This is the wiring: what the
+    /// model is, which substitutions it is shown, and which variables come
+    /// back.
     private func judgeVocabulary(
         _ step: Step, on text: String, config: Config, scope: Scope,
         findings: Vocabulary.Outcome?
@@ -914,13 +946,6 @@ struct Pipeline: Equatable, Codable {
         func declined(_ why: String, _ vars: [String: Scope.Value] = [:]) -> StageResult {
             Log.write("pipeline: vocabulary — \(why)")
             return StageResult(text: text, vars: vars.merging(["ok": .bool(false)]) { a, _ in a })
-        }
-        guard config.llm.enabled else { return declined("llm.enabled is false") }
-        guard let named = step.prompt, !named.isEmpty else {
-            return declined("no prompt file named — write `- vocabulary: <file.md>`")
-        }
-        guard let prompt = config.promptFile(named) else {
-            return declined("cannot read the prompt file \(named)")
         }
 
         let caps = step.caps ?? VocabularyJudge.Caps.standard
@@ -941,21 +966,37 @@ struct Pipeline: Equatable, Codable {
         var beforeRules: String?
         if case .string(let wrote)? = scope["replacements.changes"] { rules = wrote }
         if case .string(let handed)? = scope["replacements.before"] { beforeRules = handed }
-        let parts = VocabularyJudge.acousticParts(
+        var parts = VocabularyJudge.acousticParts(
             findings?.proposals ?? [], in: text, measuredOn: findings?.text ?? text
         ) + VocabularyJudge.ruleParts(rules, in: text, before: beforeRules ?? findings?.text)
 
+        // The near misses an exact rule cannot reach. On by default: with the
+        // acoustic path off, an exact rule is the only route to a term, and
+        // `Praisy`'s list holding `Praises` while the decoder wrote `Praise's`
+        // is a name lost for one apostrophe. `fuzzy: false` on the stage turns
+        // it off and leaves matching exact.
+        //
+        // Nothing is written here. A near miss becomes one more question for
+        // the model, which is what makes it safe to be this loose — see
+        // `VocabularyJudge.fuzzyEdits` for what it fires on and what that cost
+        // over this speaker's archive.
+        if step.fuzzy ?? true {
+            parts += VocabularyJudge.fuzzyParts(
+                in: text, rules: config.vocabularyRules, claimed: parts
+            )
+        }
+
         let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
         // Two numbers on every run, not only when the count is fatal.
-        // `max_slots` is the cliff this stage falls off — one slot over and the
-        // whole menu is declined — so the distance to it has to be measurable
-        // before a change that widens what fires, not inferred afterwards from
-        // the clips that broke.
+        // `max_slots` is the cliff this stage falls off — one place over and
+        // the whole sentence is declined — so the distance to it has to be
+        // measurable before a change that widens what fires, not inferred
+        // afterwards from the clips that broke.
         //
         // Counts only. **Which words** is behind `PARROTFLOW_JUDGE_DUMP`, the
-        // switch that already means "write this dictation's menu down for a
-        // harness to read". The log is a plain file under `Library/Logs` and it
-        // outlives the dictation, so a diagnostic that is on for everybody
+        // switch that already means "write this dictation's question down for
+        // a harness to read". The log is a plain file under `Library/Logs` and
+        // it outlives the dictation, so a diagnostic that is on for everybody
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary judge: \(slots.count) slot(s) from \(parts.count) proposal(s)"
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
@@ -967,73 +1008,71 @@ struct Pipeline: Equatable, Codable {
         guard !slots.isEmpty else {
             return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(0)])
         }
-        // Too many uncertain words to enumerate. Keeping what the decoder wrote
-        // is the safe answer, and it is logged rather than silent.
+        // Too many places to judge at once. Keeping what arrived is the safe
+        // answer, and it is logged rather than silent.
         guard slots.count <= caps.slots else {
-            return declined("\(slots.count) slots > \(caps.slots); kept as decoded",
+            return declined("\(slots.count) slots > \(caps.slots); kept as they are",
                             ["asked": .int(0), "slots": .int(slots.count)])
         }
 
-        let built = VocabularyJudge.readings(in: text, from: slots, caps: caps)
-        let sentences = built.sentences
-        // Trimming a slot cannot always get under the cap — it stops at two
-        // readings a slot — so the menu is cut instead. Said out loud: the
-        // decoder's own reading is still first, so the cost is a correction
-        // never offered rather than a wrong one written.
-        if built.truncated {
-            Log.write("pipeline: vocabulary — \(slots.count) slots allow more readings than"
-                + " the menu may hold; cut at \(sentences.count)")
+        let changes = VocabularyJudge.changes(in: text, from: slots)
+        guard !changes.isEmpty else {
+            return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(slots.count)])
         }
-        guard sentences.count > 1 else {
-            return StageResult(text: text, vars: [
-                "asked": .int(sentences.count), "slots": .int(slots.count),
-            ])
+        // Checked here rather than at the top so that a pipeline with no model
+        // still publishes what the stage found. `vocabulary.slots` is the one
+        // thing about this stage a fixture can assert — the verdict comes from
+        // a model and is not deterministic — and it was unreachable while this
+        // guard ran first.
+        guard config.llm.enabled else {
+            return declined("llm.enabled is false",
+                            ["asked": .int(0), "slots": .int(slots.count)])
         }
-        let terms = Array(Set(slots.flatMap(\.terms))).sorted().joined(separator: ", ")
-        let system = prompt.replacingOccurrences(of: "{terms}", with: terms)
-        let scores = VocabularyJudge.scoreBlock(findings?.proposals ?? [])
-        VocabularyJudge.dump(system: system, sentences: sentences, scores: scores)
+
+        let built = VocabularyJudge.sentences(in: text, from: changes)
+        let terms = Array(Set(changes.flatMap(\.terms))).sorted().joined(separator: ", ")
+        let system = VocabularyJudge.prompt.replacingOccurrences(of: "{terms}", with: terms)
+        let user = VocabularyJudge.question(
+            heard: built.heard, after: built.after, changes: changes
+        )
+        VocabularyJudge.dump(system: system, user: user)
 
         let reply: String
         do {
             reply = try await LocalLLM.complete(
-                system: system,
-                user: VocabularyJudge.menu(sentences) + scores + "\n\nWhich letter?",
-                json: false,
-                // A letter and whatever the model wraps it in. Anything longer
-                // is a model explaining itself, which this shape does not read.
-                maxTokens: 8,
+                system: system, user: user, json: false,
+                // A line per change and whatever the model wraps them in.
+                // Anything longer is a model explaining itself, which this
+                // shape does not read.
+                maxTokens: 8 * changes.count + 8,
                 config: LocalLLM.Config(
                     endpoint: config.llm.endpoint, model: config.llm.model,
                     timeout: config.llm.timeoutSeconds, keepLoaded: config.llm.keepLoaded
                 )
             )
         } catch {
-            return declined("\(error.localizedDescription); kept as decoded",
-                            ["asked": .int(sentences.count), "slots": .int(slots.count)])
-        }
-        guard let pick = VocabularyJudge.chosen(reply, of: sentences.count) else {
-            return declined("the reply named no option (\"\(reply)\"); kept as decoded",
-                            ["asked": .int(sentences.count), "slots": .int(slots.count),
-                             "reply": .string(reply)])
+            return declined("\(error.localizedDescription); kept as they are",
+                            ["asked": .int(changes.count), "slots": .int(slots.count)])
         }
 
-        // What the judge left alone, in the words it left. "Reverted" was the
-        // word for this while the pass substituted first; it proposes now, so a
-        // slot that keeps its first reading was never changed to begin with.
-        let kept = zip(built.slots, built.choices[pick])
-            .filter { $0.1 == 0 }
-            .map { $0.0.options[0] }
-        let chosen = sentences[pick]
+        let verdicts = VocabularyJudge.verdicts(reply, count: changes.count)
+        let chosen = VocabularyJudge.applying(verdicts, to: text, changes: changes)
+        // What the judge undid, in the words it put back. Named `reverted`
+        // rather than `kept_as_decoded`: on a menu a place that kept its
+        // first reading was never changed, and here every place on the list is
+        // a substitution somebody has to answer for.
+        let reverted = zip(changes, verdicts).filter { !$0.1 }.map {
+            "\($0.0.now) -> \($0.0.was)"
+        }
         if chosen != text {
             Log.write("pipeline: vocabulary rewrote the transcript")
             Log.write("    before: \(text)")
             Log.write("    after:  \(chosen)")
         }
         return StageResult(text: chosen, vars: [
-            "asked": .int(sentences.count),
+            "asked": .int(changes.count),
             "slots": .int(slots.count),
-            "kept_as_decoded": .string(kept.joined(separator: "; ")),
+            "reverted": .string(reverted.joined(separator: "; ")),
             "judged": .string(chosen),
             "reply": .string(reply.trimmingCharacters(in: .whitespacesAndNewlines)),
             "model": .string(config.llm.model),

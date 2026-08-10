@@ -1,0 +1,18 @@
+# A pipeline written before the prompt was compiled in.
+#
+# `- vocabulary: <file>` is what every config in the wild says. It still loads
+# and the stage still runs; the file is not read, and `--check-config` says so.
+# The filename here is one nothing could resolve, which is the point — the
+# stage used to refuse without a readable prompt file, and a config that only
+# works when a file happens to exist beside it is a config that breaks on the
+# next machine.
+#
+# See tests/pipelines/vocabulary-rules.yaml for `llm: {enabled: false}`.
+llm:
+  enabled: false
+languages: [en]
+replacements:
+  Vercel: [Versailles]
+pipeline:
+  - replacements
+  - vocabulary: a-file-that-is-not-here.md
