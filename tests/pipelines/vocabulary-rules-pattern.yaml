@@ -1,0 +1,13 @@
+# The same stage, with one literal rendering and one pattern beside it.
+#
+# A pattern names no spelling to offer back, so the judge skips its pair — but
+# the pattern still wrote a `Vercel`. The literal rule cannot account for that
+# occurrence, grouped or not, and the stage has to decline rather than hand the
+# literal's spelling to a place some other rule wrote. See the cases.
+languages: [en]
+replacements:
+  Vercel: [Versal, '/Versa\w+/']
+pipeline:
+  - replacements
+  - vocabulary: ../../examples/prompts/verify_names.md
+    max_readings: 1

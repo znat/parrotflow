@@ -540,13 +540,29 @@ cases:
       replacements.changes: ""
       vocabulary.slots: 0
 
-  # Two renderings of one term in one sentence, and the stage declines. Each
-  # pair in `changes` is counted on its own, so each accounts for one of the two
-  # terms standing and neither can claim its own. The earlier text does not
-  # settle this shape; only reading the pairs per term would. This is the live
-  # sentence from the 2026-08-09 dictation pass, and it is still not attributed.
-  - name: two rules writing one term in one sentence decline rather than guess
+  # Two renderings of one term in one sentence. The pairs are counted per term,
+  # so together they account for both `Vercel`s standing and each occurrence is
+  # offered its own spelling back. Counted one at a time each accounted for one
+  # of the two, each failed, and the sentence got no menu at all. This is the
+  # live sentence from the 2026-08-09 dictation pass.
+  #
+  # Two slots is the opportunity, not the answer. What the judge picks at them
+  # is a different question and this case says nothing about it.
+  - name: two rules writing one term in one sentence open a slot each
     pipeline: vocabulary-rules-two-renderings
+    input: deployed on Versal against the Versailles Castle
+    expect: deployed on Vercel against the Vercel Castle
+    expect_vars:
+      replacements.before: deployed on Versal against the Versailles Castle
+      vocabulary.slots: 2
+
+  # And the counts still have to add up. A pattern rule wrote the second
+  # `Vercel` and names no spelling to offer back, so the literal rule beside it
+  # is one occurrence short however the pairs are grouped. Declining is the
+  # point: the literal's own occurrence is still there to be claimed, and
+  # claiming it would put `Versal` on the menu at a place the pattern wrote.
+  - name: a term a pattern also wrote is still declined rather than guessed
+    pipeline: vocabulary-rules-pattern
     input: deployed on Versal against the Versailles Castle
     expect: deployed on Vercel against the Vercel Castle
     expect_vars:

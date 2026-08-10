@@ -281,23 +281,37 @@ enum VocabularyJudge {
     ///
     /// `before` is the transcript `replacements` was handed, and it says which
     /// occurrence is which. A rule rewrites in place and reorders nothing, so
-    /// the terms standing in the text now are, in order, the occurrences of
-    /// `heard` and of `term` in `before` — and only the first kind is a
+    /// the terms standing in the text now are, in order, the occurrences of the
+    /// rule sources and of `term` in `before` — and only the first kind is a
     /// substitution to offer back. See `rewritten(_:_:in:became:)`.
     ///
-    /// When the two do not line up, some other rule wrote the term as well and
-    /// nothing here can say which occurrence came from where. Then none of them
-    /// are offered, and the log says so. That is the common case for two
-    /// renderings of one term in one sentence — `Versal` and `Versailles` both
-    /// becoming `Vercel` — because each pair is counted on its own and each
-    /// accounts for one of the two terms standing. A `before` does not decide
-    /// that shape; only reading the pairs per term would.
+    /// **The pairs are read per term, not one at a time.** Two rules can write
+    /// the same term in one sentence: `Versal -> Vercel; Versailles -> Vercel`
+    /// for "deployed on Vercel against the Versailles Castle". A pair counted on
+    /// its own accounts for one of the two `Vercel`s standing, so it fails its
+    /// count and takes its reading down with it, and the sentence gets no menu.
+    /// Counted together the two pairs account for both occurrences, and each one
+    /// is offered its own spelling back.
+    ///
+    /// When the counts still do not line up, something else wrote the term as
+    /// well — a pattern rule, or a rule whose target contains it — and nothing
+    /// here can say which occurrence came from where. Then none of them are
+    /// offered, and the log says so.
     ///
     /// A rule whose source is a pattern is skipped. `/(\w+) dot (\w+)/` names
     /// no spelling to offer back, and putting the pattern on a menu would ask
-    /// the model to choose a regular expression.
+    /// the model to choose a regular expression. It still wrote the term, so the
+    /// count above is what stops the literal rules beside it from claiming its
+    /// occurrence.
     static func ruleParts(_ changes: String, in text: String, before: String?) -> [Part] {
-        var parts: [Part] = []
+        // Grouped before anything is counted, because the count is per term and
+        // not per pair. First-seen order is kept so the parts still come out in
+        // the order the rules are reported in. The key is lowercased because
+        // `spans` finds the term that way — two pairs naming it in different
+        // case are one term here, as they are in the text.
+        var order: [String] = []
+        var sources: [String: [String]] = [:]
+        var spelled: [String: String] = [:]
         for pair in changes.split(separator: ";") {
             let pairText = pair.split(separator: "@").first.map(String.init) ?? String(pair)
             guard let arrow = pairText.range(of: "->") else { continue }
@@ -306,6 +320,17 @@ enum VocabularyJudge {
             guard !heard.isEmpty, !term.isEmpty, heard != term,
                   !heard.hasPrefix("/"), !term.contains("$")
             else { continue }
+            let key = term.lowercased()
+            if sources[key] == nil {
+                order.append(key)
+                spelled[key] = term
+            }
+            sources[key, default: []].append(heard)
+        }
+
+        var parts: [Part] = []
+        for key in order {
+            guard let term = spelled[key], let heard = sources[key] else { continue }
             let stands = Vocabulary.spans(of: term, in: text, ignoringCase: true)
             guard let before else {
                 // No earlier text to compare against. `replacements` publishes
@@ -317,28 +342,35 @@ enum VocabularyJudge {
                 // One occurrence is still decidable without it: the rule is in
                 // `changes`, so it fired at least once, and a pre-existing term
                 // would be a second occurrence. More than one and nothing here
-                // can say which, so none are offered.
+                // can say which, so none are offered. Grouping does not help
+                // here — with no earlier text there is nothing to line the
+                // occurrences up against.
                 if stands.count == 1 {
-                    parts.append(Part(
-                        range: stands[0], decoded: heard, other: heard, term: term,
-                        standing: .rule
-                    ))
+                    for source in heard {
+                        parts.append(Part(
+                            range: stands[0], decoded: source, other: source, term: term,
+                            standing: .rule
+                        ))
+                    }
                 } else if stands.count > 1 {
-                    Log.write("vocabulary judge: \"\(term)\" stands \(stands.count) time(s)"
-                        + " and no acoustic pass ran, so which one \"\(heard)\" became"
-                        + " cannot be told; that reading is not offered")
+                    for source in heard {
+                        Log.write("vocabulary judge: \"\(term)\" stands \(stands.count) time(s)"
+                            + " and no acoustic pass ran, so which one \"\(source)\" became"
+                            + " cannot be told; that reading is not offered")
+                    }
                 }
                 continue
             }
             guard let mine = rewritten(heard, term, in: before, became: stands.count) else {
                 Log.write("vocabulary judge: \"\(term)\" stands \(stands.count) time(s) and"
                     + " the transcript before the rules cannot account for that many;"
-                    + " \"\(heard)\" is not offered back")
+                    + " not offering \(heard.map { "\"\($0)\"" }.joined(separator: ", ")) back")
                 continue
             }
-            for index in mine {
+            for (index, source) in mine.enumerated() {
+                guard let source else { continue }
                 parts.append(Part(
-                    range: stands[index], decoded: heard, other: heard, term: term,
+                    range: stands[index], decoded: source, other: source, term: term,
                     standing: .rule
                 ))
             }
@@ -346,29 +378,46 @@ enum VocabularyJudge {
         return parts
     }
 
-    /// Which of the terms standing in the text now were written by this rule.
+    /// Which of the terms standing in the text now were written by a rule, and
+    /// by which one.
     ///
-    /// The rule turns every `heard` into `term` and leaves every `term` where
-    /// it was. It rewrites in place, so the order is preserved: the *i*-th term
-    /// in the text now is the *i*-th of those two kinds of occurrence in the
-    /// text before. The ones that were `heard` are the substitutions; the rest
+    /// Each rule turns its own source into `term` and leaves every `term` where
+    /// it was. Rules rewrite in place, so the order is preserved: the *i*-th
+    /// term in the text now is the *i*-th of those occurrences in the text
+    /// before. The ones that were a rule source are the substitutions; the rest
     /// were already right and must not be offered a reading the decoder never
     /// produced.
     ///
-    /// Nil when the counts disagree, which means something other than this rule
-    /// also wrote the term. Guessing there is how a correct word gets a wrong
-    /// spelling put first on the menu.
+    /// **Every rule that wrote this term is counted at once.** One at a time,
+    /// two rules writing one term each account for a single occurrence, both
+    /// fail the count, and the sentence gets no menu at all.
+    ///
+    /// Nil when the counts disagree, which means something other than these
+    /// rules also wrote the term. Guessing there is how a correct word gets a
+    /// wrong spelling put first on the menu.
+    ///
+    /// Nil as well when two of the marks overlap. Only one rule can have fired
+    /// on a given span, so a count that lines up across an overlap lined up by
+    /// accident, and matching the marks to the occurrences by position past that
+    /// point would hand a reading to a span it does not own.
+    ///
+    /// - Returns: one entry per term standing in the text now, in order — the
+    ///   rule source that wrote it, or nil where the decoder wrote it itself.
     static func rewritten(
-        _ heard: String, _ term: String, in before: String, became stands: Int
-    ) -> [Int]? {
-        var marks: [(at: String.Index, rule: Bool)] =
-            Vocabulary.spans(of: heard, in: before, ignoringCase: true)
-                .map { ($0.lowerBound, true) }
-            + Vocabulary.spans(of: term, in: before, ignoringCase: true)
-                .map { ($0.lowerBound, false) }
-        marks.sort { $0.at < $1.at }
+        _ heard: [String], _ term: String, in before: String, became stands: Int
+    ) -> [String?]? {
+        var marks: [(at: Range<String.Index>, rule: String?)] =
+            Vocabulary.spans(of: term, in: before, ignoringCase: true).map { ($0, nil) }
+        for source in heard {
+            marks += Vocabulary.spans(of: source, in: before, ignoringCase: true)
+                .map { ($0, source) }
+        }
+        marks.sort { $0.at.lowerBound < $1.at.lowerBound }
         guard marks.count == stands else { return nil }
-        return marks.indices.filter { marks[$0].rule }
+        guard !marks.indices.dropFirst().contains(where: {
+            marks[$0].at.lowerBound < marks[$0 - 1].at.upperBound
+        }) else { return nil }
+        return marks.map(\.rule)
     }
 
     // MARK: - Slots and readings
