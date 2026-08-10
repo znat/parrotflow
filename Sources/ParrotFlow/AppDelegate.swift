@@ -89,6 +89,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// it. Nil when the app would not say, which is when the pill opens where
     /// it always has. See `CaretAnchor`.
     private var anchorAtPress: CaretAnchor.Found?
+
+    /// The focused element's text as it was at the press, for an app that gave
+    /// no caret. What changed in it afterwards is where the words went.
+    ///
+    /// Nil whenever there was a caret to aim at, so the search below only ever
+    /// runs for the apps that need it.
+    private var screenAtPress: String?
+
+    /// Bumped by every press, so a snapshot that took a moment to copy cannot
+    /// end up describing the dictation after the one it was taken for.
+    ///
+    /// Push-to-talk does not wait for the previous transcript, so two presses
+    /// can be a fraction of a second apart — the same overlap `transcriptionRun`
+    /// exists for.
+    private var pressRun = 0
+
+    /// Where the last dictation into a given element ended up.
+    ///
+    /// The only thing worth knowing at the press about an app that keeps no
+    /// caret: you dictate into the same box several times running, and the box
+    /// does not move between them. So the pill opens where the last one landed
+    /// instead of at the bottom of the screen, and the real answer replaces it
+    /// a few seconds later when the words arrive.
+    ///
+    /// Held per element and briefly, because both are what make it a fair guess
+    /// rather than a stale one. See the `remembered` rung in `handleHotKeyPress`
+    /// for what invalidates it.
+    private var lastLanding: (element: AXUIElement, found: CaretAnchor.Found, at: Date, chars: Int)?
+
     /// Whether there was anywhere to type when the hotkey went down — see
     /// `Destination`. Decides whether the pill shows the icon, and is handed to
     /// the transcription it belongs to so that the same press decides, a few
@@ -538,19 +567,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // end it is a race against a redraw, which is what it was, and it
         // answered about half the time. See `CaretAnchor`.
         //
-        // On this thread rather than a background one, because the pill is
-        // raised a few lines from here and an anchor that arrives after it is
-        // an anchor that makes it jump. The read is capped at 80ms and this
+        // On this thread rather than the background one below, because the pill
+        // is raised a few lines from here and an anchor that arrives after it
+        // is an anchor that makes it jump. The read is capped at 80ms and this
         // element has just been read from twice by the snapshot above.
         anchorAtPress = nil
+        screenAtPress = nil
+        pressRun += 1
         if destinationAtPress.acceptsText {
             switch CaretAnchor.read(at: focusAtPress?.element) {
             case .found(let found):
                 anchorAtPress = found
             case .missed(let why):
-                // The pill opens at the bottom of the screen, exactly as it did
-                // before any of this. That is the whole of the fallback.
-                Log.write("pill: no caret — \(why)")
+                // Rung 3: open where the last dictation into this same element
+                // landed. Two things have to hold, and both exist because a
+                // remembered anchor looks confident while it is stale.
+                //
+                // The pane's character count must match. A terminal scrolls
+                // between dictations, so last time's row then belongs to
+                // somebody else's line — which is how the pill ends up sitting
+                // over the input box you are about to type into. The count is
+                // one cheap attribute and it changes the moment anything is
+                // printed, which is exactly when the guess goes bad.
+                //
+                // And the landing must be under a minute old. Refused, the pill
+                // opens at the bottom of the screen and rung 4 moves it a moment
+                // later: starting nowhere in particular beats starting somewhere
+                // wrong.
+                if let last = lastLanding, let now = focusAtPress?.element,
+                   CFEqual(last.element, now),
+                   Date().timeIntervalSince(last.at) < 60,
+                   CaretAnchor.characterCount(of: now) == last.chars {
+                    anchorAtPress = CaretAnchor.Found(
+                        rect: last.found.rect, text: last.found.text, source: .remembered
+                    )
+                } else {
+                    Log.write("pill: no caret — \(why); will look for the words afterwards")
+                }
+
+                // Rung 4: no caret to aim at, so take the pane as it is now and
+                // find the words by what changed once they have landed. Off the
+                // main thread and after everything above, because this reads a
+                // value that has been observed at 237k characters — and there
+                // are seconds of dictation before anything needs it.
+                let element = focusAtPress?.element
+                let run = pressRun
+                DispatchQueue.global(qos: .utility).async { [weak self] in
+                    let before = CaretAnchor.snapshot(of: element)
+                    DispatchQueue.main.async {
+                        guard let self, self.pressRun == run else { return }
+                        self.screenAtPress = before
+                    }
+                }
             }
         }
 
@@ -1756,6 +1824,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         offerUntil = Date().addingTimeInterval(Self.offerSeconds)
         pill.offer(key, for: Self.offerSeconds)
+
+        // Set only when there was no caret at the press. A remembered anchor is
+        // still a guess, and this is what replaces it with the answer.
+        if let before = screenAtPress {
+            findWhereTheWordsLanded(comparedWith: before)
+        }
+    }
+
+    /// For an app with no caret: keep asking what changed until the words show
+    /// up, then move the pill there.
+    ///
+    /// Asked repeatedly rather than once, and that is the whole of what made
+    /// the first version unreliable. The offer is raised the instant the
+    /// insertion call returns; an app redraws when it gets round to it. A
+    /// single read caught it about half the time, and a single retry a fixed
+    /// 120ms later was the same bet with a different number on it. Six looks
+    /// over half a second cost nothing and do not care how slow the app was.
+    ///
+    /// Nothing waits for this. The offer is already on screen at the position
+    /// the pill opened with, and it moves if and when there is somewhere better
+    /// to be — so a miss is not a delay, it is simply the old behaviour.
+    private func findWhereTheWordsLanded(comparedWith before: String) {
+        let element = focusAtPress?.element
+        let deadline = Date().addingTimeInterval(0.5)
+        // Off the main thread, because the thing being read can be enormous:
+        // Outlook's message pane reported 395,489 characters, and every look
+        // copies all of them out of a busy process. Six of those on the main
+        // thread is a stutter in whatever the user is actually doing.
+        let queue = DispatchQueue.global(qos: .userInitiated)
+
+        func look() {
+            let outcome = CaretAnchor.landed(after: before, at: element)
+            DispatchQueue.main.async { [weak self] in
+                // Stop the moment the offer is gone: the pill it would move is
+                // no longer on screen, and the next dictation has its own aim.
+                guard let self, self.offerIsUp else { return }
+                switch outcome {
+                case .found(let found):
+                    self.pill.aim(at: found)
+                    // Remembered for the next dictation into this same element,
+                    // but only when the pane will say how big it is — that
+                    // count is the only thing that can tell the guess it has
+                    // gone stale, so without it there is no guess worth making.
+                    if let element, let chars = CaretAnchor.characterCount(of: element) {
+                        self.lastLanding = (element, found, Date(), chars)
+                    }
+                case .missed(let why):
+                    guard Date() < deadline else {
+                        Log.write("pill: never found the words — \(why)")
+                        return
+                    }
+                    queue.asyncAfter(deadline: .now() + 0.08) { look() }
+                }
+            }
+        }
+        queue.asyncAfter(deadline: .now() + 0.04) { look() }
     }
 
     /// A press on the dictation key that was too short to be a dictation, made

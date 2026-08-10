@@ -126,16 +126,20 @@ final class PillHUD {
 
     /// Point the pill at where the words are going, for this dictation.
     ///
-    /// Set once, at the press, and read by every state until the pill goes
-    /// away: the recording, the transcribing, and the offer all appear in the
-    /// same place, so nothing moves while you are watching it. Nil puts it back
-    /// at the bottom of the screen, which is where it opened before any of
-    /// this and is the whole of the fallback.
+    /// Set at the press and read by every state until the pill goes away: the
+    /// recording, the transcribing, and the offer all appear in the same place,
+    /// so nothing moves while you are watching it. Nil puts it back at the
+    /// bottom of the screen, which is where it opened before any of this.
     ///
-    /// Not re-read later, deliberately. Scroll the window or move focus while
-    /// you are talking and the anchor is stale — but you moved, and a pill that
-    /// stayed where the dictation started is easier to explain than one that
-    /// jumps halfway through.
+    /// Set a second time only for an app that gave no caret to aim at. There
+    /// the words are found after they land, so the pill is already up and this
+    /// moves it. One move to somewhere right beats staying somewhere wrong.
+    ///
+    /// Never re-read on its own, deliberately. Scroll the window or move focus
+    /// while you are talking and the anchor is stale — but you moved, and a
+    /// pill that stayed where the dictation started is easier to explain than
+    /// one that jumps halfway through. The caller aims it again only when it
+    /// has a better answer than the one it opened with.
     func aim(at anchor: CaretAnchor.Found?) {
         near = anchor
         guard let anchor else { return }
@@ -144,6 +148,12 @@ final class PillHUD {
             anchor.source.rawValue,
             anchor.rect.minX, anchor.rect.minY, anchor.rect.width, anchor.rect.height
         ))
+        // Already up: move it there, with the animation it uses for everything
+        // else. An app with no caret has no anchor at the press, so the only
+        // one it will ever get arrives after the words land — which is after
+        // the pill is on screen. Without this the answer would be found and
+        // never used.
+        if let panel, panel.isVisible { morph(to: panel.frame.size) }
     }
 
     // MARK: - Coming and going

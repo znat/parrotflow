@@ -34,8 +34,18 @@ import ApplicationServices
 ///
 /// Three of five, and the two that do not answer cannot be made to: Ghostty has
 /// no caret to report and VS Code builds no accessibility tree unless it
-/// detects a screen reader. Where this returns nothing the pill opens where it
-/// always has, which is the whole of the fallback.
+/// detects a screen reader.
+///
+/// ## The apps that give no caret
+///
+/// For those, `read(at:)` misses and the answer is found the other way round.
+/// `snapshot(of:)` takes the pane's text at the press, `landed(after:at:)`
+/// compares it with the pane after the words arrive, and the difference between
+/// the two is where they went. That runs after the insertion, so it moves a
+/// pill that is already on screen rather than deciding where one opens.
+///
+/// It is a diff and not a search, and that is what makes it work at all. See
+/// `landed(after:at:)`.
 enum CaretAnchor {
 
     /// Which rung answered. Logged, because "the pill opened in the wrong
@@ -46,6 +56,12 @@ enum CaretAnchor {
         /// The focused control's own rectangle — only taken when the control is
         /// small enough that its box and its caret mean the same thing.
         case field
+        /// Worked out afterwards, from what changed on screen. For the apps
+        /// that have no caret to give — see `landed(after:at:)`.
+        case landed
+        /// Where the last dictation into this same element ended up. A guess,
+        /// and the only thing available at the press for an app with no caret.
+        case remembered
     }
 
     struct Found {
@@ -79,6 +95,14 @@ enum CaretAnchor {
     /// has answered by now; this cap is for the app that is not.
     private static let timeout: Float = 0.08
 
+    /// For the reads that happen after the dictation instead of inside the
+    /// key-down handler.
+    ///
+    /// Longer because nothing is waiting on them and the value being copied is
+    /// large: Outlook's message pane measured 395,489 characters, and every
+    /// look copies all of them out of a busy process.
+    private static let unhurriedTimeout: Float = 0.5
+
     /// Where the caret is, for the element focus was on when the key went down.
     static func read(at element: AXUIElement?) -> Outcome {
         guard Permissions.accessibility == .granted else {
@@ -109,6 +133,129 @@ enum CaretAnchor {
             return .found(Found(rect: box, text: box, source: .field))
         }
         return .missed(pane == nil ? "no geometry" : "no caret, and the pane is too big to stand in for one")
+    }
+
+    /// How many characters the element holds.
+    ///
+    /// One number rather than the text, so it is cheap enough to ask inside the
+    /// key-down handler. The value itself has been seen at 395,489 characters
+    /// and copying that would delay the recording.
+    ///
+    /// This is what tells a remembered anchor from a stale one. It changes the
+    /// moment anything is printed into the pane, which is exactly when last
+    /// time's row stops belonging to last time's words.
+    static func characterCount(of element: AXUIElement?) -> Int? {
+        guard let element else { return nil }
+        AXUIElementSetMessagingTimeout(element, timeout)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXNumberOfCharactersAttribute as CFString, &value
+        ) == .success, let count = value as? Int else { return nil }
+        return count
+    }
+
+    // MARK: - Apps with no caret, found afterwards
+
+    /// The pane's text as it was before a word of this was said.
+    ///
+    /// Only worth taking for an app that would not give a caret, and only ever
+    /// off the main thread: see `unhurriedTimeout` for the size of the thing
+    /// being copied.
+    static func snapshot(of element: AXUIElement?) -> String? {
+        guard let element else { return nil }
+        AXUIElementSetMessagingTimeout(element, unhurriedTimeout)
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXValueAttribute as CFString, &value
+        ) == .success, let text = value as? String, !text.isEmpty
+        else { return nil }
+        return text
+    }
+
+    /// Where the words landed, by comparing the pane with how it was.
+    ///
+    /// A diff and not a search, and that is the difference between this working
+    /// and not. The first version looked for the transcript in the field. That
+    /// fails whenever what was written is not what was transcribed, and a
+    /// pipeline stage rewriting the sentence between the two is normal. It also
+    /// fails when the text is there but not as one string: a value is what is
+    /// *rendered*, so a wrapped sentence has a newline through the middle of it
+    /// and a terminal drawing an input box pads it with spaces. Nothing has to
+    /// match a diff. What changed is where the words are.
+    ///
+    /// Bounded at both ends, because a terminal is not a text field. A spinner
+    /// or a clock ticking above would poison a common prefix on its own, so
+    /// take the common suffix too and the change sits between two fixed points.
+    /// A change spanning more than half the pane is a repaint rather than an
+    /// insertion, and is refused.
+    ///
+    /// Runs after the insertion, so it is off the main thread and unhurried.
+    static func landed(after before: String, at element: AXUIElement?) -> Outcome {
+        guard let element else { return .missed("the element is gone") }
+        // For every read below, the snapshot included.
+        AXUIElementSetMessagingTimeout(element, unhurriedTimeout)
+
+        guard let now = snapshot(of: element) else { return .missed("no text to compare") }
+        guard now != before else { return .missed("the screen has not changed yet") }
+
+        // UTF-16, because that is the unit an accessibility range counts in.
+        // The indices found here are handed straight back to the app.
+        let old = Array(before.utf16), new = Array(now.utf16)
+        var head = 0
+        while head < old.count, head < new.count, old[head] == new[head] { head += 1 }
+        var tail = 0
+        while tail < old.count - head, tail < new.count - head,
+              old[old.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
+
+        let length = new.count - head - tail
+        guard length > 0 else { return .missed("the screen changed, but nothing was added") }
+        guard length < new.count / 2 else { return .missed("the whole pane repainted") }
+
+        let pane = frame(of: element).map(flipped)
+
+        // There is an index now, so ask the app where it is. An app can keep no
+        // caret and still measure text perfectly well — Outlook does — and the
+        // two failings are unrelated: one is about tracking a cursor, the other
+        // about measuring text. Asked with a range of our own, the app that
+        // would not say where the caret was says exactly where the words are.
+        if let rect = bounds(of: CFRange(location: head, length: length), in: element) {
+            let text = flipped(rect)
+            return .found(Found(rect: across(text, pane), text: text, source: .landed))
+        }
+
+        // No bounds, so work out the row instead. A terminal is a fixed grid:
+        // ask which line the last character is on for the row count, and the
+        // pane's height over that is the pitch. Measured on Ghostty at 53 rows
+        // of 17.3pt, a real line height rather than a fit.
+        guard let pane else { return .missed("no geometry") }
+        guard let row = line(of: head, in: element),
+              let rows = line(of: new.count - 1, in: element).map({ $0 + 1 }), rows > 0
+        else { return .missed("no bounds, and it will not say which line an index is on") }
+
+        // The grid gives a row and no column — see `across` for why the column
+        // would be thrown away anyway. So the row is the whole width of the
+        // pane, and it is both rectangles: there is no narrower one to pick the
+        // display from, and a row of a pane straddling two monitors goes to
+        // whichever shows more of it.
+        //
+        // Built in flipped coordinates, where `maxY` is the pane's top edge, so
+        // rows count downward from there.
+        let pitch = pane.height / CGFloat(rows)
+        let rect = NSRect(
+            x: pane.minX, y: pane.maxY - CGFloat(row + 1) * pitch,
+            width: pane.width, height: pitch
+        )
+        return .found(Found(rect: rect, text: rect, source: .landed))
+    }
+
+    /// Which row of the grid an index sits on. Nil when the app will not say.
+    private static func line(of index: Int, in element: AXUIElement) -> Int? {
+        var out: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element, kAXLineForIndexParameterizedAttribute as CFString,
+            NSNumber(value: index), &out
+        ) == .success, let value = out as? NSNumber else { return nil }
+        return value.intValue >= 0 ? value.intValue : nil
     }
 
     // MARK: - The questions
