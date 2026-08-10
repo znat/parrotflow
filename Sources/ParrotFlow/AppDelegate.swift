@@ -131,6 +131,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// pill while its own press still owns it.
     private var offerPressRun: Int?
 
+    /// When a press's words were written. What makes a pane snapshot a
+    /// *before*: read after this and it already holds the words, so it is not
+    /// a baseline and cannot be diffed against anything.
+    private var wroteAt: (run: Int, at: Date)?
+
     /// Where the last dictation into a given element ended up.
     ///
     /// The only thing worth knowing at the press about an app that keeps no
@@ -696,19 +701,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let run = pressRun
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let before = CaretAnchor.snapshot(of: element)
+                // When the pane was read, not when this hop lands. The two are
+                // the same moment nine times out of ten and only the first one
+                // says whether the words were there yet.
+                let read = Date()
                 DispatchQueue.main.async {
                     // Stamped with the press it was taken for. A copy slow
                     // enough to outlive its own dictation describes a pane
                     // nobody is waiting on, and must not be left where the
                     // next one would pick it up.
                     guard let self, self.pressRun == run, let before else { return }
+
+                    // And it has to be a *before*. A short dictation can be
+                    // transcribed and written while this copy is still running,
+                    // and a pane read after that already holds the words: diffed
+                    // against itself it finds nothing, forever. Dropped, and the
+                    // pill stays where it opened.
+                    if let wrote = self.wroteAt, wrote.run == run, read > wrote.at {
+                        Log.write("pill: the pane was read after the words landed; no baseline")
+                        return
+                    }
                     self.screenAtPress = (run, before)
 
-                    // A short dictation can be transcribed and pasted before
-                    // this copy finishes, and then the offer went up without a
-                    // pane to compare against. This is the only other moment
-                    // the search can start, so it starts here — for this press
-                    // alone, and only while this press still owns the offer.
+                    // Written already, and the offer up, but the read got in
+                    // first: this is the one other moment the search can start.
                     guard self.offerIsUp, self.offerPressRun == run, let element
                     else { return }
                     self.findWhereTheWordsLanded(comparedWith: before, in: element, for: run)
@@ -1881,6 +1897,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
 
+        // Two dictations can finish out of order — a long prompt stage on the
+        // first, none on the second. The newer one's offer is the one under the
+        // words you are looking at, so an older one arriving after it does not
+        // take the pill back off it.
+        if offerIsUp, let owner = offerPressRun, owner > press.run {
+            Log.write("offer: a newer dictation already has the pill")
+            return
+        }
+
         offerUntil = Date().addingTimeInterval(Self.offerSeconds)
         offerPressRun = press.run
         pill.offer(key, for: Self.offerSeconds)
@@ -2693,6 +2718,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        // Noted before the write, not after: from here on the pane holds this
+        // dictation's words, so a snapshot read later is not a before. See
+        // `wroteAt`.
+        wroteAt = (press.run, Date())
         switch TextInserter.insert(text, mode: config.transcription.insertMode) {
         case .pasted:
             if config.feedback.sound { NSSound(named: "Glass")?.play() }

@@ -228,7 +228,7 @@ enum CaretAnchor {
         // and the row is all that is left to find.
         guard let pane else { return .missed("no geometry") }
         guard let row = line(of: head, in: element),
-              let grid = visibleGrid(of: element, showing: now)
+              let grid = visibleGrid(of: element)
         else { return .missed("no bounds, and it will not say how the grid is laid out") }
 
         // Checked, not trusted. A pitch is a line height and it has a range —
@@ -273,26 +273,26 @@ enum CaretAnchor {
     /// pane is showing, which a row index has to be counted from when the value
     /// carries scrollback above it.
     ///
-    /// Without that attribute the value's own last line is all there is. It is
-    /// the bottom row only when the app pads the rows nothing was written to,
-    /// and whether it does is visible in the value: a padded value ends on a
-    /// blank row, a trimmed one ends on the row somebody last wrote to. Ghostty
-    /// pads, which is where 53 rows over a 917pt pane — 17.3pt, a real line
-    /// height rather than a fit — came from. Ends on text, and the count is the
-    /// text's rather than the screen's: refused, and the pill stays where it
-    /// opened.
-    private static func visibleGrid(of element: AXUIElement, showing value: String) -> (first: Int, rows: Int)? {
-        if let visible = range(kAXVisibleCharacterRangeAttribute, of: element), visible.length > 0,
-           let first = line(of: visible.location, in: element),
-           let last = line(of: visible.location + visible.length - 1, in: element),
-           last >= first {
-            return (first, last - first + 1)
-        }
-
-        let lastLine = value.lastIndex(of: "\n").map { value[value.index(after: $0)...] }
-        guard let lastLine, lastLine.allSatisfy(\.isWhitespace) else { return nil }
-        guard let last = line(of: value.utf16.count - 1, in: element) else { return nil }
-        return (0, last + 1)
+    /// Without that attribute, nothing. Counting the lines the value holds was
+    /// tried and does not work: that is how many rows have text on them, which
+    /// is the viewport only if the app pads the rows nothing was written to,
+    /// and the value gives no reliable way to tell whether it did. Get it wrong
+    /// and the pitch is wrong by the ratio between the two — 40 lines of a
+    /// 53-row screen is 22.9pt against a real 17.3pt, close enough to pass any
+    /// check on the number and still a quarter of the way down the screen.
+    ///
+    /// So the grid needs the viewport or it gets nothing, and the pill stays
+    /// where it opened. The arithmetic itself is sound where the viewport is
+    /// known: 53 rows over a 917pt pane is 17.3pt, a real line height rather
+    /// than a fit.
+    private static func visibleGrid(of element: AXUIElement) -> (first: Int, rows: Int)? {
+        guard let visible = range(kAXVisibleCharacterRangeAttribute, of: element),
+              visible.length > 0,
+              let first = line(of: visible.location, in: element),
+              let last = line(of: visible.location + visible.length - 1, in: element),
+              last >= first
+        else { return nil }
+        return (first, last - first + 1)
     }
 
     /// Which row of the grid an index sits on. Nil when the app will not say.
