@@ -118,12 +118,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Kept per press, and read by that press alone. Not frozen onto the
     /// `Press` the way the element is: the copy runs on a background queue and
     /// a short dictation can be transcribed before it lands, so frozen early it
-    /// would be frozen empty. And not one slot, because two dictations are
-    /// ordinarily in flight and the older one still needs the pane it started
-    /// with. Bounded to the press in hand and the one before it — a value here
-    /// has been seen at 395,489 characters — and each is taken out when it is
-    /// used.
+    /// would be frozen empty. And not one slot, because dictations overlap and
+    /// an older one still needs the pane it started with.
+    ///
+    /// A press's pane lives until its dictation is delivered, and
+    /// `insertDictation` takes it out — used or not. The cap is only for the
+    /// dictations that never get that far, cancelled with Escape or heard as a
+    /// command: a value here has been seen at 395,489 characters, so the
+    /// newest few are kept and the rest dropped.
     private var screenAtPress: [Int: String] = [:]
+
+    /// How many panes to keep. Past what anyone can have in flight at once —
+    /// each one is a hotkey press whose transcript has not landed yet.
+    private static let panesKept = 4
 
     /// Bumped by every press that starts a dictation. It is what a `Press`
     /// carries, and what a snapshot that took a moment to copy is stamped with
@@ -612,9 +619,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !recorder.isRecording {
             anchorAtPress = nil
             pressRun += 1
-            // The press before this one may still be waiting on a transcript,
-            // so its pane stays; anything older cannot be.
-            screenAtPress = screenAtPress.filter { pressRun - $0.key <= 1 }
             readTheAnchor()
         }
 
@@ -705,13 +709,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let before = CaretAnchor.snapshot(of: element)
                 DispatchQueue.main.async {
-                    // Kept for the press it was taken for, whether or not a
-                    // newer press has started since: that press takes its own
-                    // and this one is still going to be transcribed. Two
-                    // presses back, nothing is waiting on it any more.
-                    guard let self, let before, self.pressRun - run <= 1
-                    else { return }
+                    // Kept for the press it was taken for, however many
+                    // presses have started since: each of those has its own,
+                    // and this one is still going to be transcribed.
+                    guard let self, let before else { return }
                     self.screenAtPress[run] = before
+                    for stale in self.screenAtPress.keys.sorted().dropLast(Self.panesKept) {
+                        self.screenAtPress.removeValue(forKey: stale)
+                    }
 
                     // A short dictation can be transcribed and written while
                     // this copy is still running, so the offer can already be
@@ -2738,6 +2743,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("Accessibility not granted; left transcript on the clipboard")
             setLabel("Copied — grant Accessibility to auto-paste", clearAfter: 4)
         }
+        // Delivered, so nothing wants this dictation's pane any more. Already
+        // gone on the path that made the offer. The clipboard paths above
+        // return before this and leave theirs to the cap, which is what the
+        // cap is for.
+        screenAtPress.removeValue(forKey: press.run)
         updateUI()
     }
 
