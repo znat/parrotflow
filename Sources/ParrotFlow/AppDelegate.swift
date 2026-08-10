@@ -95,7 +95,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// Nil whenever there was a caret to aim at, so the search below only ever
     /// runs for the apps that need it.
-    private var screenAtPress: String?
+    ///
+    /// Kept with the element it was read from, because it is only about that
+    /// element. Push-to-talk does not wait for the previous transcript, so two
+    /// dictations are ordinarily in flight and this field holds the newer
+    /// press's pane. `showCorrectOffer` is handed the element its own dictation
+    /// was aimed at and refuses a snapshot from any other one — the same rule,
+    /// and the same `CFEqual`, that decides whether that dictation may paste.
+    private var screenAtPress: (element: AXUIElement, text: String)?
 
     /// Bumped by every press, so a snapshot that took a moment to copy cannot
     /// end up describing the dictation after the one it was taken for.
@@ -615,8 +622,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.global(qos: .utility).async { [weak self] in
                     let before = CaretAnchor.snapshot(of: element)
                     DispatchQueue.main.async {
-                        guard let self, self.pressRun == run else { return }
-                        self.screenAtPress = before
+                        // A snapshot that took long enough for the next press to
+                        // happen describes a dictation nobody is waiting on any
+                        // more, and would overwrite the one that is current.
+                        guard let self, self.pressRun == run,
+                              let element, let before else { return }
+                        self.screenAtPress = (element, before)
                     }
                 }
             }
@@ -1816,7 +1827,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// written down here, so a config that moved the hotkey moves what this
     /// advertises. A modifier-only binding has a name too. If registration
     /// failed there is no key to offer and nothing is shown.
-    private func showCorrectOffer() {
+    /// `aimedAt` is the element this dictation was aimed at, carried down from
+    /// its own press — see `insertDictation`. Everything the search below uses
+    /// is checked against it, so an offer for one dictation can never be moved
+    /// by the press-time state of another.
+    private func showCorrectOffer(aimedAt element: AXUIElement?) {
         guard config.feedback.correctOffer else { return }
         guard let key = hotKeys.binding?.displayName else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1825,10 +1840,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerUntil = Date().addingTimeInterval(Self.offerSeconds)
         pill.offer(key, for: Self.offerSeconds)
 
-        // Set only when there was no caret at the press. A remembered anchor is
+        // Set only when there was no caret at the press, and only used when it
+        // is a snapshot of this dictation's own field. A remembered anchor is
         // still a guess, and this is what replaces it with the answer.
-        if let before = screenAtPress {
-            findWhereTheWordsLanded(comparedWith: before)
+        if let screen = screenAtPress, let element, CFEqual(screen.element, element) {
+            findWhereTheWordsLanded(comparedWith: screen.text, in: element)
         }
     }
 
@@ -1845,21 +1861,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Nothing waits for this. The offer is already on screen at the position
     /// the pill opened with, and it moves if and when there is somewhere better
     /// to be — so a miss is not a delay, it is simply the old behaviour.
-    private func findWhereTheWordsLanded(comparedWith before: String) {
-        let element = focusAtPress?.element
+    ///
+    /// The element is passed in rather than read off `self`, so a second
+    /// dictation started while this one is still looking cannot redirect it.
+    private func findWhereTheWordsLanded(comparedWith before: String, in element: AXUIElement) {
         let deadline = Date().addingTimeInterval(0.5)
         // Off the main thread, because the thing being read can be enormous:
         // Outlook's message pane reported 395,489 characters, and every look
         // copies all of them out of a busy process. Six of those on the main
         // thread is a stutter in whatever the user is actually doing.
         let queue = DispatchQueue.global(qos: .userInitiated)
+        let run = pressRun
 
         func look() {
             let outcome = CaretAnchor.landed(after: before, at: element)
             DispatchQueue.main.async { [weak self] in
-                // Stop the moment the offer is gone: the pill it would move is
-                // no longer on screen, and the next dictation has its own aim.
-                guard let self, self.offerIsUp else { return }
+                // Stop the moment the offer is gone, or the moment another
+                // press takes the pill: this is looking for one dictation's
+                // words, and the pill it would move now belongs to a newer one.
+                guard let self, self.offerIsUp, self.pressRun == run else { return }
                 switch outcome {
                 case .found(let found):
                     self.pill.aim(at: found)
@@ -1867,7 +1887,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // but only when the pane will say how big it is — that
                     // count is the only thing that can tell the guess it has
                     // gone stale, so without it there is no guess worth making.
-                    if let element, let chars = CaretAnchor.characterCount(of: element) {
+                    if let chars = CaretAnchor.characterCount(of: element) {
                         self.lastLanding = (element, found, Date(), chars)
                     }
                 case .missed(let why):
@@ -2625,7 +2645,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
             // The words are in the field and you are looking at them. This is
             // the only second in which correcting one is free.
-            showCorrectOffer()
+            showCorrectOffer(aimedAt: element)
         case .copied:
             // Deliberate clipboard mode — confirm it landed.
             if config.feedback.sound { NSSound(named: "Glass")?.play() }

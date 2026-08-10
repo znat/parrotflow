@@ -223,14 +223,28 @@ enum CaretAnchor {
             return .found(Found(rect: across(text, pane), text: text, source: .landed))
         }
 
-        // No bounds, so work out the row instead. A terminal is a fixed grid:
-        // ask which line the last character is on for the row count, and the
-        // pane's height over that is the pitch. Measured on Ghostty at 53 rows
-        // of 17.3pt, a real line height rather than a fit.
+        // No bounds, so work out the row instead. A terminal is a fixed grid,
+        // so the pane's height over the number of rows it shows is the pitch,
+        // and the row is all that is left to find.
         guard let pane else { return .missed("no geometry") }
         guard let row = line(of: head, in: element),
-              let rows = line(of: new.count - 1, in: element).map({ $0 + 1 }), rows > 0
+              let grid = visibleGrid(of: element, holding: new.count)
         else { return .missed("no bounds, and it will not say which line an index is on") }
+
+        // Every row the pane shows, not every row that has text on it. A pitch
+        // is a line height and it has a range: 17.3pt was measured on Ghostty,
+        // and an answer far outside that came from counting the wrong rows.
+        // Refused rather than used, which is the rule everywhere else here —
+        // the pill stays where it opened, and nowhere in particular beats
+        // somewhere wrong.
+        let pitch = pane.height / CGFloat(grid.rows)
+        guard (6.0...40.0).contains(pitch), (grid.first..<grid.first + grid.rows).contains(row)
+        else {
+            return .missed(String(
+                format: "the grid says row %d of %d at %.0fpt, which is not a line of text",
+                row, grid.rows, pitch
+            ))
+        }
 
         // The grid gives a row and no column — see `across` for why the column
         // would be thrown away anyway. So the row is the whole width of the
@@ -240,12 +254,36 @@ enum CaretAnchor {
         //
         // Built in flipped coordinates, where `maxY` is the pane's top edge, so
         // rows count downward from there.
-        let pitch = pane.height / CGFloat(rows)
         let rect = NSRect(
-            x: pane.minX, y: pane.maxY - CGFloat(row + 1) * pitch,
+            x: pane.minX, y: pane.maxY - CGFloat(row - grid.first + 1) * pitch,
             width: pane.width, height: pitch
         )
         return .found(Found(rect: rect, text: rect, source: .landed))
+    }
+
+    /// The rows the pane is showing: the first one, and how many.
+    ///
+    /// `AXVisibleCharacterRange` is what is on screen, so the lines it spans
+    /// are the rows on screen. Asked first because it is the only answer that
+    /// is about the viewport rather than about the text — and it also gives the
+    /// row the top of the pane is showing, which a row index has to be counted
+    /// from when the value carries scrollback above it.
+    ///
+    /// Without it, the value's own last line is all there is to go on. That is
+    /// only the viewport if the app reports its blank rows too: Ghostty does,
+    /// and 53 rows over a 917pt pane is 17.3pt, a real line height rather than
+    /// a fit. An app that stopped at the last written line would report too few
+    /// rows and the pitch would come out too large — which is why the caller
+    /// checks the pitch instead of trusting it.
+    private static func visibleGrid(of element: AXUIElement, holding count: Int) -> (first: Int, rows: Int)? {
+        if let visible = range(kAXVisibleCharacterRangeAttribute, of: element), visible.length > 0,
+           let first = line(of: visible.location, in: element),
+           let last = line(of: visible.location + visible.length - 1, in: element),
+           last >= first {
+            return (first, last - first + 1)
+        }
+        guard count > 0, let last = line(of: count - 1, in: element) else { return nil }
+        return (0, last + 1)
     }
 
     /// Which row of the grid an index sits on. Nil when the app will not say.
@@ -287,9 +325,14 @@ enum CaretAnchor {
     }
 
     private static func selectedRange(of element: AXUIElement) -> CFRange? {
+        range(kAXSelectedTextRangeAttribute, of: element)
+    }
+
+    /// Any attribute whose value is a range.
+    private static func range(_ attribute: String, of element: AXUIElement) -> CFRange? {
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
-            element, kAXSelectedTextRangeAttribute as CFString, &value
+            element, attribute as CFString, &value
         ) == .success, let wrapped = value, CFGetTypeID(wrapped) == AXValueGetTypeID()
         else { return nil }
         var range = CFRange()
