@@ -228,15 +228,14 @@ enum CaretAnchor {
         // and the row is all that is left to find.
         guard let pane else { return .missed("no geometry") }
         guard let row = line(of: head, in: element),
-              let grid = visibleGrid(of: element, holding: new.count)
-        else { return .missed("no bounds, and it will not say which line an index is on") }
+              let grid = visibleGrid(of: element, showing: now)
+        else { return .missed("no bounds, and it will not say how the grid is laid out") }
 
-        // Every row the pane shows, not every row that has text on it. A pitch
-        // is a line height and it has a range: 17.3pt was measured on Ghostty,
-        // and an answer far outside that came from counting the wrong rows.
-        // Refused rather than used, which is the rule everywhere else here —
-        // the pill stays where it opened, and nowhere in particular beats
-        // somewhere wrong.
+        // Checked, not trusted. A pitch is a line height and it has a range —
+        // 17.3pt was measured on Ghostty — and the row has to be one the pane
+        // is showing. Either failing means the grid was read wrong, and a grid
+        // read wrong is refused rather than used: the pill stays where it
+        // opened, and nowhere in particular beats somewhere wrong.
         let pitch = pane.height / CGFloat(grid.rows)
         guard (6.0...40.0).contains(pitch), (grid.first..<grid.first + grid.rows).contains(row)
         else {
@@ -263,26 +262,36 @@ enum CaretAnchor {
 
     /// The rows the pane is showing: the first one, and how many.
     ///
-    /// `AXVisibleCharacterRange` is what is on screen, so the lines it spans
-    /// are the rows on screen. Asked first because it is the only answer that
-    /// is about the viewport rather than about the text — and it also gives the
-    /// row the top of the pane is showing, which a row index has to be counted
-    /// from when the value carries scrollback above it.
+    /// The rows on *screen*, which is not the same question as how many rows
+    /// have text on them. Get that wrong and the pitch is wrong by the ratio
+    /// between the two, and the pill goes to a row that is plausible and not
+    /// the right one.
     ///
-    /// Without it, the value's own last line is all there is to go on. That is
-    /// only the viewport if the app reports its blank rows too: Ghostty does,
-    /// and 53 rows over a 917pt pane is 17.3pt, a real line height rather than
-    /// a fit. An app that stopped at the last written line would report too few
-    /// rows and the pitch would come out too large — which is why the caller
-    /// checks the pitch instead of trusting it.
-    private static func visibleGrid(of element: AXUIElement, holding count: Int) -> (first: Int, rows: Int)? {
+    /// `AXVisibleCharacterRange` is the range on screen, so the lines it spans
+    /// are the rows on screen. Asked first because it is the only answer that
+    /// is about the viewport at all — and it also gives the row the top of the
+    /// pane is showing, which a row index has to be counted from when the value
+    /// carries scrollback above it.
+    ///
+    /// Without that attribute the value's own last line is all there is. It is
+    /// the bottom row only when the app pads the rows nothing was written to,
+    /// and whether it does is visible in the value: a padded value ends on a
+    /// blank row, a trimmed one ends on the row somebody last wrote to. Ghostty
+    /// pads, which is where 53 rows over a 917pt pane — 17.3pt, a real line
+    /// height rather than a fit — came from. Ends on text, and the count is the
+    /// text's rather than the screen's: refused, and the pill stays where it
+    /// opened.
+    private static func visibleGrid(of element: AXUIElement, showing value: String) -> (first: Int, rows: Int)? {
         if let visible = range(kAXVisibleCharacterRangeAttribute, of: element), visible.length > 0,
            let first = line(of: visible.location, in: element),
            let last = line(of: visible.location + visible.length - 1, in: element),
            last >= first {
             return (first, last - first + 1)
         }
-        guard count > 0, let last = line(of: count - 1, in: element) else { return nil }
+
+        let lastLine = value.lastIndex(of: "\n").map { value[value.index(after: $0)...] }
+        guard let lastLine, lastLine.allSatisfy(\.isWhitespace) else { return nil }
+        guard let last = line(of: value.utf16.count - 1, in: element) else { return nil }
         return (0, last + 1)
     }
 
