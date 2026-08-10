@@ -168,6 +168,14 @@ if let index = arguments.firstIndex(of: "--normalize") {
     exit(NormalizeCommand.run(text: text))
 }
 
+if let index = arguments.firstIndex(of: "--inflected") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --inflected <term> <heard>")
+        exit(2)
+    }
+    exit(InflectedCommand.run(term: arguments[index + 1], heard: arguments[index + 2]))
+}
+
 if let index = arguments.firstIndex(of: "--command") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --command \"hey parrot, Tasmin spells T A S M E E N\""

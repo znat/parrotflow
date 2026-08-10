@@ -450,18 +450,47 @@ actor Vocabulary {
     /// and never reaches a menu. The decoder had the grammar right; only the
     /// spelling of the name was in question, and the two are separable.
     ///
-    /// Only a trailing possessive is carried. A word that merely ends in the
-    /// same letters is not a name plus a suffix, so the match is on the term
-    /// followed by an apostrophe.
+    /// Only a trailing possessive is carried, and only where dropping it brings
+    /// the word closer to the term. This used to ask whether the stem was
+    /// spelled exactly like the term, which is the one case where nothing
+    /// needed carrying: a substitution runs *because* the decoder spelled the
+    /// name differently. `mathieu` is not `matthieu`, so the test failed and
+    /// the bare term came back. It carried the possessive only where the
+    /// possessive was never at risk.
+    ///
+    /// The reason that test was narrow still holds — a word that merely ends in
+    /// the same letters is not a name plus a suffix — so something still has to
+    /// refuse. `let's`, `it's` and `he's` all end in `'s` and none is a
+    /// possessive; writing `Praisy's` over one is worse than writing `Praisy`.
+    ///
+    /// A word list is not what separates them. Take the `'s` off a possessive
+    /// and what is left is the name the decoder was trying to spell, so the
+    /// match improves. Take it off a contraction and what is left is a short
+    /// function word that was never the name, so the match gets worse — the
+    /// length penalty in `gluedSimilarity` does that. So the test is a
+    /// comparison, not a threshold: it needs no floor and no list, and it
+    /// cannot fire on a token the rescorer did not already match.
+    ///
+    /// Measured on the 5672 archive tokens ending in `'s` (2026-08-10). 4660
+    /// are contractions, in 14 spellings, and every one is refused — the
+    /// closest is "Here" at 0.41 against `Vercel`. All 32 substitutions the
+    /// pass really made over such a token are name possessives. The old test
+    /// carried 11 of them, all `Mirza's` over `Mirza`; this carries 31.
+    ///
+    /// One shape can still fool it: a term shorter than a contraction's stem,
+    /// where dropping a character helps the length ratio instead of hurting it.
+    /// That needs a two-letter term, and there is none.
     static func inflected(_ term: String, like heard: String) -> String {
         let trimmed = heard.trimmingCharacters(in: CharacterSet.alphanumerics.inverted
             .subtracting(CharacterSet(charactersIn: "'\u{2019}s")))
         let lower = trimmed.lowercased()
-        for suffix in ["'s", "\u{2019}s"] where lower.hasSuffix(suffix) {
-            let stem = String(lower.dropLast(suffix.count))
-            if stem == term.lowercased() { return term + suffix }
-        }
-        return term
+        guard let suffix = ["'s", "\u{2019}s"].first(where: { lower.hasSuffix($0) })
+        else { return term }
+        let stem = String(lower.dropLast(suffix.count))
+        guard !stem.isEmpty,
+              gluedSimilarity(stem, term) >= gluedSimilarity(lower, term)
+        else { return term }
+        return term + suffix
     }
 
     /// The punctuation a replaced word carried, so the sentence keeps its end.

@@ -132,6 +132,13 @@ jobs:
       - name: The eval harness
         run: scripts/check-eval.sh
 
+      # Whether a possessive survives a substitution. Pure string work, no audio
+      # and no model, so it runs here. The direction that matters is a `'s`
+      # written where the speaker said none: these substitutions auto-apply and
+      # there is no menu behind them.
+      - name: A possessive across a substitution
+        run: scripts/check-possessive.sh
+
       # Not a validation set: it checks that the file a new install is written
       # with still teaches everything config.example.yaml documents. That has
       # drifted twice, both times silently.

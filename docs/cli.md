@@ -78,7 +78,14 @@ $PF --replace "we deployed to super base" [--app <name>]
 $PF --numbers "two hundred forty three" [--lang fr]
 $PF --normalize "<text>"
 $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
+$PF --inflected <term> <heard>
 ```
+
+`--inflected` asks what the vocabulary pass would write where a decoded word
+stood — `--inflected Matthieu "Mathieu's"` prints `Matthieu's`. It is
+`Vocabulary.inflected` and nothing else: no audio, no model, no config. The
+question it answers is whether a possessive survives a substitution, and
+`scripts/check-possessive.sh` scores it against `tests/possessive-cases.yaml`.
 
 `--pipeline` takes a YAML file holding a pipeline — its own, not your config —
 so a case file states the setup it assumes instead of inheriting this machine's.
@@ -312,6 +319,7 @@ scripts/check-compose.sh           # what a prompt says once the scope is in it
 scripts/check-context.sh           # what the context stage publishes for a screen
 scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
 scripts/check-vocabulary-config.sh # what vocabulary.yaml adds up to, old keys included
+scripts/check-possessive.sh        # whether a possessive survives a substitution
 scripts/check-no-voice.sh          # nothing in git is one person's voice
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
