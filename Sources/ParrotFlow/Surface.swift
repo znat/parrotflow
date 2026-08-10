@@ -591,11 +591,35 @@ struct Surface {
     /// concluding failure from that is worse than not checking at all: the
     /// recovery then destroys work that was fine.
     private func settled(on fragment: String) -> Bool {
-        let deadline = Date().addingTimeInterval(1.0)
+        // Two and a half seconds, not one.
+        //
+        // Measured in Outlook: the paste landed and was on screen, and this
+        // said it had not within the second — so the repair undid an edit that
+        // had worked, and the message said the app would not allow one. The
+        // read is the slow part. Outlook's message body reported 395,489
+        // characters, and every poll copies all of them out of another process
+        // that is busy laying the paste out, so a single read can eat most of
+        // the old budget and only two or three ever happened.
+        let deadline = Date().addingTimeInterval(2.5)
         repeat {
             if landed(fragment) { return true }
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
+
+        // Which of the three failures this was. They look identical from the
+        // outside and want opposite fixes: text that never arrived is a write
+        // that did not happen, text that arrived without its surroundings is
+        // this check being too literal, and neither is a paste that went to the
+        // wrong place.
+        if let value = SelectionReader.visibleText(of: element) {
+            let replacement = fragment.trimmingCharacters(in: .whitespacesAndNewlines)
+            Log.write(folded(value).contains(folded(replacement))
+                ? "surface: the text is there but not in the context expected;"
+                    + " the read-back is stricter than the edit"
+                : "surface: the text has not appeared in the field")
+        } else {
+            Log.write("surface: cannot read the field back to check the edit")
+        }
         return false
     }
 
@@ -622,6 +646,14 @@ struct Surface {
             .replacingOccurrences(of: "\u{2018}", with: "'")
             .replacingOccurrences(of: "\u{201C}", with: "\"")
             .replacingOccurrences(of: "\u{201D}", with: "\"")
+            // What a rich-text editor does to text on the way in. Outlook and
+            // Mail put non-breaking spaces around pasted runs and keep carriage
+            // returns in the value; both make a literal comparison fail on text
+            // that is plainly correct on screen.
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "\u{202F}", with: " ")
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
     }
 
     private func select(_ range: NSRange) -> Bool {
