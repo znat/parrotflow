@@ -56,10 +56,12 @@ import hashlib
 import importlib.util
 import json
 import math
+import os
 import random
 import shlex
 import statistics
 import sys
+import tempfile
 import wave
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -408,7 +410,33 @@ def load_marks(path):
 
 
 def save_marks(path, marks):
-    Path(path).write_text(json.dumps({"not_counted": marks}, indent=2) + "\n")
+    """Write the marks, and never leave a half-written file behind.
+
+    This is the only copy of decisions that came from listening. A plain
+    `write_text` truncates first, so a crash or a full disk in the middle
+    leaves the file unreadable — and `load_marks` then correctly refuses it,
+    which turns a lost write into a lost archive.
+
+    So: write a temporary file in the same directory, flush it to the disk,
+    then rename over the target. `os.replace` is atomic within a filesystem,
+    which is why the temporary has to be a sibling and not in `/tmp`. Any
+    reader sees the old file or the new one, never a mixture. If the write
+    fails the temporary is removed and the original is untouched.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    body = json.dumps({"not_counted": marks}, indent=2) + "\n"
+    handle, temporary = tempfile.mkstemp(dir=str(path.parent),
+                                         prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as out:
+            out.write(body)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
 
 
 def marked_names(marks):
