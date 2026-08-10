@@ -1,22 +1,3 @@
-"""The prompt the name judge asked before it took verdicts.
-
-The baseline every earlier round of this work was scored against, and the
-`shipped` arm of `judge-verdicts.py`. It asks a different question: whole
-sentences on a lettered menu, one letter back.
-
-It is a Python module and not a file in `examples/` because the app refuses a
-config that names a prompt file, and a prompt sitting in the tree as prose is
-one somebody copies into their config anyway.
-
-The paragraph about score gaps is part of why it was retired. It tells the
-model a gap over about 4 means the sound can decide; the largest gap in the
-data is 2.72.
-
-Four harnesses read it — `judge-verdicts.py`, `tune-judge.py`,
-`judge-framings.py` and `rerank-judge.py` — and one copy is the point.
-"""
-
-RETIRED_PROMPT = """\
 The user dictates text. The speech recogniser mangles names they use often.
 Their vocabulary includes: {terms} — colleagues, products and tools they talk
 about every day.
@@ -41,4 +22,3 @@ that makes no sense should overrule it.
 
 Pick the reading that makes sense as a sentence, unless the sound says
 otherwise by more than about 4. Answer with its letter only.
-"""

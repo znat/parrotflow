@@ -16,13 +16,32 @@ import Foundation
 ///     meant:  Mira and Mirza … deployed on Vercel     … the Versailles castle
 ///
 /// A menu can say that. So can one verdict per change, and the verdict is the
-/// smaller question. Measured on 74 substitutions from one speaker's own
-/// dictation, the lettered menu scores 29 and the per-change verdict 62,
-/// against 22 for leaving every substitution alone and 52 for undoing them
-/// all. Head to head the verdict wins 34 and loses 1. The menu's own record is
-/// why: four rounds and ten framings never moved it off 0 of 8 on the clips
-/// where an ordinary word was overwritten, because a menu asks the model to
-/// rank whole sentences and it answers by agreeing with the first one.
+/// smaller question.
+///
+/// **Measured on 74 substitutions from one speaker's own dictation**, three
+/// replays, zero flips:
+///
+///     arm                                 all      name said   name not
+///     one verdict per change              63/74    21/22       42/52
+///     the lettered menu                   29/74    18/22       11/52
+///     blind: every substitution stands    22/74    22/22       0/52
+///     blind: every substitution goes      52/74    0/22        52/52
+///
+/// The two blind rows are the point — a mechanism that does not beat its own
+/// blind version has not been shown to work. Head to head the verdict wins 36
+/// and loses 2 against the menu, and 42 to 1 against leaving the substitutions
+/// alone. On the 42 clips the wording was *not* chosen on it is 42/50 against
+/// the menu's 20/50.
+///
+/// The menu's own record is why it went: four rounds and ten framings never
+/// moved it off 0 of 8 on the clips where an ordinary word was overwritten,
+/// because a menu asks the model to rank whole sentences and it answers by
+/// agreeing with the first one.
+///
+/// The harness and the labelled clips are not in the tree — the numbers are
+/// recorded in PR #102 and here. What is testable without them is: the parser
+/// (`scripts/check-verdicts.sh`) and the prompt's own shape
+/// (`scripts/check-judge-prompt.sh`).
 ///
 /// The model still never writes the transcript. It answers KEEP or REVERT and
 /// this file puts the words back, which is what stops it tidying the grammar

@@ -11,7 +11,7 @@ question: the judge's errors nearly all belong to one class — an ordinary
 English word colliding with a vocabulary term, and the term winning — so what
 happens if the *question* changes rather than its wording?
 
-Each framing is an edit list applied to the retired menu prompt, plus a
+Each framing is an edit list applied to the shipped `verify_names.md`, plus a
 way of rendering the term list. Nothing here writes a prompt file, and nothing
 here changes the app. The edits are exact substrings of the shipped prompt and
 the run fails loudly if one stops matching, so a framing can never quietly
@@ -34,12 +34,6 @@ with the acoustic margin, and an NLTagger part-of-speech signal. The first two
 are not prompt changes — the stage composes whole sentences today, so a blank
 means rewriting how `VocabularyJudge` builds its question. `FRAMINGS` is a
 plain registry so they can be added beside these without moving anything.
-
-NOTE — this scores the **retired** menu prompt, `scripts/retired_prompt.py`.
-The judge takes one KEEP or REVERT per substitution now and `judge-verdicts.py`
-scores it; this is kept as the baseline every earlier round was measured
-against. `--harvest` no longer matches the app's dump; the committed cache in
-`tests/judge-menus.json` still replays.
 """
 import argparse
 import json
@@ -50,13 +44,8 @@ from pathlib import Path
 from importlib.machinery import SourceFileLoader
 
 ROOT = Path(__file__).resolve().parent.parent
-
-# `scripts/` is not always on the path; this file may be loaded by path.
-sys.path.insert(0, str(ROOT / "scripts"))
-from retired_prompt import RETIRED_PROMPT  # noqa: E402
-
 CACHE = ROOT / "tests/judge-menus.json"
-
+PROMPT = ROOT / "examples/prompts/verify_names.md"
 KINDS = ROOT / "tests/term-kinds.yaml"
 ENDPOINT = os.environ.get("PARROTFLOW_LLM_ENDPOINT", "http://localhost:11434") + "/api/chat"
 
@@ -217,12 +206,12 @@ def build(framing):
     framing into the baseline and reports it as a finding, which is the one
     failure this harness cannot be allowed to have.
     """
-    text = RETIRED_PROMPT.strip()
+    text = PROMPT.read_text().strip()
     for old, new in FRAMINGS[framing]["edits"]:
         if text.count(old) != 1:
             raise SystemExit(
                 f"✗ framing {framing!r}: its edit no longer matches "
-                f"the retired prompt exactly once ({text.count(old)} times).\n"
+                f"{PROMPT.name} exactly once ({text.count(old)} times).\n"
                 f"   looked for: {old[:60]!r}...")
         text = text.replace(old, new)
     return text

@@ -2,7 +2,7 @@
 """Score a judge prompt against menus already harvested from the archive.
 
     scripts/tune-judge.py --harvest              # run the app once, cache the menus
-    scripts/tune-judge.py                        # score the retired menu prompt
+    scripts/tune-judge.py                        # score the shipped verify_names.md
     scripts/tune-judge.py --prompt v6.md         # score a candidate
     scripts/tune-judge.py --prompt v6.md --model gemma4:12b
     scripts/tune-judge.py --strip-sentinels      # drop the fake 0.00 score lines
@@ -21,18 +21,11 @@ and leaving them in hides the difference between prompts behind a constant.
 menu sizes. Half the cached menus hold two options, so guessing gets 8.1/28,
 not the 2 that a menu of sixteen would suggest. A total with no chance beside
 it says nothing (F13).
-
-NOTE — this scores the **retired** menu prompt, `scripts/retired_prompt.py`.
-The judge takes one KEEP or REVERT per substitution now and `judge-verdicts.py`
-scores it; this is kept as the baseline every earlier round was measured
-against. `--harvest` no longer matches the app's dump; the committed cache in
-`tests/judge-menus.json` still replays.
 """
 import argparse
 import json
 import os
 import re
-import pathlib
 import string
 import subprocess
 import sys
@@ -41,13 +34,8 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-
-# `scripts/` is not always on the path; this file may be loaded by path.
-sys.path.insert(0, str(ROOT / "scripts"))
-from retired_prompt import RETIRED_PROMPT  # noqa: E402
-
 CACHE = ROOT / "tests/judge-menus.json"
-
+PROMPT = ROOT / "examples/prompts/verify_names.md"
 CLIPS = Path.home() / "Recordings/ParrotFlow Dev"
 ENDPOINT = os.environ.get("PARROTFLOW_LLM_ENDPOINT", "http://localhost:11434") + "/api/chat"
 
@@ -166,12 +154,12 @@ def ask(model, system, options, scores="", logprobs=False, lead=""):
 
 
 def chosen(reply, count):
-    """The letter a reply names, the way the retired judge read it.
+    """The letter a reply names, read exactly as the app reads it.
 
-    It was `VocabularyJudge.chosen`, and that function is gone — the app takes
-    KEEP or REVERT now, not a letter. Kept here unchanged because the baselines
-    in this file were measured with it, and rereading old replies by a new rule
-    would move numbers that are supposed to be fixed points.
+    This is `VocabularyJudge.chosen` in Sources/, in Python. The two must agree:
+    a harness that reads "Option B" as O while the app reads it as B is scoring
+    a choice the app never made, and every baseline in this file would then
+    describe a judge nobody ships.
 
     A letter standing on its own is the answer. `I` goes last among those,
     because it is the one letter of the alphabet that is also an English word —
@@ -222,8 +210,7 @@ def ranking(top, options):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--harvest", action="store_true")
-    ap.add_argument("--prompt", default=None,
-                    help="a prompt file to score; the retired menu prompt otherwise")
+    ap.add_argument("--prompt", default=str(PROMPT))
     ap.add_argument("--model", default=os.environ.get("PARROTFLOW_JUDGE_MODEL", "gemma4:e4b"))
     ap.add_argument("--verbose", action="store_true")
     ap.add_argument("--no-scores", action="store_true",
@@ -241,8 +228,7 @@ def main():
         print("✗ no cache — run with --harvest first")
         return 2
 
-    prompt = (Path(args.prompt).read_text().strip() if args.prompt
-              else RETIRED_PROMPT.strip())
+    prompt = Path(args.prompt).read_text().strip()
     cases = json.loads(CACHE.read_text())
     scored = picked = unreachable = stripped = 0
     chance = 0.0
@@ -267,7 +253,7 @@ def main():
             print(f"      said:  {case['said']}")
             print(f"      chose: {chosen}")
 
-    name = Path(args.prompt).name if args.prompt else "the retired menu prompt"
+    name = Path(args.prompt).name
     how = "logprob" if args.logprobs else "sampled"
     shown = "none" if args.no_scores else ("stripped" if args.strip_sentinels else "full")
     lead = f"  {name:<20} {args.model:<14} {how:<8} scores {shown:<9}"

@@ -288,8 +288,9 @@ flips:
 | the vocabulary rules switched off | 52/74 | 0/22 | 52/52 |
 
 The two bottom rows are the blind controls, and they are the point: a mechanism
-that does not beat its own blind version has not been shown to work. Run it
-with `scripts/judge-verdicts.py`.
+that does not beat its own blind version has not been shown to work. Held out
+from the clips the wording was chosen on it is 42/50, against the menu's 20/50.
+The measurement is recorded in PR #102 and the harness was not kept.
 
 An earlier round measured a spell-check gate with no model at 95% on
 `tests/judge-cases.yaml`, above the model. It cannot do the job alone. Its rule

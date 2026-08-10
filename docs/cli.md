@@ -93,9 +93,7 @@ question it answers is whether a possessive survives a substitution, and
 `VocabularyJudge.verdicts` and nothing else. A reply read wrongly puts a name
 into somebody's sentence or takes one out, so it has its own set:
 `scripts/check-verdicts.sh` against `tests/verdict-cases.yaml`, malformed
-replies included. The same cases run through the copy of the parser
-`scripts/judge-verdicts.py` carries, so the harness and the app cannot drift
-apart about what a reply says.
+replies included.
 
 `--pipeline` takes a YAML file holding a pipeline — its own, not your config —
 so a case file states the setup it assumes instead of inheriting this machine's.
@@ -331,7 +329,7 @@ scripts/check-span.sh              # a composer-shaped page, or Slack, or Outloo
 scripts/check-vocabulary-config.sh # what vocabulary.yaml adds up to, old keys included
 scripts/check-possessive.sh        # whether a possessive survives a substitution
 scripts/check-verdicts.sh          # what the name judge reads out of a reply
-scripts/check-judge-prompt.sh      # the harness scores the prompt the app ships
+scripts/check-judge-prompt.sh      # the judge's prompt is one its parser can read
 scripts/check-no-voice.sh          # nothing in git is one person's voice
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
