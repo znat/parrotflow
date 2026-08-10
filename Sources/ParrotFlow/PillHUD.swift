@@ -339,9 +339,9 @@ final class PillHUD {
     }
 
     /// Where a pill of this window size sits: next to the words when this
-    /// dictation has an anchor, and otherwise the capsule centred 96pt off the
-    /// bottom, on the screen the pointer is on — which is the screen you are
-    /// typing into.
+    /// dictation has an anchor, on the screen those words are on. With no
+    /// anchor, the capsule centred 96pt off the bottom of the screen the
+    /// pointer is on — which is the screen you are typing into.
     ///
     /// `size` is the window's, bleed included, so the margin is taken back off
     /// both axes: what has to land at 96pt is the capsule you can see, not the
@@ -351,20 +351,64 @@ final class PillHUD {
     /// that grows stays centred and one that arrives after you have moved to
     /// the other monitor arrives on that one.
     private func anchor(_ size: NSSize) -> NSPoint {
-        let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
-        guard let visible = screen?.visibleFrame else { return panel?.frame.origin ?? .zero }
-
         // Every state of a dictation that has an anchor, not just the last one.
         // The point of aiming the pill is that it says where the words are
         // going *before* they go there, and a pill that pointed at the caret
         // only once the words had landed would be reporting rather than
         // telling you.
+        //
+        // The caret decides the screen too, not the pointer. They are the same
+        // screen in the ordinary case and the pointer is only a stand-in for
+        // "where you are working" — but with the caret in a window on one
+        // monitor and the pointer parked on another, clamping to the pointer's
+        // screen would put the pill on a display the words are not on. Worse,
+        // the frame is recomputed on every state change, so the pill would
+        // change monitors mid-dictation because the mouse was nudged.
         if let near {
+            guard let visible = screen(showing: near)?.visibleFrame
+            else { return panel?.frame.origin ?? .zero }
             return beside(near, size: size, on: visible)
         }
+        guard let visible = screenUnderPointer()?.visibleFrame
+        else { return panel?.frame.origin ?? .zero }
         return NSPoint(x: visible.midX - size.width / 2,
                        y: visible.minY + 96 - PillMetrics.bleed)
+    }
+
+    /// The screen the caret is on: the one it overlaps most.
+    ///
+    /// Most, rather than the first that contains a corner, because a window
+    /// straddling two monitors has a line of text on both and only one of them
+    /// has most of it. A caret rectangle that lands on none of them — a window
+    /// dragged off the edge, a display unplugged between the press and the
+    /// pill — falls back to the pointer, which is the old behaviour.
+    private func screen(showing rect: NSRect) -> NSScreen? {
+        // At least a point across before anything is measured. An app is free
+        // to report a caret with no width, and `intersection` calls an empty
+        // rectangle a miss however far inside a screen it sits — so a caret
+        // that is plainly on a display would match none of them.
+        let probe = NSRect(
+            x: rect.minX, y: rect.minY,
+            width: max(rect.width, 1), height: max(rect.height, 1)
+        )
+        var best: NSScreen?
+        var bestArea: CGFloat = 0
+        for candidate in NSScreen.screens {
+            let shared = candidate.frame.intersection(probe)
+            guard !shared.isNull else { continue }
+            let area = shared.width * shared.height
+            if area > bestArea {
+                bestArea = area
+                best = candidate
+            }
+        }
+        return best ?? screenUnderPointer()
+    }
+
+    /// The screen the pointer is on, which is the screen you are typing into.
+    private func screenUnderPointer() -> NSScreen? {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main
     }
 
     /// Under the line the words are going to land on, at the left edge of the
