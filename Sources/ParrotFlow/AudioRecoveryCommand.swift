@@ -283,15 +283,20 @@ enum AudioRecoveryCommand {
         return say(true, name, "\"\(reported)\"")
     }
 
-    /// And one that lost a single buffer still is.
+    /// And one that lost a single buffer still is — but says so.
     ///
     /// This is the ordinary headset disconnect. The recording is stopped by the
     /// device change, and one buffer can arrive in the new format before that
     /// stop reaches the main queue. Every word is in the part that was written,
     /// so refusing the clip would cost the whole dictation to save nothing.
+    ///
+    /// Both halves are checked, because passing the clip on *quietly* is its own
+    /// bug: the sentence arrives a syllable short with nothing saying so. The
+    /// tolerance decides whether it is transcribed, never whether it is
+    /// mentioned.
     private static func checkOneLostBufferIsForgiven(config: Config) -> Bool {
         let name = String(
-            format: "a clip that lost %.2fs is still transcribed", lostPerBuffer
+            format: "a clip that lost %.2fs is transcribed and said", lostPerBuffer
         )
         let outcome = recordThenLose(buffers: 1, config: config)
         guard let recording = outcome.recording else {
@@ -301,7 +306,10 @@ enum AudioRecoveryCommand {
         guard recording.rms >= Recorder.silenceFloor else {
             return say(false, name, String(format: "rms %.5f", recording.rms))
         }
-        return say(true, name, String(format: "rms %.3f", recording.rms))
+        guard let reported = outcome.reported else {
+            return say(false, name, "it was handed on with nothing said about the loss")
+        }
+        return say(true, name, "\"\(reported)\"")
     }
 
     /// Twenty good buffers, then `buffers` at a format the converter refuses.

@@ -126,15 +126,19 @@ final class Recorder {
     ///
     /// Not zero, because a device change ends a recording through
     /// `onUnexpectedStop`, and the tap can deliver a buffer in the new format
-    /// before that hop reaches the main queue — one 4096-frame buffer, about
-    /// 85 ms at 48 kHz and 170 ms at 24 kHz. Refusing a whole dictation over
-    /// that would throw away every word of a take whose words all arrived, on
-    /// every headset that disconnects itself.
+    /// before that hop reaches the main queue. One 4096-frame buffer is
+    /// 4096/rate seconds however the conversion goes: 85 ms at 48 kHz, 171 ms
+    /// at 24 kHz, 256 ms at 16 kHz. Refusing a whole dictation over that would
+    /// throw away every word of a take whose words all arrived, on every
+    /// headset that disconnects itself.
     ///
     /// Not unbounded, because past a certain hole the transcript is a sentence
     /// with words missing and nothing to say which — the failure this file is
-    /// about, delivered as text instead of as nothing. 0.3s is two of those
-    /// buffers and no more.
+    /// about, delivered as text instead of as nothing. 0.3s covers one buffer
+    /// at every rate a microphone runs at, and two at 48 kHz.
+    ///
+    /// A loss under it is still said out loud. The tolerance decides whether
+    /// the clip is transcribed, never whether the person is told.
     static let droppedAudioTolerance: TimeInterval = 0.3
 
     /// How long a hotkey press waits for an engine that is still being built.
@@ -487,7 +491,14 @@ final class Recorder {
         }
 
         let rms = Float((energy / Double(frames)).squareRoot())
-        if rms < Self.silenceFloor {
+        if dropped > 0 {
+            // Under the tolerance, so the clip is still worth transcribing —
+            // but not worth passing off as whole. Clearing the warning here
+            // would deliver a sentence missing its last syllable with nothing
+            // on screen saying so, which is this file's own failure in a
+            // smaller size. Transcribe it and say what went.
+            report(String(format: "The last %.1fs of that recording was lost.", lost))
+        } else if rms < Self.silenceFloor {
             // Frames arrived and they are all silence. A different fault again —
             // a muted device, the wrong microphone, a headset that connected
             // without its microphone — and the same cost to the person talking,
