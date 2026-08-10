@@ -373,10 +373,15 @@ final class Recorder {
 
     // MARK: - Stop
 
-    /// Returns nil if the clip was shorter than `min_duration_seconds` (the file
-    /// is deleted in that case), if nothing was recording, or if nothing was
-    /// captured at all — and in that last case says so through
-    /// `onCaptureProblem`.
+    /// Returns nil if nothing was recording, if the clip was shorter than
+    /// `min_duration_seconds`, if nothing was captured at all, or if part of
+    /// what was captured never reached the file.
+    ///
+    /// The last two say so through `onCaptureProblem`, because they are the
+    /// ones where a sentence was spoken and lost. Only a clip whose audio is
+    /// whole is handed back to be transcribed: half a sentence typed into
+    /// somebody's editor, with nothing to say which half is missing, is the
+    /// failure this is here to stop, not a lesser version of it.
     @discardableResult
     func stop(config: Config) -> Recording? {
         guard isRecording else { return nil }
@@ -432,14 +437,26 @@ final class Recorder {
             return nil
         }
 
-        let rms = Float((energy / Double(frames)).squareRoot())
+        // Some buffers were converted and never reached the file. What is on
+        // disk is shorter than what was said, so transcribing it would type a
+        // sentence with words missing and nothing to say which ones — the
+        // silent failure this whole change is about, delivered as text instead
+        // of as nothing. It is not handed on.
+        //
+        // The file stays where it is. It is the evidence of what went wrong,
+        // and deleting it is the opposite of useful — the same reason
+        // `cancelDictation` leaves a cancelled clip alone.
         if failed > 0 {
-            // Some buffers were converted and never reached the file. What is on
-            // disk is shorter than what was said, and a transcript of it would
-            // be missing words with nothing to say which ones.
-            Log.write("recording dropped \(failed) buffer(s) on the way to the file")
-            report("Part of that recording could not be written to disk.")
-        } else if rms < Self.silenceFloor {
+            Log.write(
+                "recording dropped \(failed) buffer(s) on the way to the file — "
+                + "\(url.lastPathComponent) is short and will not be transcribed"
+            )
+            report("Part of that recording was lost. Say it again.")
+            return nil
+        }
+
+        let rms = Float((energy / Double(frames)).squareRoot())
+        if rms < Self.silenceFloor {
             // Frames arrived and they are all silence. A different fault again —
             // a muted device, the wrong microphone, a headset that connected
             // without its microphone — and the same cost to the person talking,
