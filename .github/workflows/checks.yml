@@ -132,6 +132,14 @@ jobs:
       - name: The eval harness
         run: scripts/check-eval.sh
 
+      # What the recorder does when the microphone changes underneath it. No
+      # microphone is opened and no audio setting is touched — the input
+      # binding is moved inside the process — so this runs on a headless
+      # runner and beside somebody who is dictating. What it cannot prove is
+      # the hardware; see #95 and the note at the top of the command.
+      - name: Recovery from a device change
+        run: scripts/check-audio-recovery.sh
+
       # Whether a possessive survives a substitution. Pure string work, no audio
       # and no model, so it runs here. The direction that matters is a `'s`
       # written where the speaker said none: these substitutions auto-apply and

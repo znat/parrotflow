@@ -52,6 +52,10 @@ enum RecordTestCommand {
         print("✓ wrote \(recording.url.path)")
         print("  duration   \(String(format: "%.2f", recording.duration))s")
         print("  size       \(bytes) bytes")
+        // The same number the app judges a clip by, so what this prints and
+        // what the menu bar would warn about are one measurement.
+        print("  rms        \(String(format: "%.5f", recording.rms))"
+              + (recording.rms < Recorder.silenceFloor ? "  — silence" : ""))
 
         guard let file = try? AVAudioFile(forReading: recording.url) else {
             print("✗ the file is not readable as audio")

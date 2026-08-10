@@ -1,0 +1,61 @@
+# What the recorder must do when the audio configuration changes under it.
+#
+# Run with scripts/check-audio-recovery.sh. Each case moves the input binding —
+# which device, at what format — and says whether the capture engine has to be
+# replaced. The binding is moved inside the process, so running this does not
+# touch the machine's audio settings and does not take anyone's microphone away.
+#
+# `from` and `to` are the binding before and after. `null` is a machine with no
+# input device at all. The device numbers are arbitrary — only whether two of
+# them match matters. The rates are ordinary input rates and are there to be
+# told apart, not to name a particular microphone.
+
+- name: nothing moved
+  from: {device: 2, rate: 24000, channels: 1}
+  to: {device: 2, rate: 24000, channels: 1}
+  rebuild: false
+  why: >
+    preparing an engine posts this same notification. Rebuilding on it would
+    rebuild again, forever. This is the case the device check was added for.
+
+- name: the device moved
+  from: {device: 1, rate: 48000, channels: 1}
+  to: {device: 2, rate: 24000, channels: 1}
+  rebuild: true
+  why: the RØDE went out and AirPods came in; the engine holds a device that left
+
+- name: the device moved back
+  from: {device: 2, rate: 24000, channels: 1}
+  to: {device: 1, rate: 48000, channels: 1}
+  rebuild: true
+  why: >
+    and within a moment of the change before it. A time window cannot tell this
+    from our own echo, which is why the binding is compared instead.
+
+- name: same device, the format moved
+  from: {device: 2, rate: 16000, channels: 1}
+  to: {device: 2, rate: 24000, channels: 1}
+  rebuild: true
+  why: >
+    #95. AirPods keep their identity and renegotiate their format a second or
+    two after they become the input. A check on the device alone calls this
+    "nothing moved", the engine keeps converting from 16000, and every buffer at
+    24000 is refused — a clip of pure silence that nothing reports.
+
+- name: same device, the channel count moved
+  from: {device: 3, rate: 48000, channels: 2}
+  to: {device: 3, rate: 48000, channels: 1}
+  rebuild: true
+  why: an interface that dropped a channel is holding a tap built for two
+
+- name: the device went away
+  from: {device: 2, rate: 24000, channels: 1}
+  to: null
+  rebuild: true
+  why: nothing to record through, and a fresh engine is the only way back
+
+- name: a device arrived where there was none
+  from: null
+  to: {device: 1, rate: 48000, channels: 1}
+  rebuild: true
+  why: the engine was prepared against nothing and would keep recording nothing
