@@ -2433,8 +2433,10 @@ is for, not the height.
 
 **Abstain below five recordings, not three. One number covers ten of the eleven
 terms, and it is the same number for both statistics.** At n=3 a draw still
-throws away over half of a term's own correct spans between 4% and 11% of the
-time. At n=5 that is 0% to 2.5%. The prototype's floor of 3 was arithmetic —
+throws away over half of a term's own correct spans between 4% and 15% of the
+time, depending on the term and the statistic. At n=5 that is 0% to 3.5%. The
+worst case is the number to read: an abstain rule exists for the bad draw, not
+for the median one. The prototype's floor of 3 was arithmetic —
 "two recordings give one distance" — and it is a floor on *computability*, not
 on usefulness. Usefulness arrives two clips later.
 
@@ -2485,25 +2487,25 @@ percentile gives the identical table** — see below.
 | term | rec | n=2 | n=3 | n=4 | n=5 | n=6 | n=8 | n=12 | full |
 |---|---|---|---|---|---|---|---|---|---|
 | arexvy | 7 | 0.895 | 0.921 | 0.923 | 0.936 | 0.936 | — | — | 0.936 |
-| | | .862–1.000 | .887–1.000 | .897–1.000 | .913–.985 | .921–.985 | | | |
+| | | .862–1.000 | .887–1.000 | .897–1.000 | .913–.985 | .921–.985 |  |  | |
 | claude | 6 | **0.582** | **0.635** | 0.736 | 0.851 | — | — | — | 0.844 |
-| | | .480–.654 | .539–.759 | .610–.885 | .726–.867 | | | | |
+| | | .479–.654 | .538–.759 | .610–.885 | .726–.867 |  |  |  | |
 | matthieu | 11 | 0.806 | 0.842 | 0.850 | 0.855 | 0.853 | 0.853 | — | 0.848 |
-| | | .605–.935 | .594–.940 | .705–.931 | .757–.917 | .804–.897 | .815–.877 | | |
-| mirza | 15 | 0.950 | 0.954 | 0.954 | 0.952 | 0.950 | 0.948 | 0.943 | 0.940 |
+| | | .605–.935 | .594–.940 | .705–.931 | .757–.917 | .804–.897 | .815–.877 |  | |
+| mirza | 15 | 0.950 | 0.954 | 0.954 | 0.952 | 0.950 | 0.948 | 0.942 | 0.940 |
 | | | .823–1.000 | .821–.996 | .871–.992 | .927–.992 | .927–.990 | .929–.974 | .929–.950 | |
 | ollama | 7 | 0.797 | 0.851 | 0.869 | 0.874 | 0.874 | — | — | 0.874 |
-| | | .562–.900 | .685–.903 | .697–.903 | .828–.892 | .854–.885 | | | |
+| | | .562–.900 | .685–.903 | .697–.903 | .828–.892 | .854–.885 |  |  | |
 | praisy † | 26 | 0.736 | 0.761 | 0.770 | 0.789 | 0.798 | 0.804 | 0.827 | 0.869 |
-| | | .469–.851 | .476–.874 | .593–.882 | .642–.887 | .650–.887 | .704–.892 | .726–.898 | |
+| | | .468–.851 | .476–.874 | .593–.882 | .642–.887 | .650–.887 | .704–.892 | .726–.898 | |
 | redcrawl | 8 | 0.955 | 0.966 | 0.964 | 0.962 | 0.963 | — | — | 0.966 |
-| | | .736–.998 | .818–1.000 | .867–1.000 | .879–1.000 | .897–1.000 | | | |
+| | | .736–.998 | .817–1.000 | .867–1.000 | .879–1.000 | .897–1.000 |  |  | |
 | redrock | 7 | 0.866 | 0.917 | 0.951 | 0.973 | 0.993 | — | — | 0.993 |
-| | | .723–.980 | .779–.980 | .875–.996 | .920–.996 | .958–.996 | | | |
-| supabase | 11 | 0.946 | 0.962 | 0.973 | 0.979 | 0.989 | 0.996 | — | 1.000 |
-| | | .636–.998 | .733–1.000 | .842–1.000 | .880–1.000 | .898–1.000 | .927–1.000 | | |
-| tasmeen | 8 | 0.880 | 0.926 | 0.931 | 0.981 | 0.985 | — | — | 0.985 |
-| | | .726–.987 | .756–.995 | .803–.995 | .851–.995 | .869–.992 | | | |
+| | | .723–.980 | .779–.980 | .875–.996 | .920–.996 | .958–.996 |  |  | |
+| supabase | 11 | 0.946 | 0.962 | 0.973 | 0.978 | 0.989 | 0.996 | — | 1.000 |
+| | | .636–.998 | .733–1.000 | .842–1.000 | .880–1.000 | .898–1.000 | .927–1.000 |  | |
+| tasmeen | 8 | 0.879 | 0.926 | 0.931 | 0.981 | 0.985 | — | — | 0.985 |
+| | | .726–.987 | .756–.995 | .803–.995 | .851–.995 | .869–.992 |  |  | |
 | vercel † | 16 | 0.700 | 0.767 | 0.767 | 0.800 | 0.833 | 0.833 | 0.900 | 0.933 |
 | | | .467–.933 | .500–.933 | .500–.933 | .600–.933 | .567–.933 | .633–.933 | .733–.933 | |
 
@@ -2515,8 +2517,9 @@ percentile gives the identical table** — see below.
 **A single draw at n=2 is worth nothing, which is why nobody should have
 quoted `Matthieu` 0.556.** `Matthieu` at n=2 has a median of 0.806 and a range
 of 0.605 to 0.935. Round 6's 0.556 was one draw of two clips out of the 55
-possible. `Supabase` runs .636 to .998 at n=2 and `Claude` .480 to .654.
-`Praisy` and `Vercel` have draws below chance at n=2 *and* at n=3.
+possible. `Supabase` runs .636 to .998 at n=2 and `Claude` .479 to .654.
+`Claude`, `Praisy` and `Vercel` all have draws below chance at n=2, and
+`Praisy` still does at n=3, where `Vercel`'s worst draw is exactly chance.
 
 **Nine of eleven flatten. `Praisy` and `Vercel` do not.** Both are still
 climbing at n=12, and both are the terms scored on the proposal set rather than
@@ -2535,6 +2538,14 @@ rejects under 25% of the B spans it should. **Cost**: the draw rejects over 50%
 of the A spans — the term really being said, thrown away. Both read off the
 rule's own verdict, which is what 6a found an AUC cannot see. Maximum on the
 left of each pair, 90th percentile on the right.
+
+**This table and the one above disagree about where abstain sits, and this one
+wins.** At n=3 the AUC median is inside 0.016 of the full-bank value for
+`Redcrawl`, `Matthieu`, `Mirza` and `Arexvy` — read the AUC alone and three
+clips look finished for four of the eleven terms. Those same four banks at n=3
+throw away over half of the term's own correct spans in 4% to 7.3% of draws, and
+`Mirza` is disarmed in 5% of them. The rule's behaviour is the thing an abstain
+key controls, so it is the thing that sets the number.
 
 | term | n=2 | n=3 | n=4 | n=5 | n=6 | n=8 |
 |---|---|---|---|---|---|---|

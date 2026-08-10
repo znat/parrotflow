@@ -1394,7 +1394,10 @@ def subsample_report(source_name, cache, robust, ns, draws, seed, floor,
                 got = vetoes[term][n]
                 row = [where.split()[-1], term, sizes[term], n, len(got),
                        full_bank[term][1]]
-                row += [f"{v:.4f}" for v in band(curves[term][n])]
+                # Six decimals, not three. A table built from this file rounds
+                # once, from the real number; rounding a rounded number moves
+                # the last digit on any value that lands on a half.
+                row += [f"{v:.6f}" for v in band(curves[term][n])]
                 for group, test in (("B", lambda r: r < DISARMED),
                                     ("A", lambda r: r > OVERCOST)):
                     counts = band([g["veto"][group][0] for g in got])
