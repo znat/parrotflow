@@ -112,23 +112,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The focused element's text as it was at the press, for an app that gave
     /// no caret. What changed in it afterwards is where the words went.
     ///
-    /// Nil whenever there was a caret to aim at, so the search below only ever
-    /// runs for the apps that need it.
+    /// Empty whenever there was a caret to aim at, so the search below only
+    /// ever runs for the apps that need it.
     ///
-    /// Stamped with the press that took it, and read by that press alone. Not
-    /// frozen onto the `Press` the way the element is: the copy runs on a
-    /// background queue and a short dictation can be transcribed before it
-    /// lands, so frozen early it would be frozen empty. The run is unique to
-    /// one press, so matching on it is the same guarantee, made later.
-    private var screenAtPress: (run: Int, text: String)?
+    /// Kept per press, and read by that press alone. Not frozen onto the
+    /// `Press` the way the element is: the copy runs on a background queue and
+    /// a short dictation can be transcribed before it lands, so frozen early it
+    /// would be frozen empty. And not one slot, because two dictations are
+    /// ordinarily in flight and the older one still needs the pane it started
+    /// with. Bounded to the press in hand and the one before it — a value here
+    /// has been seen at 395,489 characters — and each is taken out when it is
+    /// used.
+    private var screenAtPress: [Int: String] = [:]
 
     /// Bumped by every press that starts a dictation. It is what a `Press`
     /// carries, and what a snapshot that took a moment to copy is stamped with
     /// so it cannot be mistaken for a later one's.
     private var pressRun = 0
 
-    /// The press whose offer is on screen. The landing search only moves the
-    /// pill while its own press still owns it.
+    /// The newest press that has had the pill for an offer.
+    ///
+    /// Two things read it: the landing search, which only moves the pill while
+    /// its own press still owns it, and `showCorrectOffer`, which refuses a
+    /// press older than this one. A watermark, so it is never cleared — a later
+    /// press always has a higher run and passes on its own.
     private var offerPressRun: Int?
 
     /// Where the last dictation into a given element ended up.
@@ -604,8 +611,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // would throw away the one the running dictation is going to need.
         if !recorder.isRecording {
             anchorAtPress = nil
-            screenAtPress = nil
             pressRun += 1
+            // The press before this one may still be waiting on a transcript,
+            // so its pane stays; anything older cannot be.
+            screenAtPress = screenAtPress.filter { pressRun - $0.key <= 1 }
             readTheAnchor()
         }
 
@@ -632,7 +641,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // offer off the screen.
         pressTookTheOffer = offerIsUp
         offerUntil = nil
-        offerPressRun = nil
         keyDownDuringPress = false
 
         switch config.hotkey.mode {
@@ -697,12 +705,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let before = CaretAnchor.snapshot(of: element)
                 DispatchQueue.main.async {
-                    // Stamped with the press it was taken for. A copy slow
-                    // enough to outlive its own dictation describes a pane
-                    // nobody is waiting on, and must not be left where the
-                    // next one would pick it up.
-                    guard let self, self.pressRun == run, let before else { return }
-                    self.screenAtPress = (run, before)
+                    // Kept for the press it was taken for, whether or not a
+                    // newer press has started since: that press takes its own
+                    // and this one is still going to be transcribed. Two
+                    // presses back, nothing is waiting on it any more.
+                    guard let self, let before, self.pressRun - run <= 1
+                    else { return }
+                    self.screenAtPress[run] = before
 
                     // A short dictation can be transcribed and written while
                     // this copy is still running, so the offer can already be
@@ -1894,10 +1903,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Two dictations can finish out of order — a long prompt stage on the
         // first, none on the second. The newer one's offer is the one about the
         // words you are looking at, so an older one arriving after it never
-        // gets the pill: not while that offer is up, and not after it has
+        // gets the pill: not while that offer is up, and not once it has
         // expired either, because reappearing to talk about older text is the
-        // same mistake made a few seconds later. `offerPressRun` is cleared by
-        // the next press, which is what ends the ordering.
+        // same mistake made a few seconds later.
         if let owner = offerPressRun, owner > press.run {
             Log.write("offer: a newer dictation has already had the pill")
             return
@@ -1911,8 +1919,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // by run, so it is this dictation's own pane and nobody else's. A
         // remembered anchor is still a guess, and this is what replaces it with
         // the answer.
-        if let screen = screenAtPress, screen.run == press.run, let element = press.element {
-            findWhereTheWordsLanded(comparedWith: screen.text, in: element, for: press.run)
+        if let pane = screenAtPress.removeValue(forKey: press.run), let element = press.element {
+            findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
         }
     }
 
@@ -2008,7 +2016,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         pressTookTheOffer = false
         offerUntil = nil
-        offerPressRun = nil
 
         // Under the minimum, so the recorder deletes the clip and gives back
         // nothing. Nothing to transcribe, nothing to deliver.
