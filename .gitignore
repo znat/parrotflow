@@ -22,3 +22,11 @@ voice/
 # inside this repository. Untracked it turns every `git status` into a warning
 # about a directory that is already under version control by another route.
 .claude/worktrees/
+
+# Where scripts/clip-review.py records the groups the speaker marked
+# not-counted, and the distance matrix it caches. The marks are a decision
+# about one person's recordings; the cache is derived from the audio itself.
+# Neither is source. In production the marks live at `voice/excluded.json`
+# beside `observations.jsonl`, which `voice/` above already keeps out.
+clip-review-marks.json
+clip-review-cache.npz

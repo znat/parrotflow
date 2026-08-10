@@ -2235,7 +2235,10 @@ clusters, not one truth and one outlier. The bilingual verification criteria
 below are unchanged. What is dropped is ranking by distance from the pack, and
 deleting anything.
 
-**This section is a design. Nothing in it is measured.**
+**Built and measured, 2026-08-10.** The tool is
+[`scripts/clip-review.py`](../../scripts/clip-review.py) and the result block
+is below. Read the design first; the result says which parts of it survived.
+The falsifier fired on accuracy and did not fire on review burden.
 
 **Changes.** A review tool, not a pruner.
 
@@ -2295,6 +2298,311 @@ this to a false-flag rate. 6a supplies the answer instead — the statistic that
 would drive an automatic pruner deletes real recordings, and one of its two
 deletions made the bank worse. So the speaker confirms by ear, and the tool
 never removes a file.
+
+### Result, measured 2026-08-10
+
+**The falsifier fired. Flagging is at chance against 6a's poisoned clips, and
+the tool is still worth having.** Both halves are the result and neither
+cancels the other.
+
+The chance half: over 1220 injections the duration rule flags 22.8% of the
+labelled bad clips and 18.0% of the genuine ones, AUC **0.526**. On 6a's own two
+named clips, injected into the nine clean folders, it is 0.629 over 20
+injections. The section's strongest signal is not available at all — **122 of
+122 recordings carry `from: mined`**, so provenance ranks nothing today and the
+whole ranking rests on duration.
+
+The other half: the review itself is finishable and it is the only thing that
+can label a clip. **33 groups over 11 terms and 122 recordings, 86.4 seconds of
+audio in total.** 6c's second falsifier — "so many groups that nobody would
+finish it" — does not fire. `scripts/clip-review.py` is the tool.
+
+No app, no build, no model, no Ollama. 122 recordings, 7381 recording-to-
+recording distances, computed once in about thirty seconds and cached.
+Deterministic: no decoder, no replay, so every number here is exact for this
+data. **Nothing under `~/.config/parrotflow-dev/` was written.** The store's
+checksum is unchanged and the tool has no code path that writes to it; marks go
+to a separate file named by `--marks`.
+
+**The distances reproduce 6a exactly.** Every per-term spread printed by the
+new tool matches 6a's table to three decimals: `Supabase` 2.919, `Redrock`
+2.999, `Arexvy` 3.031, `Matthieu` 3.053, `Redcrawl` 3.098, `Vercel` 3.178,
+`Praisy` 3.235, `Mirza` 3.257, `Tasmeen` 3.268, `Ollama` 3.313, `Claude` 3.436.
+That is the check that the MFCC and DTW imported from
+`scripts/reference-matching.py` are the same ones.
+
+#### The provenance distribution, which bounds what this can do
+
+| `from` | recordings |
+|---|---|
+| `mined` | 122 |
+| `correction` | 0 |
+| `calibration` | 0 |
+| `legacy` | 0 |
+| absent | 0 |
+
+Every clip is mined, and every clip has a `span`. So the field exists, is
+populated, and carries exactly one value. **A signal that is constant ranks
+nothing**, and the tool says so in its own first screen rather than flagging all
+122. PR 4 is what writes `correction` on a clip the speaker confirmed. Until it
+lands, 6c has one signal and not two.
+
+#### The falsifier, in full
+
+Two arms. `--falsify` runs both.
+
+| arm | injections | flagged | flagged, genuine | AUC | median rank | alone in a group |
+|---|---|---|---|---|---|---|
+| cross-term | 1220 | 22.8% | 18.0% | **0.526** | 0.43 | 44.4% |
+| known bad | 20 | 15.0% | 17.7% | **0.629** | 0.36 | 50.0% |
+| chance | | | | 0.500 | 0.50 | 4.1% |
+
+`cross-term` puts every recording of another term into each bank; a recording
+of another word is a bad clip by construction. `known bad` is 6a's exact arm —
+`Vercel/09-brazil.wav` and `Tasmeen/06-that'smeanssend.wav` into the folders
+that do not already hold them. "Median rank" is where the injected clip lands in
+the review order, 0.00 first and 0.50 chance, with ties sharing their block.
+
+**Why duration is at chance here, and it is not because duration is useless.**
+Injecting a recording of another term makes a bad *word*. It does not make a
+bad *cut*: names in this archive run 0.48s to 0.88s at the median, so a foreign
+clip is usually an ordinary length. Both clips 6c names are bad words too.
+Duration catches a cut that swallowed a neighbouring word, and **there is no
+labelled example of one in the archive** — which is the thing the review exists
+to produce. The 22 clips it does flag, `Vercel/14-versal.wav` at 2.72s (×3.78 of
+the term's median) and `Praisy/07-prezi.wav` at 2.32s (×3.62) at the top, have
+never been listened to by anybody.
+
+**So the honest reading is narrower than the falsifier's wording.** What is
+measured at chance is duration against bad *words*. Duration against bad *cuts*
+is unmeasured, because labelling one needs the review. 6c does not become a
+verified mechanism on this result and it does not get to claim one.
+
+#### The geometry finds the injected clip and misses the real one
+
+This is 6a's finding again, through a different statistic, and it is the
+clearest reason the ranking has no geometry in it.
+
+An injected foreign clip lands alone in a group **44.4%** of the time, against
+**4.1%** for a genuine clip — 5 of 122. Read alone, that says group membership
+is a strong detector. Then look at the two clips that are really wrong, in the
+folders they are really in: `Vercel/09-brazil.wav` sits in a group of 6 and
+`Tasmeen/06-that'smeanssend.wav` sits in a group of 6. **Neither is ever
+alone.** A bad clip with company is invisible to any per-clip geometry, and the
+44.4% is an artefact of injecting one clip at a time into a bank that has none.
+
+#### The three verification criteria
+
+**1. Surfaced, not flagged — and both are, in the top third.** Neither is a
+geometric outlier, so as 6c requires this is the ranking putting them in front
+of a person.
+
+| clip | cut | ×median | flagged | position | tie-adjusted rank | group |
+|---|---|---|---|---|---|---|
+| `Vercel/09-brazil.wav` | 0.48s | ×0.67 | yes | 5 of 16 | 0.27 | 2 of 4 |
+| `Tasmeen/06-that'smeanssend.wav` | 0.88s | ×1.38 | no | 2 of 8 | 0.14 | 2 of 2 |
+
+**Read the `Vercel` row with its caveat.** 0.48s against a 0.72s median is
+exactly ×1.5, exactly the band edge, so whether it is flagged was being decided
+by the last bit of a float. The tool now counts the edge as outside, for the
+reason in its own comment: cut lengths here are multiples of 0.08s so exact
+ratios happen, and a review tool should err towards surfacing. The band itself
+was not moved. `Tasmeen`'s clip is not flagged at all and is surfaced only by
+its position in the order.
+
+**2. Cannot be checked. Still owed.** A deliberately bilingual term needs
+recordings that do not exist. 6a looked and found none: no observation carries
+`lang`, all eleven `Matthieu` recordings come from dictations `trace.jsonl`
+marks `en`, and splitting by rendering gives one cluster and AUC 0.513. This
+experiment adds nothing to that and did not try to. **No arm was fabricated and
+no TTS was used** — a previous session's `say` output came back blank at −0.0 on
+every CTC frame and cost a round of results.
+
+*What would settle it.* One recording session: the speaker reads `Matthieu` in
+a French sentence and in an English sentence, six of each, in one sitting, and
+the clips are mined with `lang` written on the observation. Twelve clips against
+the existing eleven is enough to ask whether the tool keeps both groups and
+whether a thin second cluster inflates `spread` the way §7 predicts. PR 4 is
+the dependency: without `lang` on the observation the two groups cannot be told
+apart afterwards, which is exactly what 6a ran into.
+
+**3. Checkable, and it passes.** "A term that keeps all its clips and rejects
+nothing has failed." Keeping every clip is what this tool does by default —
+nothing is deleted, ever. Every one of the eleven terms still rejects. The
+weakest is `Claude` at 18 of 70 B spans under the per-term spread, and no term
+is at zero under either statistic.
+
+#### 6b's third change, measured as a side effect
+
+Per-cluster spread needed 6c's clustering, so it is measured here. Same spans,
+same per-clip hold-out, same tolerance 1.0, abstain under three usable
+recordings. The only change is that the span is compared against the width of
+the group it is nearest instead of the width of the whole bank.
+
+| term | groups | veto B per-term | per-cluster | veto A per-term | per-cluster |
+|---|---|---|---|---|---|
+| arexvy | 2 | 55/66 | 66/66 | 1/6 | 3/6 |
+| claude | 2 | 18/70 | 54/70 | 1/6 | 6/6 |
+| matthieu | 3 | 50/67 | 66/67 | 2/10 | 5/10 |
+| mirza | 4 | 36/67 | 67/67 | 1/8 | 3/8 |
+| ollama | 2 | 34/67 | 61/67 | 0/7 | 4/7 |
+| praisy | 7 | 66/108 | 93/108 | 1/21 | 7/21 |
+| redcrawl | 2 | 58/66 | 65/66 | 1/8 | 2/8 |
+| redrock | 2 | 62/65 | 65/65 | 1/7 | 4/7 |
+| supabase | 3 | 62/64 | 64/64 | 0/10 | 2/10 |
+| tasmeen | 2 | 42/68 | 42/68 | 1/7 | 2/7 |
+| vercel | 4 | 71/76 | 73/76 | 1/6 | 1/6 |
+| **total** | | **554** | **716** | **10** | **39** |
+| reject everything | | 784 | 784 | 96 | 96 |
+
+**It moves towards the blind veto, and that is the warning §2 wrote.** 716 of
+784 true rejections is 91% of rejecting everything, bought with 39 of 96 false
+ones. As a ratio of true to false rejections it is worse than both alternatives:
+the maximum is 55.4 true per false, 6b's 90th percentile is 38.2 (6a's 649/17),
+and per-cluster spread is **18.4**. A smaller bank has a smaller width, so it
+rejects more; that is arithmetic, not discrimination. **Per-cluster spread as
+built here is not an improvement.** §7 argued for it from correctness on a
+bilingual term, and criterion 2 is exactly the case nobody can measure yet — so
+this number rules out the robustness argument for it and leaves the correctness
+argument untouched.
+
+#### The review, and what it costs the speaker
+
+| term | clips | groups | spread |
+|---|---|---|---|
+| arexvy | 7 | 2 | 3.031 |
+| claude | 6 | 2 | 3.436 |
+| matthieu | 11 | 3 | 3.053 |
+| mirza | 15 | 4 | 3.257 |
+| ollama | 7 | 2 | 3.313 |
+| praisy | 26 | 7 | 3.235 |
+| redcrawl | 8 | 2 | 3.098 |
+| redrock | 7 | 2 | 2.999 |
+| supabase | 11 | 3 | 2.919 |
+| tasmeen | 8 | 2 | 3.268 |
+| vercel | 16 | 4 | 3.178 |
+| **total** | **122** | **33** | |
+
+Group sizes run 1 to 6: five singletons, four pairs, seven of three, five of
+four, four of five and eight of six. **86.4 seconds of audio over the whole
+archive**, so the whole review is a few minutes including the thinking. A term
+of 8 to 26 clips produces 2 to 7 groups, which is the count 6c asked for before
+building the playback.
+
+**The grouping is a review order, not a pronunciation split, and the tool says
+so.** These banks have almost no cluster structure: within a term the median
+pairwise distance is 3.10 to 3.68 and across terms it is 3.57 to 3.64, so the
+two distributions sit on top of each other. Any distance threshold near the bulk
+of that produces singletons and nothing else, which is why the cut is a count —
+about four clips per group, six at most — and not a distance. The printed
+separation AUC (0.805 to 1.000) is what an agglomerative cut always gives and is
+there to be read against 0.500, not as evidence of two pronunciations.
+
+#### Marking has a consequence, and on the clips duration flags it is often none
+
+`--mark Vercel/g3` marks the three longest cuts in that bank, including the
+2.72s one. What it does:
+
+| | before | after |
+|---|---|---|
+| clips counted | 16 | 13 |
+| spread | 3.178 | 3.178 |
+| veto B | 71/76 | 71/76 |
+| veto A | 1/6 | 1/6 |
+
+**Nothing moves.** That is 6a's result showing up in the user's hands: the
+clips a person would most want to remove are not the clips that set the
+threshold. The tool reports it either way, which is the point — the decision has
+a visible consequence and here the consequence is "no effect on the rule, and
+the files are still there".
+
+Marking a large group does move it, and the tool warns before it becomes a
+problem. `--mark Tasmeen/g1` takes that bank from 8 counted clips to 2, and
+prints `⚠ Tasmeen is down to 2 counted clip(s). 6e puts the abstain floor at 5,
+so this term will stop deciding.` The veto column then reads `42/68 -> abstains`
+rather than a zero, because a bank that stopped deciding is not a bank that
+decided and rejected nothing.
+
+#### What is weak about this
+
+**The falsifier's labelled set is the wrong failure mode, and this is the main
+one.** Cross-term injection produces bad words. Duration is a detector of bad
+cuts. The two do not meet, and there is no labelled bad cut in the archive to
+close the gap. The 0.526 is honest and it is not a measurement of the thing 6c
+is for.
+
+**Provenance is untested, not weak.** With 122 of 122 mined there is no arm to
+run. Whether `from: correction` outranks `from: mined` in practice is a question
+for PR 4's data. It is arithmetic that it would separate perfectly on a bank
+where the two are mixed and the mined ones are the bad ones; it is not
+arithmetic that the bad ones are the mined ones.
+
+**Nobody has reviewed anything yet.** Every number here is about the tool, not
+about the archive. The 22 flagged clips are unlabelled until the speaker listens.
+
+**The per-cluster arm inherits every caveat 6a and 6e carry.** Rejection counts
+are not the ablation. They say what the rule would drop on these spans; they do
+not say what the app would write, and 6b's bar is still the blind veto's 103 on
+141 clips.
+
+**In-sample, like everything else in PR 6.** The recordings were mined from the
+corpus the spans come from. The per-clip hold-out is applied throughout and does
+not cover the corpus-level fit.
+
+**The duration band is a convention.** ×1.5 either way, chosen from the shape of
+the archive — a 0.64s median makes the band 0.43s to 0.96s — and not tuned on
+either named clip. Twenty-two of 122 clips fall outside it. A different band
+moves that count and moves the falsifier's flag rates; it does not move the AUC,
+which is computed on the risk and not on the flag.
+
+#### How to run it
+
+Against the speaker's own bank, read-only:
+
+```sh
+python3 scripts/clip-review.py --cache /tmp/clips.npz --concat /tmp/groups
+```
+
+That prints, per term: how many groups, how many clips in each, each group's
+tightness, its provenance mix, which groups are suspect and why, an `afplay`
+line for the clips, and a second `afplay` line for the whole group as one wav
+under `--concat`. `--term Vercel` narrows it. Nothing is written to
+`voice/`; `--concat` writes only to the directory named.
+
+To act on it:
+
+```sh
+python3 scripts/clip-review.py --mark Vercel/g3 --why "two words, not the name"
+python3 scripts/clip-review.py --unmark Vercel/g3
+```
+
+Marks go to `clip-review-marks.json` in the working directory, or wherever
+`--marks` says. **In production this file is `voice/excluded.json` beside
+`observations.jsonl`**, read by whatever builds a bank. Nothing is deleted and
+nothing in the voice store is touched, so a mark is undone by ear.
+
+Add `--veto-cache FILE --veto` to see what a mark does to
+`ReferenceMatch.verdict`'s own rejection counts. That arm needs the harness data
+`reference-matching.py` uses — `~/Recordings/ParrotFlow Dev/` and round 5's
+cached proposals — and says so and stops when they are absent. The spread half
+of the effect needs neither.
+
+#### How to reproduce
+
+```sh
+S=$(mktemp -d) && cp -R ~/.config/parrotflow-dev/voice "$S/voice"   # read only
+
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/clip-review.py --cache "$S/clips.npz"
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/clip-review.py --cache "$S/clips.npz" \
+  --falsify                                  # the accuracy number
+PARROTFLOW_CONFIG_DIR=$S python3 scripts/clip-review.py --cache "$S/clips.npz" \
+  --veto-cache "$S/dist.npz" --clusters      # 6b's per-cluster spread
+```
+
+The first run computes every recording-to-recording distance and caches it,
+about thirty seconds. `--falsify` and the report then return at once.
+`--clusters` builds `reference-matching.py`'s span matrix on its first run,
+about five minutes, and reuses 6a's cache file if one is given.
 
 ### 6d — the spotter generates, the bank decides
 
