@@ -437,6 +437,23 @@ def save_marks(path, marks):
     except BaseException:
         Path(temporary).unlink(missing_ok=True)
         raise
+    # And the directory entry the rename created. Flushing the file's own
+    # bytes is not enough: until the directory is flushed too, a power cut
+    # after `os.replace` returns can leave the name pointing at the old file,
+    # or at nothing at all on the first write. The rename is still atomic
+    # either way — the file is never half a file — so this decides whether the
+    # last mark survives, not whether the archive does.
+    try:
+        fd = os.open(str(path.parent), os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    except OSError:
+        # Some filesystems refuse to fsync a directory. The rename has already
+        # happened and the file is intact; only the durability of this one
+        # write is weaker. Not worth failing a review over.
+        pass
 
 
 def marked_names(marks):
