@@ -72,6 +72,13 @@ if let index = arguments.firstIndex(of: "--record") {
     exit(RecordTestCommand.run(seconds: seconds ?? 3))
 }
 
+if arguments.contains("--audio-recovery") {
+    let casesPath = arguments.firstIndex(of: "--cases").flatMap {
+        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+    }
+    exit(AudioRecoveryCommand.run(casesPath: casesPath))
+}
+
 if let index = arguments.firstIndex(of: "--transcribe") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --transcribe <file.wav> [--no-vocab]")

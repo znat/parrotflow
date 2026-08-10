@@ -244,6 +244,7 @@ $ ParrotFlow --forget Praisy
 $PF --record 3           # record 3s and verify the file it produced
 $PF --transcribe a.wav   # transcribe a clip
 $PF --watch-modifiers    # print which modifier keys are physically down, live
+$PF --audio-recovery     # what the recorder does when the microphone changes
 ```
 
 `--record` checks the result, not just that it ran: sample rate, channel count,
@@ -253,6 +254,16 @@ A silent clip or a short file gets a non-zero exit.
 `--watch-modifiers` is the one to reach for if a bare-modifier hotkey seems
 dead — it shows whether the key is reaching the app at all, and whether left
 and right are distinguishable on your keyboard.
+
+`--audio-recovery` is for the other kind of dead: the microphone changed —
+AirPods connected, a headset came out — and dictation has been recording
+silence ever since. It moves the input binding inside the process instead of
+switching your real input device, so it is safe to run while somebody is
+dictating and it never opens the microphone. That is also its limit: it proves
+the recorder replaces its engine and that the capture path writes a real signal
+afterwards, and it proves nothing about what the hardware then sends. The cases
+are in `tests/audio-recovery-cases.yaml`; `scripts/check-audio-recovery.sh` runs
+it against a scratch config.
 
 You can make a test clip without a microphone at all — `say` writes exactly the
 format the model wants:
@@ -331,6 +342,7 @@ scripts/check-possessive.sh        # whether a possessive survives a substitutio
 scripts/check-verdicts.sh          # what the name judge reads out of a reply
 scripts/check-judge-prompt.sh      # the judge's prompt is one its parser can read
 scripts/check-no-voice.sh          # nothing in git is one person's voice
+scripts/check-audio-recovery.sh    # a microphone that changes leaves a usable engine
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

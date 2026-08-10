@@ -28,6 +28,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and not on every save of an unrelated setting.
     private var announcedProblems: [String] = []
 
+    /// What went wrong with the last recording, held until one goes right.
+    ///
+    /// A notice fades after four seconds, and the failure this exists for is
+    /// one you find out about by looking up from what you were dictating into.
+    /// AirPods connect and disconnect on their own all day, so the state that
+    /// matters is "the last thing you said was not recorded" — and it has to
+    /// still be on screen when you go looking for it. Shown in the menu bar
+    /// beside the other standing problems.
+    private var standingCaptureProblem: String?
+
     /// Resolved once per config load, never in `updateUI`.
     ///
     /// `problems()` re-resolves and re-validates every pipeline for every
@@ -175,7 +185,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.pill.model.level = level
         }
         recorder.onUnexpectedStop = { [weak self] _ in
-            self?.stopRecording(reason: "The audio device changed.")
+            self?.stopRecording(reason: "The microphone changed — that take stopped early.")
+        }
+        recorder.onCaptureProblem = { [weak self] problem in
+            self?.captureProblem(problem)
         }
 
         Log.write(
@@ -676,7 +689,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // microphone changed underneath it. Logged as well, because this
             // path used to leave the log showing a press and then silence.
             Log.write("could not start recording: \(error.localizedDescription)")
-            flash(error.localizedDescription, tone: .failure)
+            // Standing, not only flashed. A press that starts nothing is the
+            // failure people describe as "the app stopped working", and a
+            // notice that fades in four seconds is gone by the time they look.
+            captureProblem(error.localizedDescription)
             return
         }
 
@@ -834,9 +850,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if let reason {
-            presentAlert(title: "Recording stopped", message: reason)
+            // A notice, not an alert, for the reason already written above
+            // `startRecording`'s catch: `runModal` holds the main run loop, the
+            // hotkey is delivered on it, and one modal behind a device change
+            // makes every press after it do nothing — which is exactly the
+            // sequence in #95, an alert saying the device changed followed by a
+            // hotkey that answers nothing. The message outlives the notice in
+            // the menu bar, so nothing is lost by not blocking for it.
+            Log.write("recording stopped: \(reason)")
+            captureProblem(reason)
         }
 
+        updateUI()
+    }
+
+    /// A capture that went wrong, said twice: once on screen now, and once in
+    /// the menu bar until a recording goes right.
+    ///
+    /// Nil is the recording that went right, which is what clears it. The
+    /// recorder reports every stop, so a device change that ended a take which
+    /// nonetheless captured real audio clears itself — nothing was lost, and a
+    /// standing warning about a dictation that arrived is a warning people
+    /// learn to ignore.
+    private func captureProblem(_ problem: String?) {
+        standingCaptureProblem = problem
+        if let problem {
+            flash(problem, tone: .failure)
+        }
         updateUI()
     }
 
@@ -2608,6 +2648,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if recording {
             let elapsed = Int(pill.model.elapsed)
             statusInfoItem.title = String(format: "Recording  %d:%02d", elapsed / 60, elapsed % 60)
+        } else if let standingCaptureProblem {
+            // Under the live clock, so it never covers a recording in progress,
+            // and over "Idle", which is the row it contradicts: a hotkey that
+            // captures nothing looks idle from here.
+            statusInfoItem.title = "⚠︎ \(standingCaptureProblem)"
         } else {
             statusInfoItem.title = "Idle  ·  \(shortcut)"
         }
