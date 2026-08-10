@@ -367,14 +367,30 @@ def group_key(members, scores):
 # ------------------------------------------------------------------- the marks
 
 def load_marks(path):
+    """The groups already marked not-counted.
+
+    A file that does not parse stops the run. It must not read as an empty
+    list: the next `--mark` writes the whole file back, so treating a corrupt
+    file as "no marks" throws away every decision the speaker has made. Those
+    decisions came from listening, and nothing here can reconstruct them. A
+    missing file is different and is genuinely no marks.
+    """
     if not path or not Path(path).exists():
         return []
     try:
         blob = json.loads(Path(path).read_text())
-    except ValueError:
-        print(f"✗ {path} is not readable JSON", file=sys.stderr)
-        return []
-    return blob.get("not_counted", [])
+    except ValueError as error:
+        print(f"✗ {path} is not readable JSON: {error}", file=sys.stderr)
+        print("  It has not been changed. Fix it or move it aside; marking "
+              "now would overwrite every decision in it.", file=sys.stderr)
+        raise SystemExit(2)
+    marks = blob.get("not_counted")
+    if not isinstance(marks, list):
+        print(f"✗ {path} has no `not_counted` list.", file=sys.stderr)
+        print("  It has not been changed. Same reason as above.",
+              file=sys.stderr)
+        raise SystemExit(2)
+    return marks
 
 
 def save_marks(path, marks):
@@ -428,7 +444,7 @@ def concat(clips, members, out, label, gap=0.25):
     return path
 
 
-def report(clips, ee, terms, marks, out_dir, robust):
+def report(clips, ee, terms, marks, out_dir, robust, marks_path):
     excluded = marked_names(marks)
     by_term = defaultdict(list)
     for i, c in enumerate(clips):
@@ -448,7 +464,7 @@ def report(clips, ee, terms, marks, out_dir, robust):
         print("  clip the speaker confirmed. Until corrections land, the whole")
         print("  ranking below rests on duration.")
     if excluded:
-        print(f"\n  {len(excluded)} clip(s) marked not counted in {out_dir}")
+        print(f"\n  {len(excluded)} clip(s) marked not counted in {marks_path}")
 
     total_groups = 0
     for term in terms:
@@ -1000,7 +1016,7 @@ def main():
         per_cluster_veto(clips, ee, args.veto_cache, args.robust)
         return 0
 
-    report(clips, ee, terms, marks, args.concat, args.robust)
+    report(clips, ee, terms, marks, args.concat, args.robust, args.marks)
     if marks or args.veto:
         effect(clips, ee, marks, terms, args.veto_cache, args.robust)
     return 0
