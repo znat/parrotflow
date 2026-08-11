@@ -57,10 +57,10 @@ final class MicNotice {
         panel?.riseIntoView(makeKey: false)
     }
 
-    /// Straight out, where the arrival is animated. The other surfaces fade
-    /// because they leave on a timer; this one leaves because you pressed the
-    /// button on it, and a decision you made yourself should not have to play
-    /// out. See `PillHUD.fadeOut`.
+    /// Out at once, where the arrival is animated. The pill fades because it
+    /// leaves on a timer; this leaves because you pressed the button on it, and
+    /// a decision you made yourself should not have to play out. The correction
+    /// and preview panels go the same way for the same reason.
     private func dismiss() {
         panel?.orderOut(nil)
     }
@@ -121,8 +121,8 @@ enum MicNoticeMetrics {
     static let width: CGFloat = 380
     /// Two heights rather than a measured fit. The sentence is one device name
     /// long and the reasons are fixed text, so there is nothing here to
-    /// measure that is not known when it is written — and both are on the
-    /// `--panels-sheet`, where a name that outgrew the box would show.
+    /// measure that is not known when it is written — and both states are on
+    /// `--panel-sheet`, where a name that outgrew the box would show.
     static func height(expanded: Bool) -> CGFloat { expanded ? 258 : 118 }
 }
 
