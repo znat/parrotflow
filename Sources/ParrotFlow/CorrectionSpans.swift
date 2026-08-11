@@ -36,6 +36,20 @@ struct Span: Identifiable, Equatable {
     var pre: String = ""
     var heard: [HeardWord]
     var value: [String]
+    /// This word holds punctuation that a join carried in, not punctuation
+    /// anybody typed. Set by `joinBack`, cleared as soon as you type the word
+    /// yourself, and it takes the span out of `rules()`.
+    ///
+    /// Provenance, not shape. Punctuation in a corrected word is often the
+    /// whole point — `.NET`, `O'Reilly`, `C++` are the terms people come to
+    /// this panel to teach — and no rule about which characters they are can
+    /// tell those from a comma that arrived because ⌫ ate the space in
+    /// "hello, world". Where the mark came from can.
+    ///
+    /// A flagged span still replaces. It teaches nothing, which is the right
+    /// way to fail: a rule not learned costs one more correction next time, and
+    /// a rule learned wrong fires forever, on sentences nobody meant to change.
+    var joinedMarks = false
 
     init(
         id: UUID = UUID(), lead: String = "", pre: String = "",
@@ -264,8 +278,13 @@ final class SpansModel: ObservableObject {
     var hasChanges: Bool { !rules().isEmpty || sentence() != original }
 
     /// One rule per span that changed. Keyed on the span, which is the point.
+    ///
+    /// Except a span whose punctuation a join carried in. That mark was never a
+    /// decision about a word, and a rule holding it would put it back into
+    /// every sentence that says those words again. See `Span.joinedMarks`.
     func rules() -> [(heard: String, corrected: String)] {
         spans.filter(\.isChanged).compactMap { span in
+            guard !span.joinedMarks else { return nil }
             let heard = span.heardText
             let corrected = span.valueText
             guard !heard.isEmpty, !corrected.isEmpty else { return nil }
@@ -300,6 +319,7 @@ final class SpansModel: ObservableObject {
                 return
             }
             spans[index].value.replaceSubrange(word...word, with: parts)
+            spans[index].joinedMarks = false
             moveCaret(to: SpanCaret(span: id, word: word + parts.count - 1, at: nil))
             return
         }
@@ -312,6 +332,11 @@ final class SpansModel: ObservableObject {
 
         rememberTyping(in: "\(id)-\(word)")
         spans[index].value[word] = text
+        // Typed is intentional. Whatever a join left in this word, you have now
+        // written the word yourself, so it is yours and it can be taught — even
+        // when what you wrote has punctuation in it, which for a name like
+        // "O'Reilly" is the reason you came to this panel.
+        spans[index].joinedMarks = false
         hasEdited = true
     }
 
@@ -370,7 +395,11 @@ final class SpansModel: ObservableObject {
         // so once the two heard lists merge that mark has nowhere left to be
         // printed from: "hello, world" joined came back "helloworld", a comma
         // deleted by a keystroke aimed at the space.
-        into.value[last] += into.post
+        //
+        // Read before the two heard lists merge, because after that `post` is
+        // the swallowed span's own mark and no longer this one's.
+        let swallowed = into.post
+        into.value[last] += swallowed
         // Counted after it, so the caret lands where the space was rather than
         // in front of a mark that was already there.
         let seam = into.value[last].utf16.count
@@ -380,6 +409,10 @@ final class SpansModel: ObservableObject {
         // a keystroke aimed at a space.
         into.value[last] += gone.pre + (gone.value.first ?? "")
         into.value += gone.value.dropFirst()
+        // Both marks are in the word now, and neither was typed. The word still
+        // goes back into the sentence — you joined it on purpose — but it
+        // teaches nothing until you write it yourself. See `Span.joinedMarks`.
+        if !(swallowed + gone.pre).isEmpty { into.joinedMarks = true }
         spans[index - 1] = into
         moveCaret(to: SpanCaret(span: into.id, word: last, at: seam))
     }

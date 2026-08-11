@@ -141,8 +141,12 @@ do {
     joinBack(model, span: 1)
     check("blue + (red", model.spans[0].value, ["blue(red"])
     check("blue + (red, and the full stop", model.sentence(), "blue(red).")
+    // It used to teach `blue red => blue(red`, which put a bracket into every
+    // later sentence that said those two words. A mark a join carried in was
+    // never a decision about a word — see `Span.joinedMarks`.
     check("the rule it teaches", model.rules().map { "\($0.heard) => \($0.corrected)" },
-          ["blue red => blue(red"])
+          [String]())
+    check("…because the mark was not typed", model.spans[0].joinedMarks, true)
 }
 do {
     let model = loaded("red crawl")
@@ -157,9 +161,11 @@ do {
     check("hello, + world", model.spans[0].value, ["hello,world"])
     check("…and the comma is still in the sentence", model.sentence(), "hello,world")
     check("…with the caret after it", model.focus?.at ?? -1, 6)
+    // The comma is in the sentence and out of the rule. Both halves matter:
+    // the user joined those words on purpose, and the mark they did not type
+    // has no business in a correction that fires forever.
     check("…and the rule says nothing about it",
-          model.rules().map { "\($0.heard) => \($0.corrected)" },
-          ["hello world => hello,world"])
+          model.rules().map { "\($0.heard) => \($0.corrected)" }, [String]())
 }
 do {
     // Both sides at once, and the sentence keeps every mark it arrived with.
@@ -206,6 +212,69 @@ do {
     check("the opening caret", model.focus?.at ?? -1, 0)
     check("…in the first word", model.focus?.word ?? -1, 0)
     check("…of the first span", model.focus?.span == model.spans[0].id, true)
+}
+
+print("\n  --- a mark a join carried in teaches nothing, and still replaces ---")
+
+// Punctuation you typed is a decision about a word. Punctuation ⌫ dragged in
+// off the sentence is debris from an edit. The model tells them apart by where
+// the mark came from, not by which character it is — no shape rule can, because
+// ".NET" and "O'Reilly" are exactly the terms this panel exists to teach.
+do {
+    let model = loaded("hello, world")
+    joinBack(model, span: 1)
+    check("the sentence still joins", model.sentence(), "hello,world")
+    check("…and teaches nothing", model.rules().count, 0)
+}
+do {
+    // The case the span model was built for. No punctuation, so nothing to
+    // doubt: this one has to go on teaching.
+    let model = loaded("red crawl")
+    joinBack(model, span: 1)
+    type(model, "Redcrawl", span: 0)
+    check("a clean join still teaches",
+          model.rules().map { "\($0.heard) => \($0.corrected)" },
+          ["red crawl => Redcrawl"])
+    check("…and was never flagged", model.spans[0].joinedMarks, false)
+}
+do {
+    // Typed punctuation is intentional, wherever it lands.
+    let model = loaded("dot net")
+    type(model, ".NET", span: 0)
+    check("punctuation you typed teaches",
+          model.rules().map { "\($0.heard) => \($0.corrected)" }, ["dot => .NET"])
+}
+do {
+    // Typed over a flagged word: it is your word now, punctuation and all.
+    let model = loaded("O Reilly")
+    joinBack(model, span: 1)
+    type(model, "O'Reilly", span: 0)
+    check("typing clears the flag", model.spans[0].joinedMarks, false)
+    check("…so the name is taught",
+          model.rules().map { "\($0.heard) => \($0.corrected)" },
+          ["O Reilly => O'Reilly"])
+}
+do {
+    // Undo carries the flag back with the spans, both ways round.
+    let model = loaded("hello, world")
+    type(model, "HELLO", span: 0)
+    check("before the join it teaches",
+          model.rules().map { "\($0.heard) => \($0.corrected)" }, ["hello => HELLO"])
+    joinBack(model, span: 1)
+    check("the join flags it", model.spans[0].joinedMarks, true)
+    check("…and it teaches nothing", model.rules().count, 0)
+    model.undo()
+    check("undo puts the flag back down", model.spans[0].joinedMarks, false)
+    check("…and the rule with it",
+          model.rules().map { "\($0.heard) => \($0.corrected)" }, ["hello => HELLO"])
+    check("…and the sentence", model.sentence(), "HELLO, world")
+}
+do {
+    // A flagged span is still an edit, so the button is still live. Nothing to
+    // teach is not nothing to do.
+    let model = loaded("hello, world")
+    joinBack(model, span: 1)
+    check("nothing to teach is still something to save", model.hasChanges, true)
 }
 
 print("\n  --- every keyboard move is a new caret request ---")
