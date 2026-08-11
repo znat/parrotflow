@@ -23,13 +23,26 @@ struct HeardWord: Equatable {
 
 struct Span: Identifiable, Equatable {
     let id: UUID
+    /// The whitespace that came before this span in the text the panel opened
+    /// on. Kept exactly, not normalised to one space: the panel opens on a
+    /// selection as often as on a fresh dictation, and a tab, a double space or
+    /// a line break in it is text nobody asked us to rewrite. The first span's
+    /// lead is whatever the selection started with.
+    ///
+    /// Never drawn: `SentenceFlow` spaces the words itself. This is only what
+    /// `sentence()` puts back.
+    var lead: String = ""
     /// Punctuation before the first word — an opening quote or bracket.
     var pre: String = ""
     var heard: [HeardWord]
     var value: [String]
 
-    init(id: UUID = UUID(), pre: String = "", heard: [HeardWord], value: [String]) {
+    init(
+        id: UUID = UUID(), lead: String = "", pre: String = "",
+        heard: [HeardWord], value: [String]
+    ) {
         self.id = id
+        self.lead = lead
         self.pre = pre
         self.heard = heard
         self.value = value
@@ -52,6 +65,13 @@ struct Span: Identifiable, Equatable {
 struct SpanCaret: Equatable {
     let span: UUID
     let word: Int
+    /// How far into the word, counted in **UTF-16 code units**. That is the one
+    /// coordinate system in this file, and it is that one because AppKit's
+    /// `NSRange` selection offsets are in it too, so `WordField` can use the
+    /// number as it stands. `String.count` counts grapheme clusters instead:
+    /// "😀" is 1 there and 2 here, "👩‍💻" is 1 there and 5 here, and a caret asked
+    /// for the end of such a word would land short of it.
+    ///
     /// Nil means the end of the word.
     let at: Int?
 }
@@ -93,6 +113,9 @@ final class SpansModel: ObservableObject {
     /// word was deleted". Neither teaches a rule; only one of them is a change
     /// worth a button.
     private var original = ""
+    /// The whitespace after the last word of the selection. On the model rather
+    /// than on a span: nothing can delete it, so nothing has to carry it.
+    private var trailing = ""
 
     private static let wordCharacters = CharacterSet.alphanumerics
         .union(CharacterSet(charactersIn: "'’-"))
@@ -100,7 +123,9 @@ final class SpansModel: ObservableObject {
     // MARK: - Loading
 
     func load(sentence: String) {
-        spans = Self.read(sentence)
+        let read = Self.read(sentence)
+        spans = read.spans
+        trailing = read.trailing
         // Nothing readable: one empty span, so the panel opens with somewhere
         // to type rather than with no fields at all.
         if spans.isEmpty { spans = [Span(heard: [HeardWord(word: "")], value: [""])] }
@@ -123,6 +148,11 @@ final class SpansModel: ObservableObject {
             guard !heard.isEmpty, !value.isEmpty else { return nil }
             return Span(heard: heard, value: value)
         }
+        // No source text here, so there are no separators to carry: one space
+        // between rules, which is what the panel assumed for everything before
+        // the leads existed.
+        for index in spans.indices.dropFirst() { spans[index].lead = " " }
+        trailing = ""
         if spans.isEmpty { spans = [Span(heard: [HeardWord(word: "")], value: [""])] }
         reset()
     }
@@ -136,22 +166,52 @@ final class SpansModel: ObservableObject {
         focusFirst()
     }
 
-    static func read(_ sentence: String) -> [Span] {
-        sentence.split(whereSeparator: \.isWhitespace).map { token in
-            let text = String(token)
-            var start = text.startIndex
-            var end = text.endIndex
-            while start < end, !isWord(text[start]) { start = text.index(after: start) }
-            while end > start, !isWord(text[text.index(before: end)]) {
-                end = text.index(before: end)
+    /// The sentence cut into spans, with the whitespace between them kept.
+    ///
+    /// Split-and-rejoin would be shorter and would normalise every separator to
+    /// one space. The panel opens on selections, so that would rewrite a tab, a
+    /// double space or a line break the user never touched, anywhere in the
+    /// selection, because one word beside it was corrected. Each span carries
+    /// the whitespace to its left; what is left over at the end is `trailing`.
+    static func read(_ sentence: String) -> (spans: [Span], trailing: String) {
+        var spans: [Span] = []
+        var lead = ""
+        var token = ""
+        for character in sentence {
+            if character.isWhitespace {
+                if !token.isEmpty {
+                    spans.append(span(token, lead: lead))
+                    lead = ""
+                    token = ""
+                }
+                lead.append(character)
+            } else {
+                token.append(character)
             }
-            let word = String(text[start..<end])
-            return Span(
-                pre: String(text[text.startIndex..<start]),
-                heard: [HeardWord(word: word, post: String(text[end...]))],
-                value: [word]
-            )
         }
+        if !token.isEmpty {
+            spans.append(span(token, lead: lead))
+            lead = ""
+        }
+        return (spans, lead)
+    }
+
+    /// One whitespace-free token, split into the punctuation around it and the
+    /// word inside.
+    private static func span(_ text: String, lead: String) -> Span {
+        var start = text.startIndex
+        var end = text.endIndex
+        while start < end, !isWord(text[start]) { start = text.index(after: start) }
+        while end > start, !isWord(text[text.index(before: end)]) {
+            end = text.index(before: end)
+        }
+        let word = String(text[start..<end])
+        return Span(
+            lead: lead,
+            pre: String(text[text.startIndex..<start]),
+            heard: [HeardWord(word: word, post: String(text[end...]))],
+            value: [word]
+        )
     }
 
     private static func isWord(_ character: Character) -> Bool {
@@ -193,10 +253,12 @@ final class SpansModel: ObservableObject {
     }
 
     /// The sentence as it now reads, ready to go back where it came from.
+    ///
+    /// Concatenated, not joined with a space. Every span carries the whitespace
+    /// that came before it, so the selection comes back spaced the way it went
+    /// in — tabs, double spaces and line breaks included.
     func sentence() -> String {
-        spans.map { $0.pre + $0.valueText + $0.post }
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
+        spans.reduce("") { $0 + $1.lead + $1.pre + $1.valueText + $1.post } + trailing
     }
 
     // MARK: - Editing
@@ -245,7 +307,13 @@ final class SpansModel: ObservableObject {
             return
         }
         guard spans.count > 1 else { return }
-        spans.remove(at: index)
+        // The whitespace before a word belongs to that word, so it goes with
+        // it: drop "bar" from "foo\nbar baz" and the line break goes too, and
+        // the space before "baz" is the one that survives. The first span is
+        // the exception — its lead is where the selection starts, not a gap
+        // between two words — so it is handed to whatever takes its place.
+        let gone = spans.remove(at: index)
+        if index == 0 { spans[0].lead = gone.lead }
         let back = max(0, index - 1)
         focus = SpanCaret(
             span: spans[back].id, word: spans[back].value.count - 1, at: nil
@@ -263,19 +331,25 @@ final class SpansModel: ObservableObject {
 
         if word > 0 {
             let taken = spans[index].value.remove(at: word)
-            let seam = spans[index].value[word - 1].count
+            // UTF-16, the unit `SpanCaret.at` is counted in.
+            let seam = spans[index].value[word - 1].utf16.count
             spans[index].value[word - 1] += taken
             focus = SpanCaret(span: id, word: word - 1, at: seam)
             return
         }
         guard index > 0 else { past.removeLast(); return }
 
+        // The lead goes with the seam: the two words become one word, and one
+        // word has no whitespace in the middle of it.
         let gone = spans.remove(at: index)
         var into = spans[index - 1]
         let last = into.value.count - 1
-        let seam = into.value[last].count
+        let seam = into.value[last].utf16.count
         into.heard += gone.heard
-        into.value[last] += gone.value.first ?? ""
+        // The punctuation that opened the swallowed span comes across too.
+        // Without it "blue" and "(red" join to "bluered" — a bracket deleted by
+        // a keystroke aimed at a space.
+        into.value[last] += gone.pre + (gone.value.first ?? "")
         into.value += gone.value.dropFirst()
         spans[index - 1] = into
         focus = SpanCaret(span: into.id, word: last, at: seam)
@@ -320,16 +394,18 @@ final class SpansModel: ObservableObject {
         typingAt = nil
     }
 
-    private func rememberTyping(in where_: String) {
+    /// `field` names one word of one span, so typing on is coalesced and typing
+    /// somewhere else is not.
+    private func rememberTyping(in field: String) {
         let now = Date()
-        if let typingAt, typingAt.word == where_,
+        if let typingAt, typingAt.word == field,
            now.timeIntervalSince(typingAt.when) < 0.7 {
-            self.typingAt = (where_, now)
+            self.typingAt = (field, now)
             return
         }
         past.append(spans)
         if past.count > 60 { past.removeFirst() }
-        typingAt = (where_, now)
+        typingAt = (field, now)
     }
 
     var canUndo: Bool { !past.isEmpty }

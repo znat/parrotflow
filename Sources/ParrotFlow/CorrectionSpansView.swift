@@ -20,8 +20,10 @@ struct WordField: NSViewRepresentable {
     let text: String
     let isChanged: Bool
     let focused: Bool
-    /// Where to put the caret when focus arrives. Nil is the end, which is
-    /// where you want it when you have come to a word to change it.
+    /// Where to put the caret when focus arrives, in UTF-16 code units — see
+    /// `SpanCaret.at`, which is the only coordinate system the model counts in.
+    /// Nil is the end, which is where you want it when you have come to a word
+    /// to change it.
     let caret: Int?
     /// `SpansModel.focusTick`. It is here so a focus asked for twice with the
     /// same value still reaches `updateNSView` — see the model for why the
@@ -69,7 +71,13 @@ struct WordField: NSViewRepresentable {
         let editing = window.firstResponder === field.currentEditor()
         if !editing { window.makeFirstResponder(field) }
         if let editor = field.currentEditor() {
-            let at = caret.map { min($0, field.stringValue.count) } ?? field.stringValue.count
+            // `NSString.length`, not `String.count`. An NSRange counts UTF-16
+            // code units; `count` counts characters. They disagree on anything
+            // with an emoji or a combining accent in it — "😀" is 1 against 2,
+            // "👩‍💻" is 1 against 5 — so "the end of the word" clamped by `count`
+            // lands short of the end.
+            let length = (field.stringValue as NSString).length
+            let at = caret.map { min($0, length) } ?? length
             let wanted = NSRange(location: at, length: 0)
             // Cleared once the request has been answered, and the caret already
             // being there is an answer. Left set, it would fire on the next
@@ -126,7 +134,12 @@ struct WordField: NSViewRepresentable {
         ) -> Bool {
             let range = textView.selectedRange()
             let atStart = range.location == 0 && range.length == 0
-            let atEnd = range.location == textView.string.count && range.length == 0
+            // Same units on both sides: `selectedRange` is UTF-16, so the
+            // length it is compared against has to be. With `String.count` a
+            // word ending in an emoji never reads as "at the end", and the
+            // right arrow stops crossing to the next word.
+            let atEnd = range.location == (textView.string as NSString).length
+                && range.length == 0
 
             switch selector {
             case #selector(NSResponder.deleteBackward(_:)):
