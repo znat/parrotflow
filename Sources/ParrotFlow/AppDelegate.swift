@@ -2232,6 +2232,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // commands need it, and neither has anything to work on without it.
         guard let target = offered?.target else { return }
 
+        // The clipboard as it is at the moment you choose. Everything below
+        // takes time — a model call, or a panel left open while you think —
+        // and the write-backs that copy check this before they do. What you
+        // copied while the model was thinking is not this app's to drop.
+        let clipboardWhenChosen = NSPasteboard.general.changeCount
+
         // Looked up again rather than carried on the chip, so a transform
         // deleted from a config reloaded while the offer was up is not run
         // from a chip that outlived it.
@@ -2241,7 +2247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             Log.write("offer: taken; running \"\(name)\"")
-            runOfferedTransform(found, over: target)
+            runOfferedTransform(found, over: target, clipboardWhenChosen: clipboardWhenChosen)
             return
         }
 
@@ -2260,7 +2266,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // by an earlier flow.
         pendingSelection = nil
         correctionPanel.onSave = { [weak self] rules, correctedText in
-            self?.saveOfferedCorrection(rules, correctedText: correctedText, into: target)
+            self?.saveOfferedCorrection(
+                rules, correctedText: correctedText, into: target,
+                clipboardWhenChosen: clipboardWhenChosen
+            )
         }
         correctionPanel.onCancel = { Log.write("offer: correction dismissed") }
         correctionPanel.show(selection: target.original)
@@ -2284,7 +2293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// move in them; the sentence this rewrites has to be the one that was on
     /// screen when the key went down.
     private func runOfferedTransform(
-        _ transform: Config.Transform, over target: Correction
+        _ transform: Config.Transform, over target: Correction, clipboardWhenChosen: Int
     ) {
         let before = target.original.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !before.isEmpty else { return }
@@ -2302,7 +2311,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     transform, instruction: "", on: before
                 ) else { return }
                 self?.finishOfferedTransform(
-                    transform, over: target, before: before, after: result
+                    transform, over: target, before: before, after: result,
+                    clipboardWhenChosen: clipboardWhenChosen
                 )
             } catch {
                 // Fail open: the words are untouched, wherever they are. Losing
@@ -2323,7 +2333,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// sits over the words, and a notice there would cover the thing the message
     /// is about.
     private func finishOfferedTransform(
-        _ transform: Config.Transform, over target: Correction, before: String, after: String
+        _ transform: Config.Transform, over target: Correction, before: String, after: String,
+        clipboardWhenChosen: Int
     ) {
         endProgress()
 
@@ -2344,7 +2355,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.write("offer: \(transform.name) rewrote the dictation")
         Log.write("    before: \(before)")
         Log.write("    after:  \(cleaned)")
-        replace(target, with: cleaned, describedAs: transform.name)
+        replace(
+            target, with: cleaned, describedAs: transform.name,
+            clipboardWhenChosen: clipboardWhenChosen
+        )
     }
 
     /// This press's dictation is over, however it ended. Drops the pane it
@@ -2502,13 +2516,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and quietly writing a rule out of every fixed sentence would fill
     /// config.yaml with pairs that will never recur.
     ///
+    /// **Never over a clipboard that has moved on.** Both write-backs that copy
+    /// check first, and both leave it alone when something else has been copied
+    /// since. `clipboardWhenChosen` is `NSPasteboard.changeCount` as it was when
+    /// the command was taken, which is the start of the wait that makes this
+    /// possible — a model call, or a panel open while somebody thinks about a
+    /// spelling. A rewrite that is refused costs a second attempt; a clipboard
+    /// this app never filled and then emptied costs whatever was in it.
+    ///
     /// Returns false when the sentence is on the clipboard — said on screen
     /// either way, and a caller with more to report should stop rather than
     /// talk over the one thing there is to act on. True means the field has it,
     /// or there was nothing to change.
     @discardableResult
     private func replace(
-        _ target: Correction, with edited: String, describedAs what: String
+        _ target: Correction, with edited: String, describedAs what: String,
+        clipboardWhenChosen: Int
     ) -> Bool {
         let corrected = edited.trimmingCharacters(in: .whitespacesAndNewlines)
         let original = target.original.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2568,6 +2591,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? "offer: could not read what is focused; copied instead of rewriting"
                     : "offer: focus moved since the dictation; copied instead of rewriting")
             }
+        }
+
+        // The field would not take it, so the clipboard is the last place left
+        // — and only if it is still the one you had when you chose the command.
+        // The sentence is untouched in the field either way, so a refusal here
+        // costs the rewrite and nothing else. What it protects is what you
+        // copied while the model was thinking.
+        guard NSPasteboard.general.changeCount == clipboardWhenChosen else {
+            Log.write("offer: the field refused \(what) and the clipboard has been used"
+                + " since; left both alone")
+            flash("\(what) not applied — the clipboard has changed", tone: .caution)
+            return false
         }
 
         Log.write("offer: left \(what) on the clipboard")
@@ -2643,12 +2678,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func saveOfferedCorrection(
         _ rules: [(heard: String, corrected: String)],
         correctedText: String,
-        into target: Correction
+        into target: Correction,
+        clipboardWhenChosen: Int
     ) {
         guard learn(rules) else { return }
-        // On the clipboard, and `replace` has said so. A rule notice on top of
-        // that would bury the one thing you need to act on.
-        guard replace(target, with: correctedText, describedAs: "Correction") else { return }
+        // On the clipboard, or not written at all, and `replace` has said which.
+        // A rule notice on top of that would bury the one thing you need to act
+        // on.
+        guard replace(
+            target, with: correctedText, describedAs: "Correction",
+            clipboardWhenChosen: clipboardWhenChosen
+        ) else { return }
         switch rules.count {
         // Nothing taught, so `replace` has already said the only thing there
         // is to say.
