@@ -130,9 +130,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// on the chance that a transcript from five minutes ago is still coming.
     private var screenAtPress: [Int: (text: String, at: Date)] = [:]
 
-    /// How long a pane is worth keeping. Nothing waits this long: the whole
-    /// chain is a decoder and at most a prompt stage.
+    /// How long a pane is worth keeping, for a press that is no longer in
+    /// flight. Nothing waits this long: the whole chain is a decoder and at
+    /// most a prompt stage.
     private static let paneLifetime: TimeInterval = 300
+
+    /// The presses that took a pane and whose dictation has not ended yet.
+    ///
+    /// The age above is a backstop and this is what stops it hitting a live
+    /// dictation: a prompt stage can outlast any number written here, and its
+    /// pane is the one thing that cannot be fetched again. Every way a
+    /// dictation ends goes through `dictationEnded(_:)`, which is what keeps
+    /// this from growing.
+    private var pressesInFlight: Set<Int> = []
 
     /// Bumped by every press that starts a dictation. It is what a `Press`
     /// carries, and what a snapshot that took a moment to copy is stamped with
@@ -708,6 +718,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // anything needs it.
             let element = focusAtPress?.element
             let run = pressRun
+            pressesInFlight.insert(run)
             DispatchQueue.global(qos: .utility).async { [weak self] in
                 let before = CaretAnchor.snapshot(of: element)
                 DispatchQueue.main.async {
@@ -717,8 +728,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     guard let self, let before else { return }
                     let now = Date()
                     self.screenAtPress[run] = (before, now)
-                    self.screenAtPress = self.screenAtPress.filter {
-                        now.timeIntervalSince($0.value.at) < Self.paneLifetime
+                    self.screenAtPress = self.screenAtPress.filter { run, pane in
+                        self.pressesInFlight.contains(run)
+                            || now.timeIntervalSince(pane.at) < Self.paneLifetime
                     }
 
                     // A short dictation can be transcribed and written while
@@ -850,6 +862,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // by the time someone presses the hotkey, and a refusal
                     // here should not offer to cancel an install that finished
                     // days ago.
+                    self.dictationEnded(self.pressRun)
                     self.permissions.show(.revisiting)
                 }
             }
@@ -870,6 +883,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // failure people describe as "the app stopped working", and a
             // notice that fades in four seconds is gone by the time they look.
             captureProblem(error.localizedDescription)
+            dictationEnded(pressRun)
             return
         }
 
@@ -1027,6 +1041,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // A clip too short to keep, or transcription switched off: no words are
+        // coming, so this press's dictation ends here. Everything that does
+        // reach a transcript ends on one of `transcribe`'s own paths.
+        if recording == nil || !config.transcription.enabled {
+            dictationEnded(pressRun)
+        }
+
         if let reason {
             // A notice, not an alert, for the reason already written above
             // `startRecording`'s catch: `runModal` holds the main run loop, the
@@ -1160,6 +1181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.runsInFlight -= 1
                     guard !self.wasCancelled(run) else {
                         Log.write("escape: dropped the transcript of a cancelled run")
+                        self.dictationEnded(press.run)
                         self.stopWatchingForEscapeIfIdle()
                         self.updateUI()
                         return
@@ -1175,6 +1197,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if self.transcriptionRun == run { self.endProgress() }
                     self.runsInFlight -= 1
                     self.stopWatchingForEscapeIfIdle()
+                    // Cancelled or failed, this dictation is over either way.
+                    self.dictationEnded(press.run)
                     guard !self.wasCancelled(run) else { return }
                     Log.write("transcription failed: \(error.localizedDescription)")
                     self.presentAlert(title: "Transcription failed", message: error.localizedDescription)
@@ -1933,6 +1957,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// This press's dictation is over, however it ended. Drops the pane it
+    /// started with — nothing can want it again — and lets the sweep above
+    /// reach anything that is somehow left.
+    private func dictationEnded(_ run: Int) {
+        screenAtPress.removeValue(forKey: run)
+        pressesInFlight.remove(run)
+    }
+
     /// For an app with no caret: keep asking what changed until the words show
     /// up, then move the pill there.
     ///
@@ -2029,6 +2061,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Under the minimum, so the recorder deletes the clip and gives back
         // nothing. Nothing to transcribe, nothing to deliver.
         _ = recorder.stop(config: config)
+        dictationEnded(pressRun)
         tickTimer?.invalidate(); tickTimer = nil
         pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
         releaseTail?.invalidate(); releaseTail = nil
@@ -2288,14 +2321,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so there is nothing to compare a pane against.
         if let command = commandAfterWakePhrase(trimmed) {
             Log.write("command heard: \"\(command)\"")
-            screenAtPress.removeValue(forKey: press.run)
+            dictationEnded(press.run)
             handleVoiceCommand(command)
             return
         }
 
         guard !trimmed.isEmpty else {
             Log.write("transcription produced no text")
-            screenAtPress.removeValue(forKey: press.run)
+            dictationEnded(press.run)
             updateUI()
             return
         }
@@ -2681,7 +2714,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // However this ends, this dictation is over and nothing wants the pane
         // it started with. The path that makes the offer takes it before this
         // runs; every other path here is a clipboard, and those make no offer.
-        defer { screenAtPress.removeValue(forKey: press.run) }
+        defer { dictationEnded(press.run) }
         // Confirmed the same field, or nothing to confirm against. Anything
         // else copies.
         //
@@ -2755,7 +2788,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("Accessibility not granted; left transcript on the clipboard")
             setLabel("Copied — grant Accessibility to auto-paste", clearAfter: 4)
         }
-        screenAtPress.removeValue(forKey: press.run)
         updateUI()
     }
 
