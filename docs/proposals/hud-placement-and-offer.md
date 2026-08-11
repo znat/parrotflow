@@ -386,6 +386,28 @@ gates quiet sound whatever is printed on the case.
 - The launch panel from the design pass is not built at all, and its lettering
   was never chosen — Serif (New York, `design: .serif`), Rounded, or Wide caps.
 - `--panels` sheet has not been reviewed since the pill changed shape.
+- **A pane read after the paste is not a baseline, and nothing here can tell.**
+  The `landed` rung takes the pane at the press on a background queue. A short
+  dictation can be transcribed and written before that copy finishes, and then
+  the baseline already holds the words: every retry compares equal strings, the
+  diff reports the screen unchanged, and the pill never aims. It is not fixed
+  here because the moment cannot be observed. `TextInserter` posts a ⌘V and the
+  target app reads the pasteboard when it gets round to it, so no instant in
+  this process means "the words are on screen" — a clock stands in for it badly
+  in both directions, and rejecting on one throws away the baselines that were
+  in time. A real fix is the insertion reporting when the target *took* the
+  text, which belongs ahead of this work rather than inside it. The cost
+  meanwhile is the documented fallback: the pill stays where it opened, which
+  is where it opened before any of this. It is not a wrong position.
+- **`lastTranscript` and `focusAtPress` are one slot each.** Dictations overlap,
+  so a later one moves them under an earlier one. The offer reads neither now —
+  it carries the transcript and the press it was raised for. Every other path
+  that reads them is untouched and has the same shape of race.
+- **None of this has been seen running.** Ghostty and Outlook need a person in
+  front of them; the numbers in this section are the spike's. Whether Ghostty
+  answers `AXVisibleCharacterRange` is unknown, and the grid rung needs it —
+  without it that rung refuses and Ghostty falls back to `remembered`, or to
+  the bottom of the screen.
 
 ## 7. The PRs
 
