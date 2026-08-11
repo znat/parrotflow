@@ -47,8 +47,22 @@ enum PillState: Equatable {
     case working(String)
     /// A sentence, for a few seconds.
     case notice(String, NoticeTone)
-    /// What you can do about what just happened, and the key that does it.
-    case offer(String)
+    /// What you can do about what just happened. One entry per command; which
+    /// one the pointer is on lives in the model, not here, so moving the
+    /// highlight is not a state change and does not crossfade the whole pill.
+    case offer([OfferedCommand])
+}
+
+/// A command on the offer, and the letter that runs it.
+///
+/// The letter is drawn as a key rather than as an icon. An icon says what a
+/// command is about; a key says you can press it, which is the more useful
+/// thing on a surface that is up for a few seconds.
+struct OfferedCommand: Equatable {
+    let title: String
+    /// Empty when the config named none. The chip is still there and still
+    /// clickable.
+    let key: String
 }
 
 final class PillModel: ObservableObject {
@@ -63,6 +77,21 @@ final class PillModel: ObservableObject {
     /// words are going, and a window with no caret in it is not somewhere they
     /// can go. See `Destination`.
     @Published var appIcon: NSImage?
+
+    /// Which command the pointer is on, if any.
+    ///
+    /// Nil when it is on none, which is how the offer arrives. This is only
+    /// ever the pointer's mark and it does not outlive the pointer — leaving
+    /// the pill clears it. Nothing runs without a click, so a chip lit before
+    /// you have touched anything is saying something about a command that is
+    /// not about to happen.
+    @Published var selected: Int?
+
+    /// Clicking a command, and the pointer coming and going. Closures rather
+    /// than published state: they are messages out of the view, and nothing
+    /// about them should redraw it.
+    var onPick: ((Int) -> Void)?
+    var onHover: ((Bool) -> Void)?
 }
 
 /// The one floating surface a dictation ever puts on screen.
@@ -120,8 +149,12 @@ final class PillHUD {
     }
 
     /// What you can do about the text that just landed, and for how long.
-    func offer(_ label: String, for duration: TimeInterval) {
-        set(.offer(label), for: duration)
+    ///
+    /// The highlight is cleared first. It belonged to the last offer's pointer,
+    /// and the pointer is not on this one yet.
+    func offer(_ commands: [OfferedCommand], for duration: TimeInterval) {
+        model.selected = nil
+        set(.offer(commands), for: duration)
     }
 
     /// Point the pill at where the words are going, for this dictation.
@@ -181,6 +214,17 @@ final class PillHUD {
         // `PillHUD.motion`.
         withAnimation(.easeInOut(duration: Self.motion)) {
             model.state = state
+        }
+
+        // The pill ignores the mouse in every state but this one. It sits over
+        // whatever you are working in, so a surface that swallowed clicks for
+        // the length of a dictation would be a hole in your screen — but the
+        // offer is made of buttons, and a button you cannot click is a picture
+        // of a button.
+        if case .offer = state {
+            panel.ignoresMouseEvents = false
+        } else {
+            panel.ignoresMouseEvents = true
         }
 
         let size = PillMetrics.panelSize(for: state, hasIcon: model.appIcon != nil)
@@ -520,7 +564,7 @@ enum PillMetrics {
         case .recording: return recording(hasIcon: hasIcon)
         case .working(let message): return text(message)
         case .notice(let message, _): return text(message)
-        case .offer(let label): return offer(label)
+        case .offer(let commands): return offer(commands)
         }
     }
 
@@ -538,26 +582,39 @@ enum PillMetrics {
         min(600, max(300, CGFloat(message.count) * 8 + 86))
     }
 
-    /// The offer is a short question wrapped around a keycap, and it has no
-    /// minimum.
+    /// A row of chips, and no minimum.
     ///
     /// Unlike a message, which is a sentence you have to be able to read to the
     /// end, this is a shape you learn after seeing it twice. Held to the 300pt
     /// floor it would be a mostly empty pill, and an offer that looks like a
     /// notice reads as something having gone wrong.
     ///
-    /// "Wrong?" and "to fix it" either side, with 8pt between the three.
+    /// Much narrower than it was. It used to ask a whole question — "Wrong?
+    /// Right ⌘ to fix it" — because it appeared at the bottom of the screen
+    /// with no connection to the words it was about. Under the words, that
+    /// sentence is answering a question nobody has to be asked any more.
     ///
-    /// Generous rather than tight. The three parts are laid out by SwiftUI and
-    /// measured here, and the two numbers only ever agree approximately — a
-    /// capsule a few points too wide has a little air at the end, one a few
-    /// points too narrow truncates the sentence it exists to ask.
-    static func offer(_ label: String) -> CGFloat {
-        padding * 2 + 58 + 8 + keycap(label) + 8 + 56
+    /// Generous rather than tight: the chips are laid out by SwiftUI and
+    /// measured here, and the two numbers only ever agree approximately. The
+    /// title is `.fixedSize()`, so a capsule a few points too narrow lets a
+    /// chip hang over the end rather than shortening it.
+    static func offer(_ commands: [OfferedCommand]) -> CGFloat {
+        // A chip is its keycap, its words and 10pt of padding either side; then
+        // 4pt between one chip and the next.
+        let chips = commands.reduce(CGFloat(0)) { total, command in
+            total + 20 + (command.key.isEmpty ? 0 : keycap) + title(command.title)
+        }
+        return padding * 2 + chips + CGFloat(max(commands.count - 1, 0)) * 4
     }
 
-    static func keycap(_ label: String) -> CGFloat {
-        max(30, CGFloat(label.count) * 7.5 + 16)
+    /// The keycap on a chip: one character at 11pt bold, 5pt either side, and
+    /// the 7pt between it and the words.
+    static let keycap: CGFloat = 26
+
+    /// A chip's words at 13pt rounded. Per character, which is what everything
+    /// else on this surface measures text with.
+    static func title(_ words: String) -> CGFloat {
+        CGFloat(words.count) * 7.5
     }
 }
 
@@ -603,12 +660,16 @@ struct PillView: View {
             case .notice(let message, let tone):
                 MessageContent(message: message, tone: tone)
                     .transition(.opacity)
-            case .offer(let label):
-                OfferContent(label: label)
+            case .offer(let commands):
+                OfferContent(commands: commands)
                     .transition(.opacity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The whole surface, not each chip: moving from one chip to the next
+        // must not read as leaving the pill. What leaving costs is decided by
+        // whoever raised the offer — see `PillModel.onHover`.
+        .onHover { inside in model.onHover?(inside) }
         .parrotSurface(Capsule(), alive: isWorking, solid: true)
         // Under the capsule, so it is the capsule's shape and not the glow's.
         .shadow(color: .black.opacity(0.22), radius: 7, y: 2)
@@ -684,52 +745,86 @@ private struct MessageContent: View {
     }
 }
 
-/// The key you can press, and what it does.
+/// What can be done to the words that just landed, one chip per command.
 ///
-/// A keycap rather than a dot, because this is the one state that is not news
-/// about something that already happened — it is a thing you can still do, and
-/// the difference has to be visible before the words are read. The key is drawn
-/// from the binding that is actually registered, so a config that moved the
-/// hotkey moves what this advertises. Offering a key that does nothing is worse
-/// than offering nothing.
+/// Chips rather than a sentence, because the pill now sits under those words:
+/// they are the subject, so this only has to name what can be done to them.
+/// The old wording — "Wrong? Right ⌘ to fix it" — was a whole question because
+/// it appeared at the bottom of the screen with no connection to anything.
+///
+/// Each chip carries a letter. This is the one pill state that is not news
+/// about something that already happened — it is a thing you can still do — and
+/// that difference has to be visible before the words are read.
 private struct OfferContent: View {
-    let label: String
+    @EnvironmentObject private var model: PillModel
+    let commands: [OfferedCommand]
+
+    /// The lit chip's lettering: leaf lightened almost to white, so the words
+    /// stay readable over a fill of the same colour.
+    private static let litText = Color(red: 0.89, green: 0.96, blue: 0.93)
 
     var body: some View {
-        HStack(spacing: 8) {
-            // The question first. "Correct" alone named the action without
-            // saying what it was for, which reads as an instruction to correct
-            // something rather than an offer to fix what just landed — and the
-            // answer to it is usually no, so it has to be askable at a glance.
-            Text("Wrong?")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .lineLimit(1)
-
-            Text(label)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                // A key's name is one line whatever it is. Without this the
-                // capsule's width wins the argument and "Right ⌘" wraps to two.
-                .lineLimit(1)
-                .fixedSize()
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.white.opacity(0.12))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.22), lineWidth: 0.5)
-                        }
-                }
-
-            Text("to fix it")
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-                .lineLimit(1)
+        HStack(spacing: 4) {
+            ForEach(Array(commands.enumerated()), id: \.offset) { index, command in
+                // A tap gesture rather than a `Button`. The pill is a
+                // `nonactivatingPanel` and is never the key window, and SwiftUI
+                // draws controls in an inactive window at reduced emphasis — so
+                // a lit chip came up washed out until the pointer landed on it,
+                // which read as nothing being lit at all. `contentShape` is what
+                // makes the whole capsule the target and not just the glyphs.
+                chip(command, lit: model.selected == index)
+                    .contentShape(Capsule())
+                    .onTapGesture { model.onPick?(index) }
+                    // Light what the pointer is over, so the letter on the chip
+                    // and the pointer say the same thing about the same command.
+                    .onHover { over in if over { model.selected = index } }
+            }
 
             Spacer(minLength: 0)
         }
         .padding(.horizontal, PillMetrics.padding)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Lit carries the same leaf as a changed word and as the confirm button:
+    /// they are the same claim — this is the one that will happen — so the eye
+    /// learns the colour once.
+    private func chip(_ command: OfferedCommand, lit: Bool) -> some View {
+        HStack(spacing: 7) {
+            if !command.key.isEmpty {
+                Text(command.key)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    // A floor rather than a width: every letter draws in the
+                    // same box, so the chips do not step in and out by a point
+                    // as the pointer moves along them.
+                    .frame(minWidth: 9)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Color.white.opacity(lit ? 0.2 : 0.12))
+                    }
+            }
+            Text(command.title)
+                .font(.system(size: 13, weight: .medium, design: .rounded))
+                // One line whatever the capsule thinks. The width is measured
+                // in `PillMetrics.offer`, and without this the capsule would
+                // win the argument and wrap a name to two lines.
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .foregroundStyle(lit ? Self.litText : .secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background {
+            Capsule()
+                .fill(lit ? Parrot.leaf.opacity(0.28) : Color.white.opacity(0.05))
+                .overlay {
+                    Capsule().strokeBorder(
+                        lit ? Parrot.leaf.opacity(0.62) : .clear, lineWidth: 1
+                    )
+                }
+        }
     }
 }
 

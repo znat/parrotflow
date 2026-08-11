@@ -551,10 +551,15 @@ struct Config: Decodable, Equatable {
         var unreadable: String?
         /// `tests: { path: heldout.yaml }` — the set `--eval` scores by default.
         var tests: String?
+        /// `offer: true` — put this on the pill after a dictation.
+        var offer = false
+        /// `key: f` — the letter shown on its chip.
+        var offerKey = ""
 
         enum CodingKeys: String, CodingKey {
             case name, description, display, confirm, prompt, content, replace, command
-            case tests, returns
+            case tests, returns, offer
+            case offerKey = "key"
             case timeout = "timeout_seconds"
         }
 
@@ -618,6 +623,12 @@ struct Config: Decodable, Equatable {
             } else {
                 unreadable = "`tests:` is neither a filename nor `{ path: <filename> }`"
             }
+
+            offer = try c.decodeIfPresent(Bool.self, forKey: .offer) ?? false
+            // One letter, upper case. The chip draws it as a keycap and a
+            // keycap holds one character; a key is printed in capitals whatever
+            // the config wrote it as.
+            offerKey = String(try trimmed(.offerKey).prefix(1)).uppercased()
 
             // A body written either way. The mapping is tried first and only
             // succeeds on `{ path: <string> }`, so nothing that decoded before
@@ -768,6 +779,7 @@ struct Config: Decodable, Equatable {
                 display: entry.display,
                 folder: entry.folder, timeout: entry.timeout,
                 confirm: entry.confirm, returnsJSON: entry.returnsJSON,
+                offer: entry.offer, offerKey: entry.offerKey,
                 body: body, source: entry.source,
                 tests: entry.tests
             ))
@@ -840,6 +852,17 @@ struct Config: Decodable, Equatable {
         /// the transcript, `sed` is still a transform, and nothing anybody has
         /// already written has to change.
         var returnsJSON: Bool = false
+        /// Whether this gets a chip on the pill after a dictation, next to
+        /// Correct.
+        ///
+        /// Off by default. The offer is on screen for a few seconds and every
+        /// entry costs the others room, so a transform joins it only by asking
+        /// — it holds what you reach for without thinking, not every transform
+        /// a config happens to define.
+        var offer: Bool = false
+        /// The letter shown on that chip. Empty when the config named none; the
+        /// chip is still there and still clickable.
+        var offerKey: String = ""
         var body: Body
         /// Where the body was read from, when it was read from a file at all —
         /// `prompt: { path: slack.md }`. Nil for an inline body, and nil for a
@@ -2939,9 +2962,9 @@ if __name__ == "__main__":
     feedback:
       sound: true     # a click when recording starts and stops
       overlay: true   # the floating pill while you speak
-      # After the words land the pill offers to correct them for 3s. Tap the
-      # dictation hotkey — press and let go — to open the correction panel over
-      # what was just written. Holding it still starts the next dictation.
+      # After the words land the pill names what can be done to them, for 3s.
+      # Click a chip to run it. Tapping the dictation hotkey — press and let go
+      # — opens the correction panel too. Holding it starts the next dictation.
       correct_offer: true
 
     transcription:
@@ -3076,6 +3099,13 @@ if __name__ == "__main__":
       - name: grammar
         description: fix grammar and punctuation mistakes, not formatting or numbers
         display: Fixing grammar
+        # `offer: true` puts it on the pill after a dictation, next to Correct;
+        # `key:` is the letter drawn on its chip. Worth it for this one: fixing
+        # what you just said is the thing you reach for without thinking. Leave
+        # both off for anything you would only ever ask for out loud — the offer
+        # is on screen briefly and every entry costs the others room.
+        offer: true
+        key: g
         prompt: |
           Correct grammar, spelling and punctuation. Make the smallest change
           that makes the text correct — and make it. Every error is fixed.

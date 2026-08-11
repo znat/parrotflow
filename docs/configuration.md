@@ -287,19 +287,26 @@ sitting at an ordinary shell prompt keeps everything you have run in it, and the
 pill goes to the bottom of the screen.
 
 `correct_offer` is what the pill does after the words land. It stays where it
-is for three seconds and reads `Wrong?  <your hotkey>  to fix it`. Tap that key
-— press and let go, faster than a dictation — and the whole sentence opens in
-an editable box. Fix it, press Replace, and it goes back over what was written.
-Hold the key as usual and you start the next dictation, exactly as before.
+is for three seconds and names what can be done to them, one chip per command:
+`Correct` first, then every transform with `offer: true` — see
+[pipelines.md](pipelines.md#offer-and-key-or-getting-on-the-pill). Click a chip
+to run it. `Correct` opens the per-word panel over what was just dictated;
+a transform runs as it always does.
+
+Tapping the dictation hotkey — press and let go, faster than a dictation —
+still opens the whole sentence in an editable box. Fix it, press Replace, and
+it goes back over what was written. Hold the key as usual and you start the
+next dictation, exactly as before.
 
 The threshold is `audio.min_duration_seconds`, which is already the app's line
 between a press and a dictation: below it the recording is deleted, so a tap
 has never done anything. Nothing that used to be a dictation becomes a tap.
 
-This is the sentence, not the vocabulary. Nothing is written to `replacements:`
-— fixing one sentence is not the same as teaching a word, and most of a
-misheard sentence is words that will never come up again. To teach a word, say
-"Hey parrot, correct" or use the menu bar, which open the per-word panel.
+The editable box is the sentence, not the vocabulary. Nothing is written to
+`replacements:` from it — fixing one sentence is not the same as teaching a
+word, and most of a misheard sentence is words that will never come up again.
+Teaching a word is what the per-word panel is for, which `Correct` and "Hey
+parrot, correct" both open.
 
 Off by setting it to `false`.
 

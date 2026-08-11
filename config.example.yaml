@@ -137,6 +137,13 @@ transforms:
   - name: grammar
     description: fix grammar and punctuation mistakes, not formatting or numbers
     display: Fixing grammar
+    # `offer: true` puts it on the pill after a dictation, next to Correct;
+    # `key:` is the letter drawn on its chip. Worth it for this one: fixing what
+    # you just said is the thing you reach for without thinking. Leave both off
+    # for anything you would only ever ask for out loud — the offer is on screen
+    # briefly and every entry costs the others room.
+    offer: true
+    key: g
     prompt: |
       Correct grammar, spelling and punctuation. Make the smallest change
       that makes the text correct — and make it. Every error is fixed.

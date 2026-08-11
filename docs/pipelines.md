@@ -239,6 +239,41 @@ it runs. Long instructions are cut at a word boundary. Reading it mid-wait is
 also how you catch the router having heard you wrong, a second before the
 preview would have told you.
 
+### `offer:` and `key:`, or: getting on the pill
+
+After a dictation the pill names what can be done to the words that just
+landed. `Correct` is always first — it is not a transform, it needs no model,
+and it cannot fail. After it comes every transform that asked for a place:
+
+```yaml
+  - name: grammar
+    description: fix grammar and punctuation mistakes
+    display: Fixing grammar
+    offer: true       # put a chip on the pill
+    key: g            # the letter drawn on it
+    prompt: |
+      Correct grammar, spelling and punctuation. Return only the text.
+```
+
+Click a chip to run it. A transform runs as it always does, so it still shows
+its preview when `confirm:` is on.
+
+**Both are off by default.** The offer is on screen for a few seconds and every
+entry costs the others room, so a transform joins it only by asking. Put a
+chip on what you reach for without thinking. Leave it off anything you would
+only ever ask for out loud — that is what the wake phrase is for.
+
+`key:` is one letter, drawn as a keycap and shown in capitals whatever you
+write. More than one character is cut to the first. A transform with `offer:
+true` and no `key:` still gets a chip, without a keycap on it.
+
+`--check-config` prints what is on the pill and the letter each chip carries.
+A chip that is missing, or a `key:` that was cut, is otherwise invisible: the
+pill is up for three seconds and a short offer looks like a normal one.
+
+Only the shipped `grammar` asks for a place. Everything else in
+config.example.yaml is left off.
+
 ### `command:`, or: the app stops needing new primitives
 
 The transcript arrives on **stdin** and comes back on **stdout**. That is the
