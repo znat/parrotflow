@@ -17,7 +17,9 @@ Design mockup: <https://claude.ai/code/artifact/4b31fdb8-192f-40df-9e42-64efcb93
 
 The pill used to appear 96pt off the bottom of the screen, always. It now opens
 next to the place the dictation is about to go, and stays there for the whole of
-it — recording, transcribing, and the offer, one position.
+it — recording, transcribing, and the offer, one position. The exception is an
+app that gives no caret: there the words are found after they land, so the pill
+opens where it can and moves once.
 
 ### Read it at the press, not at the end
 
@@ -101,25 +103,63 @@ compare after. Nothing has to match, so it survives a pipeline stage rewriting
 the sentence, a wrap putting a newline through the middle of it, and a terminal
 padding it with spaces — all three broke the search. Bound the diff at **both**
 ends: a spinner or clock ticking above would poison a common prefix on its own,
-so take the common suffix too and the change sits between two fixed points. A
-change spanning more than half the screen is a repaint, not an insertion, and is
-refused.
+so take the common suffix too and the change sits between two fixed points.
+
+That leaves one contiguous span, and it is taken only when it is certainly an
+insertion: it covers at most twelve lines, and at most twelve *written* lines
+sit below it. Both halves are needed, and each refuses one thing. Without the
+first, a scroll qualifies — it ends at the end of the buffer too. Without the
+second, a clock ticking near the top qualifies — it is small and contiguous
+too, and where it is is the only thing that tells it apart from a dictation.
+Blank lines do not count towards the second: a terminal pads its viewport with
+them, and a prompt in a pane with no history sits above a screenful. Twelve is
+what fits under the caret while you type — an input box grown to about six
+lines, a border, a mode line and a status line — against the hundreds a scroll
+or a repaint covers.
+
+Anything else is refused, and refused is the bottom of the screen. If the pill
+moves it moves to the right place, and it never comes to rest over the words
+being edited.
 
 Then ask the app for the bounds of *that* range. An app can keep no caret and
 still measure text perfectly well — Outlook does — and the two failings are
 unrelated. Only where there are no bounds fall back to the terminal grid:
-`AXLineForIndex` on the last character gives the row count, and the height over
-it gives the pitch. Measured on Ghostty at 53 rows of 17.3pt, a real line height
-rather than a fit.
+`AXLineForIndex` over the range `AXVisibleCharacterRange` reports gives the rows
+on screen, and the pane's height over that is the pitch. Measured on Ghostty at
+53 rows of 17.3pt, a real line height rather than a fit.
+
+The viewport must come from that attribute and from nothing else. Counting the
+lines in the value was tried and is wrong: that is how many rows have text on
+them, which is the screen only if the app pads the blank ones, and the value
+gives no way to tell whether it did. And the attribute is only worth having
+where it is true. In a Ghostty pane with scrollback it answers `0` and the whole
+buffer length — so it is not imprecise about the viewport, it is untrue about
+it, and untrue in exactly the panes that have scrolled. The 53 rows came from a
+pane with no history. Where the pitch that falls out is not a plausible line
+height the rung refuses, which is the observed `the grid says row 1364 of 1365
+at 1pt`.
 
 **A remembered anchor goes stale, and looks confident while it is.** A terminal
 scrolls between dictations, so last time's row belongs to something else — often
 the input box you are about to type into, which is where the pill was seen
-sitting. Two things invalidate it: the pane's character count must match (one
-cheap attribute, and it changes the moment anything is printed) and the landing
-must be under a minute old. Refused, the pill opens at the bottom of the screen
-and `landed` moves it a moment later — starting nowhere in particular beats
-starting somewhere wrong.
+sitting. Two things invalidate it: the pane must still be showing what it showed
+when the words landed, and the landing must be under a minute old. Refused, the
+pill opens at the bottom of the screen and `landed` moves it a moment later —
+starting nowhere in particular beats starting somewhere wrong.
+
+That first condition was `AXNumberOfCharacters` to begin with, on the grounds
+that it is one cheap attribute and it moves whenever anything is printed into
+the pane. It does not move. Measured
+on Ghostty it answers 49,842 and does not move while eight lines of output
+print, with `AXValue` at 2,082 across the same two reads: the count is the
+scrollback, the value is the screen, and only a resize changes the first.
+Compared against, the guard could never fail — in the one app this rung exists
+for. It is a digest of the visible text instead, read at the press under the
+same 80ms cap the other rungs use. That is a read the key-down handler is
+otherwise forbidden, and it is allowed only because it is capped and only asked
+when there is a landing for this exact element to check. A read that does not
+finish in the cap refuses, which is right rather than merely safe: a pane too
+big to read in 80ms is Outlook's, and Outlook's pane scrolls too.
 
 **Poll, do not retry once.** Every 80ms for half a second, off the main thread —
 Outlook's message pane reported 395,489 characters, copied out of another process
@@ -138,6 +178,22 @@ Two routes were considered and rejected: patching Ghostty upstream (means runnin
 a private build until it lands) and shipping an Input Method Kit component (works
 everywhere, but the user must select ParrotFlow as their input source and all
 their typing routes through us). Ghostty gets rung 3 and 4 instead.
+
+**Which of the two you get depends on what the pane is running.** The mechanism
+is worth naming, because it is not about any one program.
+
+A full-screen program draws on the *alternate screen*, and that screen has no
+scrollback. The value is then the viewport and nothing else. The row count is
+true, the pitch comes out at a real line height, and rung 4 answers.
+
+An ordinary shell prompt keeps its history in the same value, and
+`AXVisibleCharacterRange` claims all of it is on screen. Rung 4 refuses, and
+what is left is rung 3 or the bottom of the screen.
+
+That is the whole difference between two panes of one window. It is also why 53
+rows and 1,365 rows came from the same application. Claude Code is the example,
+not the cause: vim, less and anything else on the alternate screen behave the
+same way.
 
 ---
 
@@ -386,6 +442,28 @@ gates quiet sound whatever is printed on the case.
 - The launch panel from the design pass is not built at all, and its lettering
   was never chosen — Serif (New York, `design: .serif`), Rounded, or Wide caps.
 - `--panels` sheet has not been reviewed since the pill changed shape.
+- **A pane read after the paste is not a baseline, and nothing here can tell.**
+  The `landed` rung takes the pane at the press on a background queue. A short
+  dictation can be transcribed and written before that copy finishes, and then
+  the baseline already holds the words: every retry compares equal strings, the
+  diff reports the screen unchanged, and the pill never aims. It is not fixed
+  here because the moment cannot be observed. `TextInserter` posts a ⌘V and the
+  target app reads the pasteboard when it gets round to it, so no instant in
+  this process means "the words are on screen" — a clock stands in for it badly
+  in both directions, and rejecting on one throws away the baselines that were
+  in time. A real fix is the insertion reporting when the target *took* the
+  text, which belongs ahead of this work rather than inside it. The cost
+  meanwhile is the documented fallback: the pill stays where it opened, which
+  is where it opened before any of this. It is not a wrong position.
+- **`lastTranscript` and `focusAtPress` are one slot each.** Dictations overlap,
+  so a later one moves them under an earlier one. The offer reads neither now —
+  it carries the transcript and the press it was raised for. Every other path
+  that reads them is untouched and has the same shape of race.
+- **None of this has been seen running.** Ghostty and Outlook need a person in
+  front of them; the numbers in this section are the spike's. Whether Ghostty
+  answers `AXVisibleCharacterRange` is unknown, and the grid rung needs it —
+  without it that rung refuses and Ghostty falls back to `remembered`, or to
+  the bottom of the screen.
 
 ## 7. The PRs
 

@@ -89,6 +89,115 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// it. Nil when the app would not say, which is when the pill opens where
     /// it always has. See `CaretAnchor`.
     private var anchorAtPress: CaretAnchor.Found?
+
+    /// Everything one press knows about where its words are going, frozen when
+    /// the recording starts and carried down the whole delivery chain.
+    ///
+    /// Carried rather than read off `self` at the end, for the reason
+    /// `destination` and `focus` already are: push-to-talk does not wait for
+    /// the previous transcript, so two dictations are ordinarily in flight and
+    /// anything read at the end belongs to the newer press. This is what lets
+    /// the offer be certain that the pane it is diffing, and the pill it is
+    /// moving, are its own.
+    private struct Press {
+        /// `pressRun` at the time. Identifies this dictation among the ones in
+        /// flight; nothing else is unique, since two presses in a row are
+        /// ordinarily into the same field.
+        let run: Int
+        /// What was focused when the key went down. The same element `focus`
+        /// carries, held here as well so the offer needs nothing but the press.
+        let element: AXUIElement?
+        /// And the app it belonged to, for the same reason: an offer taken
+        /// later has to write back into the window that was dictated into.
+        let owner: NSRunningApplication?
+    }
+
+    /// The words the offer on screen is about, and the field they went into.
+    ///
+    /// Stored when the offer is raised because `lastTranscript` and
+    /// `focusAtPress` are one slot each and dictations overlap: an older one
+    /// finishing while the offer is up overwrites the transcript, and the press
+    /// that taps to accept overwrites the focus. Taking the offer then edits
+    /// one dictation's words against another's field. This is the same
+    /// ownership `offerPressRun` already asserts, carrying what it is about.
+    private var offeredCorrection: (run: Int, target: Correction)?
+
+    /// The focused element's text as it was at the press, for an app that gave
+    /// no caret. What changed in it afterwards is where the words went.
+    ///
+    /// Empty whenever there was a caret to aim at, so the search below only
+    /// ever runs for the apps that need it.
+    ///
+    /// Kept per press, and read by that press alone. Not frozen onto the
+    /// `Press` the way the element is: the copy runs on a background queue and
+    /// a short dictation can be transcribed before it lands, so frozen early it
+    /// would be frozen empty. And not one slot, because dictations overlap and
+    /// an older one still needs the pane it started with.
+    ///
+    /// A press's pane lives until its dictation ends, and every way one ends
+    /// takes it out. Never evicted to make room: however many dictations are in
+    /// flight, each one still needs the pane it started with.
+    ///
+    /// The age is the backstop, for a dictation that ends a way nobody thought
+    /// of. A value here has been seen at 395,489 characters, so nothing is kept
+    /// on the chance that a transcript from five minutes ago is still coming.
+    private var screenAtPress: [Int: (text: String, at: Date)] = [:]
+
+    /// How long a pane is worth keeping, for a press that is no longer in
+    /// flight. Nothing waits this long: the whole chain is a decoder and at
+    /// most a prompt stage.
+    private static let paneLifetime: TimeInterval = 300
+
+    /// The presses whose dictation was thrown away rather than delivered.
+    ///
+    /// "Not in flight" is two different things, and only one of them should
+    /// cost a press its pane. A dictation that finished and pasted is retired
+    /// and still wants its pane: the offer is on screen and the words are what
+    /// the pane is about. One that was cancelled wants nothing ever again.
+    /// Guarding the snapshot store on the first meaning threw the offer's own
+    /// baseline away; not guarding it at all kept a cancelled press's pane for
+    /// the length of the sweep. This is the difference, written down.
+    ///
+    /// Bounded by construction: only a press that dispatched a snapshot is ever
+    /// put here, and that snapshot's own callback takes it out again.
+    private var cancelledPresses: Set<Int> = []
+
+    /// The presses that took a pane and whose dictation has not ended yet.
+    ///
+    /// The age above is a backstop and this is what stops it hitting a live
+    /// dictation: a prompt stage can outlast any number written here, and its
+    /// pane is the one thing that cannot be fetched again. Every way a
+    /// dictation ends goes through `dictationEnded(_:)`, which is what keeps
+    /// this from growing.
+    private var pressesInFlight: Set<Int> = []
+
+    /// Bumped by every press that starts a dictation. It is what a `Press`
+    /// carries, and what a snapshot that took a moment to copy is stamped with
+    /// so it cannot be mistaken for a later one's.
+    private var pressRun = 0
+
+    /// The newest press that has had the pill for an offer.
+    ///
+    /// Two things read it: the landing search, which only moves the pill while
+    /// its own press still owns it, and `showCorrectOffer`, which refuses a
+    /// press older than this one. A watermark, so it is never cleared — a later
+    /// press always has a higher run and passes on its own.
+    private var offerPressRun: Int?
+
+    /// Where the last dictation into a given element ended up.
+    ///
+    /// The only thing worth knowing at the press about an app that keeps no
+    /// caret: you dictate into the same box several times running, and the box
+    /// does not move between them. So the pill opens where the last one landed
+    /// instead of at the bottom of the screen, and the real answer replaces it
+    /// a few seconds later when the words arrive.
+    ///
+    /// Held per element, briefly, and against what the pane was showing when
+    /// the words landed — all three are what make it a fair guess rather than
+    /// a stale one. See `readTheAnchor` for what invalidates it, and
+    /// `CaretAnchor.paneDigest` for why the digest is of the text.
+    private var lastLanding: (element: AXUIElement, found: CaretAnchor.Found, at: Date, digest: Int)?
+
     /// Whether there was anywhere to type when the hotkey went down — see
     /// `Destination`. Decides whether the pill shows the icon, and is handed to
     /// the transcription it belongs to so that the same press decides, a few
@@ -538,20 +647,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // end it is a race against a redraw, which is what it was, and it
         // answered about half the time. See `CaretAnchor`.
         //
-        // On this thread rather than a background one, because the pill is
-        // raised a few lines from here and an anchor that arrives after it is
-        // an anchor that makes it jump. The read is capped at 80ms and this
+        // On this thread rather than the background one below, because the pill
+        // is raised a few lines from here and an anchor that arrives after it
+        // is an anchor that makes it jump. The read is capped at 80ms and this
         // element has just been read from twice by the snapshot above.
-        anchorAtPress = nil
-        if destinationAtPress.acceptsText {
-            switch CaretAnchor.read(at: focusAtPress?.element) {
-            case .found(let found):
-                anchorAtPress = found
-            case .missed(let why):
-                // The pill opens at the bottom of the screen, exactly as it did
-                // before any of this. That is the whole of the fallback.
-                Log.write("pill: no caret — \(why)")
-            }
+        //
+        // Only for a press that is going to start a dictation. A press that
+        // ends one — the second press of a toggle, a stutter inside the release
+        // tail — is not aiming a new pill, and taking a fresh snapshot there
+        // would throw away the one the running dictation is going to need.
+        if !recorder.isRecording {
+            anchorAtPress = nil
+            pressRun += 1
+            readTheAnchor()
         }
 
         // The screen as it was when you started talking — which is the screen
@@ -594,6 +702,104 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard !recorder.isRecording else { return }
             startRecording()
             startPushToTalkPoll()
+        }
+    }
+
+    /// Climb the ladder in `CaretAnchor`, at the press. Called only from
+    /// `handleHotKeyPress`, and only for a press that starts a dictation.
+    private func readTheAnchor() {
+        guard destinationAtPress.acceptsText else { return }
+        switch CaretAnchor.read(at: focusAtPress?.element) {
+        case .found(let found):
+            anchorAtPress = found
+        case .missed(let why):
+            // Rung 3: open where the last dictation into this same element
+            // landed. Two things have to hold, and both exist because a
+            // remembered anchor looks confident while it is stale.
+            //
+            // The pane must still be showing what it showed when the words
+            // landed. A terminal scrolls between dictations, so last time's
+            // row then belongs to somebody else's line — which is how the pill
+            // ends up sitting over the input box you are about to type into.
+            //
+            // Checked against the text and not against `AXNumberOfCharacters`,
+            // which was the first answer and does not describe the screen at
+            // all. See `CaretAnchor.paneDigest` for the measurement, and for
+            // why a read that does not finish in time refuses.
+            //
+            // And the landing must be under a minute old. Refused, the pill
+            // opens at the bottom of the screen and rung 4 moves it a moment
+            // later: starting nowhere in particular beats starting somewhere
+            // wrong.
+            if let last = lastLanding, let now = focusAtPress?.element,
+               CFEqual(last.element, now),
+               Date().timeIntervalSince(last.at) < 60,
+               CaretAnchor.paneDigest(of: now) == last.digest {
+                anchorAtPress = CaretAnchor.Found(
+                    rect: last.found.rect, text: last.found.text, source: .remembered
+                )
+            } else {
+                Log.write("pill: no caret — \(why); will look for the words afterwards")
+            }
+
+            // Rung 4: no caret to aim at, so take the pane as it is now and
+            // find the words by what changed once they have landed. Off the
+            // main thread, because this reads a value that has been observed
+            // at 237k characters — and there are seconds of dictation before
+            // anything needs it.
+            let element = focusAtPress?.element
+            let run = pressRun
+            pressesInFlight.insert(run)
+            DispatchQueue.global(qos: .utility).async { [weak self] in
+                let before = CaretAnchor.snapshot(of: element)
+                DispatchQueue.main.async {
+                    // Kept for the press it was taken for, however many
+                    // presses have started since and whether or not that press
+                    // has already been retired: a short dictation can be
+                    // written before this copy finishes, and refusing the pane
+                    // then would leave the offer with nothing to compare
+                    // against — which is the whole thing this exists to do.
+                    // A pane nobody comes back for is a lifetime, not a leak,
+                    // and the sweep below is what bounds it.
+                    //
+                    // Cancelled is the one exception, and the only one: that
+                    // press is never going to write a word, so its pane is
+                    // dropped here rather than waiting out the sweep. Taken out
+                    // of the set as it is read, which is what keeps the set
+                    // from growing. See `cancelledPresses`.
+                    guard let self else { return }
+                    guard self.cancelledPresses.remove(run) == nil else { return }
+                    guard let before else { return }
+                    let now = Date()
+                    self.screenAtPress[run] = (before, now)
+                    self.screenAtPress = self.screenAtPress.filter { run, pane in
+                        self.pressesInFlight.contains(run)
+                            || now.timeIntervalSince(pane.at) < Self.paneLifetime
+                    }
+
+                    // A short dictation can be transcribed and written while
+                    // this copy is still running, so the offer can already be
+                    // up and this press already retired. Retired is not
+                    // cancelled: this is the one other moment the search can
+                    // start, and it starts here — for this press alone, and
+                    // only while the offer on screen is still the one it
+                    // raised, which is a run-owned thing now and not a slot a
+                    // later dictation can move. See `offeredCorrection`.
+                    //
+                    // Whether this snapshot is a *before* is left to the diff.
+                    // Nothing here can know: the paste is a posted ⌘V and the
+                    // app reads the pasteboard when it gets round to it, so the
+                    // moment the words appear is not a moment this process can
+                    // observe. A snapshot taken too late simply looks like an
+                    // app that has not redrawn, which is the case the poll
+                    // exists for — it times out and the pill stays where it
+                    // opened. Rejecting on a clock instead would throw away the
+                    // baselines that were in time as well.
+                    guard self.offerIsUp, self.offerPressRun == run, let element
+                    else { return }
+                    self.findWhereTheWordsLanded(comparedWith: before, in: element, for: run)
+                }
+            }
         }
     }
 
@@ -703,6 +909,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // by the time someone presses the hotkey, and a refusal
                     // here should not offer to cancel an install that finished
                     // days ago.
+                    self.dictationCancelled(self.pressRun)
                     self.permissions.show(.revisiting)
                 }
             }
@@ -723,6 +930,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // failure people describe as "the app stopped working", and a
             // notice that fades in four seconds is gone by the time they look.
             captureProblem(error.localizedDescription)
+            dictationCancelled(pressRun)
             return
         }
 
@@ -780,6 +988,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // opposite of useful when the reason you cancelled it was that
             // something sounded wrong.
             _ = recorder.stop(config: config)
+            // No words are coming, so this press's dictation is over here. The
+            // recorder is stopped directly rather than through
+            // `stopRecording`, so nothing else would retire it — and the pane
+            // it took is the largest thing the app holds. A snapshot still
+            // being copied lands on a run that has already gone and is dropped.
+            dictationCancelled(pressRun)
             tickTimer?.invalidate(); tickTimer = nil
             pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
             releaseTail?.invalidate(); releaseTail = nil
@@ -880,6 +1094,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // A clip too short to keep, or transcription switched off: no words are
+        // coming, so this press's dictation ends here. Everything that does
+        // reach a transcript ends on one of `transcribe`'s own paths.
+        if recording == nil || !config.transcription.enabled {
+            dictationCancelled(pressRun)
+        }
+
         if let reason {
             // A notice, not an alert, for the reason already written above
             // `startRecording`'s catch: `runModal` holds the main run loop, the
@@ -963,6 +1184,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // longer than any other wait in the app, and long enough to start
         // another dictation somewhere else while it sits there.
         let focus = focusAtPress
+        // And the press itself, frozen the same way and for the same reason.
+        // `pressRun` is still this dictation's here: a press that ends a
+        // recording does not bump it — see `handleHotKeyPress`.
+        let press = Press(run: pressRun, element: focus?.element, owner: focus?.owner)
         Task { [weak self] in
             do {
                 // "Transcribing…" is the truth until the decoder is done, and
@@ -1009,13 +1234,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.runsInFlight -= 1
                     guard !self.wasCancelled(run) else {
                         Log.write("escape: dropped the transcript of a cancelled run")
+                        self.dictationCancelled(press.run)
                         self.stopWatchingForEscapeIfIdle()
                         self.updateUI()
                         return
                     }
                     self.stopWatchingForEscapeIfIdle()
                     self.finishTranscription(
-                        text: text, destination: destination, focus: focus
+                        text: text, destination: destination, focus: focus, for: press
                     )
                 }
             } catch {
@@ -1024,6 +1250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if self.transcriptionRun == run { self.endProgress() }
                     self.runsInFlight -= 1
                     self.stopWatchingForEscapeIfIdle()
+                    // Cancelled or failed, nothing is going to be written.
+                    self.dictationCancelled(press.run)
                     guard !self.wasCancelled(run) else { return }
                     Log.write("transcription failed: \(error.localizedDescription)")
                     self.presentAlert(title: "Transcription failed", message: error.localizedDescription)
@@ -1748,14 +1976,125 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// written down here, so a config that moved the hotkey moves what this
     /// advertises. A modifier-only binding has a name too. If registration
     /// failed there is no key to offer and nothing is shown.
-    private func showCorrectOffer() {
+    /// `press` is the dictation this offer is about, carried down from its own
+    /// key-down — see `insertDictation`. Nothing below reads press-time state
+    /// off `self`, so an offer can never be moved by another dictation's press.
+    private func showCorrectOffer(for press: Press) {
         guard config.feedback.correctOffer else { return }
         guard let key = hotKeys.binding?.displayName else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
 
+        // Two dictations can finish out of order — a long prompt stage on the
+        // first, none on the second. The newer one's offer is the one about the
+        // words you are looking at, so an older one arriving after it never
+        // gets the pill: not while that offer is up, and not once it has
+        // expired either, because reappearing to talk about older text is the
+        // same mistake made a few seconds later.
+        if let owner = offerPressRun, owner > press.run {
+            Log.write("offer: a newer dictation has already had the pill")
+            return
+        }
+
         offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        offerPressRun = press.run
+        // This dictation's own words and its own field, frozen with the offer.
+        offeredCorrection = (press.run, Correction(
+            original: text, element: press.element, owner: press.owner
+        ))
         pill.offer(key, for: Self.offerSeconds)
+
+        // Taken at the press, and only when that press found no caret. Matched
+        // by run, so it is this dictation's own pane and nobody else's. A
+        // remembered anchor is still a guess, and this is what replaces it with
+        // the answer.
+        if let pane = screenAtPress.removeValue(forKey: press.run)?.text,
+           let element = press.element {
+            findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
+        }
+    }
+
+    /// This press's dictation is over, however it ended. Drops the pane it
+    /// started with — nothing can want it again — and lets the sweep above
+    /// reach anything that is somehow left.
+    private func dictationEnded(_ run: Int) {
+        screenAtPress.removeValue(forKey: run)
+        pressesInFlight.remove(run)
+        cancelledPresses.remove(run)
+    }
+
+    /// Over, and with nothing written. The pane goes as it does for any other
+    /// ending, and the press is marked so a snapshot still being copied is
+    /// dropped when it lands instead of sitting out the sweep.
+    private func dictationCancelled(_ run: Int) {
+        dictationEnded(run)
+        cancelledPresses.insert(run)
+    }
+
+    /// For an app with no caret: keep asking what changed until the words show
+    /// up, then move the pill there.
+    ///
+    /// Asked repeatedly rather than once, and that is the whole of what made
+    /// the first version unreliable. The offer is raised the instant the
+    /// insertion call returns; an app redraws when it gets round to it. A
+    /// single read caught it about half the time, and a single retry a fixed
+    /// 120ms later was the same bet with a different number on it. Six looks
+    /// over half a second cost nothing and do not care how slow the app was.
+    ///
+    /// Nothing waits for this. The offer is already on screen at the position
+    /// the pill opened with, and it moves if and when there is somewhere better
+    /// to be — so a miss is not a delay, it is simply the old behaviour.
+    ///
+    /// Everything it needs comes from its own press, so a second dictation
+    /// started while this one is still looking cannot redirect it — and the
+    /// offer it moves has to still be the one that press raised.
+    private func findWhereTheWordsLanded(
+        comparedWith before: String, in element: AXUIElement, for run: Int
+    ) {
+        let deadline = Date().addingTimeInterval(0.5)
+        // Off the main thread, because the thing being read can be enormous:
+        // Outlook's message pane reported 395,489 characters, and every look
+        // copies all of them out of a busy process. Six of those on the main
+        // thread is a stutter in whatever the user is actually doing.
+        let queue = DispatchQueue.global(qos: .userInitiated)
+
+        func look() {
+            let outcome = CaretAnchor.landed(after: before, at: element)
+            // The screen the words landed on, for the next dictation into this
+            // element to check `remembered` against. Read here rather than at
+            // the press, where the same string would be a delay: this queue is
+            // reading the pane anyway and nothing is waiting on it. Only for a
+            // look that found something, so a search that misses costs nothing.
+            var digest: Int?
+            if case .found = outcome { digest = CaretAnchor.snapshot(of: element)?.hashValue }
+            DispatchQueue.main.async { [weak self] in
+                // Only while this press still owns what is on screen. The
+                // offer may have expired, or another dictation may have raised
+                // its own — and then the pill this would move is not the one
+                // these words are under.
+                guard let self, self.offerIsUp, self.offerPressRun == run
+                else { return }
+                switch outcome {
+                case .found(let found):
+                    self.pill.aim(at: found)
+                    // Remembered for the next dictation into this same element,
+                    // against the screen the words landed on. Without that
+                    // there is nothing to tell the guess it has gone stale, so
+                    // a pane that would not be read is a landing not worth
+                    // keeping.
+                    if let digest {
+                        self.lastLanding = (element, found, Date(), digest)
+                    }
+                case .missed(let why):
+                    guard Date() < deadline else {
+                        Log.write("pill: never found the words — \(why)")
+                        return
+                    }
+                    queue.asyncAfter(deadline: .now() + 0.08) { look() }
+                }
+            }
+        }
+        queue.asyncAfter(deadline: .now() + 0.04) { look() }
     }
 
     /// A press on the dictation key that was too short to be a dictation, made
@@ -1787,7 +2126,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func takeTheOfferIfTapped() -> Bool {
         guard pressTookTheOffer, recorder.isRecording, !keyDownDuringPress,
               let started = recorder.startedAt,
-              Date().timeIntervalSince(started) < config.audio.minDurationSeconds
+              Date().timeIntervalSince(started) < config.audio.minDurationSeconds,
+              let offered = offeredCorrection, offered.run == offerPressRun
         else { return false }
 
         pressTookTheOffer = false
@@ -1796,18 +2136,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Under the minimum, so the recorder deletes the clip and gives back
         // nothing. Nothing to transcribe, nothing to deliver.
         _ = recorder.stop(config: config)
+        dictationCancelled(pressRun)
         tickTimer?.invalidate(); tickTimer = nil
         pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
         releaseTail?.invalidate(); releaseTail = nil
         stopWatchingForEscapeIfIdle()
         pill.hide()
 
-        // Captured here, not read again when Replace is pressed. See `Correction`.
-        let target = Correction(
-            original: lastTranscript ?? "",
-            element: focusAtPress?.element,
-            owner: focusAtPress?.owner
-        )
+        // Captured when the offer went up, not read again here and not again
+        // when Replace is pressed. See `offeredCorrection` and `Correction`.
+        let target = offered.target
+        offeredCorrection = nil
 
         Log.write("offer: taken; editing the last transcript")
         previewPanel.onApply = { [weak self] text in self?.replace(target, with: text) }
@@ -2046,18 +2385,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// down — passed along rather than looked up, so a second press landing
     /// mid-transcription cannot redirect this one. See `transcribe`.
     private func finishTranscription(
-        text: String, destination: Destination, focus: SelectionReader.Selection?
+        text: String, destination: Destination, focus: SelectionReader.Selection?,
+        for press: Press
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Heard as a command, or nothing at all: no words are going to land,
+        // so there is nothing to compare a pane against.
         if let command = commandAfterWakePhrase(trimmed) {
             Log.write("command heard: \"\(command)\"")
+            dictationEnded(press.run)
             handleVoiceCommand(command)
             return
         }
 
         guard !trimmed.isEmpty else {
             Log.write("transcription produced no text")
+            dictationEnded(press.run)
             updateUI()
             return
         }
@@ -2072,14 +2416,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lastTranscript = split.text
             runInline(
                 text: split.text, instruction: split.instruction,
-                destination: destination, focus: focus
+                destination: destination, focus: focus, for: press
             )
             return
         }
 
         Log.write("transcribed: \(trimmed)")
         lastTranscript = trimmed
-        insertDictation(trimmed, to: destination, aimedAt: focus?.element)
+        insertDictation(trimmed, to: destination, for: press)
     }
 
     /// An instruction found inside a dictation: route it, run it over the words
@@ -2099,7 +2443,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// with its before and after, as pipeline transforms do.
     private func runInline(
         text: String, instruction: String, destination: Destination,
-        focus: SelectionReader.Selection?
+        focus: SelectionReader.Selection?, for press: Press
     ) {
         let catalogue = Catalogue(transforms: config.transforms)
 
@@ -2107,7 +2451,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         func giveUp(_ why: String, tone: NoticeTone = .caution) {
             endProgress()
             Log.write("inline: \(why); wrote the text as dictated")
-            insertDictation(text, to: destination, aimedAt: focus?.element)
+            insertDictation(text, to: destination, for: press)
             pill.notice(why, tone: tone, duration: 7)
             setLabel(why, clearAfter: 7)
         }
@@ -2133,7 +2477,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             Log.write("    after:  \(cleaned)")
                         }
                         self.lastTranscript = cleaned
-                        self.insertDictation(cleaned, to: destination, aimedAt: focus?.element)
+                        self.insertDictation(cleaned, to: destination, for: press)
                     }
                 } catch {
                     await MainActor.run {
@@ -2150,7 +2494,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .action(let action):
                 runInlineAction(
                     action, text: text, instruction: instruction,
-                    destination: destination, focus: focus
+                    destination: destination, focus: focus, for: press
                 )
             }
             return
@@ -2179,7 +2523,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     case .matched(.action(let action)):
                         self.runInlineAction(
                             action, text: text, instruction: instruction,
-                            destination: destination, focus: focus
+                            destination: destination, focus: focus, for: press
                         )
                     case .anything:
                         Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
@@ -2208,7 +2552,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// mind about a rule.
     private func runInlineAction(
         _ action: Capability.Action, text: String, instruction: String,
-        destination: Destination, focus: SelectionReader.Selection?
+        destination: Destination, focus: SelectionReader.Selection?, for press: Press
     ) {
         switch action {
         case .vocabulary:
@@ -2217,7 +2561,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             endProgress()
             Log.write("inline: correction panel over \"\(text)\"")
             showInlineCorrection(
-                over: text, rules: nil, destination: destination, focus: focus
+                over: text, rules: nil, destination: destination, focus: focus, for: press
             )
 
         case .spelling:
@@ -2228,7 +2572,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 giveUpInline(
                     text,
                     why: "\"\(instruction)\" needs the local model to read the spelling",
-                    destination: destination, focus: focus
+                    destination: destination, focus: focus, for: press
                 )
                 return
             }
@@ -2256,12 +2600,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             }
                             self.showInlineCorrection(
                                 over: text, rules: rules,
-                                destination: destination, focus: focus
+                                destination: destination, focus: focus, for: press
                             )
                         case .openCorrectionPanel:
                             self.showInlineCorrection(
                                 over: text, rules: nil,
-                                destination: destination, focus: focus
+                                destination: destination, focus: focus, for: press
                             )
                         case .undo, .unrecognised:
                             // Undo cannot be reached from here: this path is
@@ -2272,7 +2616,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             // — the text is still in this function.
                             self.giveUpInline(
                                 text, why: "Didn't understand \"\(instruction)\"",
-                                destination: destination, focus: focus
+                                destination: destination, focus: focus, for: press
                             )
                         }
                     }
@@ -2282,7 +2626,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.endProgress()
                         self.giveUpInline(
                             text, why: error.localizedDescription, tone: .failure,
-                            destination: destination, focus: focus
+                            destination: destination, focus: focus, for: press
                         )
                     }
                 }
@@ -2312,7 +2656,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// proposed on the way in, and what was confirmed on the way out.
     private func showInlineCorrection(
         over text: String, rules proposed: [(heard: String, corrected: String)]?,
-        destination: Destination, focus: SelectionReader.Selection?
+        destination: Destination, focus: SelectionReader.Selection?, for press: Press
     ) {
         pendingSelection = nil
 
@@ -2369,13 +2713,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.lastTranscript = final
             handBack()
             Log.write("inline: writing into \(focus?.owner?.localizedName ?? "the frontmost app")")
-            self.insertDictation(final, to: destination, aimedAt: focus?.element)
+            self.insertDictation(final, to: destination, for: press)
         }
         correctionPanel.onCancel = { [weak self] in
             guard let self else { return }
             Log.write("inline: correction dismissed; wrote the text as dictated")
             handBack()
-            self.insertDictation(text, to: destination, aimedAt: focus?.element)
+            self.insertDictation(text, to: destination, for: press)
         }
 
         if let proposed {
@@ -2388,11 +2732,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Write what was said, and say why it is not what was asked for.
     private func giveUpInline(
         _ text: String, why: String, tone: NoticeTone = .caution,
-        destination: Destination, focus: SelectionReader.Selection?
+        destination: Destination, focus: SelectionReader.Selection?, for press: Press
     ) {
         endProgress()
         Log.write("inline: \(why); wrote the text as dictated")
-        insertDictation(text, to: destination, aimedAt: focus?.element)
+        insertDictation(text, to: destination, for: press)
         pill.notice(why, tone: tone, duration: 7)
         setLabel(why, clearAfter: 7)
     }
@@ -2412,8 +2756,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Write the transcript where it was aimed, or put it on the clipboard and
     /// say so.
     ///
-    /// `aimedAt` is the element that had focus when the hotkey went down. A
-    /// transcript arrives seconds later — a decoder, then any prompt stage —
+    /// `press.element` is the element that had focus when the hotkey went down.
+    /// A transcript arrives seconds later — a decoder, then any prompt stage —
     /// and `TextInserter` posts ⌘V into whatever is frontmost by then. Dictate
     /// an instruction into one terminal pane, switch to the next while it works,
     /// and the sentence lands in the wrong session. Nothing in this app has ever
@@ -2424,12 +2768,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Putting focus back would mean setting `kAXFocused` and trusting an app to
     /// honour it, which is a guess; the clipboard is not.
     ///
-    /// A nil `aimedAt` means there was nothing to compare against — no focus was
-    /// resolved at the press at all — and the paste goes ahead as it always did.
-    /// That is different from failing to read focus *now*, which counts as
-    /// moved: not knowing is not the same as knowing it is fine. Passed
-    /// explicitly at every call rather than defaulted, so a new path has to say
-    /// which it is.
+    /// A nil `press.element` means there was nothing to compare against — no
+    /// focus was resolved at the press at all — and the paste goes ahead as it
+    /// always did. That is different from failing to read focus *now*, which
+    /// counts as moved: not knowing is not the same as knowing it is fine. The
+    /// press is passed explicitly at every call rather than defaulted, so a new
+    /// path has to say which dictation it is writing for.
     ///
     /// False positives would make this unusable: guard too eagerly and every
     /// dictation ends up on the clipboard. The comparison was measured before it
@@ -2437,8 +2781,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// this same `CFEqual` across 17 real dictations and the element was equal
     /// every time.
     private func insertDictation(
-        _ text: String, to destination: Destination, aimedAt element: AXUIElement?
+        _ text: String, to destination: Destination, for press: Press
     ) {
+        let element = press.element
+        // However this ends, this dictation is over and nothing wants the pane
+        // it started with. The path that makes the offer takes it before this
+        // runs; every other path here is a clipboard, and those make no offer.
+        defer { dictationEnded(press.run) }
         // Confirmed the same field, or nothing to confirm against. Anything
         // else copies.
         //
@@ -2501,7 +2850,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
             // The words are in the field and you are looking at them. This is
             // the only second in which correcting one is free.
-            showCorrectOffer()
+            showCorrectOffer(for: press)
         case .copied:
             // Deliberate clipboard mode — confirm it landed.
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
