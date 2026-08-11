@@ -825,7 +825,70 @@ final class Recorder {
     /// Settings and by plugging something in, neither of which this app sees.
     static var inputDeviceName: String? {
         guard let deviceID = defaultInputDeviceID else { return nil }
+        return name(of: deviceID)
+    }
 
+    /// A microphone: what to call it, and what to decide about it with.
+    struct InputDevice {
+        /// CoreAudio's UID for the device. What tells two microphones apart,
+        /// including two that answer to the same name — a headset and a webcam
+        /// both called "Headset Microphone" are one string and two devices.
+        /// Stable across unplugging and reconnecting, which `AudioDeviceID` is
+        /// not.
+        let uid: String
+        /// What System Settings calls it, and what the notice says out loud.
+        let name: String
+        let isBluetooth: Bool
+    }
+
+    /// The device this recorder is bound to.
+    ///
+    /// Asked of the engine's own binding, not of the system default. `bound` is
+    /// the device the running engine was prepared against, which is the one the
+    /// words are being recorded through; the default can move the moment after
+    /// `start` returns, and asking again would name a microphone that heard
+    /// nothing. Nil before the first engine is built.
+    ///
+    /// One device ID, asked three times, rather than properties that each ask
+    /// which device is default. Between two such reads the answer can change —
+    /// a headset connects, and macOS makes it the input — and the answer would
+    /// then describe two devices: a wired microphone reported as Bluetooth, or
+    /// the other way round.
+    var boundDevice: InputDevice? {
+        stateLock.lock()
+        let deviceID = bound?.device
+        stateLock.unlock()
+        guard let deviceID, let name = Self.name(of: deviceID) else { return nil }
+        // The device ID stands in where a device will not give a UID — never
+        // the name, which is what a UID is here to be better than. Two devices
+        // attached at once always have different IDs, so the fallback still
+        // tells them apart; what it cannot do is survive a reconnection, since
+        // macOS hands the ID back out. That costs a notice said a second time
+        // for the same headset, which is the safe direction to be wrong in.
+        return InputDevice(
+            uid: Self.uid(of: deviceID) ?? "device-id:\(deviceID)",
+            name: name,
+            isBluetooth: Self.isBluetooth(deviceID)
+        )
+    }
+
+    /// The device's own identifier, the one that outlives a reconnection.
+    private static func uid(of deviceID: AudioDeviceID) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var uid: CFString?
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        let status = withUnsafeMutablePointer(to: &uid) {
+            AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, $0)
+        }
+        guard status == noErr, let uid = uid as String?, !uid.isEmpty else { return nil }
+        return uid
+    }
+
+    private static func name(of deviceID: AudioDeviceID) -> String? {
         var nameAddress = AudioObjectPropertyAddress(
             mSelector: kAudioObjectPropertyName,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -838,6 +901,30 @@ final class Recorder {
         }
         guard status == noErr, let name = name as String? else { return nil }
         return name.isEmpty ? nil : name
+    }
+
+    /// Whether this device is on the other end of a Bluetooth link.
+    ///
+    /// Asked of CoreAudio, not of the name. A list of brands is a list that is
+    /// wrong the day somebody buys a headset nobody thought of, and it was
+    /// answering the wrong question anyway: what costs you the ends of your
+    /// words is the transport. A Bluetooth microphone runs over a voice profile
+    /// that narrows the band and gates quiet sound, and it does that whatever
+    /// is printed on the case.
+    private static func isBluetooth(_ deviceID: AudioDeviceID) -> Bool {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var transport: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(
+            deviceID, &address, 0, nil, &size, &transport
+        )
+        guard status == noErr else { return false }
+        return transport == kAudioDeviceTransportTypeBluetooth
+            || transport == kAudioDeviceTransportTypeBluetoothLE
     }
 
     // MARK: - Files

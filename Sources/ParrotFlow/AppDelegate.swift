@@ -68,6 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var labelToken = 0
     private let correctionPanel = CorrectionPanel()
     private let previewPanel = PreviewPanel()
+    /// Says once per microphone that this one will cost you words.
+    private let micNotice = MicNotice()
     private var pendingSelection: SelectionReader.Selection?
     /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
     private var selectionAtPress: SelectionReader.Selection?
@@ -80,6 +82,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// without Accessibility — an app condition has no business needing a
     /// permission that gating a stage by app does not otherwise require.
     private var appAtPress: Pipeline.App?
+    /// Which microphone the engine is recording through. Read when recording
+    /// starts and frozen onto the `Press` when the clip is handed to the
+    /// decoder, so the microphone notice names the device that recorded the
+    /// words rather than whatever is default a second later. One slot is
+    /// enough: only one recording runs at a time, and it is taken the moment
+    /// that recording stops.
+    private var micAtPress: Recorder.InputDevice?
     /// That same app's icon, for the pill. Held apart from `appAtPress` because
     /// `Pipeline.App` is what the pipeline matches on and has no business
     /// carrying an image around.
@@ -110,6 +119,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// And the app it belonged to, for the same reason: an offer taken
         /// later has to write back into the window that was dictated into.
         let owner: NSRunningApplication?
+        /// The microphone this dictation was recorded on. Frozen for the same
+        /// reason as everything above it: the default input can change while
+        /// the decoder runs — a headset disconnects, somebody picks another
+        /// device in System Settings — and the notice is about the microphone
+        /// that recorded these words. See `micAtPress`.
+        let mic: Recorder.InputDevice?
     }
 
     /// The words the offer on screen is about, and the field they went into.
@@ -938,6 +953,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             try recorder.start(config: config)
+            // The engine's own device, asked here rather than when the
+            // transcript comes back. Not the system default: that is a
+            // different question the moment a headset connects, and the notice
+            // is about the microphone these words went through. See
+            // `Recorder.boundDevice`.
+            micAtPress = recorder.boundDevice
         } catch {
             // A notice, not an alert. `runModal` holds the main run loop, and
             // the hotkey is delivered on it: one failed press behind a modal
@@ -1207,7 +1228,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // And the press itself, frozen the same way and for the same reason.
         // `pressRun` is still this dictation's here: a press that ends a
         // recording does not bump it — see `handleHotKeyPress`.
-        let press = Press(run: pressRun, element: focus?.element, owner: focus?.owner)
+        // And the microphone that recorded it, read when the engine opened the
+        // device. Taken here rather than read at the end for the same reason as
+        // the rest: the default input can change while the decoder runs.
+        let press = Press(
+            run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress
+        )
         Task { [weak self] in
             do {
                 // "Transcribing…" is the truth until the decoder is done, and
@@ -2007,6 +2033,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// key-down — see `insertDictation`. Nothing below reads press-time state
     /// off `self`, so an offer can never be moved by another dictation's press.
     private func showCorrectOffer(for press: Press, landing: Correction.Landing) {
+        // Beside the offer, not on it: its own window, so advice about the
+        // microphone never costs you the chance to fix the sentence. Here
+        // because this is the end of a dictation and every ending comes
+        // through — a Bluetooth mic is worth saying something about the moment
+        // you have watched a transcript come back short, and worth nothing at
+        // launch, when you were not dictating.
+        //
+        // Above the guards below, which are all about the offer rather than
+        // about the microphone: `correct_offer: false` is a choice about
+        // commands on the pill, an empty transcript is the symptom itself, and
+        // a dictation that lost the pill to a newer one was still recorded on
+        // the same microphone. `MicNotice` decides for itself whether there is
+        // anything to say, so none of them can make it say it twice either.
+        //
+        // The microphone comes off the press, not off CoreAudio. This runs when
+        // the decoder is done, and by then the default input can be another
+        // device — see `micAtPress`.
+        micNotice.showIfNeeded(press.mic)
+
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
