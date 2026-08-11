@@ -189,9 +189,10 @@ final class SpansModel: ObservableObject {
                 token.append(character)
             }
         }
-        if !token.isEmpty {
+        // A word at the end takes the whitespace before it, so nothing trails.
+        guard token.isEmpty else {
             spans.append(span(token, lead: lead))
-            lead = ""
+            return (spans, "")
         }
         return (spans, lead)
     }
