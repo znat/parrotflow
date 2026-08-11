@@ -1,0 +1,199 @@
+#!/usr/bin/env bash
+# Checks the model behind the correction panel: the spans it reads a sentence
+# into, and the sentence it gives back.
+#
+#   scripts/check-spans.sh
+#
+# Three things are worth a script rather than a look at the panel, because all
+# three are invisible in it and all three were wrong once:
+#
+#   the whitespace     the panel opens on a selection as often as on a fresh
+#                      dictation. A tab, a double space or a line break in it
+#                      belongs to the user's text. Correcting one word must
+#                      not reformat the rest
+#   the punctuation    joining "blue" and "(red" with ⌫ has to keep the
+#                      bracket
+#   the caret offsets  `SpanCaret.at` counts UTF-16 code units, because that
+#                      is what AppKit's selection ranges count. A character
+#                      count agrees with it right up until a word holds an
+#                      emoji or a combining accent
+#
+# `CorrectionSpans.swift` is compiled on its own against the driver below —
+# there is no test target here, and the model needs no window, no microphone
+# and no model to answer. The one symbol it reaches out of its file for is
+# stubbed; if that list grows, this script says so by failing to compile.
+set -uo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE="$ROOT/Sources/ParrotFlow/CorrectionSpans.swift"
+
+WORK="$(mktemp -d -t parrotflow-spans)"
+trap 'rm -rf "$WORK"' EXIT
+
+cat > "$WORK/main.swift" <<'SWIFT'
+import AppKit
+
+// The only symbol CorrectionSpans.swift reads from another file.
+enum CorrectionMetrics { static let minWidth: CGFloat = 640 }
+
+var checks = 0, failures = 0
+
+func check(_ what: String, _ got: Any, _ want: Any) {
+    checks += 1
+    let got = show(got), want = show(want)
+    if got == want {
+        print("  ✓ \(what)  \(got)")
+    } else {
+        failures += 1
+        print("  ✗ \(what)\n      got   \(got)\n      want  \(want)")
+    }
+}
+
+/// Whitespace is the thing under test, so it has to be readable in the output.
+func show(_ value: Any) -> String {
+    String(describing: value)
+        .replacingOccurrences(of: "\t", with: "\\t")
+        .replacingOccurrences(of: "\n", with: "\\n")
+}
+
+func loaded(_ sentence: String) -> SpansModel {
+    let model = SpansModel()
+    model.load(sentence: sentence)
+    return model
+}
+
+/// One word typed into, the way the field's delegate reports it.
+func type(_ model: SpansModel, _ text: String, span: Int, word: Int = 0) {
+    model.typed(text, span: model.spans[span].id, word: word)
+}
+
+func joinBack(_ model: SpansModel, span: Int, word: Int = 0) {
+    model.joinBack(span: model.spans[span].id, word: word)
+}
+
+print("\n  --- the whitespace of the selection survives an edit ---")
+
+for (name, sentence, want) in [
+    ("a double space", "one  two", "one  TWO"),
+    ("a tab", "one\ttwo", "one\tTWO"),
+    ("a line break", "one\ntwo", "one\nTWO"),
+    ("whitespace at both ends", "  one \t two\n", "  one \t TWO\n"),
+] {
+    let model = loaded(sentence)
+    type(model, "TWO", span: 1)
+    check(name, model.sentence(), want)
+}
+
+for sentence in ["a\n\nb\tc   d", "\n\thello\t\n", "   ", ""] {
+    check("untouched: \(show(sentence))", loaded(sentence).sentence(), sentence)
+}
+
+do {
+    let model = loaded("Hello,   \"world\"!")
+    type(model, "World", span: 1)
+    check("punctuation stays with its word", model.sentence(), "Hello,   \"World\"!")
+}
+do {
+    // A word cleared takes the whitespace before it. That whitespace is where
+    // the word sat; the separator that survives belongs to the word that stays.
+    let model = loaded("foo\nbar baz")
+    type(model, "", span: 1)
+    check("a cleared word takes its own lead", model.sentence(), "foo baz")
+}
+do {
+    // Except the first, whose lead is where the selection starts.
+    let model = loaded("    foo bar")
+    type(model, "", span: 0)
+    check("the first word cleared leaves the indent", model.sentence(), "    bar")
+}
+do {
+    let model = loaded("foo bar\n")
+    type(model, "", span: 1)
+    check("the last word cleared leaves the newline", model.sentence(), "foo\n")
+}
+do {
+    let model = loaded("one\ttwosome")
+    type(model, "two some", span: 1)
+    check("a word split in two takes one space", model.sentence(), "one\ttwo some")
+}
+do {
+    let model = loaded("red \t crawl")
+    joinBack(model, span: 1)
+    check("a join takes the whitespace at the seam", model.sentence(), "redcrawl")
+}
+do {
+    let model = loaded("a  b  c")
+    joinBack(model, span: 1)
+    check("a join leaves the other separators", model.sentence(), "ab  c")
+}
+do {
+    let model = loaded("foo\nbar baz")
+    type(model, "", span: 1)
+    model.undo()
+    check("undo puts the whitespace back", model.sentence(), "foo\nbar baz")
+}
+
+print("\n  --- a join keeps the punctuation of what it swallowed ---")
+
+do {
+    let model = loaded("blue (red).")
+    joinBack(model, span: 1)
+    check("blue + (red", model.spans[0].value, ["blue(red"])
+    check("blue + (red, and the full stop", model.sentence(), "blue(red).")
+    check("the rule it teaches", model.rules().map { "\($0.heard) => \($0.corrected)" },
+          ["blue red => blue(red"])
+}
+do {
+    let model = loaded("red crawl")
+    joinBack(model, span: 1)
+    check("nothing to carry", model.spans[0].value, ["redcrawl"])
+}
+
+print("\n  --- the caret is counted in UTF-16, the unit AppKit ranges use ---")
+
+// "e" and a combining acute: one character, two UTF-16 code units.
+let accented = "caf\u{65}\u{301}"
+
+// The two counts have to differ, or the checks below say nothing.
+for (word, want) in [(accented, "4 5"), ("😀", "1 2"), ("👩‍💻", "1 5")] {
+    check("characters against code units", "\(word.count) \((word as NSString).length)", want)
+}
+
+// The seam a ⌫ join leaves the caret on is the end of the word before it —
+// exactly the number the two counts disagree about. Typed in rather than
+// dictated, because `read` treats an emoji as punctuation around a word, so the
+// only way one gets into a field is the keyboard.
+for word in [accented, "😀", "👩‍💻", "abc"] {
+    let model = loaded("x tail")
+    type(model, word, span: 0)
+    joinBack(model, span: 1)
+    check("the seam after \(word)", model.focus?.at ?? -1, (word as NSString).length)
+    check("…which is not its character count", model.focus?.at == word.count, word == "abc")
+    check("…and the words are one", model.spans[0].value, [word + "tail"])
+}
+do {
+    // The same seam inside one span: split a word, then join it back.
+    let model = loaded("x")
+    type(model, "\u{65}\u{301}😀 tail", span: 0)
+    check("split into two words", model.spans[0].value, ["\u{65}\u{301}😀", "tail"])
+    model.joinBack(span: model.spans[0].id, word: 1)
+    check("the seam inside a span", model.focus?.at ?? -1,
+          ("\u{65}\u{301}😀" as NSString).length)
+}
+do {
+    // The panel opens with the caret before the first letter, whatever the
+    // first word is made of.
+    let model = loaded("\(accented) tail")
+    check("the opening caret", model.focus?.at ?? -1, 0)
+    check("…in the first word", model.focus?.word ?? -1, 0)
+    check("…of the first span", model.focus?.span == model.spans[0].id, true)
+}
+
+print("\n  \(checks - failures)/\(checks)")
+exit(failures == 0 ? 0 : 1)
+SWIFT
+
+swiftc -O -o "$WORK/spans" "$WORK/main.swift" "$SOURCE" || {
+  echo "  the model no longer compiles on its own — see the note at the top"
+  exit 1
+}
+"$WORK/spans"

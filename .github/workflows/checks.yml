@@ -147,6 +147,13 @@ jobs:
       - name: A possessive across a substitution
         run: scripts/check-possessive.sh
 
+      # The model behind the correction panel: the whitespace of the selection
+      # it opened on, and where the caret lands. Both are invisible in the
+      # panel, and both were wrong. Compiles the one file on its own, so it
+      # needs no window.
+      - name: The correction panel's spans
+        run: scripts/check-spans.sh
+
       # Not a validation set: it checks that the file a new install is written
       # with still teaches everything config.example.yaml documents. That has
       # drifted twice, both times silently.
