@@ -297,6 +297,14 @@ enum CaretAnchor {
         // two failings are unrelated: one is about tracking a cursor, the other
         // about measuring text. Asked with a range of our own, the app that
         // would not say where the caret was says exactly where the words are.
+        //
+        // A span over several lines comes back as one rectangle covering all of
+        // them, and that is what is wanted. `flipped` puts its Cocoa `minY` at
+        // the bottom of the span, `across` keeps that edge, and `beside` opens
+        // the pill below `minY` — so the pill clears the whole insertion and
+        // not just the line it started on. Nothing to do here; it is written
+        // down because the arithmetic is invisible and the grid below had to be
+        // fixed for exactly this.
         if let rect = bounds(of: CFRange(location: head, length: length), in: element) {
             let text = flipped(rect)
             return .found(Found(rect: across(text, pane), text: text, source: .landed))
@@ -306,7 +314,14 @@ enum CaretAnchor {
         // so the pane's height over the number of rows it shows is the pitch,
         // and the row is all that is left to find.
         guard let pane else { return .missed("no geometry") }
-        guard let row = line(of: head, in: element),
+
+        // The row the change *ends* on, not the one it starts on. A dictation
+        // long enough to wrap covers two or three rows, and anchored to the
+        // first the pill came to rest on top of the rest of it — which is the
+        // one thing this rung must never do. Below the last row is below all of
+        // them, and it is also where the caret has ended up, so it is the right
+        // answer for its own reasons and not only for that bug.
+        guard let row = line(of: head + length - 1, in: element),
               let grid = visibleGrid(of: element)
         else { return .missed("no bounds, and it will not say how the grid is laid out") }
 
