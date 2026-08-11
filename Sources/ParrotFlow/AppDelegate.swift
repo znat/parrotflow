@@ -724,8 +724,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     // Kept for the press it was taken for, however many
                     // presses have started since: each of those has its own,
-                    // and this one is still going to be transcribed.
-                    guard let self, let before else { return }
+                    // and this one is still going to be transcribed. Unless it
+                    // is not — cancelled with Escape while this copy was still
+                    // running — in which case its run has been retired and
+                    // there is nothing left to compare a pane against.
+                    guard let self, let before, self.pressesInFlight.contains(run)
+                    else { return }
                     let now = Date()
                     self.screenAtPress[run] = (before, now)
                     self.screenAtPress = self.screenAtPress.filter { run, pane in
@@ -941,6 +945,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // opposite of useful when the reason you cancelled it was that
             // something sounded wrong.
             _ = recorder.stop(config: config)
+            // No words are coming, so this press's dictation is over here. The
+            // recorder is stopped directly rather than through
+            // `stopRecording`, so nothing else would retire it — and the pane
+            // it took is the largest thing the app holds. A snapshot still
+            // being copied lands on a run that has already gone and is dropped.
+            dictationEnded(pressRun)
             tickTimer?.invalidate(); tickTimer = nil
             pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
             releaseTail?.invalidate(); releaseTail = nil
