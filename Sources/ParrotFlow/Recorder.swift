@@ -859,11 +859,14 @@ final class Recorder {
         let deviceID = bound?.device
         stateLock.unlock()
         guard let deviceID, let name = Self.name(of: deviceID) else { return nil }
-        // The name stands in where a device will not give a UID. Two devices
-        // sharing a name is rarer than one refusing to identify itself, and
-        // this string is only ever compared with another read of itself.
+        // The device ID stands in where a device will not give a UID — never
+        // the name, which is what a UID is here to be better than. Two devices
+        // attached at once always have different IDs, so the fallback still
+        // tells them apart; what it cannot do is survive a reconnection, since
+        // macOS hands the ID back out. That costs a notice said a second time
+        // for the same headset, which is the safe direction to be wrong in.
         return InputDevice(
-            uid: Self.uid(of: deviceID) ?? name,
+            uid: Self.uid(of: deviceID) ?? "device-id:\(deviceID)",
             name: name,
             isBluetooth: Self.isBluetooth(deviceID)
         )
