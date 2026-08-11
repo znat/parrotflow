@@ -308,6 +308,10 @@ $PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
 `vocabulary`, `rule`, `dictation`, `preview` or `sequence`. `--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
 
+`offer` is the one state that takes the mouse — hover a chip to light it, click
+one to print which was chosen. Every other state lets clicks through, so the
+pill is never a hole in your screen while you are dictating.
+
 `sequence` is the one that cannot be checked from a still. The pill is a single
 panel that changes width and crossfades its contents rather than being replaced
 — hot mic, decoding, applied, the offer, gone — and whether that morphs or

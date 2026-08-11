@@ -10,6 +10,14 @@ import SwiftUI
 /// is slow enough that the surfaces drifted apart from each other unnoticed.
 enum PanelsCommand {
 
+    /// What the offer is drawn with here: Correct and one offered transform,
+    /// which is what the shipped config puts on the pill. A row of chips is the
+    /// shape worth looking at, not one chip on its own.
+    private static let offerChips = [
+        OfferedCommand(title: "Correct", key: "C"),
+        OfferedCommand(title: "grammar", key: "G")
+    ]
+
     /// Draws every surface into one PNG, light beside dark.
     ///
     /// The panels are the one part of the app with no test: they are looked at,
@@ -35,7 +43,7 @@ enum PanelsCommand {
         let notice = pill(.notice("Grammar applied", .done))
         let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution))
         let thinking = pill(.working("Thinking…"))
-        let offer = pill(.offer("Right ⌘"))
+        let offer = pill(.offer(offerChips))
 
         let overlay = pill(.recording, icon: sampleIcon(), level: 0.75)
 
@@ -236,7 +244,16 @@ enum PanelsCommand {
             pill.working("Thinking…")
         case "offer":
             // No duration: it is here to be looked at, not timed out.
-            pill.set(.offer("Right ⌘"))
+            pill.set(.offer(offerChips))
+            // The one state that takes the mouse, so the one worth being able
+            // to hover. Nothing runs — this is the surface, not the app — but
+            // the highlight has to come and go the way it does there.
+            pill.model.onHover = { inside in
+                if !inside { pill.model.selected = nil }
+            }
+            pill.model.onPick = { index in
+                print("offer: chip \(index) — \(offerChips[index].title)")
+            }
         case "vocabulary":
             correction.show(selection: "Tasmin and Mick")
         case "rule":
@@ -280,7 +297,7 @@ enum PanelsCommand {
                 (2.6, { pill.working("Transcribing…") }),
                 (4.0, { pill.working("Grammar…") }),
                 (5.4, { pill.notice("Grammar applied", tone: .done, duration: nil) }),
-                (7.4, { pill.offer("Right ⌘", for: 3) }),
+                (7.4, { pill.offer(offerChips, for: 3) }),
                 (11.4, { pill.recording(icon: nil) }),
                 (14.0, { pill.working("Transcribing…") }),
                 (15.4, { pill.notice("Nowhere to type — the transcription is on your clipboard",

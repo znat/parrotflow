@@ -272,6 +272,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// something in the way.
     private static let offerSeconds: TimeInterval = 3
 
+    /// What the offer offers: Correct, then every transform that asked for a
+    /// place on it with `offer: true`.
+    ///
+    /// Correct is first and is not a transform. It is the one command that is
+    /// about the words rather than about rewriting them, it needs no model, and
+    /// it cannot fail.
+    ///
+    /// Read fresh each time rather than stored, so a config reloaded between
+    /// two dictations changes what the next offer says.
+    private var offerCommands: [OfferedCommand] {
+        [OfferedCommand(title: "Correct", key: "C")]
+            + config.transforms.filter(\.offer).map {
+                OfferedCommand(title: $0.name, key: $0.offerKey)
+            }
+    }
+
     /// The last substitution made in somebody else's window, and enough to put
     /// it back.
     ///
@@ -1972,16 +1988,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// had nothing on it at all: the pill simply vanished and the dictation was
     /// over, which is a fine thing to feel and a wasted second of screen.
     ///
-    /// The key is read from the binding that is actually registered rather than
-    /// written down here, so a config that moved the hotkey moves what this
-    /// advertises. A modifier-only binding has a name too. If registration
-    /// failed there is no key to offer and nothing is shown.
+    /// The commands are read from the config, so what is on the pill is what
+    /// that machine can actually do. It no longer waits on the hotkey being
+    /// registered: it used to print that key's name, and now it prints its own
+    /// letters and is worked with the mouse.
+    ///
     /// `press` is the dictation this offer is about, carried down from its own
     /// key-down — see `insertDictation`. Nothing below reads press-time state
     /// off `self`, so an offer can never be moved by another dictation's press.
     private func showCorrectOffer(for press: Press) {
         guard config.feedback.correctOffer else { return }
-        guard let key = hotKeys.binding?.displayName else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
 
@@ -2002,7 +2018,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offeredCorrection = (press.run, Correction(
             original: text, element: press.element, owner: press.owner
         ))
-        pill.offer(key, for: Self.offerSeconds)
+        let commands = offerCommands
+        pill.offer(commands, for: Self.offerSeconds)
+        // The list is captured, not read again in the closure: a config
+        // reloaded while the offer is up would otherwise renumber the chips
+        // under the pointer, and the click would run whatever took the slot.
+        pill.model.onPick = { [weak self] index in
+            guard let self, self.offerIsUp, commands.indices.contains(index) else { return }
+            // Index 0 is Correct, which is not a transform and cannot be one:
+            // a config free to name a transform "Correct" must not be able to
+            // take that slot over.
+            self.runOfferedCommand(index == 0 ? nil : commands[index].title)
+        }
+        // The highlight is the pointer's mark and does not outlive it. Leaving
+        // the pill gives it up, so a chip is never lit for a command that is
+        // not about to happen. Cleared here rather than in the view because
+        // this closure is where the rest of the leaving behaviour will hang.
+        pill.model.onHover = { [weak self] inside in
+            guard !inside else { return }
+            self?.pill.model.selected = nil
+        }
 
         // Taken at the press, and only when that press found no caret. Matched
         // by run, so it is this dictation's own pane and nobody else's. A
@@ -2012,6 +2047,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            let element = press.element {
             findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
         }
+    }
+
+    /// Run the command a chip was clicked on, and take the offer down.
+    ///
+    /// `transform` is the name on the chip, or nil for Correct. The pill goes
+    /// first, before anything opens: whatever the command puts on screen
+    /// belongs over the words, which is where the pill is sitting.
+    private func runOfferedCommand(_ transform: String?) {
+        let offered = offeredCorrection
+        offerUntil = nil
+        offeredCorrection = nil
+        pill.hide()
+
+        // Looked up again rather than carried on the chip, so a transform
+        // deleted from a config reloaded while the offer was up is not run
+        // from a chip that outlived it.
+        if let name = transform {
+            guard let found = config.transforms.first(where: { $0.name == name }) else {
+                Log.write("offer: \"\(name)\" is no longer in the config")
+                return
+            }
+            Log.write("offer: taken; running \"\(name)\"")
+            // No instruction: the chip is the whole of what was asked for.
+            // This still shows the transform's preview, because that is what
+            // `confirm:` asks for today.
+            runTransform(found, instruction: "")
+            return
+        }
+
+        // Correct, which is not a transform: it is about the words rather than
+        // about rewriting them.
+        //
+        // The correction panel rather than the preview panel — the offer names
+        // one thing and that is the surface that does it. Over the sentence
+        // frozen when the offer went up, and back into the field frozen with
+        // it: the panel can be open for a while, and `focusAtPress` by then can
+        // belong to a dictation that finished in the meantime. Teaching a rule
+        // is the panel's own and is unchanged.
+        guard let target = offered?.target else { return }
+        Log.write("offer: taken; opening the correction panel")
+        // Nothing here is a selection, and the offer's own target is what says
+        // where the words go. Cleared so no later save can read one left behind
+        // by an earlier flow.
+        pendingSelection = nil
+        correctionPanel.onSave = { [weak self] rules, correctedText in
+            self?.saveOfferedCorrection(rules, correctedText: correctedText, into: target)
+        }
+        correctionPanel.onCancel = { Log.write("offer: correction dismissed") }
+        correctionPanel.show(selection: target.original)
     }
 
     /// This press's dictation is over, however it ended. Drops the pane it
@@ -2188,10 +2272,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// a word is what "Hey parrot, correct" and the correction panel are for,
     /// and quietly writing a rule out of every fixed sentence would fill
     /// config.yaml with pairs that will never recur.
-    private func replace(_ target: Correction, with edited: String) {
+    ///
+    /// Returns whether the field has the sentence. False means it is on the
+    /// clipboard instead and that has already been said on screen, so a caller
+    /// with more to report should stop rather than talk over it. Nothing to
+    /// change counts as true: the field already says what was asked for.
+    @discardableResult
+    private func replace(_ target: Correction, with edited: String) -> Bool {
         let corrected = edited.trimmingCharacters(in: .whitespacesAndNewlines)
         let original = target.original.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !original.isEmpty, !corrected.isEmpty, corrected != original else { return }
+        guard !original.isEmpty, !corrected.isEmpty, corrected != original else { return true }
 
         if let owner = target.owner, !owner.isActive {
             owner.activate()
@@ -2217,7 +2307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         lastTranscript = corrected
                     }
                     applied("Correction")
-                    return
+                    return true
                 case .failed, .notAttempted:
                     break
                 }
@@ -2232,6 +2322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(corrected, forType: .string)
         flash("Correction copied — this app won't let me edit it", tone: .caution)
+        return false
     }
 
     private func beginCorrection() {
@@ -2254,10 +2345,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         correctionPanel.show(selection: selection?.text ?? "")
     }
 
-    private func saveCorrections(
-        _ rules: [(heard: String, corrected: String)],
-        correctedText: String
-    ) {
+    /// Write out what the panel taught, one rule at a time.
+    ///
+    /// False means one could not be written and the user has already been shown
+    /// why. Nothing after it should run: a correction that half-saved and then
+    /// went on to rewrite the field would leave the two disagreeing.
+    private func learn(_ rules: [(heard: String, corrected: String)]) -> Bool {
         for rule in rules {
             do {
                 try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
@@ -2265,9 +2358,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Trace.correction(heard: rule.heard, corrected: rule.corrected, via: "command")
             } catch {
                 presentAlert(title: "Could not save the rule", message: error.localizedDescription)
-                pendingSelection = nil
-                return
+                return false
             }
+        }
+        return true
+    }
+
+    /// Save what the panel taught, then write the sentence back into the field
+    /// the offer was about.
+    ///
+    /// Separate from `saveCorrections` for one reason: the destination. That
+    /// one has to work out where the words go, and falls back to `focusAtPress`
+    /// and then to the clipboard. This one already knows — the offer froze the
+    /// element and its app when it went up. The panel can be open for as long
+    /// as it takes to think about a spelling, and push-to-talk does not wait
+    /// for the previous transcript, so anything read at this moment can belong
+    /// to a newer dictation. `replace` carries the same care the tapped offer
+    /// takes: focus handed back first, a refusal to write unless the field is
+    /// still the one that was dictated into, and the clipboard when it cannot.
+    private func saveOfferedCorrection(
+        _ rules: [(heard: String, corrected: String)],
+        correctedText: String,
+        into target: Correction
+    ) {
+        guard learn(rules) else { return }
+        // On the clipboard, and `replace` has said so. A rule notice on top of
+        // that would bury the one thing you need to act on.
+        guard replace(target, with: correctedText) else { return }
+        switch rules.count {
+        // Nothing taught, so `replace` has already said the only thing there
+        // is to say.
+        case 0: break
+        case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)", tone: .done)
+        default: flash("Saved \(rules.count) rules", tone: .done)
+        }
+    }
+
+    private func saveCorrections(
+        _ rules: [(heard: String, corrected: String)],
+        correctedText: String
+    ) {
+        guard learn(rules) else {
+            pendingSelection = nil
+            return
         }
 
         // Put the corrected phrase back where it came from, whether or not any

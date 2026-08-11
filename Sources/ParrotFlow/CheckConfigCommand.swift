@@ -217,6 +217,19 @@ enum CheckConfigCommand {
             }
         }
 
+        // And `offer:` is the other part nothing else can show you. The pill is
+        // up for a few seconds after a dictation, so a chip that failed to
+        // appear — or a `key:` that was dropped for being two characters — is
+        // read as the offer simply being short.
+        let offered = config.transforms.filter(\.offer)
+        if !offered.isEmpty {
+            print("  · offer             \(offered.count) transform(s) on the pill, after Correct")
+            for transform in offered {
+                print("      \(transform.name)"
+                    + (transform.offerKey.isEmpty ? " — no key, click only" : " — \(transform.offerKey)"))
+            }
+        }
+
         for prompt in config.prompts where prompt.description.isEmpty {
             print("  ✗ prompt \"\(prompt.name)\" has no description; the router cannot pick it")
             ok = false
