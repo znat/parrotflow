@@ -1984,13 +1984,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return offerUntil > Date()
     }
 
-    /// Say what can be done about the words that just landed, and for how long.
+    /// Say what can be done about the words just dictated, and for how long.
     ///
-    /// Only after a paste that worked. Every other ending already has something
-    /// to say — "on your clipboard", "grant Accessibility" — and those are more
-    /// useful than an offer, so they keep the pill. This is the one ending that
-    /// had nothing on it at all: the pill simply vanished and the dictation was
-    /// over, which is a fine thing to feel and a wasted second of screen.
+    /// After every ending, not only a paste that worked. A word the recogniser
+    /// got wrong is worth teaching whether or not the sentence reached a text
+    /// field, and the offer cannot wait: it is about the words you are looking
+    /// at now. The messages the clipboard endings used to put on the pill —
+    /// "on your clipboard", "grant Accessibility" — are worth keeping and worth
+    /// less than the offer, so they moved to the menu bar, where messages that
+    /// are not urgent live. See `insertDictation`.
+    ///
+    /// `landing` is where those words actually went. It is frozen into the
+    /// correction, and it is what keeps a correction out of a field the
+    /// dictation never wrote into.
     ///
     /// The commands are read from the config, so what is on the pill is what
     /// that machine can actually do. It no longer waits on the hotkey being
@@ -2000,7 +2006,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `press` is the dictation this offer is about, carried down from its own
     /// key-down — see `insertDictation`. Nothing below reads press-time state
     /// off `self`, so an offer can never be moved by another dictation's press.
-    private func showCorrectOffer(for press: Press) {
+    private func showCorrectOffer(for press: Press, landing: Correction.Landing) {
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
@@ -2022,7 +2028,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerPressRun = press.run
         // This dictation's own words and its own field, frozen with the offer.
         offeredCorrection = (press.run, Correction(
-            original: text, element: press.element, owner: press.owner
+            original: text, element: press.element, owner: press.owner, landing: landing
         ))
         let commands = offerCommands
         pill.offer(commands, for: Self.offerSeconds)
@@ -2053,8 +2059,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // by run, so it is this dictation's own pane and nobody else's. A
         // remembered anchor is still a guess, and this is what replaces it with
         // the answer.
-        if let pane = screenAtPress.removeValue(forKey: press.run)?.text,
-           let element = press.element {
+        //
+        // Dropped on every ending, not only the one that uses it. A pane
+        // belongs to one run and no later dictation can want it, so it is
+        // retired here as `dictationEnded` would retire it — leaving it for the
+        // sweep would be keeping a copy of somebody's screen for no reason.
+        let pane = screenAtPress.removeValue(forKey: press.run)?.text
+        // Nothing landed in a field on the clipboard endings, so the diff has
+        // nothing to find. Whatever it did find would be something else moving
+        // on screen.
+        if landing == .field, let pane, let element = press.element {
             findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
         }
     }
@@ -2214,6 +2228,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         endTheOffer()
         pill.hide()
 
+        // The sentence and where it went, frozen when the offer went up. Both
+        // commands need it, and neither has anything to work on without it.
+        guard let target = offered?.target else { return }
+
         // Looked up again rather than carried on the chip, so a transform
         // deleted from a config reloaded while the offer was up is not run
         // from a chip that outlived it.
@@ -2223,10 +2241,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             Log.write("offer: taken; running \"\(name)\"")
-            // No instruction: the chip is the whole of what was asked for.
-            // This still shows the transform's preview, because that is what
-            // `confirm:` asks for today.
-            runTransform(found, instruction: "")
+            runOfferedTransform(found, over: target)
             return
         }
 
@@ -2239,7 +2254,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // it: the panel can be open for a while, and `focusAtPress` by then can
         // belong to a dictation that finished in the meantime. Teaching a rule
         // is the panel's own and is unchanged.
-        guard let target = offered?.target else { return }
         Log.write("offer: taken; opening the correction panel")
         // Nothing here is a selection, and the offer's own target is what says
         // where the words go. Cleared so no later save can read one left behind
@@ -2250,6 +2264,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         correctionPanel.onCancel = { Log.write("offer: correction dismissed") }
         correctionPanel.show(selection: target.original)
+    }
+
+    /// Run a transform over the sentence the offer is about, and put the result
+    /// where that sentence went.
+    ///
+    /// Not `runTransform`, which is the selection path: that one looks for text
+    /// to work on in whatever is frontmost, and falls back to `lastTranscript`.
+    /// Both readings are wrong here. The offer already knows what it is about —
+    /// it froze the sentence and its landing when it went up — and a dictation
+    /// that ended on the clipboard left nothing in front to find, so the
+    /// selection path would rewrite text nobody dictated.
+    ///
+    /// No preview panel, whatever the transform's `confirm:` says. `runInline`
+    /// makes the same argument and for the same reason.
+    ///
+    /// The target is `target`, captured when the chip was pressed rather than
+    /// read when the model answers. A grammar pass takes seconds and focus can
+    /// move in them; the sentence this rewrites has to be the one that was on
+    /// screen when the key went down.
+    private func runOfferedTransform(
+        _ transform: Config.Transform, over target: Correction
+    ) {
+        let before = target.original.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !before.isEmpty else { return }
+
+        Log.write("offer: \(transform.name) over \"\(before.prefix(80))\"")
+        beginProgress(transform.progressLabel)
+
+        // On the main actor for the whole of it, so the answer is handled where
+        // every other caller hands it back with `MainActor.run`. `perform` is
+        // not isolated and does its waiting off here.
+        Task { @MainActor [weak self] in
+            do {
+                // No instruction: the chip is the whole of what was asked for.
+                guard let result = try await self?.perform(
+                    transform, instruction: "", on: before
+                ) else { return }
+                self?.finishOfferedTransform(
+                    transform, over: target, before: before, after: result
+                )
+            } catch {
+                // Fail open: the words are untouched, wherever they are. Losing
+                // a rewrite costs a second attempt; losing the sentence costs
+                // the sentence.
+                Log.write("offer: \(transform.name) failed: \(error.localizedDescription)")
+                self?.endProgress()
+                self?.setLabel(error.localizedDescription, clearAfter: 7)
+            }
+        }
+    }
+
+    /// The model has answered. Write it back, or say why there is nothing to
+    /// write.
+    ///
+    /// Every refusal here leaves the sentence exactly as it is — in the field or
+    /// on the clipboard — and says so in the menu bar. The pill is not used: it
+    /// sits over the words, and a notice there would cover the thing the message
+    /// is about.
+    private func finishOfferedTransform(
+        _ transform: Config.Transform, over target: Correction, before: String, after: String
+    ) {
+        endProgress()
+
+        let cleaned = after.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else {
+            Log.write("offer: \(transform.name) returned nothing")
+            setLabel("\(transform.name) returned nothing", clearAfter: 7)
+            return
+        }
+        // Saying so beats replacing text with itself and calling it done, which
+        // looks identical to the prompt having silently failed.
+        guard cleaned != before else {
+            Log.write("offer: \(transform.name) changed nothing")
+            setLabel("\(transform.name): nothing to change", clearAfter: 7)
+            return
+        }
+
+        Log.write("offer: \(transform.name) rewrote the dictation")
+        Log.write("    before: \(before)")
+        Log.write("    after:  \(cleaned)")
+        replace(target, with: cleaned, describedAs: transform.name)
     }
 
     /// This press's dictation is over, however it ended. Drops the pane it
@@ -2348,14 +2443,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let original: String
         let element: AXUIElement?
         let owner: NSRunningApplication?
+        /// Where the words went, so the correction can follow them.
+        let landing: Landing
+
+        /// The two places a dictation can end up.
+        ///
+        /// The offer is raised after every ending, and only one of them wrote
+        /// anything into a field. The rest left the sentence on the clipboard,
+        /// and `element` there is either nil or a field the words never
+        /// reached — so this is what stops a correction being written into it.
+        enum Landing {
+            /// Pasted into `element`, which was confirmed focused at the paste.
+            case field
+            /// Left on the clipboard. Nothing was written into any field.
+            case clipboard
+        }
     }
 
-    /// Put the edited sentence back over the one that was written.
+    /// Put the rewritten sentence where the dictation went.
     ///
-    /// The same ladder a transform without a selection climbs: hand focus back
-    /// first — showing the panel activated us, so ⌘V here would land in our own
-    /// window — then replace what we typed rather than pasting after it, which
-    /// is what leaves both versions side by side.
+    /// One mechanism, two destinations, and `target.landing` decides. Both
+    /// commands on the offer end here: `what` is the name to put on screen —
+    /// "Correction", or the transform's own name.
+    ///
+    /// **Into the field**, when that is where the words landed. The same ladder
+    /// a transform without a selection climbs: hand focus back first — showing
+    /// the panel activated us, so ⌘V here would land in our own window — then
+    /// replace what we typed rather than pasting after it, which is what leaves
+    /// both versions side by side.
     ///
     /// It refuses to write unless the field is the one that was dictated into.
     /// `insertDictation` makes the same check for the same reason: the words
@@ -2363,21 +2478,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// than one place. Not knowing is not the same as knowing it is fine, so a
     /// lookup that fails counts as moved and the text goes to the clipboard.
     ///
+    /// **Onto the clipboard**, when that is where the dictation went. Nothing
+    /// was written into any field then, so there is nothing to rewrite — and
+    /// `target.element` is either nil or a field these words never reached.
+    /// Writing into it is exactly the "a sentence in somebody else's window"
+    /// failure the focus check exists to prevent. What comes next after a
+    /// clipboard ending is ⌘V, so the rewrite has to be what that pastes.
+    ///
     /// No rules are saved. This is the sentence, not the vocabulary: teaching
     /// a word is what "Hey parrot, correct" and the correction panel are for,
     /// and quietly writing a rule out of every fixed sentence would fill
     /// config.yaml with pairs that will never recur.
     ///
-    /// Returns whether the field has the sentence. False means it is on the
-    /// clipboard instead and that has already been said on screen, so a caller
-    /// with more to report should stop rather than talk over it. Nothing to
-    /// change counts as true: the field already says what was asked for.
+    /// Returns false when the sentence is on the clipboard — said on screen
+    /// either way, and a caller with more to report should stop rather than
+    /// talk over the one thing there is to act on. True means the field has it,
+    /// or there was nothing to change.
     @discardableResult
-    private func replace(_ target: Correction, with edited: String) -> Bool {
+    private func replace(
+        _ target: Correction, with edited: String, describedAs what: String
+    ) -> Bool {
         let corrected = edited.trimmingCharacters(in: .whitespacesAndNewlines)
         let original = target.original.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !original.isEmpty, !corrected.isEmpty, corrected != original else { return true }
 
+        if target.landing == .clipboard {
+            Log.write("offer: the dictation went to the clipboard; \(what) went there too")
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(corrected, forType: .string)
+            noteRewritten(original, as: corrected)
+            flash("\(what) copied — ⌘V to paste", tone: .done)
+            return false
+        }
+
+        // Only for a landing in a field. Nothing is posted at the app on the
+        // clipboard path, and after a dictation that ended because focus moved,
+        // pulling the app the user has left back in front would be the second
+        // surprise in a row.
         if let owner = target.owner, !owner.isActive {
             owner.activate()
             // Let it come forward before the keystroke is posted.
@@ -2393,15 +2530,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // lands on the wrong line.
                 switch applyInPlace(
                     [Edit(find: original, replace: corrected, fuzzy: false)],
-                    dictated: original, in: now, describedAs: "correction"
+                    dictated: original, in: now, describedAs: what
                 ) {
                 case .replaced:
-                    // Only if this is still the sentence the app thinks it
-                    // wrote last. A newer dictation has its own.
-                    if lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) == original {
-                        lastTranscript = corrected
-                    }
-                    applied("Correction")
+                    noteRewritten(original, as: corrected)
+                    applied(what)
                     return true
                 case .failed, .notAttempted:
                     break
@@ -2413,11 +2546,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        Log.write("offer: left the correction on the clipboard")
+        Log.write("offer: left \(what) on the clipboard")
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(corrected, forType: .string)
-        flash("Correction copied — this app won't let me edit it", tone: .caution)
+        flash("\(what) copied — this app won't let me edit it", tone: .caution)
         return false
+    }
+
+    /// The last dictation now reads differently, so a command that works on it
+    /// works on the new text rather than on the sentence it replaced.
+    ///
+    /// Only if this is still the sentence the app thinks it wrote last. A newer
+    /// dictation has its own, and it is one slot.
+    private func noteRewritten(_ original: String, as corrected: String) {
+        guard lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) == original
+        else { return }
+        lastTranscript = corrected
     }
 
     private func beginCorrection() {
@@ -2465,12 +2609,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Separate from `saveCorrections` for one reason: the destination. That
     /// one has to work out where the words go, and falls back to `focusAtPress`
     /// and then to the clipboard. This one already knows — the offer froze the
-    /// element and its app when it went up. The panel can be open for as long
-    /// as it takes to think about a spelling, and push-to-talk does not wait
-    /// for the previous transcript, so anything read at this moment can belong
-    /// to a newer dictation. `replace` carries the same care the tapped offer
-    /// takes: focus handed back first, a refusal to write unless the field is
-    /// still the one that was dictated into, and the clipboard when it cannot.
+    /// element, its app and the landing when it went up. The panel can be open
+    /// for as long as it takes to think about a spelling, and push-to-talk does
+    /// not wait for the previous transcript, so anything read at this moment can
+    /// belong to a newer dictation. `replace` carries the same care the tapped
+    /// offer takes: focus handed back first, a refusal to write unless the field
+    /// is still the one that was dictated into, and the clipboard when the
+    /// dictation itself went there.
     private func saveOfferedCorrection(
         _ rules: [(heard: String, corrected: String)],
         correctedText: String,
@@ -2479,7 +2624,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard learn(rules) else { return }
         // On the clipboard, and `replace` has said so. A rule notice on top of
         // that would bury the one thing you need to act on.
-        guard replace(target, with: correctedText) else { return }
+        guard replace(target, with: correctedText, describedAs: "Correction") else { return }
         switch rules.count {
         // Nothing taught, so `replace` has already said the only thing there
         // is to say.
@@ -3013,8 +3158,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         let element = press.element
         // However this ends, this dictation is over and nothing wants the pane
-        // it started with. The path that makes the offer takes it before this
-        // runs; every other path here is a clipboard, and those make no offer.
+        // it started with. Every path here makes the offer now, and the offer
+        // takes the pane before this runs — so this is the backstop for the
+        // three ways `showCorrectOffer` returns without getting that far: the
+        // offer switched off in the config, an empty transcript, and a newer
+        // dictation that already had the pill.
         defer { dictationEnded(press.run) }
         // Confirmed the same field, or nothing to confirm against. Anything
         // else copies.
@@ -3039,7 +3187,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write(now == nil
                     ? "could not read what is focused; copied instead of pasting"
                     : "focus moved since the press; copied instead of pasting")
-                flash("Focus moved — the transcription is on your clipboard", tone: .caution)
+                // The menu bar, not the pill. The pill is about to carry the
+                // offer, and a notice on it would be the offer's own surface
+                // saying something else.
+                setLabel("Focus moved — the transcription is on your clipboard", clearAfter: 4)
+                showCorrectOffer(for: press, landing: .clipboard)
                 updateUI()
                 return
             }
@@ -3068,7 +3220,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             TextInserter.insert(text, mode: .clipboard)
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
             Log.write("nothing to type into (\(reason.described)); copied instead")
-            flash("Nowhere to type — the transcription is on your clipboard", tone: .done)
+            // In the menu bar, for the same reason as above: the pill is the
+            // offer's.
+            setLabel("Nowhere to type — the transcription is on your clipboard", clearAfter: 4)
+            showCorrectOffer(for: press, landing: .clipboard)
             updateUI()
             return
         }
@@ -3078,16 +3233,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
             // The words are in the field and you are looking at them. This is
             // the only second in which correcting one is free.
-            showCorrectOffer(for: press)
+            showCorrectOffer(for: press, landing: .field)
         case .copied:
             // Deliberate clipboard mode — confirm it landed.
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
             setLabel("Copied — ⌘V to paste", clearAfter: 4)
+            showCorrectOffer(for: press, landing: .clipboard)
         case .clipboardOnly:
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
             // Don't nag on every dictation — the text is safe on the clipboard.
             Log.write("Accessibility not granted; left transcript on the clipboard")
             setLabel("Copied — grant Accessibility to auto-paste", clearAfter: 4)
+            showCorrectOffer(for: press, landing: .clipboard)
         }
         updateUI()
     }
