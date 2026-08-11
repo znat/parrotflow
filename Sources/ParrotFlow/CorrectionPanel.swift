@@ -300,7 +300,10 @@ struct CorrectionView: View {
         }
         .padding(Parrot.panelPadding)
         .frame(width: CorrectionMetrics.width)
-        .parrotSurface(RoundedRectangle(cornerRadius: Parrot.panelRadius, style: .continuous))
+        .parrotSurface(
+            RoundedRectangle(cornerRadius: Parrot.panelRadius, style: .continuous),
+            solid: true
+        )
         .onAppear {
             focused = model.visibleTokens.first(where: { $0.isManual })?.id
                 ?? model.visibleTokens.first?.id

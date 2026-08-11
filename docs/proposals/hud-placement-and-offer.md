@@ -204,9 +204,8 @@ same way.
   out of the screen. Below about 90% the text starts fighting the backdrop,
   which is the thing glass never solved.
 - **The plumage loses a step of chroma** against near-black. The mockup's values
-  are `#c25f59 / #c29a5c / #5fa383 / #5a89b5`. **Not yet done in the app** —
-  `ParrotStyle` still carries the saturated set, which reads as neon on the new
-  ground.
+  are `#c25f59 / #c29a5c / #5fa383 / #5a89b5`, and `ParrotStyle` now carries
+  them. The saturated set it carried before reads as neon on the new ground.
 - **The meter is a triangle, not a diamond.** Rising to the middle and falling
   away reads as a shape with a peak — something that already happened. Rising
   the whole way reads as still opening, which is what a live microphone is.
