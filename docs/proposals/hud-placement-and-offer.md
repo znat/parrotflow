@@ -101,9 +101,23 @@ compare after. Nothing has to match, so it survives a pipeline stage rewriting
 the sentence, a wrap putting a newline through the middle of it, and a terminal
 padding it with spaces — all three broke the search. Bound the diff at **both**
 ends: a spinner or clock ticking above would poison a common prefix on its own,
-so take the common suffix too and the change sits between two fixed points. A
-change spanning more than half the screen is a repaint, not an insertion, and is
-refused.
+so take the common suffix too and the change sits between two fixed points.
+
+That leaves one contiguous span, and it is taken only when it is certainly an
+insertion: it covers at most twelve lines, and at most twelve *written* lines
+sit below it. Both halves are needed, and each refuses one thing. Without the
+first, a scroll qualifies — it ends at the end of the buffer too. Without the
+second, a clock ticking near the top qualifies — it is small and contiguous
+too, and where it is is the only thing that tells it apart from a dictation.
+Blank lines do not count towards the second: a terminal pads its viewport with
+them, and a prompt in a pane with no history sits above a screenful. Twelve is
+what fits under the caret while you type — an input box grown to about six
+lines, a border, a mode line and a status line — against the hundreds a scroll
+or a repaint covers.
+
+Anything else is refused, and refused is the bottom of the screen. If the pill
+moves it moves to the right place, and it never comes to rest over the words
+being edited.
 
 Then ask the app for the bounds of *that* range. An app can keep no caret and
 still measure text perfectly well — Outlook does — and the two failings are
