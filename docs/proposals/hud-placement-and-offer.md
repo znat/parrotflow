@@ -468,10 +468,14 @@ gates quiet sound whatever is printed on the case.
 
 ## 7. The PRs
 
-Fourteen, in this order. The rule for the boundaries: **each one is safe to
+Thirteen, in this order. The rule for the boundaries: **each one is safe to
 merge alone and can be judged on its own**. Where that meant splitting something
 that was written together, it is split — the spike is one commit and does not
 have to stay that shape.
+
+There were fourteen. 9 and 10 were one question — when a command is taken from
+the offer, where does the result go — and splitting it would have shipped a
+transform chip that rewrote whatever was in front of it. They landed together.
 
 Two run first because they are independent of everything else and one of them is
 a live bug. Two more are independent enough to reorder if something is urgent:
@@ -516,8 +520,7 @@ would be shipping that drift on purpose.
 | 6 | `feat: the offer names what can be done` | Chips, `offer:` and `key:` in config, no sentence, no preselection, clicks, `ignoresMouseEvents` per state | — |
 | 7 | `feat: the offer takes its own keys` | `OfferKeys` and the tap, letters, `esc` consumed, `↩` watched, the hotkey freed | 6 |
 | 8 | `feat: the offer fades rather than vanishing` | Linear decay, nine seconds, held by the pointer, cut by a decision, the generation guard | 6, 7 |
-| 9 | `feat: the offer follows every dictation` | All four endings; the clipboard messages move to the menu bar | 6 |
-| 10 | `feat: a command from the offer rewrites in place` | `runOfferedTransform`, no preview whatever `confirm:` says | 6 |
+| 9 | `feat: the offer follows every dictation, and a command rewrites in place` | All four endings; the clipboard messages move to the menu bar; `runOfferedTransform`, no preview whatever `confirm:` says | 6 |
 
 **Why 6 before 7.** #6 is clickable on its own, so it is a working feature
 without a system-wide event tap in it. #7 is the one PR that swallows keys from
@@ -540,5 +543,6 @@ else.
   side and invisible a week apart, which is what that sheet is for.
 - **7** — that a modified key still reaches the app, and that the tap is gone
   the moment the offer is.
-- **9, 10** — a dictation down each of the four endings.
+- **9** — a dictation down each of the four endings, and a transform taken from
+  the offer after one that landed and one that did not.
 - **13** — the file on disk, and a second dictation proving the rule fires.
