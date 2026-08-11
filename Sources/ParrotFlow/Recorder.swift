@@ -840,6 +840,32 @@ final class Recorder {
         return name.isEmpty ? nil : name
     }
 
+    /// Whether the microphone is on the other end of a Bluetooth link.
+    ///
+    /// Asked of CoreAudio, not of the name. A list of brands is a list that is
+    /// wrong the day somebody buys a headset nobody thought of, and it was
+    /// answering the wrong question anyway: what costs you the ends of your
+    /// words is the transport. A Bluetooth microphone runs over a voice profile
+    /// that narrows the band and gates quiet sound, and it does that whatever
+    /// is printed on the case.
+    static var inputIsBluetooth: Bool {
+        guard let deviceID = defaultInputDeviceID else { return false }
+
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyTransportType,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var transport: UInt32 = 0
+        var size = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(
+            deviceID, &address, 0, nil, &size, &transport
+        )
+        guard status == noErr else { return false }
+        return transport == kAudioDeviceTransportTypeBluetooth
+            || transport == kAudioDeviceTransportTypeBluetoothLE
+    }
+
     // MARK: - Files
 
     private func makeOutputURL(config: Config) throws -> URL {

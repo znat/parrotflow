@@ -305,8 +305,13 @@ $PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
 ```
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
-`vocabulary`, `rule`, `dictation`, `preview` or `sequence`. `--panel-sheet` draws all of
+`vocabulary`, `rule`, `dictation`, `preview`, `microphone` or `sequence`.
+`--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
+
+`microphone` is the Bluetooth notice, with a made-up device name. It is the one
+surface with something to click besides the offer: *Why* opens the reasons and
+resizes the panel, *Got it* dismisses it. The sheet draws it both ways.
 
 `offer` is the one state that takes the mouse — hover a chip to light it, click
 one to print which was chosen. Every other state lets clicks through, so the

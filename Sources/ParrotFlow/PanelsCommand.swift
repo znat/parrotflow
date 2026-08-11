@@ -18,6 +18,10 @@ enum PanelsCommand {
         OfferedCommand(title: "grammar", key: "G")
     ]
 
+    /// A Bluetooth headset with a long name, because the notice puts the name
+    /// in its first sentence and a short one would not say whether it fits.
+    private static let sampleMicName = "Tasmin's AirPods Pro Max"
+
     /// Draws every surface into one PNG, light beside dark.
     ///
     /// The panels are the one part of the app with no test: they are looked at,
@@ -63,6 +67,16 @@ enum PanelsCommand {
         rule.loadRules([(heard: "Tasmin", corrected: "Tasmeen"),
                         (heard: "Mick", corrected: "Mik")])
 
+        // Both states of the microphone notice, because the disclosure is the
+        // shape of it: collapsed is what you read, open is the argument. A
+        // device name long enough to outgrow the box shows here and nowhere
+        // else — see `MicNoticeMetrics`.
+        let micNotice = MicNoticeModel()
+        micNotice.mic = sampleMicName
+        let micNoticeOpen = MicNoticeModel()
+        micNoticeOpen.mic = sampleMicName
+        micNoticeOpen.expanded = true
+
         let preview = PreviewModel()
         preview.load(
             prompt: "Grammar",
@@ -107,6 +121,15 @@ enum PanelsCommand {
             // comparison that matters: it has to not look like one.
             (AnyView(PillView().environmentObject(offer)),
              pillSize(offer), .dark, true),
+            // Not a pill state at all, and the only surface here that is
+            // about the hardware rather than about the words. Next to the pill
+            // because that is what it appears beside.
+            (AnyView(MicNoticeView().environmentObject(micNotice)),
+             NSSize(width: MicNoticeMetrics.width,
+                    height: MicNoticeMetrics.height(expanded: false)), .dark, true),
+            (AnyView(MicNoticeView().environmentObject(micNoticeOpen)),
+             NSSize(width: MicNoticeMetrics.width,
+                    height: MicNoticeMetrics.height(expanded: true)), .dark, true),
             (AnyView(CorrectionView().environmentObject(correction)),
              NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 2)), .dark, false),
             (AnyView(CorrectionView().environmentObject(rule)),
@@ -231,6 +254,7 @@ enum PanelsCommand {
         let pill = PillHUD()
         let correction = CorrectionPanel()
         let preview = PreviewPanel()
+        let micNotice = MicNotice()
         var ticker: Timer?
 
         switch surface {
@@ -277,6 +301,12 @@ enum PanelsCommand {
                 before: "i think we should of asked them first, their going to be annoyed",
                 after: "I think we should have asked them first — they're going to be annoyed."
             )
+        // The one surface that has to be clicked to be seen whole: it opens
+        // where it opens in the app, and the disclosure and "Got it" both work
+        // here. `show(mic:)` rather than `showIfNeeded`, so it appears on a
+        // machine whose microphone is wired.
+        case "microphone":
+            micNotice.show(mic: sampleMicName)
         case "pill":
             pill.recording(icon: sampleIcon())
             // A meter frozen at zero says nothing about how the meter looks.
@@ -316,7 +346,7 @@ enum PanelsCommand {
                 }
             }
         default:
-            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|rule|dictation|preview|pill|sequence> [seconds]")
+            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|rule|dictation|preview|microphone|pill|sequence> [seconds]")
             return 2
         }
 

@@ -269,6 +269,30 @@ Skips clips with no speech in them, so a key pressed by accident costs nothing.
 Gated on speech being *present*, not on how much — a one-word dictation is a
 real one.
 
+## The microphone
+
+Whatever the system input device is, picked in System Settings. There is
+nothing to set here: the app follows that choice, the menu bar names the device
+in use, and `--check-config` prints it.
+
+**A Bluetooth microphone costs you words, and the app says so once.** AirPods
+and most headsets record over a Bluetooth voice profile. That profile carries
+less of your voice than a wired mic does, its noise reduction mutes quiet
+pauses and soft consonants, and the wireless delay makes the recogniser drop
+words in fast speech. What you see is a transcript missing its trailing words,
+with nothing on screen to say why.
+
+So a notice appears in the bottom right after a dictation, saying which
+microphone it is and to use the built-in one instead. *Why* opens the three
+reasons; *Got it* dismisses it. It is said once per microphone for as long as
+the app runs — not at launch, when you are not dictating and it would be advice
+about nothing, and not every time, which is nagging. Change the input device
+and change back and it is said again: that is a decision being revisited.
+
+The transport is what is asked about, not the name. A list of brands is wrong
+the day somebody buys a headset nobody thought of, and the transport is the
+thing that costs you the words.
+
 ## `feedback`
 
 `sound` is the chime when a transcript lands. `overlay` is the floating pill

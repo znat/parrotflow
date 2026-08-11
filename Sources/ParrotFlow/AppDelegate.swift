@@ -68,6 +68,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var labelToken = 0
     private let correctionPanel = CorrectionPanel()
     private let previewPanel = PreviewPanel()
+    /// Says once per microphone that this one will cost you words.
+    private let micNotice = MicNotice()
     private var pendingSelection: SelectionReader.Selection?
     /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
     private var selectionAtPress: SelectionReader.Selection?
@@ -2007,6 +2009,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// key-down — see `insertDictation`. Nothing below reads press-time state
     /// off `self`, so an offer can never be moved by another dictation's press.
     private func showCorrectOffer(for press: Press, landing: Correction.Landing) {
+        // Beside the offer, not on it: its own window, so advice about the
+        // microphone never costs you the chance to fix the sentence. Here
+        // because this is the end of a dictation and every ending comes
+        // through — a Bluetooth mic is worth saying something about the moment
+        // you have watched a transcript come back short, and worth nothing at
+        // launch, when you were not dictating.
+        //
+        // Above the guards below, which are all about the offer rather than
+        // about the microphone: `correct_offer: false` is a choice about
+        // commands on the pill, an empty transcript is the symptom itself, and
+        // a dictation that lost the pill to a newer one still used the same
+        // microphone. It is said once per microphone, so none of them can make
+        // it say it twice either.
+        micNotice.showIfNeeded()
+
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else { return }
