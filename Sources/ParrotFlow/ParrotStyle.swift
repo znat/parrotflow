@@ -78,6 +78,12 @@ extension View {
     /// of what is underneath — enough that the surface reads as sitting *over*
     /// something rather than cut out of the screen. Below about 90% the text
     /// starts fighting the backdrop, which is the thing glass never solved.
+    ///
+    /// Every surface passes `solid` now, so `glass` and `scrim` are on no call
+    /// site. Kept rather than deleted because one surface in the design — the
+    /// launch panel — is not drawn yet, and the reasons written on this path
+    /// would go with it. See "Not done" in
+    /// `docs/proposals/hud-placement-and-offer.md`.
     func parrotSurface<S: InsettableShape>(
         _ shape: S, alive: Bool = false, glass: Bool = false, solid: Bool = false,
         scrim: Double? = nil

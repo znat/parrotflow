@@ -434,9 +434,11 @@ gates quiet sound whatever is printed on the case.
 
 ## 6. Not done
 
-- The plumage is still the saturated set; only the pill went near-black. The
-  correction and preview panels are still glass, so the surfaces have drifted
-  apart — which is the one thing `ParrotStyle` exists to prevent.
+- `parrotSurface(glass:)` is now unreachable. All three surfaces pass `solid:`,
+  so nothing asks for the sheen, the light scrim or the rim's top weighting. It
+  is left in rather than deleted: the launch panel below is unbuilt and unstyled,
+  and deleting a path takes the reasons written on it with it. Delete it once
+  the last surface in the design is drawn.
 - The correction panel's Save writes nothing.
 - The launch panel from the design pass is not built at all, and its lettering
   was never chosen — Serif (New York, `design: .serif`), Rounded, or Wide caps.
