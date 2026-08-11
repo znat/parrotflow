@@ -71,6 +71,21 @@ enum PanelsCommand {
         rule.spans[3].value = ["Vercel"]
         rule.spans.removeLast()
 
+        // A fixed room rather than this machine's screen, so the sheet is the
+        // same picture wherever it is drawn.
+        for model in [correction, rule] {
+            model.width = CorrectionMetrics.width(fitting: model.spans, room: 1200)
+        }
+
+        // The disclosure open, because it is the state that changes the size of
+        // the panel and the only one where the explanation can be read.
+        let helped = SpansModel()
+        helped.load(sentence: "I work with Tasmin and Mick")
+        helped.width = CorrectionMetrics.width(fitting: helped.spans, room: 1200)
+        helped.help = true
+        helped.spans[3].value = ["Tasmeen"]
+        helped.hasEdited = true
+
         // Both states of the microphone notice, because the disclosure is the
         // shape of it: collapsed is what you read, open is the argument. A
         // device name long enough to outgrow the box shows here and nowhere
@@ -135,9 +150,11 @@ enum PanelsCommand {
              NSSize(width: MicNoticeMetrics.width,
                     height: MicNoticeMetrics.height(expanded: true)), .dark, true),
             (AnyView(CorrectionView().environmentObject(correction)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forWords: correction.spans.count)), .dark, false),
+             NSSize(width: correction.width, height: CorrectionMetrics.height(correction.spans, width: correction.width, help: false)), .dark, false),
             (AnyView(CorrectionView().environmentObject(rule)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forWords: rule.spans.count)), .dark, false),
+             NSSize(width: rule.width, height: CorrectionMetrics.height(rule.spans, width: rule.width, help: false)), .dark, false),
+            (AnyView(CorrectionView().environmentObject(helped)),
+             NSSize(width: helped.width, height: CorrectionMetrics.height(helped.spans, width: helped.width, help: true)), .dark, false),
             // The dictation panel is deliberately not here. Its field is an
             // `NSTextField` and its background is real Liquid Glass, and this
             // sheet can draw neither — it came out as a white block inside an

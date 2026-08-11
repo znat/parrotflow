@@ -68,13 +68,21 @@ struct WordField: NSViewRepresentable {
         }
     }
 
+    /// What one word occupies. Public because the panel has to know how wide
+    /// the sentence is before it opens — see `CorrectionMetrics.width` — and
+    /// two ways of measuring the same word would disagree by a pixel a word.
+    static func width(of text: String) -> CGFloat {
+        let width = (text as NSString).size(withAttributes: [.font: font]).width
+        // A caret needs somewhere to stand in an empty word.
+        return max(ceil(width) + 3, 8)
+    }
+
+    static var height: CGFloat { ceil(font.ascender - font.descender) + 2 }
+
     func sizeThatFits(
         _ proposal: ProposedViewSize, nsView: NSTextField, context: Wrapped
     ) -> CGSize? {
-        let width = (text as NSString)
-            .size(withAttributes: [.font: Self.font]).width
-        // A caret needs somewhere to stand in an empty word.
-        return CGSize(width: max(ceil(width) + 3, 8), height: ceil(Self.font.ascender - Self.font.descender) + 2)
+        CGSize(width: Self.width(of: text), height: Self.height)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }

@@ -40,6 +40,9 @@ struct Span: Identifiable, Equatable {
     var valueText: String { value.joined(separator: " ").trimmingCharacters(in: .whitespaces) }
     var post: String { heard.last?.post ?? "" }
     var isChanged: Bool { valueText != heardText }
+    /// Whether the struck line above the word has anything to say — the word
+    /// changed, or more than one heard word became it.
+    var showsHeard: Bool { isChanged || heard.count > 1 }
     /// More than one word on either side, so the underline has something to say
     /// by running under all of it.
     var isMulti: Bool { heard.count > 1 || value.count > 1 }
@@ -62,12 +65,25 @@ final class SpansModel: ObservableObject {
     /// panel has one job, and a row of keys under it is a manual for a thing
     /// you have not started doing.
     @Published var hasEdited = false
+    /// The long explanation, open or shut. Shut on every appearance: it is a
+    /// decision about the panel in front of you, not a preference to keep.
+    @Published var help = false {
+        didSet { onResize?() }
+    }
+    /// How wide the panel is. Fitted to the sentence when it loads, so a short
+    /// one is not given a line break it does not need.
+    @Published var width: CGFloat = CorrectionMetrics.minWidth
 
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
+    var onResize: (() -> Void)?
 
     private var past: [[Span]] = []
     private var typingAt: (word: String, when: Date)?
+    /// The sentence as it arrived, to tell "nothing has happened" from "one
+    /// word was deleted". Neither teaches a rule; only one of them is a change
+    /// worth a button.
+    private var original = ""
 
     private static let wordCharacters = CharacterSet.alphanumerics
         .union(CharacterSet(charactersIn: "'’-"))
@@ -106,7 +122,9 @@ final class SpansModel: ObservableObject {
         past.removeAll()
         typingAt = nil
         hasEdited = false
-        focus = nil
+        help = false
+        original = sentence()
+        focusFirst()
     }
 
     static func read(_ sentence: String) -> [Span] {
@@ -132,6 +150,22 @@ final class SpansModel: ObservableObject {
     }
 
     // MARK: - What comes out
+
+    /// The caret starts in the first word. Without it the sentence reads as a
+    /// label: the panel was tested and the one thing said about it was that it
+    /// did not look editable.
+    ///
+    /// Called again once the panel is on screen. A field can only be made first
+    /// responder through its window, and when the sentence loads there is no
+    /// window yet.
+    func focusFirst() {
+        focus = spans.first.map { SpanCaret(span: $0.id, word: 0, at: nil) }
+    }
+
+    /// Anything to press the button for. Either a rule to teach, or a sentence
+    /// that now reads differently — clearing a word teaches nothing, but it is
+    /// still an edit, and dropping it into a dead button would lose it.
+    var hasChanges: Bool { !rules().isEmpty || sentence() != original }
 
     /// One rule per span that changed. Keyed on the span, which is the point.
     func rules() -> [(heard: String, corrected: String)] {

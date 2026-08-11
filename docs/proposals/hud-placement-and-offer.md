@@ -532,7 +532,7 @@ else.
 | # | Title | Notes |
 |---|---|---|
 | 11 | `feat: a Bluetooth microphone says so, once` | `Recorder.inputIsBluetooth` and `MicNotice`. Independent — reorder freely. |
-| 12 | `feat: the correction panel works in spans` | `CorrectionSpans`, `CorrectionSpansView`, `CorrectionPanel`, the panels sheet. Save still writes nothing. The largest of these; expect it to want a second pass. |
+| 12 | `feat: the correction panel is the sentence you said, edited in place` | `CorrectionSpans`, `CorrectionSpansView`, `CorrectionPanel`, the panels sheet. **Landed.** It wanted the second pass it was expected to want: the head, the footer and the disclosure all came back changed after it was tried on a real dictation. Save still writes a replacement rule and nothing else — 13 is what closes that. |
 | 13 | `feat: teaching a word writes it down` | Save. A single term of five letters or more becomes a pronunciation in `vocabulary.yaml` — which `Config.vocabularyRules` turns into a rule as well — and anything else is a rule in `config.yaml`. Nothing in the app writes `vocabulary.yaml` today. |
 
 ### What each one has to show

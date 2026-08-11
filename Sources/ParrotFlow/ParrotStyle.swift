@@ -645,8 +645,19 @@ struct PanelActions: View {
 /// the shortcut is the answer to "how", not something to decode first.
 struct ActionButton: View {
     let title: String
+    /// Drawn instead of `title` when part of the label needs its own weight or
+    /// colour. The correction panel names the words it will teach and sets
+    /// those words brighter than the sentence around them.
+    var styled: Text?
     let key: String
     let filled: Bool
+    /// A translucent capsule in this colour, with a border of it and no glow,
+    /// instead of the standing filled gradient. For a button whose colour is
+    /// part of what it says.
+    var glass: Color?
+    /// Off: nothing to do, so nothing happens, and the keyboard shortcut on it
+    /// goes quiet too.
+    var enabled: Bool = true
     /// No capsule, no border — the label and its key and nothing else.
     ///
     /// For the button you are not expected to press. Two bordered buttons side
@@ -657,19 +668,31 @@ struct ActionButton: View {
 
     @State private var hovering = false
 
+    /// The text on a glass button. Not white — a green button wants a label
+    /// that has been near the green.
+    static let glassText = Color(red: 0.875, green: 0.941, blue: 0.906)  // #dff0e7
+
+    private var lit: Bool { hovering && enabled }
+
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Text(title)
+                (styled ?? Text(title))
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(filled ? AnyShapeStyle(.white) : AnyShapeStyle(.primary))
-                KeyCap(symbol: key, onFill: filled)
+                    .foregroundStyle(labelColour)
+                // Empty for a button whose key is not worth advertising — the
+                // correction panel's Discard, where escape is the way out of
+                // every panel in the app and does not need saying a third time.
+                if !key.isEmpty { KeyCap(symbol: key, onFill: filled) }
             }
             .padding(.horizontal, quiet ? 4 : 11)
             .padding(.vertical, 6)
             .background {
                 if quiet {
-                    Capsule().fill(Color.primary.opacity(hovering ? 0.08 : 0))
+                    Capsule().fill(Color.primary.opacity(lit ? 0.08 : 0))
+                } else if let glass {
+                    Capsule().fill(glass.opacity(lit ? 0.30 : 0.22))
+                    Capsule().strokeBorder(glass.opacity(0.5))
                 } else if filled {
                     Capsule().fill(
                         LinearGradient(
@@ -678,18 +701,25 @@ struct ActionButton: View {
                             endPoint: .bottom
                         )
                     )
-                    .shadow(color: Parrot.action.opacity(0.45), radius: hovering ? 10 : 6, y: 2)
+                    .shadow(color: Parrot.action.opacity(0.45), radius: lit ? 10 : 6, y: 2)
                 } else {
-                    Capsule().fill(Color.primary.opacity(hovering ? 0.10 : 0.06))
+                    Capsule().fill(Color.primary.opacity(lit ? 0.10 : 0.06))
                     Capsule().strokeBorder(.primary.opacity(0.10))
                 }
             }
-            .brightness(hovering && filled ? 0.05 : 0)
+            .brightness(lit && filled && glass == nil ? 0.05 : 0)
+            .opacity(enabled ? 1 : 0.4)
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .disabled(!enabled)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+
+    private var labelColour: AnyShapeStyle {
+        if glass != nil { return AnyShapeStyle(Self.glassText) }
+        return filled ? AnyShapeStyle(.white) : AnyShapeStyle(.primary)
     }
 }
 

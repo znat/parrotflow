@@ -8,18 +8,22 @@ When a name comes out wrong, select it in whatever app you're in, hold the
 hotkey and say **"hey parrot"**. A panel opens with the sentence in it,
 editable in place. What it heard sits above the word it became, struck through.
 
-    VOCABULARY  teach me the words I got wrong
+    VOCABULARY
+
+    Fix what I misheard.
 
                      Tasmin           Mick
      I    work  with Tasmeen and      Mik
      ──   ────  ──── ───────  ───     ───
      space splits a word in two   ⌫ at the start joins it to the word before
+     ▸ Not sure what to correct?
 
-     2 words → vocabulary   Cancel esc   Add Tasmeen, Mik to the vocabulary ⌘↩
+           Undo ⌘Z   Discard   Add Tasmeen and Mik to the vocabulary ↩
 
-Every gesture is one a text field already has: type over a word, space to
-split one word into two, ⌫ at the start of a word to join it to the word
-before, clear a word to drop it. ⌘Z undoes.
+The caret starts in the first word, so the sentence is a row of fields rather
+than a label. Every gesture is one a text field already has: type over a word,
+space to split one word into two, ⌫ at the start of a word to join it to the
+word before, clear a word to drop it. ⌘Z undoes, ↩ saves, escape discards.
 
 A rule is keyed on what you edited, not on a word — so when the decoder splits
 a name in two ("red crawl" for Redcrawl), joining the two words teaches
