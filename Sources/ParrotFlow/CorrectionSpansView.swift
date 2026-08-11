@@ -137,6 +137,9 @@ struct WordField: NSViewRepresentable {
         /// Set when the model asked for a caret position, cleared once it has
         /// been honoured — otherwise every redraw drags the caret back and you
         /// cannot move within a word.
+        ///
+        /// True to begin with, because the first tick a coordinator sees is the
+        /// one it was born holding, so nothing would arm the opening caret.
         var placeCaret = true
         /// The last tick honoured, so the next one is seen as new.
         var tick: Int
@@ -163,28 +166,30 @@ struct WordField: NSViewRepresentable {
             let atEnd = range.location == (textView.string as NSString).length
                 && range.length == 0
 
+            // None of these arm `placeCaret` here. This is the field the caret
+            // is leaving, and arming it does nothing for the field it is going
+            // to — that one is armed by the tick, which the model bumps on
+            // every move. Armed here it would only matter when the move does
+            // not happen: an arrow at the very end of the sentence has nowhere
+            // to go, and a field left armed drags the caret back on the redraw
+            // that follows your next keystroke.
             switch selector {
             case #selector(NSResponder.deleteBackward(_:)):
                 guard atStart else { return false }
-                placeCaret = true
                 owner.onJoinBack()
                 return true
             case #selector(NSResponder.moveLeft(_:)):
                 guard atStart else { return false }
-                placeCaret = true
                 owner.onEdge(false)
                 return true
             case #selector(NSResponder.moveRight(_:)):
                 guard atEnd else { return false }
-                placeCaret = true
                 owner.onEdge(true)
                 return true
             case #selector(NSResponder.insertTab(_:)):
-                placeCaret = true
                 owner.onTab(true)
                 return true
             case #selector(NSResponder.insertBacktab(_:)):
-                placeCaret = true
                 owner.onTab(false)
                 return true
             case #selector(NSResponder.insertNewline(_:)):

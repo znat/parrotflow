@@ -89,6 +89,8 @@ final class SpansModel: ObservableObject {
     /// runs. That is exactly the opening focus — set once at load, asked for
     /// again once the panel has a window — so the counter is what makes the
     /// second ask a real one.
+    ///
+    /// It is also what re-arms a field you are coming back to. See `moveCaret`.
     @Published private(set) var focusTick = 0
     /// Held back until the first edit — before you have touched anything the
     /// panel has one job, and a row of keys under it is a manual for a thing
@@ -234,7 +236,25 @@ final class SpansModel: ObservableObject {
     /// responder through its window, and when the sentence loads there is no
     /// window yet. See `focusTick` for what makes the second call count.
     func focusFirst() {
-        focus = spans.first.map { SpanCaret(span: $0.id, word: 0, at: 0) }
+        moveCaret(to: spans.first.map { SpanCaret(span: $0.id, word: 0, at: 0) })
+    }
+
+    /// Put the caret somewhere, and renew the request so the field it names
+    /// answers it.
+    ///
+    /// The renewal is the point. `WordField` clears its own `placeCaret` once a
+    /// request has been answered, and arms it again only when the tick changes.
+    /// So a field you have already visited has cleared it, and coming back —
+    /// with an arrow, a tab, a join — would make it first responder and stop
+    /// there. Making a text field first responder selects the whole of it, so
+    /// the word would sit highlighted with the asked-for caret never placed,
+    /// and the next character typed would replace the word.
+    ///
+    /// Every keyboard move goes through here. A click does not: AppKit has
+    /// already put the caret where the pointer was, and re-placing it would
+    /// drag it to the end of the word you clicked into.
+    private func moveCaret(to caret: SpanCaret?) {
+        focus = caret
         focusTick += 1
     }
 
@@ -280,7 +300,7 @@ final class SpansModel: ObservableObject {
                 return
             }
             spans[index].value.replaceSubrange(word...word, with: parts)
-            focus = SpanCaret(span: id, word: word + parts.count - 1, at: nil)
+            moveCaret(to: SpanCaret(span: id, word: word + parts.count - 1, at: nil))
             return
         }
 
@@ -304,7 +324,7 @@ final class SpansModel: ObservableObject {
         hasEdited = true
         if spans[index].value.count > 1 {
             spans[index].value.remove(at: word)
-            focus = SpanCaret(span: id, word: max(0, word - 1), at: nil)
+            moveCaret(to: SpanCaret(span: id, word: max(0, word - 1), at: nil))
             return
         }
         guard spans.count > 1 else { return }
@@ -316,9 +336,9 @@ final class SpansModel: ObservableObject {
         let gone = spans.remove(at: index)
         if index == 0 { spans[0].lead = gone.lead }
         let back = max(0, index - 1)
-        focus = SpanCaret(
+        moveCaret(to: SpanCaret(
             span: spans[back].id, word: spans[back].value.count - 1, at: nil
-        )
+        ))
     }
 
     /// Backspace at the start of a word. Inside a span it glues two written
@@ -335,7 +355,7 @@ final class SpansModel: ObservableObject {
             // UTF-16, the unit `SpanCaret.at` is counted in.
             let seam = spans[index].value[word - 1].utf16.count
             spans[index].value[word - 1] += taken
-            focus = SpanCaret(span: id, word: word - 1, at: seam)
+            moveCaret(to: SpanCaret(span: id, word: word - 1, at: seam))
             return
         }
         guard index > 0 else { past.removeLast(); return }
@@ -361,7 +381,7 @@ final class SpansModel: ObservableObject {
         into.value[last] += gone.pre + (gone.value.first ?? "")
         into.value += gone.value.dropFirst()
         spans[index - 1] = into
-        focus = SpanCaret(span: into.id, word: last, at: seam)
+        moveCaret(to: SpanCaret(span: into.id, word: last, at: seam))
     }
 
     // MARK: - Moving about
@@ -373,12 +393,12 @@ final class SpansModel: ObservableObject {
     /// the way.
     func step(from id: UUID, word: Int, forward: Bool, keepingEdge: Bool) {
         guard let target = neighbour(of: id, word: word, forward: forward) else { return }
-        focus = SpanCaret(
+        moveCaret(to: SpanCaret(
             span: target.span, word: target.word,
             // Tab is a different job — arriving somewhere to change it — so it
             // lands on the last character whichever way it went.
             at: keepingEdge && forward ? nil : (keepingEdge ? 0 : nil)
-        )
+        ))
     }
 
     private func neighbour(

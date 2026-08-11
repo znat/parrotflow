@@ -208,6 +208,46 @@ do {
     check("…of the first span", model.focus?.span == model.spans[0].id, true)
 }
 
+print("\n  --- every keyboard move is a new caret request ---")
+
+// `WordField` arms itself off `focusTick`, and disarms once it has answered.
+// A field you have already been in has disarmed, so a move back to it that did
+// not renew the tick would leave the whole word selected and the next character
+// typed would replace it.
+do {
+    let model = loaded("one two three")
+    var tick = model.focusTick
+    func moved(_ what: String) {
+        check(what, model.focusTick > tick, true)
+        tick = model.focusTick
+    }
+    model.step(from: model.spans[0].id, word: 0, forward: true, keepingEdge: true)
+    moved("an arrow across an edge")
+    model.step(from: model.spans[1].id, word: 0, forward: false, keepingEdge: true)
+    moved("…and the arrow back to a word already visited")
+    check("…which is the word it named", model.focus?.span == model.spans[0].id, true)
+    model.step(from: model.spans[0].id, word: 0, forward: true, keepingEdge: false)
+    moved("a tab")
+    type(model, "two more", span: 1)
+    moved("a word split in two")
+    joinBack(model, span: 1, word: 1)
+    moved("a join inside a span")
+    joinBack(model, span: 1)
+    moved("a join across spans")
+    type(model, "", span: 1)
+    moved("a word cleared")
+    model.focusFirst()
+    moved("the same word asked for twice")
+}
+do {
+    // Nowhere to go is not a move. The tick has to stay put, or the field you
+    // are in re-places the caret on the next redraw and typing drags it back.
+    let model = loaded("one two")
+    let tick = model.focusTick
+    model.step(from: model.spans[0].id, word: 0, forward: false, keepingEdge: true)
+    check("no neighbour, no new request", model.focusTick, tick)
+}
+
 print("\n  \(checks - failures)/\(checks)")
 exit(failures == 0 ? 0 : 1)
 SWIFT
