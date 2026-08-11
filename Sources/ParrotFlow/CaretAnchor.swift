@@ -95,6 +95,26 @@ enum CaretAnchor {
     /// has answered by now; this cap is for the app that is not.
     private static let timeout: Float = 0.08
 
+    /// How many lines of the value may sit below where the change starts.
+    ///
+    /// This is what an insertion looks like from outside: it happens at the
+    /// end of the buffer, because that is where a prompt is. What is under the
+    /// caret while you type is the rest of the input area and whatever the
+    /// program draws beneath it — Claude Code's input box grows to about six
+    /// lines as you type into it, with a border under that and a mode line and
+    /// a status line under that, which is nine. Twelve leaves room for a
+    /// program that draws one more.
+    ///
+    /// It is nothing beside the thing being excluded. A scroll changes the
+    /// first line of the value and every line after it, and a full repaint the
+    /// same, so both cover hundreds of lines rather than twelve.
+    ///
+    /// The same number answers both questions the diff asks — how many lines
+    /// the change covers, and how many written lines are below it — because
+    /// both are asking the same thing about the same object: how big an input
+    /// area and the furniture around it can be.
+    private static let promptLines = 12
+
     /// For the reads that happen after the dictation instead of inside the
     /// key-down handler.
     ///
@@ -202,8 +222,13 @@ enum CaretAnchor {
     /// Bounded at both ends, because a terminal is not a text field. A spinner
     /// or a clock ticking above would poison a common prefix on its own, so
     /// take the common suffix too and the change sits between two fixed points.
-    /// A change spanning more than half the pane is a repaint rather than an
-    /// insertion, and is refused.
+    ///
+    /// That gives one contiguous span, and the span is taken only when it is
+    /// certainly an insertion: it has to start within `promptLines` of the end
+    /// of the value. Anything else is refused, and refused means the pill stays
+    /// at the bottom of the screen — which is the rule the whole rung answers
+    /// to. If it moves it has to move to the right place, and it must never
+    /// come to rest over the words being edited.
     ///
     /// Runs after the insertion, so it is off the main thread and unhurried.
     static func landed(after before: String, at element: AXUIElement?) -> Outcome {
@@ -225,7 +250,45 @@ enum CaretAnchor {
 
         let length = new.count - head - tail
         guard length > 0 else { return .missed("the screen changed, but nothing was added") }
-        guard length < new.count / 2 else { return .missed("the whole pane repainted") }
+
+        // Two questions about the span, and it has to answer both. See
+        // `promptLines` for the number, which is the same in each because both
+        // are asking how big an input area and its furniture can be.
+        //
+        // The rule this replaces was that a span covering more than half the
+        // value is a repaint. It refused the case it exists for: paste two
+        // words into Claude Code's input box and the box, the mode line and
+        // the status line all redraw, so the span runs from the box down to the
+        // bottom of the pane — and in a small pane that is more than half of
+        // it. Measured, the log said "the whole pane repainted", and it said it
+        // more often the taller the input box had grown, which is a bigger
+        // redraw and not a different kind of one. Size was the wrong question.
+        //
+        // How many lines it covers. An insertion is a line or a few, even when
+        // a program redraws its whole input area around it. A scroll changes
+        // every line there is, and so does a repaint, and neither is somewhere
+        // to put the pill.
+        let changed = new[head..<(new.count - tail)]
+        var spanned = 1
+        for unit in changed where unit == 0x0A { spanned += 1 }
+        guard spanned <= promptLines else {
+            return .missed("the change covers \(spanned) lines, which is a repaint and not an insertion")
+        }
+
+        // And whether it is at the end of what has been written. This is what
+        // stops the pill going to a clock or a spinner that ticked while the
+        // app had not redrawn yet: that is a small contiguous change too, and
+        // the only thing that tells it apart from a dictation is where it is.
+        //
+        // Blank lines do not count towards the distance. They are what a
+        // terminal pads its viewport with — a prompt in a pane with no history
+        // sits above a screenful of them, which is where the 53 rows in
+        // `visibleGrid` came from — so counting them would put every fresh pane
+        // a screen away from its own end.
+        let below = contentLines(in: new[(new.count - tail)...])
+        guard below <= promptLines else {
+            return .missed("the change ends \(below) lines above the last written one, so it is not at a prompt")
+        }
 
         let pane = frame(of: element).map(flipped)
 
@@ -301,6 +364,15 @@ enum CaretAnchor {
     /// where it opened. The arithmetic itself is sound where the viewport is
     /// known: 53 rows over a 917pt pane is 17.3pt, a real line height rather
     /// than a fit.
+    ///
+    /// That 53 came from a pane with no history in it, which is the thing to
+    /// know about the attribute. Once a Ghostty pane has scrolled, its value
+    /// carries the scrollback and `AXVisibleCharacterRange` answers `0` and
+    /// the whole length — so it is not imprecise about the viewport, it is
+    /// untrue about it, and untrue in exactly the panes that have scrolled.
+    /// Measured, the refusal reads "the grid says row 1364 of 1365 at 1pt",
+    /// which is the plausibility check below doing its job. It stays refusing:
+    /// there is no viewport in that answer to be had.
     private static func visibleGrid(of element: AXUIElement) -> (first: Int, rows: Int)? {
         guard let visible = range(kAXVisibleCharacterRangeAttribute, of: element),
               visible.length > 0,
@@ -309,6 +381,24 @@ enum CaretAnchor {
               last >= first
         else { return nil }
         return (first, last - first + 1)
+    }
+
+    /// How many lines of a slice have anything on them.
+    ///
+    /// Spaces and tabs are nothing: a terminal pads with both, and a row of
+    /// them is a blank row however it was drawn.
+    private static func contentLines(in units: ArraySlice<UInt16>) -> Int {
+        var lines = 0
+        var occupied = false
+        for unit in units {
+            if unit == 0x0A {
+                if occupied { lines += 1 }
+                occupied = false
+            } else if unit != 0x20, unit != 0x09 {
+                occupied = true
+            }
+        }
+        return occupied ? lines + 1 : lines
     }
 
     /// Which row of the grid an index sits on. Nil when the app will not say.
