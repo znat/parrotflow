@@ -12,7 +12,9 @@
 #                      belongs to the user's text. Correcting one word must
 #                      not reformat the rest
 #   the punctuation    joining "blue" and "(red" with ⌫ has to keep the
-#                      bracket
+#                      bracket, and joining "hello," and "world" has to keep
+#                      the comma. ⌫ is aimed at the space, not at the marks
+#                      either side of it
 #   the caret offsets  `SpanCaret.at` counts UTF-16 code units, because that
 #                      is what AppKit's selection ranges count. A character
 #                      count agrees with it right up until a word holds an
@@ -146,6 +148,24 @@ do {
     let model = loaded("red crawl")
     joinBack(model, span: 1)
     check("nothing to carry", model.spans[0].value, ["redcrawl"])
+}
+do {
+    // The other side of the seam. ⌫ at the start of a word is aimed at the
+    // space before it, not at the comma before that.
+    let model = loaded("hello, world")
+    joinBack(model, span: 1)
+    check("hello, + world", model.spans[0].value, ["hello,world"])
+    check("…and the comma is still in the sentence", model.sentence(), "hello,world")
+    check("…with the caret after it", model.focus?.at ?? -1, 6)
+    check("…and the rule says nothing about it",
+          model.rules().map { "\($0.heard) => \($0.corrected)" },
+          ["hello world => hello,world"])
+}
+do {
+    // Both sides at once, and the sentence keeps every mark it arrived with.
+    let model = loaded("say \"hello,\" (world).")
+    joinBack(model, span: 2)
+    check("both sides of the seam", model.sentence(), "say \"hello,\"(world).")
 }
 
 print("\n  --- the caret is counted in UTF-16, the unit AppKit ranges use ---")

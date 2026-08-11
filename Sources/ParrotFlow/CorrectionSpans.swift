@@ -345,6 +345,14 @@ final class SpansModel: ObservableObject {
         let gone = spans.remove(at: index)
         var into = spans[index - 1]
         let last = into.value.count - 1
+        // The punctuation that closed the word being joined to comes across
+        // first. `sentence()` prints the last heard word's `post` and no other,
+        // so once the two heard lists merge that mark has nowhere left to be
+        // printed from: "hello, world" joined came back "helloworld", a comma
+        // deleted by a keystroke aimed at the space.
+        into.value[last] += into.post
+        // Counted after it, so the caret lands where the space was rather than
+        // in front of a mark that was already there.
         let seam = into.value[last].utf16.count
         into.heard += gone.heard
         // The punctuation that opened the swallowed span comes across too.
