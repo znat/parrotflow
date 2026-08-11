@@ -2575,6 +2575,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // there, so there is nothing to settle for — and settling for
                 // the nearest thing over a whole sentence is how a rewrite
                 // lands on the wrong line.
+                //
+                // The sentence is found by its text, and the last copy of it
+                // wins — `Surface.range(of:)`. That is the right answer for
+                // what this is: the offer is about the newest dictation, and
+                // the newest dictation is the last thing written. Say the same
+                // short sentence twice and the second one is the one corrected.
+                //
+                // It cannot tell that copy from one *you* typed after it, and
+                // nothing here can. Where the paste landed is not knowable:
+                // `TextInserter` posts ⌘V and the app takes the pasteboard when
+                // it gets round to it, so no range comes back. Refusing when
+                // there is more than one copy would be worse than being wrong
+                // rarely — a terminal echoes what you send it, so a second copy
+                // appears there for reasons that have nothing to do with you.
                 switch applyInPlace(
                     [Edit(find: original, replace: corrected, fuzzy: false)],
                     dictated: original, in: now, describedAs: what
