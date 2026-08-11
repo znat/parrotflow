@@ -121,16 +121,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// would be frozen empty. And not one slot, because dictations overlap and
     /// an older one still needs the pane it started with.
     ///
-    /// A press's pane lives until its dictation is delivered, and
-    /// `insertDictation` takes it out — used or not. The cap is only for the
-    /// dictations that never get that far, cancelled with Escape or heard as a
-    /// command: a value here has been seen at 395,489 characters, so the
-    /// newest few are kept and the rest dropped.
-    private var screenAtPress: [Int: String] = [:]
+    /// A press's pane lives until its dictation ends, and every way one ends
+    /// takes it out. Never evicted to make room: however many dictations are in
+    /// flight, each one still needs the pane it started with.
+    ///
+    /// The age is the backstop, for a dictation that ends a way nobody thought
+    /// of. A value here has been seen at 395,489 characters, so nothing is kept
+    /// on the chance that a transcript from five minutes ago is still coming.
+    private var screenAtPress: [Int: (text: String, at: Date)] = [:]
 
-    /// How many panes to keep. Past what anyone can have in flight at once —
-    /// each one is a hotkey press whose transcript has not landed yet.
-    private static let panesKept = 4
+    /// How long a pane is worth keeping. Nothing waits this long: the whole
+    /// chain is a decoder and at most a prompt stage.
+    private static let paneLifetime: TimeInterval = 300
 
     /// Bumped by every press that starts a dictation. It is what a `Press`
     /// carries, and what a snapshot that took a moment to copy is stamped with
@@ -713,9 +715,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // presses have started since: each of those has its own,
                     // and this one is still going to be transcribed.
                     guard let self, let before else { return }
-                    self.screenAtPress[run] = before
-                    for stale in self.screenAtPress.keys.sorted().dropLast(Self.panesKept) {
-                        self.screenAtPress.removeValue(forKey: stale)
+                    let now = Date()
+                    self.screenAtPress[run] = (before, now)
+                    self.screenAtPress = self.screenAtPress.filter {
+                        now.timeIntervalSince($0.value.at) < Self.paneLifetime
                     }
 
                     // A short dictation can be transcribed and written while
@@ -1924,7 +1927,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // by run, so it is this dictation's own pane and nobody else's. A
         // remembered anchor is still a guess, and this is what replaces it with
         // the answer.
-        if let pane = screenAtPress.removeValue(forKey: press.run), let element = press.element {
+        if let pane = screenAtPress.removeValue(forKey: press.run)?.text,
+           let element = press.element {
             findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
         }
     }
@@ -2280,14 +2284,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
 
+        // Heard as a command, or nothing at all: no words are going to land,
+        // so there is nothing to compare a pane against.
         if let command = commandAfterWakePhrase(trimmed) {
             Log.write("command heard: \"\(command)\"")
+            screenAtPress.removeValue(forKey: press.run)
             handleVoiceCommand(command)
             return
         }
 
         guard !trimmed.isEmpty else {
             Log.write("transcription produced no text")
+            screenAtPress.removeValue(forKey: press.run)
             updateUI()
             return
         }
@@ -2670,6 +2678,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ text: String, to destination: Destination, for press: Press
     ) {
         let element = press.element
+        // However this ends, this dictation is over and nothing wants the pane
+        // it started with. The path that makes the offer takes it before this
+        // runs; every other path here is a clipboard, and those make no offer.
+        defer { screenAtPress.removeValue(forKey: press.run) }
         // Confirmed the same field, or nothing to confirm against. Anything
         // else copies.
         //
@@ -2743,10 +2755,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("Accessibility not granted; left transcript on the clipboard")
             setLabel("Copied — grant Accessibility to auto-paste", clearAfter: 4)
         }
-        // Delivered, so nothing wants this dictation's pane any more. Already
-        // gone on the path that made the offer. The clipboard paths above
-        // return before this and leave theirs to the cap, which is what the
-        // cap is for.
         screenAtPress.removeValue(forKey: press.run)
         updateUI()
     }
