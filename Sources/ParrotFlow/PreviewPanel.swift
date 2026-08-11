@@ -22,7 +22,13 @@ final class PreviewPanel {
     var onCancel: (() -> Void)?
 
     /// The whole dictation, editable, so a misheard sentence can be fixed
-    /// where it landed. Opened by the offer the pill makes after a dictation.
+    /// where it landed.
+    ///
+    /// Nothing in the app opens it this way today. A tap of the dictation key
+    /// during the offer used to, and that cost the key its one job — pressing
+    /// it while the offer was up opened a panel instead of starting the
+    /// dictation you had just asked for. Kept for `--panels-sheet`, which is
+    /// where the surfaces are compared side by side.
     func show(transcript: String) {
         model.loadTranscript(transcript)
         present()

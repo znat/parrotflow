@@ -224,9 +224,23 @@ enum CheckConfigCommand {
         let offered = config.transforms.filter(\.offer)
         if !offered.isEmpty {
             print("  · offer             \(offered.count) transform(s) on the pill, after Correct")
+            // Correct's letter is not a transform's to lose, and the first chip
+            // with a letter is the one that key runs. So a second chip asking
+            // for the same letter is drawn with a keycap that never fires, and
+            // that is invisible on a pill that is up for three seconds.
+            var taken: Set<String> = ["C"]
             for transform in offered {
-                print("      \(transform.name)"
-                    + (transform.offerKey.isEmpty ? " — no key, click only" : " — \(transform.offerKey)"))
+                let key = transform.offerKey
+                let note: String
+                if key.isEmpty {
+                    note = " — no key, click only"
+                } else if taken.contains(key) {
+                    note = " — \(key), already taken; this chip is click only"
+                } else {
+                    note = " — \(key)"
+                    taken.insert(key)
+                }
+                print("      \(transform.name)\(note)")
             }
         }
 

@@ -243,26 +243,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// When the offer to correct the last dictation stops being on screen.
     ///
     /// Held here as well as in the pill because the pill only knows how to draw
-    /// it. Whether a press is a tap on the offer or the start of a dictation is
-    /// decided against this, and that decision is made in the hotkey handler
-    /// before anything is drawn at all.
+    /// it. It is also the deadline the key tap is given, so the keys can never
+    /// be held for longer than the offer is worth.
     private var offerUntil: Date?
-    /// Whether the offer was still up when this press went down.
+    /// The keyboard, for as long as the offer is up. See `OfferKeys`.
+    private let offerKeys = OfferKeys()
+    /// The chips the offer on screen is showing, and so the letters it claims.
     ///
-    /// Captured at the press rather than read at the release, because the three
-    /// seconds can run out in between — and a press that began as a tap on the
-    /// offer should stay one, or the gesture would depend on how fast you let
-    /// go of a key you have already pressed.
-    private var pressTookTheOffer = false
-    /// Whether an ordinary key went down while the hotkey was held.
+    /// Held rather than read from the config when the keys are armed, because
+    /// the keys can be armed after the chips were drawn — see
+    /// `watchTheOfferKeys`. A config reloaded in between must not leave a
+    /// letter claimed for a chip that is not on screen.
+    private var offerOnScreen: [OfferedCommand]?
+    /// Gives the keys back when the offer simply runs out.
     ///
-    /// A bare-modifier hotkey — `hotkey: right_command` — is also half of every
-    /// shortcut that uses that modifier. Right ⌘ V is a press and a release
-    /// well under the tap threshold, and without this it would open the
-    /// correction panel instead of pasting. Set by the same keyboard monitors
-    /// Escape already installs, so it costs nothing extra and is only watched
-    /// while there is a recording to watch.
-    private var keyDownDuringPress = false
+    /// The pill takes itself off screen after `offerSeconds` and tells nobody,
+    /// so an offer that nobody answers ends with no call back into here. This
+    /// is that call. Without it the tap's own expiry would be the only thing
+    /// left to end it, and that is the backstop, not the way out.
+    private var offerKeysExpiry: DispatchWorkItem?
 
     /// How long the offer stays up.
     ///
@@ -698,10 +697,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Before the recording starts, because starting it is what takes the
-        // offer off the screen.
-        pressTookTheOffer = offerIsUp
-        offerUntil = nil
-        keyDownDuringPress = false
+        // offer off the screen. A new dictation is one of the ways the offer
+        // ends, so it is one of the ways the keys go back.
+        endTheOffer()
 
         switch config.hotkey.mode {
         case .toggle:
@@ -826,12 +824,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the character key is still down and a flicked-back modifier means
         // the chord never really broke.
         pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
-        // Checked here rather than in `stopRecording`, which is the wrong side
-        // of the release tail: the mic stays open for `release_tail_seconds`
-        // after the key comes up, so by the time the recorder is stopped every
-        // press has lasted at least that long and no tap would ever be short
-        // enough to see.
-        if takeTheOfferIfTapped() { return }
         stopRecordingAfterTail()
     }
 
@@ -904,10 +896,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             startRecording()
             return
         }
-        // The second press of a toggle is the end of the gesture, which is
-        // where push-to-talk checks too. Same rule, measured between two
-        // presses instead of between a press and a release.
-        if takeTheOfferIfTapped() { return }
         stopRecording()
     }
 
@@ -1051,10 +1039,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // what a `hotkey:` of "escape" would resolve through.
         guard let escape = KeyCodes.code(for: "escape") else { return }
         let cancel: (NSEvent) -> Void = { [weak self] event in
-            // Any key at all, before the Escape test: a key going down during
-            // a press is what tells a chord apart from a tap. See
-            // `takeTheOfferIfTapped`.
-            self?.keyDownDuringPress = true
             guard event.keyCode == UInt16(escape) else { return }
             DispatchQueue.main.async { self?.cancelDictation() }
         }
@@ -1079,6 +1063,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func stopWatchingForEscapeIfIdle() {
         guard !recorder.isRecording, runsInFlight <= 0 else { return }
         stopWatchingForEscape()
+        // The same moment, read the other way round: Escape has nothing left to
+        // cancel, so an offer that was raised while a dictation was still
+        // running can have its keys now. See `watchTheOfferKeys`.
+        if offerIsUp, !offerKeys.isRunning { watchTheOfferKeys() }
     }
 
     private func stopWatchingForEscape() {
@@ -2039,6 +2027,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.pill.model.selected = nil
         }
 
+        offerOnScreen = commands
+        watchTheOfferKeys()
+
         // Taken at the press, and only when that press found no caret. Matched
         // by run, so it is this dictation's own pane and nobody else's. A
         // remembered anchor is still a guess, and this is what replaces it with
@@ -2049,15 +2040,98 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Run the command a chip was clicked on, and take the offer down.
+    /// Take the offer's letters and Escape for as long as the offer is up.
+    ///
+    /// Consumed rather than only heard — see `OfferKeys` for why that needs a
+    /// system-wide tap, and for the fences on it. The keys go back the moment
+    /// the offer does, by every path that ends it and by the timer below.
+    ///
+    /// The commands are `offerOnScreen` — the same list the chips were drawn
+    /// from and the same list `onPick` closed over. Read fresh from the config
+    /// here it could disagree with both: a config reloaded while the offer is
+    /// up would leave a letter claimed for a chip that is not on screen.
+    ///
+    /// Called when the offer is raised, and again from
+    /// `stopWatchingForEscapeIfIdle` for the offer that could not have the keys
+    /// the first time.
+    private func watchTheOfferKeys() {
+        // Whatever the last call left running goes first, deadline included.
+        offerKeysExpiry?.cancel()
+        offerKeysExpiry = nil
+        offerKeys.stop()
+
+        guard let until = offerUntil, let commands = offerOnScreen else { return }
+
+        // The offer can also end by nobody answering it. The pill takes itself
+        // down and says nothing, so this is what hands the keyboard back.
+        // Armed before the tap is, so the offer is cleaned up at its deadline
+        // even on the path below that installs no tap at all.
+        let expire = DispatchWorkItem { [weak self] in self?.endTheOffer() }
+        offerKeysExpiry = expire
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + until.timeIntervalSinceNow, execute: expire
+        )
+
+        // Not while another dictation is running. Push-to-talk does not wait
+        // for the previous transcript, so an offer can go up while a newer
+        // press is still recording or decoding — and Escape belongs to that
+        // press, to cancel it. A tap consumes before any monitor is reached, so
+        // arming here would take Escape away from the dictation and spend it
+        // dismissing the offer. The chips stay clickable meanwhile, and
+        // `stopWatchingForEscapeIfIdle` calls back here the moment that
+        // dictation is over — so an offer still on screen then gets its keys
+        // for whatever is left of its three seconds.
+        guard !recorder.isRecording, runsInFlight <= 0 else {
+            Log.write("offer keys: a dictation is still running; the keys wait for it")
+            return
+        }
+        let letters = Set(commands.map(\.key).filter { !$0.isEmpty })
+        offerKeys.start(until: until, letters: letters) { [weak self] key in
+            guard let self, self.offerIsUp else { return }
+            switch key {
+            case .letter(let typed):
+                guard let index = commands.firstIndex(where: { $0.key == typed }) else { return }
+                // The highlight moves first, so what runs is what the pill was
+                // showing when it ran.
+                self.pill.model.selected = index
+                // The same door the pointer uses. A key and a click must not be
+                // two ways of running a command, or only one of them gets the
+                // guards the other one has.
+                self.pill.model.onPick?(index)
+            case .dismiss:
+                Log.write("offer: dismissed")
+                self.endTheOffer()
+                self.pill.hide()
+            }
+        }
+    }
+
+    /// The offer is over, however it ended: nothing left to run, and the keys
+    /// go back.
+    ///
+    /// Called by every ending — a letter, a click, Escape, Return, the offer
+    /// running out, and a new dictation starting. Safe to call when there is no
+    /// offer, which is most of the time. A caller that still needs the words
+    /// the offer was about reads `offeredCorrection` before calling this.
+    private func endTheOffer() {
+        offerUntil = nil
+        offeredCorrection = nil
+        offerOnScreen = nil
+        offerKeysExpiry?.cancel()
+        offerKeysExpiry = nil
+        offerKeys.stop()
+    }
+
+    /// Run the command a chip was clicked on or lettered, and take the offer
+    /// down.
     ///
     /// `transform` is the name on the chip, or nil for Correct. The pill goes
     /// first, before anything opens: whatever the command puts on screen
     /// belongs over the words, which is where the pill is sitting.
     private func runOfferedCommand(_ transform: String?) {
+        // Read before the offer is ended, which is what clears it.
         let offered = offeredCorrection
-        offerUntil = nil
-        offeredCorrection = nil
+        endTheOffer()
         pill.hide()
 
         // Looked up again rather than carried on the chip, so a transform
@@ -2179,65 +2253,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         queue.asyncAfter(deadline: .now() + 0.04) { look() }
-    }
-
-    /// A press on the dictation key that was too short to be a dictation, made
-    /// while the offer was up: open the correction panel instead.
-    ///
-    /// The dictation key rather than a key of its own because there is no key
-    /// of its own to have. Carbon needs a modifier, an `NSEvent` monitor cannot
-    /// swallow what it sees — so a bare ⌫ would open the panel *and* delete a
-    /// character out of the sentence it is about to correct — and a new combo
-    /// is one more thing to configure and collide with. The key already in your
-    /// hand is the one you can offer without asking for anything.
-    ///
-    /// The threshold is `audio.min_duration_seconds`, not a number of its own.
-    /// That is already the app's definition of a press too short to be speech:
-    /// under it the recorder deletes the clip and returns nothing, so a tap has
-    /// always cost nothing and done nothing. This gives it something to do
-    /// without taking anything away — a press that would have been a dictation
-    /// still is one.
-    ///
-    /// A chord is not a tap. With a bare-modifier hotkey the key is also half
-    /// of every shortcut that uses it, so `keyDownDuringPress` throws out any
-    /// press that had another key inside it — Right ⌘ V is a press and a
-    /// release well under the threshold, and it means paste. Seeing that key
-    /// in somebody else's window needs Accessibility, which is the grant the
-    /// app already asks for; without it the chord is invisible and a shortcut
-    /// during the offer opens the panel.
-    ///
-    /// Returns whether the offer was taken, so the caller can stop.
-    private func takeTheOfferIfTapped() -> Bool {
-        guard pressTookTheOffer, recorder.isRecording, !keyDownDuringPress,
-              let started = recorder.startedAt,
-              Date().timeIntervalSince(started) < config.audio.minDurationSeconds,
-              let offered = offeredCorrection, offered.run == offerPressRun
-        else { return false }
-
-        pressTookTheOffer = false
-        offerUntil = nil
-
-        // Under the minimum, so the recorder deletes the clip and gives back
-        // nothing. Nothing to transcribe, nothing to deliver.
-        _ = recorder.stop(config: config)
-        dictationCancelled(pressRun)
-        tickTimer?.invalidate(); tickTimer = nil
-        pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
-        releaseTail?.invalidate(); releaseTail = nil
-        stopWatchingForEscapeIfIdle()
-        pill.hide()
-
-        // Captured when the offer went up, not read again here and not again
-        // when Replace is pressed. See `offeredCorrection` and `Correction`.
-        let target = offered.target
-        offeredCorrection = nil
-
-        Log.write("offer: taken; editing the last transcript")
-        previewPanel.onApply = { [weak self] text in self?.replace(target, with: text) }
-        previewPanel.onCancel = { Log.write("offer: dismissed; the text stands as dictated") }
-        previewPanel.show(transcript: target.original)
-        updateUI()
-        return true
     }
 
     /// What an offer is about: the sentence, and the field it was written into.

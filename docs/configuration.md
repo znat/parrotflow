@@ -289,26 +289,27 @@ pill goes to the bottom of the screen.
 `correct_offer` is what the pill does after the words land. It stays where it
 is for three seconds and names what can be done to them, one chip per command:
 `Correct` first, then every transform with `offer: true` — see
-[pipelines.md](pipelines.md#offer-and-key-or-getting-on-the-pill). Click a chip
-to run it. `Correct` opens the per-word panel over what was just dictated;
-a transform runs as it always does.
+[pipelines.md](pipelines.md#offer-and-key-or-getting-on-the-pill). `Correct`
+opens the per-word panel over what was just dictated; a transform runs as it
+always does.
 
-Tapping the dictation hotkey — press and let go, faster than a dictation —
-still opens the whole sentence in an editable box. Fix it, press Replace, and
-it goes back over what was written. Hold the key as usual and you start the
-next dictation, exactly as before.
+| | Does |
+|---|---|
+| a chip's letter — `C`, `G` | Runs that command |
+| a click on a chip | Runs that command |
+| `esc` | Dismisses |
+| `↩` | Dismisses, and reaches the app underneath untouched |
+| the dictation hotkey | Starts the next dictation, exactly as before |
 
-The threshold is `audio.min_duration_seconds`, which is already the app's line
-between a press and a dictation: below it the recording is deleted, so a tap
-has never done anything. Nothing that used to be a dictation becomes a tap.
+**The letters are taken from every app for those three seconds.** The pill
+never holds keyboard focus, so it swallows the letters system-wide or it does
+not get them at all. Finish a dictation and immediately type a word starting
+with `C` or `G` and the first keystroke runs a command instead of typing.
+A letter with a modifier on it is never taken — `⌘C` copies and `⇧G` types a
+capital G — so only bare letters are exposed, and only until the offer goes.
+`esc` ends it, and so does starting the next dictation.
 
-The editable box is the sentence, not the vocabulary. Nothing is written to
-`replacements:` from it — fixing one sentence is not the same as teaching a
-word, and most of a misheard sentence is words that will never come up again.
-Teaching a word is what the per-word panel is for, which `Correct` and "Hey
-parrot, correct" both open.
-
-Off by setting it to `false`.
+Off by setting it to `false`. Then no key is taken at any time.
 
 ## See also
 
