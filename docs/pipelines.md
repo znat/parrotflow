@@ -275,7 +275,7 @@ drawn but never reached, because the first chip with that letter wins.
 
 `--check-config` prints what is on the pill and the letter each chip carries.
 A chip that is missing, or a `key:` that was cut, is otherwise invisible: the
-pill is up for three seconds and a short offer looks like a normal one.
+pill fades out over nine seconds and a short offer looks like a normal one.
 
 Only the shipped `grammar` asks for a place. Everything else in
 config.example.yaml is left off.

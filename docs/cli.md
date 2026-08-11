@@ -312,6 +312,11 @@ them at once, which is where drift between them shows up.
 one to print which was chosen. Every other state lets clicks through, so the
 pill is never a hole in your screen while you are dictating.
 
+It is also the one state that fades. It arrives just below full strength and
+thins out over nine seconds, the same as in the app, so it leaves on its own.
+Put the pointer on it and the fading stops, which is both what the app does and
+how you keep it on screen for as long as you want to look at it.
+
 `sequence` is the one that cannot be checked from a still. The pill is a single
 panel that changes width and crossfades its contents rather than being replaced
 — hot mic, decoding, applied, the offer, gone — and whether that morphs or
