@@ -42,8 +42,8 @@ final class MicNotice {
     /// when the recording starts — see `micAtPress` in `AppDelegate` — because
     /// the default input can change while the decoder runs, and this is about
     /// the microphone that recorded these words. The transport comes from
-    /// CoreAudio; see `Recorder.inputIsBluetooth` for why it is the transport
-    /// and not the name.
+    /// CoreAudio; see `Recorder.isBluetooth` for why it is the transport and
+    /// not the name.
     func showIfNeeded(mic: String?, isBluetooth: Bool) {
         guard let mic else { return }
         guard lastMic != mic else { return }

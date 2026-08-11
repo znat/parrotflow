@@ -956,9 +956,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try recorder.start(config: config)
             // Asked here, where the engine has just opened the device, and not
-            // when the transcript comes back. Two reads of a CoreAudio
-            // property, next to the call that opened the microphone.
-            micAtPress = Recorder.inputDeviceName.map { ($0, Recorder.inputIsBluetooth) }
+            // when the transcript comes back. One lookup, so the name and the
+            // transport are the same device's — see `Recorder.inputDevice`.
+            micAtPress = Recorder.inputDevice
         } catch {
             // A notice, not an alert. `runModal` holds the main run loop, and
             // the hotkey is delivered on it: one failed press behind a modal

@@ -825,7 +825,23 @@ final class Recorder {
     /// Settings and by plugging something in, neither of which this app sees.
     static var inputDeviceName: String? {
         guard let deviceID = defaultInputDeviceID else { return nil }
+        return name(of: deviceID)
+    }
 
+    /// The default input, named and with its transport, from one lookup.
+    ///
+    /// One device ID, asked twice, rather than two properties that each ask
+    /// which device is default. The default input can change between two such
+    /// reads — a headset connects, and macOS makes it the input — and the pair
+    /// then describes two devices: a wired microphone reported as Bluetooth,
+    /// or the other way round. The callers of the single properties print a
+    /// name and nothing else; this is the one that decides with both.
+    static var inputDevice: (name: String, isBluetooth: Bool)? {
+        guard let deviceID = defaultInputDeviceID, let name = name(of: deviceID) else { return nil }
+        return (name, isBluetooth(deviceID))
+    }
+
+    private static func name(of deviceID: AudioDeviceID) -> String? {
         var nameAddress = AudioObjectPropertyAddress(
             mSelector: kAudioObjectPropertyName,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -840,7 +856,7 @@ final class Recorder {
         return name.isEmpty ? nil : name
     }
 
-    /// Whether the microphone is on the other end of a Bluetooth link.
+    /// Whether this device is on the other end of a Bluetooth link.
     ///
     /// Asked of CoreAudio, not of the name. A list of brands is a list that is
     /// wrong the day somebody buys a headset nobody thought of, and it was
@@ -848,9 +864,7 @@ final class Recorder {
     /// words is the transport. A Bluetooth microphone runs over a voice profile
     /// that narrows the band and gates quiet sound, and it does that whatever
     /// is printed on the case.
-    static var inputIsBluetooth: Bool {
-        guard let deviceID = defaultInputDeviceID else { return false }
-
+    private static func isBluetooth(_ deviceID: AudioDeviceID) -> Bool {
         var address = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyTransportType,
             mScope: kAudioObjectPropertyScopeGlobal,
