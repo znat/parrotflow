@@ -67,7 +67,22 @@ struct WordField: NSViewRepresentable {
             ? NSColor(Parrot.amber)
             : NSColor.white.withAlphaComponent(0.62)
 
-        guard focused else { return }
+        // A field is armed only by a tick it sees while it has the focus. Every
+        // other field records the tick and stays disarmed.
+        //
+        // Recording it matters as much as arming it. A field that only looked
+        // at the tick while focused would go stale the moment the caret left,
+        // and the next *click* on it would arrive with a mismatch that reads
+        // exactly like a caret request — so the caret would jump to the end of
+        // the word you clicked into and your typing would land there. AppKit
+        // has already put the caret where the pointer was; a click has nothing
+        // to ask for. See `SpansModel.moveCaret`, which is the only thing that
+        // moves the tick.
+        guard focused else {
+            context.coordinator.tick = tick
+            context.coordinator.placeCaret = false
+            return
+        }
         guard let window = field.window else { return }
         // A new tick is the model asking for the caret again. It asks twice on
         // opening, and the second ask is the one that can work.

@@ -605,6 +605,10 @@ private struct SpanView: View {
             onSubmit: { model.onSubmit?() },
             onCancel: { model.onCancel?() }
         )
+        // `focus` directly, not `moveCaret`: this records where the caret now
+        // is, it does not ask for it to move. AppKit put it where you clicked
+        // before this ran, and the tick stays where it was so no field treats
+        // the click as a request. The `at` is never read for that reason.
         .onTapGesture { model.focus = SpanCaret(span: span.id, word: at, at: nil) }
     }
 }
