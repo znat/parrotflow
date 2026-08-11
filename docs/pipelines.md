@@ -255,8 +255,8 @@ and it cannot fail. After it comes every transform that asked for a place:
       Correct grammar, spelling and punctuation. Return only the text.
 ```
 
-Click a chip to run it. A transform runs as it always does, so it still shows
-its preview when `confirm:` is on.
+Press the letter on a chip, or click it. A transform runs as it always does, so
+it still shows its preview when `confirm:` is on.
 
 **Both are off by default.** The offer is on screen for a few seconds and every
 entry costs the others room, so a transform joins it only by asking. Put a
@@ -265,7 +265,13 @@ only ever ask for out loud — that is what the wake phrase is for.
 
 `key:` is one letter, drawn as a keycap and shown in capitals whatever you
 write. More than one character is cut to the first. A transform with `offer:
-true` and no `key:` still gets a chip, without a keycap on it.
+true` and no `key:` still gets a chip, without a keycap on it — clickable, and
+on no key.
+
+The letter is taken from whatever app you are typing into, for the three
+seconds the offer is up. Pick one you are unlikely to start a word with right
+after dictating. `C` is already `Correct`'s; a second chip asking for it is
+drawn but never reached, because the first chip with that letter wins.
 
 `--check-config` prints what is on the pill and the letter each chip carries.
 A chip that is missing, or a `key:` that was cut, is otherwise invisible: the
