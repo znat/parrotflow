@@ -107,7 +107,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// What was focused when the key went down. The same element `focus`
         /// carries, held here as well so the offer needs nothing but the press.
         let element: AXUIElement?
+        /// And the app it belonged to, for the same reason: an offer taken
+        /// later has to write back into the window that was dictated into.
+        let owner: NSRunningApplication?
     }
+
+    /// The words the offer on screen is about, and the field they went into.
+    ///
+    /// Stored when the offer is raised because `lastTranscript` and
+    /// `focusAtPress` are one slot each and dictations overlap: an older one
+    /// finishing while the offer is up overwrites the transcript, and the press
+    /// that taps to accept overwrites the focus. Taking the offer then edits
+    /// one dictation's words against another's field. This is the same
+    /// ownership `offerPressRun` already asserts, carrying what it is about.
+    private var offeredCorrection: (run: Int, target: Correction)?
 
     /// The focused element's text as it was at the press, for an app that gave
     /// no caret. What changed in it afterwards is where the words went.
@@ -1145,7 +1158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // And the press itself, frozen the same way and for the same reason.
         // `pressRun` is still this dictation's here: a press that ends a
         // recording does not bump it — see `handleHotKeyPress`.
-        let press = Press(run: pressRun, element: focus?.element)
+        let press = Press(run: pressRun, element: focus?.element, owner: focus?.owner)
         Task { [weak self] in
             do {
                 // "Transcribing…" is the truth until the decoder is done, and
@@ -1956,6 +1969,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         offerUntil = Date().addingTimeInterval(Self.offerSeconds)
         offerPressRun = press.run
+        // This dictation's own words and its own field, frozen with the offer.
+        offeredCorrection = (press.run, Correction(
+            original: text, element: press.element, owner: press.owner
+        ))
         pill.offer(key, for: Self.offerSeconds)
 
         // Taken at the press, and only when that press found no caret. Matched
@@ -2063,7 +2080,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func takeTheOfferIfTapped() -> Bool {
         guard pressTookTheOffer, recorder.isRecording, !keyDownDuringPress,
               let started = recorder.startedAt,
-              Date().timeIntervalSince(started) < config.audio.minDurationSeconds
+              Date().timeIntervalSince(started) < config.audio.minDurationSeconds,
+              let offered = offeredCorrection, offered.run == offerPressRun
         else { return false }
 
         pressTookTheOffer = false
@@ -2079,12 +2097,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stopWatchingForEscapeIfIdle()
         pill.hide()
 
-        // Captured here, not read again when Replace is pressed. See `Correction`.
-        let target = Correction(
-            original: lastTranscript ?? "",
-            element: focusAtPress?.element,
-            owner: focusAtPress?.owner
-        )
+        // Captured when the offer went up, not read again here and not again
+        // when Replace is pressed. See `offeredCorrection` and `Correction`.
+        let target = offered.target
+        offeredCorrection = nil
 
         Log.write("offer: taken; editing the last transcript")
         previewPanel.onApply = { [weak self] text in self?.replace(target, with: text) }
