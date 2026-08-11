@@ -36,9 +36,9 @@ struct Span: Identifiable, Equatable {
     var pre: String = ""
     var heard: [HeardWord]
     var value: [String]
-    /// This word holds punctuation that a join carried in, not punctuation
-    /// anybody typed. Set by `joinBack`, cleared as soon as you type the word
-    /// yourself, and it takes the span out of `rules()`.
+    /// The marks a join carried into this word — punctuation nobody typed.
+    /// Filled by `joinBack`, emptied as you delete them, and while it holds
+    /// anything the span stays out of `rules()`.
     ///
     /// Provenance, not shape. Punctuation in a corrected word is often the
     /// whole point — `.NET`, `O'Reilly`, `C++` are the terms people come to
@@ -46,10 +46,15 @@ struct Span: Identifiable, Equatable {
     /// tell those from a comma that arrived because ⌫ ate the space in
     /// "hello, world". Where the mark came from can.
     ///
-    /// A flagged span still replaces. It teaches nothing, which is the right
-    /// way to fail: a rule not learned costs one more correction next time, and
-    /// a rule learned wrong fires forever, on sentences nobody meant to change.
-    var joinedMarks = false
+    /// The characters, not a flag, because typing is not consent. Capitalise
+    /// the H in "hello,world" and the comma is still a comma you never typed,
+    /// so the span goes on teaching nothing. Delete the comma and it teaches.
+    ///
+    /// A span holding marks still replaces. It teaches nothing, which is the
+    /// right way to fail: a rule not learned costs one more correction next
+    /// time, and a rule learned wrong fires forever, on sentences nobody meant
+    /// to change.
+    var joinedMarks: Set<Character> = []
 
     init(
         id: UUID = UUID(), lead: String = "", pre: String = "",
@@ -284,7 +289,7 @@ final class SpansModel: ObservableObject {
     /// every sentence that says those words again. See `Span.joinedMarks`.
     func rules() -> [(heard: String, corrected: String)] {
         spans.filter(\.isChanged).compactMap { span in
-            guard !span.joinedMarks else { return nil }
+            guard span.joinedMarks.isEmpty else { return nil }
             let heard = span.heardText
             let corrected = span.valueText
             guard !heard.isEmpty, !corrected.isEmpty else { return nil }
@@ -319,7 +324,7 @@ final class SpansModel: ObservableObject {
                 return
             }
             spans[index].value.replaceSubrange(word...word, with: parts)
-            spans[index].joinedMarks = false
+            pruneJoinedMarks(at: index)
             moveCaret(to: SpanCaret(span: id, word: word + parts.count - 1, at: nil))
             return
         }
@@ -332,12 +337,20 @@ final class SpansModel: ObservableObject {
 
         rememberTyping(in: "\(id)-\(word)")
         spans[index].value[word] = text
-        // Typed is intentional. Whatever a join left in this word, you have now
-        // written the word yourself, so it is yours and it can be taught — even
-        // when what you wrote has punctuation in it, which for a name like
-        // "O'Reilly" is the reason you came to this panel.
-        spans[index].joinedMarks = false
+        pruneJoinedMarks(at: index)
         hasEdited = true
+    }
+
+    /// Forget any carried mark the span no longer holds.
+    ///
+    /// A mark you deleted is a mark you decided about, so the span can teach
+    /// again. A mark still sitting there is one you typed around, not one you
+    /// chose — see `Span.joinedMarks`. Punctuation you typed yourself is never
+    /// in the set, so "O'Reilly" and ".NET" are taught whatever else happens.
+    private func pruneJoinedMarks(at index: Int) {
+        guard !spans[index].joinedMarks.isEmpty else { return }
+        let written = spans[index].valueText
+        spans[index].joinedMarks = spans[index].joinedMarks.filter(written.contains)
     }
 
     /// A word cleared is a word you have decided not to write, and that is all
@@ -349,6 +362,7 @@ final class SpansModel: ObservableObject {
         hasEdited = true
         if spans[index].value.count > 1 {
             spans[index].value.remove(at: word)
+            pruneJoinedMarks(at: index)
             moveCaret(to: SpanCaret(span: id, word: max(0, word - 1), at: nil))
             return
         }
@@ -412,7 +426,8 @@ final class SpansModel: ObservableObject {
         // Both marks are in the word now, and neither was typed. The word still
         // goes back into the sentence — you joined it on purpose — but it
         // teaches nothing until you write it yourself. See `Span.joinedMarks`.
-        if !(swallowed + gone.pre).isEmpty { into.joinedMarks = true }
+        into.joinedMarks.formUnion(swallowed)
+        into.joinedMarks.formUnion(gone.pre)
         spans[index - 1] = into
         moveCaret(to: SpanCaret(span: into.id, word: last, at: seam))
     }

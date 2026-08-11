@@ -72,6 +72,13 @@ func joinBack(_ model: SpansModel, span: Int, word: Int = 0) {
     model.joinBack(span: model.spans[span].id, word: word)
 }
 
+/// The marks a join left in a span, in an order that does not change between
+/// runs. A `Set` prints in hash order, which differs per process, and two of
+/// these checks passed and failed on alternate runs before they were sorted.
+func marks(_ model: SpansModel, _ span: Int) -> [Character] {
+    model.spans[span].joinedMarks.sorted()
+}
+
 print("\n  --- the whitespace of the selection survives an edit ---")
 
 for (name, sentence, want) in [
@@ -146,7 +153,7 @@ do {
     // never a decision about a word — see `Span.joinedMarks`.
     check("the rule it teaches", model.rules().map { "\($0.heard) => \($0.corrected)" },
           [String]())
-    check("…because the mark was not typed", model.spans[0].joinedMarks, true)
+    check("…because the mark was not typed", marks(model, 0), ["("] as [Character])
 }
 do {
     let model = loaded("red crawl")
@@ -235,7 +242,7 @@ do {
     check("a clean join still teaches",
           model.rules().map { "\($0.heard) => \($0.corrected)" },
           ["red crawl => Redcrawl"])
-    check("…and was never flagged", model.spans[0].joinedMarks, false)
+    check("…and carried nothing", marks(model, 0), [Character]())
 }
 do {
     // Typed punctuation is intentional, wherever it lands.
@@ -245,14 +252,49 @@ do {
           model.rules().map { "\($0.heard) => \($0.corrected)" }, ["dot => .NET"])
 }
 do {
-    // Typed over a flagged word: it is your word now, punctuation and all.
+    // Punctuation you typed is never in the set, so a join with nothing to
+    // carry leaves the name free to be taught with the apostrophe you added.
     let model = loaded("O Reilly")
     joinBack(model, span: 1)
     type(model, "O'Reilly", span: 0)
-    check("typing clears the flag", model.spans[0].joinedMarks, false)
+    check("nothing was carried", marks(model, 0), [Character]())
     check("…so the name is taught",
           model.rules().map { "\($0.heard) => \($0.corrected)" },
           ["O Reilly => O'Reilly"])
+}
+do {
+    // Typing is not consent. The comma is still a comma nobody typed, so a
+    // capital letter somewhere else in the word does not release it.
+    let model = loaded("hello, world")
+    joinBack(model, span: 1)
+    type(model, "Hello,world", span: 0)
+    check("an edit that leaves the mark", marks(model, 0), [","] as [Character])
+    check("…still teaches nothing", model.rules().count, 0)
+    check("…and still replaces", model.sentence(), "Hello,world")
+}
+do {
+    // Delete the mark and you have decided about it.
+    let model = loaded("hello, world")
+    joinBack(model, span: 1)
+    type(model, "Helloworld", span: 0)
+    check("the mark deleted", marks(model, 0), [Character]())
+    check("…so the word is taught",
+          model.rules().map { "\($0.heard) => \($0.corrected)" },
+          ["hello world => Helloworld"])
+}
+do {
+    // Two marks at one seam, dropped one at a time.
+    let model = loaded("say \"hello,\" (world).")
+    joinBack(model, span: 2)
+    check("both marks are held", marks(model, 1), ["\"", "(", ","] as [Character])
+    type(model, "hello,\"world", span: 1)
+    check("one dropped, two left", marks(model, 1), ["\"", ","] as [Character])
+    check("…and it teaches nothing yet", model.rules().count, 0)
+    type(model, "helloworld", span: 1)
+    check("all gone", marks(model, 1), [Character]())
+    check("…so it teaches",
+          model.rules().map { "\($0.heard) => \($0.corrected)" },
+          ["hello world => helloworld"])
 }
 do {
     // Undo carries the flag back with the spans, both ways round.
@@ -261,10 +303,10 @@ do {
     check("before the join it teaches",
           model.rules().map { "\($0.heard) => \($0.corrected)" }, ["hello => HELLO"])
     joinBack(model, span: 1)
-    check("the join flags it", model.spans[0].joinedMarks, true)
+    check("the join records the mark", marks(model, 0), [","] as [Character])
     check("…and it teaches nothing", model.rules().count, 0)
     model.undo()
-    check("undo puts the flag back down", model.spans[0].joinedMarks, false)
+    check("undo takes the mark back off", marks(model, 0), [Character]())
     check("…and the rule with it",
           model.rules().map { "\($0.heard) => \($0.corrected)" }, ["hello => HELLO"])
     check("…and the sentence", model.sentence(), "HELLO, world")
