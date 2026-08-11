@@ -135,23 +135,39 @@ enum CaretAnchor {
         return .missed(pane == nil ? "no geometry" : "no caret, and the pane is too big to stand in for one")
     }
 
-    /// How many characters the element holds.
+    /// A fingerprint of what the pane is showing, read at the press.
     ///
-    /// One number rather than the text, so it is cheap enough to ask inside the
-    /// key-down handler. The value itself has been seen at 395,489 characters
-    /// and copying that would delay the recording.
+    /// This is what tells a remembered anchor from a stale one, and it has to
+    /// be the text because the cheap number is about something else.
+    /// `AXNumberOfCharacters` was tried and is wrong here: measured on Ghostty
+    /// it answers 49,842 and does not move while eight lines of output are
+    /// printed, with `AXValue` at 2,082 over the same two reads. The count is
+    /// the scrollback and the value is the screen, and only a resize changes
+    /// the first. Compared against, it can never fail — so in the one app the
+    /// `remembered` rung exists for, the guard was not a guard.
     ///
-    /// This is what tells a remembered anchor from a stale one. It changes the
-    /// moment anything is printed into the pane, which is exactly when last
-    /// time's row stops belonging to last time's words.
-    static func characterCount(of element: AXUIElement?) -> Int? {
+    /// Hashed rather than kept, because this is a staleness check and the
+    /// question is only "the same as last time". It is compared within one run
+    /// of the app, which is the only place a `hashValue` means anything.
+    ///
+    /// Reading the value at key-down is the thing that handler is told never to
+    /// do, and it is allowed here for two reasons: it is capped at the same
+    /// 80ms as everything else `read(at:)` asks, and it is only asked when
+    /// there is a landing for this exact element to check — which is the rung
+    /// below a caret, so the apps with one never pay for it.
+    ///
+    /// Not answering inside the cap means refusing the anchor, and that is
+    /// right rather than merely safe. A pane too big to read in 80ms is
+    /// Outlook's, and Outlook's pane scrolls too: a remembered rectangle there
+    /// is worth no more than one in a terminal.
+    static func paneDigest(of element: AXUIElement?) -> Int? {
         guard let element else { return nil }
         AXUIElementSetMessagingTimeout(element, timeout)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
-            element, kAXNumberOfCharactersAttribute as CFString, &value
-        ) == .success, let count = value as? Int else { return nil }
-        return count
+            element, kAXValueAttribute as CFString, &value
+        ) == .success, let text = value as? String, !text.isEmpty else { return nil }
+        return text.hashValue
     }
 
     // MARK: - Apps with no caret, found afterwards

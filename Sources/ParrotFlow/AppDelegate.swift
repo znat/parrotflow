@@ -192,10 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// instead of at the bottom of the screen, and the real answer replaces it
     /// a few seconds later when the words arrive.
     ///
-    /// Held per element and briefly, because both are what make it a fair guess
-    /// rather than a stale one. See the `remembered` rung in `handleHotKeyPress`
-    /// for what invalidates it.
-    private var lastLanding: (element: AXUIElement, found: CaretAnchor.Found, at: Date, chars: Int)?
+    /// Held per element, briefly, and against what the pane was showing when
+    /// the words landed — all three are what make it a fair guess rather than
+    /// a stale one. See `readTheAnchor` for what invalidates it, and
+    /// `CaretAnchor.paneDigest` for why the digest is of the text.
+    private var lastLanding: (element: AXUIElement, found: CaretAnchor.Found, at: Date, digest: Int)?
 
     /// Whether there was anywhere to type when the hotkey went down — see
     /// `Destination`. Decides whether the pill shows the icon, and is handed to
@@ -716,12 +717,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // landed. Two things have to hold, and both exist because a
             // remembered anchor looks confident while it is stale.
             //
-            // The pane's character count must match. A terminal scrolls
-            // between dictations, so last time's row then belongs to somebody
-            // else's line — which is how the pill ends up sitting over the
-            // input box you are about to type into. The count is one cheap
-            // attribute and it changes the moment anything is printed, which
-            // is exactly when the guess goes bad.
+            // The pane must still be showing what it showed when the words
+            // landed. A terminal scrolls between dictations, so last time's
+            // row then belongs to somebody else's line — which is how the pill
+            // ends up sitting over the input box you are about to type into.
+            //
+            // Checked against the text and not against `AXNumberOfCharacters`,
+            // which was the first answer and does not describe the screen at
+            // all. See `CaretAnchor.paneDigest` for the measurement, and for
+            // why a read that does not finish in time refuses.
             //
             // And the landing must be under a minute old. Refused, the pill
             // opens at the bottom of the screen and rung 4 moves it a moment
@@ -730,7 +734,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let last = lastLanding, let now = focusAtPress?.element,
                CFEqual(last.element, now),
                Date().timeIntervalSince(last.at) < 60,
-               CaretAnchor.characterCount(of: now) == last.chars {
+               CaretAnchor.paneDigest(of: now) == last.digest {
                 anchorAtPress = CaretAnchor.Found(
                     rect: last.found.rect, text: last.found.text, source: .remembered
                 )
@@ -2056,6 +2060,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         func look() {
             let outcome = CaretAnchor.landed(after: before, at: element)
+            // The screen the words landed on, for the next dictation into this
+            // element to check `remembered` against. Read here rather than at
+            // the press, where the same string would be a delay: this queue is
+            // reading the pane anyway and nothing is waiting on it. Only for a
+            // look that found something, so a search that misses costs nothing.
+            var digest: Int?
+            if case .found = outcome { digest = CaretAnchor.snapshot(of: element)?.hashValue }
             DispatchQueue.main.async { [weak self] in
                 // Only while this press still owns what is on screen. The
                 // offer may have expired, or another dictation may have raised
@@ -2067,11 +2078,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .found(let found):
                     self.pill.aim(at: found)
                     // Remembered for the next dictation into this same element,
-                    // but only when the pane will say how big it is — that
-                    // count is the only thing that can tell the guess it has
-                    // gone stale, so without it there is no guess worth making.
-                    if let chars = CaretAnchor.characterCount(of: element) {
-                        self.lastLanding = (element, found, Date(), chars)
+                    // against the screen the words landed on. Without that
+                    // there is nothing to tell the guess it has gone stale, so
+                    // a pane that would not be read is a landing not worth
+                    // keeping.
+                    if let digest {
+                        self.lastLanding = (element, found, Date(), digest)
                     }
                 case .missed(let why):
                     guard Date() < deadline else {
