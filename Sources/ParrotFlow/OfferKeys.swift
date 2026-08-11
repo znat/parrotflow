@@ -44,6 +44,22 @@ final class OfferKeys {
 
     var isRunning: Bool { tap != nil }
 
+    /// Move the deadline, after something said the offer is not over yet.
+    ///
+    /// The tap itself is left exactly as it is — the same letters, the same
+    /// handler. Only the backstop moves, and it has to move with the offer: a
+    /// tap still holding `C` for a pill the pointer is holding open, with an
+    /// expiry from before it was held, would give the letter back to the app
+    /// while the chip that claims it is still on screen.
+    ///
+    /// Does nothing when no tap is running. The offer can be up without one —
+    /// the keys wait for a dictation that is still going — and there is no
+    /// deadline to move until `start` gives it one.
+    func extend(until: Date) {
+        guard tap != nil else { return }
+        expiry = until
+    }
+
     /// Begin taking the keys, until `until` at the latest.
     ///
     /// `letters` must already be uppercased, which is the shape `Config` stores

@@ -111,6 +111,27 @@ final class PillHUD {
     /// Armed by a `set()` that carries a duration.
     private var pendingDismiss: DispatchWorkItem?
     private var isFading = false
+    /// Thinning out on a deadline, rather than holding and then going. Only the
+    /// offer does this — see `decay(over:)`.
+    private var isDecaying = false
+    /// How long the offer on screen was given, so the pointer can give it again.
+    private var offerFor: TimeInterval?
+    /// A decay the pointer has stopped, as against one still running.
+    ///
+    /// The two end differently. A stopped one sits at `offerAlpha`, which is a
+    /// real strength, so it can fade out the way every other state does. A
+    /// running one has already told AppKit to finish at zero, so a fade laid
+    /// over it has nothing left to move and it is cut instead.
+    private var decayIsHeld = false
+    /// Which decay is the live one.
+    ///
+    /// Replacing an animation makes the one it replaced call its completion
+    /// handler, straight away. A flag alone cannot tell those apart: the decay
+    /// that replaces it sets `isDecaying` back to true before the old handler
+    /// runs, so the old handler passes the guard and orders the panel out. That
+    /// was the pointer dismissing the offer it was there to hold open. The
+    /// handler checks this number as well, and a stale one does nothing.
+    private var decayRun = 0
 
     /// Where this dictation's words are going, set at the press by `aim(at:)`.
     /// Every state reads it while the pill is up, and `fadeOut` clears it, so
@@ -152,9 +173,113 @@ final class PillHUD {
     ///
     /// The highlight is cleared first. It belonged to the last offer's pointer,
     /// and the pointer is not on this one yet.
+    ///
+    /// This is the one state that leaves by going quiet rather than by
+    /// disappearing. Every other one holds full strength and then goes. This
+    /// one starts below full and thins the whole way out, for two reasons. It
+    /// is the only state nobody asked for — it arrives after a dictation you
+    /// had already finished — so it should announce itself less than a notice
+    /// does. And it is the only state with a deadline you might want to beat: a
+    /// hard cut gives you the time and then nothing, while a decay says how
+    /// long is left without a clock on screen, and stays usable to the last
+    /// frame. The keys and the chips work the whole way down; the fading only
+    /// says how long is left.
     func offer(_ commands: [OfferedCommand], for duration: TimeInterval) {
         model.selected = nil
-        set(.offer(commands), for: duration)
+        offerFor = duration
+        set(.offer(commands))
+        decay(over: duration)
+    }
+
+    /// From `Self.offerAlpha` to nothing, over `duration`, then gone.
+    ///
+    /// Linear on purpose. An eased fade spends most of its time near the ends
+    /// and crosses the middle quickly, which reads as the surface being yanked
+    /// away at the halfway mark. A straight ramp is the one shape that says
+    /// "this is running out" at a steady rate — a clock without a clock.
+    private func decay(over duration: TimeInterval) {
+        guard let panel else { return }
+        pendingDismiss?.cancel(); pendingDismiss = nil
+        isFading = false
+        isDecaying = true
+        decayIsHeld = false
+        decayRun += 1
+        let run = decayRun
+
+        // Land on the starting strength at once, cancelling whatever was
+        // animating alpha. Usually nothing — the offer follows a pill already
+        // on screen — but raised from cold, `set` starts a fade to full and the
+        // two would pull opposite ways.
+        if !panel.isVisible { panel.orderFrontRegardless() }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            panel.animator().alphaValue = Self.offerAlpha
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .linear)
+            panel.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            // `decayRun` and not `isDecaying` alone: see the property.
+            guard let self, self.isDecaying, self.decayRun == run else { return }
+            self.isDecaying = false
+            // The aim belonged to the dictation that has just ended, the same
+            // as in `fadeOut`.
+            self.near = nil
+            panel.orderOut(nil)
+            // Back to full strength while off screen, or the next appearance
+            // starts from a panel that is already invisible and stays that way.
+            panel.alphaValue = 1
+        }
+    }
+
+    /// Hold the offer at full strength, or let it start running out again.
+    ///
+    /// The pointer resting on the pill is the least ambiguous statement there
+    /// is that you are still deciding, so the fade stops entirely rather than
+    /// resetting — and starts again from the beginning when the pointer leaves.
+    /// A surface that went on thinning while you were reaching for it would be
+    /// arguing with you about whether you had finished.
+    ///
+    /// This is also why the decay can be as long as it is. Nine seconds of
+    /// clutter would be too much to put on screen after every dictation if
+    /// reading it did not put it back.
+    func hovering(_ inside: Bool) {
+        // `isVisible` as well as the flag: a decay that finished a moment ago
+        // has taken the panel out, and nothing about the pointer should bring
+        // an offer that is over back onto the screen.
+        guard let panel, panel.isVisible, let offerFor, isDecaying || inside else { return }
+        if inside {
+            // Stop the running decay without letting its completion fire: the
+            // animation below replaces it, and a replaced animation calls its
+            // handler at once.
+            decayRun += 1
+            isDecaying = true
+            decayIsHeld = true
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                panel.animator().alphaValue = Self.offerAlpha
+            }
+        } else {
+            decay(over: offerFor)
+        }
+    }
+
+    /// Where the offer starts. Below full, because it is the one surface that
+    /// appears without being asked for.
+    static let offerAlpha: CGFloat = 0.92
+
+    /// Whether the pointer is over the pill at this instant.
+    ///
+    /// Asked, rather than remembered from the last `hovering(_:)`. A hover that
+    /// arrives can be believed; a hover that never leaves cannot. A Space
+    /// change, Mission Control or a window ordered out from underneath the
+    /// pointer can all swallow the exit, and whoever is holding the offer open
+    /// on the strength of that hover would hold it — and the keys it takes —
+    /// until the next dictation.
+    var pointerIsOver: Bool {
+        guard let panel, panel.isVisible else { return false }
+        return panel.frame.contains(NSEvent.mouseLocation)
     }
 
     /// Point the pill at where the words are going, for this dictation.
@@ -204,9 +329,22 @@ final class PillHUD {
 
         // A fade that has not finished is a panel that is still on screen. Put
         // it back to full strength rather than morphing something half gone.
-        if isFading {
+        // The same for a decay, which is a fade with a longer clock on it: a
+        // pill part-way through running out that then has something to say
+        // would otherwise say it at whatever strength it had got down to.
+        if isFading || isDecaying {
             isFading = false
-            panel.alphaValue = 1
+            isDecaying = false
+            decayIsHeld = false
+            // The decay's handler is now a stale one. See `decayRun`.
+            decayRun += 1
+            // Zero-length rather than a plain assignment: that is what stops
+            // the animation underneath, which would otherwise go on pulling
+            // the alpha down under the state that has just replaced it.
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                panel.animator().alphaValue = 1
+            }
         }
 
         // The words change with the frame, not after it: SwiftUI is told inside
@@ -225,6 +363,9 @@ final class PillHUD {
             panel.ignoresMouseEvents = false
         } else {
             panel.ignoresMouseEvents = true
+            // No offer, nothing for the pointer to hold: `hovering` reads this
+            // and must not act on a duration left behind by the last one.
+            offerFor = nil
         }
 
         let size = PillMetrics.panelSize(for: state, hasIcon: model.appIcon != nil)
@@ -295,6 +436,40 @@ final class PillHUD {
         pendingHide = nil
         pendingDismiss = nil
         guard let panel, panel.isVisible, !isFading else { return }
+
+        // A decision takes the offer at once rather than letting the rest of
+        // its decay play out. Escape, Return and running a command all arrive
+        // here, and a dismissal that took another few seconds to show would
+        // read as the key not working.
+        //
+        // A running decay is cut, because its alpha is already on its way to
+        // zero and a fade laid over that has nothing left to move. A decay the
+        // pointer is holding is not: it is stopped at `offerAlpha`, so it goes
+        // out the way every other state does. Clicking a chip is the common
+        // path and the pointer is on the pill by definition, so that is the
+        // one that must not blink out. The stale handler is seen off the same
+        // way as in `set`.
+        if isDecaying, !decayIsHeld {
+            isDecaying = false
+            decayRun += 1
+            near = nil
+            // A zero-length animation is how the running one is stopped, and
+            // it leaves the panel at full strength for the next appearance.
+            // Nothing is drawn at that strength: the panel goes out in the
+            // same turn.
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0
+                panel.animator().alphaValue = 1
+            }
+            panel.orderOut(nil)
+            return
+        }
+        // Nothing is decaying past this line. A held decay is standing at a
+        // real alpha, so it leaves as an ordinary fade — and either way the
+        // flags and the handler are seen off before that fade starts.
+        isDecaying = false
+        decayIsHeld = false
+        decayRun += 1
 
         isFading = true
         NSAnimationContext.runAnimationGroup { context in

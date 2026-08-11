@@ -227,7 +227,7 @@ enum CheckConfigCommand {
             // Correct's letter is not a transform's to lose, and the first chip
             // with a letter is the one that key runs. So a second chip asking
             // for the same letter is drawn with a keycap that never fires, and
-            // that is invisible on a pill that is up for three seconds.
+            // that is invisible on a pill that fades out in nine seconds.
             var taken: Set<String> = ["C"]
             for transform in offered {
                 let key = transform.offerKey

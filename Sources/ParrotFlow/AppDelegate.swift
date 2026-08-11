@@ -257,19 +257,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var offerOnScreen: [OfferedCommand]?
     /// Gives the keys back when the offer simply runs out.
     ///
-    /// The pill takes itself off screen after `offerSeconds` and tells nobody,
+    /// The pill fades itself off screen after `offerSeconds` and tells nobody,
     /// so an offer that nobody answers ends with no call back into here. This
     /// is that call. Without it the tap's own expiry would be the only thing
     /// left to end it, and that is the backstop, not the way out.
+    ///
+    /// It has a second job while the pointer is holding the offer open. See
+    /// `offerDeadlinePassed`.
     private var offerKeysExpiry: DispatchWorkItem?
+    /// True while the pointer is resting on the offer.
+    ///
+    /// The clock is stopped then, and `offerUntil` becomes a date that never
+    /// arrives — which is also why the deadline above is not armed with it:
+    /// `asyncAfter` at that distance is an overflow rather than a long wait.
+    /// See `holdTheOffer`.
+    private var offerHeld = false
 
     /// How long the offer stays up.
     ///
-    /// Long enough to read the key and act on it, short enough that it is gone
-    /// before you have started typing the next thing. It is on screen after
-    /// every dictation, so any longer and it stops being an offer and becomes
-    /// something in the way.
-    private static let offerSeconds: TimeInterval = 3
+    /// Long enough to read the sentence, decide it is wrong and reach for a
+    /// key, which three seconds was not. It can afford to be this long because
+    /// it does not sit there at full strength: it thins out the whole way — see
+    /// `PillHUD.offer` — and the pointer stops that clock and gives the nine
+    /// seconds back in full. A fade this generous would be clutter after every
+    /// dictation if reading it did not put it back.
+    ///
+    /// Not private: `--panels offer` previews the offer for as long as the app
+    /// gives it, and a preview with a number of its own is a preview of
+    /// something else.
+    static let offerSeconds: TimeInterval = 9
 
     /// What the offer offers: Correct, then every transform that asked for a
     /// place on it with `offer: true`.
@@ -2001,6 +2017,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        // A new offer is never born held, whatever the last one ended as.
+        offerHeld = false
         offerPressRun = press.run
         // This dictation's own words and its own field, frozen with the offer.
         offeredCorrection = (press.run, Correction(
@@ -2021,10 +2039,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The highlight is the pointer's mark and does not outlive it. Leaving
         // the pill gives it up, so a chip is never lit for a command that is
         // not about to happen. Cleared here rather than in the view because
-        // this closure is where the rest of the leaving behaviour will hang.
+        // this is where the rest of the leaving behaviour hangs.
         pill.model.onHover = { [weak self] inside in
-            guard !inside else { return }
-            self?.pill.model.selected = nil
+            guard let self else { return }
+            if !inside { self.pill.model.selected = nil }
+            self.holdTheOffer(inside)
         }
 
         offerOnScreen = commands
@@ -2066,11 +2085,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // down and says nothing, so this is what hands the keyboard back.
         // Armed before the tap is, so the offer is cleaned up at its deadline
         // even on the path below that installs no tap at all.
-        let expire = DispatchWorkItem { [weak self] in self?.endTheOffer() }
-        offerKeysExpiry = expire
-        DispatchQueue.main.asyncAfter(
-            deadline: .now() + until.timeIntervalSinceNow, execute: expire
-        )
+        armTheOfferDeadline()
 
         // Not while another dictation is running. Push-to-talk does not wait
         // for the previous transcript, so an offer can go up while a newer
@@ -2080,7 +2095,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // dismissing the offer. The chips stay clickable meanwhile, and
         // `stopWatchingForEscapeIfIdle` calls back here the moment that
         // dictation is over — so an offer still on screen then gets its keys
-        // for whatever is left of its three seconds.
+        // for whatever is left of its nine seconds.
         guard !recorder.isRecording, runsInFlight <= 0 else {
             Log.write("offer keys: a dictation is still running; the keys wait for it")
             return
@@ -2106,6 +2121,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Arm the call that ends the offer when nobody answers it.
+    ///
+    /// One work item, replaced rather than added to, so the deadline can move
+    /// without the tap being torn down and built again.
+    private func armTheOfferDeadline() {
+        offerKeysExpiry?.cancel()
+        offerKeysExpiry = nil
+        guard let until = offerUntil else { return }
+        // Held, this is not a deadline but a look. The offer has no deadline
+        // while the pointer is on it, so what is armed instead is the question
+        // "is the pointer still there" — see `offerDeadlinePassed`.
+        let after = offerHeld ? Self.offerSeconds : max(0, until.timeIntervalSinceNow)
+        let expire = DispatchWorkItem { [weak self] in self?.offerDeadlinePassed() }
+        offerKeysExpiry = expire
+        DispatchQueue.main.asyncAfter(deadline: .now() + after, execute: expire)
+    }
+
+    /// Nobody answered the offer, or nobody has moved the pointer off it.
+    ///
+    /// Held, the pointer is asked for rather than waited on. `onHover` is the
+    /// only thing saying the pill is still under the pointer, and an exit that
+    /// never arrives — a Space change, Mission Control, a window ordered out —
+    /// would hold the offer open until the next dictation, with the letters it
+    /// takes from every app. So the hold is checked once every `offerSeconds`,
+    /// and a pointer that has gone without saying so is treated as one that
+    /// said so: the offer gets its nine seconds and runs out normally.
+    private func offerDeadlinePassed() {
+        guard offerHeld else { endTheOffer(); return }
+        if pill.pointerIsOver {
+            armTheOfferDeadline()
+            return
+        }
+        Log.write("offer: the pointer left without saying so; the clock starts again")
+        holdTheOffer(false)
+    }
+
+    /// The pointer stops the offer's clock, and gives it back in full when it
+    /// leaves.
+    ///
+    /// Stopped rather than reset. A surface that went on thinning while you
+    /// were reaching for it would be arguing about whether you had finished,
+    /// and a pointer can rest for longer than any number chosen here. So while
+    /// it is inside the offer has no deadline at all, and leaving starts a
+    /// whole new nine seconds.
+    ///
+    /// Three clocks have to move together, or the pill and the keys disagree:
+    /// the pill's own fade, this deadline, and the tap's expiry. The tap's is
+    /// a backstop against a tap that outlived its offer, and a pointer resting
+    /// on the pill is the opposite of that — the offer is on screen, by
+    /// definition. Every path that ends the offer still calls
+    /// `OfferKeys.stop`, so the tap does not depend on that expiry to go.
+    private func holdTheOffer(_ inside: Bool) {
+        // Nothing to hold once the offer is over. The pointer can leave a pill
+        // that a key has already dismissed, and that must not give it a
+        // deadline back.
+        guard offerUntil != nil else { return }
+        let until = inside ? Date.distantFuture : Date().addingTimeInterval(Self.offerSeconds)
+        offerHeld = inside
+        offerUntil = until
+        armTheOfferDeadline()
+        offerKeys.extend(until: until)
+        pill.hovering(inside)
+    }
+
     /// The offer is over, however it ended: nothing left to run, and the keys
     /// go back.
     ///
@@ -2115,6 +2194,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the offer was about reads `offeredCorrection` before calling this.
     private func endTheOffer() {
         offerUntil = nil
+        offerHeld = false
         offeredCorrection = nil
         offerOnScreen = nil
         offerKeysExpiry?.cancel()

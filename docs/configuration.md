@@ -287,7 +287,7 @@ sitting at an ordinary shell prompt keeps everything you have run in it, and the
 pill goes to the bottom of the screen.
 
 `correct_offer` is what the pill does after the words land. It stays where it
-is for three seconds and names what can be done to them, one chip per command:
+is and names what can be done to them, one chip per command:
 `Correct` first, then every transform with `offer: true` — see
 [pipelines.md](pipelines.md#offer-and-key-or-getting-on-the-pill). `Correct`
 opens the per-word panel over what was just dictated; a transform runs as it
@@ -301,7 +301,13 @@ always does.
 | `↩` | Dismisses, and reaches the app underneath untouched |
 | the dictation hotkey | Starts the next dictation, exactly as before |
 
-**The letters are taken from every app for those three seconds.** The pill
+It fades rather than vanishing. It arrives just below full strength and thins
+out over nine seconds, and then it is gone. The keys and the chips work the
+whole way down — the fading only says how long is left. Putting the pointer on
+the pill stops the clock, and taking it off starts the nine seconds again. Any
+of the endings above takes the pill at once.
+
+**The letters are taken from every app for those nine seconds.** The pill
 never holds keyboard focus, so it swallows the letters system-wide or it does
 not get them at all. Finish a dictation and immediately type a word starting
 with `C` or `G` and the first keystroke runs a command instead of typing.

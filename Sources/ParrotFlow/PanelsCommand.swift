@@ -243,13 +243,19 @@ enum PanelsCommand {
         case "thinking":
             pill.working("Thinking…")
         case "offer":
-            // No duration: it is here to be looked at, not timed out.
-            pill.set(.offer(offerChips))
+            // The real call rather than a bare `set`. The offer is the one
+            // state that arrives below full strength and thins out, so a
+            // preview holding it at full would be a picture of a pill that
+            // never appears. It gets the duration the app gives it.
+            pill.offer(offerChips, for: AppDelegate.offerSeconds)
             // The one state that takes the mouse, so the one worth being able
             // to hover. Nothing runs — this is the surface, not the app — but
-            // the highlight has to come and go the way it does there.
+            // the highlight and the hold behave the way they do there: park the
+            // pointer on the pill and it stops fading, which is also how you
+            // keep it on screen for as long as you want to look at it.
             pill.model.onHover = { inside in
                 if !inside { pill.model.selected = nil }
+                pill.hovering(inside)
             }
             pill.model.onPick = { index in
                 print("offer: chip \(index) — \(offerChips[index].title)")
