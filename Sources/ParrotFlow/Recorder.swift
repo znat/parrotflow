@@ -828,17 +828,25 @@ final class Recorder {
         return name(of: deviceID)
     }
 
-    /// The default input, named and with its transport, from one lookup.
+    /// The device this recorder is bound to, named and with its transport.
+    ///
+    /// Asked of the engine's own binding, not of the system default. `bound` is
+    /// the device the running engine was prepared against, which is the one the
+    /// words are being recorded through; the default can move the moment after
+    /// `start` returns, and asking again would name a microphone that heard
+    /// nothing. Nil before the first engine is built.
     ///
     /// One device ID, asked twice, rather than two properties that each ask
-    /// which device is default. The default input can change between two such
-    /// reads — a headset connects, and macOS makes it the input — and the pair
-    /// then describes two devices: a wired microphone reported as Bluetooth,
-    /// or the other way round. The callers of the single properties print a
-    /// name and nothing else; this is the one that decides with both.
-    static var inputDevice: (name: String, isBluetooth: Bool)? {
-        guard let deviceID = defaultInputDeviceID, let name = name(of: deviceID) else { return nil }
-        return (name, isBluetooth(deviceID))
+    /// which device is default. Between two such reads the answer can change —
+    /// a headset connects, and macOS makes it the input — and the pair would
+    /// then describe two devices: a wired microphone reported as Bluetooth, or
+    /// the other way round.
+    var boundDevice: (name: String, isBluetooth: Bool)? {
+        stateLock.lock()
+        let deviceID = bound?.device
+        stateLock.unlock()
+        guard let deviceID, let name = Self.name(of: deviceID) else { return nil }
+        return (name, Self.isBluetooth(deviceID))
     }
 
     private static func name(of deviceID: AudioDeviceID) -> String? {

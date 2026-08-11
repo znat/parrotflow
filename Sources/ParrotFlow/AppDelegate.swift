@@ -82,12 +82,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// without Accessibility — an app condition has no business needing a
     /// permission that gating a stage by app does not otherwise require.
     private var appAtPress: Pipeline.App?
-    /// Which microphone the engine opened for this recording, and whether it
-    /// is on Bluetooth. Read when recording starts and frozen onto the `Press`
-    /// when the clip is handed to the decoder, so the microphone notice names
-    /// the device that recorded the words rather than whatever is default a
-    /// second later. One slot is enough: only one recording runs at a time,
-    /// and it is taken the moment that recording stops.
+    /// Which microphone the engine is recording through, and whether it is on
+    /// Bluetooth. Read when recording starts and frozen onto the `Press` when
+    /// the clip is handed to the decoder, so the microphone notice names the
+    /// device that recorded the words rather than whatever is default a second
+    /// later. One slot is enough: only one recording runs at a time, and it is
+    /// taken the moment that recording stops.
     private var micAtPress: (name: String, isBluetooth: Bool)?
     /// That same app's icon, for the pill. Held apart from `appAtPress` because
     /// `Pipeline.App` is what the pipeline matches on and has no business
@@ -955,10 +955,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             try recorder.start(config: config)
-            // Asked here, where the engine has just opened the device, and not
-            // when the transcript comes back. One lookup, so the name and the
-            // transport are the same device's — see `Recorder.inputDevice`.
-            micAtPress = Recorder.inputDevice
+            // The engine's own device, asked here rather than when the
+            // transcript comes back. Not the system default: that is a
+            // different question the moment a headset connects, and the notice
+            // is about the microphone these words went through. See
+            // `Recorder.boundDevice`.
+            micAtPress = recorder.boundDevice
         } catch {
             // A notice, not an alert. `runModal` holds the main run loop, and
             // the hotkey is delivered on it: one failed press behind a modal
