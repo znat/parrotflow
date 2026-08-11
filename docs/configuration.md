@@ -301,6 +301,10 @@ what a command produces goes back to the clipboard. So the ⌘V you were about t
 press pastes the corrected version. The notices those endings used to put on the
 pill are in the menu bar now, under the parrot.
 
+Only over the dictation itself. Copy something else while the panel is open, or
+while a transform is running, and the clipboard is yours rather than the
+dictation's — the result is not written over it, and the menu bar says so.
+
 | | Does |
 |---|---|
 | a chip's letter — `C`, `G` | Runs that command |

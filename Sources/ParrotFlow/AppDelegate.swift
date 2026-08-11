@@ -2068,7 +2068,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Nothing landed in a field on the clipboard endings, so the diff has
         // nothing to find. Whatever it did find would be something else moving
         // on screen.
-        if landing == .field, let pane, let element = press.element {
+        if case .field = landing, let pane, let element = press.element {
             findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
         }
     }
@@ -2455,8 +2455,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         enum Landing {
             /// Pasted into `element`, which was confirmed focused at the paste.
             case field
-            /// Left on the clipboard. Nothing was written into any field.
-            case clipboard
+            /// Left on the clipboard, with `NSPasteboard.changeCount` as it was
+            /// straight after. Anything copied since — by the user or by
+            /// anything else on the machine — moves that count, and then the
+            /// clipboard is not this dictation's any more. See `replace`.
+            case clipboard(change: Int)
+
+            /// The clipboard as it is right now.
+            ///
+            /// Called immediately after the words were put there, so the count
+            /// it takes is the one our own write produced. Read any later and
+            /// it would be agreeing with whatever had happened in between.
+            static func clipboardNow() -> Landing {
+                .clipboard(change: NSPasteboard.general.changeCount)
+            }
         }
     }
 
@@ -2502,7 +2514,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let original = target.original.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !original.isEmpty, !corrected.isEmpty, corrected != original else { return true }
 
-        if target.landing == .clipboard {
+        if case .clipboard(let change) = target.landing {
+            // Only over our own words. A correction panel can be open for as
+            // long as it takes to think about a spelling, and a transform takes
+            // seconds — copy anything in that time and the clipboard is yours
+            // rather than this dictation's. Writing over it would take
+            // something away that this app never put there, and losing a
+            // rewrite costs a second attempt.
+            guard NSPasteboard.general.changeCount == change else {
+                Log.write("offer: the clipboard has been used since the dictation;"
+                    + " \(what) was not written over it")
+                flash("Clipboard has changed — \(what) not copied", tone: .caution)
+                return false
+            }
             Log.write("offer: the dictation went to the clipboard; \(what) went there too")
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(corrected, forType: .string)
@@ -3191,7 +3215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // offer, and a notice on it would be the offer's own surface
                 // saying something else.
                 setLabel("Focus moved — the transcription is on your clipboard", clearAfter: 4)
-                showCorrectOffer(for: press, landing: .clipboard)
+                showCorrectOffer(for: press, landing: .clipboardNow())
                 updateUI()
                 return
             }
@@ -3223,7 +3247,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // In the menu bar, for the same reason as above: the pill is the
             // offer's.
             setLabel("Nowhere to type — the transcription is on your clipboard", clearAfter: 4)
-            showCorrectOffer(for: press, landing: .clipboard)
+            showCorrectOffer(for: press, landing: .clipboardNow())
             updateUI()
             return
         }
@@ -3238,13 +3262,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Deliberate clipboard mode — confirm it landed.
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
             setLabel("Copied — ⌘V to paste", clearAfter: 4)
-            showCorrectOffer(for: press, landing: .clipboard)
+            showCorrectOffer(for: press, landing: .clipboardNow())
         case .clipboardOnly:
             if config.feedback.sound { NSSound(named: "Glass")?.play() }
             // Don't nag on every dictation — the text is safe on the clipboard.
             Log.write("Accessibility not granted; left transcript on the clipboard")
             setLabel("Copied — grant Accessibility to auto-paste", clearAfter: 4)
-            showCorrectOffer(for: press, landing: .clipboard)
+            showCorrectOffer(for: press, landing: .clipboardNow())
         }
         updateUI()
     }
