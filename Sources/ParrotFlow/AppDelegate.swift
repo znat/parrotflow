@@ -82,6 +82,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// without Accessibility — an app condition has no business needing a
     /// permission that gating a stage by app does not otherwise require.
     private var appAtPress: Pipeline.App?
+    /// Which microphone the engine opened for this recording, and whether it
+    /// is on Bluetooth. Read when recording starts and frozen onto the `Press`
+    /// when the clip is handed to the decoder, so the microphone notice names
+    /// the device that recorded the words rather than whatever is default a
+    /// second later. One slot is enough: only one recording runs at a time,
+    /// and it is taken the moment that recording stops.
+    private var micAtPress: (name: String, isBluetooth: Bool)?
     /// That same app's icon, for the pill. Held apart from `appAtPress` because
     /// `Pipeline.App` is what the pipeline matches on and has no business
     /// carrying an image around.
@@ -112,6 +119,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// And the app it belonged to, for the same reason: an offer taken
         /// later has to write back into the window that was dictated into.
         let owner: NSRunningApplication?
+        /// The microphone this dictation was recorded on, and whether it was on
+        /// Bluetooth. Frozen for the same reason as everything above it: the
+        /// default input can change while the decoder runs — a headset
+        /// disconnects, somebody picks another device in System Settings — and
+        /// the notice is about the microphone that recorded these words. See
+        /// `micAtPress`.
+        let mic: String?
+        let micIsBluetooth: Bool
     }
 
     /// The words the offer on screen is about, and the field they went into.
@@ -940,6 +955,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         do {
             try recorder.start(config: config)
+            // Asked here, where the engine has just opened the device, and not
+            // when the transcript comes back. Two reads of a CoreAudio
+            // property, next to the call that opened the microphone.
+            micAtPress = Recorder.inputDeviceName.map { ($0, Recorder.inputIsBluetooth) }
         } catch {
             // A notice, not an alert. `runModal` holds the main run loop, and
             // the hotkey is delivered on it: one failed press behind a modal
@@ -1209,7 +1228,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // And the press itself, frozen the same way and for the same reason.
         // `pressRun` is still this dictation's here: a press that ends a
         // recording does not bump it — see `handleHotKeyPress`.
-        let press = Press(run: pressRun, element: focus?.element, owner: focus?.owner)
+        // And the microphone that recorded it, read when the engine opened the
+        // device. Taken here rather than read at the end for the same reason as
+        // the rest: the default input can change while the decoder runs.
+        let press = Press(
+            run: pressRun, element: focus?.element, owner: focus?.owner,
+            mic: micAtPress?.name, micIsBluetooth: micAtPress?.isBluetooth ?? false
+        )
         Task { [weak self] in
             do {
                 // "Transcribing…" is the truth until the decoder is done, and
@@ -2019,10 +2044,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Above the guards below, which are all about the offer rather than
         // about the microphone: `correct_offer: false` is a choice about
         // commands on the pill, an empty transcript is the symptom itself, and
-        // a dictation that lost the pill to a newer one still used the same
-        // microphone. It is said once per microphone, so none of them can make
-        // it say it twice either.
-        micNotice.showIfNeeded()
+        // a dictation that lost the pill to a newer one was still recorded on
+        // the same microphone. `MicNotice` decides for itself whether there is
+        // anything to say, so none of them can make it say it twice either.
+        //
+        // The microphone comes off the press, not off CoreAudio. This runs when
+        // the decoder is done, and by then the default input can be another
+        // device — see `micAtPress`.
+        micNotice.showIfNeeded(mic: press.mic, isBluetooth: press.micIsBluetooth)
 
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),

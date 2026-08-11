@@ -20,24 +20,45 @@ final class MicNotice {
     private var panel: NSPanel?
     private let model = MicNoticeModel()
 
-    /// The microphones already spoken about, so each is mentioned once for as
-    /// long as the app is running. Changing to another and back says it again,
-    /// which is right: that is a decision being revisited.
-    private var told: Set<String> = []
+    /// The microphone the last dictation was recorded on, whether or not
+    /// anything was said about it.
+    ///
+    /// One slot rather than a list of the ones already mentioned, and that is
+    /// the difference between "once ever" and what this is meant to be.
+    /// Changing microphone forgets the one you left, so coming back to it says
+    /// it again — that is a decision being revisited. A list cannot do that: it
+    /// remembers every microphone the app has ever seen and never says anything
+    /// twice.
+    ///
+    /// It only ever sees the microphone a dictation was on. Switching away and
+    /// back with no dictation in between is not a change this can see, and
+    /// nothing is said.
+    private var lastMic: String?
 
-    /// After a dictation, if this microphone is on Bluetooth and has not been
-    /// mentioned yet. The transport is asked of CoreAudio — see
-    /// `Recorder.inputIsBluetooth` for why it is the transport and not the name.
-    func showIfNeeded() {
-        guard Recorder.inputIsBluetooth, let mic = Recorder.inputDeviceName else { return }
-        guard !told.contains(mic) else { return }
-        told.insert(mic)
+    /// After a dictation, if it was recorded on Bluetooth and that microphone
+    /// is not the one the last dictation used.
+    ///
+    /// The microphone is passed in rather than asked for here. It is frozen
+    /// when the recording starts — see `micAtPress` in `AppDelegate` — because
+    /// the default input can change while the decoder runs, and this is about
+    /// the microphone that recorded these words. The transport comes from
+    /// CoreAudio; see `Recorder.inputIsBluetooth` for why it is the transport
+    /// and not the name.
+    func showIfNeeded(mic: String?, isBluetooth: Bool) {
+        guard let mic else { return }
+        guard lastMic != mic else { return }
+        // Set for a wired microphone too. This is which microphone was last
+        // decided about, not which one was last complained about, and a
+        // dictation on the built-in mic is what makes going back to the
+        // headset a new decision.
+        lastMic = mic
+        guard isBluetooth else { return }
 
         Log.write("mic: \(mic) is on Bluetooth; said so once")
         show(mic: mic)
     }
 
-    /// Put it on screen for a named microphone, transport and `told` aside.
+    /// Put it on screen for a named microphone, transport and `lastMic` aside.
     ///
     /// Split out so `--panels microphone` raises the surface the app raises,
     /// rather than a copy of it that can drift.

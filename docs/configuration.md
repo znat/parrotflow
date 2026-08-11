@@ -284,10 +284,15 @@ with nothing on screen to say why.
 
 So a notice appears in the bottom right after a dictation, saying which
 microphone it is and to use the built-in one instead. *Why* opens the three
-reasons; *Got it* dismisses it. It is said once per microphone for as long as
-the app runs — not at launch, when you are not dictating and it would be advice
-about nothing, and not every time, which is nagging. Change the input device
-and change back and it is said again: that is a decision being revisited.
+reasons; *Got it* dismisses it. It is said once for as long as you stay on that
+microphone — not at launch, when you are not dictating and it would be advice
+about nothing, and not every time, which is nagging. Dictate on another
+microphone and come back to this one and it is said again: that is a decision
+being revisited.
+
+The microphone it names is the one that recorded the words, read when the
+recording starts. Change the input device while a transcript is still coming
+back and the notice still talks about the microphone you actually used.
 
 The transport is what is asked about, not the name. A list of brands is wrong
 the day somebody buys a headset nobody thought of, and the transport is the
