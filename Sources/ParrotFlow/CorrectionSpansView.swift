@@ -23,6 +23,10 @@ struct WordField: NSViewRepresentable {
     /// Where to put the caret when focus arrives. Nil is the end, which is
     /// where you want it when you have come to a word to change it.
     let caret: Int?
+    /// `SpansModel.focusTick`. It is here so a focus asked for twice with the
+    /// same value still reaches `updateNSView` — see the model for why the
+    /// panel does that.
+    let tick: Int
 
     var onChange: (String) -> Void
     var onJoinBack: () -> Void
@@ -56,13 +60,24 @@ struct WordField: NSViewRepresentable {
 
         guard focused else { return }
         guard let window = field.window else { return }
+        // A new tick is the model asking for the caret again. It asks twice on
+        // opening, and the second ask is the one that can work.
+        if context.coordinator.tick != tick {
+            context.coordinator.tick = tick
+            context.coordinator.placeCaret = true
+        }
         let editing = window.firstResponder === field.currentEditor()
         if !editing { window.makeFirstResponder(field) }
         if let editor = field.currentEditor() {
             let at = caret.map { min($0, field.stringValue.count) } ?? field.stringValue.count
             let wanted = NSRange(location: at, length: 0)
-            if !editing || editor.selectedRange != wanted, context.coordinator.placeCaret {
-                editor.selectedRange = wanted
+            // Cleared once the request has been answered, and the caret already
+            // being there is an answer. Left set, it would fire on the next
+            // redraw instead — which is the redraw that follows your first
+            // keystroke, and it would drag the caret back to the front of the
+            // word you are typing in.
+            if context.coordinator.placeCaret {
+                if !editing || editor.selectedRange != wanted { editor.selectedRange = wanted }
                 context.coordinator.placeCaret = false
             }
         }
@@ -93,8 +108,13 @@ struct WordField: NSViewRepresentable {
         /// been honoured — otherwise every redraw drags the caret back and you
         /// cannot move within a word.
         var placeCaret = true
+        /// The last tick honoured, so the next one is seen as new.
+        var tick: Int
 
-        init(_ owner: WordField) { self.owner = owner }
+        init(_ owner: WordField) {
+            self.owner = owner
+            self.tick = owner.tick
+        }
 
         func controlTextDidChange(_ note: Notification) {
             guard let field = note.object as? NSTextField else { return }

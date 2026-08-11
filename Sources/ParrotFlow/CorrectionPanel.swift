@@ -48,10 +48,22 @@ final class CorrectionPanel {
         reposition()
         NSApp.activate(ignoringOtherApps: true)
         panel?.riseIntoView(makeKey: true)
-        // Again, now that there is a window to be first responder in. Setting
-        // it before the panel exists gets the bar under the first word right
-        // and the caret nowhere.
-        model.focusFirst()
+
+        // Focus again on the next turn of the runloop, and not before. Two
+        // things have to be true before a field can show a caret, and neither
+        // is true on this turn: there has to be a window to be first responder
+        // in, and that window has to be key — a field made first responder in a
+        // window that is not key draws no insertion point. `NSApp.activate`
+        // only lands on the next turn, so the key status is asked for again
+        // there rather than trusted here.
+        //
+        // The focus itself is unchanged from the one `load` set, so it takes
+        // `focusTick` to make it a change SwiftUI redraws for.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let panel = self.panel else { return }
+            if !panel.isKeyWindow { panel.makeKeyAndOrderFront(nil) }
+            self.model.focusFirst()
+        }
     }
 
     private func commit() {
@@ -562,6 +574,7 @@ private struct SpanView: View {
             isChanged: span.isChanged,
             focused: model.focus?.span == span.id && model.focus?.word == at,
             caret: model.focus?.at,
+            tick: model.focusTick,
             onChange: { model.typed($0, span: span.id, word: at) },
             onJoinBack: { model.joinBack(span: span.id, word: at) },
             onEdge: { forward in

@@ -61,6 +61,15 @@ final class SpansModel: ObservableObject {
     @Published var spans: [Span] = []
     /// Which word has the caret, and where to put it after a rebuild.
     @Published var focus: SpanCaret?
+    /// Bumped every time the focus is asked for, even when it lands on the word
+    /// that already has it.
+    ///
+    /// `WordField` is driven by the value of `focus`, and an identical value is
+    /// not a change: SwiftUI does not redraw, so `makeFirstResponder` never
+    /// runs. That is exactly the opening focus — set once at load, asked for
+    /// again once the panel has a window — so the counter is what makes the
+    /// second ask a real one.
+    @Published private(set) var focusTick = 0
     /// Held back until the first edit — before you have touched anything the
     /// panel has one job, and a row of keys under it is a manual for a thing
     /// you have not started doing.
@@ -151,15 +160,21 @@ final class SpansModel: ObservableObject {
 
     // MARK: - What comes out
 
-    /// The caret starts in the first word. Without it the sentence reads as a
-    /// label: the panel was tested and the one thing said about it was that it
-    /// did not look editable.
+    /// The caret starts before the first letter of the first word. Without it
+    /// the sentence reads as a label: the panel was tested and the one thing
+    /// said about it was that it did not look editable.
+    ///
+    /// `at: 0` rather than the end, which is what nil means everywhere else.
+    /// Nil is right when you have arrived at a word to change it; here nothing
+    /// has been chosen yet, and the caret sits at the start of the sentence the
+    /// way it would in any other field you had just opened.
     ///
     /// Called again once the panel is on screen. A field can only be made first
     /// responder through its window, and when the sentence loads there is no
-    /// window yet.
+    /// window yet. See `focusTick` for what makes the second call count.
     func focusFirst() {
-        focus = spans.first.map { SpanCaret(span: $0.id, word: 0, at: nil) }
+        focus = spans.first.map { SpanCaret(span: $0.id, word: 0, at: 0) }
+        focusTick += 1
     }
 
     /// Anything to press the button for. Either a rule to teach, or a sentence
