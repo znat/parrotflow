@@ -723,13 +723,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let before = CaretAnchor.snapshot(of: element)
                 DispatchQueue.main.async {
                     // Kept for the press it was taken for, however many
-                    // presses have started since: each of those has its own,
-                    // and this one is still going to be transcribed. Unless it
-                    // is not — cancelled with Escape while this copy was still
-                    // running — in which case its run has been retired and
-                    // there is nothing left to compare a pane against.
-                    guard let self, let before, self.pressesInFlight.contains(run)
-                    else { return }
+                    // presses have started since and whether or not that press
+                    // has already been retired: a short dictation can be
+                    // written before this copy finishes, and refusing the pane
+                    // then would leave the offer with nothing to compare
+                    // against — which is the whole thing this exists to do.
+                    // A pane nobody comes back for is a lifetime, not a leak,
+                    // and the sweep below is what bounds it.
+                    guard let self, let before else { return }
                     let now = Date()
                     self.screenAtPress[run] = (before, now)
                     self.screenAtPress = self.screenAtPress.filter { run, pane in
