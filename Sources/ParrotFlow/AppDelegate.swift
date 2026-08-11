@@ -2081,17 +2081,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //
         // The correction panel rather than the preview panel — the offer names
         // one thing and that is the surface that does it. Over the sentence
-        // frozen when the offer went up, so a dictation that finished in the
-        // meantime cannot move what is being corrected. Saving is the panel's
-        // own, unchanged: the same `saveCorrections` the spoken command uses.
-        guard let text = offered?.target.original ?? lastTranscript else { return }
+        // frozen when the offer went up, and back into the field frozen with
+        // it: the panel can be open for a while, and `focusAtPress` by then can
+        // belong to a dictation that finished in the meantime. Teaching a rule
+        // is the panel's own and is unchanged.
+        guard let target = offered?.target else { return }
         Log.write("offer: taken; opening the correction panel")
+        // Nothing here is a selection, and the offer's own target is what says
+        // where the words go. Cleared so no later save can read one left behind
+        // by an earlier flow.
         pendingSelection = nil
         correctionPanel.onSave = { [weak self] rules, correctedText in
-            self?.saveCorrections(rules, correctedText: correctedText)
+            self?.saveOfferedCorrection(rules, correctedText: correctedText, into: target)
         }
-        correctionPanel.onCancel = { [weak self] in self?.pendingSelection = nil }
-        correctionPanel.show(selection: text)
+        correctionPanel.onCancel = { Log.write("offer: correction dismissed") }
+        correctionPanel.show(selection: target.original)
     }
 
     /// This press's dictation is over, however it ended. Drops the pane it
@@ -2268,10 +2272,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// a word is what "Hey parrot, correct" and the correction panel are for,
     /// and quietly writing a rule out of every fixed sentence would fill
     /// config.yaml with pairs that will never recur.
-    private func replace(_ target: Correction, with edited: String) {
+    ///
+    /// Returns whether the field has the sentence. False means it is on the
+    /// clipboard instead and that has already been said on screen, so a caller
+    /// with more to report should stop rather than talk over it. Nothing to
+    /// change counts as true: the field already says what was asked for.
+    @discardableResult
+    private func replace(_ target: Correction, with edited: String) -> Bool {
         let corrected = edited.trimmingCharacters(in: .whitespacesAndNewlines)
         let original = target.original.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !original.isEmpty, !corrected.isEmpty, corrected != original else { return }
+        guard !original.isEmpty, !corrected.isEmpty, corrected != original else { return true }
 
         if let owner = target.owner, !owner.isActive {
             owner.activate()
@@ -2297,7 +2307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         lastTranscript = corrected
                     }
                     applied("Correction")
-                    return
+                    return true
                 case .failed, .notAttempted:
                     break
                 }
@@ -2312,6 +2322,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(corrected, forType: .string)
         flash("Correction copied — this app won't let me edit it", tone: .caution)
+        return false
     }
 
     private func beginCorrection() {
@@ -2334,10 +2345,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         correctionPanel.show(selection: selection?.text ?? "")
     }
 
-    private func saveCorrections(
-        _ rules: [(heard: String, corrected: String)],
-        correctedText: String
-    ) {
+    /// Write out what the panel taught, one rule at a time.
+    ///
+    /// False means one could not be written and the user has already been shown
+    /// why. Nothing after it should run: a correction that half-saved and then
+    /// went on to rewrite the field would leave the two disagreeing.
+    private func learn(_ rules: [(heard: String, corrected: String)]) -> Bool {
         for rule in rules {
             do {
                 try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
@@ -2345,9 +2358,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Trace.correction(heard: rule.heard, corrected: rule.corrected, via: "command")
             } catch {
                 presentAlert(title: "Could not save the rule", message: error.localizedDescription)
-                pendingSelection = nil
-                return
+                return false
             }
+        }
+        return true
+    }
+
+    /// Save what the panel taught, then write the sentence back into the field
+    /// the offer was about.
+    ///
+    /// Separate from `saveCorrections` for one reason: the destination. That
+    /// one has to work out where the words go, and falls back to `focusAtPress`
+    /// and then to the clipboard. This one already knows — the offer froze the
+    /// element and its app when it went up. The panel can be open for as long
+    /// as it takes to think about a spelling, and push-to-talk does not wait
+    /// for the previous transcript, so anything read at this moment can belong
+    /// to a newer dictation. `replace` carries the same care the tapped offer
+    /// takes: focus handed back first, a refusal to write unless the field is
+    /// still the one that was dictated into, and the clipboard when it cannot.
+    private func saveOfferedCorrection(
+        _ rules: [(heard: String, corrected: String)],
+        correctedText: String,
+        into target: Correction
+    ) {
+        guard learn(rules) else { return }
+        // On the clipboard, and `replace` has said so. A rule notice on top of
+        // that would bury the one thing you need to act on.
+        guard replace(target, with: correctedText) else { return }
+        switch rules.count {
+        // Nothing taught, so `replace` has already said the only thing there
+        // is to say.
+        case 0: break
+        case 1: flash("Saved  \(rules[0].heard) → \(rules[0].corrected)", tone: .done)
+        default: flash("Saved \(rules.count) rules", tone: .done)
+        }
+    }
+
+    private func saveCorrections(
+        _ rules: [(heard: String, corrected: String)],
+        correctedText: String
+    ) {
+        guard learn(rules) else {
+            pendingSelection = nil
+            return
         }
 
         // Put the corrected phrase back where it came from, whether or not any
