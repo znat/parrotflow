@@ -20,7 +20,7 @@ final class MicNotice {
     private var panel: NSPanel?
     private let model = MicNoticeModel()
 
-    /// The microphone the last dictation was recorded on, whether or not
+    /// The device the last dictation was recorded on, by UID, whether or not
     /// anything was said about it.
     ///
     /// One slot rather than a list of the ones already mentioned, and that is
@@ -30,35 +30,40 @@ final class MicNotice {
     /// remembers every microphone the app has ever seen and never says anything
     /// twice.
     ///
+    /// The UID and not the name, because the name is not an identity: two
+    /// microphones can answer to "Headset Microphone", and one of them going
+    /// quiet on you is the whole subject of this file.
+    ///
     /// It only ever sees the microphone a dictation was on. Switching away and
     /// back with no dictation in between is not a change this can see, and
     /// nothing is said.
-    private var lastMic: String?
+    private var lastDevice: String?
 
     /// After a dictation, if it was recorded on Bluetooth and that microphone
     /// is not the one the last dictation used.
     ///
-    /// The microphone is passed in rather than asked for here. It is frozen
-    /// when the recording starts — see `micAtPress` in `AppDelegate` — because
-    /// the default input can change while the decoder runs, and this is about
-    /// the microphone that recorded these words. The transport comes from
+    /// The device is passed in rather than asked for here. It is frozen when
+    /// the recording starts — see `micAtPress` in `AppDelegate` — because the
+    /// default input can change while the decoder runs, and this is about the
+    /// microphone that recorded these words. The transport comes from
     /// CoreAudio; see `Recorder.isBluetooth` for why it is the transport and
     /// not the name.
-    func showIfNeeded(mic: String?, isBluetooth: Bool) {
-        guard let mic else { return }
-        guard lastMic != mic else { return }
+    func showIfNeeded(_ device: Recorder.InputDevice?) {
+        guard let device else { return }
+        guard lastDevice != device.uid else { return }
         // Set for a wired microphone too. This is which microphone was last
         // decided about, not which one was last complained about, and a
         // dictation on the built-in mic is what makes going back to the
         // headset a new decision.
-        lastMic = mic
-        guard isBluetooth else { return }
+        lastDevice = device.uid
+        guard device.isBluetooth else { return }
 
-        Log.write("mic: \(mic) is on Bluetooth; said so once")
-        show(mic: mic)
+        Log.write("mic: \(device.name) is on Bluetooth; said so once")
+        show(mic: device.name)
     }
 
-    /// Put it on screen for a named microphone, transport and `lastMic` aside.
+    /// Put it on screen for a named microphone, transport and `lastDevice`
+    /// aside.
     ///
     /// Split out so `--panels microphone` raises the surface the app raises,
     /// rather than a copy of it that can drift.

@@ -828,7 +828,20 @@ final class Recorder {
         return name(of: deviceID)
     }
 
-    /// The device this recorder is bound to, named and with its transport.
+    /// A microphone: what to call it, and what to decide about it with.
+    struct InputDevice {
+        /// CoreAudio's UID for the device. What tells two microphones apart,
+        /// including two that answer to the same name — a headset and a webcam
+        /// both called "Headset Microphone" are one string and two devices.
+        /// Stable across unplugging and reconnecting, which `AudioDeviceID` is
+        /// not.
+        let uid: String
+        /// What System Settings calls it, and what the notice says out loud.
+        let name: String
+        let isBluetooth: Bool
+    }
+
+    /// The device this recorder is bound to.
     ///
     /// Asked of the engine's own binding, not of the system default. `bound` is
     /// the device the running engine was prepared against, which is the one the
@@ -836,17 +849,40 @@ final class Recorder {
     /// `start` returns, and asking again would name a microphone that heard
     /// nothing. Nil before the first engine is built.
     ///
-    /// One device ID, asked twice, rather than two properties that each ask
+    /// One device ID, asked three times, rather than properties that each ask
     /// which device is default. Between two such reads the answer can change —
-    /// a headset connects, and macOS makes it the input — and the pair would
+    /// a headset connects, and macOS makes it the input — and the answer would
     /// then describe two devices: a wired microphone reported as Bluetooth, or
     /// the other way round.
-    var boundDevice: (name: String, isBluetooth: Bool)? {
+    var boundDevice: InputDevice? {
         stateLock.lock()
         let deviceID = bound?.device
         stateLock.unlock()
         guard let deviceID, let name = Self.name(of: deviceID) else { return nil }
-        return (name, Self.isBluetooth(deviceID))
+        // The name stands in where a device will not give a UID. Two devices
+        // sharing a name is rarer than one refusing to identify itself, and
+        // this string is only ever compared with another read of itself.
+        return InputDevice(
+            uid: Self.uid(of: deviceID) ?? name,
+            name: name,
+            isBluetooth: Self.isBluetooth(deviceID)
+        )
+    }
+
+    /// The device's own identifier, the one that outlives a reconnection.
+    private static func uid(of deviceID: AudioDeviceID) -> String? {
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyDeviceUID,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var uid: CFString?
+        var size = UInt32(MemoryLayout<CFString?>.size)
+        let status = withUnsafeMutablePointer(to: &uid) {
+            AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, $0)
+        }
+        guard status == noErr, let uid = uid as String?, !uid.isEmpty else { return nil }
+        return uid
     }
 
     private static func name(of deviceID: AudioDeviceID) -> String? {

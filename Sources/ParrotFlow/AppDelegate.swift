@@ -82,13 +82,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// without Accessibility — an app condition has no business needing a
     /// permission that gating a stage by app does not otherwise require.
     private var appAtPress: Pipeline.App?
-    /// Which microphone the engine is recording through, and whether it is on
-    /// Bluetooth. Read when recording starts and frozen onto the `Press` when
-    /// the clip is handed to the decoder, so the microphone notice names the
-    /// device that recorded the words rather than whatever is default a second
-    /// later. One slot is enough: only one recording runs at a time, and it is
-    /// taken the moment that recording stops.
-    private var micAtPress: (name: String, isBluetooth: Bool)?
+    /// Which microphone the engine is recording through. Read when recording
+    /// starts and frozen onto the `Press` when the clip is handed to the
+    /// decoder, so the microphone notice names the device that recorded the
+    /// words rather than whatever is default a second later. One slot is
+    /// enough: only one recording runs at a time, and it is taken the moment
+    /// that recording stops.
+    private var micAtPress: Recorder.InputDevice?
     /// That same app's icon, for the pill. Held apart from `appAtPress` because
     /// `Pipeline.App` is what the pipeline matches on and has no business
     /// carrying an image around.
@@ -119,14 +119,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// And the app it belonged to, for the same reason: an offer taken
         /// later has to write back into the window that was dictated into.
         let owner: NSRunningApplication?
-        /// The microphone this dictation was recorded on, and whether it was on
-        /// Bluetooth. Frozen for the same reason as everything above it: the
-        /// default input can change while the decoder runs — a headset
-        /// disconnects, somebody picks another device in System Settings — and
-        /// the notice is about the microphone that recorded these words. See
-        /// `micAtPress`.
-        let mic: String?
-        let micIsBluetooth: Bool
+        /// The microphone this dictation was recorded on. Frozen for the same
+        /// reason as everything above it: the default input can change while
+        /// the decoder runs — a headset disconnects, somebody picks another
+        /// device in System Settings — and the notice is about the microphone
+        /// that recorded these words. See `micAtPress`.
+        let mic: Recorder.InputDevice?
     }
 
     /// The words the offer on screen is about, and the field they went into.
@@ -1234,8 +1232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // device. Taken here rather than read at the end for the same reason as
         // the rest: the default input can change while the decoder runs.
         let press = Press(
-            run: pressRun, element: focus?.element, owner: focus?.owner,
-            mic: micAtPress?.name, micIsBluetooth: micAtPress?.isBluetooth ?? false
+            run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress
         )
         Task { [weak self] in
             do {
@@ -2053,7 +2050,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The microphone comes off the press, not off CoreAudio. This runs when
         // the decoder is done, and by then the default input can be another
         // device — see `micAtPress`.
-        micNotice.showIfNeeded(mic: press.mic, isBluetooth: press.micIsBluetooth)
+        micNotice.showIfNeeded(press.mic)
 
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
