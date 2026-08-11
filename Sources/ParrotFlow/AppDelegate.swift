@@ -148,6 +148,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// most a prompt stage.
     private static let paneLifetime: TimeInterval = 300
 
+    /// The presses whose dictation was thrown away rather than delivered.
+    ///
+    /// "Not in flight" is two different things, and only one of them should
+    /// cost a press its pane. A dictation that finished and pasted is retired
+    /// and still wants its pane: the offer is on screen and the words are what
+    /// the pane is about. One that was cancelled wants nothing ever again.
+    /// Guarding the snapshot store on the first meaning threw the offer's own
+    /// baseline away; not guarding it at all kept a cancelled press's pane for
+    /// the length of the sweep. This is the difference, written down.
+    ///
+    /// Bounded by construction: only a press that dispatched a snapshot is ever
+    /// put here, and that snapshot's own callback takes it out again.
+    private var cancelledPresses: Set<Int> = []
+
     /// The presses that took a pane and whose dictation has not ended yet.
     ///
     /// The age above is a backstop and this is what stops it hitting a live
@@ -743,7 +757,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // against — which is the whole thing this exists to do.
                     // A pane nobody comes back for is a lifetime, not a leak,
                     // and the sweep below is what bounds it.
-                    guard let self, let before else { return }
+                    //
+                    // Cancelled is the one exception, and the only one: that
+                    // press is never going to write a word, so its pane is
+                    // dropped here rather than waiting out the sweep. Taken out
+                    // of the set as it is read, which is what keeps the set
+                    // from growing. See `cancelledPresses`.
+                    guard let self else { return }
+                    guard self.cancelledPresses.remove(run) == nil else { return }
+                    guard let before else { return }
                     let now = Date()
                     self.screenAtPress[run] = (before, now)
                     self.screenAtPress = self.screenAtPress.filter { run, pane in
@@ -753,9 +775,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
                     // A short dictation can be transcribed and written while
                     // this copy is still running, so the offer can already be
-                    // up. Then this is the one other moment the search can
+                    // up and this press already retired. Retired is not
+                    // cancelled: this is the one other moment the search can
                     // start, and it starts here — for this press alone, and
-                    // only while this press still owns the offer.
+                    // only while the offer on screen is still the one it
+                    // raised, which is a run-owned thing now and not a slot a
+                    // later dictation can move. See `offeredCorrection`.
                     //
                     // Whether this snapshot is a *before* is left to the diff.
                     // Nothing here can know: the paste is a posted ⌘V and the
@@ -880,7 +905,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // by the time someone presses the hotkey, and a refusal
                     // here should not offer to cancel an install that finished
                     // days ago.
-                    self.dictationEnded(self.pressRun)
+                    self.dictationCancelled(self.pressRun)
                     self.permissions.show(.revisiting)
                 }
             }
@@ -901,7 +926,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // failure people describe as "the app stopped working", and a
             // notice that fades in four seconds is gone by the time they look.
             captureProblem(error.localizedDescription)
-            dictationEnded(pressRun)
+            dictationCancelled(pressRun)
             return
         }
 
@@ -964,7 +989,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // `stopRecording`, so nothing else would retire it — and the pane
             // it took is the largest thing the app holds. A snapshot still
             // being copied lands on a run that has already gone and is dropped.
-            dictationEnded(pressRun)
+            dictationCancelled(pressRun)
             tickTimer?.invalidate(); tickTimer = nil
             pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
             releaseTail?.invalidate(); releaseTail = nil
@@ -1069,7 +1094,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // coming, so this press's dictation ends here. Everything that does
         // reach a transcript ends on one of `transcribe`'s own paths.
         if recording == nil || !config.transcription.enabled {
-            dictationEnded(pressRun)
+            dictationCancelled(pressRun)
         }
 
         if let reason {
@@ -1205,7 +1230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.runsInFlight -= 1
                     guard !self.wasCancelled(run) else {
                         Log.write("escape: dropped the transcript of a cancelled run")
-                        self.dictationEnded(press.run)
+                        self.dictationCancelled(press.run)
                         self.stopWatchingForEscapeIfIdle()
                         self.updateUI()
                         return
@@ -1221,8 +1246,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     if self.transcriptionRun == run { self.endProgress() }
                     self.runsInFlight -= 1
                     self.stopWatchingForEscapeIfIdle()
-                    // Cancelled or failed, this dictation is over either way.
-                    self.dictationEnded(press.run)
+                    // Cancelled or failed, nothing is going to be written.
+                    self.dictationCancelled(press.run)
                     guard !self.wasCancelled(run) else { return }
                     Log.write("transcription failed: \(error.localizedDescription)")
                     self.presentAlert(title: "Transcription failed", message: error.localizedDescription)
@@ -1991,6 +2016,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func dictationEnded(_ run: Int) {
         screenAtPress.removeValue(forKey: run)
         pressesInFlight.remove(run)
+        cancelledPresses.remove(run)
+    }
+
+    /// Over, and with nothing written. The pane goes as it does for any other
+    /// ending, and the press is marked so a snapshot still being copied is
+    /// dropped when it lands instead of sitting out the sweep.
+    private func dictationCancelled(_ run: Int) {
+        dictationEnded(run)
+        cancelledPresses.insert(run)
     }
 
     /// For an app with no caret: keep asking what changed until the words show
@@ -2090,7 +2124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Under the minimum, so the recorder deletes the clip and gives back
         // nothing. Nothing to transcribe, nothing to deliver.
         _ = recorder.stop(config: config)
-        dictationEnded(pressRun)
+        dictationCancelled(pressRun)
         tickTimer?.invalidate(); tickTimer = nil
         pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
         releaseTail?.invalidate(); releaseTail = nil
