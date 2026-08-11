@@ -275,6 +275,17 @@ real one.
 that shows the mic is hot. Both on by default; the pill is the only thing on
 screen that says recording is happening, so turning it off is a real choice.
 
+**Where the pill appears.** Next to the place your words are about to go, so you
+can see where they are headed before you have said any of them. Where the app
+will not say where that is, it sits at the bottom of the screen instead. That is
+where it always used to be.
+
+Terminals split two ways, and it is worth knowing which one you are in. A pane
+running a full-screen program shows only what fits on the screen. Claude Code,
+vim and less all work this way, and the pill follows your words there. A pane
+sitting at an ordinary shell prompt keeps everything you have run in it, and the
+pill goes to the bottom of the screen.
+
 `correct_offer` is what the pill does after the words land. It stays where it
 is for three seconds and reads `Wrong?  <your hotkey>  to fix it`. Tap that key
 — press and let go, faster than a dictation — and the whole sentence opens in

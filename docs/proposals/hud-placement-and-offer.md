@@ -17,7 +17,9 @@ Design mockup: <https://claude.ai/code/artifact/4b31fdb8-192f-40df-9e42-64efcb93
 
 The pill used to appear 96pt off the bottom of the screen, always. It now opens
 next to the place the dictation is about to go, and stays there for the whole of
-it — recording, transcribing, and the offer, one position.
+it — recording, transcribing, and the offer, one position. The exception is an
+app that gives no caret: there the words are found after they land, so the pill
+opens where it can and moves once.
 
 ### Read it at the press, not at the end
 
@@ -122,18 +124,42 @@ being edited.
 Then ask the app for the bounds of *that* range. An app can keep no caret and
 still measure text perfectly well — Outlook does — and the two failings are
 unrelated. Only where there are no bounds fall back to the terminal grid:
-`AXLineForIndex` on the last character gives the row count, and the height over
-it gives the pitch. Measured on Ghostty at 53 rows of 17.3pt, a real line height
-rather than a fit.
+`AXLineForIndex` over the range `AXVisibleCharacterRange` reports gives the rows
+on screen, and the pane's height over that is the pitch. Measured on Ghostty at
+53 rows of 17.3pt, a real line height rather than a fit.
+
+The viewport must come from that attribute and from nothing else. Counting the
+lines in the value was tried and is wrong: that is how many rows have text on
+them, which is the screen only if the app pads the blank ones, and the value
+gives no way to tell whether it did. And the attribute is only worth having
+where it is true. In a Ghostty pane with scrollback it answers `0` and the whole
+buffer length — so it is not imprecise about the viewport, it is untrue about
+it, and untrue in exactly the panes that have scrolled. The 53 rows came from a
+pane with no history. Where the pitch that falls out is not a plausible line
+height the rung refuses, which is the observed `the grid says row 1364 of 1365
+at 1pt`.
 
 **A remembered anchor goes stale, and looks confident while it is.** A terminal
 scrolls between dictations, so last time's row belongs to something else — often
 the input box you are about to type into, which is where the pill was seen
-sitting. Two things invalidate it: the pane's character count must match (one
-cheap attribute, and it changes the moment anything is printed) and the landing
-must be under a minute old. Refused, the pill opens at the bottom of the screen
-and `landed` moves it a moment later — starting nowhere in particular beats
-starting somewhere wrong.
+sitting. Two things invalidate it: the pane must still be showing what it showed
+when the words landed, and the landing must be under a minute old. Refused, the
+pill opens at the bottom of the screen and `landed` moves it a moment later —
+starting nowhere in particular beats starting somewhere wrong.
+
+That first condition was `AXNumberOfCharacters` to begin with, on the grounds
+that it is one cheap attribute and it moves whenever anything is printed into
+the pane. It does not move. Measured
+on Ghostty it answers 49,842 and does not move while eight lines of output
+print, with `AXValue` at 2,082 across the same two reads: the count is the
+scrollback, the value is the screen, and only a resize changes the first.
+Compared against, the guard could never fail — in the one app this rung exists
+for. It is a digest of the visible text instead, read at the press under the
+same 80ms cap the other rungs use. That is a read the key-down handler is
+otherwise forbidden, and it is allowed only because it is capped and only asked
+when there is a landing for this exact element to check. A read that does not
+finish in the cap refuses, which is right rather than merely safe: a pane too
+big to read in 80ms is Outlook's, and Outlook's pane scrolls too.
 
 **Poll, do not retry once.** Every 80ms for half a second, off the main thread —
 Outlook's message pane reported 395,489 characters, copied out of another process
@@ -152,6 +178,22 @@ Two routes were considered and rejected: patching Ghostty upstream (means runnin
 a private build until it lands) and shipping an Input Method Kit component (works
 everywhere, but the user must select ParrotFlow as their input source and all
 their typing routes through us). Ghostty gets rung 3 and 4 instead.
+
+**Which of the two you get depends on what the pane is running.** The mechanism
+is worth naming, because it is not about any one program.
+
+A full-screen program draws on the *alternate screen*, and that screen has no
+scrollback. The value is then the viewport and nothing else. The row count is
+true, the pitch comes out at a real line height, and rung 4 answers.
+
+An ordinary shell prompt keeps its history in the same value, and
+`AXVisibleCharacterRange` claims all of it is on screen. Rung 4 refuses, and
+what is left is rung 3 or the bottom of the screen.
+
+That is the whole difference between two panes of one window. It is also why 53
+rows and 1,365 rows came from the same application. Claude Code is the example,
+not the cause: vim, less and anything else on the alternate screen behave the
+same way.
 
 ---
 
