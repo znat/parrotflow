@@ -402,8 +402,10 @@ struct Surface {
         // The replacement in the company it is meant to keep. Checking for the
         // replacement alone would accept an append — "…the storethey're"
         // contains "they're" quite happily — so the surrounding characters are
-        // what make this a check rather than a formality.
-        let fragment = self.fragment(around: range, replacement: replacement)
+        // what make this a check rather than a formality. `updated` is what the
+        // value should read afterwards, and the fragment is widened against it
+        // until it names one place there.
+        let fragment = self.fragment(around: range, replacement: replacement, in: updated)
 
         // 1. Set the range, then write the text into it. Disturbs nothing, and
         //    is what a native field accepts.
@@ -464,7 +466,7 @@ struct Surface {
     /// Nil rather than a refusal when the walk is too long to be worth taking,
     /// so the caller can fall through to its own last resort.
     private func writeByWalkingTheCaret(
-        _ target: NSRange, replacement: String, fragment: String, undo: Undo
+        _ target: NSRange, replacement: String, fragment: Fragment, undo: Undo
     ) -> Outcome? {
         guard var caret = caretOffset() else {
             Log.write("surface: the app will not say where the caret is; cannot walk to the span")
@@ -590,28 +592,113 @@ struct Surface {
     /// Reading once after a guessed delay measures the delay, not the write, and
     /// concluding failure from that is worse than not checking at all: the
     /// recovery then destroys work that was fine.
-    private func settled(on fragment: String) -> Bool {
-        let deadline = Date().addingTimeInterval(1.0)
+    private func settled(on fragment: Fragment) -> Bool {
+        // Two and a half seconds, not one.
+        //
+        // Measured in Outlook: the paste landed and was on screen, and this
+        // said it had not within the second — so the repair undid an edit that
+        // had worked, and the message said the app would not allow one. The
+        // read is the slow part. Outlook's message body reported 395,489
+        // characters, and every poll copies all of them out of another process
+        // that is busy laying the paste out, so a single read can eat most of
+        // the old budget and only two or three ever happened.
+        let deadline = Date().addingTimeInterval(2.5)
         repeat {
             if landed(fragment) { return true }
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
+
+        // Which of the three failures this was. They look identical from the
+        // outside and want opposite fixes: text that never arrived is a write
+        // that did not happen, text that arrived without its surroundings is
+        // this check being too literal, and neither is a paste that went to the
+        // wrong place.
+        if let value = SelectionReader.visibleText(of: element) {
+            let replacement = fragment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            Log.write(folded(value).contains(folded(replacement))
+                ? "surface: the text is there but not in the context expected;"
+                    + " the read-back is stricter than the edit"
+                : "surface: the text has not appeared in the field")
+        } else {
+            Log.write("surface: cannot read the field back to check the edit")
+        }
         return false
     }
 
-    /// The replacement with up to 12 characters of its surroundings on each
-    /// side — the shape the value must take for the edit to have happened in
-    /// the place it was asked to happen. An append does not produce it.
-    private func fragment(around range: Range<String.Index>, replacement: String) -> String {
-        let context = 12
-        return String(content[..<range.lowerBound].suffix(context))
-            + replacement
-            + String(content[range.upperBound...].prefix(context))
+    /// The replacement with its surroundings — the shape the value must take for
+    /// the edit to have happened in the place it was asked to happen. An append
+    /// does not produce it.
+    ///
+    /// Twelve characters after the replacement, and at least twelve before it.
+    /// The leading context is widened until it stands in exactly one place in
+    /// the text the edit should produce.
+    ///
+    /// Why widen. `landed` asks whether the value *contains* this, and a
+    /// contains cannot tell one place from another. Twelve characters repeat —
+    /// a list, a table, the same line quoted further down — and a paste that
+    /// misses and lands on the twin then satisfies the check while the place we
+    /// aimed at is untouched. That is the failure this file exists to prevent.
+    /// A leading context standing in one place pins the position, so the
+    /// contains is a question about position again.
+    ///
+    /// Ordinary prose is already unique after twelve characters, so this
+    /// usually returns on the first pass and nothing gets stricter. Where the
+    /// text really does repeat itself, the window grows until it does not.
+    ///
+    /// Folded, because the folded text is what `landed` compares. Capped at the
+    /// whole text before the span — at which point the leading context reaches
+    /// the start of the value, and `atStart` says so rather than pretending a
+    /// contains still places it.
+    private func fragment(
+        around range: Range<String.Index>, replacement: String, in updated: String
+    ) -> Fragment {
+        let before = content[..<range.lowerBound]
+        let beforeCount = before.count
+        let trailing = String(content[range.upperBound...].prefix(12))
+        let target = folded(updated)
+
+        var context = 12
+        while true {
+            let leading = String(before.suffix(context))
+            // Nothing left to widen with, so the value's own start is the
+            // anchor. This is also the span that begins the field, where there
+            // is no leading context at all and a contains would accept the same
+            // words written anywhere further down.
+            if context >= beforeCount {
+                return Fragment(text: leading + replacement + trailing, atStart: true)
+            }
+            if standsAlone(folded(leading), in: target) {
+                return Fragment(text: leading + replacement + trailing, atStart: false)
+            }
+            context *= 2
+        }
     }
 
-    private func landed(_ fragment: String) -> Bool {
+    /// The text the value must hold for the edit to have happened, and where.
+    private struct Fragment {
+        let text: String
+        /// The leading context reaches the start of the content, so the value
+        /// has to *begin* with this. Containing it is not enough: a span at
+        /// offset zero has nothing in front of it to be recognised by, and an
+        /// identical run later in the field would answer for it.
+        let atStart: Bool
+    }
+
+    /// Whether `needle` stands in exactly one place in `text`.
+    private func standsAlone(_ needle: String, in text: String) -> Bool {
+        guard !needle.isEmpty, let first = text.range(of: needle) else { return false }
+        return text.range(of: needle, range: first.upperBound..<text.endIndex) == nil
+    }
+
+    private func landed(_ fragment: Fragment) -> Bool {
         guard let value = SelectionReader.visibleText(of: element) else { return false }
-        return folded(value).contains(folded(fragment))
+        let text = folded(value)
+        let needle = folded(fragment.text)
+        guard fragment.atStart else { return text.contains(needle) }
+        // Leading whitespace on both sides, because a rich-text editor can put
+        // a blank line above what it holds and that is not a failed write.
+        return text.drop(while: \.isWhitespace)
+            .starts(with: needle.drop(while: \.isWhitespace))
     }
 
     /// Typographic substitution is not a failed write. Most apps turn a straight
@@ -622,6 +709,14 @@ struct Surface {
             .replacingOccurrences(of: "\u{2018}", with: "'")
             .replacingOccurrences(of: "\u{201C}", with: "\"")
             .replacingOccurrences(of: "\u{201D}", with: "\"")
+            // What a rich-text editor does to text on the way in. Outlook and
+            // Mail put non-breaking spaces around pasted runs and keep carriage
+            // returns in the value; both make a literal comparison fail on text
+            // that is plainly correct on screen.
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "\u{202F}", with: " ")
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
     }
 
     private func select(_ range: NSRange) -> Bool {
