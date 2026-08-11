@@ -356,11 +356,7 @@ struct PreviewView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .parrotSurface(
             RoundedRectangle(cornerRadius: Parrot.panelRadius, style: .continuous),
-            glass: true,
-            // Heavier than the pill's. This one holds a sentence you read word
-            // by word and select inside; the pill holds four words you glance
-            // at. Same glass, less of the desktop coming through it.
-            scrim: 0.30
+            solid: true
         )
         .background {
             PlumageBloom(

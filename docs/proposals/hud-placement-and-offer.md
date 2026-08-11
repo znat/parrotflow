@@ -204,9 +204,8 @@ same way.
   out of the screen. Below about 90% the text starts fighting the backdrop,
   which is the thing glass never solved.
 - **The plumage loses a step of chroma** against near-black. The mockup's values
-  are `#c25f59 / #c29a5c / #5fa383 / #5a89b5`. **Not yet done in the app** —
-  `ParrotStyle` still carries the saturated set, which reads as neon on the new
-  ground.
+  are `#c25f59 / #c29a5c / #5fa383 / #5a89b5`, and `ParrotStyle` now carries
+  them. The saturated set it carried before reads as neon on the new ground.
 - **The meter is a triangle, not a diamond.** Rising to the middle and falling
   away reads as a shape with a peak — something that already happened. Rising
   the whole way reads as still opening, which is what a live microphone is.
@@ -435,9 +434,11 @@ gates quiet sound whatever is printed on the case.
 
 ## 6. Not done
 
-- The plumage is still the saturated set; only the pill went near-black. The
-  correction and preview panels are still glass, so the surfaces have drifted
-  apart — which is the one thing `ParrotStyle` exists to prevent.
+- `parrotSurface(glass:)` is now unreachable. All three surfaces pass `solid:`,
+  so nothing asks for the sheen, the light scrim or the rim's top weighting. It
+  is left in rather than deleted: the launch panel below is unbuilt and unstyled,
+  and deleting a path takes the reasons written on it with it. Delete it once
+  the last surface in the design is drawn.
 - The correction panel's Save writes nothing.
 - The launch panel from the design pass is not built at all, and its lettering
   was never chosen — Serif (New York, `design: .serif`), Rounded, or Wide caps.

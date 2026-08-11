@@ -318,6 +318,11 @@ final class PillHUD {
         // Real glass under the capsule. See `ParrotGlass` for why AppKit has to
         // do this and SwiftUI cannot — and why it is masked rather than left to
         // fill the window, which here would frost the margin the glow lives in.
+        //
+        // Still here under a near-black capsule, because the capsule is 95%
+        // opaque and this is what the last 5% shows. A blurred hint of the
+        // desktop is what makes the surface read as sitting over something; the
+        // desktop itself, unblurred, would read as the surface being thin.
         let container = ParrotGlass.container(
             hosting, radius: PillMetrics.height / 2, inset: PillMetrics.bleed,
             // Barely tinted. The pill is glanced at over whatever you are
@@ -604,12 +609,12 @@ struct PillView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .parrotSurface(Capsule(), alive: isWorking, glass: true)
+        .parrotSurface(Capsule(), alive: isWorking, solid: true)
         // Under the capsule, so it is the capsule's shape and not the glow's.
         .shadow(color: .black.opacity(0.22), radius: 7, y: 2)
         // Behind everything above it. `.background` applied last sits furthest
         // back, which is where the bloom has to be — over the fill it would be
-        // a coloured film on the glass rather than light coming off the edge.
+        // a coloured film on the surface rather than light coming off the edge.
         .background { PlumageBloom(shape: Capsule(), alive: isWorking) }
         // The transparent margin the bloom spills into. See `PillMetrics.bleed`.
         .padding(PillMetrics.bleed)
@@ -793,9 +798,10 @@ struct Meter: View {
     }
 
     private func height(for index: Int) -> CGFloat {
-        // Gentle arc so the meter reads as a waveform rather than a bar chart.
-        let mid = CGFloat(bars - 1) / 2
-        let distance = abs(CGFloat(index) - mid) / mid
-        return 6 + (1 - distance) * 10
+        // A triangle, not a diamond. The arc rose to the middle and fell away
+        // again, which reads as a shape with a peak — something that has
+        // already happened. Rising the whole way reads as something still
+        // opening, which is what a microphone that is still listening is.
+        6 + CGFloat(index) / CGFloat(bars - 1) * 13
     }
 }

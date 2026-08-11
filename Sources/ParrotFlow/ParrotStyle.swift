@@ -16,13 +16,18 @@ enum Parrot {
     // walks this wheel in this order, so the surfaces share a direction of
     // travel and not just a set of colours.
     //
-    // Saturated on purpose. Muted versions of these read as the system's own
-    // red/yellow/green/blue — the colours of a traffic light and of every other
-    // Mac alert — and the point of them is that this app is a parrot.
-    static let scarlet = Color(red: 1.00, green: 0.16, blue: 0.15)
-    static let amber = Color(red: 1.00, green: 0.75, blue: 0.00)
-    static let leaf = Color(red: 0.00, green: 0.85, blue: 0.42)
-    static let sky = Color(red: 0.00, green: 0.60, blue: 1.00)
+    // Still well clear of the system's own red/yellow/green/blue — the colours
+    // of a traffic light and of every other Mac alert. The point of them is
+    // that this app is a parrot.
+    //
+    // One step down in chroma from the values these started at. On glass the
+    // hues sat over a lit, shifting ground and needed the saturation to hold.
+    // The surfaces are near-black now, so the hues carry much further and the
+    // old values read as neon.
+    static let scarlet = Color(red: 0.761, green: 0.373, blue: 0.349)  // #c25f59
+    static let amber = Color(red: 0.761, green: 0.604, blue: 0.361)  // #c29a5c
+    static let leaf = Color(red: 0.373, green: 0.639, blue: 0.514)  // #5fa383
+    static let sky = Color(red: 0.353, green: 0.537, blue: 0.710)  // #5a89b5
 
     /// Closes on scarlet so an angular gradient has no seam.
     static let wheel: [Color] = [scarlet, amber, leaf, sky, scarlet]
@@ -43,13 +48,13 @@ enum Parrot {
 
 extension View {
 
-    /// Dark glass and the plumage rim: the family look.
+    /// A dark ground and the plumage rim: the family look.
     ///
     /// The colour lives on the edge and nowhere else. A surface washed in a
     /// feather is a surface you have to read text off, and these appear over
-    /// documents, terminals and dark editors without knowing which — dark glass
-    /// is the one background that stays legible over all of them, and the rim
-    /// carries the identity without asking anything of the text.
+    /// documents, terminals and dark editors without knowing which — a dark
+    /// ground is the one background that stays legible over all of them, and
+    /// the rim carries the identity without asking anything of the text.
     ///
     /// `alive` is for work of unknown length. The rim turns and brightens, which
     /// is the only motion any of these surfaces make — it means the app is busy,
@@ -64,16 +69,35 @@ extension View {
     /// `scrim` is how much of the desktop it keeps out, and only means anything
     /// under glass. Default is thin, for the pill, which is glanced at. Pass
     /// more for anything holding a sentence you have to read and select.
+    ///
+    /// `solid` is the near-black ground, and it is the opposite bet from
+    /// `glass`. Glass gives a surface thickness by letting the desktop through;
+    /// this holds the desktop out, so a sentence is read off a known ground
+    /// rather than off whatever happened to be behind the window. 95% rather
+    /// than 100% because the last 5% is not transparency so much as a hairline
+    /// of what is underneath — enough that the surface reads as sitting *over*
+    /// something rather than cut out of the screen. Below about 90% the text
+    /// starts fighting the backdrop, which is the thing glass never solved.
+    ///
+    /// Every surface passes `solid` now, so `glass` and `scrim` are on no call
+    /// site. Kept rather than deleted because one surface in the design — the
+    /// launch panel — is not drawn yet, and the reasons written on this path
+    /// would go with it. See "Not done" in
+    /// `docs/proposals/hud-placement-and-offer.md`.
     func parrotSurface<S: InsettableShape>(
-        _ shape: S, alive: Bool = false, glass: Bool = false, scrim: Double? = nil
+        _ shape: S, alive: Bool = false, glass: Bool = false, solid: Bool = false,
+        scrim: Double? = nil
     ) -> some View {
         background {
+            if solid {
+                shape.fill(Color(red: 0.035, green: 0.035, blue: 0.043).opacity(0.95))
+            }
             // No `.regularMaterial` under glass. That blurs what is inside the
             // window, and on a panel with a clear background there is nothing
             // inside it to blur — it comes out flat grey, and a scrim over flat
             // grey is a black-to-grey gradient rather than glass. The material
             // for those surfaces sits behind the whole window; see `ParrotGlass`.
-            if !glass {
+            if !glass, !solid {
                 shape.fill(.regularMaterial)
             }
             // The material alone takes the shade of whatever is behind it, which
@@ -93,9 +117,9 @@ extension View {
             // Nothing at all where the system has real Liquid Glass: it does
             // its own tinting, through `tintColor` on the view behind, and a
             // scrim painted on top of it is paint over glass.
-            if !glass {
+            if !glass, !solid {
                 shape.fill(Color.black.opacity(0.34))
-            } else if !ParrotGlass.isPlatform {
+            } else if glass, !ParrotGlass.isPlatform {
                 shape.fill(Color.black.opacity(scrim ?? 0.08))
             }
 
