@@ -2544,15 +2544,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // rather than this dictation's. Writing over it would take
             // something away that this app never put there, and losing a
             // rewrite costs a second attempt.
-            guard NSPasteboard.general.changeCount == change else {
+            guard copyOverOurOwn(corrected, unlessChangedFrom: change) else {
                 Log.write("offer: the clipboard has been used since the dictation;"
                     + " \(what) was not written over it")
                 flash("Clipboard has changed — \(what) not copied", tone: .caution)
                 return false
             }
             Log.write("offer: the dictation went to the clipboard; \(what) went there too")
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(corrected, forType: .string)
             noteRewritten(original, as: corrected)
             flash("\(what) copied — ⌘V to paste", tone: .done)
             return false
@@ -2612,7 +2610,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The sentence is untouched in the field either way, so a refusal here
         // costs the rewrite and nothing else. What it protects is what you
         // copied while the model was thinking.
-        guard NSPasteboard.general.changeCount == clipboardWhenChosen else {
+        guard copyOverOurOwn(corrected, unlessChangedFrom: clipboardWhenChosen) else {
             Log.write("offer: the field refused \(what) and the clipboard has been used"
                 + " since; left both alone")
             flash("\(what) not applied — the clipboard has changed", tone: .caution)
@@ -2620,10 +2618,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Log.write("offer: left \(what) on the clipboard")
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(corrected, forType: .string)
         flash("\(what) copied — this app won't let me edit it", tone: .caution)
         return false
+    }
+
+    /// Put text on the clipboard, unless somebody else has been there since.
+    ///
+    /// `change` is `NSPasteboard.changeCount` from the moment this app last knew
+    /// what was on the clipboard. Anything copied since moves it, and then the
+    /// clipboard is somebody's work rather than ours to overwrite.
+    ///
+    /// The look and the write sit next to each other with nothing between them
+    /// — no logging, no message — because there is nothing stronger to have.
+    /// `NSPasteboard` offers no compare-and-write: `declareTypes(owner:)` names
+    /// an owner for callbacks and stops no other process from writing. Any check
+    /// is a look followed by a write, and the gap can only be made small. It is
+    /// two calls here, and the messages are left to the caller so they cannot
+    /// get in between.
+    ///
+    /// Returns false when it did not write.
+    private func copyOverOurOwn(_ text: String, unlessChangedFrom change: Int) -> Bool {
+        let pasteboard = NSPasteboard.general
+        guard pasteboard.changeCount == change else { return false }
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        return true
     }
 
     /// The last dictation now reads differently, so a command that works on it
