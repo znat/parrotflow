@@ -84,6 +84,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `Pipeline.App` is what the pipeline matches on and has no business
     /// carrying an image around.
     private var appIconAtPress: NSImage?
+
+    /// Where the caret was when the key went down, so the pill can open next to
+    /// it. Nil when the app would not say, which is when the pill opens where
+    /// it always has. See `CaretAnchor`.
+    private var anchorAtPress: CaretAnchor.Found?
     /// Whether there was anywhere to type when the hotkey went down — see
     /// `Destination`. Decides whether the pill shows the icon, and is handed to
     /// the transcription it belongs to so that the same press decides, a few
@@ -524,6 +529,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
         }
 
+        // Where the words are about to go, so the pill can open there and say
+        // so before a single one of them has been said.
+        //
+        // Here rather than after the insertion, and the difference is the whole
+        // reason it works: at this moment the target app is idle and its caret
+        // is sitting exactly where the sentence will start. Asked at the other
+        // end it is a race against a redraw, which is what it was, and it
+        // answered about half the time. See `CaretAnchor`.
+        //
+        // On this thread rather than a background one, because the pill is
+        // raised a few lines from here and an anchor that arrives after it is
+        // an anchor that makes it jump. The read is capped at 80ms and this
+        // element has just been read from twice by the snapshot above.
+        anchorAtPress = nil
+        if destinationAtPress.acceptsText {
+            switch CaretAnchor.read(at: focusAtPress?.element) {
+            case .found(let found):
+                anchorAtPress = found
+            case .missed(let why):
+                // The pill opens at the bottom of the screen, exactly as it did
+                // before any of this. That is the whole of the fallback.
+                Log.write("pill: no caret — \(why)")
+            }
+        }
+
         // The screen as it was when you started talking — which is the screen
         // the sentence is about. Taken here rather than in the pipeline because
         // this is the last moment the pane is *known*: by the time the stage
@@ -700,6 +730,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if config.feedback.sound { NSSound(named: "Tink")?.play() }
         if config.feedback.overlay {
+            pill.aim(at: anchorAtPress)
             pill.recording(icon: appIconAtPress)
         }
 
