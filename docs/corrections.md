@@ -5,21 +5,28 @@ colleagues' names all day. A rule you teach once is written to your
 `config.yaml` and applied to every transcript afterwards.
 
 When a name comes out wrong, select it in whatever app you're in, hold the
-hotkey and say **"hey parrot"**. A panel opens showing what it heard and a
-field for what it should have written.
+hotkey and say **"hey parrot"**. A panel opens with the sentence in it,
+editable in place. What it heard sits above the word it became, struck through.
 
-    HEARD AS         SHOULD BE
-    Tasmin      →   [Tasmeen            ]  ×
-    and         →   [                   ]  ×
-    Mick        →   [Mik                ]  ×
-    return Save   esc Cancel              2 rules
+    VOCABULARY  teach me the words I got wrong
 
-You get a row per word, because rules are per-word — a phrase you selected
-once will never recur verbatim. Leave a row blank and it is skipped, so
-selecting a whole sentence to fix two names costs nothing. × drops a row you
-do not want to think about.
+                     Tasmin           Mick
+     I    work  with Tasmeen and      Mik
+     ──   ────  ──── ───────  ───     ───
+     space splits a word in two   ⌫ at the start joins it to the word before
 
-Saving writes each filled-in rule to `config.yaml` — comments and your other
+     2 words → vocabulary   Cancel esc   Add Tasmeen, Mik to the vocabulary ⌘↩
+
+Every gesture is one a text field already has: type over a word, space to
+split one word into two, ⌫ at the start of a word to join it to the word
+before, clear a word to drop it. ⌘Z undoes.
+
+A rule is keyed on what you edited, not on a word — so when the decoder splits
+a name in two ("red crawl" for Redcrawl), joining the two words teaches
+`red crawl => Redcrawl` and leaves the colour alone. The words you did not
+touch cost nothing.
+
+Saving writes one rule per changed word to `config.yaml` — comments and your other
 settings untouched — and puts the corrected phrase back where it came from,
 punctuation and spacing intact.
 
@@ -42,7 +49,8 @@ language:
     "hey parrot, Elastic search is one word"
     "hey parrot, Jean Luc avec un trait d'union"
 
-And one breath can carry two corrections, which open as two rows in the panel:
+And one breath can carry two corrections, which open as two changed words
+in the panel:
 
     "hey parrot, Tasmin spells T A S M E E N and Mick spells M I K"
     "hey parrot, Nathalie sans le h et Philipe avec deux p"
@@ -147,7 +155,7 @@ often before the transcript comes back. ParrotFlow snapshots the selection the
 moment the hotkey goes down, which covers most of it, and falls back to your
 clipboard when there is nothing to read. So if a terminal selection does not
 come through, copy it first — select, ⌘C, then say the phrase. The panel always
-opens either way, with a row you can type into.
+opens either way, with a word you can type into.
 
 ## An instruction inside a dictation
 

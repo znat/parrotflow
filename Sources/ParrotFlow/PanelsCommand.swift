@@ -59,13 +59,17 @@ enum PanelsCommand {
         // that is obvious side by side and invisible a week apart.
         let overlayBlind = pill(.recording, level: 0.75)
 
-        let correction = CorrectionModel()
-        correction.load(selection: "Tasmin and Mick")
-        correction.tokens[0].replacement = "Tasmeen"
+        // One span changed and one span with two heard words folded into it —
+        // the two shapes the panel exists for, side by side.
+        let correction = SpansModel()
+        correction.load(sentence: "I work with Tasmin and Mick")
+        correction.spans[3].value = ["Tasmeen"]
 
-        let rule = CorrectionModel()
-        rule.loadRules([(heard: "Tasmin", corrected: "Tasmeen"),
-                        (heard: "Mick", corrected: "Mik")])
+        let rule = SpansModel()
+        rule.load(sentence: "we deployed on Ver Sal")
+        rule.spans[3].heard += rule.spans[4].heard
+        rule.spans[3].value = ["Vercel"]
+        rule.spans.removeLast()
 
         // Both states of the microphone notice, because the disclosure is the
         // shape of it: collapsed is what you read, open is the argument. A
@@ -131,9 +135,9 @@ enum PanelsCommand {
              NSSize(width: MicNoticeMetrics.width,
                     height: MicNoticeMetrics.height(expanded: true)), .dark, true),
             (AnyView(CorrectionView().environmentObject(correction)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 2)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forWords: correction.spans.count)), .dark, false),
             (AnyView(CorrectionView().environmentObject(rule)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 1)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forWords: rule.spans.count)), .dark, false),
             // The dictation panel is deliberately not here. Its field is an
             // `NSTextField` and its background is real Liquid Glass, and this
             // sheet can draw neither — it came out as a white block inside an
@@ -285,9 +289,11 @@ enum PanelsCommand {
                 print("offer: chip \(index) — \(offerChips[index].title)")
             }
         case "vocabulary":
-            correction.show(selection: "Tasmin and Mick")
+            correction.show(selection: "I work with Tasmin and Mick on Versal")
+        // One of the two rules heard two words, because that is the shape that
+        // used to land on the wrong span — see `SpansModel.load(rules:)`.
         case "rule":
-            correction.show(rules: [(heard: "Tasmin", corrected: "Tasmeen"),
+            correction.show(rules: [(heard: "Ver Sal", corrected: "Vercel"),
                                     (heard: "Mick", corrected: "Mik")])
         // The panel the pill's offer opens: one line, editable, over what was
         // just dictated. A different shape from the transform preview below —
