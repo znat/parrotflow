@@ -18,12 +18,13 @@ editable in place. What it heard sits above the word it became, struck through.
      space splits a word in two   ⌫ at the start joins it to the word before
      ▸ Not sure what to correct?
 
-           Undo ⌘Z   Discard   Add Tasmeen and Mik to the vocabulary ↩
+           Undo ⌘Z   Discard   Add Tasmeen and Mik to the vocabulary ⌘↩
 
 The caret starts in the first word, so the sentence is a row of fields rather
 than a label. Every gesture is one a text field already has: type over a word,
 space to split one word into two, ⌫ at the start of a word to join it to the
-word before, clear a word to drop it. ⌘Z undoes, ↩ saves, escape discards.
+word before, clear a word to drop it. ⌘Z undoes, ⌘↩ saves, escape discards.
+Plain ↩ saves too, from inside a word.
 
 A rule is keyed on what you edited, not on a word — so when the decoder splits
 a name in two ("red crawl" for Redcrawl), joining the two words teaches

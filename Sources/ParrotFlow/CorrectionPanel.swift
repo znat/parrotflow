@@ -414,12 +414,14 @@ struct CorrectionView: View {
 
             // Leaf, the colour of a changed word's bar. The same promise: this
             // is the thing that is going to happen.
-            ActionButton(title: confirmTitle, styled: confirmLabel, key: "↩",
+            ActionButton(title: confirmTitle, styled: confirmLabel, key: "⌘↩",
                          filled: false, glass: Parrot.leaf,
                          enabled: model.hasChanges) { model.onSubmit?() }
-                // Plain Return, because Return already submits from inside a
-                // word — there is nowhere in this panel it would insert a line.
-                .keyboardShortcut(.return, modifiers: [])
+                // ⌘↩ is the one the button advertises, because it works from
+                // anywhere on the panel. Plain Return goes on saving too — it
+                // is handled inside the word field, where there is nowhere in
+                // this panel a newline could go instead.
+                .keyboardShortcut(.return, modifiers: .command)
         }
         .padding(.top, 4)
     }
@@ -501,12 +503,17 @@ struct CorrectionView: View {
         confirmParts.map(\.text).joined()
     }
 
-    /// The same sentence with the words themselves lit. They are the thing to
-    /// check before pressing it, so they are the part that is not dimmed.
+    /// The same sentence with the words themselves lit — in amber, the colour
+    /// they are in the sentence above.
+    ///
+    /// That is the whole reason for the colour: the orange words on the button
+    /// are the orange words in the sentence, so nothing has to say which words
+    /// are about to be taught. White read as one more bold word in a green
+    /// label and said nothing.
     private var confirmLabel: Text {
         confirmParts.reduce(Text("")) { label, part in
             label + (part.lit
-                ? Text(part.text).bold().foregroundStyle(Color.white)
+                ? Text(part.text).bold().foregroundStyle(Parrot.amber)
                 : Text(part.text).foregroundStyle(ActionButton.glassText))
         }
     }
@@ -527,10 +534,18 @@ private struct SpanView: View {
             // Set at the size of the word below it. Small, it read as a
             // footnote about the word; the same size, the two lines read as one
             // sentence rewritten over another.
+            //
+            // Amber, like the word below it: the two of them are one change,
+            // and the change is the thing on this panel worth looking at. It
+            // was tertiary grey — the dimmest thing on the panel, which is the
+            // wrong end for the one line you are being asked to check. Under
+            // full strength, so the word that will be written wins; the line
+            // through it dimmer again, so it reads as a line through a word and
+            // not as a second word.
             Text(span.showsHeard ? span.heardShown : " ")
                 .font(.system(size: CorrectionMetrics.wordSize, design: .rounded))
-                .foregroundStyle(.tertiary)
-                .strikethrough(span.showsHeard, color: .white.opacity(0.22))
+                .foregroundStyle(Parrot.amber.opacity(0.75))
+                .strikethrough(span.showsHeard, color: Parrot.amber.opacity(0.4))
                 .lineLimit(1)
                 .fixedSize()
 
@@ -562,6 +577,10 @@ private struct SpanView: View {
         return Color.white.opacity(0.13)
     }
 
+    /// Drawn, never typed. A comma is not a `WordField`: there is nothing to
+    /// teach about one, so it takes no focus, no tab stop and no caret, and a
+    /// click on it does nothing. It belongs to the word it follows and is
+    /// spaced that way — tight against the word, and the gap after it.
     private func punctuation(_ text: String) -> some View {
         Text(text)
             .font(.system(size: CorrectionMetrics.wordSize))

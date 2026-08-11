@@ -71,9 +71,16 @@ enum PanelsCommand {
         rule.spans[3].value = ["Vercel"]
         rule.spans.removeLast()
 
+        // The sentence with punctuation in it. A comma is drawn, not typed, and
+        // the gap around it is the thing to look at: it belongs after the
+        // comma, never between the comma and the word it follows.
+        let punctuated = SpansModel()
+        punctuated.load(sentence: "Trois, quatre, cinq.")
+        punctuated.spans[1].value = ["quatorze"]
+
         // A fixed room rather than this machine's screen, so the sheet is the
         // same picture wherever it is drawn.
-        for model in [correction, rule] {
+        for model in [correction, rule, punctuated] {
             model.width = CorrectionMetrics.width(fitting: model.spans, room: 1200)
         }
 
@@ -153,6 +160,8 @@ enum PanelsCommand {
              NSSize(width: correction.width, height: CorrectionMetrics.height(correction.spans, width: correction.width, help: false)), .dark, false),
             (AnyView(CorrectionView().environmentObject(rule)),
              NSSize(width: rule.width, height: CorrectionMetrics.height(rule.spans, width: rule.width, help: false)), .dark, false),
+            (AnyView(CorrectionView().environmentObject(punctuated)),
+             NSSize(width: punctuated.width, height: CorrectionMetrics.height(punctuated.spans, width: punctuated.width, help: false)), .dark, false),
             (AnyView(CorrectionView().environmentObject(helped)),
              NSSize(width: helped.width, height: CorrectionMetrics.height(helped.spans, width: helped.width, help: true)), .dark, false),
             // The dictation panel is deliberately not here. Its field is an
@@ -307,6 +316,11 @@ enum PanelsCommand {
             }
         case "vocabulary":
             correction.show(selection: "I work with Tasmin and Mick on Versal")
+        // The same panel over a sentence with punctuation in it. On its own
+        // because a comma is drawn rather than typed, and how it sits — against
+        // the word before it, with the gap after — is only settled by looking.
+        case "punctuation":
+            correction.show(selection: "Trois, quatre, cinq.")
         // One of the two rules heard two words, because that is the shape that
         // used to land on the wrong span — see `SpansModel.load(rules:)`.
         case "rule":
@@ -369,7 +383,9 @@ enum PanelsCommand {
                 }
             }
         default:
-            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|rule|dictation|preview|microphone|pill|sequence> [seconds]")
+            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
+                + "|vocabulary|punctuation|rule|dictation|preview|microphone|pill"
+                + "|sequence> [seconds]")
             return 2
         }
 

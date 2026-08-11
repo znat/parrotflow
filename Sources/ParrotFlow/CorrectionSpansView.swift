@@ -58,7 +58,14 @@ struct WordField: NSViewRepresentable {
     func updateNSView(_ field: NSTextField, context: Wrapped) {
         context.coordinator.owner = self
         if field.stringValue != text { field.stringValue = text }
-        field.textColor = isChanged ? .white : NSColor.white.withAlphaComponent(0.82)
+        // Amber is the panel's colour for "this is the change": the corrected
+        // word here, the struck word above it, and the same words on the
+        // button. An unchanged word is dimmer than it was — still plainly text
+        // you can type into, but no longer competing with the one word you are
+        // being asked to check.
+        field.textColor = isChanged
+            ? NSColor(Parrot.amber)
+            : NSColor.white.withAlphaComponent(0.62)
 
         guard focused else { return }
         guard let window = field.window else { return }
@@ -91,13 +98,28 @@ struct WordField: NSViewRepresentable {
         }
     }
 
-    /// What one word occupies. Public because the panel has to know how wide
-    /// the sentence is before it opens — see `CorrectionMetrics.width` — and
-    /// two ways of measuring the same word would disagree by a pixel a word.
+    /// What one word occupies: its glyphs, and nothing more.
+    ///
+    /// Nothing more is the point. This used to return the glyphs plus 3pt, and
+    /// those 3pt were the daylight in front of every comma: the sentence is
+    /// drawn edge to edge, so slack inside a word's box is a gap between the
+    /// word and the punctuation that follows it. Measured off a render, the gap
+    /// before a comma went 5pt to 2pt when the 3pt came off, against 9.5pt after
+    /// it — which is a comma attached to the word it belongs to.
+    ///
+    /// The field's own inset needs no allowance here. `NSTextField` reports
+    /// `alignmentRectInsets` of 2pt either side, SwiftUI lays out the alignment
+    /// rect and hands the view a frame 2pt wider on each edge, so the glyphs
+    /// land exactly on the box. Those 2pt on the right are also where the caret
+    /// stands at the end of a word.
+    ///
+    /// Public because the panel has to know how wide the sentence is before it
+    /// opens — see `CorrectionMetrics.width` — and two ways of measuring the
+    /// same word would disagree by a pixel a word.
     static func width(of text: String) -> CGFloat {
         let width = (text as NSString).size(withAttributes: [.font: font]).width
         // A caret needs somewhere to stand in an empty word.
-        return max(ceil(width) + 3, 8)
+        return max(ceil(width), 8)
     }
 
     static var height: CGFloat { ceil(font.ascender - font.descender) + 2 }
