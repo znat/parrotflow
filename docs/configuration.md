@@ -286,12 +286,24 @@ vim and less all work this way, and the pill follows your words there. A pane
 sitting at an ordinary shell prompt keeps everything you have run in it, and the
 pill goes to the bottom of the screen.
 
-`correct_offer` is what the pill does after the words land. It stays where it
-is and names what can be done to them, one chip per command:
+`correct_offer` is what the pill does after a dictation. It stays where it
+is and names what can be done to the words, one chip per command:
 `Correct` first, then every transform with `offer: true` — see
 [pipelines.md](pipelines.md#offer-and-key-or-getting-on-the-pill). `Correct`
-opens the per-word panel over what was just dictated; a transform runs as it
-always does.
+opens the per-word panel over what was just dictated; a transform rewrites it
+straight away, with no preview.
+
+**After every dictation, not only one that landed in a field.** A word the
+recogniser got wrong is worth fixing whether or not the sentence reached a text
+field. A dictation that ended on the clipboard — focus moved, nowhere to type,
+`insert_mode: clipboard`, or no Accessibility grant — gets the same offer, and
+what a command produces goes back to the clipboard. So the ⌘V you were about to
+press pastes the corrected version. The notices those endings used to put on the
+pill are in the menu bar now, under the parrot.
+
+Only over the dictation itself. Copy something else while the panel is open, or
+while a transform is running, and the clipboard is yours rather than the
+dictation's — the result is not written over it, and the menu bar says so.
 
 | | Does |
 |---|---|

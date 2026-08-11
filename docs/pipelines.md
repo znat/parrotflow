@@ -241,9 +241,10 @@ preview would have told you.
 
 ### `offer:` and `key:`, or: getting on the pill
 
-After a dictation the pill names what can be done to the words that just
-landed. `Correct` is always first — it is not a transform, it needs no model,
-and it cannot fail. After it comes every transform that asked for a place:
+After a dictation the pill names what can be done to the words — wherever they
+went, a field or the clipboard. `Correct` is always first — it is not a
+transform, it needs no model, and it cannot fail. After it comes every transform
+that asked for a place:
 
 ```yaml
   - name: grammar
@@ -255,8 +256,15 @@ and it cannot fail. After it comes every transform that asked for a place:
       Correct grammar, spelling and punctuation. Return only the text.
 ```
 
-Press the letter on a chip, or click it. A transform runs as it always does, so
-it still shows its preview when `confirm:` is on.
+Press the letter on a chip, or click it. A transform taken from the pill runs
+over the sentence that was just dictated and writes the result straight back —
+into the field it went into, or onto the clipboard if that is where it went.
+
+**No preview, whatever `confirm:` says.** That setting guards text you selected
+and are about to have overwritten. Nothing is overwritten here: the words came
+from the dictation you just made, they are on screen above the pill, and you
+picked the command with a key. If the transform fails or changes nothing, the
+words are left exactly as they are and the menu bar says why.
 
 **Both are off by default.** The offer is on screen for a few seconds and every
 entry costs the others room, so a transform joins it only by asking. Put a
@@ -268,7 +276,7 @@ write. More than one character is cut to the first. A transform with `offer:
 true` and no `key:` still gets a chip, without a keycap on it — clickable, and
 on no key.
 
-The letter is taken from whatever app you are typing into, for the three
+The letter is taken from whatever app you are typing into, for the nine
 seconds the offer is up. Pick one you are unlikely to start a word with right
 after dictating. `C` is already `Correct`'s; a second chip asking for it is
 drawn but never reached, because the first chip with that letter wins.
