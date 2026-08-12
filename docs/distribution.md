@@ -2,88 +2,10 @@
 
 How ParrotFlow gets onto someone else's Mac.
 
-Implemented: releases are automated, the app installs by `curl`, and a coding
-agent can drive the whole setup. Still open: notarization, and everything that
-unlocks — Homebrew, a double-clickable `.dmg`, a link that works for someone who
-was sent it.
-
-## The Mac App Store is a dead end for this app
-
-Worth settling first, because it constrains everything else.
-
-The App Store requires the App Sandbox, and
-[sandboxed apps cannot use the Accessibility APIs](https://developer.apple.com/forums/thread/707680)
-that let one app insert text into another. `AXIsProcessTrustedWithOptions` is
-not available under the sandbox. Since typing the transcript into whatever app
-you're in *is the product*, this isn't a feature to trade away.
-
-Global hotkeys would survive — a `CGEventTap` needs Input Monitoring, which
-sandboxed apps can request — but text insertion does not. Clipboard-manager
-style apps get
-[rejected under Guideline 2.4.5](https://developer.apple.com/forums/thread/820594)
-for related reasons.
-
-This is why every app in this category — Wispr Flow, VoiceInk, Handy, Raycast —
-ships outside the App Store. Direct download and Homebrew is the path.
-
-## Homebrew is closed to us until we notarize
-
-This was the plan, and it no longer works. Homebrew **removed
-`--no-quarantine`** in the 5.0 line, deliberately, on the grounds that it
-existed only to bypass a macOS security mechanism. Verified on 6.0.10: the flag
-isn't recognised, `brew install` just prints its usage. `HOMEBREW_CASK_OPTS`
-went with it.
-
-So a cask now always installs the app quarantined, Gatekeeper always assesses
-it, and an app signed with anything short of a Developer ID always fails that
-assessment. What Homebrew's maintainers tell users to do instead is run
-`xattr -rd com.apple.quarantine /Applications/Whatever.app` by hand.
-
-That is a bad sentence to put in the install instructions for *any* app. For
-this one — which then asks for the microphone and for permission to type into
-every window — it is disqualifying. "Turn off a security check, then let me
-listen to you" is not a trade a reasonable person should accept, and we should
-not be the ones asking.
-
-The official repo is further out than it was. [Acceptable Casks](https://docs.brew.sh/Acceptable-Casks)
-already required a cask work **"without requiring System Integrity Protection or
-Gatekeeper to be disabled"**, and homebrew-cask is dropping casks that fail its
-codesigning-and-notarization audit on **1 September 2026**.
-
-So Homebrew is not a first channel any more. It is a thing that unlocks after
-notarization, at the same moment everything else does.
-
-## Why curl works, and it isn't a trick
-
-The quarantine attribute is not applied by macOS. It is applied by the
-*downloading application*, via `LSFileQuarantineEnabled` — browsers set it, Mail
-sets it, Slack sets it. `curl` does not.
-
-Measured:
-
-```
-$ curl -o file.zip <url> && xattr -l file.zip
-com.apple.provenance                    ← no com.apple.quarantine
-
-$ xattr -l .build/ParrotFlow.app
-com.apple.provenance
-$ spctl --assess --type execute -vv .build/ParrotFlow.app
-rejected                                ← and yet it launches, every day
-```
-
-Gatekeeper only assesses quarantined files. No attribute, no assessment — which
-is why a locally built app runs without ceremony, and why a curl-fetched one
-does too. Same mechanism, and it is the mechanism every `curl | sh` developer
-tool has relied on for a decade.
-
-This is not us disabling a security feature. It is us not triggering one, which
-is a different thing: nothing is turned off, no state is changed, and a user who
-downloads the same zip in a browser still gets the full Gatekeeper treatment.
-
-The honest caveat: it works because Apple has not closed this path, and closing
-it would break most of the developer tooling ecosystem. Unlikely, not promised.
-Notarization is the only future-proof answer — curl is what lets us ship before
-we have it.
+Releases are automated. The app installs by `curl`, and a coding agent can
+drive the whole setup. The app is not notarized, so Homebrew, a
+double-clickable `.dmg`, and a link that opens for someone who was sent it do
+not work yet.
 
 ## Signing releases anyway
 
@@ -120,24 +42,6 @@ rotating it a one-line change rather than an archaeology exercise:
 openssl x509 -in ~/.parrotflow-release/cert.pem -outform DER | shasum -a 256
 codesign -d --extract-certificates=/tmp/c ParrotFlow.app && shasum -a 256 /tmp/c0
 ```
-
-## Gatekeeper without notarization is now genuinely bad
-
-This used to be a shrug — right-click, Open, done. Not since macOS 15:
-[Control-click no longer overrides Gatekeeper](https://developer.apple.com/news/?id=saqachfa).
-A user who downloads an unsigned build now has to open System Settings →
-Privacy & Security, scroll to a message about blocked software, click Open
-Anyway, and re-authenticate. Many will conclude the app is broken.
-
-There is a second, subtler cost, and we already ran into it: **ad-hoc signatures
-break permissions on every build**. TCC pins high-risk grants to the binary's
-cdhash, so a new build silently loses Microphone and Accessibility while System
-Settings still shows the app ticked. A Developer ID certificate makes the
-designated requirement key on the certificate instead, and the problem vanishes
-for users and for us.
-
-That's the real argument for the $99/year Apple Developer Program here — not
-polish, but that the permission model doesn't work properly without it.
 
 ## Signing and notarizing
 
@@ -312,23 +216,9 @@ sign with Developer ID instead, submit, staple, upload. The rest stays.
 | GitHub Releases hosting | Free |
 | Self-signed release certificate | Free |
 
-The $99 is still the only real decision, but what it buys has changed. It is no
-longer "polish plus a shorter install line" — Homebrew of any kind, a `.dmg`
-anyone can double-click, and a link that works when someone's colleague sends it
-to them are all on the far side of it. Curl covers the developer who is already
-in a terminal. It does not cover the person who was sent a link.
+The $99 buys notarization, and notarization is what Homebrew, a
+double-clickable `.dmg`, and a shareable link need. Curl covers a developer who
+is already in a terminal. It does not cover a person who was sent a link.
 
-What the self-signed certificate buys for free is the permissions problem:
-grants survive upgrades. That was the other half of the argument for $99, and it
-is now settled without it.
-
-## Sources
-
-- [Acceptable Casks](https://docs.brew.sh/Acceptable-Casks) · [Cask Cookbook](https://docs.brew.sh/Cask-Cookbook)
-- [Removing support for `--no-quarantine` for casks](https://github.com/Homebrew/brew/issues/20755) · [Prepare for deprecation](https://github.com/Homebrew/brew/pull/20929) · [discussion](https://github.com/orgs/Homebrew/discussions/6537)
-- [Updates to runtime protection in macOS Sequoia](https://developer.apple.com/news/?id=saqachfa)
-- [Safely open apps on your Mac](https://support.apple.com/en-us/102445)
-- [An Exhaustive Guide to Signing and Notarizing on macOS](https://armaan.cc/blog/signing-and-notarizing-macos)
-- [Accessibility permission in sandboxed app](https://developer.apple.com/forums/thread/707680)
-- [Guideline 2.4.5 rejection for CGEvent.post](https://developer.apple.com/forums/thread/820594)
-- [Notarization: the hardened runtime](https://eclecticlight.co/2021/01/07/notarization-the-hardened-runtime/)
+The self-signed certificate is free and keeps the permission grants across
+upgrades.
