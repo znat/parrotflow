@@ -428,7 +428,7 @@ dropped as soon as focus moves. Copy the text first, then say the command.
 http://localhost:11434/api/version` and `ollama list | grep gemma4`.
 
 **A name is still wrong after teaching it.**
-`grep -A5 replacements ~/.config/parrotflow/config.yaml`.
+`grep -A5 <name> ~/.config/parrotflow/vocabulary.yaml`.
 
 **Dictation is slow the first time.** The first clip after launch loads the
 speech model.

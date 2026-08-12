@@ -167,6 +167,13 @@ jobs:
       - name: What vocabulary.yaml adds up to
         run: scripts/check-vocabulary-config.sh
 
+      # `--learn` used to write into config.yaml's `transcription.replacements`.
+      # It writes into vocabulary.yaml now, the same file the correction panel
+      # and the voice spelling command write, and the splice has to handle
+      # every shape that file has been written by hand.
+      - name: --learn writes a pronunciation
+        run: scripts/check-learn.sh
+
       # The same trap, one directory over: the transform folder a first launch
       # is seeded with against the copy in examples/ that people read and
       # score. It has always been able to drift and has never been checked

@@ -18,10 +18,11 @@ takes text prompts.
 So "transcribe this as bullet points" or "the speaker is French" cannot be
 passed to the model. Two things cover what you'd actually want from a prompt:
 
-### 1. A replacements map — for names and jargon
+### 1. A replacements map — for patterns and deletions
 
-Rare names are fixed by literal, word-boundary, case-insensitive substitution
-on the finished transcript, taught through the correction panel.
+Literal, word-boundary, case-insensitive substitution on the finished
+transcript, written by hand in `config.yaml`. A name the recogniser mangles
+does not belong here — that is what the vocabulary below is for.
 
 A source wrapped in slashes is a regular expression instead, and an empty
 target deletes rather than substitutes. That combination is what handles
@@ -404,9 +405,10 @@ a resumable transfer, and a working app (record-only) until it lands.
 
 ## Voice corrections
 
-Saying "hey parrot, <name> spells T A S M E E N" adds a replacement rule. A
-local model picks which words in the previous transcript were meant; the
-spelling comes from the letters by regex, never from the model.
+Saying "hey parrot, <name> spells T A S M E E N" adds a pronunciation to
+`vocabulary.yaml`. A local model picks which words in the previous transcript
+were meant; the spelling comes from the letters by regex, never from the
+model.
 
 That split is deliberate and measured. Given the whole job the model returns
 the right span but mangles the letters it is copying — "S I O B H A N" came

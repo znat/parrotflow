@@ -178,9 +178,9 @@ everything about the instruction fails.
 
 ## See also
 
-- [configuration.md](configuration.md#transcriptionreplacements) — the rule
-  table a correction writes into
-- [pipelines.md](pipelines.md) — the `fuzzy` stage, which catches renderings you
-  never taught
+- [transcription.md](transcription.md#2-a-vocabulary--for-words-the-recogniser-gets-wrong) —
+  the vocabulary a correction writes into
+- [transcription.md](transcription.md#per-term) — `vocabulary.acoustic`, which
+  catches renderings you never taught, by sound
 - [authoring.md](authoring.md) — changing the prompts behind any of this, with
   the case sets that say whether you made it better
