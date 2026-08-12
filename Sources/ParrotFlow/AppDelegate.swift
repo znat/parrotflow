@@ -3462,8 +3462,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        // One row for the two files you configure this app by: the config, and
-        // the folder of transforms beside it. A submenu rather than two lines
+        // One row for the two doors you configure this app by: the config file,
+        // and the folder it sits in. A submenu rather than two lines
         // because they are the same errand, and this menu is mostly state —
         // every row spent on a door is a row not spent saying what is happening.
         let settingsItem = NSMenuItem(title: "Settings", action: nil, keyEquivalent: "")
@@ -3479,13 +3479,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editConfigItem.target = self
         settingsMenu.addItem(editConfigItem)
 
-        let transformsItem = NSMenuItem(
-            title: "View Transforms",
-            action: #selector(openTransformsFolder),
+        let folderItem = NSMenuItem(
+            title: "Open Config Folder",
+            action: #selector(openConfigFolder),
             keyEquivalent: ""
         )
-        transformsItem.target = self
-        settingsMenu.addItem(transformsItem)
+        folderItem.target = self
+        settingsMenu.addItem(folderItem)
 
         settingsItem.submenu = settingsMenu
         menu.addItem(settingsItem)
@@ -3640,13 +3640,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Self.openInEditor(ConfigStore.fileURL)
     }
 
-    /// The transforms folder — the layout is the documentation, so opening the
-    /// directory says more than a list of names would.
+    /// The config folder, not the transforms folder inside it.
+    ///
+    /// Everything you own lives here: `config.yaml`, `vocabulary.yaml`, the
+    /// `transforms/` folder and the `voice/` recordings. One door reaches all
+    /// of them, where the old row reached one subfolder and left the rest with
+    /// no way in from the menu.
     ///
     /// Created if it is not there, because an empty folder is an answer ("this
     /// is where they go") and a window that never opened is not.
-    @objc private func openTransformsFolder() {
-        let dir = ConfigStore.transformsDirectory
+    @objc private func openConfigFolder() {
+        let dir = ConfigStore.directory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         Self.openInEditor(dir)
     }
