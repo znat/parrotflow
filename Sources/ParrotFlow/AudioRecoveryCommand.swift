@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import ObjCExceptions
 import Yams
 
 /// `--audio-recovery` — drives a device change past the recorder and checks it
@@ -55,6 +56,14 @@ enum AudioRecoveryCommand {
         }
 
         print("")
+        print("The engine and its own input")
+        var graph = 0
+        graph += checkAGraphThatDisagreesWithItselfIsRebuilt() ? 0 : 1
+        graph += checkAnExceptionComesBackAsAValue() ? 0 : 1
+        graph += checkAReplacedEngineIsNotReleasedOnTheSpot() ? 0 : 1
+        failures += graph
+
+        print("")
         thisMachine()
 
         print("")
@@ -66,7 +75,7 @@ enum AudioRecoveryCommand {
         capture += checkOneLostBufferIsForgiven(config: config) ? 0 : 1
         failures += capture
 
-        let total = cases.count + 4
+        let total = cases.count + 7
         print("")
         print("  \(total - failures)/\(total)")
         return failures == 0 ? 0 : 1
@@ -91,14 +100,119 @@ enum AudioRecoveryCommand {
         // released segfaults. No engine is started, so the microphone
         // indicator stays off — the same promise `Recorder.warmUp` makes.
         let engine = AVAudioEngine()
-        let engineFormat = engine.inputNode.outputFormat(forBus: 0)
+        let formats = Recorder.EngineFormats(
+            tap: engine.inputNode.outputFormat(forBus: 0),
+            hardware: engine.inputNode.inputFormat(forBus: 0)
+        )
         print("  device   \(Recorder.inputDeviceName ?? "unnamed") — \(binding.described)")
-        print("  engine   \(Int(engineFormat.sampleRate)) Hz, \(engineFormat.channelCount) ch")
-        print(
-            "  agree    "
-            + (engineFormat.sampleRate == binding.sampleRate
-               ? "yes"
-               : "NO — a press would rebuild the engine before recording")
+        print("  engine   \(formats.described)")
+        // Both comparisons, in the words the log would use. The engine against
+        // itself is the one that decides whether a tap can be installed at all.
+        if let problem = Recorder.formatProblem(formats, against: binding) {
+            print("  agree    NO — \(problem)")
+            print("           a press would rebuild the engine before recording")
+        } else {
+            print("  agree    yes")
+        }
+    }
+
+    // MARK: - The graph
+
+    /// The engine's own two formats disagree, and nothing about the device
+    /// does. #123: this is what an AirPods link settling looks like from
+    /// inside, and comparing only the binding drops it.
+    ///
+    /// Dropping it is not a missed rebuild, it is a crash. The press after it
+    /// installs a tap at the format the node has left, and `installTap` answers
+    /// that by raising an exception through the hotkey handler.
+    private static func checkAGraphThatDisagreesWithItselfIsRebuilt() -> Bool {
+        let name = "a graph that disagrees with itself is rebuilt"
+        let binding = Recorder.InputBinding(device: 2, sampleRate: 24000, channels: 1)
+        guard let tap = format(24000), let hardware = format(16000) else {
+            return say(false, name, "could not build the formats")
+        }
+
+        let recorder = Recorder()
+        recorder.currentInput = { binding }
+        recorder.warmUp()
+
+        // Moved after the binding is settled, so the device is provably not
+        // what fires this: `currentInput` answers the same thing throughout.
+        let before = recorder.rebuilds
+        recorder.engineFormats = { _ in
+            Recorder.EngineFormats(tap: tap, hardware: hardware)
+        }
+        recorder.simulateConfigurationChange()
+        settle(untilTrue: { recorder.rebuilds > before }, seconds: 2)
+
+        guard recorder.rebuilds > before else {
+            return say(false, name, "the device had not moved, so the change was dropped")
+        }
+        return say(true, name, "rebuilt")
+    }
+
+    /// An NSException raised inside a Swift frame comes back as a value.
+    ///
+    /// The one thing the shim in `Sources/ObjCExceptions` exists for. Without
+    /// it, this raise would unwind out of the run loop callback that called it
+    /// — past every `catch`, past every log line — and AppKit would swallow it
+    /// at the top of the loop.
+    private static func checkAnExceptionComesBackAsAValue() -> Bool {
+        let name = "an exception comes back as a value"
+        let raised = runCatchingObjCExceptions {
+            NSException(
+                name: .invalidArgumentException,
+                reason: "required condition is false: format.sampleRate == inputHWFormat.sampleRate",
+                userInfo: nil
+            ).raise()
+        }
+        guard let raised else {
+            return say(false, name, "nothing came back, so the exception was not caught")
+        }
+        guard runCatchingObjCExceptions({}) == nil else {
+            return say(false, name, "a block that raised nothing came back with something")
+        }
+        return say(true, name, "\(raised.name.rawValue)")
+    }
+
+    /// The engine a rebuild replaced is held, not released where it stood.
+    ///
+    /// Releasing it there is a crash, not a leak: `dealloc` blocks for seconds
+    /// tearing down a Bluetooth audio unit, and AVFoundation delivers property
+    /// changes to the object throughout. One landed on 2026-08-12 at 18:22:43.
+    ///
+    /// Both halves are checked. Held is the fix; let go afterwards is what
+    /// makes it a delay rather than an engine kept forever, holding a device
+    /// open that nothing is recording through.
+    private static func checkAReplacedEngineIsNotReleasedOnTheSpot() -> Bool {
+        let name = "a replaced engine is held, then let go"
+        let recorder = Recorder()
+        recorder.currentInput = { Recorder.InputBinding(device: 1, sampleRate: 48000, channels: 1) }
+        recorder.warmUp()
+
+        recorder.currentInput = { Recorder.InputBinding(device: 2, sampleRate: 24000, channels: 1) }
+        recorder.simulateConfigurationChange()
+        settle(untilTrue: { recorder.rebuilds > 0 }, seconds: 2)
+
+        guard recorder.rebuilds > 0 else {
+            return say(false, name, "nothing was replaced, so there was nothing to hold")
+        }
+        guard recorder.enginesInRetirement == 1 else {
+            return say(false, name, "the engine was let go where it was replaced")
+        }
+
+        // Longer than the recorder holds one. Nothing waits on this in the app;
+        // it is waited on here so "held" cannot pass by being "kept".
+        settle(untilTrue: { recorder.enginesInRetirement == 0 }, seconds: 15)
+        guard recorder.enginesInRetirement == 0 else {
+            return say(false, name, "it was still being held after 15s")
+        }
+        return say(true, name, "held, then let go")
+    }
+
+    private static func format(_ rate: Double) -> AVAudioFormat? {
+        AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false
         )
     }
 

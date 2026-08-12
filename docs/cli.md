@@ -256,14 +256,24 @@ dead — it shows whether the key is reaching the app at all, and whether left
 and right are distinguishable on your keyboard.
 
 `--audio-recovery` is for the other kind of dead: the microphone changed —
-AirPods connected, a headset came out — and dictation has been recording
-silence ever since. It moves the input binding inside the process instead of
-switching your real input device, so it is safe to run while somebody is
-dictating and it never opens the microphone. That is also its limit: it proves
-the recorder replaces its engine and that the capture path writes a real signal
-afterwards, and it proves nothing about what the hardware then sends. The cases
-are in `tests/audio-recovery-cases.yaml`; `scripts/check-audio-recovery.sh` runs
-it against a scratch config.
+AirPods connected, a headset came out — and since then dictation records
+silence, or the hotkey starts nothing at all. It moves the input binding inside
+the process instead of switching your real input device, so it is safe to run
+while somebody is dictating and it never opens the microphone. That is also its
+limit: it proves the recorder replaces its engine and that the capture path
+writes a real signal afterwards, and it proves nothing about what the hardware
+then sends. The cases are in `tests/audio-recovery-cases.yaml`;
+`scripts/check-audio-recovery.sh` runs it against a scratch config.
+
+It asks two questions, and the second one is easy to miss. `Device changes` is
+CoreAudio against the engine: has the input moved. `The engine and its own
+input` is the engine against itself — the two formats it holds for its input
+node, which is the pair `installTap` compares. A microphone can move only that
+pair, and it is the more expensive way to be wrong: a stale binding costs a
+silent clip, while a graph that disagrees with itself makes `installTap` raise
+an exception through the hotkey handler, and the app then answers its menu and
+records nothing until it is restarted. The `This machine` block prints both
+comparisons for whatever is plugged in right now.
 
 You can make a test clip without a microphone at all — `say` writes exactly the
 format the model wants:
