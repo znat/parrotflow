@@ -12,12 +12,11 @@
 # lands. Those need the apps and stay manual, like check-inplace.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN="${PARROTFLOW_BIN:-$ROOT/.build/debug/ParrotFlow}"
-
-if [ ! -x "$BIN" ]; then
-    echo "  ✗ no binary at $BIN — run: swift build"
-    exit 1
-fi
+# Release first, as the other check scripts do and as CI builds. Debug is the
+# fallback so this also runs after a plain `swift build`.
+BIN="$ROOT/.build/release/ParrotFlow"
+[ -x "$BIN" ] || BIN="$ROOT/.build/debug/ParrotFlow"
+[ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 
 python3 - "$ROOT" "$BIN" <<'PY'
 import subprocess, sys, pathlib, yaml
