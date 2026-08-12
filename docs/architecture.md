@@ -169,7 +169,7 @@ degrades to "not available" rather than failing.
 
 ## See also
 
-- [transcription.md](transcription.md) — why Parakeet rather than Whisper, why
-  it cannot be prompted, and what covers that instead
+- [transcription.md](transcription.md) — the speech model, its limits, and the
+  stages that cover them
 - [pipelines.md](pipelines.md) — the stage model in full
-- [distribution.md](distribution.md) — signing, updates, why this ships by curl
+- [distribution.md](distribution.md) — signing, updates, and the install
