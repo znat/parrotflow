@@ -33,13 +33,15 @@ struct AppProfile: Equatable {
     static let terminal = AppProfile(focus: .screen, anchor: .ladder, readsPane: true)
     static let blind = AppProfile(focus: .blind, anchor: .window, readsPane: false)
 
-    /// Bundle id and name both, because one terminal is several bundles and
-    /// Codex is one bundle called ChatGPT.
+    /// Terminals by bundle id or name, because one terminal is several bundles
+    /// and anything built from source signs itself however the build did.
+    /// Blind apps by bundle id alone: the list is one measured build each, and
+    /// a name is something any app can claim.
     static func of(_ app: Pipeline.App) -> AppProfile {
         let bundle = app.bundleID.lowercased()
         let name = app.name.lowercased()
         if terminalBundleIDs.contains(bundle) || terminalNames.contains(name) { return .terminal }
-        if blindBundleIDs.contains(bundle) || blindNames.contains(name) { return .blind }
+        if blindBundleIDs.contains(bundle) { return .blind }
         return .ordinary
     }
 
@@ -58,8 +60,7 @@ struct AppProfile: Equatable {
     /// An app belongs here only once two things are measured: that
     /// `ChromiumAccessibility` fails on it, and that a ⌘V into it lands. Codex
     /// answers -25205 to `AXManualAccessibility` and -25208 to
-    /// `AXEnhancedUserInterface`.
+    /// `AXEnhancedUserInterface`. Its name is "ChatGPT", so the bundle id is
+    /// the only thing that identifies it.
     private static let blindBundleIDs: Set<String> = ["com.openai.codex"]
-
-    private static let blindNames: Set<String> = ["codex"]
 }

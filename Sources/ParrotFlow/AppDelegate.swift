@@ -82,6 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// without Accessibility — an app condition has no business needing a
     /// permission that gating a stage by app does not otherwise require.
     private var appAtPress: Pipeline.App?
+    /// The same app as a pid, for the window anchor. Kept from the press so the
+    /// pill is measured against the app the words are aimed at.
+    private var pidAtPress: pid_t?
     /// Which microphone the engine is recording through. Read when recording
     /// starts and frozen onto the `Press` when the clip is handed to the
     /// decoder, so the microphone notice names the device that recorded the
@@ -674,6 +677,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
         let front = Self.appInFront()
         appAtPress = front?.app
+        pidAtPress = front?.pid
         // The icon is a promise that the words are going to land in that app,
         // so it is only made when they will. Off the element the snapshot above
         // already fetched — the answer costs two more attribute reads on a
@@ -765,8 +769,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // window. Measured on Codex: the pill anchored to a 712x44 box while
         // accessibility reported nothing focused in the app in front.
         if appAtPress.map({ AppProfile.of($0).anchor }) == .window {
-            if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
-               let found = CaretAnchor.window(of: pid) {
+            if let pid = pidAtPress, let found = CaretAnchor.window(of: pid) {
                 anchorAtPress = found
                 Log.write("pill: no caret — the app answers nothing; using its window")
             } else {
@@ -1204,7 +1207,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the same answer the pipeline will be conditioned on. Reading NSWorkspace
     /// twice would let them disagree, and the one time they disagree is exactly
     /// the time the pill is worth having.
-    private static func appInFront() -> (app: Pipeline.App, icon: NSImage?)? {
+    private static func appInFront() -> (app: Pipeline.App, icon: NSImage?, pid: pid_t)? {
         guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
         let app = Pipeline.App(
             name: front.localizedName ?? "", bundleID: front.bundleIdentifier ?? ""
@@ -1212,7 +1215,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Both empty is not an app you could write a condition against, and
         // saying so is what makes `app:` fail closed instead of matching "  ".
         guard !app.searchable.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-        return (app, front.icon)
+        return (app, front.icon, front.processIdentifier)
     }
 
     private func transcribe(_ recording: Recorder.Recording) {
