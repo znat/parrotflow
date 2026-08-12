@@ -578,11 +578,17 @@ final class Recorder {
         // failure this file is about, delivered as text instead of as nothing.
         // So it is not handed on.
         //
-        // The file stays where it is. It is the evidence of what went wrong,
-        // and deleting it is the opposite of useful — the same reason
-        // `cancelDictation` leaves a cancelled clip alone.
+        // The file stays where it is, unless `logging.audio` says recordings
+        // do not accumulate at all — that setting is about not keeping your
+        // voice on disk, and a partial clip is still your voice. Kept, it is
+        // evidence of what went wrong, and deleting it is the opposite of
+        // useful — the same reason `cancelDictation` leaves a cancelled clip
+        // alone.
         if lost > Self.droppedAudioTolerance {
             Log.write("\(url.lastPathComponent) is short and will not be transcribed")
+            if !config.logging.audio {
+                try? FileManager.default.removeItem(at: url)
+            }
             report("Part of that recording was lost. Say it again.")
             return nil
         }
@@ -1120,7 +1126,30 @@ final class Recorder {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
-        let name = "parrotflow-\(formatter.string(from: Date())).wav"
+        // The timestamp alone is only second-precision, and push-to-talk does
+        // not wait for the previous dictation's transcription before starting
+        // the next recording — two presses inside the same second would name
+        // the same file. That used to mean the second recording's write
+        // silently clobbered whatever the first was still being read from; now
+        // that a clip can be deleted once its own dictation is done with it,
+        // an earlier clip's cleanup could delete a later recording still using
+        // the same name. The suffix makes every capture its own file.
+        let suffix = UUID().uuidString.prefix(8)
+        let name = "parrotflow-\(formatter.string(from: Date()))-\(suffix).wav"
         return dir.appendingPathComponent(name)
+    }
+
+    /// Removes a clip once nothing needs the file on disk any more, unless
+    /// `logging.audio` says to keep it.
+    ///
+    /// Not folded into `stop()`: the caller still needs the file to exist right
+    /// after `stop()` returns, to hand it to the transcriber. This runs once
+    /// that is done — after transcription finishes, or straight away when
+    /// nothing was ever going to transcribe it. `--record`, `--audio-recovery`
+    /// and the rest of the terminal commands manage their own clips directly
+    /// and never call this — a deliberate `--record` keeps what it wrote.
+    static func discardIfNotKept(_ recording: Recording, config: Config) {
+        guard !config.logging.audio else { return }
+        try? FileManager.default.removeItem(at: recording.url)
     }
 }

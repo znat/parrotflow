@@ -25,7 +25,10 @@ enum PeekCommand {
     /// LaunchServices throws stdout away. A harness reads the log.
     private static func report(_ line: String) {
         print(line)
-        Log.write("peek: \(line)")
+        // Forced: this is the only transport that survives LaunchServices
+        // throwing stdout away, whatever `logging.text` says — see the doc
+        // comment above.
+        Log.write("peek: \(line)", force: true)
     }
 
     /// `expecting` is the harness's precondition, not a convenience.

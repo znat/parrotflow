@@ -11,6 +11,11 @@ enum Log {
         .homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Logs/\(AppVariant.logFileName)")
 
+    /// `config.logging.text`. True until a config has actually loaded, so
+    /// nothing written before then — including a config that fails to parse
+    /// — is lost. Set from `ConfigStore.load()`.
+    static var textEnabled = true
+
     private static let queue = DispatchQueue(label: "com.parrotflow.log")
 
     private static let timestampFormatter: DateFormatter = {
@@ -29,10 +34,16 @@ enum Log {
         queue.sync {}
     }
 
-    static func write(_ message: String) {
+    /// - Parameter force: writes to the file even with `textEnabled` off. For
+    ///   the handful of commands whose only transport this is — `--peek` and
+    ///   `--edit-test`/`--span-test` are read out of this file by a harness
+    ///   because LaunchServices throws their stdout away. Everything else
+    ///   respects the setting.
+    static func write(_ message: String, force: Bool = false) {
         let line = "\(timestampFormatter.string(from: Date()))  \(message)\n"
         NSLog("[ParrotFlow] %@", message)
 
+        guard force || textEnabled else { return }
         queue.async {
             guard let data = line.data(using: .utf8) else { return }
             let fm = FileManager.default

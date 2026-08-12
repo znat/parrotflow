@@ -28,7 +28,10 @@ enum EditTestCommand {
 
     private static func report(_ line: String) {
         print(line)
-        Log.write("edit-test: \(line)")
+        // Forced, same reason as `PeekCommand.report`: scripts/check-inplace.sh
+        // and check-span.sh read this back out of the log file, which is the
+        // only transport that survives LaunchServices throwing stdout away.
+        Log.write("edit-test: \(line)", force: true)
     }
 
     /// Everything both modes need before either is allowed to write.
