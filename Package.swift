@@ -10,9 +10,15 @@ let package = Package(
         .package(url: "https://github.com/FluidInference/FluidAudio.git", from: "0.15.5"),
     ],
     targets: [
+        // Three lines of Objective-C, for the one thing Swift cannot do:
+        // catch an NSException. See Sources/ObjCExceptions/include.
+        .target(
+            name: "ObjCExceptions",
+            path: "Sources/ObjCExceptions"
+        ),
         .executableTarget(
             name: "ParrotFlow",
-            dependencies: ["Yams", "FluidAudio"],
+            dependencies: ["Yams", "FluidAudio", "ObjCExceptions"],
             path: "Sources/ParrotFlow"
         )
     ]
