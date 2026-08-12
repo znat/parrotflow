@@ -69,6 +69,24 @@ EN|a dot product of two vectors|a dot product of two vectors
 EN|the dot matrix printer|the dot matrix printer
 EN|a dot file in home|a dot file in home
 
+# Hyphen and underscore — same `dotted` transform, scored the same way.
+CODE|read user hyphen name|read user-name
+CODE|dans user tiret name|dans user-name
+CODE|config underscore path|config_path
+CODE|une variable tiret bas nom|une variable_nom
+CODE|the max hyphen retries setting|the max-retries setting
+
+# `tiret` must not eat the start of "tiret bas" meant for underscore.
+CODE|config tiret bas path|config_path
+
+FR|le mot souligné dans le texte|le mot souligné dans le texte
+
+EN|the hyphen key on your keyboard|the hyphen key on your keyboard
+
+# `dash` is not a trigger: an ordinary word, unguarded unlike `dot`/`point`.
+EN|a mad dash to the door|a mad dash to the door
+EN|the hundred yard dash record|the hundred yard dash record
+
 # The residue. Two content words either side, so nothing in the sentence says
 # which one it is. Both are unlikely in a terminal or a chat window, which is
 # the only reason this ships.
