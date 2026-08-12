@@ -681,9 +681,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         destinationAtPress = Destination.at(app: front?.app, focus: focusAtPress?.element)
         appIconAtPress = destinationAtPress.acceptsText ? front?.icon : nil
         // The app by name: `field (AXTextArea)` alone cannot be acted on.
-        let where_ = destinationAtPress.namesTheApp
+        let inWhichApp = destinationAtPress.namesTheApp
             ? "" : " in \(front?.app.described ?? "nothing")"
-        Log.write("destination: \(destinationAtPress.described)\(where_)")
+        Log.write("destination: \(destinationAtPress.described)\(inWhichApp)")
         let elapsed = Date().timeIntervalSince(snapshotStart)
         if elapsed > 0.15 {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
@@ -2901,11 +2901,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setLabel(nil)
     }
 
-    /// Sets the menu bar title, optionally clearing it again after a delay.
-    ///
-    /// The token matters: these clears are fire-and-forget, so without it a
-    /// timer armed for "Copied — ⌘V to paste" wipes whatever newer message has
-    /// replaced it in the meantime.
     /// Activation and not the press: the tree is not built by the time the
     /// call returns. The app already in front at launch never sends one.
     private func watchActivation() {
@@ -2927,6 +2922,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ChromiumAccessibility.askIfNeeded(NSWorkspace.shared.frontmostApplication)
     }
 
+    /// Sets the menu bar title, optionally clearing it again after a delay.
+    ///
+    /// The token matters: these clears are fire-and-forget, so without it a
+    /// timer armed for "Copied — ⌘V to paste" wipes whatever newer message has
+    /// replaced it in the meantime.
     private func setLabel(_ message: String?, clearAfter: TimeInterval? = nil) {
         labelToken += 1
         let token = labelToken
