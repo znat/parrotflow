@@ -100,6 +100,17 @@ llm:
 updates:
   after_days: 7
 
+# What gets written to disk about a dictation, apart from the transcript.
+logging:
+  # The line-by-line log at ~/Library/Logs/ParrotFlow.log — how every problem
+  # in this app gets diagnosed. Leave it on.
+  text: true
+  # Write each dictation's recording to disk, in audio.output_dir. Off by
+  # default: a recording of your voice should not pile up there unless you
+  # asked for it. Turn it on for --transcribe, calibration, or to hear what
+  # the app heard.
+  audio: false
+
 # What the activation phrase can reach, and what a pipeline can name. The
 # description is what the router matches your words against, so write it the
 # way you would say it; the whole instruction reaches the body, which is why

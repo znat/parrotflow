@@ -1023,12 +1023,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard recording || transcribing else { return }
 
         if recording {
-            // The clip on disk is left alone. It cost nothing to write, the
-            // recordings folder is where you go to find out what the app heard,
-            // and deleting the evidence of the thing you just cancelled is the
-            // opposite of useful when the reason you cancelled it was that
-            // something sounded wrong.
-            _ = recorder.stop(config: config)
+            // The clip on disk is left alone, unless `logging.audio` says
+            // recordings do not accumulate at all. Kept, it cost nothing to
+            // write, the recordings folder is where you go to find out what
+            // the app heard, and deleting the evidence of the thing you just
+            // cancelled is the opposite of useful when the reason you
+            // cancelled it was that something sounded wrong.
+            if let clip = recorder.stop(config: config) {
+                Recorder.discardIfNotKept(clip, config: config)
+            }
             // No words are coming, so this press's dictation is over here. The
             // recorder is stopped directly rather than through
             // `stopRecording`, so nothing else would retire it — and the pane
@@ -1132,6 +1135,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write(String(format: "wrote %@ (%.2fs)", recording.url.lastPathComponent, recording.duration))
             if config.transcription.enabled {
                 transcribe(recording)
+            } else {
+                // Nothing is going to read the file — `transcribe` is what
+                // would otherwise discard it once it is done.
+                Recorder.discardIfNotKept(recording, config: config)
             }
         }
 
@@ -1235,6 +1242,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress
         )
         Task { [weak self] in
+            // Whatever happens below — decoded, cancelled, or thrown — nothing
+            // needs the clip on disk once this dictation is over.
+            defer { Recorder.discardIfNotKept(recording, config: config) }
             do {
                 // "Transcribing…" is the truth until the decoder is done, and
                 // a lie for the second a prompt or a script spends after it.
