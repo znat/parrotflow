@@ -941,7 +941,16 @@ final class Recorder {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
-        let name = "parrotflow-\(formatter.string(from: Date())).wav"
+        // The timestamp alone is only second-precision, and push-to-talk does
+        // not wait for the previous dictation's transcription before starting
+        // the next recording — two presses inside the same second would name
+        // the same file. That used to mean the second recording's write
+        // silently clobbered whatever the first was still being read from; now
+        // that a clip can be deleted once its own dictation is done with it,
+        // an earlier clip's cleanup could delete a later recording still using
+        // the same name. The suffix makes every capture its own file.
+        let suffix = UUID().uuidString.prefix(8)
+        let name = "parrotflow-\(formatter.string(from: Date()))-\(suffix).wav"
         return dir.appendingPathComponent(name)
     }
 
