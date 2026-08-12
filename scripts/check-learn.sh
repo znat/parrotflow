@@ -93,6 +93,63 @@ printf 'terms:\n  Redcrawl: [Redcroll, red crawl]\n' > "$WORK/vocabulary.yaml"
 learn "Red Croll" Redcrawl
 wants "the old renderings survive"   "$(vocab)" "Redcroll, red crawl, Red Croll"
 
+# --- a rendering that is a substring of an existing one is not a duplicate --
+# Greptile found this one: "Press" is not "Pressy", and a bare `contains`
+# over the joined list text said it was, so the write was silently skipped.
+printf 'terms:\n  Praisy: [Prissy, Pressy]\n' > "$WORK/vocabulary.yaml"
+learn Press Praisy
+wants "the shorter rendering is still added" "$(vocab)" "Prissy, Pressy, Press"
+before="$(vocab)"
+learn Pressy Praisy
+total=$((total + 1))
+if [ "$(vocab)" = "$before" ]; then
+  pass=$((pass + 1)); printf '  ✓ the exact rendering it is a substring of still no-ops\n'
+else
+  failed="$failed
+      the exact rendering it is a substring of still no-ops"
+  printf '  ✗ the exact rendering it is a substring of still no-ops\n'
+fi
+
+# --- a single-line flow mapping keeps its `heard:` list -------------------
+# Greptile found this one too: the writer did not recognise `{...}` on the
+# term's own line, fell through to the legacy-floor branch, and shoved the
+# whole mapping under a `floor:` key — which the decoder cannot read back as
+# pronunciations, so the old renderings were reachable only by their raw
+# text, not as terms the sound search or the exact pass would ever find.
+printf 'terms:\n  Claude: {floor: off, heard: [cloud]}\n' > "$WORK/vocabulary.yaml"
+learn cloude Claude
+wants "floor: off survives the rewrite"   "$(vocab)" "floor: off"
+wants "the old heard: list survives"      "$(vocab)" "heard: [cloud]"
+wants "the new rendering is added beside it" "$(vocab)" "heard: cloude"
+got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1)"
+wants "and both renderings are read back" "$got" "1 terms in vocabulary.yaml, 0 matched by sound, 2 by rule"
+before="$(vocab)"
+learn cloud Claude
+total=$((total + 1))
+if [ "$(vocab)" = "$before" ]; then
+  pass=$((pass + 1)); printf '  ✓ a duplicate inside the old heard: list still no-ops\n'
+else
+  failed="$failed
+      a duplicate inside the old heard: list still no-ops"
+  printf '  ✗ a duplicate inside the old heard: list still no-ops\n'
+fi
+
+# --- a block-style (not flow-mapping) `heard:` list is also recognised -----
+printf 'terms:\n  Praisy:\n    heard: [Prissy, Pressy]\n' > "$WORK/vocabulary.yaml"
+before="$(vocab)"
+learn Pressy Praisy
+total=$((total + 1))
+if [ "$(vocab)" = "$before" ]; then
+  pass=$((pass + 1)); printf '  ✓ a duplicate inside a block heard: list no-ops\n'
+else
+  failed="$failed
+      a duplicate inside a block heard: list no-ops"
+  printf '  ✗ a duplicate inside a block heard: list no-ops\n'
+fi
+learn Prezi Praisy
+wants "a new rendering still gets a pronunciations block" "$(vocab)" "heard: Prezi"
+wants "beside the old heard: list, not instead of it"     "$(vocab)" "heard: [Prissy, Pressy]"
+
 # --- a bare term (nothing known yet) grows a pronunciations block ----------
 printf 'terms:\n  Tasmeen:\n' > "$WORK/vocabulary.yaml"
 learn Tasmid Tasmeen

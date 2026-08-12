@@ -83,7 +83,7 @@ enum ConfigWriter {
         if value.hasPrefix("[") {
             let end = closingFlow(in: lines, from: start, deeperThan: 2)
             let sources = lines[start...end].joined(separator: " ")
-            if sources.contains(heard) { return yaml }
+            if flowListContains(heard, in: sources) { return yaml }
             guard let close = lines[end].lastIndex(of: "]") else { return yaml }
             let before = String(lines[end][lines[end].startIndex..<close])
             let separator = before.trimmingCharacters(in: .whitespaces).hasSuffix("[") ? "" : ", "
@@ -91,11 +91,30 @@ enum ConfigWriter {
             return lines.joined(separator: "\n")
         }
 
-        // A block already — `floor:`, `pronunciations:`, or both — or a bare
-        // (`Term:`) or legacy-floor (`Term: 0.85`) term with neither yet.
+        // A single-line flow mapping: `Claude: {floor: off, heard: [cloud]}`.
+        // Broken into one key per line rather than parsed and rewritten, so
+        // whatever it already says — `heard:`, `floor:`, both — survives
+        // untouched and the new rendering only ever adds a `pronunciations:`
+        // block beside it.
+        if value.hasPrefix("{"), value.hasSuffix("}") {
+            let pairs = splitFlowMapping(String(value.dropFirst().dropLast()))
+            if pairs.contains(where: { $0.key == "heard" && flowListContains(heard, in: $0.value) }) {
+                return yaml
+            }
+            let expanded = ["  \(quoted(term)):"]
+                + pairs.map { "    \($0.key): \($0.value)" }
+                + ["    pronunciations:"] + entry
+            lines.replaceSubrange(start...start, with: expanded)
+            return lines.joined(separator: "\n")
+        }
+
+        // A block already — `floor:`, `heard:`, `pronunciations:`, any mix —
+        // or a bare (`Term:`) or legacy-floor (`Term: 0.85`) term with none
+        // of them yet.
         let bodyIndent = 4
         var blockEnd = start
         var pronunciationsLine: Int?
+        var heardRange: ClosedRange<Int>?
         cursor = start + 1
         while cursor < lines.count {
             let line = lines[cursor]
@@ -105,8 +124,22 @@ enum ConfigWriter {
             if indentation(of: line).count == bodyIndent, trimmed.hasPrefix("pronunciations:") {
                 pronunciationsLine = cursor
             }
+            // The old key, possibly wrapped over two lines — cutting only the
+            // first would strand the tail as invalid YAML, so its whole span
+            // is tracked rather than just the one line it starts on.
+            if indentation(of: line).count == bodyIndent, trimmed.hasPrefix("heard:") {
+                let end = closingFlow(in: lines, from: cursor, deeperThan: bodyIndent)
+                heardRange = cursor...end
+                blockEnd = end
+                cursor = end + 1
+                continue
+            }
             blockEnd = cursor
             cursor += 1
+        }
+
+        if let heardRange, flowListContains(heard, in: lines[heardRange].joined(separator: " ")) {
+            return yaml
         }
 
         if let pronunciationsStart = pronunciationsLine {
@@ -287,6 +320,44 @@ enum ConfigWriter {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         return inside.count
+    }
+
+    /// Whether `item` is one of a flow sequence's entries, exactly — not
+    /// merely a substring of a longer one. "Press" is not "Pressy", and a
+    /// bare `contains` over the raw text said it was, so a rendering that
+    /// happened to be a prefix of one already there was silently dropped.
+    private static func flowListContains(_ item: String, in text: String) -> Bool {
+        guard let open = text.firstIndex(of: "["), let close = text.lastIndex(of: "]"),
+              open < close else { return false }
+        return text[text.index(after: open)..<close]
+            .split(separator: ",")
+            .map { unquoted($0.trimmingCharacters(in: .whitespaces)) }
+            .contains { $0.caseInsensitiveCompare(item) == .orderedSame }
+    }
+
+    /// A one-line flow mapping's entries, split on its own top-level commas —
+    /// `{floor: off, heard: [cloud, cloude]}` has a comma inside `heard:`'s
+    /// list that is not one of the mapping's own separators.
+    private static func splitFlowMapping(_ inner: String) -> [(key: String, value: String)] {
+        var depth = 0
+        var pieces: [String] = [""]
+        for character in inner {
+            if character == "[" || character == "{" { depth += 1 }
+            if character == "]" || character == "}" { depth -= 1 }
+            if character == ",", depth == 0 {
+                pieces.append("")
+            } else {
+                pieces[pieces.count - 1].append(character)
+            }
+        }
+        return pieces.compactMap { piece in
+            let trimmed = piece.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, let colon = trimmed.firstIndex(of: ":") else { return nil }
+            let key = unquoted(String(trimmed[trimmed.startIndex..<colon]))
+            let value = String(trimmed[trimmed.index(after: colon)...])
+                .trimmingCharacters(in: .whitespaces)
+            return (key, value)
+        }
     }
 
     // MARK: - Helpers
