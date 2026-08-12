@@ -59,13 +59,39 @@ enum PanelsCommand {
         // that is obvious side by side and invisible a week apart.
         let overlayBlind = pill(.recording, level: 0.75)
 
-        let correction = CorrectionModel()
-        correction.load(selection: "Tasmin and Mick")
-        correction.tokens[0].replacement = "Tasmeen"
+        // One span changed and one span with two heard words folded into it —
+        // the two shapes the panel exists for, side by side.
+        let correction = SpansModel()
+        correction.load(sentence: "I work with Tasmin and Mick")
+        correction.spans[3].value = ["Tasmeen"]
 
-        let rule = CorrectionModel()
-        rule.loadRules([(heard: "Tasmin", corrected: "Tasmeen"),
-                        (heard: "Mick", corrected: "Mik")])
+        let rule = SpansModel()
+        rule.load(sentence: "we deployed on Ver Sal")
+        rule.spans[3].heard += rule.spans[4].heard
+        rule.spans[3].value = ["Vercel"]
+        rule.spans.removeLast()
+
+        // The sentence with punctuation in it. A comma is drawn, not typed, and
+        // the gap around it is the thing to look at: it belongs after the
+        // comma, never between the comma and the word it follows.
+        let punctuated = SpansModel()
+        punctuated.load(sentence: "Trois, quatre, cinq.")
+        punctuated.spans[1].value = ["quatorze"]
+
+        // A fixed room rather than this machine's screen, so the sheet is the
+        // same picture wherever it is drawn.
+        for model in [correction, rule, punctuated] {
+            model.width = CorrectionMetrics.width(fitting: model.spans, room: 1200)
+        }
+
+        // The disclosure open, because it is the state that changes the size of
+        // the panel and the only one where the explanation can be read.
+        let helped = SpansModel()
+        helped.load(sentence: "I work with Tasmin and Mick")
+        helped.width = CorrectionMetrics.width(fitting: helped.spans, room: 1200)
+        helped.help = true
+        helped.spans[3].value = ["Tasmeen"]
+        helped.hasEdited = true
 
         // Both states of the microphone notice, because the disclosure is the
         // shape of it: collapsed is what you read, open is the argument. A
@@ -131,9 +157,13 @@ enum PanelsCommand {
              NSSize(width: MicNoticeMetrics.width,
                     height: MicNoticeMetrics.height(expanded: true)), .dark, true),
             (AnyView(CorrectionView().environmentObject(correction)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 2)), .dark, false),
+             NSSize(width: correction.width, height: CorrectionMetrics.height(correction.spans, width: correction.width, help: false)), .dark, false),
             (AnyView(CorrectionView().environmentObject(rule)),
-             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: 1)), .dark, false),
+             NSSize(width: rule.width, height: CorrectionMetrics.height(rule.spans, width: rule.width, help: false)), .dark, false),
+            (AnyView(CorrectionView().environmentObject(punctuated)),
+             NSSize(width: punctuated.width, height: CorrectionMetrics.height(punctuated.spans, width: punctuated.width, help: false)), .dark, false),
+            (AnyView(CorrectionView().environmentObject(helped)),
+             NSSize(width: helped.width, height: CorrectionMetrics.height(helped.spans, width: helped.width, help: true)), .dark, false),
             // The dictation panel is deliberately not here. Its field is an
             // `NSTextField` and its background is real Liquid Glass, and this
             // sheet can draw neither — it came out as a white block inside an
@@ -285,9 +315,16 @@ enum PanelsCommand {
                 print("offer: chip \(index) — \(offerChips[index].title)")
             }
         case "vocabulary":
-            correction.show(selection: "Tasmin and Mick")
+            correction.show(selection: "I work with Tasmin and Mick on Versal")
+        // The same panel over a sentence with punctuation in it. On its own
+        // because a comma is drawn rather than typed, and how it sits — against
+        // the word before it, with the gap after — is only settled by looking.
+        case "punctuation":
+            correction.show(selection: "Trois, quatre, cinq.")
+        // One of the two rules heard two words, because that is the shape that
+        // used to land on the wrong span — see `SpansModel.load(rules:)`.
         case "rule":
-            correction.show(rules: [(heard: "Tasmin", corrected: "Tasmeen"),
+            correction.show(rules: [(heard: "Ver Sal", corrected: "Vercel"),
                                     (heard: "Mick", corrected: "Mik")])
         // The panel the pill's offer opens: one line, editable, over what was
         // just dictated. A different shape from the transform preview below —
@@ -346,7 +383,9 @@ enum PanelsCommand {
                 }
             }
         default:
-            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|rule|dictation|preview|microphone|pill|sequence> [seconds]")
+            print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
+                + "|vocabulary|punctuation|rule|dictation|preview|microphone|pill"
+                + "|sequence> [seconds]")
             return 2
         }
 
