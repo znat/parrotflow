@@ -67,17 +67,17 @@ For a name that comes out wrong, nothing needs writing — say
 $PF --learn "super base" Supabase
 ```
 
-For a pattern, add it to `transcription.replacements` and check it:
+For a pattern or a deletion, add it to `transcription.replacements` and check
+it:
 
 ```yaml
 replacements:
-  Supabase: [super base, superbees]
   "": ['/\b(?:u+m+|erm+)\b/']          # empty target deletes
   '$1 ticket': ['/\bticket number (\d+)\b/']
 ```
 
 ```sh
-$PF --replace "we deployed to super base and um it worked"
+$PF --replace "ticket number 42 and um it worked"
 scripts/check-replacements.sh
 ```
 

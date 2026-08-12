@@ -3011,13 +3011,15 @@ if __name__ == "__main__":
             app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
             when: /\\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\\b/
 
-      # The spelling you want, and the ways it comes out wrong. Whole words,
-      # case-insensitive. A source in /slashes/ is a regular expression, and
-      # then the target is a template where $1 writes back what it captured. An
-      # empty target deletes, which is how filler words go.
+      # Patterns and deletions. Whole words, case-insensitive. A source in
+      # /slashes/ is a regular expression, and then the target is a template
+      # where $1 writes back what it captured. An empty target deletes, which
+      # is how filler words go. A name the recogniser mangles does not belong
+      # here — say "hey parrot" and fix it in the panel, and it is learnt in
+      # vocabulary.yaml instead.
       #
-      #   Supabase: [super base, superbees]
       #   "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
+      #   '$1.$2': ['/\\b(\\w+) dot (\\w+)\\b/']    # "user dot name" -> user.name
       replacements: {}
 
 

@@ -211,8 +211,8 @@ instruction that would have been spoken. `--command` runs the whole
 wake-phrase path: is this a command at all, is it a correction, which words in
 the previous transcript does it target.
 
-`--learn` writes a replacement rule from the terminal, the same one the
-correction panel would have written.
+`--learn` adds a pronunciation to `vocabulary.yaml` from the terminal, the
+same one the correction panel would have written.
 
 ## Forgetting what a name sounds like
 

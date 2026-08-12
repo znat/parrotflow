@@ -214,14 +214,15 @@ end of what was still there.
 
 ## `transcription.replacements`
 
-The spelling you want, and the ways it comes out wrong. Whole words,
-case-insensitive.
+Patterns and deletions, hand-written. Whole words, case-insensitive. A name
+the recogniser mangles does not go here — say "hey parrot" and fix it in the
+panel, and it lands in `vocabulary.yaml` instead — but a pattern with no fixed
+spelling, or a deletion, has nowhere else to live.
 
 ```yaml
 replacements:
-  Tasmeen: [Tasmid, Tasmin, Tasmine]
-  Supabase: [super base, superbees]
   "": ['/[,]?\s*\b(?:u+m+|u+h+|erm+|hmm+)\b[,]?/']
+  '$1.$2': ['/\b(\w+) dot (\w+)\b/']
 ```
 
 A source in `/slashes/` is a regular expression, and with one the target is a
@@ -229,12 +230,8 @@ template, so `$1` writes back what the pattern captured. An **empty target
 deletes** rather than substitutes, which is how filler words go, punctuation
 and spacing included.
 
-Grouped by the spelling you want rather than one line per mistake, because the
-same name comes out wrong a dozen ways and they all mean one thing.
-
-The table runs as the `replacements` stage; the `fuzzy` stage runs the same
-table against renderings you never taught it. Both are pipeline stages, so
-whether they run at all is [pipelines.md](pipelines.md).
+The table runs as the `replacements` stage — a pipeline stage, so whether it
+runs at all is [pipelines.md](pipelines.md).
 
 ## `llm`
 

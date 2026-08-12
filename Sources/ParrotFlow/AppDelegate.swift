@@ -2729,8 +2729,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func learn(_ rules: [(heard: String, corrected: String)]) -> Bool {
         for rule in rules {
             do {
-                try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
-                Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+                try ConfigWriter.addVocabularyPronunciation(
+                    term: rule.corrected, heard: rule.heard
+                )
+                Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                 Trace.correction(heard: rule.heard, corrected: rule.corrected, via: "command")
             } catch {
                 presentAlert(title: "Could not save the rule", message: error.localizedDescription)
@@ -3193,8 +3195,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             for rule in rules {
                 do {
-                    try ConfigWriter.addReplacement(heard: rule.heard, corrected: rule.corrected)
-                    Log.write("learned replacement: \(rule.heard) -> \(rule.corrected)")
+                    try ConfigWriter.addVocabularyPronunciation(
+                        term: rule.corrected, heard: rule.heard
+                    )
+                    Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                     Trace.correction(
                         heard: rule.heard, corrected: rule.corrected, via: "panel"
                     )

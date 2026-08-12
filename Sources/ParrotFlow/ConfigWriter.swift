@@ -1,111 +1,188 @@
 import Foundation
 
-/// Adds a replacement rule to config.yaml without disturbing anything else.
+/// Writes what a correction taught into `vocabulary.yaml`, without disturbing
+/// anything else in it.
 ///
 /// Deliberately text-level rather than decode-edit-encode: round-tripping
 /// through Yams would strip every comment in the file, and the comments are
-/// most of what makes that config readable. So we find the `replacements:`
-/// block and splice one line into it.
+/// most of what makes that config readable. So we find the `terms:` block and
+/// splice a pronunciation into it.
 enum ConfigWriter {
 
-    enum WriteError: LocalizedError {
-        case noTranscriptionSection
+    // MARK: - Learning a pronunciation
 
-        var errorDescription: String? {
-            switch self {
-            case .noTranscriptionSection:
-                return "config.yaml has no `transcription:` section to add the rule to."
-            }
-        }
-    }
-
-    /// Records that `heard` should be written as `corrected`.
-    static func addReplacement(heard: String, corrected: String) throws {
-        let url = ConfigStore.fileURL
-        let original = try String(contentsOf: url, encoding: .utf8)
-        let updated = try insert(heard: heard, corrected: corrected, into: original)
+    /// Records that `term` is sometimes heard as `heard`.
+    ///
+    /// Where the correction panel, `--learn` and the voice spelling command
+    /// write — see `Config.Vocabulary`. `config.yaml`'s `transcription.
+    /// replacements` stays for patterns and deletions; a name the recogniser
+    /// mangled is a pronunciation, not a pattern, and belongs beside the
+    /// pronunciations the acoustic pass already found on its own.
+    static func addVocabularyPronunciation(term: String, heard: String) throws {
+        let url = ConfigStore.vocabularyURL
+        let original = (try? String(contentsOf: url, encoding: .utf8)) ?? "terms: {}\n"
+        let updated = try insertVocabulary(term: term, heard: heard, into: original)
         try updated.write(to: url, atomically: true, encoding: .utf8)
     }
 
-    /// Splices the mishearing into the list under its target spelling, adding
-    /// the target if it is new.
+    /// Splices the rendering into the term's `pronunciations:`, adding the
+    /// term if it is new.
     ///
-    /// Text-level rather than decode-edit-encode: round-tripping through Yams
-    /// would strip every comment in the file, and the comments are most of what
-    /// makes that config readable.
-    static func insert(heard: String, corrected: String, into yaml: String) throws -> String {
+    /// `from: correction` is what tells this rendering apart from one
+    /// `scripts/mine-pronunciations.py` found on its own — see
+    /// `Config.Vocabulary.Pronunciation.Source`.
+    static func insertVocabulary(term: String, heard: String, into yaml: String) throws -> String {
         var lines = yaml.components(separatedBy: "\n")
+        let entry = ["      - heard: \(quoted(heard))", "        from: correction"]
 
-        guard let transcriptionIndex = lines.firstIndex(where: {
-            $0.hasPrefix("transcription:")
-        }) else {
-            throw WriteError.noTranscriptionSection
+        guard let termsIndex = lines.firstIndex(where: { $0.hasPrefix("terms:") }) else {
+            var out = lines
+            if let last = out.last, !last.isEmpty { out.append("") }
+            out.append("terms:")
+            out.append(contentsOf: newTerm(term, entry: entry))
+            return out.joined(separator: "\n")
         }
 
-        // Find `replacements:` inside the transcription block, which ends at
-        // the first non-indented, non-blank line.
-        var replacementsIndex: Int?
-        var index = transcriptionIndex + 1
-        while index < lines.count {
-            let line = lines[index]
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if !line.hasPrefix(" ") && !trimmed.isEmpty { break }
-            if trimmed.hasPrefix("replacements:") { replacementsIndex = index; break }
-            index += 1
-        }
-
-        guard let start = replacementsIndex else {
-            let insertAt = endOfBlock(in: lines, from: transcriptionIndex)
-            lines.insert(contentsOf: [
-                "  replacements:",
-                "    \(quoted(corrected)): [\(quoted(heard))]",
-            ], at: insertAt)
+        // `terms: {}` has to become a block mapping first.
+        if lines[termsIndex].trimmingCharacters(in: .whitespaces).hasSuffix("{}") {
+            lines[termsIndex] = "terms:"
+            lines.insert(contentsOf: newTerm(term, entry: entry), at: termsIndex + 1)
             return lines.joined(separator: "\n")
         }
 
-        let keyIndent = indentation(of: lines[start])
-        let entryIndent = keyIndent + "  "
-
-        // `replacements: {}` has to become a block mapping first.
-        if lines[start].trimmingCharacters(in: .whitespaces).hasSuffix("{}") {
-            lines[start] = "\(keyIndent)replacements:"
-            lines.insert("\(entryIndent)\(quoted(corrected)): [\(quoted(heard))]", at: start + 1)
-            return lines.joined(separator: "\n")
-        }
-
-        // Look for the target, and append to its list if it is already there.
-        var lastEntry = start
-        var cursor = start + 1
+        // Find the term's own line, directly under `terms:`.
+        var start: Int?
+        var cursor = termsIndex + 1
         while cursor < lines.count {
             let line = lines[cursor]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { cursor += 1; continue }
-            guard indentation(of: line).count > keyIndent.count else { break }
-
-            if !trimmed.hasPrefix("#"), let colon = trimmed.firstIndex(of: ":") {
-                let existing = unquoted(String(trimmed[trimmed.startIndex..<colon]))
-                if existing.caseInsensitiveCompare(corrected) == .orderedSame {
-                    let sources = String(trimmed[trimmed.index(after: colon)...])
-                        .trimmingCharacters(in: .whitespaces)
-                    // Already listed: nothing to add.
-                    if sources.contains(heard) { return yaml }
-                    if let close = line.lastIndex(of: "]") {
-                        let separator = sources == "[]" ? "" : ", "
-                        lines[cursor] = String(line[line.startIndex..<close])
-                            + separator + quoted(heard) + "]"
-                        return lines.joined(separator: "\n")
-                    }
-                }
-                lastEntry = cursor
+            guard line.hasPrefix(" ") else { break }
+            if indentation(of: line).count == 2, !trimmed.hasPrefix("#"),
+               let colon = trimmed.firstIndex(of: ":"),
+               unquoted(String(trimmed[trimmed.startIndex..<colon]))
+                   .caseInsensitiveCompare(term) == .orderedSame {
+                start = cursor
+                break
             }
             cursor += 1
         }
 
-        lines.insert(
-            "\(entryIndent)\(quoted(corrected)): [\(quoted(heard))]",
-            at: lastEntry + 1
-        )
+        guard let start else {
+            // A new term: append at the end of `terms:`.
+            let insertAt = endOfBlock(in: lines, from: termsIndex)
+            lines.insert(contentsOf: newTerm(term, entry: entry), at: insertAt)
+            return lines.joined(separator: "\n")
+        }
+
+        let head = lines[start]
+        guard let colon = head.firstIndex(of: ":") else { return yaml }
+        let value = String(head[head.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+
+        // Shorthand list: `Term: [a, b]`, possibly wrapped over two lines.
+        if value.hasPrefix("[") {
+            let end = closingFlow(in: lines, from: start, deeperThan: 2)
+            let sources = lines[start...end].joined(separator: " ")
+            if flowListContains(heard, in: sources) { return yaml }
+            guard let close = lines[end].lastIndex(of: "]") else { return yaml }
+            let before = String(lines[end][lines[end].startIndex..<close])
+            let separator = before.trimmingCharacters(in: .whitespaces).hasSuffix("[") ? "" : ", "
+            lines[end] = before + separator + quoted(heard) + "]"
+            return lines.joined(separator: "\n")
+        }
+
+        // A single-line flow mapping: `Claude: {floor: off, heard: [cloud]}`.
+        // Broken into one key per line rather than parsed and rewritten, so
+        // whatever it already says — `heard:`, `floor:`, both — survives
+        // untouched and the new rendering only ever adds a `pronunciations:`
+        // block beside it.
+        if value.hasPrefix("{"), value.hasSuffix("}") {
+            let pairs = splitFlowMapping(String(value.dropFirst().dropLast()))
+            if pairs.contains(where: { $0.key == "heard" && flowListContains(heard, in: $0.value) }) {
+                return yaml
+            }
+            let expanded = ["  \(quoted(term)):"]
+                + pairs.map { "    \($0.key): \($0.value)" }
+                + ["    pronunciations:"] + entry
+            lines.replaceSubrange(start...start, with: expanded)
+            return lines.joined(separator: "\n")
+        }
+
+        // A block already — `floor:`, `heard:`, `pronunciations:`, any mix —
+        // or a bare (`Term:`) or legacy-floor (`Term: 0.85`) term with none
+        // of them yet.
+        let bodyIndent = 4
+        var blockEnd = start
+        var pronunciationsLine: Int?
+        var heardRange: ClosedRange<Int>?
+        cursor = start + 1
+        while cursor < lines.count {
+            let line = lines[cursor]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { cursor += 1; continue }
+            guard indentation(of: line).count >= bodyIndent else { break }
+            if indentation(of: line).count == bodyIndent, trimmed.hasPrefix("pronunciations:") {
+                pronunciationsLine = cursor
+            }
+            // The old key, possibly wrapped over two lines — cutting only the
+            // first would strand the tail as invalid YAML, so its whole span
+            // is tracked rather than just the one line it starts on.
+            if indentation(of: line).count == bodyIndent, trimmed.hasPrefix("heard:") {
+                let end = closingFlow(in: lines, from: cursor, deeperThan: bodyIndent)
+                heardRange = cursor...end
+                blockEnd = end
+                cursor = end + 1
+                continue
+            }
+            blockEnd = cursor
+            cursor += 1
+        }
+
+        if let heardRange, flowListContains(heard, in: lines[heardRange].joined(separator: " ")) {
+            return yaml
+        }
+
+        if let pronunciationsStart = pronunciationsLine {
+            var listEnd = pronunciationsStart
+            var scan = pronunciationsStart + 1
+            while scan < lines.count {
+                let line = lines[scan]
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty { scan += 1; continue }
+                guard indentation(of: line).count > bodyIndent else { break }
+                let bare = trimmed.hasPrefix("- ") ? String(trimmed.dropFirst(2)) : trimmed
+                let existing = bare.hasPrefix("heard:")
+                    ? unquoted(String(bare.dropFirst("heard:".count)).trimmingCharacters(in: .whitespaces))
+                    : unquoted(bare)
+                if existing.caseInsensitiveCompare(heard) == .orderedSame { return yaml }
+                listEnd = scan
+                scan += 1
+            }
+            lines.insert(contentsOf: entry, at: listEnd + 1)
+            return lines.joined(separator: "\n")
+        }
+
+        if blockEnd > start {
+            // A block with `floor:` but no `pronunciations:` yet.
+            lines.insert(contentsOf: ["    pronunciations:"] + entry, at: blockEnd + 1)
+            return lines.joined(separator: "\n")
+        }
+
+        // Bare, or carrying a legacy floor number that has to move under its
+        // own key before anything can nest below it.
+        if value.isEmpty {
+            lines.insert(contentsOf: ["    pronunciations:"] + entry, at: start + 1)
+        } else {
+            lines[start] = "  \(quoted(term)):"
+            lines.insert(
+                contentsOf: ["    floor: \(value)", "    pronunciations:"] + entry, at: start + 1
+            )
+        }
         return lines.joined(separator: "\n")
+    }
+
+    private static func newTerm(_ term: String, entry: [String]) -> [String] {
+        ["  \(quoted(term)):", "    pronunciations:"] + entry
     }
 
     // MARK: - Forgetting a term's pronunciations
@@ -116,9 +193,9 @@ enum ConfigWriter {
     /// spellings and the audio that piled up behind a name — and a person who
     /// wanted the name gone would delete the name.
     ///
-    /// Text-level, for the same reason `insert` is: this file carries a long
-    /// header explaining what its numbers mean, and a round trip through Yams
-    /// would throw all of it away.
+    /// Text-level, for the same reason `insertVocabulary` is: this file
+    /// carries a long header explaining what its numbers mean, and a round
+    /// trip through Yams would throw all of it away.
     static func forgetPronunciations(of term: String) throws -> Int {
         let url = ConfigStore.vocabularyURL
         guard let original = try? String(contentsOf: url, encoding: .utf8) else { return 0 }
@@ -243,6 +320,44 @@ enum ConfigWriter {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         return inside.count
+    }
+
+    /// Whether `item` is one of a flow sequence's entries, exactly — not
+    /// merely a substring of a longer one. "Press" is not "Pressy", and a
+    /// bare `contains` over the raw text said it was, so a rendering that
+    /// happened to be a prefix of one already there was silently dropped.
+    private static func flowListContains(_ item: String, in text: String) -> Bool {
+        guard let open = text.firstIndex(of: "["), let close = text.lastIndex(of: "]"),
+              open < close else { return false }
+        return text[text.index(after: open)..<close]
+            .split(separator: ",")
+            .map { unquoted($0.trimmingCharacters(in: .whitespaces)) }
+            .contains { $0.caseInsensitiveCompare(item) == .orderedSame }
+    }
+
+    /// A one-line flow mapping's entries, split on its own top-level commas —
+    /// `{floor: off, heard: [cloud, cloude]}` has a comma inside `heard:`'s
+    /// list that is not one of the mapping's own separators.
+    private static func splitFlowMapping(_ inner: String) -> [(key: String, value: String)] {
+        var depth = 0
+        var pieces: [String] = [""]
+        for character in inner {
+            if character == "[" || character == "{" { depth += 1 }
+            if character == "]" || character == "}" { depth -= 1 }
+            if character == ",", depth == 0 {
+                pieces.append("")
+            } else {
+                pieces[pieces.count - 1].append(character)
+            }
+        }
+        return pieces.compactMap { piece in
+            let trimmed = piece.trimmingCharacters(in: .whitespaces)
+            guard !trimmed.isEmpty, let colon = trimmed.firstIndex(of: ":") else { return nil }
+            let key = unquoted(String(trimmed[trimmed.startIndex..<colon]))
+            let value = String(trimmed[trimmed.index(after: colon)...])
+                .trimmingCharacters(in: .whitespaces)
+            return (key, value)
+        }
     }
 
     // MARK: - Helpers

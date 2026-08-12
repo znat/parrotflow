@@ -80,8 +80,7 @@ transcription:
   # belong here.
   replacements:
     "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
-    Tasmeen: [Tasmid, Tasmin, Tasmine]
-    Supabase: [super base, superbees]
+    '$1.$2': ['/\b(\w+) dot (\w+)\b/']    # "user dot name" -> user.name
 
 # The local Ollama model behind spoken commands. Without it dictation still
 # works and every `prompt:` transform below stops.
