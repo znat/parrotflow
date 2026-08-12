@@ -80,7 +80,8 @@ Installs to `/Applications` and starts it.
 
 Download fails → check `https://github.com/znat/parrotflow/releases` for a
 release. `/Applications` not writable → rerun with
-`PARROTFLOW_DEST=~/Applications`.
+`PARROTFLOW_DEST=~/Applications`, and use that path instead of `/Applications`
+in every command below.
 
 **Microphone.** The app asks at first launch; the window may already be open.
 
