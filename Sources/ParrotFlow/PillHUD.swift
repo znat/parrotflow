@@ -274,6 +274,24 @@ final class PillHUD {
     /// appears without being asked for.
     static let offerAlpha: CGFloat = 0.92
 
+    /// The pill's own visible capsule right now — what a click has to land
+    /// inside of to count as a click on the pill rather than a click past it.
+    /// Nil while there is no pill up, so a caller cannot mistake the frame it
+    /// was last shown at for one it is still shown at.
+    ///
+    /// `panel.frame` inset by `bleed`, not `panel.frame` itself: the window is
+    /// bigger than the capsule on every side, for the glow to spill into — see
+    /// `PillMetrics.bleed`. That margin is fully transparent, and the pill
+    /// often sits right beside the words you are about to click into, so a
+    /// click meant to land past it can easily fall inside that invisible
+    /// window without landing anywhere near the capsule you can see. Counting
+    /// that as "on the pill" is why a click there used to look like it did
+    /// nothing.
+    var frame: NSRect? {
+        guard let panel, panel.isVisible else { return nil }
+        return panel.frame.insetBy(dx: PillMetrics.bleed, dy: PillMetrics.bleed)
+    }
+
     /// Whether the pointer is over the pill at this instant.
     ///
     /// Asked, rather than remembered from the last `hovering(_:)`. A hover that

@@ -4,6 +4,19 @@ import Carbon.HIToolbox
 /// Takes the offer's letters and Escape while the offer is on screen, and gives
 /// them back the moment it is not.
 ///
+/// ## Why any other key dismisses it
+///
+/// Only a chip's own letter runs its command — everything else you type ends
+/// the offer instead, the same as clicking anywhere but the pill does. Typing
+/// is the clearest sign there is that you have moved on to something else, and
+/// the offer has no business still claiming a letter over your shoulder once
+/// you have. This also bounds the one real risk left: the offer is up for nine
+/// seconds after every dictation, so a sentence that happens to start with a
+/// chip's own letter — `C` for Correct — still runs that command on its first
+/// keystroke. Every keystroke after that first one is safe, because the offer
+/// is already gone by then. Pick a chip's letter accordingly: one you are
+/// unlikely to start a word with right after dictating.
+///
 /// ## Why this is a tap and not a monitor
 ///
 /// The pill is a `nonactivatingPanel` and never takes keyboard focus — that is
@@ -28,7 +41,8 @@ import Carbon.HIToolbox
 final class OfferKeys {
 
     enum Key: Equatable {
-        /// Escape, or Return. Both end the offer; only Escape is consumed.
+        /// Escape, or any other key that is not a chip's own letter. All of
+        /// them end the offer; only Escape is consumed.
         case dismiss
         /// Run the command this letter belongs to.
         case letter(String)
@@ -131,6 +145,13 @@ final class OfferKeys {
 
     deinit { stop() }
 
+    /// A bare letter belongs to the offer; a letter with a modifier on it is
+    /// somebody else's shortcut — ⌘C copies, ⇧G types a capital G — so a chip
+    /// only answers to the plain key.
+    private static let anyModifier: CGEventFlags = [
+        .maskCommand, .maskAlternate, .maskControl, .maskShift,
+    ]
+
     private func handle(
         _ type: CGEventType, _ event: CGEvent
     ) -> Unmanaged<CGEvent>? {
@@ -151,40 +172,26 @@ final class OfferKeys {
             return Unmanaged.passUnretained(event)
         }
 
-        // A modified key is somebody else's shortcut — ⌘C copies, ⇧F types a
-        // capital F, ⌃C interrupts. Only the bare key belongs to the offer, and
-        // checking first means a letter with a modifier on it is never even
-        // considered.
-        let claimed: CGEventFlags = [.maskCommand, .maskAlternate, .maskControl, .maskShift]
-        guard event.flags.isDisjoint(with: claimed) else {
-            return Unmanaged.passUnretained(event)
-        }
-
-        // Letters and Escape are taken. Return is only watched.
-        //
-        // The arrows and space were here and are gone. Selecting with one key
-        // and confirming with another is a menu, and this is two buttons: the
-        // letter on each says how to press it, and the mouse says the same
-        // thing again. Every key taken from the system has to earn it, and a
-        // selection nobody needed did not.
+        // A bare letter the offer has claimed runs its command. Escape ends
+        // the offer and is swallowed, the one key taken from every app that is
+        // not a chip's own. Everything else — Return, a letter that is not on
+        // a chip, a modified key, an arrow, a function key — ends the offer
+        // too, but goes through untouched: it is the same "you have moved on"
+        // signal a click outside the pill sends, and only Escape and a
+        // matching letter were ever the offer's to keep.
         let key: Key
         var take = true
-        switch Int(event.getIntegerValueField(.keyboardEventKeycode)) {
-        case kVK_Escape:
+        let keycode = Int(event.getIntegerValueField(.keyboardEventKeycode))
+        if keycode == kVK_Escape, event.flags.isDisjoint(with: Self.anyModifier) {
             key = .dismiss
-        case kVK_Return, kVK_ANSI_KeypadEnter:
-            // Return means you are sending what was dictated, which is the end
-            // of the whole errand — so the offer goes at once rather than
-            // sitting over your shoulder while you read the reply. Passed
-            // through, never taken: this is the key the dictation was for.
+        } else if event.flags.isDisjoint(with: Self.anyModifier),
+                  !letters.isEmpty,
+                  let typed = NSEvent(cgEvent: event)?.charactersIgnoringModifiers?.uppercased(),
+                  letters.contains(typed) {
+            key = .letter(typed)
+        } else {
             key = .dismiss
             take = false
-        default:
-            guard !letters.isEmpty,
-                  let typed = NSEvent(cgEvent: event)?.charactersIgnoringModifiers?.uppercased(),
-                  letters.contains(typed)
-            else { return Unmanaged.passUnretained(event) }
-            key = .letter(typed)
         }
 
         // Handed to the next turn of the main loop rather than run here. What
