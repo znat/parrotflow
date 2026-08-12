@@ -179,7 +179,7 @@ enum Context {
     static func read(app: Pipeline.App?) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        guard Destination.terminalName(of: app) != nil else { return .failure(.notATerminal) }
+        guard AppProfile.of(app).readsPane else { return .failure(.notATerminal) }
 
         let front = NSWorkspace.shared.frontmostApplication
         let frontID = front?.bundleIdentifier ?? ""
@@ -215,7 +215,7 @@ enum Context {
     ) -> Result<Capture, Declined> {
         guard Permissions.accessibility == .granted else { return .failure(.noPermission) }
         guard let app else { return .failure(.noApp) }
-        guard Destination.terminalName(of: app) != nil else { return .failure(.notATerminal) }
+        guard AppProfile.of(app).readsPane else { return .failure(.notATerminal) }
         guard !SelectionReader.isOurs(element) else { return .failure(.nothingFocused) }
         guard let value = SelectionReader.visibleText(of: element) else {
             return .failure(.unreadable)

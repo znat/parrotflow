@@ -47,7 +47,9 @@ enum PanelsCommand {
         let notice = pill(.notice("Grammar applied", .done))
         let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution))
         let thinking = pill(.working("Thinking…"))
-        let offer = pill(.offer(offerChips))
+        let offer = pill(.offer(offerChips, nil))
+        // Beside the plain one: the two endings must not look the same.
+        let offerCopied = pill(.offer(offerChips, "Nowhere to type · ⌘V"))
 
         let overlay = pill(.recording, icon: sampleIcon(), level: 0.75)
 
@@ -147,6 +149,8 @@ enum PanelsCommand {
             // comparison that matters: it has to not look like one.
             (AnyView(PillView().environmentObject(offer)),
              pillSize(offer), .dark, true),
+            (AnyView(PillView().environmentObject(offerCopied)),
+             pillSize(offerCopied), .dark, true),
             // Not a pill state at all, and the only surface here that is
             // about the hardware rather than about the words. Next to the pill
             // because that is what it appears beside.

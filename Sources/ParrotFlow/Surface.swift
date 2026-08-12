@@ -132,9 +132,9 @@ struct Surface {
 
         let front = app ?? NSWorkspace.shared.frontmostApplication
         let isTerminal = front.map {
-            Destination.terminalName(of: Pipeline.App(
+            AppProfile.of(Pipeline.App(
                 name: $0.localizedName ?? "", bundleID: $0.bundleIdentifier ?? ""
-            )) != nil
+            )).focus == .screen
         } ?? false
 
         if isTerminal {

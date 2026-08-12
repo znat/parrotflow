@@ -154,6 +154,12 @@ jobs:
       - name: The correction panel's spans
         run: scripts/check-spans.sh
 
+      # Which app gets which treatment. The one part of the destination path
+      # that runs without a screen or a real app in front, and a wrong entry is
+      # silent both ways — one already was, matching any app named "codex".
+      - name: What ParrotFlow makes of an app
+        run: scripts/check-profiles.sh
+
       # Not a validation set: it checks that the file a new install is written
       # with still teaches everything config.example.yaml documents. That has
       # drifted twice, both times silently.
