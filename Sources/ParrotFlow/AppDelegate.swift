@@ -340,6 +340,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         loadConfig(announceErrors: false)
         watchConfig()
 
+        watchActivation()
+
         recorder.warmUp()
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
@@ -678,7 +680,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // reference we are holding, not another walk of the tree.
         destinationAtPress = Destination.at(app: front?.app, focus: focusAtPress?.element)
         appIconAtPress = destinationAtPress.acceptsText ? front?.icon : nil
-        Log.write("destination: \(destinationAtPress.described)")
+        // The app by name: `field (AXTextArea)` alone cannot be acted on.
+        let where_ = destinationAtPress.namesTheApp
+            ? "" : " in \(front?.app.described ?? "nothing")"
+        Log.write("destination: \(destinationAtPress.described)\(where_)")
         let elapsed = Date().timeIntervalSince(snapshotStart)
         if elapsed > 0.15 {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
@@ -754,6 +759,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `handleHotKeyPress`, and only for a press that starts a dictation.
     private func readTheAnchor() {
         guard destinationAtPress.acceptsText else { return }
+
+        // `focusAtPress` is not empty for a blind app — it holds whatever app
+        // was focused before — so every rung below would measure the wrong
+        // window. Measured on Codex: the pill anchored to a 712x44 box while
+        // accessibility reported nothing focused in the app in front.
+        if appAtPress.map({ AppProfile.of($0).anchor }) == .window {
+            if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+               let found = CaretAnchor.window(of: pid) {
+                anchorAtPress = found
+                Log.write("pill: no caret — the app answers nothing; using its window")
+            } else {
+                Log.write("pill: no caret — the app answers nothing, and it has no window")
+            }
+            return
+        }
+
         switch CaretAnchor.read(at: focusAtPress?.element) {
         case .found(let found):
             anchorAtPress = found
@@ -2032,7 +2053,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `press` is the dictation this offer is about, carried down from its own
     /// key-down — see `insertDictation`. Nothing below reads press-time state
     /// off `self`, so an offer can never be moved by another dictation's press.
-    private func showCorrectOffer(for press: Press, landing: Correction.Landing) {
+    /// `headline` is only passed for an ending nobody chose.
+    private func showCorrectOffer(
+        for press: Press, landing: Correction.Landing, headline: String? = nil
+    ) {
         // Beside the offer, not on it: its own window, so advice about the
         // microphone never costs you the chance to fix the sentence. Here
         // because this is the end of a dictation and every ending comes
@@ -2076,7 +2100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             original: text, element: press.element, owner: press.owner, landing: landing
         ))
         let commands = offerCommands
-        pill.offer(commands, for: Self.offerSeconds)
+        pill.offer(commands, headline: headline, for: Self.offerSeconds)
         // The list is captured, not read again in the closure: a config
         // reloaded while the offer is up would otherwise renumber the chips
         // under the pointer, and the click would run whatever took the slot.
@@ -2882,6 +2906,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The token matters: these clears are fire-and-forget, so without it a
     /// timer armed for "Copied — ⌘V to paste" wipes whatever newer message has
     /// replaced it in the meantime.
+    /// Activation and not the press: the tree is not built by the time the
+    /// call returns. The app already in front at launch never sends one.
+    private func watchActivation() {
+        let centre = NSWorkspace.shared.notificationCenter
+        centre.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { note in
+            ChromiumAccessibility.askIfNeeded(
+                note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            )
+        }
+        centre.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+        ) { note in
+            ChromiumAccessibility.forget(
+                note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            )
+        }
+        ChromiumAccessibility.askIfNeeded(NSWorkspace.shared.frontmostApplication)
+    }
+
     private func setLabel(_ message: String?, clearAfter: TimeInterval? = nil) {
         labelToken += 1
         let token = labelToken
@@ -3325,15 +3370,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let now = SelectionReader.focusedElement()
             if now == nil || !CFEqual(now!, element) {
                 TextInserter.insert(text, mode: .clipboard)
-                if config.feedback.sound { NSSound(named: "Glass")?.play() }
+                // Not the paste sound — see the nowhere-to-type ending below.
+                if config.feedback.sound { NSSound(named: "Tink")?.play() }
                 Log.write(now == nil
                     ? "could not read what is focused; copied instead of pasting"
                     : "focus moved since the press; copied instead of pasting")
-                // The menu bar, not the pill. The pill is about to carry the
-                // offer, and a notice on it would be the offer's own surface
-                // saying something else.
                 setLabel("Focus moved — the transcription is on your clipboard", clearAfter: 4)
-                showCorrectOffer(for: press, landing: .clipboardNow())
+                showCorrectOffer(
+                    for: press, landing: .clipboardNow(), headline: "Focus moved · ⌘V"
+                )
                 updateUI()
                 return
             }
@@ -3360,12 +3405,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if config.transcription.insertMode == .paste,
            case .nowhere(let reason) = destination, reason != .noAccessibility {
             TextInserter.insert(text, mode: .clipboard)
-            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            // Not Glass: a sound that cannot be told from success is no sound.
+            if config.feedback.sound { NSSound(named: "Tink")?.play() }
             Log.write("nothing to type into (\(reason.described)); copied instead")
-            // In the menu bar, for the same reason as above: the pill is the
-            // offer's.
             setLabel("Nowhere to type — the transcription is on your clipboard", clearAfter: 4)
-            showCorrectOffer(for: press, landing: .clipboardNow())
+            // And on the pill: the menu bar row is inside a menu you must open.
+            showCorrectOffer(
+                for: press, landing: .clipboardNow(), headline: "Nowhere to type · ⌘V"
+            )
             updateUI()
             return
         }

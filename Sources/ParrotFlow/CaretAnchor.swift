@@ -62,6 +62,9 @@ enum CaretAnchor {
         /// Where the last dictation into this same element ended up. A guess,
         /// and the only thing available at the press for an app with no caret.
         case remembered
+        /// The bottom of the app's own window, for an app that answers
+        /// nothing. A guess: their composer sits at the bottom.
+        case window
     }
 
     struct Found {
@@ -153,6 +156,40 @@ enum CaretAnchor {
             return .found(Found(rect: box, text: box, source: .field))
         }
         return .missed(pane == nil ? "no geometry" : "no caret, and the pane is too big to stand in for one")
+    }
+
+    /// The bottom strip of an app's frontmost window, for apps that answer no
+    /// accessibility questions.
+    ///
+    /// Read from the window server, which cannot be refused by the app —
+    /// asking these apps for a window through AX fails as asking for a caret
+    /// does.
+    ///
+    /// Centred rather than full width because `beside` puts the pill at its
+    /// anchor's left edge, which would park it against the window frame.
+    static func window(of pid: pid_t) -> Found? {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let listed = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]]
+        else { return nil }
+
+        // Layer order, so the app's first entry is its frontmost window.
+        let mine = listed.first { entry in
+            (entry[kCGWindowOwnerPID as String] as? pid_t) == pid
+                && (entry[kCGWindowLayer as String] as? Int) == 0
+                && (entry[kCGWindowBounds as String] as? [String: CGFloat]).map {
+                    ($0["Width"] ?? 0) > 200 && ($0["Height"] ?? 0) > 200
+                } == true
+        }
+        guard let bounds = mine?[kCGWindowBounds as String] as? [String: CGFloat],
+              let x = bounds["X"], let y = bounds["Y"],
+              let width = bounds["Width"], let height = bounds["Height"]
+        else { return nil }
+
+        // `kCGWindowBounds` is top-left with y downward, like the AX API.
+        let strip = flipped(
+            CGRect(x: x + width / 4, y: y + height - 96, width: width / 2, height: 44)
+        )
+        return Found(rect: strip, text: strip, source: .window)
     }
 
     /// A fingerprint of what the pane is showing, read at the press.

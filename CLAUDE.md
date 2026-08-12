@@ -17,5 +17,14 @@ descriptions, issues, review comments, and documentation.
 This is about the prose, not the work. Be just as precise and just as thorough.
 Say the same things — say them in fewer, simpler words.
 
-Code comments in this repository follow the surrounding style, which explains
-*why* a thing is the way it is. Keep that habit, but keep the sentences short.
+## Code comments
+
+Strict minimum. Write a comment only for what you could not work out again by
+reading the code: a measured number, an error code, a constraint the API
+imposes, a thing that was tried and did not work.
+
+- No comment that restates the line under it.
+- No essays. One or two short sentences.
+- No design rationale that the code already shows.
+
+When in doubt, leave it out.
