@@ -283,6 +283,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// It has a second job while the pointer is holding the offer open. See
     /// `offerDeadlinePassed`.
     private var offerKeysExpiry: DispatchWorkItem?
+    /// Watches for a click outside the offer, for as long as it is up. See
+    /// `watchForOfferOutsideClick`.
+    private var offerClickMonitors: [Any] = []
     /// True while the pointer is resting on the offer.
     ///
     /// The clock is stopped then, and `offerUntil` becomes a date that never
@@ -2136,6 +2139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         offerOnScreen = commands
         watchTheOfferKeys()
+        watchForOfferOutsideClick()
 
         // Taken at the press, and only when that press found no caret. Matched
         // by run, so it is this dictation's own pane and nobody else's. A
@@ -2210,11 +2214,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // guards the other one has.
                 self.pill.model.onPick?(index)
             case .dismiss:
-                Log.write("offer: dismissed")
-                self.endTheOffer()
-                self.pill.hide()
+                self.dismissOffer(reason: "the keyboard")
             }
         }
+    }
+
+    /// A click anywhere but on the offer ends it, the same way Escape or
+    /// Return does. Clicking outside the offer is already how you leave a menu
+    /// or close a popover on the Mac; this is one more surface answering to
+    /// the same habit rather than needing its own.
+    ///
+    /// Two monitors, the same pair `watchForEscape` uses and for the same
+    /// reason: the global one sees a click in whatever app you clicked into,
+    /// while it is in front; the local one sees a click on one of this app's
+    /// own windows before AppKit routes it anywhere. Neither consumes the
+    /// click — it still lands wherever it was headed, on the words you clicked
+    /// into or the panel you clicked in. A click on the pill itself is not
+    /// "outside" and does nothing here; the pill's own tap gesture is what
+    /// runs a chip.
+    ///
+    /// Installed with the offer and torn down by `endTheOffer`, so an idle app
+    /// is not watching the mouse at all — the same shape as `watchForEscape`.
+    private func watchForOfferOutsideClick() {
+        guard offerClickMonitors.isEmpty else { return }
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let dismissIfOutside: () -> Void = { [weak self] in
+            guard let self, self.offerIsUp, let frame = self.pill.frame,
+                  !frame.contains(NSEvent.mouseLocation)
+            else { return }
+            self.dismissOffer(reason: "a click outside it")
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { _ in
+            dismissIfOutside()
+        }) {
+            offerClickMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { event in
+            dismissIfOutside()
+            return event
+        }) {
+            offerClickMonitors.append(local)
+        }
+    }
+
+    private func stopWatchingForOfferOutsideClick() {
+        offerClickMonitors.forEach(NSEvent.removeMonitor)
+        offerClickMonitors.removeAll()
+    }
+
+    /// Take the offer down without running anything on it — Escape, Return, or
+    /// a click outside it. `reason` is only for the log.
+    ///
+    /// Not called by the deadline passing unanswered: the pill has already
+    /// faded itself out by then, on its own clock, and this would fade it a
+    /// second time. `offerDeadlinePassed` calls `endTheOffer` directly.
+    private func dismissOffer(reason: String) {
+        Log.write("offer: dismissed by \(reason)")
+        endTheOffer()
+        pill.hide()
     }
 
     /// Arm the call that ends the offer when nobody answers it.
@@ -2296,6 +2353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerKeysExpiry?.cancel()
         offerKeysExpiry = nil
         offerKeys.stop()
+        stopWatchingForOfferOutsideClick()
     }
 
     /// Run the command a chip was clicked on or lettered, and take the offer

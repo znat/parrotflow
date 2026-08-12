@@ -278,8 +278,11 @@ on no key.
 
 The letter is taken from whatever app you are typing into, for the nine
 seconds the offer is up. Pick one you are unlikely to start a word with right
-after dictating. `C` is already `Correct`'s; a second chip asking for it is
-drawn but never reached, because the first chip with that letter wins.
+after dictating — the first keystroke of a word that starts with it still
+runs the command, though every keystroke after that is safe: typing anything
+else ends the offer, the same as clicking off the pill does. `C` is already
+`Correct`'s; a second chip asking for it is drawn but never reached, because
+the first chip with that letter wins.
 
 `--check-config` prints what is on the pill and the letter each chip carries.
 A chip that is missing, or a `key:` that was cut, is otherwise invisible: the

@@ -342,23 +342,30 @@ dictation's — the result is not written over it, and the menu bar says so.
 |---|---|
 | a chip's letter — `C`, `G` | Runs that command |
 | a click on a chip | Runs that command |
+| a click anywhere else | Dismisses, and reaches whatever you clicked untouched |
+| any other key | Dismisses, and reaches whatever it was headed for untouched |
 | `esc` | Dismisses |
 | `↩` | Dismisses, and reaches the app underneath untouched |
 | the dictation hotkey | Starts the next dictation, exactly as before |
 
 It fades rather than vanishing. It arrives just below full strength and thins
-out over nine seconds, and then it is gone. The keys and the chips work the
-whole way down — the fading only says how long is left. Putting the pointer on
-the pill stops the clock, and taking it off starts the nine seconds again. Any
-of the endings above takes the pill at once.
+out over nine seconds, and then it is gone. The keys, the click, and the chips
+work the whole way down — the fading only says how long is left. Putting the
+pointer on the pill stops the clock, and taking it off starts the nine seconds
+again. Any of the endings above takes the pill at once.
 
 **The letters are taken from every app for those nine seconds.** The pill
-never holds keyboard focus, so it swallows the letters system-wide or it does
-not get them at all. Finish a dictation and immediately type a word starting
-with `C` or `G` and the first keystroke runs a command instead of typing.
-A letter with a modifier on it is never taken — `⌘C` copies and `⇧G` types a
-capital G — so only bare letters are exposed, and only until the offer goes.
-`esc` ends it, and so does starting the next dictation.
+never holds keyboard focus, so it swallows a chip's own letter system-wide or
+it does not get it at all. Only that bare letter runs a command — a letter
+with a modifier on it is somebody else's shortcut and is left alone, `⌘C`
+still copies and `⇧G` still types a capital G. Every other key you press ends
+the offer instead, the same as clicking anywhere but the pill does, and is
+passed straight through: it still lands wherever it was headed. So a dictation
+followed straight away by a sentence starting with `C` or `G` runs a command
+on that first keystroke — the offer is up, and that is still its letter — but
+every keystroke after it is safe, because the offer is already gone. Pick a
+chip's letter with that in mind: one you are unlikely to start a word with
+right after dictating.
 
 Off by setting it to `false`. Then no key is taken at any time.
 
