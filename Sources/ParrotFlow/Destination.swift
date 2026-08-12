@@ -33,6 +33,13 @@ enum Destination: Equatable {
     /// named rather than examined.
     case terminal(name: String)
 
+    /// An app that takes a paste and answers no questions about itself.
+    ///
+    /// Kept apart from `terminal` because a terminal also has a readable pane
+    /// and these do not. Nothing is lost by not examining them: `TextInserter`
+    /// writes with ⌘V whatever the destination.
+    case named(name: String)
+
     /// Nothing focused that would take text. The transcript goes to the
     /// clipboard instead.
     ///
@@ -63,10 +70,20 @@ enum Destination: Equatable {
         return true
     }
 
+    /// True for the cases that already carry the app's name, so the log does
+    /// not print it twice.
+    var namesTheApp: Bool {
+        switch self {
+        case .terminal, .named: return true
+        case .field, .nowhere: return false
+        }
+    }
+
     var described: String {
         switch self {
         case .field(let role): return "field (\(role))"
         case .terminal(let name): return "terminal (\(name))"
+        case .named(let name): return "named (\(name))"
         case .nowhere(let reason): return "nowhere — \(reason.described)"
         }
     }
@@ -88,7 +105,15 @@ enum Destination: Equatable {
             return .nowhere(.noAccessibility)
         }
 
-        if let app, let name = terminalName(of: app) { return .terminal(name: name) }
+        // Before the examination: asking these apps what has focus returns
+        // something that is not about them.
+        if let app {
+            switch AppProfile.of(app).focus {
+            case .screen: return .terminal(name: app.described)
+            case .blind: return .named(name: app.described)
+            case .examine: break
+            }
+        }
 
         guard let focus else { return .nowhere(.nothingFocused) }
         let role = SelectionReader.role(of: focus) ?? "an unnamed element"
@@ -98,58 +123,4 @@ enum Destination: Equatable {
         return .field(role: role)
     }
 
-    /// The terminal in front, by name, or nil for anything else.
-    ///
-    /// A list rather than a test, because there is nothing to test: what makes a
-    /// terminal a terminal is on the far side of a pty, and everything the
-    /// accessibility API can see is a grid of characters — the same shape
-    /// whether it is showing a shell prompt or the output of `cat`.
-    ///
-    /// Both halves are checked because one terminal is several bundles. Warp
-    /// ships stable, preview and nightly under three identifiers, Alacritty has
-    /// been `io.` and `org.` in living memory, and anything built from source
-    /// signs itself however the build did — while the name in the menu bar
-    /// stays what you call it. A list that only knew identifiers would silently
-    /// stop recognising a terminal on the day its author renamed one.
-    ///
-    /// The exception is deliberately narrow either way: being wrong here costs
-    /// a paste into a window that ignores it, which is what happened before any
-    /// of this existed.
-    static func terminalName(of app: Pipeline.App) -> String? {
-        let bundle = app.bundleID.lowercased()
-        let name = app.name.lowercased()
-        if terminalBundleIDs.contains(bundle) || terminalNames.contains(name) {
-            return app.described
-        }
-        return nil
-    }
-
-    private static let terminalBundleIDs: Set<String> = [
-        "com.apple.terminal",
-        "com.googlecode.iterm2",
-        "com.mitchellh.ghostty",
-        "net.kovidgoyal.kitty",
-        "com.github.wez.wezterm",
-        "io.alacritty",
-        "org.alacritty",
-        "dev.warp.warp-stable",
-        "dev.warp.warp-preview",
-        "co.zeit.hyper",
-        "com.raphaelamorim.rio",
-        "org.tabby",
-    ]
-
-    private static let terminalNames: Set<String> = [
-        "terminal",
-        "iterm",
-        "iterm2",
-        "ghostty",
-        "kitty",
-        "wezterm",
-        "alacritty",
-        "warp",
-        "hyper",
-        "rio",
-        "tabby",
-    ]
 }

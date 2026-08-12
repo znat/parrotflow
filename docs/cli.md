@@ -256,14 +256,24 @@ dead — it shows whether the key is reaching the app at all, and whether left
 and right are distinguishable on your keyboard.
 
 `--audio-recovery` is for the other kind of dead: the microphone changed —
-AirPods connected, a headset came out — and dictation has been recording
-silence ever since. It moves the input binding inside the process instead of
-switching your real input device, so it is safe to run while somebody is
-dictating and it never opens the microphone. That is also its limit: it proves
-the recorder replaces its engine and that the capture path writes a real signal
-afterwards, and it proves nothing about what the hardware then sends. The cases
-are in `tests/audio-recovery-cases.yaml`; `scripts/check-audio-recovery.sh` runs
-it against a scratch config.
+AirPods connected, a headset came out — and since then dictation records
+silence, or the hotkey starts nothing at all. It moves the input binding inside
+the process instead of switching your real input device, so it is safe to run
+while somebody is dictating and it never opens the microphone. That is also its
+limit: it proves the recorder replaces its engine and that the capture path
+writes a real signal afterwards, and it proves nothing about what the hardware
+then sends. The cases are in `tests/audio-recovery-cases.yaml`;
+`scripts/check-audio-recovery.sh` runs it against a scratch config.
+
+It asks two questions, and the second one is easy to miss. `Device changes` is
+CoreAudio against the engine: has the input moved. `The engine and its own
+input` is the engine against itself — the two formats it holds for its input
+node, which is the pair `installTap` compares. A microphone can move only that
+pair, and it is the more expensive way to be wrong: a stale binding costs a
+silent clip, while a graph that disagrees with itself makes `installTap` raise
+an exception through the hotkey handler, and the app then answers its menu and
+records nothing until it is restarted. The `This machine` block prints both
+comparisons for whatever is plugged in right now.
 
 You can make a test clip without a microphone at all — `say` writes exactly the
 format the model wants:
@@ -272,6 +282,28 @@ format the model wants:
 say -o /tmp/t.wav --data-format=LEI16@16000 --channels=1 "testing one two three"
 $PF --transcribe /tmp/t.wav
 ```
+
+## What ParrotFlow makes of an app
+
+```sh
+$PF --profile com.openai.codex ChatGPT
+$PF --profile com.mitchellh.ghostty Ghostty
+```
+
+Prints the three things `AppProfile` decides from an app's identity: whether its
+focused element can be believed (`examine`, `screen` or `blind`), where the pill
+opens (`ladder` or `window`), and whether the visible pane can be read as
+context.
+
+The name is optional and matters only for terminals, which are matched on either
+half — one terminal ships under several bundle ids. Blind apps are matched on the
+bundle id alone.
+
+`scripts/check-profiles.sh` runs this over `tests/profile-cases.yaml`. It is the
+only part of the destination path that can be checked without a screen and a
+real app in front, so it runs in CI. It does not check what an app actually does
+— that Codex refuses `AXManualAccessibility`, that a ⌘V lands — only that the
+classification is what the case file says.
 
 ## Text insertion, which is the risky path
 
@@ -358,6 +390,7 @@ scripts/check-verdicts.sh          # what the name judge reads out of a reply
 scripts/check-judge-prompt.sh      # the judge's prompt is one its parser can read
 scripts/check-no-voice.sh          # nothing in git is one person's voice
 scripts/check-audio-recovery.sh    # a microphone that changes leaves a usable engine
+scripts/check-profiles.sh          # which app gets examined, named, or read for context
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

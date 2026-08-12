@@ -44,6 +44,10 @@ feedback:
   sound: true
   overlay: true
   correct_offer: true
+
+logging:
+  text: true    # ~/Library/Logs/ParrotFlow.log
+  audio: false  # keep each dictation's recording on disk
 ```
 
 ## Where things live
@@ -52,17 +56,17 @@ feedback:
 |---|---|
 | Config | `~/.config/parrotflow/config.yaml` |
 | Transforms | `~/.config/parrotflow/transforms/<name>/` — one folder each |
-| Recordings | `~/Recordings/ParrotFlow` |
+| Recordings | `~/Recordings/ParrotFlow` — empty unless `logging.audio: true` |
 | Trace | `~/Recordings/ParrotFlow/trace.jsonl` |
-| Log | `~/Library/Logs/ParrotFlow.log` |
+| Log | `~/Library/Logs/ParrotFlow.log` — off with `logging.text: false` |
 | The example transform | `~/.config/parrotflow/transforms/code_identifiers/`, written on first launch and never overwritten |
 
 The menu bar item shows the current state and offers *Correct a Word…*, *Open
-Recordings Folder* — the wavs and `trace.jsonl` — *Settings*, which holds *Edit
-Config…* (`config.yaml`) and *Open Config Folder* — everything you own, so
-`vocabulary.yaml`, `transforms/` and `voice/` too — and
-*Permissions…*. Both open in VS Code if it is installed, and in whatever the
-system would otherwise use if it is not.
+Recordings Folder* — the wavs, if `logging.audio` is on, and `trace.jsonl` —
+*Settings*, which holds *Edit Config…* (`config.yaml`) and *Open Config
+Folder* — everything you own, so `vocabulary.yaml`, `transforms/` and `voice/`
+too — and *Permissions…*. Both open in VS Code if it is installed, and in
+whatever the system would otherwise use if it is not. See [`logging`](#logging).
 
 ### A folder per transform
 
@@ -167,9 +171,11 @@ It works with the hotkey still held, which is the point of it: in push-to-talk
 the key is down for the whole sentence, and letting go is what commits the
 recording. Say the wrong thing and you can stop before it lands.
 
-A recording that is cancelled is still written to your recordings folder — it is
-where you go to hear what the app heard, and the moment you most want that is
-the moment you cancelled. It is simply never transcribed.
+With `logging.audio: true`, a recording that is cancelled is still kept in your
+recordings folder — it is where you go to hear what the app heard, and the
+moment you most want that is the moment you cancelled. It is simply never
+transcribed. With `logging.audio` at its default of `false`, the clip is
+discarded like any other.
 
 Cancelling during transcription cannot make the decoder stop sooner. The model
 call is not interruptible. What it guarantees is that nothing is written when it
@@ -336,25 +342,69 @@ dictation's — the result is not written over it, and the menu bar says so.
 |---|---|
 | a chip's letter — `C`, `G` | Runs that command |
 | a click on a chip | Runs that command |
+| a click anywhere else | Dismisses, and reaches whatever you clicked untouched |
+| any other key | Dismisses, and reaches whatever it was headed for untouched |
 | `esc` | Dismisses |
 | `↩` | Dismisses, and reaches the app underneath untouched |
 | the dictation hotkey | Starts the next dictation, exactly as before |
 
 It fades rather than vanishing. It arrives just below full strength and thins
-out over nine seconds, and then it is gone. The keys and the chips work the
-whole way down — the fading only says how long is left. Putting the pointer on
-the pill stops the clock, and taking it off starts the nine seconds again. Any
-of the endings above takes the pill at once.
+out over nine seconds, and then it is gone. The keys, the click, and the chips
+work the whole way down — the fading only says how long is left. Putting the
+pointer on the pill stops the clock, and taking it off starts the nine seconds
+again. Any of the endings above takes the pill at once.
 
 **The letters are taken from every app for those nine seconds.** The pill
-never holds keyboard focus, so it swallows the letters system-wide or it does
-not get them at all. Finish a dictation and immediately type a word starting
-with `C` or `G` and the first keystroke runs a command instead of typing.
-A letter with a modifier on it is never taken — `⌘C` copies and `⇧G` types a
-capital G — so only bare letters are exposed, and only until the offer goes.
-`esc` ends it, and so does starting the next dictation.
+never holds keyboard focus, so it swallows a chip's own letter system-wide or
+it does not get it at all. Only that bare letter runs a command — a letter
+with a modifier on it is somebody else's shortcut and is left alone, `⌘C`
+still copies and `⇧G` still types a capital G. Every other key you press ends
+the offer instead, the same as clicking anywhere but the pill does, and is
+passed straight through: it still lands wherever it was headed. So a dictation
+followed straight away by a sentence starting with `C` or `G` runs a command
+on that first keystroke — the offer is up, and that is still its letter — but
+every keystroke after it is safe, because the offer is already gone. Pick a
+chip's letter with that in mind: one you are unlikely to start a word with
+right after dictating.
 
 Off by setting it to `false`. Then no key is taken at any time.
+
+## `logging`
+
+What gets written to disk about a dictation, apart from the transcript itself.
+Two separate switches, because the two artifacts have nothing in common but
+where they end up.
+
+`text` controls the line-by-line log at `~/Library/Logs/ParrotFlow.log` — see
+[Where things live](#where-things-live). On by default: it is how every
+problem in this app gets diagnosed, from a hotkey that will not register to a
+pipeline stage that silently did nothing. Turn it off and the app still works
+exactly the same; it just stops narrating itself to that file.
+
+`--peek` and `--edit-test`/`--span-test` write to the log whatever this says.
+Both are meant to be run as `open -na ParrotFlowDev --args --peek`, the only
+way to carry the app's own Accessibility grant from a terminal, and
+LaunchServices throws away the stdout of a process launched that way — the log
+is the one transport that survives, and the harnesses built on these commands
+read it back out.
+
+`audio` controls whether each dictation's recording is kept on disk, in
+`audio.output_dir`. **Off by default** — a recording of your voice should not
+accumulate there unless you asked for it. This is a change from earlier
+versions, which always kept every clip.
+
+Turn it on to get the old behaviour back: every recording, including a
+cancelled one (see [Escape stops a dictation](#escape-stops-a-dictation)) and
+one whose ending was lost to a device change, stays in your recordings folder.
+Turn it on before you want to build up a history of clips to work from — for
+calibration, or to re-run against a change with `--transcribe`.
+
+With it off, a clip exists on disk only for as long as the app needs it to
+transcribe your words, and is removed the moment that is done. With
+`transcription: { enabled: false }` nothing transcribes it at all, so nothing
+is kept either. Commands you run yourself from the terminal — `--record`,
+`--transcribe <file>`, `--spot` — are unaffected either way: they write and
+keep the file you asked them to, because you asked for it by running them.
 
 ## See also
 

@@ -82,6 +82,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// without Accessibility — an app condition has no business needing a
     /// permission that gating a stage by app does not otherwise require.
     private var appAtPress: Pipeline.App?
+    /// The same app as a pid, for the window anchor. Kept from the press so the
+    /// pill is measured against the app the words are aimed at.
+    private var pidAtPress: pid_t?
     /// Which microphone the engine is recording through. Read when recording
     /// starts and frozen onto the `Press` when the clip is handed to the
     /// decoder, so the microphone notice names the device that recorded the
@@ -280,6 +283,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// It has a second job while the pointer is holding the offer open. See
     /// `offerDeadlinePassed`.
     private var offerKeysExpiry: DispatchWorkItem?
+    /// Watches for a click outside the offer, for as long as it is up. See
+    /// `watchForOfferOutsideClick`.
+    private var offerClickMonitors: [Any] = []
     /// True while the pointer is resting on the offer.
     ///
     /// The clock is stopped then, and `offerUntil` becomes a date that never
@@ -339,6 +345,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
         loadConfig(announceErrors: false)
         watchConfig()
+
+        watchActivation()
 
         recorder.warmUp()
         recorder.onLevel = { [weak self] level in
@@ -672,13 +680,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focusAtPress = selectionAtPress ?? SelectionReader.focusSnapshot()
         let front = Self.appInFront()
         appAtPress = front?.app
+        pidAtPress = front?.pid
         // The icon is a promise that the words are going to land in that app,
         // so it is only made when they will. Off the element the snapshot above
         // already fetched — the answer costs two more attribute reads on a
         // reference we are holding, not another walk of the tree.
         destinationAtPress = Destination.at(app: front?.app, focus: focusAtPress?.element)
         appIconAtPress = destinationAtPress.acceptsText ? front?.icon : nil
-        Log.write("destination: \(destinationAtPress.described)")
+        // The app by name: `field (AXTextArea)` alone cannot be acted on.
+        let inWhichApp = destinationAtPress.namesTheApp
+            ? "" : " in \(front?.app.described ?? "nothing")"
+        Log.write("destination: \(destinationAtPress.described)\(inWhichApp)")
         let elapsed = Date().timeIntervalSince(snapshotStart)
         if elapsed > 0.15 {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
@@ -754,6 +766,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `handleHotKeyPress`, and only for a press that starts a dictation.
     private func readTheAnchor() {
         guard destinationAtPress.acceptsText else { return }
+
+        // `focusAtPress` is not empty for a blind app — it holds whatever app
+        // was focused before — so every rung below would measure the wrong
+        // window. Measured on Codex: the pill anchored to a 712x44 box while
+        // accessibility reported nothing focused in the app in front.
+        if appAtPress.map({ AppProfile.of($0).anchor }) == .window {
+            if let pid = pidAtPress, let found = CaretAnchor.window(of: pid) {
+                anchorAtPress = found
+                Log.write("pill: no caret — the app answers nothing; using its window")
+            } else {
+                Log.write("pill: no caret — the app answers nothing, and it has no window")
+            }
+            return
+        }
+
         switch CaretAnchor.read(at: focusAtPress?.element) {
         case .found(let found):
             anchorAtPress = found
@@ -1023,12 +1050,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard recording || transcribing else { return }
 
         if recording {
-            // The clip on disk is left alone. It cost nothing to write, the
-            // recordings folder is where you go to find out what the app heard,
-            // and deleting the evidence of the thing you just cancelled is the
-            // opposite of useful when the reason you cancelled it was that
-            // something sounded wrong.
-            _ = recorder.stop(config: config)
+            // The clip on disk is left alone, unless `logging.audio` says
+            // recordings do not accumulate at all. Kept, it cost nothing to
+            // write, the recordings folder is where you go to find out what
+            // the app heard, and deleting the evidence of the thing you just
+            // cancelled is the opposite of useful when the reason you
+            // cancelled it was that something sounded wrong.
+            if let clip = recorder.stop(config: config) {
+                Recorder.discardIfNotKept(clip, config: config)
+            }
             // No words are coming, so this press's dictation is over here. The
             // recorder is stopped directly rather than through
             // `stopRecording`, so nothing else would retire it — and the pane
@@ -1132,6 +1162,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write(String(format: "wrote %@ (%.2fs)", recording.url.lastPathComponent, recording.duration))
             if config.transcription.enabled {
                 transcribe(recording)
+            } else {
+                // Nothing is going to read the file — `transcribe` is what
+                // would otherwise discard it once it is done.
+                Recorder.discardIfNotKept(recording, config: config)
             }
         }
 
@@ -1183,7 +1217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the same answer the pipeline will be conditioned on. Reading NSWorkspace
     /// twice would let them disagree, and the one time they disagree is exactly
     /// the time the pill is worth having.
-    private static func appInFront() -> (app: Pipeline.App, icon: NSImage?)? {
+    private static func appInFront() -> (app: Pipeline.App, icon: NSImage?, pid: pid_t)? {
         guard let front = NSWorkspace.shared.frontmostApplication else { return nil }
         let app = Pipeline.App(
             name: front.localizedName ?? "", bundleID: front.bundleIdentifier ?? ""
@@ -1191,7 +1225,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Both empty is not an app you could write a condition against, and
         // saying so is what makes `app:` fail closed instead of matching "  ".
         guard !app.searchable.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
-        return (app, front.icon)
+        return (app, front.icon, front.processIdentifier)
     }
 
     private func transcribe(_ recording: Recorder.Recording) {
@@ -1235,6 +1269,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress
         )
         Task { [weak self] in
+            // Whatever happens below — decoded, cancelled, or thrown — nothing
+            // needs the clip on disk once this dictation is over.
+            defer { Recorder.discardIfNotKept(recording, config: config) }
             do {
                 // "Transcribing…" is the truth until the decoder is done, and
                 // a lie for the second a prompt or a script spends after it.
@@ -2032,7 +2069,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `press` is the dictation this offer is about, carried down from its own
     /// key-down — see `insertDictation`. Nothing below reads press-time state
     /// off `self`, so an offer can never be moved by another dictation's press.
-    private func showCorrectOffer(for press: Press, landing: Correction.Landing) {
+    /// `headline` is only passed for an ending nobody chose.
+    private func showCorrectOffer(
+        for press: Press, landing: Correction.Landing, headline: String? = nil
+    ) {
         // Beside the offer, not on it: its own window, so advice about the
         // microphone never costs you the chance to fix the sentence. Here
         // because this is the end of a dictation and every ending comes
@@ -2076,7 +2116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             original: text, element: press.element, owner: press.owner, landing: landing
         ))
         let commands = offerCommands
-        pill.offer(commands, for: Self.offerSeconds)
+        pill.offer(commands, headline: headline, for: Self.offerSeconds)
         // The list is captured, not read again in the closure: a config
         // reloaded while the offer is up would otherwise renumber the chips
         // under the pointer, and the click would run whatever took the slot.
@@ -2099,6 +2139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         offerOnScreen = commands
         watchTheOfferKeys()
+        watchForOfferOutsideClick()
 
         // Taken at the press, and only when that press found no caret. Matched
         // by run, so it is this dictation's own pane and nobody else's. A
@@ -2173,11 +2214,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // guards the other one has.
                 self.pill.model.onPick?(index)
             case .dismiss:
-                Log.write("offer: dismissed")
-                self.endTheOffer()
-                self.pill.hide()
+                self.dismissOffer(reason: "the keyboard")
             }
         }
+    }
+
+    /// A click anywhere but on the offer ends it, the same way Escape or
+    /// Return does. Clicking outside the offer is already how you leave a menu
+    /// or close a popover on the Mac; this is one more surface answering to
+    /// the same habit rather than needing its own.
+    ///
+    /// Two monitors, the same pair `watchForEscape` uses and for the same
+    /// reason: the global one sees a click in whatever app you clicked into,
+    /// while it is in front; the local one sees a click on one of this app's
+    /// own windows before AppKit routes it anywhere. Neither consumes the
+    /// click — it still lands wherever it was headed, on the words you clicked
+    /// into or the panel you clicked in. A click on the pill itself is not
+    /// "outside" and does nothing here; the pill's own tap gesture is what
+    /// runs a chip.
+    ///
+    /// Installed with the offer and torn down by `endTheOffer`, so an idle app
+    /// is not watching the mouse at all — the same shape as `watchForEscape`.
+    private func watchForOfferOutsideClick() {
+        guard offerClickMonitors.isEmpty else { return }
+        let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        let dismissIfOutside: () -> Void = { [weak self] in
+            guard let self, self.offerIsUp, let frame = self.pill.frame,
+                  !frame.contains(NSEvent.mouseLocation)
+            else { return }
+            self.dismissOffer(reason: "a click outside it")
+        }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { _ in
+            dismissIfOutside()
+        }) {
+            offerClickMonitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { event in
+            dismissIfOutside()
+            return event
+        }) {
+            offerClickMonitors.append(local)
+        }
+    }
+
+    private func stopWatchingForOfferOutsideClick() {
+        offerClickMonitors.forEach(NSEvent.removeMonitor)
+        offerClickMonitors.removeAll()
+    }
+
+    /// Take the offer down without running anything on it — Escape, Return, or
+    /// a click outside it. `reason` is only for the log.
+    ///
+    /// Not called by the deadline passing unanswered: the pill has already
+    /// faded itself out by then, on its own clock, and this would fade it a
+    /// second time. `offerDeadlinePassed` calls `endTheOffer` directly.
+    private func dismissOffer(reason: String) {
+        Log.write("offer: dismissed by \(reason)")
+        endTheOffer()
+        pill.hide()
     }
 
     /// Arm the call that ends the offer when nobody answers it.
@@ -2259,6 +2353,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerKeysExpiry?.cancel()
         offerKeysExpiry = nil
         offerKeys.stop()
+        stopWatchingForOfferOutsideClick()
     }
 
     /// Run the command a chip was clicked on or lettered, and take the offer
@@ -2879,6 +2974,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setLabel(nil)
     }
 
+    /// Activation and not the press: the tree is not built by the time the
+    /// call returns. The app already in front at launch never sends one.
+    private func watchActivation() {
+        let centre = NSWorkspace.shared.notificationCenter
+        centre.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { note in
+            ChromiumAccessibility.askIfNeeded(
+                note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            )
+        }
+        centre.addObserver(
+            forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main
+        ) { note in
+            ChromiumAccessibility.forget(
+                note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            )
+        }
+        ChromiumAccessibility.askIfNeeded(NSWorkspace.shared.frontmostApplication)
+    }
+
     /// Sets the menu bar title, optionally clearing it again after a delay.
     ///
     /// The token matters: these clears are fire-and-forget, so without it a
@@ -3329,15 +3445,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let now = SelectionReader.focusedElement()
             if now == nil || !CFEqual(now!, element) {
                 TextInserter.insert(text, mode: .clipboard)
-                if config.feedback.sound { NSSound(named: "Glass")?.play() }
+                // Not the paste sound — see the nowhere-to-type ending below.
+                if config.feedback.sound { NSSound(named: "Tink")?.play() }
                 Log.write(now == nil
                     ? "could not read what is focused; copied instead of pasting"
                     : "focus moved since the press; copied instead of pasting")
-                // The menu bar, not the pill. The pill is about to carry the
-                // offer, and a notice on it would be the offer's own surface
-                // saying something else.
                 setLabel("Focus moved — the transcription is on your clipboard", clearAfter: 4)
-                showCorrectOffer(for: press, landing: .clipboardNow())
+                showCorrectOffer(
+                    for: press, landing: .clipboardNow(), headline: "Focus moved · ⌘V"
+                )
                 updateUI()
                 return
             }
@@ -3364,12 +3480,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if config.transcription.insertMode == .paste,
            case .nowhere(let reason) = destination, reason != .noAccessibility {
             TextInserter.insert(text, mode: .clipboard)
-            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            // Not Glass: a sound that cannot be told from success is no sound.
+            if config.feedback.sound { NSSound(named: "Tink")?.play() }
             Log.write("nothing to type into (\(reason.described)); copied instead")
-            // In the menu bar, for the same reason as above: the pill is the
-            // offer's.
             setLabel("Nowhere to type — the transcription is on your clipboard", clearAfter: 4)
-            showCorrectOffer(for: press, landing: .clipboardNow())
+            // And on the pill: the menu bar row is inside a menu you must open.
+            showCorrectOffer(
+                for: press, landing: .clipboardNow(), headline: "Nowhere to type · ⌘V"
+            )
             updateUI()
             return
         }

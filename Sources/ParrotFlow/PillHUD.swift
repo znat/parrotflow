@@ -50,7 +50,10 @@ enum PillState: Equatable {
     /// What you can do about what just happened. One entry per command; which
     /// one the pointer is on lives in the model, not here, so moving the
     /// highlight is not a state change and does not crossfade the whole pill.
-    case offer([OfferedCommand])
+    ///
+    /// The headline is where the words went. Nil when they went into the field
+    /// you were looking at, set for the endings nobody asked for.
+    case offer([OfferedCommand], String?)
 }
 
 /// A command on the offer, and the letter that runs it.
@@ -184,10 +187,12 @@ final class PillHUD {
     /// long is left without a clock on screen, and stays usable to the last
     /// frame. The keys and the chips work the whole way down; the fading only
     /// says how long is left.
-    func offer(_ commands: [OfferedCommand], for duration: TimeInterval) {
+    func offer(
+        _ commands: [OfferedCommand], headline: String? = nil, for duration: TimeInterval
+    ) {
         model.selected = nil
         offerFor = duration
-        set(.offer(commands))
+        set(.offer(commands, headline))
         decay(over: duration)
     }
 
@@ -268,6 +273,24 @@ final class PillHUD {
     /// Where the offer starts. Below full, because it is the one surface that
     /// appears without being asked for.
     static let offerAlpha: CGFloat = 0.92
+
+    /// The pill's own visible capsule right now — what a click has to land
+    /// inside of to count as a click on the pill rather than a click past it.
+    /// Nil while there is no pill up, so a caller cannot mistake the frame it
+    /// was last shown at for one it is still shown at.
+    ///
+    /// `panel.frame` inset by `bleed`, not `panel.frame` itself: the window is
+    /// bigger than the capsule on every side, for the glow to spill into — see
+    /// `PillMetrics.bleed`. That margin is fully transparent, and the pill
+    /// often sits right beside the words you are about to click into, so a
+    /// click meant to land past it can easily fall inside that invisible
+    /// window without landing anywhere near the capsule you can see. Counting
+    /// that as "on the pill" is why a click there used to look like it did
+    /// nothing.
+    var frame: NSRect? {
+        guard let panel, panel.isVisible else { return nil }
+        return panel.frame.insetBy(dx: PillMetrics.bleed, dy: PillMetrics.bleed)
+    }
 
     /// Whether the pointer is over the pill at this instant.
     ///
@@ -739,7 +762,7 @@ enum PillMetrics {
         case .recording: return recording(hasIcon: hasIcon)
         case .working(let message): return text(message)
         case .notice(let message, _): return text(message)
-        case .offer(let commands): return offer(commands)
+        case .offer(let commands, let headline): return offer(commands, headline: headline)
         }
     }
 
@@ -773,13 +796,17 @@ enum PillMetrics {
     /// measured here, and the two numbers only ever agree approximately. The
     /// title is `.fixedSize()`, so a capsule a few points too narrow lets a
     /// chip hang over the end rather than shortening it.
-    static func offer(_ commands: [OfferedCommand]) -> CGFloat {
+    ///
+    /// A headline widens it and is meant to: then the sentence is on the
+    /// clipboard and looking like a notice is the point.
+    static func offer(_ commands: [OfferedCommand], headline: String? = nil) -> CGFloat {
         // A chip is its keycap, its words and 10pt of padding either side; then
         // 4pt between one chip and the next.
         let chips = commands.reduce(CGFloat(0)) { total, command in
             total + 20 + (command.key.isEmpty ? 0 : keycap) + title(command.title)
         }
-        return padding * 2 + chips + CGFloat(max(commands.count - 1, 0)) * 4
+        let lead = headline.map { title($0) + gap } ?? 0
+        return padding * 2 + lead + chips + CGFloat(max(commands.count - 1, 0)) * 4
     }
 
     /// The keycap on a chip: one character at 11pt bold, 5pt either side, and
@@ -835,8 +862,8 @@ struct PillView: View {
             case .notice(let message, let tone):
                 MessageContent(message: message, tone: tone)
                     .transition(.opacity)
-            case .offer(let commands):
-                OfferContent(commands: commands)
+            case .offer(let commands, let headline):
+                OfferContent(commands: commands, headline: headline)
                     .transition(.opacity)
             }
         }
@@ -933,6 +960,7 @@ private struct MessageContent: View {
 private struct OfferContent: View {
     @EnvironmentObject private var model: PillModel
     let commands: [OfferedCommand]
+    let headline: String?
 
     /// The lit chip's lettering: leaf lightened almost to white, so the words
     /// stay readable over a fill of the same colour.
@@ -940,6 +968,15 @@ private struct OfferContent: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            if let headline {
+                Text(headline)
+                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .foregroundStyle(NoticeTone.caution.color)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.trailing, PillMetrics.gap - 4)
+            }
+
             ForEach(Array(commands.enumerated()), id: \.offset) { index, command in
                 // A tap gesture rather than a `Button`. The pill is a
                 // `nonactivatingPanel` and is never the key window, and SwiftUI

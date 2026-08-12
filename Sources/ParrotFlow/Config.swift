@@ -27,6 +27,7 @@ struct Config: Decodable, Equatable {
     var transcription: Transcription = Transcription()
     var llm: LLM = LLM()
     var updates: UpdatePolicy = UpdatePolicy()
+    var logging: Logging = Logging()
     /// Everything nameable: `transforms:`, plus anything still written under
     /// the older `prompts:`.
     var transforms: [Transform] = []
@@ -67,7 +68,7 @@ struct Config: Decodable, Equatable {
 
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, audio, feedback, transcription, llm, transforms, prompts, updates
+        case hotkey, audio, feedback, transcription, llm, transforms, prompts, updates, logging
         case freeForm = "free_form"
     }
 
@@ -1633,6 +1634,35 @@ struct Config: Decodable, Equatable {
         }
     }
 
+    /// What gets written to disk about a dictation, apart from the transcript
+    /// itself.
+    ///
+    /// Two switches because the two artifacts have nothing in common but
+    /// where they end up. The text log is prose, rotates itself, and is how
+    /// every problem in this app gets diagnosed — it stays on. A clip is a
+    /// recording of your voice, keeps growing forever, and nothing downstream
+    /// needs it once the words have landed — it stays off until you ask for
+    /// it, for calibration or for `--transcribe`.
+    struct Logging: Codable, Equatable {
+        /// The line-by-line log at `~/Library/Logs/ParrotFlow.log` — see
+        /// `Log`. On by default.
+        var text: Bool = true
+        /// Keep each dictation's recording on disk, in `audio.output_dir`.
+        /// Off by default: nothing written, nothing left behind.
+        var audio: Bool = false
+
+        enum CodingKeys: String, CodingKey { case text, audio }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init()
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .text) { text = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .audio) { audio = v }
+        }
+    }
+
     init() {}
 
     /// Hand-rolled so a partial config.yaml is valid: anything you leave out
@@ -1650,6 +1680,7 @@ struct Config: Decodable, Equatable {
         if let updates = try c.decodeIfPresent(UpdatePolicy.self, forKey: .updates) {
             self.updates = updates
         }
+        if let logging = try c.decodeIfPresent(Logging.self, forKey: .logging) { self.logging = logging }
         // `transforms:` first, then anything still under `prompts:`. Both are
         // read: `prompts:` is what every config written before this existed
         // says, and a rename that silently empties the section is the one
@@ -2082,6 +2113,7 @@ enum ConfigStore {
     static func load() throws -> Config {
         try createIfMissing()
         let text = try String(contentsOf: fileURL, encoding: .utf8)
+        let config: Config
         // An empty config.yaml is a supported state — it means "defaults for
         // everything" — and it must not take the vocabulary down with it. The
         // two files are independent, and one of them being blank says nothing
@@ -2089,15 +2121,21 @@ enum ConfigStore {
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             var bare = Config()
             bare.vocabulary = loadVocabulary()
-            return bare
+            config = bare
+        } else {
+            // A relative `command:` is relative to the file that declared it,
+            // so a config carries its scripts beside it and a `--pipeline`
+            // fixture carries its own.
+            var decoded = try YAMLDecoder().decode(
+                Config.self, from: text, userInfo: [.configDirectory: directory]
+            )
+            decoded.vocabulary = loadVocabulary()
+            config = decoded
         }
-        // A relative `command:` is relative to the file that declared it, so a
-        // config carries its scripts beside it and a `--pipeline` fixture
-        // carries its own.
-        var config = try YAMLDecoder().decode(
-            Config.self, from: text, userInfo: [.configDirectory: directory]
-        )
-        config.vocabulary = loadVocabulary()
+        // Every caller reads the config through here — the app at launch and
+        // on every save, and each CLI command once — so this is the one place
+        // that has to set it.
+        Log.textEnabled = config.logging.text
         return config
     }
 
@@ -2159,6 +2197,17 @@ enum ConfigStore {
       # Click a chip to run it. Tapping the dictation hotkey — press and let go
       # — opens the correction panel too. Holding it starts the next dictation.
       correct_offer: true
+
+    logging:
+      # The line-by-line log at ~/Library/Logs/\(AppVariant.logFileName) — how
+      # every problem in this app gets diagnosed. Leave it on.
+      text: true
+
+      # Write each dictation's recording to disk, in audio.output_dir. Off by
+      # default: a recording of your voice should not pile up there unless you
+      # asked for it. Turn it on for --transcribe, calibration, or to hear what
+      # the app heard.
+      audio: false
 
     transcription:
       # paste     -> typed into the app you're in (needs Accessibility)

@@ -1,6 +1,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import ObjCExceptions
 
 /// Captures the default input device and writes 16 kHz mono PCM WAV files —
 /// the format Parakeet expects, so the transcription step can read them as-is.
@@ -91,11 +92,34 @@ final class Recorder {
         }
     }
 
+    /// The two formats an engine holds for its own input node.
+    ///
+    /// `tap` is what a tap has to be installed with. `hardware` is what
+    /// `installTap` checks it against — the assertion is literally
+    /// `format.sampleRate == inputHWFormat.sampleRate`. They are the same
+    /// number until the device moves under a graph that has not been rebuilt
+    /// since, and then they are one number each.
+    ///
+    /// Both come off the same node, so this is the engine talking about itself.
+    /// It is a different question from `InputBinding`, which is CoreAudio
+    /// talking about the device, and the difference is #123: the device and the
+    /// engine agreed at 24000 Hz while the node's two halves did not, so every
+    /// check passed and the tap still asserted.
+    struct EngineFormats {
+        let tap: AVAudioFormat
+        let hardware: AVAudioFormat
+
+        var described: String {
+            "tap at \(Int(tap.sampleRate)) Hz, input at \(Int(hardware.sampleRate)) Hz"
+        }
+    }
+
     enum RecorderError: LocalizedError {
         case noInputDevice
         case unsupportedFormat
         case converterUnavailable
         case inputStillConnecting
+        case inputMovedWhileStarting
 
         var errorDescription: String? {
             switch self {
@@ -107,6 +131,8 @@ final class Recorder {
                 return "Could not convert the microphone's format to 16 kHz mono."
             case .inputStillConnecting:
                 return "The microphone is still connecting — press again in a moment."
+            case .inputMovedWhileStarting:
+                return "The microphone changed as the recording started — press again."
             }
         }
     }
@@ -149,6 +175,16 @@ final class Recorder {
     /// message you can act on, not an app that stops answering the hotkey.
     private static let rebuildWaitSeconds: Double = 1.5
 
+    /// How long a replaced engine is kept alive before it is let go. See
+    /// `retire`.
+    ///
+    /// Long enough to be past the change that caused the rebuild: the AirPods
+    /// link that crashed the app was still posting property changes seven
+    /// seconds after it became the input, and the rebuild itself takes a
+    /// tenth of that. Nothing waits on this, so the cost of being generous is
+    /// one engine object held a few seconds longer.
+    private static let retirementSeconds: Double = 10
+
     private(set) var isRecording = false
     private(set) var startedAt: Date?
 
@@ -161,6 +197,16 @@ final class Recorder {
         return rebuildCount
     }
     private var rebuildCount = 0
+
+    /// How many replaced engines are being held rather than released. Read by
+    /// `--audio-recovery`, from a different thread than the one that counts
+    /// them. Zero at rest.
+    var enginesInRetirement: Int {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return retiredCount
+    }
+    private var retiredCount = 0
 
     /// 0...1, already smoothed — drive a meter with it. Called on the main queue.
     var onLevel: ((Float) -> Void)?
@@ -179,6 +225,18 @@ final class Recorder {
     /// input under the recorder without moving the machine's audio settings.
     /// Nothing in the app replaces it.
     var currentInput: () -> InputBinding? = InputBinding.system
+
+    /// What the engine says about its own input node, both halves of it.
+    ///
+    /// A property for the same reason as `currentInput`: it is the only way to
+    /// put a graph that disagrees with itself in front of the check without a
+    /// microphone that does it on cue. Nothing in the app replaces it.
+    var engineFormats: (AVAudioEngine) -> EngineFormats = { engine in
+        EngineFormats(
+            tap: engine.inputNode.outputFormat(forBus: 0),
+            hardware: engine.inputNode.inputFormat(forBus: 0)
+        )
+    }
 
     /// Recreated when the audio device changes — an engine holds on to the
     /// device it was prepared against. Guarded by `stateLock`.
@@ -205,6 +263,8 @@ final class Recorder {
     /// delivered, no recording started, and not one line was written. The app
     /// looked dead, and quitting it was the only way out.
     private let engineQueue = DispatchQueue(label: "com.parrotflow.recorder.engine")
+    /// Lets go of the engines the rebuilds replaced. See `retire`.
+    private let retirementQueue = DispatchQueue(label: "com.parrotflow.recorder.retirement")
     /// Empty unless a rebuild is under way. `start` waits on it, briefly.
     private let rebuildGroup = DispatchGroup()
 
@@ -272,9 +332,9 @@ final class Recorder {
         try waitForRebuild()
 
         var engine = currentEngine()
-        var inputFormat = engine.inputNode.outputFormat(forBus: 0)
+        var formats = engineFormats(engine)
 
-        if let problem = Self.formatProblem(inputFormat, against: currentInput()),
+        if let problem = Self.formatProblem(formats, against: currentInput()),
            problem != acceptedFormatMismatch {
             // A second chance rather than an error, for both shapes of the
             // problem. An empty format means the engine is pointing at nothing;
@@ -286,30 +346,67 @@ final class Recorder {
             rebuildEngine(because: problem)
             try waitForRebuild()
             engine = currentEngine()
-            inputFormat = engine.inputNode.outputFormat(forBus: 0)
+            formats = engineFormats(engine)
 
-            let remaining = Self.formatProblem(inputFormat, against: currentInput())
-            // Remembered whether it cleared or not. A device whose engine and
-            // stream never agree would otherwise buy a rebuild on every single
-            // press, which is a second bug wearing the first one's clothes.
-            acceptedFormatMismatch = remaining
-            if let remaining {
-                // Fail open. A recording that may be wrong beats refusing to
-                // record — but said out loud, because the whole point of #95 is
-                // that this used to be the silent path.
+            let remaining = Self.formatProblem(formats, against: currentInput())
+            if let remaining, Self.graphProblem(formats) == nil {
+                // Fail open. The engine agrees with itself and disagrees with
+                // the device: the tap will install, and whether it hears
+                // anything is what the counters in `process` are for. A
+                // recording that may be wrong beats refusing to record — but
+                // said out loud, because the whole point of #95 is that this
+                // used to be the silent path.
+                //
+                // Remembered, because a device whose engine and stream never
+                // agree would otherwise buy a rebuild on every single press,
+                // which is a second bug wearing the first one's clothes.
+                acceptedFormatMismatch = remaining
                 Log.write("after the rebuild, \(remaining) — recording anyway")
                 report("The microphone is not answering as expected.")
+            } else {
+                // Either it cleared, or the engine still disagrees with itself.
+                // That second one is never remembered: it is not a device to be
+                // lived with, it is a graph a rebuild has always fixed, and the
+                // press after this one has to be allowed to try again.
+                acceptedFormatMismatch = nil
             }
         }
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+        guard formats.tap.sampleRate > 0, formats.tap.channelCount > 0 else {
             throw RecorderError.noInputDevice
         }
         let inputNode = engine.inputNode
 
-        let url = try openCapture(inputFormat: inputFormat, config: config)
+        let url = try openCapture(inputFormat: formats.tap, config: config)
 
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            self?.process(buffer: buffer)
+        // The last look, at the one number `installTap` is about to assert on.
+        // The hardware format can move between the check above and this line —
+        // that is a few milliseconds, and settling a Bluetooth link lands
+        // inside them. Re-read rather than trusted, because being wrong here
+        // does not return an error.
+        if let problem = Self.graphProblem(engineFormats(engine)) {
+            Log.write("\(problem) — not installing the tap")
+            teardown()
+            try? FileManager.default.removeItem(at: url)
+            rebuildEngine(because: problem)
+            throw RecorderError.inputMovedWhileStarting
+        }
+
+        // Wrapped, because `installTap` reports this by raising an
+        // NSException, which unwinds through the hotkey handler and out of the
+        // run loop: no error, no log line, no recording, and an app that still
+        // answers its menu. That is #123, and it is what made "the microphone
+        // changed" look like "the app died". The engine is thrown away rather
+        // than reused — whatever raised it is in whatever state it was in.
+        if let raised = runCatchingObjCExceptions({
+            inputNode.installTap(onBus: 0, bufferSize: 4096, format: formats.tap) { [weak self] buffer, _ in
+                self?.process(buffer: buffer)
+            }
+        }) {
+            Log.write("installing the tap raised \(raised.name.rawValue): \(raised.reason ?? "no reason given")")
+            teardown()
+            try? FileManager.default.removeItem(at: url)
+            rebuildEngine(because: "installing the tap raised an exception")
+            throw RecorderError.inputMovedWhileStarting
         }
 
         do {
@@ -481,11 +578,17 @@ final class Recorder {
         // failure this file is about, delivered as text instead of as nothing.
         // So it is not handed on.
         //
-        // The file stays where it is. It is the evidence of what went wrong,
-        // and deleting it is the opposite of useful — the same reason
-        // `cancelDictation` leaves a cancelled clip alone.
+        // The file stays where it is, unless `logging.audio` says recordings
+        // do not accumulate at all — that setting is about not keeping your
+        // voice on disk, and a partial clip is still your voice. Kept, it is
+        // evidence of what went wrong, and deleting it is the opposite of
+        // useful — the same reason `cancelDictation` leaves a cancelled clip
+        // alone.
         if lost > Self.droppedAudioTolerance {
             Log.write("\(url.lastPathComponent) is short and will not be transcribed")
+            if !config.logging.audio {
+                try? FileManager.default.removeItem(at: url)
+            }
             report("Part of that recording was lost. Say it again.")
             return nil
         }
@@ -680,33 +783,84 @@ final class Recorder {
 
         stateLock.lock()
         let bound = self.bound
+        let engine = self.engine
+        let rebuilding = self.rebuilding
         stateLock.unlock()
 
         let current = currentInput()
-        guard current != bound else { return }
-        rebuildEngine(because: "input moved: \(Self.describe(bound)) → \(Self.describe(current))")
+        guard current == bound else {
+            rebuildEngine(because: "input moved: \(Self.describe(bound)) → \(Self.describe(current))")
+            return
+        }
+
+        // Nothing below this line asks anything of an engine that is already
+        // being replaced. `adopt` is stopping that one on another thread, and
+        // reading a format off it at the same moment is a race against a
+        // teardown for an answer that is about to be thrown away.
+        guard !rebuilding else { return }
+
+        // The device is where it was, and the engine can still have moved. It
+        // is the engine that posts this notification, and it posts it about
+        // itself: AirPods settle their link, the node's hardware format changes
+        // underneath a graph that was built against the old one, and CoreAudio
+        // reports the same device at the same rate throughout. Comparing only
+        // the binding drops that, and the next press installs a tap that
+        // asserts. See #123.
+        //
+        // Our own `prepare()` posts this notification too, and that echo still
+        // costs nothing: an engine that agrees with itself has no problem to
+        // find here.
+        guard let problem = Self.graphProblem(engineFormats(engine)) else { return }
+        rebuildEngine(because: problem)
     }
 
     private static func describe(_ binding: InputBinding?) -> String {
         binding?.described ?? "no input device"
     }
 
-    /// Why this format cannot be recorded through, or nil if it can.
+    /// Why this engine cannot have a tap installed on it, or nil if it can.
     ///
-    /// The second test is the one #95 needed. A format that disagrees with the
-    /// device is not a broken format — it passes every guard, builds a
-    /// converter, installs a tap — it is a format that used to be true.
-    private static func formatProblem(
-        _ format: AVAudioFormat, against input: InputBinding?
-    ) -> String? {
-        if format.sampleRate <= 0 || format.channelCount == 0 {
+    /// Asked of the engine alone, so it holds wherever the device is: a graph
+    /// whose two halves disagree is unusable against every device, including
+    /// the one it is pointing at. `installTap` makes the same comparison and
+    /// answers it by raising an exception, so this has to be asked first.
+    ///
+    /// This is #123. The engine was at 24000 Hz, the device was at 24000 Hz,
+    /// every check agreed — and the node's own hardware format had moved when
+    /// the AirPods link settled, 700 ms before the key was pressed.
+    ///
+    /// Not private: `--audio-recovery` prints the sentence it would write.
+    static func graphProblem(_ formats: EngineFormats) -> String? {
+        if formats.tap.sampleRate <= 0 || formats.tap.channelCount == 0 {
             return "the input format came back empty"
         }
+        guard formats.tap.sampleRate != formats.hardware.sampleRate else { return nil }
+        return String(
+            format: "the engine's tap is at %.0f Hz and its own input is at %.0f Hz",
+            formats.tap.sampleRate, formats.hardware.sampleRate
+        )
+    }
+
+    /// Why this format cannot be recorded through, or nil if it can.
+    ///
+    /// Two questions, asked in the order they cost. The graph has to hold
+    /// before the device is worth asking about — and it is the half nothing
+    /// asked until #123.
+    ///
+    /// The device test is the one #95 needed. A format that disagrees with the
+    /// device is not a broken format — it passes every guard, builds a
+    /// converter, installs a tap — it is a format that used to be true.
+    ///
+    /// Not private: `--audio-recovery` prints the sentence it would write.
+    static func formatProblem(
+        _ formats: EngineFormats, against input: InputBinding?
+    ) -> String? {
+        if let problem = graphProblem(formats) { return problem }
         guard let input, input.sampleRate > 0 else { return nil }
-        guard format.sampleRate != input.sampleRate else { return nil }
+        guard formats.tap.sampleRate != input.sampleRate else { return nil }
         return String(
             format: "the engine is at %.0f Hz and the device is at %.0f Hz",
-            format.sampleRate, input.sampleRate
+            formats.tap.sampleRate, input.sampleRate
         )
     }
 
@@ -786,11 +940,48 @@ final class Recorder {
         )
         observeConfigurationChanges(on: fresh)
         old.stop()
+        retire(old)
 
         Log.write(String(
             format: "capture engine rebuilt in %.1fs — mic=%@, %@",
             took, Self.inputDeviceName ?? "none", Self.describe(binding)
         ))
+    }
+
+    /// Holds a replaced engine for a while, then lets it go.
+    ///
+    /// Releasing one on the spot is what crashed the app on 2026-08-12 at
+    /// 18:22:43, seven seconds after AirPods became the input: `adopt` on the
+    /// engine queue was inside `-[AVAudioEngine dealloc]`, blocked in
+    /// `invalidateAudioUnit` while a Bluetooth audio unit tore itself down, and
+    /// the AVAudioIOUnit queue delivered a property change to the same object.
+    /// The callback messaged an engine that was halfway gone — EXC_BAD_ACCESS,
+    /// with the two threads named in the report.
+    ///
+    /// The window is not small. A device change is exactly when AVFoundation
+    /// has property changes in flight, and tearing down that unit is measured
+    /// in seconds, not milliseconds. So a replaced engine is stopped, set
+    /// aside, and released once the device that was changing has stopped
+    /// changing.
+    ///
+    /// On its own queue, because the release blocks for as long as the teardown
+    /// does, and blocking `engineQueue` would make the next rebuild wait behind
+    /// a dead engine — which the press after it would see as a microphone that
+    /// is still connecting.
+    private func retire(_ old: AVAudioEngine) {
+        stateLock.lock()
+        retiredCount += 1
+        stateLock.unlock()
+
+        retirementQueue.asyncAfter(deadline: .now() + Self.retirementSeconds) { [weak self] in
+            // `old` is captured on purpose: this block is the only thing
+            // holding it, and the release is the block ending.
+            withExtendedLifetime(old) {}
+            guard let self else { return }
+            self.stateLock.lock()
+            self.retiredCount -= 1
+            self.stateLock.unlock()
+        }
     }
 
     // MARK: - Device
@@ -935,7 +1126,30 @@ final class Recorder {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss"
-        let name = "parrotflow-\(formatter.string(from: Date())).wav"
+        // The timestamp alone is only second-precision, and push-to-talk does
+        // not wait for the previous dictation's transcription before starting
+        // the next recording — two presses inside the same second would name
+        // the same file. That used to mean the second recording's write
+        // silently clobbered whatever the first was still being read from; now
+        // that a clip can be deleted once its own dictation is done with it,
+        // an earlier clip's cleanup could delete a later recording still using
+        // the same name. The suffix makes every capture its own file.
+        let suffix = UUID().uuidString.prefix(8)
+        let name = "parrotflow-\(formatter.string(from: Date()))-\(suffix).wav"
         return dir.appendingPathComponent(name)
+    }
+
+    /// Removes a clip once nothing needs the file on disk any more, unless
+    /// `logging.audio` says to keep it.
+    ///
+    /// Not folded into `stop()`: the caller still needs the file to exist right
+    /// after `stop()` returns, to hand it to the transcriber. This runs once
+    /// that is done — after transcription finishes, or straight away when
+    /// nothing was ever going to transcribe it. `--record`, `--audio-recovery`
+    /// and the rest of the terminal commands manage their own clips directly
+    /// and never call this — a deliberate `--record` keeps what it wrote.
+    static func discardIfNotKept(_ recording: Recording, config: Config) {
+        guard !config.logging.audio else { return }
+        try? FileManager.default.removeItem(at: recording.url)
     }
 }

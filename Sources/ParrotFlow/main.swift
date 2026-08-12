@@ -304,6 +304,16 @@ if let index = arguments.firstIndex(of: "--forget") {
     exit(ForgetCommand.run(term: arguments[index + 1]))
 }
 
+if let index = arguments.firstIndex(of: "--profile") {
+    guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
+        print("usage: ParrotFlow --profile <bundle-id> [name]")
+        exit(2)
+    }
+    let name = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
+        ? arguments[index + 2] : ""
+    exit(ProfileCommand.run(bundleID: arguments[index + 1], name: name))
+}
+
 if let index = arguments.firstIndex(of: "--peek") {
     let seconds = arguments.indices.contains(index + 1) ? Double(arguments[index + 1]) : nil
     let sentinel = arguments.firstIndex(of: "--find").flatMap { found in
