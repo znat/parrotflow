@@ -33,18 +33,16 @@ enum PermissionStep: CaseIterable {
         }
     }
 
-    /// What it is for, and why this app is the one asking. Two sentences at
-    /// most: this is read once, standing between someone and the thing they
+    /// Says only why this permission, not what the app is or how it works —
+    /// one sentence, read once, standing between someone and the thing they
     /// just installed.
     var reason: String {
         switch self {
         case .microphone:
-            return "Hold the hotkey and ParrotFlow records. The recording becomes "
-                + "text on this Mac, and never leaves it."
+            return "ParrotFlow needs microphone access to turn what you say into text."
         case .accessibility:
-            return "This is what puts the text into the app you are already in, and "
-                + "reads the words you select so you can fix them out loud. Both "
-                + "halves of ParrotFlow need it."
+            return "ParrotFlow needs Accessibility access to type that text into "
+                + "the app you're using."
         }
     }
 
@@ -168,6 +166,22 @@ final class PermissionsWindowController {
     private var window: NSWindow?
     private var timer: Timer?
     private var accessibilityObserver: NSObjectProtocol?
+    /// The step a fronting attempt is under way for, and how many ticks it
+    /// gets to actually land. A step is only worth fighting for the moment it
+    /// first appears — activation is asynchronous and the first attempt does
+    /// not always take (see poll below), so this allows a few retries rather
+    /// than marking it "done" the instant one attempt is fired and never
+    /// checking whether it actually worked.
+    private var fronting: (index: Int, attemptsLeft: Int)?
+    /// The step that has already been in front at least once. Checked before
+    /// `fronting` is ever armed, and for good — granting Accessibility means
+    /// clicking into System Settings, not this window, and the first
+    /// successful appearance is the only one this window is owed. Without
+    /// this, clicking into Settings to tick the box put the window out of
+    /// key focus again, `fronting`'s budget hadn't run out yet, and the next
+    /// tick re-fronted it on top of the very checkbox someone was reaching
+    /// for.
+    private var succeededIndex: Int?
 
     init() {
         accessibilityObserver = Permissions.observeAccessibilityChanges { [weak self] in
@@ -191,6 +205,8 @@ final class PermissionsWindowController {
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
         window?.center()
+        fronting = nil
+        succeededIndex = model.index
 
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -201,6 +217,34 @@ final class PermissionsWindowController {
     private func poll() {
         model.refresh()
         model.advancePastGranted()
+        guard model.current != nil else { fronting = nil; return }
+
+        // Once this step has been in front at all, it is done — regardless
+        // of what has focus now, or whether `fronting`'s own budget has any
+        // attempts left. See `succeededIndex`'s doc comment.
+        if window?.isKeyWindow == true { succeededIndex = model.index }
+        guard succeededIndex != model.index else { return }
+
+        // A new step gets a few ticks' worth of attempts to land its one
+        // successful appearance — activation is asynchronous and does not
+        // always take on the first try.
+        if fronting?.index != model.index {
+            fronting = (model.index, attemptsLeft: 3)
+        }
+        guard var attempt = fronting, attempt.attemptsLeft > 0 else { return }
+        attempt.attemptsLeft -= 1
+        fronting = attempt
+        let target = attempt.index
+
+        NSApp.activate(ignoringOtherApps: true)
+        // NSApp.activate only lands on the next turn of the run loop — see
+        // the same trap in CorrectionPanel.present(). Calling
+        // makeKeyAndOrderFront synchronously right after it here did nothing,
+        // because activation had not actually happened yet.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.fronting?.index == target else { return }
+            self.window?.makeKeyAndOrderFront(nil)
+        }
     }
 
     private func build() {
@@ -247,12 +291,14 @@ final class PermissionsWindowController {
         case .microphone:
             Permissions.requestMicrophone { [weak self] _ in self?.poll() }
         case .accessibility:
-            // Request before opening Settings, always. It is
-            // AXIsProcessTrustedWithOptions that registers this binary with
-            // TCC — open the pane first and the app may not be in the list to
-            // tick, which reads as the instructions being wrong.
+            // AXIsProcessTrustedWithOptions with the prompt option is what
+            // registers this binary with TCC — skip it and the app may not
+            // be in the list to tick, which reads as the instructions being
+            // wrong. It also puts up its own system alert with an "Open
+            // System Settings" button, so a second, explicit open() here
+            // used to land on top of that alert as a doubled prompt. The
+            // alert's own button is the one way through now.
             Permissions.requestAccessibility()
-            Permissions.openAccessibilitySettings()
         }
     }
 }
@@ -428,8 +474,8 @@ private struct StepPane: View {
                 .padding(.bottom, 7)
 
             Text(step.reason)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(.system(size: 14))
+                .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .lineSpacing(2)
 
@@ -458,10 +504,18 @@ private struct StepPane: View {
             Spacer(minLength: 16)
 
             HStack(spacing: 10) {
-                Button(step.declineTitle(in: context), action: onDecline)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tertiary)
-                    .font(.system(size: 12))
+                // Not offered during setup: both permissions are required, and a
+                // way out here would be a way to finish installing without
+                // either — the exact state that fails later, silently, at the
+                // moment someone holds the key and nothing is written.
+                // Revisiting still gets it, and the window's own close button
+                // besides — this screen only ever asks to skip, never to quit.
+                if context != .installing {
+                    Button(step.declineTitle(in: context), action: onDecline)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 12))
+                }
 
                 Spacer()
 
