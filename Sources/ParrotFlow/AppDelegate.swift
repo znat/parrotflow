@@ -599,9 +599,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 if manual {
                     await MainActor.run { [weak self] in
-                        guard let self,
-                            self.updateSchedulingGeneration == schedulingGenerationAtStart
-                        else { return }
+                        guard let self else { return }
+                        guard self.updateSchedulingGeneration == schedulingGenerationAtStart else {
+                            self.flash("Update check canceled — settings changed")
+                            return
+                        }
                         self.updateCheckInFlight = false
                         self.manualCheckGeneration += 1
                         Log.write("updates: check failed — \(error.localizedDescription)")
@@ -613,9 +615,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 latest = nil
             }
             await MainActor.run { [weak self] in
-                guard let self,
-                    self.updateSchedulingGeneration == schedulingGenerationAtStart
-                else { return }
+                guard let self else { return }
+                guard self.updateSchedulingGeneration == schedulingGenerationAtStart else {
+                    if manual { self.flash("Update check canceled — settings changed") }
+                    return
+                }
                 // A manual answer always applies. A background one only does
                 // if a manual check has not started, or finished, meanwhile.
                 if !manual {
