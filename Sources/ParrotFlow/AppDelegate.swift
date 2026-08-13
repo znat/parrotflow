@@ -8,6 +8,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var vocabularyWatcher: FileWatcher?
     private var transformWatchers: [FileWatcher] = []
 
+    /// Set while a live-reload failure is waiting out its grace period —
+    /// see `loadConfig(announceErrors:)`.
+    private var configReloadNotice: DispatchWorkItem?
+
+    /// How long a bad config.yaml is given to be fixed before the failure is
+    /// shown. Round number, long enough to finish an edit and save again.
+    static let configReloadGraceSeconds: TimeInterval = 10
+
     private let hotKeys = HotKeyManager()
     private let recorder = Recorder()
     private let pill = PillHUD()
@@ -423,18 +431,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             config = try ConfigStore.load()
         } catch {
             if announceErrors {
-                presentAlert(
-                    title: "Could not read config.yaml",
-                    message: "\(error.localizedDescription)\n\nFalling back to the previous settings."
-                )
+                Log.write("config: could not reload — \(error.localizedDescription)")
+                armConfigReloadNotice()
             }
             return
         }
+        configReloadNotice?.cancel()
+        configReloadNotice = nil
         applyConfig()
         // After the load, not with the other watchers: a transform can be
         // renamed, removed or pointed at a different file, so which files are
         // worth watching is only known once the config has been read.
         watchTransformFiles()
+    }
+
+    /// Holds a live-reload failure for `configReloadGraceSeconds` before saying
+    /// anything, and re-arms rather than stacks on every write in that window.
+    ///
+    /// An editor can leave config.yaml briefly invalid mid-save — several
+    /// syscalls, or an atomic replace caught between the delete and the
+    /// rewrite. The grace period gives the next save a chance to be the real
+    /// one before the user is interrupted over a file they are still editing.
+    private func armConfigReloadNotice() {
+        configReloadNotice?.cancel()
+        let notice = DispatchWorkItem { [weak self] in
+            self?.flash("Could not reload config.yaml — using the previous settings", tone: .failure)
+        }
+        configReloadNotice = notice
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.configReloadGraceSeconds, execute: notice)
     }
 
     /// Says a config problem once, at the moment it appears.
