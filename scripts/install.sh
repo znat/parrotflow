@@ -178,7 +178,9 @@ cat <<'EOF'
 
     Next:
       1. Say yes to the microphone prompt.
-      2. Hold Right Option, say something, let go.
+      2. Click the 🎙 icon, choose Permissions…, and grant Accessibility —
+         without it, dictation transcribes but can't type it in for you.
+      3. Hold Right Option, say something, let go.
 
 EOF
 
