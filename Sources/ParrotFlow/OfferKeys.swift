@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import IOKit.hid
 
 /// Takes the offer's letters and Escape while the offer is on screen, and gives
 /// them back the moment it is not.
@@ -27,7 +28,12 @@ import Carbon.HIToolbox
 /// `c` in the sentence it is about to correct.
 ///
 /// A `CGEvent` tap is the only way to consume a key without holding focus. It
-/// needs Accessibility, which the app already requires.
+/// needs Accessibility, which the app already requires, and Input Monitoring,
+/// which nothing else in the app does — Accessibility alone lets the tap
+/// create without error, and then macOS delivers it nothing: no denial, no
+/// disabled-by-timeout event, just silence indistinguishable from a user who
+/// never presses the chip's letter. `start` asks for it below and refuses to
+/// stand up a tap that would only ever look like it is working.
 ///
 /// ## What keeps it safe
 ///
@@ -86,6 +92,28 @@ final class OfferKeys {
             Log.write("offer keys: accessibility is not granted; the keys are not taken")
             return
         }
+        // Unlike Accessibility, a missing grant here does not stop the tap
+        // from being created — it just leaves it empty. Checked first so that
+        // never happens: `.unknown` means the request below has never been
+        // made, so this is also what puts the app in System Settings for the
+        // user to grant it in the first place.
+        let listenAccess = IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)
+        guard listenAccess == kIOHIDAccessTypeGranted else {
+            if listenAccess == kIOHIDAccessTypeUnknown {
+                IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
+            }
+            Log.write("offer keys: input monitoring is not granted; the keys are not taken")
+            return
+        }
+        // Secure Event Input — what a terminal turns on so no other process,
+        // permissions or not, can see what you type into it — blocks a tap
+        // the same way a missing grant does: created, enabled, and given
+        // nothing. Logged here rather than guarded on: it can flip on after
+        // the tap is already up, so refusing to start one here would not
+        // even cover every case, and the honest answer is in the log either
+        // way instead of a guess.
+        Log.write("offer keys: secure input is \(IsSecureEventInputEnabled() ? "on" : "off")")
+
         handler = onKey
         expiry = until
 
