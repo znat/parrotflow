@@ -28,6 +28,14 @@ actor Transcriber {
     private var vad: VadManager?
     private var models: AsrModels?
 
+    /// The download in flight, if any. Actor isolation stops a torn read or
+    /// write of `models`/`vad`, but not two callers both finding them nil on
+    /// either side of the same `await` — an eager warm-up at launch racing
+    /// the first dictation's own call, say. A caller that arrives mid-load
+    /// joins this task instead of starting a second download.
+    private var loadingModels: Task<AsrModels, Error>?
+    private var loadingVad: Task<VadManager?, Error>?
+
     /// Reported on the main queue so the menu bar can show download progress.
     nonisolated let onStatusChange: @Sendable (Status) -> Void
 
@@ -42,26 +50,48 @@ actor Transcriber {
 
     // MARK: - Model loading
 
-    /// Downloads and loads models if needed. Safe to call repeatedly; it only
-    /// redoes work when the vocabulary has actually changed.
+    /// Downloads and loads models if needed. Safe to call repeatedly, and
+    /// safe to call concurrently: overlapping callers converge on the same
+    /// in-progress load instead of racing separate downloads.
     func prepare(config: Config) async throws {
         if models == nil {
-            setStatus(.downloading("speech model"))
-            models = try await AsrModels.downloadAndLoad(
+            models = try await loadModels()
+        }
+
+        if config.audio.speechGate, vad == nil {
+            vad = try await loadVad()
+        }
+
+        setStatus(.ready)
+    }
+
+    private func loadModels() async throws -> AsrModels {
+        if let loadingModels { return try await loadingModels.value }
+        setStatus(.downloading("speech model"))
+        let task = Task<AsrModels, Error> {
+            try await AsrModels.downloadAndLoad(
                 progressHandler: { [weak self] progress in
                     guard let self else { return }
                     Task { await self.reportDownload("speech model", progress) }
                 }
             )
         }
+        loadingModels = task
+        defer { loadingModels = nil }
+        return try await task.value
+    }
 
-        if config.audio.speechGate, vad == nil {
-            setStatus(.downloading("voice detector"))
-            vad = try? await VadManager(config: .default)
+    private func loadVad() async throws -> VadManager? {
+        if let loadingVad { return try await loadingVad.value }
+        setStatus(.downloading("voice detector"))
+        let task = Task<VadManager?, Error> {
+            let vad = try? await VadManager(config: .default)
             if vad == nil { Log.write("speech gate: VAD unavailable; transcribing everything") }
+            return vad
         }
-
-        setStatus(.ready)
+        loadingVad = task
+        defer { loadingVad = nil }
+        return try await task.value
     }
 
     private var lastReportedPercent: Int = -1

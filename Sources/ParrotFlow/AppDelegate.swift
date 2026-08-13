@@ -396,6 +396,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         warmUpLLM()
+        warmUpTranscriber()
 
         // Anything still missing opens the walk, and nothing is asked for yet.
         // The prompt used to fire here, the moment the window appeared — a
@@ -1399,6 +1400,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? String(format: "llm: %@ loaded and pinned in %.1fs", llm.model, elapsed)
                     : "llm: could not preload \(llm.model) — is Ollama running?"
             )
+        }
+    }
+
+    /// Starts the Parakeet (and VAD) download at launch, so it's already
+    /// running — ideally already done — by the time the first dictation
+    /// needs it, instead of the first dictation triggering and waiting on it.
+    ///
+    /// `transcriber.prepare` is safe to call again from `transcribe(...)`
+    /// once this is in flight: overlapping callers converge on the same
+    /// download rather than racing two.
+    private func warmUpTranscriber() {
+        guard config.transcription.enabled else { return }
+
+        let transcriber = transcriber
+        let config = config
+        Task.detached(priority: .background) {
+            let started = Date()
+            do {
+                try await transcriber.prepare(config: config)
+                Log.write(String(
+                    format: "transcriber: warmed up in %.1fs", Date().timeIntervalSince(started)
+                ))
+            } catch {
+                Log.write("transcriber: warm-up failed — \(error.localizedDescription)")
+            }
         }
     }
 
