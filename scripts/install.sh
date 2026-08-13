@@ -256,9 +256,21 @@ if command -v ollama >/dev/null 2>&1 && ! INSTALLED="$(ollama list 2>/dev/null)"
     if [ "$SETUP_VOICE" != "0" ]; then
         say "Starting Ollama"
         brew services start ollama || die "could not start Ollama"
-        # Freshly started, not freshly listening — give it a moment before the
-        # model check below asks it anything.
-        sleep 2
+        # Bounded poll, not a fixed sleep: freshly started is not freshly
+        # listening, and a guessed delay that is too short makes the model
+        # check below fail silently — it sees Ollama still not answering and
+        # skips the pull with no explanation. Up to 15s, checked every second.
+        i=0
+        until ollama list >/dev/null 2>&1; do
+            i=$((i + 1))
+            if [ "$i" -ge 15 ]; then
+                printf '    Ollama started but is not answering yet. Run this installer\n'
+                printf '    again once it has, or pull the model yourself:\n\n'
+                printf '      ollama pull %s\n\n' "$MODEL"
+                break
+            fi
+            sleep 1
+        done
     else
         printf '      brew services start ollama\n\n'
     fi
