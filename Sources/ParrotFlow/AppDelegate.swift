@@ -67,9 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// True between a manual "Check for Updates" click and its answer, so the
     /// menu item can say so and a second click cannot start a second request.
     private var updateCheckInFlight = false
-    /// Bumped by every manual check, so a background check that started
-    /// before it — and answers after — knows a manual answer has since
-    /// landed and does not overwrite it.
+    /// Bumped when a manual check finishes, not when it starts — so a
+    /// background check that began during that manual check, and answers
+    /// after it, can tell its answer is now stale and skip overwriting it.
     private var manualCheckGeneration = 0
 
     private lazy var transcriber = Transcriber { [weak self] status in
@@ -575,7 +575,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let generationAtStart = manualCheckGeneration
         if manual {
             updateCheckInFlight = true
-            manualCheckGeneration += 1
             updateUI()
         }
 
@@ -588,6 +587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     await MainActor.run { [weak self] in
                         guard let self else { return }
                         self.updateCheckInFlight = false
+                        self.manualCheckGeneration += 1
                         Log.write("updates: check failed — \(error.localizedDescription)")
                         self.flash("Could not check for updates: \(error.localizedDescription)")
                         self.updateUI()
@@ -606,6 +606,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     else { return }
                 }
                 self.updateCheckInFlight = false
+                if manual { self.manualCheckGeneration += 1 }
                 let decision = Updates.decide(
                     current: Updates.current, latest: latest, afterDays: afterDays
                 )
