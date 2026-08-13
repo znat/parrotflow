@@ -7,7 +7,7 @@ Start from the question you have.
 | | |
 |---|---|
 | [setup.md](setup.md) | The guided install, written to be handed to an agent. Permissions, Ollama, model sizing, and a check that transcription works. |
-| [permissions.md](permissions.md) | Microphone and Accessibility: what needs which, and what a rebuild does to the grants. |
+| [permissions.md](permissions.md) | Microphone, Accessibility, and Input Monitoring: what needs which, and what a rebuild does to the grants. |
 | [configuration.md](configuration.md) | Every setting in `config.yaml`, what it does, and what happens when it is wrong. |
 
 ## Using it

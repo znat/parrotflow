@@ -39,10 +39,10 @@ install: stop app
 	  && open "/Applications/$$APP_NAME.app" \
 	  && echo "==> Installed and launched /Applications/$$APP_NAME.app"
 
-## Quit, remove, and forget its Microphone/Accessibility grants — the three
-## things a test cycle needs undone together, so a stale grant or a leftover
-## copy never survives into the next install. config.yaml and vocabulary.yaml
-## are left alone: that is tuning, not install state.
+## Quit, remove, and forget its permission grants — the things a test cycle
+## needs undone together, so a stale grant or a leftover copy never survives
+## into the next install. config.yaml and vocabulary.yaml are left alone: that
+## is tuning, not install state.
 ##
 ## Uses VARIANT like everything else here, which defaults to dev — the one
 ## you are working on, running the whole time you are testing the other one.
@@ -98,6 +98,7 @@ try-install: release
 reset-permissions:
 	@$(V) tccutil reset Microphone "$$BUNDLE_ID" || true
 	@$(V) tccutil reset Accessibility "$$BUNDLE_ID" || true
+	@$(V) tccutil reset ListenEvent "$$BUNDLE_ID" || true
 	@$(V) echo "==> Permissions reset for $$BUNDLE_ID"
 
 ## Tail this variant's log
