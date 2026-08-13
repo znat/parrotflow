@@ -138,6 +138,18 @@ enum PanelsCommand {
                 .environmentObject(PermissionsModel.showing(
                     .accessibility, asked: true, context: .revisiting))),
              NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
+            // The screen after both are granted, in the three shapes it comes
+            // in: the speech model already there, still on its way, and there
+            // but the hotkey never bound — the states DonePane's invitation
+            // sentence chooses between.
+            (AnyView(PermissionsView().environmentObject(PermissionsModel.done())),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
+            (AnyView(PermissionsView()
+                .environmentObject(PermissionsModel.done(speechModel: .preparing(percent: 43)))),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
+            (AnyView(PermissionsView()
+                .environmentObject(PermissionsModel.done(hotkeyRegistered: false))),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), .dark, true),
             (AnyView(PillView().environmentObject(thinking)),

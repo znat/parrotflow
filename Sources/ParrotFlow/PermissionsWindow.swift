@@ -80,6 +80,25 @@ final class PermissionsModel: ObservableObject {
     @Published var micStatus: Permissions.Status = .notDetermined
     @Published var axStatus: Permissions.Status = .notGranted
     @Published var axBlocker: String?
+    /// Pushed from AppDelegate.handleTranscriberStatus, not polled — nothing
+    /// in this file can ask the transcriber actor anything, and this window
+    /// is not the one place that needs to know. Defaults to `.ready` rather
+    /// than an "unknown" third case: a launch that never touches the
+    /// transcriber (transcription disabled) should not sit on a
+    /// "downloading" message forever for a download that will never start.
+    @Published var speechModel: SpeechModelProgress = .ready
+    /// Pushed from AppDelegate.updateUI, but only the name of a hotkey that
+    /// actually registered — the menu bar's own fallback text (the
+    /// *configured* key, shown even when registration failed) would tell
+    /// someone to press a key that does nothing, in the one screen whose
+    /// whole job is telling them what to press.
+    @Published var hotkeyDisplay: String = "your hotkey"
+    @Published var hotkeyRegistered: Bool = true
+
+    enum SpeechModelProgress: Equatable {
+        case ready
+        case preparing(percent: Int?)
+    }
 
     /// What is left to ask for, fixed when the window opens.
     ///
@@ -137,6 +156,24 @@ final class PermissionsModel: ObservableObject {
         model.steps = PermissionStep.allCases
         model.index = PermissionStep.allCases.firstIndex(of: step) ?? 0
         model.asked = asked
+        return model
+    }
+
+    /// Past every step, for `--panel-sheet` — `showing(_:)` always parks on
+    /// one, and DonePane is only ever reached by walking off the end of
+    /// `steps`, which nothing outside this file can set directly.
+    static func done(
+        speechModel: SpeechModelProgress = .ready, hotkeyDisplay: String = "Right ⌥",
+        hotkeyRegistered: Bool = true
+    ) -> PermissionsModel {
+        let model = PermissionsModel()
+        model.micStatus = .granted
+        model.axStatus = .granted
+        model.steps = PermissionStep.allCases
+        model.index = PermissionStep.allCases.count
+        model.speechModel = speechModel
+        model.hotkeyDisplay = hotkeyDisplay
+        model.hotkeyRegistered = hotkeyRegistered
         return model
     }
 
@@ -345,7 +382,10 @@ struct PermissionsView: View {
                 )
             } else {
                 DonePane(
-                    micStatus: model.micStatus, axStatus: model.axStatus, onClose: onClose
+                    micStatus: model.micStatus, axStatus: model.axStatus,
+                    speechModel: model.speechModel, hotkeyDisplay: model.hotkeyDisplay,
+                    hotkeyRegistered: model.hotkeyRegistered,
+                    onClose: onClose
                 )
             }
         }
@@ -386,7 +426,7 @@ private struct Instrument: View {
                     .frame(width: PillMetrics.recording(hasIcon: false) + PillMetrics.bleed * 2,
                            height: PillMetrics.height + PillMetrics.bleed * 2)
             case .accessibility:
-                Landing()
+                SettingsRowMock()
             }
         }
         .frame(height: 88)
@@ -401,42 +441,75 @@ private struct Instrument: View {
     }()
 }
 
-/// The four feathers, then a field with the words already in it and the caret
-/// after them. `PlumageMark` is documented as the pill once it has heard you,
-/// which makes it exactly the right mark to show arriving somewhere.
-private struct Landing: View {
+/// What Accessibility actually asks for is a row in System Settings, not
+/// anything this app draws — so the picture is that row, not a metaphor for
+/// it. The switch animates on a loop rather than sitting lit: someone reading
+/// this has not ticked it yet, and a switch already on would show the answer
+/// instead of the question. `allowsHitTesting(false)` on the mock switch is
+/// not a precaution — nothing here is wired to anything, ever.
+private struct SettingsRowMock: View {
+    @State private var isOn = false
+
     var body: some View {
-        HStack(spacing: 12) {
-            // Scaled up rather than redrawn: it is the app's mark at label size
-            // everywhere else, and this is the one place it is the subject of
-            // the picture rather than a label on one.
-            PlumageMark()
-                .scaleEffect(1.5)
-                .frame(width: 18)
-
-            Image(systemName: "arrow.right")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-
-            HStack(spacing: 2) {
-                Text("hold the hotkey and talk")
-                    .font(.system(size: 13, design: .rounded))
-                    .foregroundStyle(.primary)
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(Parrot.action)
-                    .frame(width: 2, height: 16)
-            }
-            .padding(.horizontal, 11)
-            .padding(.vertical, 9)
-            .background(
-                Color.primary.opacity(0.07),
-                in: RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
-                    .strokeBorder(Parrot.action.opacity(0.55), lineWidth: 1.5)
+        HStack(spacing: 10) {
+            appIcon
+            Text(AppVariant.displayName)
+                .font(.system(size: 13))
+                .foregroundStyle(.primary)
+            Spacer(minLength: 12)
+            MockToggle(isOn: isOn)
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: 260)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true).delay(0.5)) {
+                isOn = true
             }
         }
+    }
+
+    /// The real app icon, the same file System Settings itself reads. Loaded
+    /// by path rather than `NSImage(named:)`: a loose `AppIcon.icns` with no
+    /// asset-catalog entry doesn't reliably resolve by name, and silently
+    /// drawing the wrong mark is worse than a fallback that says so by being
+    /// visibly different. `PlumageMark` falls back only if that ever fails —
+    /// running the bare binary outside any bundle, mainly.
+    @ViewBuilder
+    private var appIcon: some View {
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: url) {
+            Image(nsImage: icon)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 24, height: 24)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        } else {
+            PlumageMark(size: 20)
+                .frame(width: 24, height: 24)
+        }
+    }
+}
+
+/// Shaped and sized after the real macOS toggle in Privacy & Security, not
+/// approximated from memory — capsule track, round knob inset by 2pt, knob
+/// on the side the value is on. Never a real `Toggle`: a control that can be
+/// clicked invites clicking it, and clicking this one would do nothing.
+private struct MockToggle: View {
+    let isOn: Bool
+
+    var body: some View {
+        Capsule()
+            .fill(isOn ? Parrot.action : Color.primary.opacity(0.18))
+            .frame(width: 34, height: 20)
+            .overlay(alignment: isOn ? .trailing : .leading) {
+                Circle()
+                    .fill(.white)
+                    .frame(width: 16, height: 16)
+                    .padding(2)
+                    .shadow(color: .black.opacity(0.25), radius: 1, y: 0.5)
+            }
+            .allowsHitTesting(false)
     }
 }
 
@@ -553,31 +626,25 @@ private struct StepPane: View {
 private struct DonePane: View {
     let micStatus: Permissions.Status
     let axStatus: Permissions.Status
+    let speechModel: PermissionsModel.SpeechModelProgress
+    let hotkeyDisplay: String
+    let hotkeyRegistered: Bool
     let onClose: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Spacer(minLength: 20)
 
-            Text(everything ? "Ready" : "Something was switched off")
+            Text(title)
                 .font(.system(size: 19, weight: .semibold, design: .rounded))
                 .padding(.bottom, 7)
 
-            // Reachable two ways now: a permission revoked in System Settings
-            // while this window is open, or a skip from the menu bar. Either
-            // way what is true is that something is missing, which it says
-            // rather than pretending the app is fine.
-            Text(everything
-                ? "Hold your hotkey, say something, let go."
-                : "ParrotFlow needs both. Reopen this window from the menu bar when you want to "
-                    + "finish, or check what is missing below.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            invitation
                 .padding(.bottom, 18)
 
-            StatusLine(title: "Microphone", status: micStatus)
-            StatusLine(title: "Accessibility", status: axStatus)
+            StatusLine(title: "Microphone", text: micStatus.label, color: micStatus.badgeColor)
+            StatusLine(title: "Accessibility", text: axStatus.label, color: axStatus.badgeColor)
+            StatusLine(title: "Speech model", text: speechModel.label, color: speechModel.badgeColor)
 
             Spacer(minLength: 16)
 
@@ -589,16 +656,107 @@ private struct DonePane: View {
     }
 
     private var everything: Bool { micStatus == .granted && axStatus == .granted }
+
+    /// "Ready" oversold it while the model was still on its way in — someone
+    /// reads that word, holds the hotkey, and dictates into a download that
+    /// has not finished. Only true once both permissions and the model are
+    /// all the way there.
+    private var title: String {
+        guard everything else { return "Something was switched off" }
+        if case .preparing = speechModel { return "Almost ready" }
+        if !hotkeyRegistered { return "Almost ready" }
+        return "Ready"
+    }
+
+    /// Both permissions granted is the gate for reaching this screen at all
+    /// (see `PermissionsModel.begin`'s step filter) — what is still open past
+    /// that is only ever the speech model, and only ever a matter of time,
+    /// not a decision to make. So the two states get their own sentence
+    /// rather than a status line read in silence: one says dictate now, the
+    /// other says what to wait for and then dictate.
+    ///
+    /// The hotkey is a key someone presses, not a word in a sentence — plain
+    /// prose let it blend into "Hold Right Option and start dictating." and
+    /// read past. Its own line, in the same bordered mark this window
+    /// already uses for a key combination, is what makes it the one thing to
+    /// notice here.
+    @ViewBuilder
+    private var invitation: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            switch speechModel {
+            case .ready:
+                EmptyView()
+            case .preparing:
+                Text("The speech model is still downloading.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            if everything, hotkeyRegistered {
+                HStack(spacing: 6) {
+                    Text(holdVerb)
+                    HotkeyBadge(text: hotkeyDisplay)
+                    Text("and start dictating.")
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            } else if everything {
+                // hotkeyRegistered is false here: both permissions are
+                // granted, but the configured key never bound — another app
+                // already holds it, most likely. Naming the key it wanted
+                // would tell someone to press a key that does nothing.
+                Text("ParrotFlow's hotkey isn't registered. Check hotkey.key in config.yaml, "
+                    + "then reopen this window from the menu bar.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("ParrotFlow needs both. Reopen this window from the menu bar when you want to "
+                    + "finish, or check what is missing below.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var holdVerb: String {
+        if case .preparing = speechModel { return "Once it's done, hold" }
+        return "Hold"
+    }
+}
+
+/// The same bordered field this window already draws for a key combination
+/// — one mark for "this is a key you press," not two.
+private struct HotkeyBadge: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                Color.primary.opacity(0.07),
+                in: RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
+                    .strokeBorder(Parrot.action.opacity(0.55), lineWidth: 1.5)
+            }
+    }
 }
 
 private struct StatusLine: View {
     let title: String
-    let status: Permissions.Status
+    let text: String
+    let color: Color
 
     var body: some View {
         HStack(spacing: 8) {
             Text(title).font(.system(size: 12))
-            StatusBadge(status: status)
+            StatusBadge(text: text, color: color)
             Spacer()
         }
         .padding(.vertical, 3)
@@ -606,22 +764,43 @@ private struct StatusLine: View {
 }
 
 private struct StatusBadge: View {
-    let status: Permissions.Status
+    let text: String
+    let color: Color
 
     var body: some View {
-        Text(status.label)
+        Text(text)
             .font(.system(size: 10, weight: .semibold))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(color.opacity(0.18), in: Capsule())
             .foregroundStyle(color)
     }
+}
 
-    private var color: Color {
-        switch status {
+private extension Permissions.Status {
+    var badgeColor: Color {
+        switch self {
         case .granted: return Parrot.leaf
         case .denied: return Parrot.scarlet
         case .notDetermined, .notGranted: return Parrot.amber
+        }
+    }
+}
+
+private extension PermissionsModel.SpeechModelProgress {
+    var label: String {
+        switch self {
+        case .ready: return "Ready"
+        case .preparing(let percent):
+            guard let percent else { return "Downloading" }
+            return "Downloading \(percent)%"
+        }
+    }
+
+    var badgeColor: Color {
+        switch self {
+        case .ready: return Parrot.leaf
+        case .preparing: return Parrot.amber
         }
     }
 }
