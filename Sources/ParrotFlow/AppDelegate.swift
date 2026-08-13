@@ -3758,7 +3758,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let shortcut = hotKeys.binding?.displayName
             ?? KeyCodes.displayString(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
-        permissions.model.hotkeyDisplay = shortcut
+        permissions.model.hotkeyRegistered = hotKeys.binding != nil
+        if let bound = hotKeys.binding?.displayName {
+            permissions.model.hotkeyDisplay = bound
+        }
 
         if let transcriptionLabel {
             statusInfoItem.title = transcriptionLabel

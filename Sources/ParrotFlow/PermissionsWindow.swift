@@ -87,10 +87,13 @@ final class PermissionsModel: ObservableObject {
     /// transcriber (transcription disabled) should not sit on a
     /// "downloading" message forever for a download that will never start.
     @Published var speechModel: SpeechModelProgress = .ready
-    /// Pushed from AppDelegate.updateUI, where the same string is already
-    /// computed for the menu bar — one source, so a rebound hotkey shows up
-    /// here without this file knowing config exists.
+    /// Pushed from AppDelegate.updateUI, but only the name of a hotkey that
+    /// actually registered — the menu bar's own fallback text (the
+    /// *configured* key, shown even when registration failed) would tell
+    /// someone to press a key that does nothing, in the one screen whose
+    /// whole job is telling them what to press.
     @Published var hotkeyDisplay: String = "your hotkey"
+    @Published var hotkeyRegistered: Bool = true
 
     enum SpeechModelProgress: Equatable {
         case ready
@@ -160,7 +163,8 @@ final class PermissionsModel: ObservableObject {
     /// one, and DonePane is only ever reached by walking off the end of
     /// `steps`, which nothing outside this file can set directly.
     static func done(
-        speechModel: SpeechModelProgress = .ready, hotkeyDisplay: String = "Right ⌥"
+        speechModel: SpeechModelProgress = .ready, hotkeyDisplay: String = "Right ⌥",
+        hotkeyRegistered: Bool = true
     ) -> PermissionsModel {
         let model = PermissionsModel()
         model.micStatus = .granted
@@ -169,6 +173,7 @@ final class PermissionsModel: ObservableObject {
         model.index = PermissionStep.allCases.count
         model.speechModel = speechModel
         model.hotkeyDisplay = hotkeyDisplay
+        model.hotkeyRegistered = hotkeyRegistered
         return model
     }
 
@@ -379,6 +384,7 @@ struct PermissionsView: View {
                 DonePane(
                     micStatus: model.micStatus, axStatus: model.axStatus,
                     speechModel: model.speechModel, hotkeyDisplay: model.hotkeyDisplay,
+                    hotkeyRegistered: model.hotkeyRegistered,
                     onClose: onClose
                 )
             }
@@ -622,6 +628,7 @@ private struct DonePane: View {
     let axStatus: Permissions.Status
     let speechModel: PermissionsModel.SpeechModelProgress
     let hotkeyDisplay: String
+    let hotkeyRegistered: Bool
     let onClose: () -> Void
 
     var body: some View {
@@ -657,6 +664,7 @@ private struct DonePane: View {
     private var title: String {
         guard everything else { return "Something was switched off" }
         if case .preparing = speechModel { return "Almost ready" }
+        if !hotkeyRegistered { return "Almost ready" }
         return "Ready"
     }
 
@@ -684,7 +692,7 @@ private struct DonePane: View {
                     .foregroundStyle(.secondary)
             }
 
-            if everything {
+            if everything, hotkeyRegistered {
                 HStack(spacing: 6) {
                     Text(holdVerb)
                     HotkeyBadge(text: hotkeyDisplay)
@@ -692,6 +700,16 @@ private struct DonePane: View {
                 }
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
+            } else if everything {
+                // hotkeyRegistered is false here: both permissions are
+                // granted, but the configured key never bound — another app
+                // already holds it, most likely. Naming the key it wanted
+                // would tell someone to press a key that does nothing.
+                Text("ParrotFlow's hotkey isn't registered. Check hotkey.key in config.yaml, "
+                    + "then reopen this window from the menu bar.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("ParrotFlow needs both. Reopen this window from the menu bar when you want to "
                     + "finish, or check what is missing below.")
