@@ -266,12 +266,29 @@ def place(reply, text, converted=None):
         # model does not get to invent words that are not in the sentence.
         if len(words) < 2 or len(words) > 4 or span.lower() not in out.lower():
             continue
-        # The last occurrence, not the first: the model extracts names from
-        # "call it X" / "rename it to X", and both put X after whatever prose
-        # introduced it — "the user profile name is shown in settings; call it
-        # user profile name" repeats the words once as prose and once as the
-        # declaration, in that order.
-        start = out.lower().rfind(span.lower())
+        # Every occurrence, not just one: the model gives back the words, not
+        # a position, and a name that also sits earlier or later as ordinary
+        # prose ("the user profile name is shown in settings; call it user
+        # profile name") is ambiguous by text alone in either direction.
+        low = out.lower()
+        needle = span.lower()
+        starts, i = [], low.find(needle)
+        while i != -1:
+            starts.append(i)
+            i = low.find(needle, i + 1)
+        if len(starts) == 1:
+            start = starts[0]
+        else:
+            # Disambiguate the way `convert` does: a trigger word right in
+            # front of it. Still ambiguous — two occurrences both marked, or
+            # none — is declined rather than guessed; a wrong rewrite is worse
+            # than none, and this is a stage that runs on sentences nobody
+            # asked it to touch.
+            trigger_ends = {m.end() for m in TRIGGER.finditer(out)}
+            marked = [s for s in starts if s in trigger_ends]
+            if len(marked) != 1:
+                continue
+            start = marked[0]
         out = (out[:start] + cased(words, style_for(out, out[:start], language))
                + out[start + len(span):])
         if converted is not None:
