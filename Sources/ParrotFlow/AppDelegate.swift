@@ -61,6 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// So the notice fires when a version first becomes available, and not
     /// again every day for as long as the user leaves it alone.
     private var announcedUpdate: String?
+    /// So the modal is offered once per version while idle, and not again on
+    /// every hourly check while the user is busy or has not answered it yet.
+    private var alertedUpdate: String?
+    /// True between a manual "Check for Updates" click and its answer, so the
+    /// menu item can say so and a second click cannot start a second request.
+    private var updateCheckInFlight = false
 
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
@@ -524,7 +530,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Updates
 
-    /// Once shortly after launch, then daily.
+    /// Once shortly after launch, then hourly.
     ///
     /// Restarted on every config load, since `after_days` can turn the whole
     /// thing off — and a setting that only takes effect after a restart is one
@@ -543,21 +549,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
             self?.checkForUpdate()
         }
-        let timer = Timer(timeInterval: 86_400, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 3_600, repeats: true) { [weak self] _ in
             self?.checkForUpdate()
         }
         RunLoop.main.add(timer, forMode: .common)
         updatesTimer = timer
     }
 
-    private func checkForUpdate() {
+    /// - Parameter manual: True for a menu click, false for the timer.
+    ///   A manual check reports its result even when there is nothing new —
+    ///   a click with no visible answer reads as broken — and shows the
+    ///   update alert straight away rather than waiting for the app to go
+    ///   idle, since the user just asked for it.
+    private func checkForUpdate(manual: Bool = false) {
         let afterDays = config.updates.afterDays
-        guard afterDays >= 0 else { return }
+        guard afterDays >= 0 else {
+            if manual { flash("Update checks are disabled") }
+            return
+        }
+
+        if manual {
+            updateCheckInFlight = true
+            updateUI()
+        }
 
         Task<Void, Never> {
-            let latest = try? await Updates.latest()
+            var latest: Updates.Release?
+            do {
+                latest = try await Updates.latest()
+            } catch {
+                if manual {
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        self.updateCheckInFlight = false
+                        Log.write("updates: check failed — \(error.localizedDescription)")
+                        self.flash("Could not check for updates: \(error.localizedDescription)")
+                        self.updateUI()
+                    }
+                    return
+                }
+                latest = nil
+            }
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                self.updateCheckInFlight = false
                 let decision = Updates.decide(
                     current: Updates.current, latest: latest, afterDays: afterDays
                 )
@@ -569,10 +604,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("updates: \(release.version) is available")
                         self.flash("ParrotFlow \(release.version) is available")
                     }
-                case .waiting(let release, let days):
+                    // The modal steals focus, so a background check waits for
+                    // a moment with nothing running. A manual check was asked
+                    // for, so it shows right away.
+                    let idle = !self.recorder.isRecording && self.runsInFlight <= 0
+                    if self.alertedUpdate != release.version, manual || idle {
+                        self.alertedUpdate = release.version
+                        self.showUpdate()
+                    }
+                case .waiting(let release, let daysToGo):
                     self.updateAvailable = nil
-                    Log.write("updates: holding \(release.version) for \(days) more day(s)")
-                default:
+                    Log.write("updates: holding \(release.version) for \(daysToGo) more day(s)")
+                    if manual {
+                        self.flash(
+                            "ParrotFlow \(release.version) is out, offered in "
+                                + "\(daysToGo) day\(daysToGo == 1 ? "" : "s")"
+                        )
+                    }
+                case .upToDate:
+                    self.updateAvailable = nil
+                    if manual { self.flash("ParrotFlow is up to date") }
+                case .skipped(let release):
+                    self.updateAvailable = nil
+                    if manual { self.flash("You skipped \(release.version)") }
+                case .snoozed(let release, _):
+                    self.updateAvailable = nil
+                    if manual { self.flash("ParrotFlow \(release.version) is snoozed for now") }
+                case .disabled:
                     self.updateAvailable = nil
                 }
                 self.updateUI()
@@ -612,6 +670,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    @objc private func checkForUpdateNow() {
+        checkForUpdate(manual: true)
     }
 
     /// The release notes, and the three answers to them.
@@ -3784,9 +3846,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ? "⚠︎ 1 setting in config.yaml does nothing"
             : "⚠︎ \(configProblems.count) settings in config.yaml do nothing"
 
-        updateItem.isHidden = updateAvailable == nil
-        if let release = updateAvailable {
+        if updateCheckInFlight {
+            updateItem.isHidden = false
+            updateItem.title = "Checking for Updates…"
+            updateItem.isEnabled = false
+        } else if let release = updateAvailable {
+            updateItem.isHidden = false
             updateItem.title = "↑ ParrotFlow \(release.version) is available"
+            updateItem.action = #selector(showUpdate)
+            updateItem.isEnabled = true
+        } else if config.updates.afterDays >= 0 {
+            updateItem.isHidden = false
+            updateItem.title = "Check for Updates"
+            updateItem.action = #selector(checkForUpdateNow)
+            updateItem.isEnabled = true
+        } else {
+            updateItem.isHidden = true
         }
     }
 

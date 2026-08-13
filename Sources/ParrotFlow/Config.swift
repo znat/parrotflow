@@ -1040,7 +1040,7 @@ struct Config: Decodable, Equatable {
     /// A local Ollama model, used to interpret spoken commands.
     /// How long a release has to have existed before this Mac will take it.
     ///
-    /// Not a polling interval — the check itself is daily. This is a waiting
+    /// Not a polling interval — the check itself is hourly. This is a waiting
     /// period, and it is the only defence a one-person project has against its
     /// own release pipeline being taken: a bad release that is noticed and
     /// pulled inside the window is one nobody's app ever offered. See
