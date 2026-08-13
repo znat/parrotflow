@@ -129,13 +129,9 @@ More examples, their own test cases, in
 
 ParrotFlow requires Apple silicon and macOS 14 or later.
 
-> [!TIP]
-> Paste this in Claude Code or any coding agent to set up ParrotFlow.
->
-> ```text
-> Set up ParrotFlow on my Mac by following
-> https://raw.githubusercontent.com/znat/parrotflow/main/docs/setup.md
-> ```
+```sh
+curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
+```
 
 Setup will install the Parakeet speech model (1.2 GB,
 needed for dictation), and [Ollama](https://ollama.com/download) with a
