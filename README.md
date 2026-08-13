@@ -72,8 +72,9 @@ Where `priorities.py` looks like:
 #!/usr/bin/env python3
 import re, sys
 text = sys.stdin.read()
-text = re.sub(r"\bp\s*(?:one|un)\b", "P1", text, flags=re.I)
-text = re.sub(r"\bp\s*(?:two|deux)\b", "P2", text, flags=re.I)
+levels = ("one un", "two deux", "three trois", "four quatre")
+for n, words in enumerate(levels, start=1):
+    text = re.sub(r"\bp\s*(?:%s)\b" % words.replace(" ", "|"), f"P{n}", text, flags=re.I)
 sys.stdout.write(text)
 ```
 
