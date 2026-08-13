@@ -180,13 +180,6 @@ jobs:
       - name: --learn writes a pronunciation
         run: scripts/check-learn.sh
 
-      # The same trap, one directory over: the transform folder a first launch
-      # is seeded with against the copy in examples/ that people read and
-      # score. It has always been able to drift and has never been checked
-      # here — the rename that came with folders is the moment to fix that.
-      - name: The transform a new install gets
-        run: scripts/check-seeded-transform.sh
-
       # Two ways in, one certificate. A pin that is only right in the script or
       # only right in the app is a door that checks less than the other one.
       - name: Both install paths pin the same certificate

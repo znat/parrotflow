@@ -119,9 +119,8 @@ $ $PF --pipeline tests/pipelines/vars-shipped.yaml \
 in:   a python function called max retries
   → transform
       a python function called max_retries
-      code_identifiers.asked_model = false  code_identifiers.changed = true  code_identifiers.count = 1
+      code_identifiers.changed = true  code_identifiers.count = 1
   ⊘ transform  — skipped, when code_identifiers.count == 0 did not match (code_identifiers.count = 1)
-var   code_identifiers.asked_model = false
 var   code_identifiers.changed = true
 var   code_identifiers.count = 1
 var   code_identifiers.ms = 69.0
@@ -129,6 +128,8 @@ var   code_identifiers.ok = true
 var   code_identifiers.ran = true
 var   dotted.ran = false
 var   language = "en"
+var   vocabulary.changes = ""
+var   vocabulary.count = 0
 out:  a python function called max_retries
 ```
 

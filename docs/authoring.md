@@ -231,7 +231,7 @@ then do with them.
 
 ```json
 { "text": "a python function called max_retries",
-  "vars": { "count": 1, "asked_model": false } }
+  "vars": { "count": 1 } }
 ```
 
 - **Both keys are optional.** No `text` means "I looked and left the sentence

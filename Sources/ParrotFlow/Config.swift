@@ -1958,15 +1958,24 @@ enum ConfigStore {
         directory.appendingPathComponent("transforms", isDirectory: true)
     }
 
-    /// The folder the `code_identifiers` transform owns.
-    static var codeIdentifiersFolder: URL {
-        transformsDirectory.appendingPathComponent("code_identifiers", isDirectory: true)
+    /// Transforms seeded on first launch, script-only: (folder name, script
+    /// filename). Each folder is copied whole from `exampleTransformsDirectory`
+    /// — the script, plus the `cases.yaml` beside it.
+    static let seededTransforms: [(name: String, script: String)] = [
+        ("code_identifiers", "code_identifiers.py"),
+        ("punctuation", "punctuation.py"),
+        ("repetitions", "repetitions.py"),
+    ]
+
+    /// The folder a seeded transform owns.
+    static func seededTransformFolder(_ name: String) -> URL {
+        transformsDirectory.appendingPathComponent(name, isDirectory: true)
     }
 
-    /// Where the `code_identifiers` transform's program lives — in its folder,
-    /// which is what makes `command: code_identifiers.py` resolve.
-    static var codeIdentifiersURL: URL {
-        codeIdentifiersFolder.appendingPathComponent("code_identifiers.py")
+    /// Where a seeded transform's program lives — in its folder, which is
+    /// what makes `command: <script>` resolve.
+    static func seededTransformScript(_ name: String, _ script: String) -> URL {
+        seededTransformFolder(name).appendingPathComponent(script)
     }
 
     /// `examples/transforms/` — the one copy of every shipped example, seeded
@@ -2010,21 +2019,23 @@ enum ConfigStore {
     /// your stop lists would be the app taking back what it gave you.
     static func createIfMissing() throws {
         let fm = FileManager.default
-        let source = exampleTransformsDirectory.appendingPathComponent("code_identifiers", isDirectory: true)
-        if !fm.fileExists(atPath: codeIdentifiersURL.path) {
-            try fm.createDirectory(at: codeIdentifiersFolder, withIntermediateDirectories: true)
-            try fm.copyItem(
-                at: source.appendingPathComponent("code_identifiers.py"), to: codeIdentifiersURL
-            )
-            // A shebang does nothing without this.
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: codeIdentifiersURL.path)
-            Log.write("config: wrote transforms/code_identifiers/code_identifiers.py")
-        }
-        let cases = codeIdentifiersFolder.appendingPathComponent("cases.yaml")
-        if !fm.fileExists(atPath: cases.path) {
-            try fm.createDirectory(at: codeIdentifiersFolder, withIntermediateDirectories: true)
-            try fm.copyItem(at: source.appendingPathComponent("cases.yaml"), to: cases)
-            Log.write("config: wrote transforms/code_identifiers/cases.yaml")
+        for (name, script) in seededTransforms {
+            let folder = seededTransformFolder(name)
+            let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)
+            let scriptURL = seededTransformScript(name, script)
+            if !fm.fileExists(atPath: scriptURL.path) {
+                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+                try fm.copyItem(at: source.appendingPathComponent(script), to: scriptURL)
+                // A shebang does nothing without this.
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+                Log.write("config: wrote transforms/\(name)/\(script)")
+            }
+            let cases = folder.appendingPathComponent("cases.yaml")
+            if !fm.fileExists(atPath: cases.path) {
+                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+                try fm.copyItem(at: source.appendingPathComponent("cases.yaml"), to: cases)
+                Log.write("config: wrote transforms/\(name)/cases.yaml")
+            }
         }
         // The vocabulary, empty but explained. Written so the file exists to
         // be found and read — a person who never dictates a mangled word
@@ -2243,6 +2254,12 @@ enum ConfigStore {
           - replacements
           - fuzzy
           - numbers
+          # "is that true question mark" -> is that true? A spoken mark
+          # replaces the decoder's own punctuation rather than sitting beside
+          # it. English only.
+          - transform: punctuation
+          # A word or phrase said twice by accident, taken out.
+          - transform: repetitions
           # "read user dot name" -> read user.name, where you write code-ish text.
           - transform: dotted
             app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
@@ -2528,6 +2545,19 @@ enum ConfigStore {
         description: spoken names as identifiers
         display: Formatting identifiers
         command: code_identifiers.py
+
+      # Written to transforms/punctuation/ on first launch. Rules only, no
+      # model — see the script for the guard list this leans on.
+      - name: punctuation
+        description: spoken marks as punctuation
+        command: punctuation.py
+
+      # Written to transforms/repetitions/ on first launch. Cheap enough not
+      # to gate: 0.04s, mostly the python3 start, and it deletes nothing when
+      # it finds nothing.
+      - name: repetitions
+        description: delete a word or phrase said twice by accident
+        command: repetitions.py
 
     # Do what was asked even when no transform above matches:
     # "hey parrot, sort that list alphabetically". A remark that was never an
