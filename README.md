@@ -1,11 +1,12 @@
 <div align="center">
 
+<img src="Resources/parrot.svg" width="56" alt="">
+
 # ParrotFlow
 
-### A local, programmable dictation tool, shaped around your voice and your work
+### A local, fast and programmable dictation app shaped around your voice and your work
 
-An open source alternative to Wispr Flow. No account, no subscription, no cloud.
-Your audio never leaves your Mac.
+
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
@@ -18,6 +19,8 @@ Your audio never leaves your Mac.
 
 ---
 
+- **Dictate anywhere.** Click where you'd normally type, hold `⌘ Right`,
+  speak, release. The text lands almost instantly.
 - **Local-first.** Ships with Parakeet for speech and a small Gemma model for
   rewrites. Both run on your Mac.
 - **Learns your vocabulary.** Teammates, internal jargon, products, vendor
@@ -47,15 +50,18 @@ transforms:
 
 ```yaml
 transforms:
-  - name: pirate
-    description: rewrite like a pirate
+  - name: Fix grammar
+    description: fix grammar
     offer: true        # put a chip on the pill after every dictation
-    key: p             # press P to run it
-    prompt: Rewrite as a pirate would say it. Keep the meaning. Return only the text.
+    key: g             # press G to run it
+    prompt: Fix grammar and punctuation...
 ```
 
-Say *"hey parrot, make that sound like a pirate"*, or press `P` on the pill
-after any dictation, and it does.
+Say *"hey parrot, fix the grammar"*, or press `G` on the pill after any
+dictation, and it does.
+
+See a more complete example, tuned and scored against real transcripts, in
+[examples/transforms/grammar](examples/transforms/grammar).
 
 **A script**, for a rule that needs code:
 
@@ -99,17 +105,31 @@ transcription:
       description: spoken priority levels as P1 to P4
       command: priorities.py
 
-    - name: pirate                            # not in the pipeline: on demand only
-      description: rewrite like a pirate
+    - name: gram                              # not in the pipeline: on demand only
+      description: fix grammar
       offer: true                             # put a chip on the pill
-      key: p                                  # press P to run it
-      prompt: Rewrite as a pirate would say it. Keep the meaning. Return only the text.
+      key: g                                  # press G to run it
+      prompt: Fix grammar and punctuation...
 ```
 
 `hesitations` and `priorities` run on every dictation, because they are in the
-pipeline. `pirate` is not, so it only runs when you ask: hold the hotkey and say
-*"hey parrot, rephrase as if I was a pirate"*, or press `P` on the pill after
-any dictation.
+pipeline. `gram` is not, so it only runs when you ask: hold right `⌘` and say
+*"hey parrot, fix the grammar"*, or press `G` on the pill after any
+dictation.
+
+More examples, each with its own test cases, in
+[examples/transforms](examples/transforms):
+
+- [code_identifiers](examples/transforms/code_identifiers) — spoken names
+  cased for the language, *"a python function called max retries"* →
+  `max_retries`.
+- [repetitions](examples/transforms/repetitions) — drops disfluencies, a word
+  said twice by accident: *"the the prompt"* → *"the prompt"*.
+- [grammar](examples/transforms/grammar), [email](examples/transforms/email),
+  [punctuation](examples/transforms/punctuation),
+  [priorities](examples/transforms/priorities),
+  [dotted](examples/transforms/dotted), and
+  [verify_names](examples/transforms/verify_names).
 
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
 [Where the time goes](docs/architecture.md#where-the-time-goes)
