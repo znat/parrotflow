@@ -13,8 +13,9 @@ export VARIANT ?= dev
 
 V := . scripts/variant.sh &&
 
-.PHONY: app run install uninstall stop clean reset-permissions logs \
-        dev-certificate release release-certificate try-install which hooks
+.PHONY: app run install uninstall uninstall-dev uninstall-release stop clean \
+        reset-permissions logs dev-certificate release release-certificate \
+        try-install which hooks
 
 ## Build the app bundle into .build/
 app:
@@ -42,9 +43,21 @@ install: stop app
 ## things a test cycle needs undone together, so a stale grant or a leftover
 ## copy never survives into the next install. config.yaml and vocabulary.yaml
 ## are left alone: that is tuning, not install state.
+##
+## Uses VARIANT like everything else here, which defaults to dev — the one
+## you are working on, running the whole time you are testing the other one.
+## `make uninstall` typed without thinking wipes that one. uninstall-dev and
+## uninstall-release below name the variant instead of trusting the default.
 uninstall: stop reset-permissions
 	@$(V) rm -rf "/Applications/$$APP_NAME.app" \
 	  && echo "==> $$DISPLAY_NAME fully uninstalled — config left in ~/$$CONFIG_DIR"
+
+## The unambiguous forms — ignore whatever VARIANT is set to.
+uninstall-dev:
+	@$(MAKE) --no-print-directory uninstall VARIANT=dev
+
+uninstall-release:
+	@$(MAKE) --no-print-directory uninstall VARIANT=release
 
 ## Quit this variant. The other one keeps running.
 stop:
