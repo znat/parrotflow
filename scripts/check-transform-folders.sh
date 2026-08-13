@@ -162,7 +162,7 @@ seeded="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 
 check "a first launch writes the transform as a folder" \
   "$(cd "$FRESH" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')" \
-  "config.yaml transforms/code_identifiers/cases.yaml transforms/code_identifiers/code_identifiers.py vocabulary.yaml "
+  "config.yaml transforms/code_identifiers/cases.yaml transforms/code_identifiers/code_identifiers.py transforms/punctuation/cases.yaml transforms/punctuation/punctuation.py transforms/repetitions/cases.yaml transforms/repetitions/repetitions.py vocabulary.yaml "
 
 check "the seeded script is executable" \
   "$([ -x "$FRESH/transforms/code_identifiers/code_identifiers.py" ] && echo yes || echo no)" \
