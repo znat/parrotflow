@@ -67,10 +67,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// True between a manual "Check for Updates" click and its answer, so the
     /// menu item can say so and a second click cannot start a second request.
     private var updateCheckInFlight = false
-    /// Bumped by every `checkForUpdate`, so a background check that answers
-    /// after a manual one has started cannot clobber the manual result — or
-    /// the reverse. Only the most recently started check's completion counts.
-    private var updateCheckGeneration = 0
+    /// Bumped by every manual check, so a background check that started
+    /// before it — and answers after — knows a manual answer has since
+    /// landed and does not overwrite it.
+    private var manualCheckGeneration = 0
 
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
@@ -572,13 +572,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        let generationAtStart = manualCheckGeneration
         if manual {
             updateCheckInFlight = true
+            manualCheckGeneration += 1
             updateUI()
         }
-
-        updateCheckGeneration += 1
-        let generation = updateCheckGeneration
 
         Task<Void, Never> {
             var latest: Updates.Release?
@@ -587,7 +586,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 if manual {
                     await MainActor.run { [weak self] in
-                        guard let self, generation == self.updateCheckGeneration else { return }
+                        guard let self else { return }
                         self.updateCheckInFlight = false
                         Log.write("updates: check failed — \(error.localizedDescription)")
                         self.flash("Could not check for updates: \(error.localizedDescription)")
@@ -598,7 +597,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 latest = nil
             }
             await MainActor.run { [weak self] in
-                guard let self, generation == self.updateCheckGeneration else { return }
+                guard let self else { return }
+                // A manual answer always applies. A background one only does
+                // if a manual check has not started, or finished, meanwhile.
+                if !manual {
+                    guard !self.updateCheckInFlight,
+                        self.manualCheckGeneration == generationAtStart
+                    else { return }
+                }
                 self.updateCheckInFlight = false
                 let decision = Updates.decide(
                     current: Updates.current, latest: latest, afterDays: afterDays
