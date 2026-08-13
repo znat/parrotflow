@@ -1959,7 +1959,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// moment you can tell it went wrong is the moment you are looking at the
     /// text and not at the menu bar. It has to already be on screen.
     private func applied(_ what: String) {
-        if config.feedback.sound { NSSound(named: "Glass")?.play() }
+        if config.feedback.sound { NSSound(named: "Morse")?.play() }
         flash("\(what) applied\(undoHint)", tone: .done)
     }
 
@@ -2001,7 +2001,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .replaced:
             Log.write("undo: put back \(quoted(record.before))")
             lastSubstitution = nil
-            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            if config.feedback.sound { NSSound(named: "Morse")?.play() }
             flash("Undone", tone: .done)
         case .refused(let why):
             Log.write("undo: refused — \(why)")
@@ -2070,7 +2070,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
             switch TextInserter.insert(text, mode: config.transcription.insertMode) {
             case .pasted, .copied:
-                if config.feedback.sound { NSSound(named: "Glass")?.play() }
+                if config.feedback.sound { NSSound(named: "Morse")?.play() }
                 flash("\(transform.name) applied", tone: .done)
             case .clipboardOnly:
                 flash("\(transform.name) copied — grant Accessibility to paste", tone: .caution)
@@ -2994,7 +2994,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingSelection = nil
         focusAtPress = nil
 
-        if config.feedback.sound { NSSound(named: "Glass")?.play() }
+        if config.feedback.sound { NSSound(named: "Morse")?.play() }
         if landedOnClipboard {
             flash("Rule saved · \"\(rules.first?.corrected ?? "")\" copied — this app won't let me edit it", tone: .caution)
             return
@@ -3547,7 +3547,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if config.transcription.insertMode == .paste,
            case .nowhere(let reason) = destination, reason != .noAccessibility {
             TextInserter.insert(text, mode: .clipboard)
-            // Not Glass: a sound that cannot be told from success is no sound.
+            // Not Morse: a sound that cannot be told from success is no sound.
             if config.feedback.sound { NSSound(named: "Tink")?.play() }
             Log.write("nothing to type into (\(reason.described)); copied instead")
             setLabel("Nowhere to type — the transcription is on your clipboard", clearAfter: 4)
@@ -3561,17 +3561,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch TextInserter.insert(text, mode: config.transcription.insertMode) {
         case .pasted:
-            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            if config.feedback.sound { NSSound(named: "Morse")?.play() }
             // The words are in the field and you are looking at them. This is
             // the only second in which correcting one is free.
             showCorrectOffer(for: press, landing: .field)
         case .copied:
             // Deliberate clipboard mode — confirm it landed.
-            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            if config.feedback.sound { NSSound(named: "Morse")?.play() }
             setLabel("Copied — ⌘V to paste", clearAfter: 4)
             showCorrectOffer(for: press, landing: .clipboardNow())
         case .clipboardOnly:
-            if config.feedback.sound { NSSound(named: "Glass")?.play() }
+            if config.feedback.sound { NSSound(named: "Morse")?.play() }
             // Don't nag on every dictation — the text is safe on the clipboard.
             Log.write("Accessibility not granted; left transcript on the clipboard")
             setLabel("Copied — grant Accessibility to auto-paste", clearAfter: 4)
