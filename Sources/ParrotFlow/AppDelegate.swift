@@ -76,6 +76,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// discarded on arrival rather than reviving state the reload just
     /// changed.
     private var updateSchedulingGeneration = 0
+    /// Bumped by every manual check, so an older manual request's completion
+    /// — canceled, failed, or just slow — cannot overwrite the feedback for
+    /// a newer manual request the user is actually waiting on.
+    private var manualRequestID = 0
 
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
@@ -587,9 +591,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let generationAtStart = manualCheckGeneration
         let schedulingGenerationAtStart = updateSchedulingGeneration
+        let myRequestID: Int
         if manual {
             updateCheckInFlight = true
+            manualRequestID += 1
+            myRequestID = manualRequestID
             updateUI()
+        } else {
+            myRequestID = 0
         }
 
         Task<Void, Never> {
@@ -599,7 +608,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 if manual {
                     await MainActor.run { [weak self] in
-                        guard let self else { return }
+                        // A newer manual request has since started — its own
+                        // completion owns the feedback now, not this one.
+                        guard let self, myRequestID == self.manualRequestID else { return }
                         guard self.updateSchedulingGeneration == schedulingGenerationAtStart else {
                             self.flash("Update check canceled — settings changed")
                             return
@@ -626,6 +637,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                // A newer manual request has since started — its own
+                // completion owns the feedback now, not this one.
+                if manual, myRequestID != self.manualRequestID { return }
                 guard self.updateSchedulingGeneration == schedulingGenerationAtStart else {
                     if manual { self.flash("Update check canceled — settings changed") }
                     return
