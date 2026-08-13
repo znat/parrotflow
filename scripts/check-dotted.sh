@@ -4,7 +4,8 @@
 #   scripts/check-dotted.sh
 #
 # The pattern is not written in the case file or in a fixture. It is read out of
-# `Config.defaultYAML`, so this scores the rule a new install actually gets — a
+# config.example.yaml — the file a new install is actually seeded with, see
+# Config.defaultYAML — so this scores the rule a new install actually gets. A
 # committed copy would be free to drift from the thing that ships, and this is
 # the one rewrite that fires on ordinary language rather than on a name someone
 # taught it.
@@ -28,17 +29,10 @@ DECIMAL="$(mktemp -t parrotflow-decimal).yaml"
 trap 'rm -f "$FIXTURE" "$CHAT" "$DECIMAL"' EXIT
 
 python3 - "$ROOT" "$FIXTURE" "$CHAT" "$DECIMAL" <<'PY'
-import re, sys, pathlib, yaml
+import sys, pathlib, yaml
 
 root, out, chat, decimal = (pathlib.Path(a) for a in sys.argv[1:5])
-src = (root / "Sources/ParrotFlow/Config.swift").read_text()
-start = src.index("static var defaultYAML: String {")
-open_quote = src.index('"""', start) + 3
-close_quote = src.index('"""', open_quote)
-# A Swift literal: interpolations stand in for per-variant values, and an
-# escaped backslash is one backslash by the time YAML sees it.
-raw = re.sub(r"\\\((.*?)\)", "placeholder", src[open_quote:close_quote]).replace("\\\\", "\\")
-doc = yaml.safe_load(raw)
+doc = yaml.safe_load((root / "config.example.yaml").read_text())
 
 transforms = [t for t in doc.get("transforms") or [] if "replace" in t]
 if not any(t["name"] == "dotted" for t in transforms):

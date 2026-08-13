@@ -1,0 +1,50 @@
+import Foundation
+
+/// `--warm-models` — downloads Parakeet (and the voice detector, if the
+/// config asks for one) without waiting for a first dictation.
+///
+/// `Transcriber.prepare` already does this lazily, on the first real
+/// transcription. This command calls the same method and nothing else, so
+/// `install.sh` — or anyone else scripting a setup — can trigger the
+/// download on its own schedule instead of the user's first attempt to
+/// dictate.
+enum WarmModelsCommand {
+
+    static func run() -> Int32 {
+        guard #available(macOS 14, *) else {
+            print("✗ transcription needs macOS 14 or later")
+            return 1
+        }
+
+        let config: Config
+        do {
+            config = try ConfigStore.load()
+        } catch {
+            print("✗ config: \(CheckConfigCommand.describe(error))")
+            return 1
+        }
+
+        var exitCode: Int32 = 0
+        let done = DispatchSemaphore(value: 0)
+
+        Task {
+            let transcriber = Transcriber { status in
+                if case .downloading(let what) = status {
+                    print("\r  downloading \(what)…", terminator: "")
+                    fflush(stdout)
+                }
+            }
+            do {
+                try await transcriber.prepare(config: config)
+                print("\r\u{1B}[K✓ models ready")
+            } catch {
+                print("\r\u{1B}[K✗ \(error.localizedDescription)")
+                exitCode = 1
+            }
+            done.signal()
+        }
+
+        done.wait()
+        return exitCode
+    }
+}

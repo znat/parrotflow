@@ -41,11 +41,11 @@ enum AppVariant {
         isDev ? "~/Recordings/ParrotFlow Dev" : "~/Recordings/ParrotFlow"
     }
 
-    /// Right ⌘ for dev, so both builds can run at once and you choose which one
-    /// hears you by which key you hold. Both are bare modifiers, which is what
-    /// push-to-talk wants.
+    /// Right ⌥ for dev, Right ⌘ for release, so both builds can run at once
+    /// and you choose which one hears you by which key you hold. Both are
+    /// bare modifiers, which is what push-to-talk wants.
     static var defaultHotkey: String {
-        isDev ? "right_command" : "right_option"
+        isDev ? "right_option" : "right_command"
     }
 
     /// The parrot this build sits in the menu bar with when nothing is happening.

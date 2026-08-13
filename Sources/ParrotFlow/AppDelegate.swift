@@ -356,7 +356,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         watchActivation()
 
-        recorder.warmUp()
+        // Touching the engine's inputNode is what warmUp does, and it is also
+        // what makes AVFoundation put up the native microphone dialog on its
+        // own — before the window below has had a chance to explain why.
+        // Skipped here when the answer isn't in yet; the first recording
+        // after permission is granted pays the warm-up cost instead.
+        if Permissions.microphone == .granted {
+            recorder.warmUp()
+        }
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }

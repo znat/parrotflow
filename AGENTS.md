@@ -66,9 +66,10 @@ release machinery and gets no warning. `make hooks` refuses it locally — see
 
 ## What not to change without being asked
 
-- `Config.defaultYAML` and `config.example.yaml` are what a new install gets,
-  and several check scripts read the real file rather than a fixture. Changing
-  a default changes what everyone gets on first launch.
+- `config.example.yaml` is what a new install gets — `Config.defaultYAML`
+  reads it directly, substituting only the few lines that differ per variant
+  — and several check scripts read the real file rather than a fixture.
+  Changing a default changes what everyone gets on first launch.
 - The stop lists in the `dotted` pattern and in `examples/transforms/code_identifiers/code_identifiers.py`
   are judgements about how people speak, tuned against scored sets. They are
   meant to be edited by the person whose speech they describe — not silently

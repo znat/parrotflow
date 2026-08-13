@@ -1,7 +1,65 @@
+# ParrotFlow configuration
+# Edit and save — changes are picked up automatically. Delete any line to
+# get its default back. `--check-config` says what the file adds up to.
+
+hotkey:
+  # A bare modifier — right_option, left_option, right_command,
+  # left_command, right_control, left_control, right_shift, left_shift, fn
+  # — or a character key (a-z, 0-9, f1-f20, space, return, arrows,
+  # punctuation), which needs `modifiers` below.
+  key: right_command
+
+  # Any of: command, control, option, shift.
+  modifiers: []
+
+  # push_to_talk records while the key is held; toggle taps on and off.
+  # A bare modifier wants push_to_talk, or typing an accented character
+  # with it would start recording.
+  mode: push_to_talk
+
+  # Keep the mic open this long after you let go, so the last syllable is
+  # not cut off. push_to_talk only. 0 turns it off.
+  release_tail_seconds: 0.3
+
+audio:
+  # Where the recordings and trace.jsonl go.
+  output_dir: ~/Recordings/ParrotFlow
+
+  # Skip clips with no speech in them, so a stray keypress does not decode
+  # room tone into a sentence.
+  speech_gate: true
+
+feedback:
+  sound: true     # a click when recording starts and stops
+  overlay: true   # the floating pill while you speak
+  # After the words land the pill names what can be done to them, for 3s.
+  # Click a chip to run it. Tapping the dictation hotkey — press and let go
+  # — opens the correction panel too. Holding it starts the next dictation.
+  correct_offer: true
+
+logging:
+  # The line-by-line log at ~/Library/Logs/ParrotFlow.log — how
+  # every problem in this app gets diagnosed. Leave it on.
+  text: true
+
+  # Write each dictation's recording to disk, in audio.output_dir. Off by
+  # default: a recording of your voice should not pile up there unless you
+  # asked for it. Turn it on for --transcribe, calibration, or to hear what
+  # the app heard.
+  audio: false
+
 transcription:
+  # paste     -> typed into the app you're in (needs Accessibility)
+  # clipboard -> copied, you press Cmd-V
+  insert_mode: paste
+
   # Say one of these, and what follows is an instruction, not dictation:
   # "hey parrot, make that a bullet list". An empty list turns this off.
   activation_phrases: [hey parrot, by the way parrot]
+
+  # Terminals only: they cannot be edited in place, so the input line is
+  # cleared and retyped corrected. Everywhere else ignores this.
+  rewrite_line: true
 
   # Languages you dictate in, most spoken first. Supported: en, fr. One entry
   # turns off language detection.

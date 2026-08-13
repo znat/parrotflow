@@ -41,11 +41,13 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"
 cp "$ROOT"/Resources/MenuBarParrot*.png "$APP/Contents/Resources/"
 
-# The one shipped transform is seeded from here — copied, not baked into the
-# binary as a string, so there is one copy of it and not two drifting apart.
-# See Config.exampleTransformsDirectory.
+# The shipped transforms and the default config.yaml are seeded from here —
+# copied, not baked into the binary as strings, so there is one copy of each
+# and not two drifting apart. See Config.exampleTransformsDirectory and
+# Config.configTemplateURL.
 cp -R "$ROOT/examples" "$APP/Contents/Resources/examples"
 find "$APP/Contents/Resources/examples" -name __pycache__ -type d -exec rm -rf {} +
+cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
 
 # Resources/Info.plist carries the released identity; the dev bundle is that
 # file with three keys rewritten. One template rather than two files means a key
@@ -70,9 +72,23 @@ echo "==> Build stamp: $STAMP"
 
 # Ad-hoc ("-") by default. Set CODESIGN_IDENTITY to a self-signed identity to
 # keep the microphone permission across rebuilds — see README.
-# Prefer a stable self-signed identity when one exists — see dev-certificate.sh.
-if [ -z "${CODESIGN_IDENTITY:-}" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "ParrotFlow Dev"; then
-    CODESIGN_IDENTITY="ParrotFlow Dev"
+#
+# The identity has to match the variant. TCC keys a grant to the certificate,
+# not only the bundle id: signing com.parrotflow.app (release) with the Dev
+# certificate makes a locally built copy a different identity than the one
+# distributed, and permission grants stop lining up between them — this was
+# picking "ParrotFlow Dev" whenever it existed, for either variant, which is
+# exactly that bug. Prefer the matching identity, fall back to the other
+# rather than ad-hoc — see dev-certificate.sh.
+if [ -z "${CODESIGN_IDENTITY:-}" ]; then
+    PREFERRED="ParrotFlow Dev"
+    [ "$VARIANT" = "release" ] && PREFERRED="ParrotFlow Release"
+    for candidate in "$PREFERRED" "ParrotFlow Release" "ParrotFlow Dev"; do
+        if security find-identity -v -p codesigning 2>/dev/null | grep -q "$candidate"; then
+            CODESIGN_IDENTITY="$candidate"
+            break
+        fi
+    done
 fi
 IDENTITY="${CODESIGN_IDENTITY:--}"
 echo "==> Signing with identity: $IDENTITY"
