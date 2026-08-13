@@ -122,7 +122,6 @@ sentence is French. Score a model or a prompt against them with
 
 ## Without speaking
 
-*Correct a Word…* in the menu opens the same panel,
 `--learn <heard> <corrected>` adds a rule from the terminal, and
 `--command "<what you'd say>"` shows how a phrase would be routed. See
 [cli.md](cli.md).

@@ -3717,14 +3717,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let correctItem = NSMenuItem(
-            title: "Correct a Word…",
-            action: #selector(correctWord),
-            keyEquivalent: ""
-        )
-        correctItem.target = self
-        menu.addItem(correctItem)
-
         let revealItem = NSMenuItem(
             title: "Open Recordings Folder",
             action: #selector(openRecordingsFolder),
@@ -3893,10 +3885,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Menu actions
-
-    @objc private func correctWord() {
-        beginCorrection()
-    }
 
     /// `--preview-panel` shows the correction panel with sample text, so its
     /// layout can be iterated on without dictating into it every time.
