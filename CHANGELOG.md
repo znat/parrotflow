@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.6.0](https://github.com/znat/parrotflow/compare/v0.5.0...v0.6.0) (2026-08-13)
+
+
+### Features
+
+* the final permissions screen invites you to dictate, live ([#135](https://github.com/znat/parrotflow/issues/135)) ([0dd54fc](https://github.com/znat/parrotflow/commit/0dd54fc6dd062dfa8a3acff5645a01514f4b8efb))
+* warm up the transcriber at launch, not on first dictation ([#132](https://github.com/znat/parrotflow/issues/132)) ([28d7676](https://github.com/znat/parrotflow/commit/28d7676a017fa81f7709ac369ebfc3f8d2e2c00a))
+
+
+### Fixes
+
+* check Input Monitoring before taking the offer's keys ([#136](https://github.com/znat/parrotflow/issues/136)) ([fc86338](https://github.com/znat/parrotflow/commit/fc86338720e3b173a151d4afa21a3600a8f950b7))
+* close the launch-time gap in llm.keep_loaded warm-up ([#131](https://github.com/znat/parrotflow/issues/131)) ([317aa5f](https://github.com/znat/parrotflow/commit/317aa5fe1054e3a10d058a2b5295e487a88693cb))
+* give config.yaml live-reload 10s before it interrupts you ([#129](https://github.com/znat/parrotflow/issues/129)) ([514dc58](https://github.com/znat/parrotflow/commit/514dc581808392dce267955053f222815a876649))
+* seed config.yaml from config.example.yaml, add --warm-models and default Ollama install ([#133](https://github.com/znat/parrotflow/issues/133)) ([8b1b4d9](https://github.com/znat/parrotflow/commit/8b1b4d9c1f776550b7bd68d37e3ae712f2fd052e))
+
 ## [0.5.0](https://github.com/znat/parrotflow/compare/v0.4.0...v0.5.0) (2026-08-13)
 
 
