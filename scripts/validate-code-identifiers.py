@@ -371,12 +371,12 @@ def main():
     ap.add_argument("--code-only", action="store_true",
                     help="no model at all: a regex for the naming phrase, cased in code")
     ap.add_argument("--combo", action="store_true",
-                    help="the shipped shape: the script first, and the prompt only on what it"
-                         " declined — which is what makes the model call rare enough to afford")
+                    help="rules first, the prompt only on what they declined — no longer what"
+                         " ships (the shipped script has no --model), kept for comparison")
     ap.add_argument("--script", default=None,
                     help="score a `command:` transform instead — the same way the app runs it,"
                          " the transcript on stdin and the rewrite on stdout. Takes arguments:"
-                         " --script 'examples/transforms/code_identifiers/code_identifiers.py --model gemma4:e4b'")
+                         " --script 'examples/transforms/code_identifiers/code_identifiers.py'")
     args = ap.parse_args()
 
     cases = yaml.safe_load(pathlib.Path(args.cases).read_text())["cases"]

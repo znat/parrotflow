@@ -1,0 +1,110 @@
+# Validation set for `punctuation`, English only. Scored with
+# `ParrotFlow --eval punctuation`.
+#
+# A case with no `expect` must come back byte for byte — every trigger is an
+# ordinary word, and a false fire puts a comma in the middle of a sentence
+# that was already right.
+#
+# Inputs carry the decoder's own guessed punctuation, because that's what this
+# stage actually receives: a spoken mark replaces whatever punctuation the
+# decoder put next to it, rather than sitting beside it.
+#
+# No period rule — "period" and "full stop" are both too ordinary ("a period
+# of time", "the bus makes a full stop", "I said no, full stop") to guard
+# without an archive to build the guard from. Same call `dotted` makes on
+# bare "dot"/"point".
+#
+# Known miss, not guarded: an adjective between the article and the noun
+# ("the oxford comma") slips past the "article right before it" guard.
+#
+# `on`/`in`/`with` etc. are deliberately not in the guard — they're how a
+# phrasal verb ends ("hold on", "log in"), and guarding on them broke real
+# instructions. Measured, then rolled back to what these cases prove is safe.
+
+cases:
+  # --- quoted segments ---
+  - probe: quote
+    input: he said quote we should ship this unquote and left.
+    expect: he said "we should ship this" and left.
+  - probe: quote
+    input: quote first unquote and quote second unquote.
+    expect: "\"first\" and \"second\"."
+
+  # --- marks, decoder-punctuated as they'd actually arrive ---
+  - probe: mark
+    input: hello comma world.
+    expect: hello, world.
+  - probe: mark
+    input: is that true question mark.
+    expect: is that true?
+  - probe: mark
+    input: is that true question mark we should check.
+    expect: is that true? we should check.
+  - probe: mark
+    input: that is amazing exclamation point.
+    expect: that is amazing!
+  - probe: mark
+    input: two options colon speed and cost.
+    expect: "two options: speed and cost."
+  - probe: mark
+    input: send the invoice comma then follow up next week.
+    expect: send the invoice, then follow up next week.
+  - probe: mark
+    input: three items colon milk eggs and bread.
+    expect: "three items: milk eggs and bread."
+
+  # --- a spoken mark replaces the decoder's own punctuation, not beside it ---
+  - probe: mark
+    input: see what solution we could find. exclamation point we ship it today.
+    expect: see what solution we could find! we ship it today.
+  - probe: mark
+    input: that is done. comma then we ship.
+    expect: that is done, then we ship.
+  # A pause, then the mark, then another pause: decoder punctuation on both
+  # sides of the trigger, and both get absorbed into the one mark.
+  - probe: mark
+    input: "Yesterday, comma, I was at a bar."
+    expect: "Yesterday, I was at a bar."
+  - probe: mark
+    input: "Dear Michael, comma. I will be there next week, exclamation point."
+    expect: "Dear Michael, I will be there next week!"
+  # "hold on" ends in a preposition, and it's a real instruction, not a
+  # mention — the reason the guard list stops at articles/conjunctions.
+  - probe: mark
+    input: hold on comma let me check.
+    expect: hold on, let me check.
+
+  # --- keep: the trigger words used as ordinary words ---
+  - probe: prose
+    input: each period was different.
+  - probe: prose
+    input: we waited for a period of time.
+  - probe: prose
+    input: he did not quote me correctly.
+  # "quote unquote" said together, nothing between: passes through. Used to
+  # match on a single captured space and produce `" "` — an empty quotation
+  # dropped into the sentence.
+  - probe: prose
+    input: discuss this quote unquote new PR.
+  # First word of the utterance — nothing to attach the mark to.
+  - probe: prose
+    input: colon cancer is treatable.
+  - probe: prose
+    input: comma splices are a common error.
+  # "a/an/the" right before the trigger: it's the noun, not the mark.
+  - probe: prose
+    input: she has a comma splice in her essay.
+  - probe: prose
+    input: he drew a question mark on the whiteboard.
+  - probe: prose
+    input: don't overuse the exclamation point in emails.
+  - probe: prose
+    input: get me a quote for the roofing job.
+  # No rule at all for "full stop" — the bus-stop / emphatic-idiom senses win.
+  - probe: prose
+    input: put it on the calendar full stop.
+  - probe: prose
+    input: the bus makes a full stop at every corner.
+  # "around"/"or" right before the trigger: listing the marks, not dictating one.
+  - probe: prose
+    input: Look at how punctuation around Comma or exclamation point.

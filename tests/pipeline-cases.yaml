@@ -440,7 +440,6 @@ cases:
     expect: a python function called max_retries
     expect_vars:
       code_identifiers.count: 1
-      code_identifiers.asked_model: false
       dotted.ran: false
   # And one it declines, which is what lets the stage below it have a turn.
   - name: and stands aside for the next stage when it converted nothing

@@ -1,0 +1,68 @@
+# Validation set for `priorities` — spoken priority levels as P1 to P4.
+# Scored with `ParrotFlow --eval priorities`.
+#
+# One rule per level, because a substitution cannot look up the digit for a
+# word. Four levels is the range in use.
+#
+# A case with no `expect` must come back byte for byte. That half is the point
+# of this set: the rule is a bare letter followed by a small number, which is a
+# shape ordinary prose hits by accident. "pun", "phone", "up one", "top one"
+# and "mp3" are all one guard away from being rewritten.
+
+cases:
+  # --- said as a word, English and French ---
+  - probe: word
+    input: P one
+    expect: P1
+  - probe: word
+    input: P un
+    expect: P1
+  - probe: word
+    input: p deux
+    expect: P2
+  - probe: word
+    input: Let's make that a P three please
+    expect: Let's make that a P3 please
+  - probe: word
+    input: c'est une P quatre
+    expect: c'est une P4
+  - probe: word
+    input: on met ça en P un et l'autre en P deux
+    expect: on met ça en P1 et l'autre en P2
+
+  # --- already a digit ---
+  - probe: digit
+    input: P1
+    expect: P1
+  - probe: digit
+    input: P 2
+    expect: P2
+  - probe: digit
+    input: P-2
+    expect: P2
+  - probe: digit
+    input: P. one
+    expect: P1
+  # Said quickly, written joined.
+  - probe: digit
+    input: P1P2
+    expect: P1 P2
+  - probe: digit
+    input: the bug is P1P2
+    expect: the bug is P1 P2
+
+  # --- keep: a p next to a small number that is not a priority ---
+  #
+  # The separator requirement carries the first two: a spelled-out number needs
+  # one, so "pun" and "pone" never match. `\b` carries the rest — the p in
+  # "up", "top", "phone" and "mp3" is not at a word boundary.
+  - probe: prose
+    input: pun intended
+  - probe: prose
+    input: the phone rang twice
+  - probe: prose
+    input: up one level, top one is fine
+  - probe: prose
+    input: the mp3 file is corrupted
+  - probe: prose
+    input: chapitre trois, page une

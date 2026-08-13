@@ -2,10 +2,10 @@
 
 # ParrotFlow
 
-### Local dictation for people who type for a living
+### A local, programmable dictation tool, shaped around your voice and your work
 
-An open source alternative to Wispr Flow. No account, no subscription, no cloud —
-your audio never leaves your Mac.
+An open source alternative to Wispr Flow. No account, no subscription, no cloud.
+Your audio never leaves your Mac.
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
@@ -18,79 +18,117 @@ your audio never leaves your Mac.
 
 ---
 
-You say it once, holding <kbd>right ⌥</kbd>:
+- **Local-first.** Ships with Parakeet for speech and a small Gemma model for
+  rewrites. Both run on your Mac.
+- **Learns your vocabulary.** Teammates, internal jargon, products, vendor
+  names. Correct one out loud, once, and it stays fixed.
+- **Fast.** Text lands at your cursor in under half a second for most
+  dictations, up to about two seconds for harder ones.
+- **Programmable and promptable.** Build transforms out of substitutions,
+  prompts, or scripts, and arrange them into your own pipeline.
 
-> *"hi marie um the staging deploy is broken again can you take a look when you
-> get a chance thanks nathan"*
+## Improve and adapt your dictation
 
-What gets typed depends on the window it lands in.
+A transform can be a substitution, a prompt, or a script. Here is one of each.
 
-| Where you were | What got typed |
-| --- | --- |
-| **A terminal**<br><sub>Ghostty, Warp, Claude Code</sub> | Hi marie the staging deploy is broken again can you take a look when you get a chance thanks nathan |
-| **Slack** | Hi Marie, the staging deploy is broken again. Can you take a look when you get a chance? Thanks, Nathan. |
-| **Outlook**<br><sub>Mail, Superhuman, Missive</sub> | Hi Marie,<br><br>The staging deploy is broken again. Can you take a look when you get a chance?<br><br>Thanks,<br>Nathan |
-
-The terminal keeps your words and drops the *um*. Slack gets one clean
-paragraph and no markup it cannot render. The mail window gets a greeting on
-its own line and a signature on theirs. **That is the config it ships with**,
-not one you have to write.
-
-## Fast, and none of it leaves your Mac
-
-Text at your cursor a second after you let go. Small models on hardware you own
-— Parakeet on the Neural Engine, a Gemma 4B through your own
-[Ollama](https://ollama.com). No account, no key, no bill.
-
-## It gets your words right
-
-*"read user dot name"* → `read user.name`. *"two hundred forty-three"* → `243`.
-It mishears a name? Fix it out loud, once.
-
-## There is no ceiling
-
-Every stage is yours — a regex, a prompt, or a script in any language. This is
-the whole of what produced the table above:
+**A regex**, to drop hesitations:
 
 ```yaml
-pipelines:
-  default:
-    - replacements                       # the names you taught it
-    - numbers                            # "two hundred forty-three" -> 243
-    - transform: dotted                  # "user point name" -> user.name
-      app: /term|ghostty|warp|slack/     #   but never in an email
-    - transform: email                   # greeting, paragraphs, signature
-      app: /mail|outlook|superhuman/
-    - transform: slack                   # one paragraph, no markup
-      app: /slack/
+transforms:
+  - name: hesitations
+    description: drop filler words
+    replace:
+      "": ['/\b(?:u+m+|u+h+|erm+)\b,?\s*/']
 ```
 
-Or skip the file and just say it: *"hey parrot, use Slack mentions"*.
+*"so um, let's ship it"* → *"so, let's ship it"*
+
+**A prompt**, to rewrite in a voice of your choosing:
+
+```yaml
+transforms:
+  - name: pirate
+    description: rewrite like a pirate
+    offer: true        # put a chip on the pill after every dictation
+    key: p             # press P to run it
+    prompt: Rewrite as a pirate would say it. Keep the meaning. Return only the text.
+```
+
+Say *"hey parrot, make that sound like a pirate"*, or press `P` on the pill
+after any dictation, and it does.
+
+**A script**, for a rule that needs code:
+
+```yaml
+transforms:
+  - name: priorities
+    description: spoken priority levels as P1 to P4
+    command: priorities.py
+```
+
+Where `priorities.py` looks like:
+
+```python
+#!/usr/bin/env python3
+import re, sys
+text = sys.stdin.read()
+levels = ("one un", "two deux", "three trois", "four quatre")
+for n, words in enumerate(levels, start=1):
+    text = re.sub(r"\bp\s*(?:%s)\b" % words.replace(" ", "|"), f"P{n}", text, flags=re.I)
+sys.stdout.write(text)
+```
+
+*"that's a P one, this one's a P two"* → *"that's a P1, this one's a P2"*
+
+Put them in a pipeline, or leave them out of it:
+
+```yaml
+transcription:
+  pipelines:
+    default:
+      - transform: hesitations                # drop filler words, every dictation
+      - transform: priorities                 # "P one" -> P1, every dictation
+
+  transforms:
+    - name: hesitations
+      description: drop filler words
+      replace:
+        "": ['/\b(?:u+m+|u+h+|erm+)\b,?\s*/']
+
+    - name: priorities
+      description: spoken priority levels as P1 to P4
+      command: priorities.py
+
+    - name: pirate                            # not in the pipeline: on demand only
+      description: rewrite like a pirate
+      offer: true                             # put a chip on the pill
+      key: p                                  # press P to run it
+      prompt: Rewrite as a pirate would say it. Keep the meaning. Return only the text.
+```
+
+`hesitations` and `priorities` run on every dictation, because they are in the
+pipeline. `pirate` is not, so it only runs when you ask: hold the hotkey and say
+*"hey parrot, rephrase as if I was a pirate"*, or press `P` on the pill after
+any dictation.
 
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
 [Where the time goes](docs/architecture.md#where-the-time-goes)
 
 ## Install
 
-**Requires** an Apple Silicon Mac on macOS 14 or later.
+ParrotFlow requires Apple silicon and macOS 14 or later.
 
 > [!TIP]
-> **Let an agent do it.** Paste the block below into Claude Code, or any other agent.
+> Paste this in Claude Code or any coding agent to set up ParrotFlow.
+>
+> ```text
+> Set up ParrotFlow on my Mac by following
+> https://raw.githubusercontent.com/znat/parrotflow/main/docs/setup.md
+> ```
 
-```text
-Set up ParrotFlow on my Mac by following
-https://raw.githubusercontent.com/znat/parrotflow/main/docs/setup.md
-```
-
-Or install it yourself. The app is one command; the permissions that follow are
-in [docs/setup.md](docs/setup.md).
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
-```
-
-Your first dictation downloads the speech model, about 1.2 GB. Everything after
-that is immediate.
+Setup will install the Parakeet speech model (1.2 GB,
+needed for dictation), and [Ollama](https://ollama.com/download) with a
+small [Gemma4](https://ollama.com/library/gemma4:e4b-mlx) model.
 
 ## Documentation
 

@@ -231,7 +231,7 @@ then do with them.
 
 ```json
 { "text": "a python function called max_retries",
-  "vars": { "count": 1, "asked_model": false } }
+  "vars": { "count": 1 } }
 ```
 
 - **Both keys are optional.** No `text` means "I looked and left the sentence
@@ -345,9 +345,9 @@ to a built-in stage or to the router have nowhere else to be and stay in
 | `tests/` | `spelling` (62), `french` (45), `numbers` (97), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement` |
 
 Each has a runner in `scripts/`; the transform sets can also be scored with
-`--eval`. `examples/transforms/` is a byte-for-byte mirror of what a first
-launch writes into `~/.config/parrotflow/transforms/`, kept honest by
-`scripts/check-seeded-transform.sh`.
+`--eval`. `examples/transforms/` is what a first launch copies into
+`~/.config/parrotflow/transforms/` — one file, not a mirror of one, so there
+is nothing to keep in sync. See `Config.exampleTransformsDirectory`.
 
 ## Before you call it done
 

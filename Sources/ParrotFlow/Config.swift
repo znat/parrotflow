@@ -1958,15 +1958,50 @@ enum ConfigStore {
         directory.appendingPathComponent("transforms", isDirectory: true)
     }
 
-    /// The folder the `code_identifiers` transform owns.
-    static var codeIdentifiersFolder: URL {
-        transformsDirectory.appendingPathComponent("code_identifiers", isDirectory: true)
+    /// Transforms seeded on first launch, script-only: (folder name, script
+    /// filename). Each folder is copied whole from `exampleTransformsDirectory`
+    /// — the script, plus the `cases.yaml` beside it.
+    static let seededTransforms: [(name: String, script: String)] = [
+        ("code_identifiers", "code_identifiers.py"),
+        ("punctuation", "punctuation.py"),
+        ("repetitions", "repetitions.py"),
+    ]
+
+    /// The folder a seeded transform owns.
+    static func seededTransformFolder(_ name: String) -> URL {
+        transformsDirectory.appendingPathComponent(name, isDirectory: true)
     }
 
-    /// Where the `code_identifiers` transform's program lives — in its folder,
-    /// which is what makes `command: code_identifiers.py` resolve.
-    static var codeIdentifiersURL: URL {
-        codeIdentifiersFolder.appendingPathComponent("code_identifiers.py")
+    /// Where a seeded transform's program lives — in its folder, which is
+    /// what makes `command: <script>` resolve.
+    static func seededTransformScript(_ name: String, _ script: String) -> URL {
+        seededTransformFolder(name).appendingPathComponent(script)
+    }
+
+    /// `examples/transforms/` — the one copy of every shipped example, seeded
+    /// from here instead of a string in the binary.
+    ///
+    /// SwiftPM's `resources:` only copies paths inside the target's own
+    /// directory: a symlink out to `examples/` gets copied as a symlink, and
+    /// it breaks once relocated into the bundle — tried, confirmed broken.
+    /// `Bundle.main` after `scripts/build-app.sh` has assembled the .app is
+    /// the one place this already works, because that script puts real files
+    /// there, the same way it does for the icons.
+    ///
+    /// Running the raw `swift build`/`swift run` binary has no such bundle —
+    /// `isRunningFromBuildDirectory` catches that, and the source tree this
+    /// file compiled from is right there to read instead.
+    static var exampleTransformsDirectory: URL {
+        if !Permissions.isRunningFromBuildDirectory,
+           let bundled = Bundle.main.resourceURL?.appendingPathComponent("examples/transforms"),
+           FileManager.default.fileExists(atPath: bundled.path) {
+            return bundled
+        }
+        return URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // Config.swift -> Sources/ParrotFlow/
+            .deletingLastPathComponent()  // -> Sources/
+            .deletingLastPathComponent()  // -> repo root
+            .appendingPathComponent("examples/transforms", isDirectory: true)
     }
 
     /// Creates the config file, and the one transform it ships with, if they
@@ -1978,28 +2013,29 @@ enum ConfigStore {
     /// arrives with its own set is the whole argument of docs/authoring.md
     /// made concrete, and `--eval code_identifiers` finds it by convention.
     ///
-    /// The script is written rather than bundled because this app has no
-    /// resources — `defaultYAML` is a string in the binary for the same reason
-    /// — and because a script you can open and edit beside your config is the
-    /// point of it. Nothing here is ever overwritten: once it exists it is
-    /// yours, and an update that reverted your stop lists would be the app
-    /// taking back something it gave you.
+    /// Copied from `exampleTransformsDirectory`, not written from a string —
+    /// one real file instead of two hand-synced copies. Nothing here is ever
+    /// overwritten: once it exists it is yours, and an update that reverted
+    /// your stop lists would be the app taking back what it gave you.
     static func createIfMissing() throws {
         let fm = FileManager.default
-        if !fm.fileExists(atPath: codeIdentifiersURL.path) {
-            try fm.createDirectory(at: codeIdentifiersFolder, withIntermediateDirectories: true)
-            try defaultCodeIdentifiersScript.write(
-                to: codeIdentifiersURL, atomically: true, encoding: .utf8
-            )
-            // A shebang does nothing without this.
-            try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: codeIdentifiersURL.path)
-            Log.write("config: wrote transforms/code_identifiers/code_identifiers.py")
-        }
-        let cases = codeIdentifiersFolder.appendingPathComponent("cases.yaml")
-        if !fm.fileExists(atPath: cases.path) {
-            try fm.createDirectory(at: codeIdentifiersFolder, withIntermediateDirectories: true)
-            try defaultCodeIdentifiersCases.write(to: cases, atomically: true, encoding: .utf8)
-            Log.write("config: wrote transforms/code_identifiers/cases.yaml")
+        for (name, script) in seededTransforms {
+            let folder = seededTransformFolder(name)
+            let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)
+            let scriptURL = seededTransformScript(name, script)
+            if !fm.fileExists(atPath: scriptURL.path) {
+                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+                try fm.copyItem(at: source.appendingPathComponent(script), to: scriptURL)
+                // A shebang does nothing without this.
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
+                Log.write("config: wrote transforms/\(name)/\(script)")
+            }
+            let cases = folder.appendingPathComponent("cases.yaml")
+            if !fm.fileExists(atPath: cases.path) {
+                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+                try fm.copyItem(at: source.appendingPathComponent("cases.yaml"), to: cases)
+                Log.write("config: wrote transforms/\(name)/cases.yaml")
+            }
         }
         // The vocabulary, empty but explained. Written so the file exists to
         // be found and read — a person who never dictates a mangled word
@@ -2083,838 +2119,6 @@ enum ConfigStore {
     #        from: correction
 
     """
-
-    /// The shipped copy of examples/transforms/code_identifiers/cases.yaml.
-    ///
-    /// Written into the folder beside the script, so the one transform this
-    /// app ships arrives with the thing every other rewrite in its repository
-    /// has and no user ever got: a set to score it against. `--eval
-    /// code_identifiers` runs it.
-    ///
-    /// Two copies of one file again, and kept honest the same way —
-    /// scripts/check-seeded-transform.sh fails when they differ. The one in
-    /// examples/ is the one to edit.
-    static let defaultCodeIdentifiersCases = #"""
-# Validation set for spoken identifiers — a transform that turns a name said
-# out loud into the identifier a language would spell it as. Run with
-# scripts/validate-code-identifiers.py.
-#
-# The question it exists to answer: can one prompt, on a small local model, do
-# this on its own? If it can, the whole feature is a `transforms:` entry and a
-# pipeline line in config.yaml, and nothing enters the app at all. If it cannot,
-# the fallback is a prompt that only *marks* the names and a `replace:` table
-# that cases them — which needs a case operator the substitution engine does
-# not have. This set is what decides between the two, and it judges both the
-# same way.
-#
-# Two halves, and the second is the important one.
-#
-#   change  a name is introduced as a function, variable, class or constant.
-#           The right answer is that name in the language's convention, with
-#           every other word of the transcript untouched.
-#   keep    nothing is being named. The right answer is the transcript, byte
-#           for byte.
-#
-# `keep` is nearly half the set on purpose. This transform runs on *every*
-# transcript in the pipeline it is added to, so the failure it invites is not
-# getting a name wrong — it is quietly rewriting a sentence that needed
-# nothing. A model that scores well on `change` and poorly on `keep` has made
-# the feature unusable, because you would have to proof-read every dictation.
-#
-# The contract, which is the boundary the set argues about on purpose: convert
-# only what the speaker introduces as a name — "a function called X", "une
-# variable qui s'appelle X", "the class X". A noun phrase that merely describes
-# something ("the retry count is too high") is prose. Both sides are here.
-#
-# The convention comes from the language if one was said, and is camelCase when
-# none was:
-#
-#   python, rust, ruby, elixir   snake_case
-#   javascript, typescript, java, go, swift, php   camelCase
-#   a class or a type            PascalCase
-#   a constant                   SCREAMING_SNAKE_CASE
-#   nothing said                 camelCase
-#
-# Inputs are dictated, so they are lowercase and unpunctuated where a speaker
-# would be, and they mix French and English the way this app is used.
-
-cases:
-  # ---- A language was said ------------------------------------------------
-  - name: python function
-    kind: change
-    category: language-said
-    input: add a python function called max retries
-    expect: add a python function called max_retries
-
-  - name: python variable, three words
-    kind: change
-    category: language-said
-    input: in python a variable called user profile name
-    expect: in python a variable called user_profile_name
-
-  - name: rust variable
-    kind: change
-    category: language-said
-    input: rust variable called retry count
-    expect: rust variable called retry_count
-
-  - name: typescript function
-    kind: change
-    category: language-said
-    input: a typescript function named get user profile
-    expect: a typescript function named getUserProfile
-
-  - name: javascript variable
-    kind: change
-    category: language-said
-    input: javascript variable called is logged in
-    expect: javascript variable called isLoggedIn
-
-  - name: java function, five words
-    kind: change
-    category: language-said
-    input: a java method called build request from config
-    expect: a java method called buildRequestFromConfig
-
-  - name: go function
-    kind: change
-    category: language-said
-    input: a go function called parse config file
-    expect: a go function called parseConfigFile
-
-  - name: swift function
-    kind: change
-    category: language-said
-    input: swift function named reload dictation model
-    expect: swift function named reloadDictationModel
-
-  # ---- A class or a type takes PascalCase whatever the language ------------
-  - name: python class
-    kind: change
-    category: class
-    input: a python class called user service
-    expect: a python class called UserService
-
-  - name: typescript type
-    kind: change
-    category: class
-    input: a typescript type called retry policy
-    expect: a typescript type called RetryPolicy
-
-  - name: class, no language
-    kind: change
-    category: class
-    input: create a class called audio recorder
-    expect: create a class called AudioRecorder
-
-  # ---- A constant takes screaming snake ------------------------------------
-  - name: python constant
-    kind: change
-    category: constant
-    input: a python constant called max retry count
-    expect: a python constant called MAX_RETRY_COUNT
-
-  - name: constant, no language
-    kind: change
-    category: constant
-    input: a constant called default timeout seconds
-    expect: a constant called DEFAULT_TIMEOUT_SECONDS
-
-  # ---- No language said: camelCase ----------------------------------------
-  - name: bare function
-    kind: change
-    category: default-camel
-    input: a function called user profile name
-    expect: a function called userProfileName
-
-  - name: bare variable
-    kind: change
-    category: default-camel
-    input: a variable named retry count
-    expect: a variable named retryCount
-
-  - name: bare function, two words
-    kind: change
-    category: default-camel
-    input: write a function called send email
-    expect: write a function called sendEmail
-
-  # ---- French ---------------------------------------------------------------
-  - name: fonction python
-    kind: change
-    category: french
-    input: une fonction python qui s'appelle calculer le total
-    expect: une fonction python qui s'appelle calculer_le_total
-
-  - name: variable typescript
-    kind: change
-    category: french
-    input: en typescript une variable qui s'appelle nom utilisateur
-    expect: en typescript une variable qui s'appelle nomUtilisateur
-
-  - name: fonction sans langage
-    kind: change
-    category: french
-    input: crée une fonction qui s'appelle envoyer le rapport
-    expect: crée une fonction qui s'appelle envoyerLeRapport
-
-  - name: classe française
-    kind: change
-    category: french
-    input: une classe qui s'appelle lecteur audio
-    expect: une classe qui s'appelle LecteurAudio
-
-  # ---- Where does the name end --------------------------------------------
-  # The sentence continues after the name, and everything after it is prose.
-  # This is the same span problem the spelling correction has, and it is where
-  # a model that is doing the job by feel will over-reach.
-  - name: name then a relative clause
-    kind: change
-    category: boundary
-    input: add a python function called max retries that returns the count
-    expect: add a python function called max_retries that returns the count
-
-  - name: name then a purpose
-    kind: change
-    category: boundary
-    input: a typescript function named get user profile for the settings page
-    expect: a typescript function named getUserProfile for the settings page
-
-  - name: name in the middle
-    kind: change
-    category: boundary
-    input: the function called reload config should run on save
-    expect: the function called reloadConfig should run on save
-
-  - name: two names in one sentence
-    kind: change
-    category: boundary
-    input: a python function called read config and a variable called config path
-    expect: a python function called read_config and a variable called config_path
-
-  # ---- keep: ordinary prose -------------------------------------------------
-  - name: plain sentence
-    kind: keep
-    category: prose
-    input: we should ship it on friday if the tests are green
-
-  - name: meeting note
-    kind: keep
-    category: prose
-    input: i told them we would look at it again after the release
-
-  - name: prose with a number
-    kind: keep
-    category: prose
-    input: it took about forty minutes and we still did not finish
-
-  - name: email sentence
-    kind: keep
-    category: prose
-    input: thanks for the quick turnaround on this one really appreciated
-
-  - name: phrase française
-    kind: keep
-    category: prose
-    input: on en reparle demain matin avant la réunion
-
-  # ---- keep: the words are there, the naming is not -------------------------
-  # "function", "variable", a language name — every trigger word this transform
-  # keys on, in a sentence that names nothing. These are the ones that decide
-  # whether it can be left on.
-  - name: function as an English word
-    kind: keep
-    category: near-miss
-    input: that function of the business was outsourced years ago
-
-  - name: python as a topic
-    kind: keep
-    category: near-miss
-    input: we talked about python packaging for most of the afternoon
-
-  - name: describing a variable, not naming one
-    kind: keep
-    category: near-miss
-    input: the retry count is too high and it hammers the api
-
-  - name: a person called Max
-    kind: keep
-    category: near-miss
-    input: i called max yesterday and he had not seen the ticket
-
-  - name: variable en français, sans nom
-    kind: keep
-    category: near-miss
-    input: la variable dépend de la charge du serveur ce jour là
-
-  - name: a class in the school sense
-    kind: keep
-    category: near-miss
-    input: she has a class at nine so we moved the standup
-
-  # ---- keep: already an identifier -----------------------------------------
-  # Nothing to do, and the invitation to re-case something that is already
-  # right — or to "fix" a convention the speaker meant.
-  - name: already camel
-    kind: keep
-    category: already-done
-    input: call getUserProfile before the render happens
-
-  - name: already snake
-    kind: keep
-    category: already-done
-    input: max_retries is set to three in the config file
-
-  - name: deliberately mixed conventions
-    kind: keep
-    category: already-done
-    input: the python side uses max_retries and the client sends maxRetries
-
-  - name: a dotted path
-    kind: keep
-    category: already-done
-    input: read config.port from user.name before anything else
-
-  # ---- keep: it is a question or an aside ----------------------------------
-  - name: a question about code
-    kind: keep
-    category: near-miss
-    input: what does the parser do when the header is missing
-
-  - name: an aside about naming
-    kind: keep
-    category: near-miss
-    input: honestly the naming in that module has never made any sense
-
-  # ---- Held out while the code-only control was being tuned ----------------
-  #
-  # The control reached 100% on everything above, which is worth nothing on its
-  # own: the stop list and the "a kind word must precede the naming phrase"
-  # rule were both written *because* of failures in that half. These fifteen
-  # were written afterwards and used to tune nothing. They cost the control one
-  # case — the passive "called by the scheduler", which every cheap rule fires
-  # on — and the model five.
-  #
-  # They are part of the set now, so the next change needs new ones.
-  - name: ruby method
-    kind: change
-    category: language-said
-    input: a ruby method called fetch remote config
-    expect: a ruby method called fetch_remote_config
-
-  - name: go variable
-    kind: change
-    category: language-said
-    input: declare a go variable named http client timeout
-    expect: declare a go variable named httpClientTimeout
-
-  - name: elixir function containing to
-    kind: change
-    category: boundary
-    input: an elixir function called broadcast message to room
-    expect: an elixir function called broadcast_message_to_room
-
-  - name: php variable
-    kind: change
-    category: language-said
-    input: a php variable called current user id
-    expect: a php variable called currentUserId
-
-  - name: constante française
-    kind: change
-    category: french
-    input: une constante python qui s'appelle taille maximale
-    expect: une constante python qui s'appelle TAILLE_MAXIMALE
-
-  - name: struct
-    kind: change
-    category: class
-    input: a struct called connection pool
-    expect: a struct called ConnectionPool
-
-  - name: typescript interface
-    kind: change
-    category: class
-    input: a typescript interface named payment method
-    expect: a typescript interface named PaymentMethod
-
-  - name: name then modal
-    kind: change
-    category: boundary
-    input: the variable called last seen at should be nullable
-    expect: the variable called lastSeenAt should be nullable
-
-  - name: rust constant
-    kind: change
-    category: constant
-    input: add a rust constant called default buffer size
-    expect: add a rust constant called DEFAULT_BUFFER_SIZE
-
-  # "called" that introduces nothing — the passive. A kind word sits right in
-  # front of it, so every cheap rule fires here.
-  - name: called by, not called X
-    kind: keep
-    category: near-miss
-    input: a python function called by the scheduler every hour
-
-  - name: called it useless
-    kind: keep
-    category: near-miss
-    input: he called the function useless in the review yesterday
-
-  - name: class in the school sense again
-    kind: keep
-    category: near-miss
-    input: the class was late so we started the demo without her
-
-  - name: named a cat
-    kind: keep
-    category: near-miss
-    input: i named my cat after a rust crate honestly
-
-  - name: type as a verb
-    kind: keep
-    category: near-miss
-    input: we should type the config properly before shipping it
-
-  - name: variable qui change
-    kind: keep
-    category: near-miss
-    input: on a une variable qui change tout le temps sur ce serveur
-
-  # ---- Held out a second time: a kind word and a naming word, in prose ----
-  #
-  # Written to break the script rather than to flatter it, and they did: 2/8
-  # before a length cap, because "the class called intro to python starts at
-  # nine tomorrow" has every marker a naming has. Nobody dictates a five-word
-  # identifier, and declining beyond four is what tells them apart. The
-  # remaining one — "a method called cognitive behavioural therapy" — is three
-  # plausible words and no surface rule separates it from a name.
-  - name: a class with a name, in the school sense
-    kind: keep
-    input: the class called intro to python starts at nine tomorrow
-  - name: a method in the medical sense
-    kind: keep
-    input: there is a method called cognitive behavioural therapy for that
-  - name: naming after someone
-    kind: keep
-    input: he named the variable after his cat which i think is unwise
-  - name: a function in the event sense
-    kind: keep
-    input: the function called the annual review is on friday afternoon
-  - name: a type of person
-    kind: keep
-    input: she is the type called on whenever something breaks at night
-  - name: a constant complaint
-    kind: keep
-    input: the constant called for by the spec is not what we shipped
-  - name: une classe au sens scolaire
-    kind: keep
-    input: la classe qui s'appelle initiation au python commence à neuf heures
-  - name: a variable in the statistical sense
-    kind: keep
-    input: the variable called into question was the sample size all along
-  # And two that must still work, so a fix cannot just switch everything off.
-
-  # ---- No marker at all: the only job left for a model ---------------------
-  #
-  # A name given without "called": "call it X", "rename it to X", "a getter for
-  # X". The script declines every one of these by construction, and they are
-  # the cases that decide whether a prompt earns its second here.
-  - name: call it, no kind word
-    kind: change
-    input: call it max retries in python
-    expect: call it max_retries in python
-  - name: a helper, said as prose
-    kind: change
-    input: write a python helper that reads the config file and call it load config
-    expect: write a python helper that reads the config file and call it load_config
-  - name: naming by apposition
-    kind: change
-    input: i need a typescript getter for the user profile name
-    expect: i need a typescript getter for the userProfileName
-  - name: rename
-    kind: change
-    input: rename the python variable to retry count
-    expect: rename the python variable to retry_count
-  - name: French, no kind word
-    kind: change
-    input: appelle ça nombre de tentatives en python
-    expect: appelle ça nombre_de_tentatives en python
-  # The hard keep the script still fails, so a prompt gets a chance at it too.
-  - name: a method in the medical sense
-    kind: keep
-    input: there is a method called cognitive behavioural therapy for that
-
-  # ---- Languages the old pattern did not know -----------------------------
-  #
-  # `python|rust|ruby|elixir` meant snake_case and everything else meant camel,
-  # so each of these was silently wrong. Held out while BY_LANGUAGE was written
-  # to replace that pattern: the rules scored 1/5 before it and 5/5 after, with
-  # no model involved. Asking the model for the language is what made the table
-  # worth having — a pattern has to be edited to learn a language, a table has
-  # to be added to.
-
-  - name: zig
-    kind: change
-    category: language-said
-    input: a zig function called read config file
-    expect: a zig function called read_config_file
-
-  - name: c sharp
-    kind: change
-    category: language-said
-    input: a c# method called build request
-    expect: a c# method called BuildRequest
-
-  - name: kotlin
-    kind: change
-    category: language-said
-    input: a kotlin function called retry count
-    expect: a kotlin function called retryCount
-
-  - name: julia
-    kind: change
-    category: language-said
-    input: a julia function called solve system
-    expect: a julia function called solve_system
-
-  - name: erlang
-    kind: change
-    category: language-said
-    input: an erlang function called handle call
-    expect: an erlang function called handle_call
-"""#
-
-    /// The shipped copy of examples/transforms/code_identifiers/code_identifiers.py.
-    ///
-    /// Two copies of one file, which is a thing this repo has been bitten by
-    /// twice — so scripts/check-seeded-transform.sh fails when they differ. The
-    /// example is the one to edit; this is the one that ships.
-    static let defaultCodeIdentifiersScript = #"""
-#!/usr/bin/env python3
-"""Spoken names as identifiers. A transcript on stdin, the rewrite on stdout.
-
-    transforms:
-      - name: code_identifiers
-        description: spoken names as identifiers
-        display: Formatting identifiers
-        command: code_identifiers.py                       # rules only, 0.03s
-      # command: code_identifiers.py --model gemma4:e4b     # + the model, below
-        timeout_seconds: 12                                 # only with --model
-
-    transcription:
-      pipelines:
-        default:
-          - transform: code_identifiers
-            when: /\b(?:function|variable|class|constant|fonction|classe)\b/
-
-"a python function called max retries"  ->  "a python function called max_retries"
-
-The convention comes from the language if one was said, and is camelCase when
-none was. A class or a type takes PascalCase whatever the language; a constant
-takes SCREAMING_SNAKE_CASE.
-
-A copy of this folder — this file and cases.yaml beside it — is written to
-~/.config/parrotflow/transforms/code_identifiers/ on first launch and never
-overwritten afterwards, and the step above is in the default pipeline. This
-one, in examples/, is the copy you read and edit; see
-scripts/check-seeded-transform.sh, which keeps the two equal.
-
-Why a script and not a prompt: measured. On examples/transforms/code_identifiers/cases.yaml, 56
-cases, this scores 100% and costs a process start; gemma4:e4b scores 68% and
-costs a second — and its errors are the expensive kind, capitalising words it
-was not asked to touch and translating French names into English. See
-scripts/validate-code-identifiers.py for the scoreboard.
-
---model asks a local model, and only about what the rules declined: a name
-given without a marker in front of it — "call it max retries", "rename the
-variable to retry count", "a getter for the user profile name". The rules
-cannot see those at all, and the model gets 8/8 on them where the rules get
-2/8.
-
-It extracts rather than rewrites — the language, and the names — and everything
-after that stays here. That division is the whole reason it works: asked to
-return the rewritten sentence instead, the same model scored 68% and
-capitalised words nobody asked it to touch.
-
-It is off by default, and the trade is measured rather than assumed. Over 75
-cases, adding it takes the sentences that should change from 87% to 100% — and
-the sentences that must come back untouched from 94% to 84%, because a model
-asked only about what a careful rule refused sees mostly near-misses. Turn it
-on if you dictate code all day and will notice; leave it off if a sentence
-quietly rewritten would slip past you. It also costs about a second, and a
-model that is cold takes longer than the two seconds ParrotFlow waits, in which
-case your transcript passes through untouched.
-
-It is yours now. The stop lists below are the part that will want editing:
-they say where a name ends, and that boundary is a judgement about how you
-speak, not a fact.
-"""
-import json
-import os
-import re
-import sys
-import urllib.request
-
-# A name has to be introduced as one. Without this, "i called max yesterday"
-# is a naming and the transform renames a person.
-KIND = re.compile(
-    r"\b(?:function|method|variable|class|constant|type|struct|interface|enum|"
-    r"fonction|m[ée]thode|variable|classe|constante)\b", re.I)
-
-# "called by the scheduler" is a passive and never a naming.
-TRIGGER = re.compile(
-    r"\b(?:called|named|call it|nomm[ée]e?|qui s['’]appelle|appel[ée]e?)\s+"
-    r"(?!by\b|par\b)", re.I)
-
-# Where the name stops and the sentence resumes. "in", "from", "on" and "to"
-# were here and had to come out — they are ordinary parts of identifiers
-# ("is logged in", "build request from config") and stopping there truncated
-# the name.
-TAIL = re.compile(
-    r"\b(?:that|which|for|and|so|should|will|when|if|because|"
-    r"qui|que|pour|et|dans|sur|avant|apr[èe]s|doit)\b", re.I)
-
-# The convention each language writes identifiers in. A table rather than a
-# pattern, because a pattern has to be edited to learn a language and a table
-# has to be added to — and everything it does not know reads as camelCase,
-# which was silently wrong for zig, julia, erlang and c# until this was a
-# table. Add your own; it is a dict, not a regex.
-BY_LANGUAGE = {
-    "python": "snake", "rust": "snake", "ruby": "snake", "elixir": "snake",
-    "erlang": "snake", "julia": "snake", "perl": "snake", "zig": "snake",
-    "nim": "snake", "crystal": "snake", "lua": "snake", "c": "snake",
-    "javascript": "camel", "typescript": "camel", "java": "camel",
-    "kotlin": "camel", "go": "camel", "swift": "camel", "php": "camel",
-    "scala": "camel", "dart": "camel", "groovy": "camel", "haskell": "camel",
-    "c#": "pascal", "csharp": "pascal", "f#": "pascal",
-}
-# "c#" ends in a character no word boundary follows, so the trailing \b would
-# never match it — the boundary has to be asserted on the left only, plus "not
-# followed by more word characters".
-LANGUAGE = re.compile(
-    r"\b(" + "|".join(re.escape(name) for name in sorted(BY_LANGUAGE, key=len, reverse=True))
-    + r")(?!\w)", re.I)
-PASCAL_KIND = re.compile(r"\b(?:class|classe|type|struct|interface|enum)\b", re.I)
-SCREAMING_KIND = re.compile(r"\b(?:constant|constante)\b", re.I)
-
-
-def style_for(sentence, before, language=None):
-    """A kind word in front of the name wins — a class is PascalCase in any
-    language — then the language, then camelCase for a sentence that named
-    none."""
-    if SCREAMING_KIND.search(before):
-        return "screaming"
-    if PASCAL_KIND.search(before):
-        return "pascal"
-    if not language:
-        found = LANGUAGE.search(sentence)
-        language = found.group(1) if found else None
-    return BY_LANGUAGE.get((language or "").lower(), "camel")
-
-
-def cased(words, style):
-    if style == "snake":
-        return "_".join(word.lower() for word in words)
-    if style == "screaming":
-        return "_".join(word.upper() for word in words)
-    if style == "pascal":
-        return "".join(word.capitalize() for word in words)
-    return words[0].lower() + "".join(word.capitalize() for word in words[1:])
-
-
-def convert(text, converted=None):
-    """The rewrite. `converted`, if given, is appended one entry per name taken.
-
-    An out-parameter rather than a second return value because
-    `scripts/validate-code-identifiers.py` calls this as `shipped.convert` and
-    compares its result to a string — a tuple would have changed what the
-    scoreboard measures in order to add a number nothing there reads.
-    """
-    out = text
-    # Right to left, so an earlier rewrite cannot move a later match.
-    for match in list(TRIGGER.finditer(text))[::-1]:
-        if not KIND.search(text[:match.start()]):
-            continue
-        rest = text[match.end():]
-        stop = TAIL.search(rest)
-        span = (rest[:stop.start()] if stop else rest).strip()
-        words = [word for word in re.split(r"[^\w'’]+", span) if word]
-        # One word is already an identifier, whatever its case.
-        if len(words) < 2:
-            continue
-        # Nobody dictates a five-word identifier, and prose runs on: "the class
-        # called intro to python starts at nine tomorrow" is not a naming, and
-        # the length is what says so. Declining rather than truncating — a
-        # shortened guess is a wrong rewrite, and this is a stage that runs on
-        # sentences nobody asked it to touch.
-        if len(words) > 4:
-            continue
-        if span in out:
-            out = out.replace(span, cased(words, style_for(text, text[:match.start()])), 1)
-            if converted is not None:
-                converted.append(span)
-    return out
-
-
-# The prompt, iterated and scored as v5 in scripts/validate-code-identifiers.py.
-#
-# It extracts rather than rewrites: the language once, the names one per line.
-# Everything after that is code — the language becomes a convention through
-# BY_LANGUAGE above, a kind word still overrides it for a class or a constant,
-# and putting the words back is a string replace.
-#
-# Asking for the language rather than pattern-matching it is what makes the
-# table extensible without touching the prompt, and it is why the model is
-# still worth asking once the table exists: a sentence can name a language in a
-# way no scan of it will catch.
-PROMPT = """\
-The text is a dictated sentence. Some of them give names to functions, \
-variables, classes or constants.
-
-Reply in exactly this shape and nothing else:
-
-lang: <the programming language the sentence names, or none>
-name: <the words of one name, copied exactly>
-
-Repeat the name line once per name. Write no name line at all when the \
-sentence names nothing.
-
-- Copy the words exactly as they appear. Do not rewrite them, join them or \
-change their case — that is done elsewhere.
-- A name is two to four words. Take the whole name and only the name.
-- The name may be given without the word "called": "call it X", "rename it to \
-X", "a getter for X".
-- Write no name line when the sentence merely talks about a function, a class \
-or a variable, or is about something else entirely.
-
-text: add a rust function called read config file
-lang: rust
-name: read config file
-
-text: call it max retries in python
-lang: python
-name: max retries
-
-text: a python function called read config and a variable called config path
-lang: python
-name: read config
-name: config path
-
-text: the retry count is too high and it hammers the api
-lang: none
-
-text: we talked about python packaging for most of the afternoon
-lang: python
-
-text: there is a method called cognitive behavioural therapy for that
-lang: none
-"""
-
-
-def ask(model, text, endpoint="http://localhost:11434"):
-    """The model's answer, or "" for every way this can fail. Ollama not
-    running is an ordinary state and a transcript is not worth dropping."""
-    body = {"model": model, "system": PROMPT, "prompt": text, "stream": False,
-            "think": False, "options": {"temperature": 0, "num_predict": 64}}
-    request = urllib.request.Request(
-        endpoint + "/api/generate", data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            return (json.load(response).get("response") or "").strip()
-    except Exception:
-        return ""
-
-
-def place(reply, text, converted=None):
-    """The extraction applied — the deterministic half, sharing `cased` and
-    `style_for` with the rules above so there is one algorithm and not two.
-
-    `converted` is appended one entry per name taken, exactly as `convert` does
-    — the two paths produce the same kind of rewrite and have to report it the
-    same way. A model conversion that did not count would publish `count: 0` on
-    a sentence this stage had just rewritten, and the stage below, told to stand
-    down when the count is zero, would run anyway.
-    """
-    language, names = None, []
-    for line in reply.splitlines():
-        line = line.strip()
-        if line.lower().startswith("lang:"):
-            said = line.split(":", 1)[1].strip().lower()
-            language = None if said in ("none", "") else said
-        elif line.lower().startswith("name:"):
-            names.append(line.split(":", 1)[1].strip())
-
-    out = text
-    for span in names:
-        span = span.strip().strip('".')
-        words = [word for word in re.split(r"[^\w'’]+", span) if word]
-        # The same guards the rules use: a name is two to four words, and the
-        # model does not get to invent words that are not in the sentence.
-        if len(words) < 2 or len(words) > 4 or span.lower() not in out.lower():
-            continue
-        start = out.lower().index(span.lower())
-        out = (out[:start] + cased(words, style_for(out, out[:start], language))
-               + out[start + len(span):])
-        if converted is not None:
-            converted.append(span)
-    return out
-
-
-if __name__ == "__main__":
-    model = None
-    if "--model" in sys.argv:
-        index = sys.argv.index("--model")
-        model = sys.argv[index + 1] if len(sys.argv) > index + 1 else None
-
-    # Two protocols, and which one is in force is decided by the config rather
-    # than by anything here: ParrotFlow sets PARROTFLOW_PROTOCOL=json when the
-    # transform declares `returns: json`, and leaves it unset otherwise.
-    #
-    # Reading the environment rather than taking a flag keeps `returns:` the
-    # single declaration — a flag in the `command:` line would say the same
-    # thing one line lower and could disagree with it. It also keeps this
-    # runnable by hand: `echo "a python function called max retries" |
-    # ./code_identifiers.py` takes the plain path, which is what every harness
-    # in scripts/ does and what anybody debugging one will type.
-    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
-
-    raw = sys.stdin.read()
-    if structured:
-        text = json.loads(raw)["text"]
-    else:
-        text = raw.rstrip("\n")
-
-    converted = []
-    out = convert(text, converted)
-    asked = False
-    # The model is asked only about what the rules declined. On a sentence with
-    # a marker in it — the common case — nothing is paid at all.
-    #
-    # `converted` is passed on rather than reset: the branch is only reached
-    # when the rules took nothing, so it is empty here — but threading it keeps
-    # `count` meaning "names this stage converted" regardless of which half did
-    # it, which is the only reading a condition below can rely on.
-    if model and out == text:
-        asked = True
-        out = place(ask(model, text), text, converted)
-
-    if not structured:
-        sys.stdout.write(out)
-        raise SystemExit(0)
-
-    # `count` is what a later stage wants: `dotted` should stand down when this
-    # already took the sentence, and until now the only way to ask was to
-    # re-derive the judgement from the words. `asked` is for the log rather than
-    # for a condition — it is the difference between a stage that cost nothing
-    # and one that cost a second, and it was previously invisible.
-    sys.stdout.write(json.dumps({
-        "text": out,
-        "vars": {"count": len(converted), "asked_model": asked},
-    }))
-"""#
 
     /// Reads and decodes the config. Missing keys fall back to the struct defaults.
     static func load() throws -> Config {
@@ -3050,6 +2254,12 @@ if __name__ == "__main__":
           - replacements
           - fuzzy
           - numbers
+          # "is that true question mark" -> is that true? A spoken mark
+          # replaces the decoder's own punctuation rather than sitting beside
+          # it. English only.
+          - transform: punctuation
+          # A word or phrase said twice by accident, taken out.
+          - transform: repetitions
           # "read user dot name" -> read user.name, where you write code-ish text.
           - transform: dotted
             app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
@@ -3310,10 +2520,17 @@ if __name__ == "__main__":
       # it when either side is a word code does not use there — without that,
       # "voilà le point sur les tests" loses its middle. Score it with
       # scripts/check-dotted.sh, which reads the pattern out of this file.
+      #
+      # Hyphen and underscore reuse the same lists — same risk shape. `dash`
+      # is left out: an ordinary word nobody has measured a guard for, unlike
+      # `dot`/`point`. `tiret` excludes "tiret bas" so the two rules never
+      # claim the same words.
       - name: dotted
-        description: spoken dotted paths as code
+        description: spoken dot, hyphen and underscore paths as code
         replace:
           '$1.': ['/\\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\\b)(\\w+) (?:dot|point) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\\b)(?=\\w)/']
+          '$1-': ['/\\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\\b)(\\w+) (?:hyphen|tiret(?! bas)) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\\b)(?=\\w)/']
+          '$1_': ['/\\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\\b)(\\w+) (?:underscore|souligné|tiret bas) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\\b)(?=\\w)/']
 
       - name: backticks
         description: wrap dotted paths in backticks, for chat
@@ -3328,11 +2545,19 @@ if __name__ == "__main__":
         description: spoken names as identifiers
         display: Formatting identifiers
         command: code_identifiers.py
-        # Add `--model gemma4:e4b` to have a model handle the namings the rules
-        # cannot see. It takes the sentences that should change from 88% to 100%
-        # and the ones that must not from 94% to 84%, so it is off by default.
-        # Raise timeout_seconds with it — Ollama takes 7-10s cold.
-        # timeout_seconds: 12
+
+      # Written to transforms/punctuation/ on first launch. Rules only, no
+      # model — see the script for the guard list this leans on.
+      - name: punctuation
+        description: spoken marks as punctuation
+        command: punctuation.py
+
+      # Written to transforms/repetitions/ on first launch. Cheap enough not
+      # to gate: 0.04s, mostly the python3 start, and it deletes nothing when
+      # it finds nothing.
+      - name: repetitions
+        description: delete a word or phrase said twice by accident
+        command: repetitions.py
 
     # Do what was asked even when no transform above matches:
     # "hey parrot, sort that list alphabetically". A remark that was never an
