@@ -70,9 +70,10 @@ Where `priorities.py` looks like:
 
 ```python
 #!/usr/bin/env python3
-import sys
+import re, sys
 text = sys.stdin.read()
-# ... turn "P one" / "P un" into "P1", "P two" / "P deux" into "P2", and so on
+text = re.sub(r"\bp\s*(?:one|un)\b", "P1", text, flags=re.I)
+text = re.sub(r"\bp\s*(?:two|deux)\b", "P2", text, flags=re.I)
 sys.stdout.write(text)
 ```
 
