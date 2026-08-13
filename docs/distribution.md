@@ -113,7 +113,7 @@ permissions and a ~1 GB download before it does anything.
 curl -fsSL .../install.sh | sh          (~3 MB, checksum verified)
         │
         ▼
-Launch — no Dock icon, a 🎙 appears in the menu bar
+Launch — no Dock icon, a 🦜 appears in the menu bar
         │
         ▼
   ├─ Microphone       [Grant]   ← system prompt, required

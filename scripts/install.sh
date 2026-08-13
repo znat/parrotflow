@@ -174,12 +174,13 @@ open "$DEST/$APP_NAME.app" || die "installed, but could not launch it"
 
 cat <<'EOF'
 
-    ParrotFlow is running — look for 🎙 in your menu bar.
+    ParrotFlow is running — look for 🦜 in your menu bar.
 
     Next:
-      1. Say yes to the microphone prompt.
-      2. Click the 🎙 icon, choose Permissions…, and grant Accessibility —
-         without it, dictation transcribes but can't type it in for you.
+      1. Say yes to the microphone prompt — wait until it's granted.
+      2. Click the 🦜 icon, choose Permissions…, grant Accessibility, and
+         wait until that's granted too — without it, dictation transcribes
+         but can't type the result in for you.
       3. Hold Right Option, say something, let go.
 
 EOF
@@ -223,6 +224,11 @@ fi
 # tests the same value instead of re-reading the environment.
 SETUP_VOICE="${PARROTFLOW_SETUP_VOICE:-1}"
 
+# Set by any branch below that finds something to do, so the end of this
+# section can say plainly that nothing was needed — silence reads as "did
+# this even run", not as "already done".
+NEEDED_SETUP=""
+
 # What Ollama backs: not only spoken commands, but also the check that a
 # vocabulary term applied in the right context. Dictation and the deterministic
 # match still work without Ollama; that match then ships unchecked instead of
@@ -234,6 +240,7 @@ SETUP_VOICE="${PARROTFLOW_SETUP_VOICE:-1}"
 # started it and stopped there, never looking at whether the model it needs
 # was actually present.
 if ! command -v ollama >/dev/null 2>&1; then
+    NEEDED_SETUP=1
     printf '    Ollama is not on this Mac. It runs the language model behind two\n'
     printf '    things: spoken commands, and the check that a vocabulary match fits\n'
     printf '    its sentence before it is kept. Without it, dictation still works,\n'
@@ -251,6 +258,7 @@ if ! command -v ollama >/dev/null 2>&1; then
 fi
 
 if command -v ollama >/dev/null 2>&1 && ! INSTALLED="$(ollama list 2>/dev/null)"; then
+    NEEDED_SETUP=1
     printf '    Ollama is installed but not answering, so spoken commands and the\n'
     printf '    vocabulary context check will not work. Start it:\n\n'
     if [ "$SETUP_VOICE" != "0" ]; then
@@ -279,6 +287,7 @@ fi
 if command -v ollama >/dev/null 2>&1 \
     && INSTALLED="$(ollama list 2>/dev/null)" \
     && ! printf '%s\n' "$INSTALLED" | grep -qF "$MODEL"; then
+    NEEDED_SETUP=1
     printf '    The %s model is not downloaded yet. Spoken commands and the\n' "$MODEL"
     printf '    vocabulary context check need it:\n\n'
     # Only the default's size is known here. A model named in someone's own
@@ -289,12 +298,18 @@ if command -v ollama >/dev/null 2>&1 \
     if [ "$SETUP_VOICE" != "0" ]; then
         printf '    ParrotFlow is already running and dictation already works — this\n'
         printf '    download only unlocks spoken commands and the vocabulary check.\n\n'
-        say "Pulling $MODEL"
+        say "Downloading $MODEL — this runs in the background, and dictation"
+        printf '    keeps working the whole time.\n\n'
         ollama pull "$MODEL" || die "could not pull $MODEL"
     else
         printf '      ollama pull %s\n\n' "$MODEL"
         printf '    Dictation works the whole time it downloads.\n\n'
     fi
+fi
+
+if [ -z "$NEEDED_SETUP" ]; then
+    printf '    Ollama and the %s model are already set up — spoken\n' "$MODEL"
+    printf '    commands and the vocabulary check are ready now.\n\n'
 fi
 
 cat <<'EOF'
