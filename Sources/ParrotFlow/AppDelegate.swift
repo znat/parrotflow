@@ -67,6 +67,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// True between a manual "Check for Updates" click and its answer, so the
     /// menu item can say so and a second click cannot start a second request.
     private var updateCheckInFlight = false
+    /// Bumped by every `checkForUpdate`, so a background check that answers
+    /// after a manual one has started cannot clobber the manual result — or
+    /// the reverse. Only the most recently started check's completion counts.
+    private var updateCheckGeneration = 0
 
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
@@ -573,6 +577,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             updateUI()
         }
 
+        updateCheckGeneration += 1
+        let generation = updateCheckGeneration
+
         Task<Void, Never> {
             var latest: Updates.Release?
             do {
@@ -580,7 +587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 if manual {
                     await MainActor.run { [weak self] in
-                        guard let self else { return }
+                        guard let self, generation == self.updateCheckGeneration else { return }
                         self.updateCheckInFlight = false
                         Log.write("updates: check failed — \(error.localizedDescription)")
                         self.flash("Could not check for updates: \(error.localizedDescription)")
@@ -591,7 +598,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 latest = nil
             }
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                guard let self, generation == self.updateCheckGeneration else { return }
                 self.updateCheckInFlight = false
                 let decision = Updates.decide(
                     current: Updates.current, latest: latest, afterDays: afterDays
