@@ -674,6 +674,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 case .waiting(let release, let daysToGo):
                     self.updateAvailable = nil
+                    // A longer after_days can drop an already-alerted release
+                    // back into waiting. Forget the alert so it can fire
+                    // again once the release re-qualifies.
+                    if self.alertedUpdate == release.version { self.alertedUpdate = nil }
                     Log.write("updates: holding \(release.version) for \(daysToGo) more day(s)")
                     if manual {
                         self.flash(
