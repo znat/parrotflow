@@ -117,8 +117,8 @@ More examples, their own test cases, in
 - [code_identifiers](examples/transforms/code_identifiers) — spoken names
   cased for the language, *"a python function called max retries"* →
   `max_retries`.
-- [disfluency](examples/transforms/disfluency) — drops a word said twice by
-  accident: *"the the prompt"* → *"the prompt"*.
+- [repetitions](examples/transforms/repetitions) — drops disfluencies, a word
+  said twice by accident: *"the the prompt"* → *"the prompt"*.
 - [punctuation](examples/transforms/punctuation) — spoken marks as
   punctuation, *"is that true question mark"* → *"is that true?"*.
 

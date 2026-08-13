@@ -88,7 +88,8 @@ TAIL = re.compile(
 # which was silently wrong for zig, julia, erlang and c# until this was a
 # table. Add your own; it is a dict, not a regex.
 BY_LANGUAGE = {
-    "python": "snake", "rust": "snake", "ruby": "snake", "elixir": "snake",
+    "python": "snake", "py": "snake", "rust": "snake",
+    "ruby": "snake", "rb": "snake", "elixir": "snake",
     "erlang": "snake", "julia": "snake", "perl": "snake", "zig": "snake",
     "nim": "snake", "crystal": "snake", "lua": "snake", "c": "snake",
     "javascript": "camel", "typescript": "camel", "java": "camel",
@@ -145,7 +146,8 @@ def convert(text, converted=None):
             continue
         rest = text[match.end():]
         stop = TAIL.search(rest)
-        span = (rest[:stop.start()] if stop else rest).strip()
+        window = rest[:stop.start()] if stop else rest
+        span = window.strip()
         words = [word for word in re.split(r"[^\w'’]+", span) if word]
         # One word is already an identifier, whatever its case.
         if len(words) < 2:
@@ -157,10 +159,13 @@ def convert(text, converted=None):
         # sentences nobody asked it to touch.
         if len(words) > 4:
             continue
-        if span in out:
-            out = out.replace(span, cased(words, style_for(text, text[:match.start()])), 1)
-            if converted is not None:
-                converted.append(span)
+        # Position, not text search — the same words can sit earlier as
+        # ordinary prose, and a search would rewrite that copy instead.
+        start = match.end() + (len(window) - len(window.lstrip()))
+        end = start + len(span)
+        out = out[:start] + cased(words, style_for(text, text[:match.start()])) + out[end:]
+        if converted is not None:
+            converted.append(span)
     return out
 
 
