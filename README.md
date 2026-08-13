@@ -6,8 +6,6 @@
 
 ### A local, fast and programmable dictation app shaped around your voice and your work
 
-
-
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
 ![License Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-0c8c7c)
@@ -18,17 +16,13 @@
 </div>
 
 ---
-
-- **Dictate anywhere.** Click where you'd normally type, hold `⌘ Right`,
-  speak, release. The text lands almost instantly.
-- **Local-first.** Ships with Parakeet for speech and a small Gemma model for
-  rewrites. Both run on your Mac.
-- **Learns your vocabulary.** Teammates, internal jargon, products, vendor
-  names. Correct one out loud, once, and it stays fixed.
-- **Fast.** Text lands at your cursor in under half a second for most
-  dictations, up to about two seconds for harder ones.
-- **Programmable and promptable.** Build transforms out of substitutions,
-  prompts, or scripts, and arrange them into your own pipeline.
+<table>
+<tr><td><strong>Dictate anywhere</strong></td><td>Click where you'd normally type, hold <code>⌘ Right</code>, speak, release. The text lands almost instantly.</td></tr>
+<tr><td><strong>Local-first</strong></td><td>Ships with Parakeet for speech and a small Gemma model for rewrites. Both run on your Mac.</td></tr>
+<tr><td><strong>Learns your vocabulary</strong></td><td>Teammates, internal jargon, products, vendor names. Correct one out loud, once, and it stays fixed.</td></tr>
+<tr><td><strong>Fast</strong></td><td>Text lands at your cursor in under half a second for most dictations, up to about two seconds for harder ones.</td></tr>
+<tr><td><strong>Programmable and promptable</strong></td><td>Build transforms out of substitutions, prompts, or scripts, and arrange them into your own pipeline.</td></tr>
+</table>
 
 ## Improve and adapt your dictation
 
@@ -117,7 +111,7 @@ pipeline. `gram` is not, so it only runs when you ask: hold right `⌘` and say
 *"hey parrot, fix the grammar"*, or press `G` on the pill after any
 dictation.
 
-More examples, each with its own test cases, in
+More examples, their own test cases, in
 [examples/transforms](examples/transforms):
 
 - [code_identifiers](examples/transforms/code_identifiers) — spoken names
@@ -125,11 +119,8 @@ More examples, each with its own test cases, in
   `max_retries`.
 - [repetitions](examples/transforms/repetitions) — drops disfluencies, a word
   said twice by accident: *"the the prompt"* → *"the prompt"*.
-- [grammar](examples/transforms/grammar), [email](examples/transforms/email),
-  [punctuation](examples/transforms/punctuation),
-  [priorities](examples/transforms/priorities),
-  [dotted](examples/transforms/dotted), and
-  [verify_names](examples/transforms/verify_names).
+- [punctuation](examples/transforms/punctuation) — spoken marks as
+  punctuation, *"is that true question mark"* → *"is that true?"*.
 
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
 [Where the time goes](docs/architecture.md#where-the-time-goes)

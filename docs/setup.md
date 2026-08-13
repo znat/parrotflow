@@ -29,13 +29,13 @@ Say which download you are on. A silent 10 GB download looks like a hang.
 | --- | --- | --- | --- |
 | The app | 3 MB | Step 2 | everything |
 | Parakeet, the speech model | 1.2 GB | Step 3, automatic | dictation |
-| Gemma, the language model | 10 GB | Step 7, optional | voice commands |
+| Gemma, the language model | 10 GB | Step 5, optional | voice commands |
 
 Dictation works after Step 3. Everything after is extra.
 
 **Already installed** (`ls -d /Applications/ParrotFlow.app`)? This is an
 upgrade. Run Step 2 anyway — it replaces the app in place — then go to Step 4,
-read `~/.config/parrotflow/config.yaml`, and Step 5, read
+read `~/.config/parrotflow/config.yaml` and
 `~/.config/parrotflow/vocabulary.yaml`, and ask only about what is missing.
 
 ---
@@ -58,11 +58,11 @@ it.
 ```sh
 sw_vers -productVersion                # need 14 or higher
 uname -m                               # need arm64
-sysctl -n hw.memsize                   # bytes of RAM — write this down, Step 7 needs it
+sysctl -n hw.memsize                   # bytes of RAM — write this down, Step 5 needs it
 df -g / | tail -1 | awk '{print $4}'   # GB free — need 15 or more
 ```
 
-**Remember the RAM number.** It decides a setting in Step 7.
+**Remember the RAM number.** It decides a setting in Step 5.
 
 Stop if macOS is older than 14, or if the Mac is Intel. Under 15 GB free: say
 so and ask whether to continue.
@@ -111,7 +111,7 @@ any settings window.
 Clipboard → set `transcription: insert_mode: clipboard`, then say:
 
 > Two things will not work: fixing a word by voice, and the voice commands in
-> Step 7. Both have to read the text you selected. Dictation is not affected,
+> Step 5. Both have to read the text you selected. Dictation is not affected,
 > and you can turn the permission on later without reinstalling anything.
 
 Typing — the default — open the window:
@@ -151,7 +151,7 @@ The first run downloads that model — tell them first:
 `Testing 123.` is a correct result; what matters is that text came back. If this
 fails, stop and fix it — nothing after this step can work.
 
-## Step 4 — The questions that shape the config
+## Step 4 — Configure languages, filler words, hotkey, numbers
 
 Ask together, edit `~/.config/parrotflow/config.yaml` after each answer. The app
 reloads on save.
@@ -203,55 +203,7 @@ want it: `transcription: numbers: true`.
 Check every edit with `--check-config`. It prints each rule and reports a
 pattern it cannot compile.
 
-## Step 5 — Build the vocabulary
-
-Build a `vocabulary.yaml` from the names, jargon and acronyms this person
-actually says.
-
-> I want to gather the names and terms you say a lot — colleagues, projects,
-> tools — so dictation gets them right from the start. I will look at your
-> code, and I will hand you something to paste into Slack. Nothing leaves your
-> Mac; I will say more about that before I ask for anything.
-
-Follow `.claude/skills/vocabulary-corpus/SKILL.md` for the whole of this step.
-Do not shortcut its rejection criteria — they are what stops a name from
-overwriting an ordinary word.
-
-**No audio calibration in this procedure.** Do not have them read sentences
-aloud, and do not use `.claude/skills/calibrate`. `vocabulary.acoustic`
-defaults to `false`, so terms match by rule only, not by sound. No model to
-download, no clip to record, no threshold to tune.
-
-When the vocabulary is written, confirm it parsed:
-
-```sh
-/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
-```
-
-It prints a `vocabulary:` block: term count, and whether matching is by rule
-only. A term with no rule and no rendering does nothing — say so if one shows
-up.
-
-## Step 6 — Let them try it
-
-You cannot do this one.
-
-> Your turn. Open any text box, hold the **right Option key**, say a sentence,
-> let go.
-
-A pill appears near where the words will land while they talk. The text lands
-there, then the pill turns into chips — **Correct** first — for nine seconds.
-
-```sh
-grep -E "transcribed|speech gate|hotkey" ~/Library/Logs/ParrotFlow.log | tail -5
-```
-
-- Nothing in the log → the key never fired. Check `--check-config` for a
-  registration failure; ask if another app owns that key.
-- `speech gate: no speech detected` → wrong input device, or they let go early.
-- `transcribed: …` but no text → Accessibility. Back to Step 2.
-
-## Step 7 — The optional model half
+## Step 5 — The optional model half
 
 One decision covers everything in this step: do they want the 10 GB part.
 
@@ -349,9 +301,9 @@ everything else goes to `free_form`:
 > Three are tuned for one job each. Everything else goes to the general one. You
 > do not have to remember which is which.
 
-`grammar` is also already on the pill from Step 6 — the **G** chip, right after
-any dictation, no wake phrase needed. `bullets` and `terse` only run when asked
-out loud.
+`grammar` is also already on the pill — the **G** chip, right after any
+dictation, no wake phrase needed. `bullets` and `terse` only run when asked out
+loud.
 
 A transform of their own goes in `transforms:` and needs a `description` —
 `--check-config` reports one without it as an error.
