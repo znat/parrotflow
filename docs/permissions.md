@@ -7,9 +7,18 @@ spoken corrections, because reading your selection is exactly what that
 permission governs. `insert_mode: clipboard` works without it: the transcript
 is copied and you press ⌘V.
 
-Nothing else is asked for. Gating a pipeline stage by app reads the frontmost
-app from `NSWorkspace` rather than off the focused element, so it costs no
-permission that gating by text does not.
+**Input Monitoring** — required for the offer's own hotkeys (`C` for Correct,
+and any `key:` on a transform with `offer: true`). The offer's chips sit in a
+window that never takes focus, so catching their letters before they land in
+whatever you were typing into needs a system-wide key tap — and macOS gates
+that with Input Monitoring, separately from Accessibility. Without it the
+chips still draw and still take the mouse; only the keyboard shortcut is
+silently gone; the letter types instead. Requested the first time the offer
+goes up.
+
+Gating a pipeline stage by app reads the frontmost app from `NSWorkspace`
+rather than off the focused element, so it costs no permission that gating by
+text does not.
 
 ## Checking them
 
@@ -34,8 +43,9 @@ pins the binary's `cdhash`, which changes on every single build.
 So the grant you gave to yesterday's build does not apply to today's. Worse,
 the entry stays in System Settings pointing at a binary that no longer exists,
 so it *looks* granted. Un-ticking and re-ticking that entry doesn't help —
-it reuses the same dead record. Accessibility enforces this strictly;
-Microphone is more forgiving but still breaks when the bundle is replaced.
+it reuses the same dead record. Accessibility and Input Monitoring enforce
+this strictly; Microphone is more forgiving but still breaks when the bundle
+is replaced.
 
 The symptom is unmistakable: System Settings shows the app ticked, and the app
 insists the permission isn't granted.
