@@ -3563,18 +3563,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateUI()
     }
 
+    /// The token `setLabel` held while a load owned the label, so `.ready`
+    /// clears only its own message — not "Transcribing…", which a live
+    /// dictation may have put up in the meantime.
+    private var transcriberLabelToken: Int?
+
     private func handleTranscriberStatus(_ status: Transcriber.Status) {
         switch status {
         case .downloading(let what):
-            transcriptionLabel = "Downloading \(what)"
+            setLabel("Downloading \(what)")
+            transcriberLabelToken = labelToken
         case .loading:
-            transcriptionLabel = "Loading speech model…"
-        case .ready, .idle:
-            break
+            setLabel("Loading speech model…")
+            transcriberLabelToken = labelToken
         case .failed(let message):
-            transcriptionLabel = "Model error: \(message)"
+            setLabel("Model error: \(message)")
+            transcriberLabelToken = labelToken
+        case .ready, .idle:
+            if transcriberLabelToken == labelToken { setLabel(nil) }
+            transcriberLabelToken = nil
         }
-        updateUI()
     }
 
     // MARK: - Menu bar
