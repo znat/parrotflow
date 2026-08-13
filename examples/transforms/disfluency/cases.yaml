@@ -1,0 +1,181 @@
+# Validation set for `repetitions`. Scored with `ParrotFlow --eval repetitions`,
+# which runs the deployed command, not a reimplementation of it.
+#
+# `change`: a word/phrase said twice by accident — collapse it.
+# `keep` (no `expect`): must come back byte for byte — a collapsed repetition
+# is gone for good, so this half matters as much as `change`.
+#
+# Most inputs are real sentences from ~/Recordings/ParrotFlow.
+
+cases:
+
+  # --- word ---
+  - probe: word
+    input: "and and uh fix conflicts."
+    expect: "and uh fix conflicts."
+  - probe: word
+    input: "but but in the pop-up I would only see"
+    expect: "but in the pop-up I would only see"
+  - probe: word
+    input: "the the prompt that processes the hey parrot"
+    expect: "the prompt that processes the hey parrot"
+  - probe: word
+    input: "the core or most most significant code fragments changed."
+    expect: "the core or most significant code fragments changed."
+  - probe: word
+    input: "Okay, so the next next thing I want to do is"
+    expect: "Okay, so the next thing I want to do is"
+  - probe: word
+    input: "So I'd like to consolidate consolidate that on something"
+    expect: "So I'd like to consolidate that on something"
+  - probe: word
+    input: "It was the the last session we had"
+    expect: "It was the last session we had"
+  - probe: word
+    input: "to remove usual hesitations and feelers and mumblers mumblers."
+    expect: "to remove usual hesitations and feelers and mumblers."
+  - probe: word
+    input: "We could even have a a path option to the prompts"
+    expect: "We could even have a path option to the prompts"
+  - probe: word
+    input: "add some design consistency between the the menu"
+    expect: "add some design consistency between the menu"
+  - probe: word
+    input: "the replace dialogue and the vocabulary vocabulary replacement dialogue"
+    expect: "the replace dialogue and the vocabulary replacement dialogue"
+  - probe: word
+    input: "so that like two hundred forty-three is is always return two four three."
+    expect: "so that like two hundred forty-three is always return two four three."
+  - probe: word
+    input: "the substitution with the brackets and and then there would be a code step"
+    expect: "the substitution with the brackets and then there would be a code step"
+  - probe: word
+    input: "Could we output output a score and return a list"
+    expect: "Could we output a score and return a list"
+  - probe: word
+    input: "the heading and the 50 first characters of of the markdown content."
+    expect: "the heading and the 50 first characters of the markdown content."
+  - probe: word
+    input: "you would replace you you would ask to replace one word"
+    expect: "you would replace you would ask to replace one word"
+  - probe: word
+    input: "I switch from my microphone to my my airpods"
+    expect: "I switch from my microphone to my airpods"
+  - probe: word
+    input: "looking for a solution that is easy to to use"
+    expect: "looking for a solution that is easy to use"
+  - probe: word
+    input: "Since expanding in in the content and in the query"
+    expect: "Since expanding in the content and in the query"
+  - probe: word
+    input: "but I would like like a quick start, fast track"
+    expect: "but I would like a quick start, fast track"
+  - probe: word
+    input: "I will prompt so the the the result of the prompting would be"
+    expect: "I will prompt so the result of the prompting would be"
+  - probe: word
+    input: "just do the minimal, minimal changes so that grammar is correct"
+    expect: "just do the minimal changes so that grammar is correct"
+  - probe: word
+    input: "So So if you have two dictated segments, you would replace"
+    expect: "So if you have two dictated segments, you would replace"
+  - probe: word
+    input: "for example if we use the The heading two has the queries"
+    expect: "for example if we use The heading two has the queries"
+  - probe: word
+    input: "the following instruction becomes the becomes the uh instructions"
+    expect: "the following instruction becomes the uh instructions"
+
+  # --- phrase ---
+  - probe: phrase
+    input: "How what's the what's the logic behind correcting"
+    expect: "How what's the logic behind correcting"
+  - probe: phrase
+    input: "that evokes the profile the profile view of a parrot"
+    expect: "that evokes the profile view of a parrot"
+  - probe: phrase
+    input: "If we can we can still use it, maybe at"
+    expect: "If we can still use it, maybe at"
+  - probe: phrase
+    input: "prompt tuning before fine tuning. So the so the logic would be the same."
+    expect: "prompt tuning before fine tuning. So the logic would be the same."
+  - probe: phrase
+    input: "is low then they go in all in all the same"
+    expect: "is low then they go in all the same"
+  - probe: phrase
+    input: "Could you try a markdown a markdown version"
+    expect: "Could you try a markdown version"
+  - probe: phrase
+    input: "add weather in the bottom in the bundle in the bundle or as a follow-up?"
+    expect: "add weather in the bottom in the bundle or as a follow-up?"
+  - probe: phrase
+    input: "We can um can um with ITN we can write"
+    expect: "We can um with ITN we can write"
+
+  # --- meant ---
+  - probe: meant
+    input: "when I said hey parrot tasmine spells blah blah blah, but it wasn't able to reconcile"
+  - probe: meant
+    input: "For example, converting or formatting functions dot dot dot or fixing grammar dot dot dot."
+  - probe: meant
+    input: "so Tasmi spells T A S M E E N Tasmin."
+  - probe: meant
+    input: "this mean spells T A S M E E N but in the pop-up"
+  - probe: meant
+    input: "and by the way, pirate James spells G G A M E Z"
+  - probe: meant
+    input: "Le x.y, x.y pour slack et pour le terminal."
+  - probe: meant
+    input: "Hey, yeah, yeah. Apparently, fifty should be in digits"
+  - probe: meant
+    input: "the meeting that that person asked for"
+  - probe: meant
+    input: "I had had enough of it by then"
+  - probe: meant
+    input: "it was a very very long afternoon"
+  - probe: meant
+    input: "vous vous êtes trompé de fichier"
+  - probe: meant
+    input: "nous nous sommes vus hier"
+  - probe: meant
+    input: "c'est très très bien fait"
+  - probe: meant
+    input: "I went over it again and again and again"
+  - probe: meant
+    input: "twenty two two"
+  - probe: meant
+    input: "the code is two two three"
+  - probe: meant
+    input: "il en reste quatre-vingt six six"
+
+  # --- fragment: a word begun, abandoned, then said in full ---
+  - probe: fragment
+    input: "Yeah. I mean w we can try I'm not exactly sure how it's gonna work."
+    expect: "Yeah. I mean we can try I'm not exactly sure how it's gonna work."
+  - probe: fragment
+    input: "Of course vocabulary is important. Like t teammates names Slack mentions."
+    expect: "Of course vocabulary is important. Like teammates names Slack mentions."
+  - probe: fragment
+    input: "c c'est exactement ça"
+    expect: "c'est exactement ça"
+
+  # --- meant: the fragment rule's own traps ---
+  # "A" is a letter being discussed, not a false start — the rule only fires
+  # lowercase because of this one.
+  - probe: meant
+    input: "Pas d'article avant, pas de A avec accent avant, pas de sur"
+  # Single letters that are real words — each loses a subject/verb/article.
+  - probe: meant
+    input: "I imagine we can try it tomorrow"
+  - probe: meant
+    input: "il a acheté le fichier hier"
+  - probe: meant
+    input: "je crois qu'il y a un souci"
+  - probe: meant
+    input: "we need a answer before Friday"
+  # A dictated list label, not a false start.
+  - probe: meant
+    input: "The options are a. apples b. bananas"
+  # A spelled name. The letter sits among other single letters.
+  - probe: meant
+    input: "she spells it m a r c but says Marc"
