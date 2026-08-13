@@ -396,6 +396,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         warmUpLLM()
+        warmUpTranscriber()
 
         // Anything still missing opens the walk, and nothing is asked for yet.
         // The prompt used to fire here, the moment the window appeared — a
@@ -1409,6 +1410,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // `startKeepWarm`'s first 15s tick instead of waiting for it.
             let warmed = await LocalLLM.keepWarm(system: system, config: llm)
             Log.write(warmed ? "llm: warmed with one generate call" : "llm: warm-up generate ping failed")
+        }
+    }
+
+    /// Starts the Parakeet (and VAD) download at launch, so it's already
+    /// running — ideally already done — by the time the first dictation
+    /// needs it, instead of the first dictation triggering and waiting on it.
+    ///
+    /// `transcriber.prepare` is safe to call again from `transcribe(...)`
+    /// once this is in flight: overlapping callers converge on the same
+    /// download rather than racing two.
+    private func warmUpTranscriber() {
+        guard config.transcription.enabled else { return }
+
+        let transcriber = transcriber
+        let config = config
+        Task.detached(priority: .background) {
+            let started = Date()
+            do {
+                try await transcriber.prepare(config: config)
+                Log.write(String(
+                    format: "transcriber: warmed up in %.1fs", Date().timeIntervalSince(started)
+                ))
+            } catch {
+                Log.write("transcriber: warm-up failed — \(error.localizedDescription)")
+            }
         }
     }
 
@@ -3547,18 +3573,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateUI()
     }
 
+    /// The token `setLabel` held while a load owned the label, so `.ready`
+    /// clears only its own message — not "Transcribing…", which a live
+    /// dictation may have put up in the meantime.
+    private var transcriberLabelToken: Int?
+
     private func handleTranscriberStatus(_ status: Transcriber.Status) {
         switch status {
         case .downloading(let what):
-            transcriptionLabel = "Downloading \(what)"
+            setLabel("Downloading \(what)")
+            transcriberLabelToken = labelToken
         case .loading:
-            transcriptionLabel = "Loading speech model…"
-        case .ready, .idle:
-            break
+            setLabel("Loading speech model…")
+            transcriberLabelToken = labelToken
         case .failed(let message):
-            transcriptionLabel = "Model error: \(message)"
+            setLabel("Model error: \(message)")
+            transcriberLabelToken = labelToken
+        case .ready, .idle:
+            if transcriberLabelToken == labelToken { setLabel(nil) }
+            transcriberLabelToken = nil
         }
-        updateUI()
     }
 
     // MARK: - Menu bar
