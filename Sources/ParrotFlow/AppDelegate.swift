@@ -1390,6 +1390,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard config.llm.enabled, config.llm.keepLoaded else { return }
 
         let llm = llmConfig()
+        let system = Router.prompt(
+            for: Catalogue(transforms: config.transforms), freeForm: config.freeForm
+        )
         Task.detached(priority: .background) {
             let started = Date()
             let loaded = await LocalLLM.warmUp(config: llm)
@@ -1399,6 +1402,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ? String(format: "llm: %@ loaded and pinned in %.1fs", llm.model, elapsed)
                     : "llm: could not preload \(llm.model) — is Ollama running?"
             )
+            guard loaded else { return }
+
+            // A pinned model can be resident and still cold — see
+            // `LocalLLM.keepWarm` — so this closes the gap before
+            // `startKeepWarm`'s first 15s tick instead of waiting for it.
+            let warmed = await LocalLLM.keepWarm(system: system, config: llm)
+            Log.write(warmed ? "llm: warmed with one generate call" : "llm: warm-up generate ping failed")
         }
     }
 
