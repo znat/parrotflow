@@ -610,9 +610,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.flash("Could not check for updates: \(error.localizedDescription)")
                         self.updateUI()
                     }
-                    return
+                } else {
+                    // A failed poll leaves everything as it was — a known
+                    // update stays known, and a version already alerted for
+                    // is not asked about again just because this fetch
+                    // failed. The next successful poll picks up from here.
+                    await MainActor.run { [weak self] in
+                        guard let self,
+                            self.updateSchedulingGeneration == schedulingGenerationAtStart
+                        else { return }
+                        Log.write("updates: check failed — \(error.localizedDescription)")
+                    }
                 }
-                latest = nil
+                return
             }
             await MainActor.run { [weak self] in
                 guard let self else { return }
