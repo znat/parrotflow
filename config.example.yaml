@@ -75,7 +75,6 @@ transcription:
       # must fire first. Judges each one KEEP or REVERT.
       - stage: vocabulary
         when: vocabulary.count > 0
-      - fuzzy                              # the same table, against words the spell checker misses
       - numbers                            # "two hundred forty-three" -> 243
       - transform: punctuation             # "is that true question mark" -> is that true?
       - transform: repetitions             # a word or phrase said twice by accident, taken out

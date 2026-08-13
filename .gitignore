@@ -22,3 +22,4 @@ voice/
 # inside this repository. Untracked it turns every `git status` into a warning
 # about a directory that is already under version control by another route.
 .claude/worktrees/
+.claude/skills/ste/SKILL.md
