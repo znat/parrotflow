@@ -3590,15 +3590,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .downloading(let what):
             setLabel("Downloading \(what)")
             transcriberLabelToken = labelToken
+            // `what` reads like "speech model 43%" — the number, if this is
+            // the one download that carries one, is the only part worth a
+            // second field for; the rest is already the sentence above.
+            let percent = what.split(separator: " ").last.flatMap { token -> Int? in
+                token.hasSuffix("%") ? Int(token.dropLast()) : nil
+            }
+            permissions.model.speechModel = .preparing(percent: percent)
         case .loading:
             setLabel("Loading speech model…")
             transcriberLabelToken = labelToken
+            permissions.model.speechModel = .preparing(percent: nil)
         case .failed(let message):
             setLabel("Model error: \(message)")
             transcriberLabelToken = labelToken
+            // Not surfaced as "preparing" forever: the permissions window
+            // isn't the place a transcription failure gets diagnosed, and a
+            // stuck "downloading" badge there would outlive the one place
+            // that does explain it — this label, and the log.
+            permissions.model.speechModel = .ready
         case .ready, .idle:
             if transcriberLabelToken == labelToken { setLabel(nil) }
             transcriberLabelToken = nil
+            permissions.model.speechModel = .ready
         }
     }
 
@@ -3744,6 +3758,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let shortcut = hotKeys.binding?.displayName
             ?? KeyCodes.displayString(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
+        permissions.model.hotkeyDisplay = shortcut
 
         if let transcriptionLabel {
             statusInfoItem.title = transcriptionLabel
