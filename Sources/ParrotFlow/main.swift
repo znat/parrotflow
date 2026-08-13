@@ -5,6 +5,7 @@ import AppKit
 //   ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
 //   ParrotFlow.app/Contents/MacOS/ParrotFlow --record 3
 //   ParrotFlow.app/Contents/MacOS/ParrotFlow --transcribe clip.wav
+//   ParrotFlow.app/Contents/MacOS/ParrotFlow --warm-models
 //
 let arguments = CommandLine.arguments
 
@@ -88,6 +89,10 @@ if let index = arguments.firstIndex(of: "--transcribe") {
         path: arguments[index + 1],
         withVocabulary: !arguments.contains("--no-vocab")
     ))
+}
+
+if arguments.contains("--warm-models") {
+    exit(WarmModelsCommand.run())
 }
 
 
