@@ -72,9 +72,23 @@ echo "==> Build stamp: $STAMP"
 
 # Ad-hoc ("-") by default. Set CODESIGN_IDENTITY to a self-signed identity to
 # keep the microphone permission across rebuilds — see README.
-# Prefer a stable self-signed identity when one exists — see dev-certificate.sh.
-if [ -z "${CODESIGN_IDENTITY:-}" ] && security find-identity -v -p codesigning 2>/dev/null | grep -q "ParrotFlow Dev"; then
-    CODESIGN_IDENTITY="ParrotFlow Dev"
+#
+# The identity has to match the variant. TCC keys a grant to the certificate,
+# not only the bundle id: signing com.parrotflow.app (release) with the Dev
+# certificate makes a locally built copy a different identity than the one
+# distributed, and permission grants stop lining up between them — this was
+# picking "ParrotFlow Dev" whenever it existed, for either variant, which is
+# exactly that bug. Prefer the matching identity, fall back to the other
+# rather than ad-hoc — see dev-certificate.sh.
+if [ -z "${CODESIGN_IDENTITY:-}" ]; then
+    PREFERRED="ParrotFlow Dev"
+    [ "$VARIANT" = "release" ] && PREFERRED="ParrotFlow Release"
+    for candidate in "$PREFERRED" "ParrotFlow Release" "ParrotFlow Dev"; do
+        if security find-identity -v -p codesigning 2>/dev/null | grep -q "$candidate"; then
+            CODESIGN_IDENTITY="$candidate"
+            break
+        fi
+    done
 fi
 IDENTITY="${CODESIGN_IDENTITY:--}"
 echo "==> Signing with identity: $IDENTITY"
