@@ -227,6 +227,12 @@ SETUP_VOICE="${PARROTFLOW_SETUP_VOICE:-1}"
 # vocabulary term applied in the right context. Dictation and the deterministic
 # match still work without Ollama; that match then ships unchecked instead of
 # reviewed, so a name can land in the wrong place with nothing to catch it.
+#
+# Three checks in sequence, not mutually exclusive branches: installing Ollama
+# still leaves the model to pull, and starting a stopped Ollama still leaves
+# the model to check. A stopped service used to be a dead end — the script
+# started it and stopped there, never looking at whether the model it needs
+# was actually present.
 if ! command -v ollama >/dev/null 2>&1; then
     printf '    Ollama is not on this Mac. It runs the language model behind two\n'
     printf '    things: spoken commands, and the check that a vocabulary match fits\n'
@@ -238,22 +244,29 @@ if ! command -v ollama >/dev/null 2>&1; then
         say "Installing Ollama"
         brew install ollama && brew services start ollama \
             || die "could not install or start Ollama"
-        say "Pulling $MODEL"
-        ollama pull "$MODEL" || die "could not pull $MODEL"
     else
         printf '      brew install ollama && brew services start ollama\n'
         printf '      ollama pull %s\n\n' "$MODEL"
     fi
-elif ! INSTALLED="$(ollama list 2>/dev/null)"; then
+fi
+
+if command -v ollama >/dev/null 2>&1 && ! INSTALLED="$(ollama list 2>/dev/null)"; then
     printf '    Ollama is installed but not answering, so spoken commands and the\n'
     printf '    vocabulary context check will not work. Start it:\n\n'
     if [ "$SETUP_VOICE" != "0" ]; then
         say "Starting Ollama"
         brew services start ollama || die "could not start Ollama"
+        # Freshly started, not freshly listening — give it a moment before the
+        # model check below asks it anything.
+        sleep 2
     else
         printf '      brew services start ollama\n\n'
     fi
-elif ! printf '%s\n' "$INSTALLED" | grep -qF "$MODEL"; then
+fi
+
+if command -v ollama >/dev/null 2>&1 \
+    && INSTALLED="$(ollama list 2>/dev/null)" \
+    && ! printf '%s\n' "$INSTALLED" | grep -qF "$MODEL"; then
     printf '    The %s model is not downloaded yet. Spoken commands and the\n' "$MODEL"
     printf '    vocabulary context check need it:\n\n'
     # Only the default's size is known here. A model named in someone's own

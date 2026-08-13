@@ -1065,7 +1065,7 @@ struct Config: Decodable, Equatable {
 
     struct LLM: Codable, Equatable {
         var enabled: Bool = true
-        var model: String = "gemma4:e4b"
+        var model: String = "gemma4:e4b-mlx"
         var endpoint: String = "http://localhost:11434"
         var timeoutSeconds: Double = 20
         /// Load the model at launch and pin it in Ollama's memory. Trades a few
