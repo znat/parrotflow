@@ -71,6 +71,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// background check that began during that manual check, and answers
     /// after it, can tell its answer is now stale and skip overwriting it.
     private var manualCheckGeneration = 0
+    /// Bumped by `startUpdateChecks`, so a check already in flight when
+    /// config.yaml reloads — and so working from a stale `afterDays` — is
+    /// discarded on arrival rather than reviving state the reload just
+    /// changed.
+    private var updateSchedulingGeneration = 0
 
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
@@ -540,6 +545,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// thing off — and a setting that only takes effect after a restart is one
     /// that will be reported as not working.
     private func startUpdateChecks() {
+        // Discards any check already in flight: it captured the old
+        // afterDays and would otherwise revive state this reload just
+        // changed. Clearing updateCheckInFlight here, rather than waiting
+        // for that stale check's own completion, keeps the menu correct
+        // right away even if the completion never discards cleanly.
+        updateSchedulingGeneration += 1
+        updateCheckInFlight = false
+
         updatesTimer?.invalidate()
         updatesTimer = nil
 
@@ -573,6 +586,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let generationAtStart = manualCheckGeneration
+        let schedulingGenerationAtStart = updateSchedulingGeneration
         if manual {
             updateCheckInFlight = true
             updateUI()
@@ -585,7 +599,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 if manual {
                     await MainActor.run { [weak self] in
-                        guard let self else { return }
+                        guard let self,
+                            self.updateSchedulingGeneration == schedulingGenerationAtStart
+                        else { return }
                         self.updateCheckInFlight = false
                         self.manualCheckGeneration += 1
                         Log.write("updates: check failed — \(error.localizedDescription)")
@@ -597,7 +613,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 latest = nil
             }
             await MainActor.run { [weak self] in
-                guard let self else { return }
+                guard let self,
+                    self.updateSchedulingGeneration == schedulingGenerationAtStart
+                else { return }
                 // A manual answer always applies. A background one only does
                 // if a manual check has not started, or finished, meanwhile.
                 if !manual {
