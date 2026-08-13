@@ -41,11 +41,13 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"
 cp "$ROOT"/Resources/MenuBarParrot*.png "$APP/Contents/Resources/"
 
-# The one shipped transform is seeded from here — copied, not baked into the
-# binary as a string, so there is one copy of it and not two drifting apart.
-# See Config.exampleTransformsDirectory.
+# The shipped transforms and the default config.yaml are seeded from here —
+# copied, not baked into the binary as strings, so there is one copy of each
+# and not two drifting apart. See Config.exampleTransformsDirectory and
+# Config.configTemplateURL.
 cp -R "$ROOT/examples" "$APP/Contents/Resources/examples"
 find "$APP/Contents/Resources/examples" -name __pycache__ -type d -exec rm -rf {} +
+cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
 
 # Resources/Info.plist carries the released identity; the dev bundle is that
 # file with three keys rewritten. One template rather than two files means a key

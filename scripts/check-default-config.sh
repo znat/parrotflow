@@ -1,21 +1,27 @@
 #!/usr/bin/env bash
-# Checks that what a new install is written with teaches everything
-# config.example.yaml documents.
+# Checks that config.example.yaml — what a new install is written with, and
+# what anyone reads to find out what exists — is one file, not two drifting
+# copies of the same shape.
 #
-# There are two copies of the config's shape — `Config.defaultYAML`, which is
-# written on first launch, and config.example.yaml, which is what anyone reads
-# to find out what exists. They drift, and the drift is silent both ways: a key
-# missing from the template is a feature nobody discovers, and a key missing
-# from the example is one nobody can look up.
+# It used to be two: `Config.defaultYAML`, a hand-synced Swift string written
+# on first launch, and config.example.yaml, read by everyone else. They
+# drifted, silently, more than once — `languages` went missing from the
+# string while the example kept it; then the vocabulary judge stage and the
+# app-scoped transforms landed in the example and never reached the string,
+# so a new install ran a pipeline with no judge in it and nothing said so. A
+# key-name comparison between the two caught the first kind of drift and was
+# structurally blind to the second: a missing pipeline *step* is not a
+# missing *key*.
 #
-# It has already bitten twice. `languages` was absent from the template, so a
-# new install shipped a pipeline whose comment promised numbers in French while
-# listing only English. Then `prompts` was absent, so "hey parrot, make that a
-# list" did nothing on a fresh machine and nothing said why.
+# `Config.defaultYAML` now reads config.example.yaml itself and substitutes
+# four lines that differ per variant — see Config.configTemplateURL. There is
+# one file, so there is nothing left to drift. What is left to check:
 #
-# Only the template is required to be complete. The example deliberately starts
-# at `transcription:` and says nothing about hotkeys or audio, so keys the
-# template has and the example lacks are reported and not failed.
+#   1. config.example.yaml still parses as YAML.
+#   2. Every pipeline step still names something real — a `stage:` this app
+#      knows, or a `transform:` this file defines.
+#   3. Config.defaultYAML has not grown back into a second copy — the
+#      regression this check exists to catch.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -23,78 +29,71 @@ python3 - "$ROOT" <<'PY'
 import re, sys, pathlib, yaml
 
 root = pathlib.Path(sys.argv[1])
-src = (root / "Sources/ParrotFlow/Config.swift").read_text()
-start = src.index('static var defaultYAML: String {')
-open_quote = src.index('"""', start) + 3
-close_quote = src.index('"""', open_quote)
-# The template is a Swift literal: interpolations stand in for per-variant
-# values, and an escaped backslash is one backslash by the time YAML sees it.
-raw = re.sub(r'\\\((.*?)\)', 'placeholder', src[open_quote:close_quote]).replace("\\\\", "\\")
+ok = True
 
+example_path = root / "config.example.yaml"
 try:
-    template = yaml.safe_load(raw)
+    example = yaml.safe_load(example_path.read_text())
 except yaml.YAMLError as error:
-    print("  ✗ Config.defaultYAML is not valid YAML — a new install would fail to parse")
+    print(f"  ✗ config.example.yaml is not valid YAML")
     print(f"      {error}")
     sys.exit(1)
 
-example = yaml.safe_load((root / "config.example.yaml").read_text())
-
-def keys(node, prefix=""):
-    found = []
-    for key, value in (node or {}).items():
-        found.append(prefix + key)
-        # `replacements` and `pipelines` hold user data, not schema; their keys
-        # are names and languages, and comparing those would be nonsense.
-        if isinstance(value, dict) and key not in ("replacements", "pipelines"):
-            found += keys(value, prefix + key + ".")
-    return found
-
-missing = sorted(set(keys(example)) - set(keys(template)))
-extra = sorted(set(keys(template)) - set(keys(example)))
-
-ok = True
-for key in missing:
-    print(f"  ✗ {key} is in config.example.yaml but not in the file a new install gets")
-    ok = False
-# The example starts at `transcription:` by design, so the hotkey, audio and
-# feedback sections are permanently "extra". Counted rather than listed: twelve
-# lines of expected noise on every run is how a check stops being read.
-if extra:
-    print(f"  · {len(extra)} keys are written on install and not documented in the example"
-          f" ({', '.join(sorted({k.split('.')[0] for k in extra}))})")
-
-# Transforms are a list, so the key check above says nothing about which ones.
-# `prompts:` is read too: it is the older name for the same section, still
-# accepted, and a config written before the rename must not read as empty here.
+# Every transform this file defines, by name.
 def names(doc):
     entries = (doc.get("transforms") or []) + (doc.get("prompts") or [])
     return {e.get("name") for e in entries}
-for name in sorted(names(example) - names(template)):
-    print(f"  ✗ transform \"{name}\" is documented but not written on install")
-    ok = False
 
-# A pipeline step naming a transform the file does not define is a config the
-# app refuses on first launch. It happened: `dotted-chat` was renamed to
-# `backticks` and the steps were not brought along, and nothing here noticed
-# because the key check and the name check both looked only at what exists,
-# never at whether the two halves agree.
+defined = names(example)
+
+# The stage kinds this app understands without a name — everything else in a
+# pipeline step must be one of these, or a `transform:` naming a defined one.
+BUILTIN_STAGES = {"replacements", "fuzzy", "numbers", "vocabulary"}
+
 def steps(doc):
-    named = []
+    found = []
     for entries in ((doc.get("transcription") or {}).get("pipelines") or {}).values():
         for entry in entries or []:
-            if isinstance(entry, dict) and entry.get("transform"):
-                named.append(entry["transform"])
-    return named
+            if isinstance(entry, str):
+                found.append(("stage", entry))
+            elif isinstance(entry, dict):
+                if entry.get("transform"):
+                    found.append(("transform", entry["transform"]))
+                elif entry.get("stage"):
+                    found.append(("stage", entry["stage"]))
+    return found
 
-for doc, where in ((template, "a new install"), (example, "config.example.yaml")):
-    for step in sorted(set(steps(doc)) - {n for n in names(doc) if n}):
-        print(f"  ✗ {where} runs `transform: {step}`, which it never defines")
+for kind, step in steps(example):
+    if kind == "transform" and step not in defined:
+        print(f"  ✗ pipeline runs `transform: {step}`, which config.example.yaml never defines")
+        ok = False
+    elif kind == "stage" and step not in BUILTIN_STAGES:
+        print(f"  ✗ pipeline runs `stage: {step}`, which is not a stage this app knows"
+              f" ({', '.join(sorted(BUILTIN_STAGES))})")
         ok = False
 
+# The regression this whole check exists to catch: defaultYAML growing back
+# into a second, hand-synced copy of the config's shape. It should be a few
+# lines that read the file and swap in the variant-specific ones — not
+# something that itself defines `transforms:`, `pipelines:`, or `llm:`.
+config_swift = (root / "Sources/ParrotFlow/Config.swift").read_text()
+start = config_swift.index("static var defaultYAML: String {")
+end = config_swift.index("\n}", start) if "\n}" in config_swift[start:] else len(config_swift)
+body = config_swift[start:start + 2000] if end == len(config_swift) else config_swift[start:end]
+
+if "configTemplateURL" not in body:
+    print("  ✗ Config.defaultYAML no longer reads configTemplateURL — has it gone back to"
+          " being a literal string? That is the two-copies problem this check exists to catch.")
+    ok = False
+if re.search(r"\btransforms:\s*$", body, re.MULTILINE) or "pipelines:" in body:
+    print("  ✗ Config.defaultYAML appears to embed config content directly (`transforms:` or"
+          " `pipelines:` found in its body) — that is the two-copies problem this check exists"
+          " to catch")
+    ok = False
+
 if ok:
-    print(f"  ✓ a new install gets every key config.example.yaml documents"
-          f"  ({len(keys(template))} keys, {len(names(template))} transforms,"
-          f" {len(steps(template))} transform step(s))")
+    print(f"  ✓ config.example.yaml is the one copy, parses, and its pipeline"
+          f" names only real stages and transforms"
+          f"  ({len(defined)} transforms, {len(steps(example))} pipeline step(s))")
 sys.exit(0 if ok else 1)
 PY

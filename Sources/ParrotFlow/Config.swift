@@ -2166,404 +2166,52 @@ enum ConfigStore {
         }
     }
 
-    /// Computed rather than a constant because the dev build seeds a different
-    /// hotkey and recordings directory — see `AppVariant`.
+    /// `config.example.yaml` — the one copy of the default config's content,
+    /// same reasoning as `exampleTransformsDirectory` above: seeded from the
+    /// real file instead of a second, hand-synced copy in the binary. It was
+    /// a string here for a while, and it drifted — config.example.yaml
+    /// gained the vocabulary judge stage and app-scoped transforms that this
+    /// string never did, silently, because nothing compared the two beyond a
+    /// key-name check that could not see into a pipeline's steps.
+    static var configTemplateURL: URL {
+        if !Permissions.isRunningFromBuildDirectory,
+           let bundled = Bundle.main.resourceURL?.appendingPathComponent("config.example.yaml"),
+           FileManager.default.fileExists(atPath: bundled.path) {
+            return bundled
+        }
+        return URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // Config.swift -> Sources/ParrotFlow/
+            .deletingLastPathComponent()  // -> Sources/
+            .deletingLastPathComponent()  // -> repo root
+            .appendingPathComponent("config.example.yaml")
+    }
+
+    /// What a new install's config.yaml is written with.
+    ///
+    /// config.example.yaml itself, with the four lines that differ per
+    /// variant swapped in. The release build needs no substitution at all —
+    /// the file already reads as its own defaults — which is the point: a
+    /// release config.yaml and config.example.yaml can now be compared for
+    /// equality instead of trusted to have been kept in sync by hand.
     static var defaultYAML: String {
-        """
-    # \(AppVariant.displayName) configuration
-    # Edit and save — changes are picked up automatically. Delete any line to
-    # get its default back. `--check-config` says what the file adds up to.
-
-    hotkey:
-      # A bare modifier — right_option, left_option, right_command,
-      # left_command, right_control, left_control, right_shift, left_shift, fn
-      # — or a character key (a-z, 0-9, f1-f20, space, return, arrows,
-      # punctuation), which needs `modifiers` below.
-      key: \(AppVariant.defaultHotkey)
-
-      # Any of: command, control, option, shift.
-      modifiers: []
-
-      # push_to_talk records while the key is held; toggle taps on and off.
-      # A bare modifier wants push_to_talk, or typing an accented character
-      # with it would start recording.
-      mode: push_to_talk
-
-      # Keep the mic open this long after you let go, so the last syllable is
-      # not cut off. push_to_talk only. 0 turns it off.
-      release_tail_seconds: 0.3
-
-    audio:
-      # Where the recordings and trace.jsonl go.
-      output_dir: \(AppVariant.defaultOutputDir)
-
-      # Skip clips with no speech in them, so a stray keypress does not decode
-      # room tone into a sentence.
-      speech_gate: true
-
-    feedback:
-      sound: true     # a click when recording starts and stops
-      overlay: true   # the floating pill while you speak
-      # After the words land the pill names what can be done to them, for 3s.
-      # Click a chip to run it. Tapping the dictation hotkey — press and let go
-      # — opens the correction panel too. Holding it starts the next dictation.
-      correct_offer: true
-
-    logging:
-      # The line-by-line log at ~/Library/Logs/\(AppVariant.logFileName) — how
-      # every problem in this app gets diagnosed. Leave it on.
-      text: true
-
-      # Write each dictation's recording to disk, in audio.output_dir. Off by
-      # default: a recording of your voice should not pile up there unless you
-      # asked for it. Turn it on for --transcribe, calibration, or to hear what
-      # the app heard.
-      audio: false
-
-    transcription:
-      # paste     -> typed into the app you're in (needs Accessibility)
-      # clipboard -> copied, you press Cmd-V
-      insert_mode: paste
-
-      # Say one of these and what follows is an instruction: "hey parrot, make
-      # that a bullet list". One of them mid-sentence turns the rest into an
-      # instruction about the words before it. An empty list turns this off.
-      activation_phrases: [hey parrot, by the way parrot]
-
-      # Terminals only: they cannot be edited in place, so the input line is
-      # cleared and retyped corrected. Everywhere else ignores this.
-      rewrite_line: true
-
-      # Languages you dictate in, most spoken first. Supported: en, fr.
-      # One entry means no detection runs. Name only what you actually speak.
-      languages: [en]
-
-      # What a finished transcript runs through, in order. A stage runs only if
-      # it is listed here.
-      #
-      #   replacements  the table below
-      #   fuzzy         the same table against words the spell checker does not
-      #                 know. Needs replacements before it
-      #   numbers       "two hundred forty-three" -> 243, ordinals, decimals
-      #
-      # A transform can be a stage too, and any stage takes a condition — on the
-      # text with `when:` / `unless:`, or on the app with `app:`. A key per
-      # language wins over `default`. See docs/pipelines.md.
-      pipelines:
-        default:
-          - replacements
-          - fuzzy
-          - numbers
-          # "is that true question mark" -> is that true? A spoken mark
-          # replaces the decoder's own punctuation rather than sitting beside
-          # it. English only.
-          - transform: punctuation
-          # A word or phrase said twice by accident, taken out.
-          - transform: repetitions
-          # "read user dot name" -> read user.name, where you write code-ish text.
-          - transform: dotted
-            app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
-          # "a python function called max retries" -> ...called max_retries. The
-          # script is written to transforms/code_identifiers/ on first launch, with
-          # its own case set beside it, and both are yours to edit.
-          - transform: code_identifiers
-            app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
-            when: /\\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\\b/
-
-      # Patterns and deletions. Whole words, case-insensitive. A source in
-      # /slashes/ is a regular expression, and then the target is a template
-      # where $1 writes back what it captured. An empty target deletes, which
-      # is how filler words go. A name the recogniser mangles does not belong
-      # here — say "hey parrot" and fix it in the panel, and it is learnt in
-      # vocabulary.yaml instead.
-      #
-      #   "": ['/[,]?\\s*\\b(?:u+m+|u+h+|erm+|hmm+)\\b[,]?/']
-      #   '$1.$2': ['/\\b(\\w+) dot (\\w+)\\b/']    # "user dot name" -> user.name
-      replacements: {}
-
-
-
-    # The local Ollama model behind spoken commands. Without it dictation still
-    # works and every `prompt:` transform below stops.
-    llm:
-      enabled: true
-      model: gemma4:e4b
-      endpoint: http://localhost:11434
-      # Pin the model in RAM. Ollama otherwise drops it after five minutes and
-      # the next command waits 7-10s for the reload.
-      keep_loaded: true
-
-    # Checking whether a newer ParrotFlow exists.
-    #
-    # One call a day to GitHub's release API — no account, nothing about you, and
-    # nothing about what you dictate. It is the only request this app makes on its
-    # own; the speech model is fetched once on first use, and the language model
-    # never leaves your Mac.
-    #
-    # The number is a waiting period, not how often it looks:
-    #
-    #   -1   never ask at all
-    #    0   offer a release the day it is published
-    #    7   only offer a release that has existed for a week
-    #
-    # The wait is the point. A release that turns out to be bad — a pipeline taken,
-    # a key stolen — is one that gets noticed and pulled, and a week of distance
-    # means your Mac never saw it. What proves an archive is ours is the pinned
-    # signing certificate in scripts/install.sh; this is the other half, and buys
-    # the time someone needs to notice in the first place.
-    updates:
-      # Checking whether a newer ParrotFlow exists: one call a day to GitHub's
-      # release API, nothing about you or what you dictate.
-      #
-      #   -1  never ask     0  offer it the day it is published
-      #    7  only offer a release that has existed for a week
-      #
-      # The wait is the point: a bad release is one that gets noticed and
-      # pulled, and a week of distance means your Mac never saw it.
-      after_days: 7
-
-    # What the activation phrase can reach, and what a pipeline can name.
-    #
-    #     "hey parrot, make that a bullet list"
-    #
-    # A description is not a comment — it is what the router matches your words
-    # against, so write it the way you would say it.
-    #
-    # One of three bodies. `prompt:` asks the local model and costs about a
-    # second; `replace:` is a substitution table and costs nothing; `command:`
-    # runs a program of yours — transcript on stdin, rewrite on stdout — and
-    # costs a process start. A `command:` is the one thing in this file that
-    # runs code, and --check-config names every one out loud.
-    #
-    # A transform owns transforms/<name>/ beside this file: its script or its
-    # prompt, and the case set `--eval <name>` scores it against. A long body
-    # can live there instead of here — `prompt: { path: slack.md }`.
-    #
-    # `display:` is what the menu bar says while it runs. Results are shown
-    # before they replace your selection; `confirm: false` skips that.
-    # See docs/pipelines.md.
-    transforms:
-      - name: bullets
-        description: turn text into a short bullet list
-        display: Making bullets
-        prompt: |
-          Rewrite the text as concise bullets, one idea each.
-          Keep the speaker's wording. Return only the bullets.
-
-      - name: terse
-        description: shorten text without losing anything it says
-        display: Cutting it down
-        prompt: |
-          Cut this down. No filler, same facts, same voice.
-          Return only the shortened text.
-
-      - name: grammar
-        description: fix grammar and punctuation mistakes, not formatting or numbers
-        display: Fixing grammar
-        # `offer: true` puts it on the pill after a dictation, next to Correct;
-        # `key:` is the letter drawn on its chip. Worth it for this one: fixing
-        # what you just said is the thing you reach for without thinking. Leave
-        # both off for anything you would only ever ask for out loud — the offer
-        # is on screen briefly and every entry costs the others room.
-        offer: true
-        key: g
-        prompt: |
-          Correct grammar, spelling and punctuation. Make the smallest change
-          that makes the text correct — and make it. Every error is fixed.
-          Nothing else is touched.
-
-          Fix: subject-verb agreement, verb forms, confused homophones
-          (its/it's, their/they're, weather/whether), missing or wrong
-          punctuation, a missing capital at the start of a sentence, and a
-          missing full stop at the end.
-
-          Never reword, reorder, shorten, expand, or improve. Never add or
-          remove words except where grammar requires it. Never add quotation
-          marks, emphasis, or punctuation the sentence does not need. Keep the
-          speaker's own vocabulary, register and phrasing, including informal,
-          blunt or repetitive wording. A sentence that is already correct comes
-          back exactly as it was.
-
-          A phrase before the main clause takes a comma after it. A trailing
-          please or thanks does not.
-
-          Return only the text.
-
-      # Scoped to one kind of window each by the pipeline above. `grammar` mends
-      # a sentence; these two also lay one out, which is the part no substitution
-      # can express. Both are told twice not to write anything: a model handed a
-      # dictated email will gladly return a better one in its own voice.
-      - name: email
-        description: lay dictated text out as an email
-        display: Laying out the email
-        prompt: |
-          Lay the text out as an email, in the language it was dictated in.
-          Fix the writing; do not write it.
-
-          Correct grammar, spelling and punctuation, and drop the hesitations
-          — um, uh, euh, well, you know, I mean. Every other word survives:
-          the wording, the order and the tone are the speaker's.
-
-          If the text opens with a greeting, it goes on its own line, with a
-          comma after it and a blank line under it. If it does not, the email
-          starts with the first sentence. Never add a greeting nobody spoke.
-
-          Break the body into paragraphs where the subject changes, a blank
-          line between them. Add no headings and no emphasis.
-
-          Three or more things listed in a row never stay inline. Whatever
-          joined them — commas, "and", nothing at all — the words introducing
-          them take a colon and each thing goes on a line of its own behind a
-          dash. No number has to be said for this: "here is what I need from
-          you", "the steps are", "we should" all open a list as surely as
-          "there are three things" does. Two things are a sentence and stay
-          one.
-
-          The email ends on the last thing the speaker said. If that last
-          thing is a name, it is a signature: a blank line, then the name on
-          its own line, and a closing word said just before it — thanks,
-          merci — on the line above. If it is anything else — a question, a
-          goodbye, a sentence — that is the last line, and there is nothing
-          under it. The only name that can appear is one that was spoken; an
-          unspoken one has no stand-in, in brackets or otherwise.
-
-          A short reply is not an email with parts. One or two sentences and
-          no hello in front of them come back as one or two sentences,
-          corrected, with no line put anywhere.
-
-          Return only the email.
-
-      # 3/3. "Add nothing" rather than "no greeting, no sign-off": the second
-      # wording read as an instruction to remove one, and "hey uh quick one the
-      # build is red" came back as "The build is red". The slang line is there
-      # because "gonna" was being corrected to "going to", which is the
-      # speaker's voice going out with the hesitations.
-      - name: slack
-        description: tidy dictated text into a chat message
-        display: Tidying for chat
-        prompt: |
-          Tidy the text into a chat message, in the language it was dictated
-          in. Fix the writing; do not write it.
-
-          Correct grammar, spelling and punctuation, and drop the hesitations
-          — um, uh, euh, well, you know, I mean. Every other word survives.
-          Slang and contractions are the speaker's voice rather than
-          mistakes: gonna stays gonna, ouais stays ouais.
-
-          Add nothing: no greeting, no sign-off, no heading, no bullet, no
-          bold, no backtick. Slack's composer renders none of that when text
-          arrives by paste, so it would land in the message as characters.
-          Remove nothing either: a spoken "hey" is part of the message.
-
-          One paragraph, unless the text plainly holds two.
-
-          Return only the message.
-
-      # Said out loud — "hey parrot, use Slack mentions" — and deliberately in
-      # no pipeline. A message that names someone is not a message that pings
-      # them, and nothing in a transcript tells the two apart. So this is the
-      # one you ask for.
-      #
-      # `confirm` covers one of the two ways of asking. With text selected the
-      # result is shown first; mid-sentence there is no preview whatever
-      # `confirm` says. Either way what lands is text in your composer, and
-      # ParrotFlow sends nothing.
-      #
-      # It was two `replace:` tables for a while — a table cannot invent a
-      # handle, where this prompt's first draft answered "Sofia already looked
-      # at it" with "@priya already looked at it". They came back out because a
-      # table has to be triggered from inside the sentence, and "mention" is a
-      # word English already uses: "I should mention here that the deadline
-      # changed" became "I should @here that the deadline changed". A pipeline
-      # stage has no preview, so a false positive there is a message already
-      # sent. Asking out loud fires when you ask and never otherwise. The whole
-      # excursion is written up in config.example.yaml.
-      #
-      # Put your own people in the list.
-      - name: slack_mentions
-        description: turn people's names into Slack mentions
-        display: Adding mentions
-        prompt: |
-          Return the text word for word, with one kind of change and no
-          other: a name that appears in this list becomes its handle.
-
-            Marie   -> @marie.dupont
-            Thomas  -> @tleroy
-            Priya   -> @priya
-
-          Every occurrence, including where the message is about that person
-          rather than to them.
-
-          A name that is not in the list is left exactly as it was. Sofia
-          stays Sofia. Never give a name a handle that belongs to someone
-          else, and never invent one.
-
-          Two group mentions are a judgement rather than a lookup. "everyone
-          here", "whoever is around" -> @here, which pings the people who are
-          online. "the whole channel", "everyone", "all of them" -> @channel,
-          which pings the ones who are away too. Only where the text means
-          the people: "the file is here" is a place, and stays.
-
-          A mention replaces the words that name the person or the group, and
-          not one word more: "heads up to the whole channel" comes back as
-          "heads up to @channel".
-
-          Nothing is ever deleted. Every other word, the order and the
-          punctuation come back as they went in.
-
-          Return only the text.
-
-      # The two tables the pipeline above names. Same pattern, different output —
-      # that is the whole reason a table has a name.
-      #
-      # The pattern reads "a word, then dot or point, then a word", then refuses
-      # it when either side is a word code does not use there — without that,
-      # "voilà le point sur les tests" loses its middle. Score it with
-      # scripts/check-dotted.sh, which reads the pattern out of this file.
-      #
-      # Hyphen and underscore reuse the same lists — same risk shape. `dash`
-      # is left out: an ordinary word nobody has measured a guard for, unlike
-      # `dot`/`point`. `tiret` excludes "tiret bas" so the two rules never
-      # claim the same words.
-      - name: dotted
-        description: spoken dot, hyphen and underscore paths as code
-        replace:
-          '$1.': ['/\\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\\b)(\\w+) (?:dot|point) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\\b)(?=\\w)/']
-          '$1-': ['/\\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\\b)(\\w+) (?:hyphen|tiret(?! bas)) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\\b)(?=\\w)/']
-          '$1_': ['/\\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\\b)(\\w+) (?:underscore|souligné|tiret bas) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\\b)(?=\\w)/']
-
-      - name: backticks
-        description: wrap dotted paths in backticks, for chat
-        replace:
-          '`$1`': ['/\\b([A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)+)/']
-
-      # A program rather than a table, because casing words is not something a
-      # substitution can express. Written to transforms/code_identifiers/ on
-      # first launch and yours to edit — the stop lists in it decide where a name
-      # ends, which is a judgement about how you speak.
-      - name: code_identifiers
-        description: spoken names as identifiers
-        display: Formatting identifiers
-        command: code_identifiers.py
-
-      # Written to transforms/punctuation/ on first launch. Rules only, no
-      # model — see the script for the guard list this leans on.
-      - name: punctuation
-        description: spoken marks as punctuation
-        command: punctuation.py
-
-      # Written to transforms/repetitions/ on first launch. Cheap enough not
-      # to gate: 0.04s, mostly the python3 start, and it deletes nothing when
-      # it finds nothing.
-      - name: repetitions
-        description: delete a word or phrase said twice by accident
-        command: repetitions.py
-
-    # Do what was asked even when no transform above matches:
-    # "hey parrot, sort that list alphabetically". A remark that was never an
-    # instruction is still refused, and you see every result first.
-    free_form: true
-    """
+        guard let text = try? String(contentsOf: configTemplateURL, encoding: .utf8) else {
+            Log.write("config: could not read \(configTemplateURL.path); writing nothing")
+            return ""
+        }
+        guard AppVariant.isDev else { return text }
+        return text
+            .replacingOccurrences(
+                of: "# ParrotFlow configuration",
+                with: "# \(AppVariant.displayName) configuration")
+            .replacingOccurrences(
+                of: "  key: right_command",
+                with: "  key: \(AppVariant.defaultHotkey)")
+            .replacingOccurrences(
+                of: "  output_dir: ~/Recordings/ParrotFlow",
+                with: "  output_dir: \(AppVariant.defaultOutputDir)")
+            .replacingOccurrences(
+                of: "~/Library/Logs/ParrotFlow.log",
+                with: "~/Library/Logs/\(AppVariant.logFileName)")
     }
 }
 
