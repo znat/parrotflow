@@ -266,7 +266,12 @@ def place(reply, text, converted=None):
         # model does not get to invent words that are not in the sentence.
         if len(words) < 2 or len(words) > 4 or span.lower() not in out.lower():
             continue
-        start = out.lower().index(span.lower())
+        # The last occurrence, not the first: the model extracts names from
+        # "call it X" / "rename it to X", and both put X after whatever prose
+        # introduced it — "the user profile name is shown in settings; call it
+        # user profile name" repeats the words once as prose and once as the
+        # declaration, in that order.
+        start = out.lower().rfind(span.lower())
         out = (out[:start] + cased(words, style_for(out, out[:start], language))
                + out[start + len(span):])
         if converted is not None:
