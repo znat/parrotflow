@@ -263,9 +263,9 @@ enum CheckConfigCommand {
         case ..<0:
             print("  · updates           never checked")
         case 0:
-            print("  · updates           checked daily, offered as soon as published")
+            print("  · updates           checked hourly, offered as soon as published")
         case let days:
-            print("  · updates           checked daily, offered after \(days) day\(days == 1 ? "" : "s")")
+            print("  · updates           checked hourly, offered after \(days) day\(days == 1 ? "" : "s")")
         }
 
         // Environment

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Asks the same question the app asks daily, and shows its working.
+/// Asks the same question the app asks hourly, and shows its working.
 ///
 ///     ParrotFlow --update-check
 ///     ParrotFlow --update-check --after-days 0

@@ -61,6 +61,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// So the notice fires when a version first becomes available, and not
     /// again every day for as long as the user leaves it alone.
     private var announcedUpdate: String?
+    /// So the modal is offered once per version while idle, and not again on
+    /// every hourly check while the user is busy or has not answered it yet.
+    private var alertedUpdate: String?
+    /// True between a manual "Check for Updates" click and its answer, so the
+    /// menu item can say so and a second click cannot start a second request.
+    private var updateCheckInFlight = false
+    /// Bumped when a manual check finishes, not when it starts — so a
+    /// background check that began during that manual check, and answers
+    /// after it, can tell its answer is now stale and skip overwriting it.
+    private var manualCheckGeneration = 0
+    /// Bumped by `startUpdateChecks`, so a check already in flight when
+    /// config.yaml reloads — and so working from a stale `afterDays` — is
+    /// discarded on arrival rather than reviving state the reload just
+    /// changed.
+    private var updateSchedulingGeneration = 0
+    /// Bumped by every manual check, so an older manual request's completion
+    /// — canceled, failed, or just slow — cannot overwrite the feedback for
+    /// a newer manual request the user is actually waiting on.
+    private var manualRequestID = 0
 
     private lazy var transcriber = Transcriber { [weak self] status in
         DispatchQueue.main.async { self?.handleTranscriberStatus(status) }
@@ -524,12 +543,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Updates
 
-    /// Once shortly after launch, then daily.
+    /// Once shortly after launch, then hourly.
     ///
     /// Restarted on every config load, since `after_days` can turn the whole
     /// thing off — and a setting that only takes effect after a restart is one
     /// that will be reported as not working.
     private func startUpdateChecks() {
+        // Discards any check already in flight: it captured the old
+        // afterDays and would otherwise revive state this reload just
+        // changed. Clearing updateCheckInFlight here, rather than waiting
+        // for that stale check's own completion, keeps the menu correct
+        // right away even if the completion never discards cleanly.
+        updateSchedulingGeneration += 1
+        updateCheckInFlight = false
+
         updatesTimer?.invalidate()
         updatesTimer = nil
 
@@ -543,21 +570,89 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
             self?.checkForUpdate()
         }
-        let timer = Timer(timeInterval: 86_400, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 3_600, repeats: true) { [weak self] _ in
             self?.checkForUpdate()
         }
         RunLoop.main.add(timer, forMode: .common)
         updatesTimer = timer
     }
 
-    private func checkForUpdate() {
+    /// - Parameter manual: True for a menu click, false for the timer.
+    ///   A manual check reports its result even when there is nothing new —
+    ///   a click with no visible answer reads as broken — and shows the
+    ///   update alert straight away rather than waiting for the app to go
+    ///   idle, since the user just asked for it.
+    private func checkForUpdate(manual: Bool = false) {
         let afterDays = config.updates.afterDays
-        guard afterDays >= 0 else { return }
+        guard afterDays >= 0 else {
+            if manual { flash("Update checks are disabled") }
+            return
+        }
+
+        let generationAtStart = manualCheckGeneration
+        let schedulingGenerationAtStart = updateSchedulingGeneration
+        let myRequestID: Int
+        if manual {
+            updateCheckInFlight = true
+            manualRequestID += 1
+            myRequestID = manualRequestID
+            updateUI()
+        } else {
+            myRequestID = 0
+        }
 
         Task<Void, Never> {
-            let latest = try? await Updates.latest()
+            var latest: Updates.Release?
+            do {
+                latest = try await Updates.latest()
+            } catch {
+                if manual {
+                    await MainActor.run { [weak self] in
+                        // A newer manual request has since started — its own
+                        // completion owns the feedback now, not this one.
+                        guard let self, myRequestID == self.manualRequestID else { return }
+                        guard self.updateSchedulingGeneration == schedulingGenerationAtStart else {
+                            self.flash("Update check canceled — settings changed")
+                            return
+                        }
+                        self.updateCheckInFlight = false
+                        self.manualCheckGeneration += 1
+                        Log.write("updates: check failed — \(error.localizedDescription)")
+                        self.flash("Could not check for updates: \(error.localizedDescription)")
+                        self.updateUI()
+                    }
+                } else {
+                    // A failed poll leaves everything as it was — a known
+                    // update stays known, and a version already alerted for
+                    // is not asked about again just because this fetch
+                    // failed. The next successful poll picks up from here.
+                    await MainActor.run { [weak self] in
+                        guard let self,
+                            self.updateSchedulingGeneration == schedulingGenerationAtStart
+                        else { return }
+                        Log.write("updates: check failed — \(error.localizedDescription)")
+                    }
+                }
+                return
+            }
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                // A newer manual request has since started — its own
+                // completion owns the feedback now, not this one.
+                if manual, myRequestID != self.manualRequestID { return }
+                guard self.updateSchedulingGeneration == schedulingGenerationAtStart else {
+                    if manual { self.flash("Update check canceled — settings changed") }
+                    return
+                }
+                // A manual answer always applies. A background one only does
+                // if a manual check has not started, or finished, meanwhile.
+                if !manual {
+                    guard !self.updateCheckInFlight,
+                        self.manualCheckGeneration == generationAtStart
+                    else { return }
+                }
+                self.updateCheckInFlight = false
+                if manual { self.manualCheckGeneration += 1 }
                 let decision = Updates.decide(
                     current: Updates.current, latest: latest, afterDays: afterDays
                 )
@@ -569,10 +664,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("updates: \(release.version) is available")
                         self.flash("ParrotFlow \(release.version) is available")
                     }
-                case .waiting(let release, let days):
+                    // The modal steals focus, so a background check waits for
+                    // a moment with nothing running. A manual check was asked
+                    // for, so it shows right away.
+                    let idle = !self.recorder.isRecording && self.runsInFlight <= 0
+                    if self.alertedUpdate != release.version, manual || idle {
+                        self.alertedUpdate = release.version
+                        self.showUpdate()
+                    }
+                case .waiting(let release, let daysToGo):
                     self.updateAvailable = nil
-                    Log.write("updates: holding \(release.version) for \(days) more day(s)")
-                default:
+                    // A longer after_days can drop an already-alerted release
+                    // back into waiting. Forget the alert so it can fire
+                    // again once the release re-qualifies.
+                    if self.alertedUpdate == release.version { self.alertedUpdate = nil }
+                    Log.write("updates: holding \(release.version) for \(daysToGo) more day(s)")
+                    if manual {
+                        self.flash(
+                            "ParrotFlow \(release.version) is out, offered in "
+                                + "\(daysToGo) day\(daysToGo == 1 ? "" : "s")"
+                        )
+                    }
+                case .upToDate:
+                    self.updateAvailable = nil
+                    if manual { self.flash("ParrotFlow is up to date") }
+                case .skipped(let release):
+                    self.updateAvailable = nil
+                    if manual { self.flash("You skipped \(release.version)") }
+                case .snoozed(let release, _):
+                    self.updateAvailable = nil
+                    if manual { self.flash("ParrotFlow \(release.version) is snoozed for now") }
+                case .disabled:
                     self.updateAvailable = nil
                 }
                 self.updateUI()
@@ -612,6 +734,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    @objc private func checkForUpdateNow() {
+        checkForUpdate(manual: true)
     }
 
     /// The release notes, and the three answers to them.
@@ -3655,14 +3781,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let correctItem = NSMenuItem(
-            title: "Correct a Word…",
-            action: #selector(correctWord),
-            keyEquivalent: ""
-        )
-        correctItem.target = self
-        menu.addItem(correctItem)
-
         let revealItem = NSMenuItem(
             title: "Open Recordings Folder",
             action: #selector(openRecordingsFolder),
@@ -3784,9 +3902,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ? "⚠︎ 1 setting in config.yaml does nothing"
             : "⚠︎ \(configProblems.count) settings in config.yaml do nothing"
 
-        updateItem.isHidden = updateAvailable == nil
-        if let release = updateAvailable {
+        if updateCheckInFlight {
+            updateItem.isHidden = false
+            updateItem.title = "Checking for Updates…"
+            updateItem.isEnabled = false
+        } else if let release = updateAvailable {
+            updateItem.isHidden = false
             updateItem.title = "↑ ParrotFlow \(release.version) is available"
+            updateItem.action = #selector(showUpdate)
+            updateItem.isEnabled = true
+        } else if config.updates.afterDays >= 0 {
+            updateItem.isHidden = false
+            updateItem.title = "Check for Updates"
+            updateItem.action = #selector(checkForUpdateNow)
+            updateItem.isEnabled = true
+        } else {
+            updateItem.isHidden = true
         }
     }
 
@@ -3818,10 +3949,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // MARK: - Menu actions
-
-    @objc private func correctWord() {
-        beginCorrection()
-    }
 
     /// `--preview-panel` shows the correction panel with sample text, so its
     /// layout can be iterated on without dictating into it every time.

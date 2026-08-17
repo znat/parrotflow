@@ -136,7 +136,7 @@ enum Updates {
     // MARK: - Asking GitHub
 
     /// One call, no authentication. Unauthenticated GitHub allows 60 an hour
-    /// per address, and this runs once a day.
+    /// per address, and this runs once an hour — comfortably under the cap.
     static func latest(timeout: TimeInterval = 10) async throws -> Release {
         guard let url = URL(string: "https://api.github.com/repos/\(repo)/releases/latest") else {
             throw Failure.malformed("bad URL")

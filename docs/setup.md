@@ -362,8 +362,8 @@ mention but notifies nobody — tell them that.
 >
 > Settings are in `~/.config/parrotflow/config.yaml`, and the names it has
 > learnt are in `vocabulary.yaml` beside it. Both reload on save. The menu bar
-> icon has *Correct a Word…*, *Settings* — *Edit Config…* and *View
-> Transforms* — and *Permissions…*.
+> icon has *Settings* — *Edit Config…* and *View Transforms* — and
+> *Permissions…*.
 
 ---
 
