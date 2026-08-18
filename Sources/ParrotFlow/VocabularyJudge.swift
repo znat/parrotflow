@@ -974,6 +974,24 @@ enum VocabularyJudge {
         return out + text[cursor...]
     }
 
+    /// Text with every taught span put back to what the decoder wrote, and
+    /// every other span left exactly as `text` already has it.
+    ///
+    /// Unlike `applying`, a change that is not being reverted is not
+    /// rewritten to `now` — the model may never have run, so there is no
+    /// verdict to write it from. This is what a spelling lesson mixed with an
+    /// ordinary substitution needs when the model is disabled or unreachable:
+    /// the lesson still gets undone, the ordinary change is left untouched.
+    static func reverting(_ taught: [Bool], in text: String, changes: [Change]) -> String {
+        var out = "", cursor = text.startIndex
+        for (index, change) in changes.enumerated() {
+            out += text[cursor..<change.range.lowerBound]
+            out += (index < taught.count && taught[index]) ? change.was : String(text[change.range])
+            cursor = change.range.upperBound
+        }
+        return out + text[cursor...]
+    }
+
     /// One verdict per change, read off the reply. `true` is KEEP.
     ///
     /// A number, then the word. Read loosely because a model that answers

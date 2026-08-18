@@ -951,9 +951,12 @@ struct Pipeline: Equatable, Codable {
         _ step: Step, on text: String, config: Config, scope: Scope,
         findings: Vocabulary.Outcome?
     ) async -> StageResult {
-        func declined(_ why: String, _ vars: [String: Scope.Value] = [:]) -> StageResult {
+        func declined(
+            _ why: String, _ vars: [String: Scope.Value] = [:], fallback: String? = nil
+        ) -> StageResult {
             Log.write("pipeline: vocabulary — \(why)")
-            return StageResult(text: text, vars: vars.merging(["ok": .bool(false)]) { a, _ in a })
+            return StageResult(
+                text: fallback ?? text, vars: vars.merging(["ok": .bool(false)]) { a, _ in a })
         }
 
         let caps = step.caps ?? VocabularyJudge.Caps.standard
@@ -1040,8 +1043,7 @@ struct Pipeline: Equatable, Codable {
         // Nothing left for a model to answer. Returned before the `llm.enabled`
         // guard so the rule still fires on a machine with no Ollama.
         if taught.allSatisfy({ $0 }) {
-            let chosen = VocabularyJudge.applying(
-                taught.map { !$0 }, to: text, changes: changes)
+            let chosen = VocabularyJudge.reverting(taught, in: text, changes: changes)
             return StageResult(text: chosen, vars: [
                 "asked": .int(0), "slots": .int(slots.count),
                 "reverted": .string(lessons.joined(separator: "; ")),
@@ -1053,9 +1055,16 @@ struct Pipeline: Equatable, Codable {
         // thing about this stage a fixture can assert — the verdict comes from
         // a model and is not deterministic — and it was unreachable while this
         // guard ran first.
+        //
+        // A lesson mixed with an ordinary substitution still has a model to
+        // ask about the ordinary one, but not here: the model is off. The
+        // lesson is reverted anyway — that part never needed a model — and the
+        // ordinary change is left exactly as it arrived, same as every other
+        // decline in this stage.
         guard config.llm.enabled else {
             return declined("llm.enabled is false",
-                            ["asked": .int(0), "slots": .int(slots.count)])
+                            ["asked": .int(0), "slots": .int(slots.count)],
+                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
         }
 
         let built = VocabularyJudge.sentences(in: text, from: changes)
@@ -1081,7 +1090,8 @@ struct Pipeline: Equatable, Codable {
             )
         } catch {
             return declined("\(error.localizedDescription); kept as they are",
-                            ["asked": .int(changes.count), "slots": .int(slots.count)])
+                            ["asked": .int(changes.count), "slots": .int(slots.count)],
+                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
         }
 
         // A lesson mixed in with real questions is still shown to the model,
