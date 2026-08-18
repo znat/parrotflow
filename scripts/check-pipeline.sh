@@ -52,7 +52,7 @@ while IFS='|' read -r name fixture app noprompts input expect vars; do
   # regression this is here to catch.
   missing=""
   if [ -n "$vars" ]; then
-    old="$IFS"; IFS=';'
+    old="$IFS"; IFS=$'\x1f'
     for pair in $vars; do
       [ -z "$pair" ] && continue
       printf '%s\n' "$full" | grep -qxF "var   $pair" || missing="$missing
@@ -93,7 +93,9 @@ def printed(value):
 for c in yaml.safe_load(open(sys.argv[1]))["cases"]:
     fields = [str(c.get(k, "")) for k in
               ("name", "pipeline", "app", "no_prompts", "input", "expect")]
-    fields.append(";".join("%s = %s" % (path, printed(value))
+    # \x1f, not ";". `protected` joins its own terms on "; ", so a semicolon
+    # here split one expectation into two that matched nothing.
+    fields.append("\x1f".join("%s = %s" % (path, printed(value))
                            for path, value in (c.get("expect_vars") or {}).items()))
     print("|".join(fields))
 ' "$ROOT/tests/pipeline-cases.yaml")

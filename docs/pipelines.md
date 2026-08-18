@@ -507,6 +507,89 @@ Add the step if your chat app renders pasted markup. Getting this to work
 properly means putting rich text on the clipboard rather than markdown
 characters, which is a different feature.
 
+### `join`, which fits a clip to the box it lands in
+
+`examples/transforms/join/join.py` reads `input.*` and decides two things: what
+goes at the leading edge of the clip, and whether the trailing full stop
+survives.
+
+```yaml
+transforms:
+  - name: join
+    description: space and case the transcript to fit where the caret is
+    command: join.py
+    returns: json
+
+pipelines:
+  default:
+    - input
+    - transform: code_identifiers
+    - stage: transform
+      transform: join
+      when: input.ok
+```
+
+**The problem it solves.** The decoder writes every clip as a standalone
+sentence — leading capital, trailing stop — because it never saw what surrounds
+it. That is right when you are appending to a paragraph and wrong every other
+time: dictating into the middle of a sentence gets you a capital and a stop you
+did not want.
+
+**The leading edge is a first-match-wins table.** Five rules over what precedes
+the caret, in precedence order:
+
+| rule | when | |
+|---|---|---|
+| `line start` | a newline behind, or one in front | no space, capital |
+| `compound` | after a hyphen or a slash | no space, lower case |
+| `glued` | after a bracket or a quote | no space, lower case |
+| `new sentence` | after `.`, `!`, `?` or `…` | space, capital |
+| `mid sentence` | anything else | space, lower case |
+
+Each rule reports its own name in `join.applied`, so the trace says which branch
+decided a sentence. That is the whole reason they are named: as an `if`/`elif`
+chain the only way to find out which branch fired was to read the file and
+guess, which produced three wrong diagnoses in one evening.
+
+**Only the tagger lowers a capital.** The envelope's `tokens` say what the first
+word is. `Verb`, `Determiner`, `Adjective` and the rest of the closed classes
+are lowered; `PersonalName` and `Noun` are not. `Noun` is deliberately on the
+safe side — `User`, `Release` and `Tasmeen` all tag `Noun`, and so does any name
+the tagger does not recognise. With no tag at all nothing is lowered: a stray
+capital is a character you can see and delete, a lowercased name reads as
+correct.
+
+**It also removes a stop the decoder wrote at a hesitation.** "I think you
+should. try this" is the decoder hearing a pause. The signal is the lower-case
+word after the stop, because the decoder capitalises after a boundary it means.
+Measured over 369 mid-clip stops in one archive, 16 had a lower-case word after
+them and nearly all were wrong. Over 3,785 archived clips the rule fired 10
+times and every one was right.
+
+**The glued version of that rule was deleted.** `should.try`, with no space, is
+indistinguishable from `join.py`, `package.json` and `Method.variable`. Over the
+same 3,785 clips it fired 24 times: 19 on real dotted names and at most 2
+usefully. A word list of extensions held some and could never hold the rest —
+`work`, `example` and `variable` are ordinary words that happen to sit right of
+a dot. Deleted rather than tuned.
+
+**It respects `protected`.** A dot an earlier stage wrote is not a guess, and an
+identifier an earlier stage cased keeps that case. Without this, `max_retries`
+at a line start became `Max_retries`. See
+[`protected`](#protected-what-a-later-stage-must-not-undo).
+
+**In a terminal it still runs, and does less.** No caret is readable there, so
+no question about the edges has an answer and every leading-edge rule stands
+down. The stops inside the sentence are a different question and need no caret,
+so that half still fires.
+
+`scripts/check-join.sh` scores it — 44/44 — against
+`examples/transforms/join/cases.yaml`. It runs the deployed script on the
+envelope it really receives, because `--eval` feeds a transcript and nothing
+else. The tags come from `--tag` rather than from the case file, so what is
+scored is the tagger the app ships. A case may name the `rule:` it expects, and
+a right answer reached by the wrong rule counts as a miss.
+
 ### Writing to people: `email` and `slack`
 
 Two prompts scoped to one kind of window each, and the first stages that ask
@@ -781,6 +864,35 @@ the `replacements` ones: `changes` says which rules fired and `before` says
 *where*, because the rules leave no positions behind. A `command:` transform
 publishes whatever it likes; see
 [docs/authoring.md](authoring.md#recipe-a-program-that-reports-what-it-did).
+
+### `protected`: what a later stage must not undo
+
+`protected` is one variable with a meaning agreed across stages: **the exact
+characters this stage wrote on purpose.** A later stage reads it and leaves
+those characters alone.
+
+It is one string, terms joined on `; `, because a scope value is a scalar. A
+condition reads it as `code_identifiers.protected.contains("max_retries")`.
+
+Two stages publish it today.
+
+- `code_identifiers` publishes the identifiers it wrote — `max_retries`,
+  `UserProfile`.
+- A `replace:` table publishes what its rules put in, as does the `replacements`
+  stage. A table has no code of its own, so `Replacements.exact` publishes on
+  its behalf. The value is the **template expanded**: `dotted` writes `$1.` and
+  publishes `user.`, not `$1.`.
+
+`join` is the consumer. It re-cases the first word of a clip and it removes a
+full stop the decoder wrote at a hesitation. Neither is right on something a
+stage wrote deliberately, and no amount of part-of-speech tagging fixes that:
+`max_retries` is a name because a stage made it one, which is a fact about the
+pipeline and not about the language.
+
+Any stage that writes a term it does not want undone publishes the same key.
+Nothing in `join` knows about `code_identifiers` in particular — `ctx.vars`
+already nests by stage name, so the stage that wrote a term names itself by
+where the value lands.
 
 Before any stage runs, the scope already holds `text`, `app`, `bundle_id`,
 `language`, and what transcription measured — `asr.confidence`, `asr.duration`,
