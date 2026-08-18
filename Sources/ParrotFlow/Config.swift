@@ -66,10 +66,71 @@ struct Config: Decodable, Equatable {
     /// It is maintained by the app rather than by hand — see `Vocabulary`.
     var vocabulary: Vocabulary = Vocabulary()
 
+    /// Named word lists, written once and referred to by name.
+    ///
+    /// The same list — "the determiners, so this is prose and not a name" —
+    /// was pasted into nine regexes across two config files and one Python set,
+    /// and the copies had already drifted: one said `the|a|an`, another held
+    /// forty French words. A `replace:` pattern now writes `{{determiners}}`
+    /// and a transform script reads the same list out of the scope, so there
+    /// is one definition and adding a language is adding words to it.
+    ///
+    /// Deliberately not per language. `dotted` has always merged English and
+    /// French into one alternation and it measures clean, because the words do
+    /// not collide.
+    var lists: [String: [String]] = [:]
 
     enum CodingKeys: String, CodingKey {
         case hotkey, audio, feedback, transcription, llm, transforms, prompts, updates, logging
         case freeForm = "free_form"
+        case lists
+    }
+
+    private static let listReference = try? NSRegularExpression(pattern: #"\{\{(\w+)\}\}"#)
+
+    /// Every `{{name}}` a pattern refers to, in the order written.
+    static func listNames(in pattern: String) -> [String] {
+        guard pattern.contains("{{"), let expression = listReference else { return [] }
+        return expression
+            .matches(in: pattern, range: NSRange(pattern.startIndex..., in: pattern))
+            .compactMap { Range($0.range(at: 1), in: pattern).map { String(pattern[$0]) } }
+    }
+
+    /// `{{name}}` replaced by the list, as a regex alternation.
+    ///
+    /// Longest first, so `semi colon` cannot be eaten by `colon` sitting
+    /// earlier in the same alternation.
+    ///
+    /// Nil when a name is unknown or names an empty list. The rule is then
+    /// skipped, the way one with an invalid pattern is.
+    ///
+    /// Skipped rather than expanded to something, because no expansion is safe
+    /// both ways. Emptied, `(?:)` matches everywhere: a positive rule fires on
+    /// every word. Left literal it matches nothing, so
+    /// `(?!(?:{{determiners}})\b)` always succeeds and `dotted` rewrites prose.
+    /// A guard and a plain match want opposite fallbacks, so not running is the
+    /// only answer that is right for both. `replacementProblems` refuses the
+    /// config first; this is what happens if one is loaded anyway.
+    func expanded(_ pattern: String) -> String? {
+        guard pattern.contains("{{") else { return pattern }
+        var out = pattern
+        for name in Config.listNames(in: pattern) {
+            guard let words = lists[name], !words.isEmpty else { return nil }
+            let alternation = words
+                .sorted { $0.count > $1.count }
+                .map { NSRegularExpression.escapedPattern(for: $0) }
+                .joined(separator: "|")
+            out = out.replacingOccurrences(of: "{{\(name)}}", with: alternation)
+        }
+        return out
+    }
+
+    /// The lists as scope values, for a transform that is a program rather than
+    /// a table. Joined on `; ` because a `Scope.Value` is a scalar.
+    var listVariables: [String: Scope.Value] {
+        lists.reduce(into: [:]) { out, entry in
+            out[entry.key] = .string(entry.value.joined(separator: "; "))
+        }
     }
 
     /// The words you dictate that the recogniser gets wrong, and what the app
@@ -752,6 +813,26 @@ struct Config: Decodable, Equatable {
             }
             if let why = entry.unreadable {
                 let said = "transforms: \"\(entry.name)\" \(why); skipped"
+                Log.write(said)
+                unreadable.append(said)
+                continue
+            }
+            // A name the scope already uses. Dropped rather than reported and
+            // kept, because a stage files its variables under its own name and
+            // this one would write over `lists.determiners` or `asr.confidence`.
+            //
+            // Asked here, where the name is declared, because `Pipeline
+            // .validate` asks it of the spelling a *step* wrote and the two are
+            // not the same question. And asked case-insensitively, because
+            // `transform(named:)` is: a step spelled `lists` reaches a transform
+            // declared `Lists`, and `Pipeline.namespace` then files it under the
+            // step's spelling. Either casing is a way into the same namespace,
+            // so neither may be declared.
+            if let taken = Scope.reserved.first(where: {
+                $0.caseInsensitiveCompare(entry.name) == .orderedSame
+            }) {
+                let said = "transforms: \"\(entry.name)\" would file its variables where"
+                    + " \(taken) already is; skipped — rename it"
                 Log.write(said)
                 unreadable.append(said)
                 continue
@@ -1775,6 +1856,12 @@ struct Config: Decodable, Equatable {
         if let freeForm = try c.decodeIfPresent(Bool.self, forKey: .freeForm) {
             self.freeForm = freeForm
         }
+        // Decoded here because this initialiser is hand-rolled. A property and
+        // a CodingKey are not enough: miss this line and the lists work in a
+        // `--pipeline` fixture and are empty in the app.
+        if let lists = try c.decodeIfPresent([String: [String]].self, forKey: .lists) {
+            self.lists = lists
+        }
     }
 
     /// Everything the config says that will not do what it looks like it does.
@@ -1801,6 +1888,27 @@ struct Config: Decodable, Equatable {
     /// wherever it is written.
     func replacementProblems() -> [String] {
         var found: [String] = []
+        // A pattern naming a list that is not there, or is there and empty.
+        // Both are left literal at runtime — an emptied alternation would match
+        // everywhere — so the rule simply never fires, and this is the only
+        // place that says so.
+        let defined = lists.keys.sorted()
+        for rule in transcription.rules + transforms.flatMap(\.rules) {
+            for name in Config.listNames(in: rule.pattern) {
+                guard let words = lists[name] else {
+                    found.append("lists: \"\(rule.source)\" names {{\(name)}}, which nothing"
+                        + " defines"
+                        + (defined.isEmpty ? " — there is no lists: section"
+                            : " — have: \(defined.joined(separator: ", "))")
+                        + "; the rule never fires")
+                    continue
+                }
+                if words.isEmpty {
+                    found.append("lists: \"\(rule.source)\" names {{\(name)}}, which is defined"
+                        + " with no words in it; the rule never fires")
+                }
+            }
+        }
         // A template referring to a group the pattern never captures is
         // written as nothing at all — the rule fires, the output is quietly
         // short, and the log shows a substitution that looks like it worked.

@@ -126,8 +126,14 @@ actor Transcriber {
     /// the scope values below are: the collector is only bound when somebody
     /// asked for a trace, and a feature that worked on the runs you are watching
     /// and stopped on the runs you are not would be worse than no feature.
+    ///
+    /// - Parameter press: Which hotkey press this clip came from, published to
+    ///   the pipeline as `press.run`. It is how a stage reaches what was read
+    ///   at *its own* press: dictations overlap, so a stage that took the
+    ///   newest capture would describe the wrong field. Nil off the hotkey
+    ///   path, where there is no press to belong to.
     func transcribe(
-        url: URL, config: Config, app: Pipeline.App? = nil,
+        url: URL, config: Config, app: Pipeline.App? = nil, press: Int? = nil,
         progress: (@Sendable (String) -> Void)? = nil,
         heard: (@Sendable (Decode) -> Void)? = nil
     ) async throws -> String {
@@ -275,9 +281,7 @@ actor Transcriber {
         // the time — and a condition reading `asr.confidence` must not work on
         // the runs you are watching and quietly stop on the runs you are not.
         // So the trace consumes these; it does not own them.
-        return await Self.applyReplacements(
-            to: text, config: config, app: app,
-            seed: Scope(values: [
+        var seed = Scope(values: [
                 "asr.model": .string(Repo.parakeetV3.rawValue),
                 "asr.confidence": .double(Double(result.confidence)),
                 "asr.duration": .double(result.duration),
@@ -289,7 +293,12 @@ actor Transcriber {
                 // pipeline can read rather than an error about a missing path.
                 "vocabulary.count": .int(vocabularyCount),
                 "vocabulary.changes": .string(vocabularyChanges),
-            ]),
+        ])
+        // Only when there is one. Absent says "no press", which is the honest
+        // answer off the hotkey path and the one `input` declines on.
+        if let press { seed.set("press.run", .int(press)) }
+        return await Self.applyReplacements(
+            to: text, config: config, app: app, seed: seed,
             findings: findings,
             progress: progress
         )

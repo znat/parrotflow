@@ -1,0 +1,14 @@
+# A list that is defined and has no words in it. Refused for the same reason a
+# name nothing defines is: the placeholder is left literal, so the rule matches
+# nothing. Expanded to `(?:)` instead it would match everywhere, and the guard
+# in front of it would stop the rewrite on every transcript.
+languages: [en]
+lists:
+  determiners: []
+transforms:
+  - name: guarded
+    description: a guard naming a list with nothing in it
+    replace:
+      '$1.': ['/\b(?!(?:{{determiners}})\b)(\w+) dot (?=\w)/']
+pipeline:
+  - transform: guarded

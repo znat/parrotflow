@@ -891,7 +891,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ends one — the second press of a toggle, a stutter inside the release
         // tail — is not aiming a new pill, and taking a fresh snapshot there
         // would throw away the one the running dictation is going to need.
-        if !recorder.isRecording {
+        let startsDictation = !recorder.isRecording
+        if startsDictation {
             anchorAtPress = nil
             pressRun += 1
             readTheAnchor()
@@ -908,11 +909,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // one thing this handler may not do is delay recording. Gated on the
         // stage being configured, so a config that never asked for context pays
         // nothing for the question.
-        if Context.isConfigured(in: config) {
+        //
+        // And on the press starting one, for the reason the anchor above is.
+        // The second press of a toggle, and a stutter inside the release tail,
+        // belong to the dictation already running. Capturing there replaces
+        // what that dictation is going to read with the screen as it stands
+        // when it ends. There is one capture, not one per press.
+        if startsDictation, Context.isConfigured(in: config) {
             let app = front?.app
             let element = focusAtPress?.element
             DispatchQueue.global(qos: .userInitiated).async {
                 Context.capturePress(app: app, element: element)
+            }
+        }
+
+        // The same press, the other half of the window. Gated separately
+        // because it is a separate disclosure: `context` reads the terminal
+        // around the box, this reads what you have typed into it, in every app.
+        if startsDictation, InputBox.isConfigured(in: config) {
+            let app = front?.app
+            let element = focusAtPress?.element
+            // By run, not into one slot. `pressRun` was bumped above, so this
+            // is the run the dictation about to start will carry, and the one
+            // its pipeline asks for. Dictations overlap.
+            //
+            // The slot is reserved here, on this thread, before the read is
+            // dispatched. It is what `dictationEnded` removes, and what a read
+            // that finishes late checks itself against.
+            let run = pressRun
+            InputBox.beginPress(run)
+            DispatchQueue.global(qos: .userInitiated).async {
+                InputBox.capturePress(run: run, app: app, element: element)
             }
         }
 
@@ -1475,7 +1502,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     beside: recording.url.deletingLastPathComponent()
                 ) {
                     let text = try await self?.transcriber.transcribe(
-                        url: recording.url, config: config, app: app,
+                        url: recording.url, config: config, app: app, press: press.run,
                         progress: { label in
                             Task { @MainActor [weak self] in
                                 // Still this dictation, and still one that has
@@ -1774,7 +1801,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 prompt: prompt, instruction: instruction, text: text, config: llmConfig()
             )
         case .replace:
-            return Replacements.applyExact(to: text, rules: transform.rules)
+            // `expand:`, or a table reached by voice compiles `{{determiners}}`
+            // to nothing while the same table in a pipeline works.
+            return Replacements.exact(
+                to: text, rules: transform.rules, expand: config.expanded
+            ).text
         case .command(let command):
             // Nil is every way a program can fail, and in a pipeline it means
             // keep the text — a stage that fails must not cost you a sentence.
@@ -2792,6 +2823,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func dictationEnded(_ run: Int) {
         screenAtPress.removeValue(forKey: run)
         heardAtPress.removeValue(forKey: run)
+        InputBox.forget(run)
         pressesInFlight.remove(run)
         cancelledPresses.remove(run)
     }

@@ -526,6 +526,112 @@ cases:
       context.ok: false
       context.changed: false
 
+  # --- protected, which a table publishes on its own behalf ----------------
+  #
+  # `protected` is the text a pass actually put in, so a later stage can leave
+  # those characters alone. A `replace:` table has no code of its own, so
+  # `Replacements.exact` publishes for it. The value is the template expanded,
+  # which is the part that needed the change: the all-at-once regex call keeps
+  # the expansion to itself and hands back only the finished string.
+  - name: a replace transform publishes the expanded template, not the template
+    pipeline: vars-shipped
+    input: read user dot name
+    expect: read user.name
+    expect_vars:
+      dotted.count: 1
+      dotted.protected: user.name
+
+  # The same rule twice in one sentence. Both are protected, and the pass walks
+  # the matches back to front so the second one's offsets are still good when
+  # the first is written.
+  - name: a replace transform publishes both substitutions it wrote
+    pipeline: vars-shipped
+    input: read user dot name and config dot yaml
+    expect: read user.name and config.yaml
+    expect_vars:
+      dotted.count: 1
+      dotted.protected: "user.name; config.yaml"
+
+  # Nothing fired, so there is nothing to protect. Empty rather than absent, so
+  # a condition reading it does not fault.
+  - name: a replace transform that fired publishes nothing when it wrote nothing
+    pipeline: vars-shipped
+    input: a python function called max retries
+    expect: a python function called max_retries
+    expect_vars:
+      dotted.ran: false
+
+  # The `replacements` stage publishes it too, from the same pass. A literal
+  # rule protects the term it wrote, and a deletion protects nothing — there is
+  # no text to leave alone.
+  - name: the replacements stage publishes what its rules wrote
+    pipeline: replacements
+    input: our app is deployed on Versailles
+    expect: our app is deployed on Vercel
+    expect_vars:
+      replacements.protected: Vercel
+
+  - name: a deletion protects nothing
+    pipeline: replacements
+    input: our app is um deployed on Vercel
+    expect: Our app is deployed on Vercel
+    expect_vars:
+      replacements.count: 1
+      replacements.protected: ""
+
+  # A pattern can match a term that is already written the way the rule would
+  # write it. That match wrote nothing, so there is nothing to protect —
+  # publishing it would have `join` read the speaker's own word as a rule's
+  # work and leave it alone where it should be re-cased.
+  - name: a match that changed nothing protects nothing
+    pipeline: protected
+    input: we deployed on Vercel
+    expect: unchanged
+    expect_vars:
+      replacements.count: 0
+      replacements.changed: false
+      replacements.protected: ""
+
+  # The same rule, the spelling it exists for. This is the half that must keep
+  # working, and it is why the case above cannot be got by deleting the rule.
+  - name: and the same rule protects what it did write
+    pipeline: protected
+    input: we deployed on Versal
+    expect: we deployed on Vercel
+    expect_vars:
+      replacements.count: 1
+      replacements.protected: Vercel
+
+  # --- input, which from here can only decline -----------------------------
+  #
+  # See tests/pipelines/input.yaml. Same shape as the context cases above and
+  # for the same reason: the field is read when the hotkey goes down, and
+  # `--pipeline` has no hotkey.
+  - name: input declines with no press to publish, and says which
+    pipeline: input
+    app: Slack com.tinyspeck.slackmacgap
+    input: super base has twenty one users
+    expect: Supabase has 21 users
+    expect_vars:
+      input.ran: true
+      input.ok: false
+      input.chars: 0
+      input.total: 0
+      input.declined: nothing was captured when the hotkey went down
+
+  # Every surface, not terminals only. That is the difference from `context`,
+  # so a terminal gets its own case rather than being assumed.
+  - name: input declines in a terminal too, and leaves the stages around it alone
+    pipeline: input
+    app: Ghostty com.mitchellh.ghostty
+    input: super base has twenty one users
+    expect: Supabase has 21 users
+    expect_vars:
+      input.ok: false
+      input.changed: false
+      replacements.count: 1
+      numbers.ran: true
+
   # --- the name judge, on what a `replacements` rule did -----------------------
   #
   # `--pipeline` has no audio, so these are the path that used to have no earlier
@@ -670,6 +776,49 @@ cases:
       replacements.changes: Versal -> Vercel
       vocabulary.slots: 1
 
+  # --- named word lists ------------------------------------------------------
+  #
+  # `{{name}}` in a pattern is the list of that name, as an alternation. The
+  # same words were pasted into nine regexes before this and had already
+  # drifted apart.
+  - name: a list expands into a pattern, and the guard fires
+    pipeline: lists
+    input: the dot com bubble
+    expect: unchanged
+
+  - name: the same rule still fires where no determiner is in front
+    pipeline: lists
+    input: read user dot name
+    expect: read user.name
+
+  # Longest word first, or `colon` sitting earlier in the alternation eats
+  # `semi colon`. The fixture writes the two the wrong way round on purpose.
+  - name: a longer phrase wins over a shorter one inside it
+    pipeline: lists
+    input: he paused semi colon then went on
+    expect: he paused MARK then went on
+
+  # A second list in the same pattern, so a rule can guard on two.
+  - name: a lead word declines the whole path
+    pipeline: lists
+    input: it is in slash tmp
+    expect: unchanged
+
+  - name: and the same rule fires without one
+    pipeline: lists
+    input: folder slash file
+    expect: folder/file
+
+  # And the words reach a script as well as a pattern, under one namespace.
+  # One word, because `expect_vars` splits its own entries on `;` and a joined
+  # list is full of them.
+  - name: the lists are published into the scope
+    pipeline: lists
+    input: read user dot name
+    expect: read user.name
+    expect_vars:
+      lists.path_lead: in
+
 # Pipelines that must not load at all.
 #
 # Scored separately because the property is different: these never reach a
@@ -733,3 +882,23 @@ refused:
   - name: a cap on the retired menu is refused
     pipeline: vocabulary-max-readings
     expect_problem: max_readings is 16
+
+  # A pattern naming a list nothing defines. The name is left literal at
+  # runtime, so the rule matches nothing and looks exactly like a rule that is
+  # working. Emptying it instead would be worse: `(?:)` matches everywhere.
+  - name: a pattern naming a list nothing defines is refused
+    pipeline: unknown-list
+    expect_problem: names {{determinors}}, which nothing defines
+
+  # And a list that is defined with nothing in it. Same outcome, and the worse
+  # of the two if it expanded: `(?:)` matches everywhere, so the guard in front
+  # of it would stop the rewrite on every transcript.
+  - name: a pattern naming an empty list is refused
+    pipeline: empty-list
+    expect_problem: which is defined with no words in it
+
+  # The lists are published under `lists.*` before any stage runs, so a
+  # transform of that name would overwrite them.
+  - name: a transform named after the word lists is refused
+    pipeline: reserved-lists
+    expect_problem: a transform called "lists" would file its variables

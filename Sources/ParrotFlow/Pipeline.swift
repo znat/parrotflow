@@ -41,6 +41,10 @@ struct Pipeline: Equatable, Codable {
         /// What is on screen around the field, published as `context.*` and
         /// never written into the transcript. Terminals only — see `Context`.
         case context
+        /// What is already *in* the field, and where the caret is, published as
+        /// `input.*` and never written into the transcript. Works in every
+        /// surface, which is why it is not part of `context` — see `InputBox`.
+        case input
         /// Every substitution the vocabulary pass made, put to a model one
         /// at a time — see `VocabularyJudge`. The pipeline entry is
         /// `- vocabulary`, with no prompt file: the prompt is compiled in.
@@ -59,7 +63,7 @@ struct Pipeline: Equatable, Codable {
         /// that edits text moves them (F10). `replacements` is the exception it
         /// has to live with — the judge offers a rule's substitution back, so
         /// the rules must already have fired.
-        var editsText: Bool { self != .context && self != .vocabulary }
+        var editsText: Bool { self != .context && self != .input && self != .vocabulary }
 
         /// Whether it can be in a default nobody wrote.
         ///
@@ -72,7 +76,8 @@ struct Pipeline: Equatable, Codable {
         /// block would be a silent change to what the app looks at, which is the
         /// one kind of change that has to be asked for by name.
         var isAutomatic: Bool {
-            self != .transform && self != .context && self != .vocabulary
+            self != .transform && self != .context && self != .input
+                && self != .vocabulary
         }
     }
 
@@ -681,6 +686,12 @@ struct Pipeline: Equatable, Codable {
             scope.set("vocabulary.count", .int(0))
             scope.set("vocabulary.changes", .string(""))
         }
+        // The named lists, so a transform that is a program reads the same
+        // words a `replace:` pattern writes as `{{determiners}}`. Under one
+        // namespace, so a script asks `ctx["vars"]["lists"]["determiners"]`.
+        for (name, value) in config.listVariables {
+            scope.set("lists.\(name)", value)
+        }
 
         for step in steps {
             let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
@@ -820,7 +831,8 @@ struct Pipeline: Equatable, Codable {
             // person wrote; `vocabulary.yaml` holds the names the app learnt.
             // One pass, so a rule behaves the same whichever file it came from.
             let done = Replacements.exact(
-                to: text, rules: config.transcription.rules + config.vocabularyRules
+                to: text, rules: config.transcription.rules + config.vocabularyRules,
+                expand: config.expanded
             )
             // `changes` as well as `count`, so a later stage can judge what
             // this one did. A stage handed only the finished sentence cannot
@@ -844,6 +856,7 @@ struct Pipeline: Equatable, Codable {
                 "count": .int(done.count),
                 "changes": .string(done.changes),
                 "before": .string(text),
+                "protected": .string(done.protected),
             ])
         case .fuzzy:
             // From the rules, not from the table's keys. Fuzzy matching
@@ -861,6 +874,8 @@ struct Pipeline: Equatable, Codable {
             return StageResult(text: done.text, vars: ["language": .string(done.language)])
         case .context:
             return await readContext(on: text)
+        case .input:
+            return readInputBox(on: text, scope: scope)
         case .vocabulary:
             return await judgeVocabulary(step, on: text, config: config, scope: scope,
                                          findings: findings)
@@ -933,6 +948,63 @@ struct Pipeline: Equatable, Codable {
                 "lines": .int(capture.lines),
                 "truncated": .bool(capture.truncated),
             ])
+        }
+    }
+
+    /// The field's own contents and the caret, as variables. Never as text.
+    ///
+    /// Like `context` this returns its input untouched, and for the same
+    /// reason: a stage that could put the field into the transcript could paste
+    /// what you already typed back on top of itself.
+    ///
+    /// The box is not read here. It was read when the hotkey went down — see
+    /// `InputBox.capturePress` — because by then focus may have moved.
+    ///
+    /// The capture is fetched by press run, seeded as `press.run`. Dictations
+    /// overlap, and "the box you were typing in" is a question about one press.
+    /// No run in scope means no press at all, which is every entry point that
+    /// is not the hotkey — `--pipeline` above all.
+    ///
+    /// `before`, `selection`, `after` and `appending` are absent rather than
+    /// empty where the surface publishes no caret, which is every terminal.
+    /// Absent throws in a condition and that is the point: `when: input.appending`
+    /// should fail loudly on a surface that cannot answer it, not read as "no".
+    private func readInputBox(on text: String, scope: Scope) -> StageResult {
+        let capture: Result<InputBox.Capture, InputBox.Declined> = {
+            guard case .int(let run)? = scope["press.run"],
+                  let press = InputBox.capture(for: run) else { return .failure(.noPress) }
+            return press.outcome
+        }()
+        switch capture {
+        case .failure(let why):
+            Log.write("pipeline: input declined — \(why.rawValue)")
+            // The same keys a successful read publishes, emptied, plus the
+            // reason. A condition is written once and has to hold on the runs
+            // where nothing could be read.
+            return StageResult(text: text, vars: [
+                "ok": .bool(false),
+                "declined": .string(why.rawValue),
+                "text": .string(""),
+                "chars": .int(0),
+                "total": .int(0),
+                "truncated": .bool(false),
+            ])
+        case .success(let capture):
+            let placement = capture.before == nil ? "caret unknown"
+                : (capture.appending == true ? "appending" : "inserting")
+            Log.write("pipeline: input read \(capture.chars) of \(capture.total) chars, "
+                + placement + (capture.truncated ? ", truncated" : ""))
+            var vars: [String: Scope.Value] = [
+                "chars": .int(capture.chars),
+                "total": .int(capture.total),
+                "truncated": .bool(capture.truncated),
+            ]
+            if let before = capture.before { vars["before"] = .string(before) }
+            if let selection = capture.selection { vars["selection"] = .string(selection) }
+            if let after = capture.after { vars["after"] = .string(after) }
+            if let whole = capture.text { vars["text"] = .string(whole) }
+            if let appending = capture.appending { vars["appending"] = .bool(appending) }
+            return StageResult(text: text, vars: vars)
         }
     }
 
@@ -1150,16 +1222,24 @@ struct Pipeline: Equatable, Codable {
         case .prompt:
             return await runPrompt(step, named: name, on: text, config: config, scope: scope)
         case .replace:
-            // Exact and free, so there is nothing to guard and nothing to
-            // report beyond what the table did — the log line is the same one
-            // `replacements` writes, with the name that asked for it.
-            let done = Replacements.exact(to: text, rules: transform.rules)
+            // Exact and free, so there is nothing to guard — the log line is
+            // the same one `replacements` writes, with the name that asked for
+            // it. `protected` is the exception to "nothing to report": a table
+            // has no code of its own to publish from, and what it wrote is
+            // exactly what a later stage must not undo. `dotted` writes the dot
+            // in `user.name` and `join` would otherwise read it as one the
+            // decoder invented.
+            let done = Replacements.exact(to: text, rules: transform.rules,
+                                          expand: config.expanded)
             if done.text != text {
                 Log.write("pipeline: transform \(name) rewrote the transcript")
                 Log.write("    before: \(text)")
                 Log.write("    after:  \(done.text)")
             }
-            return StageResult(text: done.text, vars: ["count": .int(done.count)])
+            return StageResult(text: done.text, vars: [
+                "count": .int(done.count),
+                "protected": .string(done.protected),
+            ])
         case .command(let command):
             // Someone else's program, so this is the second stage that can
             // fail and the second that must not fail loudly. `run` returns nil

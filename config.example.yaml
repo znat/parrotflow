@@ -139,6 +139,44 @@ llm:
 updates:
   after_days: 0
 
+# Word lists, written once and named. A `replace:` pattern refers to one as
+# `{{determiners}}` and a transform that is a program reads the same words from
+# `ctx["vars"]["lists"]`, so there is one definition rather than a copy in every
+# regex — there were nine, and they had already drifted apart.
+#
+# Not split by language. `dotted` has always merged English and French into one
+# alternation and it measures clean, because the words do not collide. Adding a
+# language is adding words here, not adding a file.
+#
+# Every entry is quoted. `on`, `no` and `off` are booleans in YAML 1.1, which is
+# what the check scripts parse with, and an unquoted `on` reaches them as the
+# word `true`.
+lists:
+  # What may sit in front of a spoken name. A determiner there means the words
+  # are prose: "the dot com bubble", "le point sur les tests".
+  determiners: ["le", "la", "les", "l", "un", "une", "des", "du", "de", "d", "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "notre", "nos", "votre", "vos", "leur", "leurs", "au", "aux", "à", "quel", "quelle", "chaque", "autre", "même", "premier", "première", "deuxième", "dernier", "dernière", "seul", "seule", "bon", "bonne", "mauvais", "certain", "tel", "telle", "quelque", "the", "a", "an"]
+
+  # Words that mean the speaker is joining ideas, not names. Only `dash` needs
+  # these, being an ordinary word in a way `hyphen` is not.
+  connectors: ["this", "that", "about", "and", "or", "it"]
+
+  # What may sit in front of a slash that starts a path rather than joining two
+  # words: "available in slash tmp slash x".
+  path_lead: ["in", "to", "at", "from", "on", "of", "into", "onto", "under", "sure", "is", "was", "be"]
+
+  # What may follow "point"/"dot" in prose. Mostly French, because "point" is an
+  # everyday French word and English "dot" is not: "point de vue", "point
+  # commun", "point final". The last few are the English set phrases.
+  prose_after_point: ["de", "du", "des", "d", "le", "la", "les", "l", "un", "une", "sur", "dans", "en", "et", "ou", "que", "qui", "où", "à", "au", "aux", "pour", "par", "avec", "sans", "est", "sont", "était", "sera", "me", "te", "se", "ne", "n", "c", "il", "elle", "je", "tu", "nous", "vous", "ils", "elles", "ce", "plus", "moins", "très", "mais", "donc", "car", "si", "comme", "final", "finale", "barre", "virgule", "commun", "commune", "faible", "faibles", "fort", "forts", "mort", "culminant", "névralgique", "chaud", "sensible", "positif", "négatif", "clé", "focal", "nommé", "com", "net", "org", "matrix", "product", "notation", "plot"]
+
+  # Ordinary English function words. A real hyphen-join has a name part on its
+  # right, never a preposition — this is what leaves "a mad dash to the door".
+  function_words: ["to", "the", "a", "an", "of", "for", "in", "on", "at", "from", "with", "is", "was", "are", "were", "and", "or", "it", "its", "this", "that"]
+
+  # The names of the marks themselves. Saying them is talking about them, which
+  # is why "add slash semicolon ellipsis" comes back as words.
+  mark_names: ["semicolon", "semi", "ellipsis", "comma", "colon", "dot", "dash", "hyphen", "underscore", "period", "quote", "unquote", "bracket", "brackets", "paren", "parens", "parenthesis", "point", "virgule"]
+
 # What the activation phrase can reach, and what a pipeline can name.
 #
 #   name          the id a pipeline or `when:` names
@@ -193,15 +231,34 @@ transforms:
   # use there, or "voilà le point sur les tests" becomes "voilà le.sur les
   # tests". First list: what may not precede. Second: what may not follow.
   #
-  # Hyphen and underscore reuse both lists — same risk shape. `dash` is left
-  # out: an ordinary word ("a mad dash to the door") with no guard measured
-  # against it, unlike `dot`/`point`.
+  # Hyphen and underscore reuse both lists — same risk shape.
+  #
+  # `dash` was left out until it was measured. Over 3,759 archived clips
+  # "hyphen" was said 0 times and "dash" 8, 6 of them joining a real name. It is
+  # also an ordinary word, so it carries a longer before-list and an English
+  # after-list of its own: a real join has a name part on its right, never a
+  # preposition, and that is what leaves "a mad dash to the door" alone.
+  #
+  # A single letter either side — "A dot B", "a underscore b" — is never prose.
+  # The article guard was throwing it away.
   - name: dotted
-    description: spoken dot, hyphen and underscore paths as code
+    description: spoken dot, hyphen, dash, slash and underscore paths as code
     replace:
-      '$1.': ['/\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\b)(\w+) (?:dot|point) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\b)(?=\w)/']
-      '$1-': ['/\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\b)(\w+) (?:hyphen|tiret(?! bas)) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\b)(?=\w)/']
-      '$1_': ['/\b(?!(?:le|la|les|l|un|une|des|du|de|d|ce|cet|cette|ces|mon|ma|mes|ton|ta|tes|son|sa|ses|notre|nos|votre|vos|leur|leurs|au|aux|à|quel|quelle|chaque|autre|même|premier|première|deuxième|dernier|dernière|seul|seule|bon|bonne|mauvais|certain|tel|telle|quelque|the|a|an)\b)(\w+) (?:underscore|souligné|tiret bas) (?!(?:de|du|des|d|le|la|les|l|un|une|sur|dans|en|et|ou|que|qui|où|à|au|aux|pour|par|avec|sans|est|sont|était|sera|me|te|se|ne|n|c|il|elle|je|tu|nous|vous|ils|elles|ce|plus|moins|très|mais|donc|car|si|comme|final|finale|barre|virgule|commun|commune|faible|faibles|fort|forts|mort|culminant|névralgique|chaud|sensible|positif|négatif|clé|focal|nommé|com|net|org|matrix|product|notation|plot)\b)(?=\w)/']
+      '$1.': ['/\b(?!(?:{{determiners}})\b)(\w+) (?:dot|point) (?!(?:{{prose_after_point}})\b)(?=\w)/',
+              '/\b([A-Za-z]) (?:dot|point) (?=[A-Za-z]\b)/']
+      '$1-': ['/\b(?!(?:{{determiners}})\b)(\w+) (?:hyphen|tiret(?! bas)) (?!(?:{{prose_after_point}})\b)(?=\w)/',
+              '/\b(?!(?:{{determiners}}|{{connectors}})\b)(\w+) (?:dash) (?!(?:{{prose_after_point}}|{{function_words}})\b)(?=\w)/',
+              '/\b([A-Za-z]) (?:hyphen|tiret(?! bas)|dash) (?=[A-Za-z]\b)/']
+      # A path, or the and/or sense ("a technical slash product decision").
+      # `(?<!slash )` is what keeps a leading-slash path from half-converting:
+      # "in slash tmp slash x" declines whole rather than becoming
+      # "in slash tmp/x". A `replace:` table is a Swift dictionary, so its rules
+      # run in an arbitrary order and no two-step rewrite can be relied on.
+      # The mark names in the after-list are why "add slash semicolon ellipsis"
+      # is left as words.
+      '$1/': ['/\b(?!(?:{{determiners}}|{{path_lead}})\b)(?<!slash )(?<!barre oblique )(\w+) (?:slash|barre oblique) (?!(?:{{mark_names}})\b)(?=\w)/']
+      '$1_': ['/\b(?!(?:{{determiners}})\b)(\w+) (?:underscore|souligné|tiret bas) (?!(?:{{prose_after_point}})\b)(?=\w)/',
+              '/\b([A-Za-z]) (?:underscore|souligné|tiret bas) (?=[A-Za-z]\b)/']
 
   - name: backticks
     description: wrap dotted paths in backticks, for chat

@@ -323,6 +323,37 @@ real app in front, so it runs in CI. It does not check what an app actually does
 — that Codex refuses `AXManualAccessibility`, that a ⌘V lands — only that the
 classification is what the case file says.
 
+## What kind of word each word is
+
+```sh
+$PF --tag "he asked" --lang en
+$PF --tag "Sarah a reporté la réunion" --lang fr
+```
+
+Prints the tokens a `returns: json` transform is handed as `tokens`: the offset,
+the length, the word, its tag and its lemma. The tags come from macOS
+`NLTagger` under `.nameTypeOrLexicalClass`, so `Sarah` is a `PersonalName` and
+`Postponed` is a `Verb`. That is the one question a stage cannot answer from a
+string — whether a capital is the decoder starting a clip or the speaker naming
+somebody.
+
+`--lang` matters. `NLTagger` will not guess a language from four words and
+returns `Other` for everything without one. In a pipeline the language comes
+from the scope; here it falls back to the first configured language.
+
+## Where the input stage cuts a field
+
+```sh
+$PF --input-test "the quick brown fox" 4 5 [limit]
+```
+
+Takes a field, a caret, how much is selected and a budget. Prints the three
+blocks the `input` stage would publish, delimited with `⟪⟫` so their own spaces
+are visible. `scripts/check-input.sh` scores it against
+`tests/input-cases.txt`. The capture itself needs a real focused field and the
+accessibility grant, so it is not faked here — see
+[pipelines.md](pipelines.md#input-what-is-already-in-the-field).
+
 ## Text insertion, which is the risky path
 
 ```sh
@@ -413,6 +444,8 @@ scripts/check-default-config.sh    scripts/check-transform-folders.sh
 scripts/check-eval.sh              # every case set, scored
 scripts/check-compose.sh           # what a prompt says once the scope is in it
 scripts/check-context.sh           # what the context stage publishes for a screen
+scripts/check-input.sh             # where the input stage cuts a field, and the caret
+scripts/check-join.sh              # fitting a clip to the text either side of the caret
 scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
 scripts/check-vocabulary-config.sh # what vocabulary.yaml adds up to, old keys included
 scripts/check-possessive.sh        # whether a possessive survives a substitution
@@ -534,6 +567,30 @@ jq -r '.stages[]? | select(.skip_reason) | .skip_reason' trace.jsonl |
 # Every rule you have ever taught, and from where.
 jq -r 'select(.kind == "correction") | [.via, .heard, .corrected] | @tsv' trace.jsonl
 ```
+
+### Watching it live
+
+```sh
+scripts/watch.py                       # follow live dictations
+scripts/watch.py --last 10             # the last 10, then follow
+scripts/watch.py --stage repetitions   # only where that stage changed something
+scripts/watch.py --all                 # include cli sweeps and evals
+```
+
+Tails `trace.jsonl` and prints one block per dictation: the decoder's text, then
+each stage as a **word-level diff** with what it cost and what it published. It
+calls no model and reads no log — the trace record turns up complete, and a
+dictation is one to three seconds end to end, so there is no middle to
+reassemble.
+
+Two things it does that are not obvious. It filters on `source: live`, because
+the Dev trace holds roughly three `cli` records for every one you spoke and a
+check script running in another terminal otherwise floods the output. And it
+parses only lines that arrived with a newline: records reach 17.8 KB, which is
+past the size where a single append is reliably atomic, so a read can land
+mid-record.
+
+`--archive <dir>` points it at another variant's directory.
 
 `--transcribe` writes a trace line too, which is what makes it worth having:
 change a table, re-run the clips, and both sets of numbers sit in one file

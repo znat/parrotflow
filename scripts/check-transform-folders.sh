@@ -119,6 +119,73 @@ check "and that is a fault, so --check-config exits 1" \
   "$(PARROTFLOW_CONFIG_DIR="$WORK/outside" "$BIN" --check-config > /dev/null 2>&1; echo $?)" \
   "1"
 
+# --- a transform named after something the runner already publishes ---------
+#
+# Asked where the name is declared, not where a pipeline step spells it.
+# `transform(named:)` resolves case-insensitively, so a step written `Lists`
+# reaches a transform declared `lists` and files under `lists.*` regardless of
+# how the step was spelled.
+RESERVED="$WORK/reserved"
+mkdir -p "$RESERVED"
+cat > "$RESERVED/config.yaml" <<'YAML'
+lists:
+  determiners: ["the", "a", "an"]
+transforms:
+  - name: lists
+    description: collides with the named word lists
+    replace:
+      hush: [shout]
+transcription:
+  pipelines:
+    default:
+      - transform: Lists
+YAML
+reserved="$(PARROTFLOW_CONFIG_DIR="$RESERVED" "$BIN" --check-config 2>/dev/null)"
+
+check "a transform declared with a reserved name is dropped, and said so" \
+  "$(printf '%s\n' "$reserved" | grep -c 'transforms: "lists" would file its variables')" \
+  "1"
+
+check "and that is a fault, whatever spelling the pipeline step used" \
+  "$(PARROTFLOW_CONFIG_DIR="$RESERVED" "$BIN" --check-config > /dev/null 2>&1; echo $?)" \
+  "1"
+
+# Dropped, so the step naming it names nothing — which is the second half of
+# the same message. Reported and kept, it would have run.
+check "so the pipeline step that named it reaches nothing" \
+  "$(printf '%s\n' "$reserved" | grep -c 'no transform named "Lists"')" \
+  "1"
+
+# And the same the other way round. `transform(named:)` resolves
+# case-insensitively and `Pipeline.namespace` files a stage under the spelling
+# the *step* wrote, so a transform declared `Lists` reached by a step spelled
+# `lists` lands in `lists.*` all the same. Either casing is a way into the same
+# namespace, so neither may be declared.
+CASED="$WORK/cased"
+mkdir -p "$CASED"
+cat > "$CASED/config.yaml" <<'YAML'
+lists:
+  determiners: ["the", "a", "an"]
+transforms:
+  - name: Lists
+    description: the same collision, spelled differently
+    replace:
+      hush: [shout]
+transcription:
+  pipelines:
+    default:
+      - transform: lists
+YAML
+cased="$(PARROTFLOW_CONFIG_DIR="$CASED" "$BIN" --check-config 2>/dev/null)"
+
+check "a reserved name is taken whatever its casing" \
+  "$(printf '%s\n' "$cased" | grep -c 'transforms: "Lists" would file its variables where lists')" \
+  "1"
+
+check "and the step spelled the other way reaches nothing" \
+  "$(printf '%s\n' "$cased" | grep -c 'no transform named "lists"')" \
+  "1"
+
 # --- prompt: { path: }, through a whole config ------------------------------
 #
 # A prompt body cannot be scored without a model, so what is checked here is

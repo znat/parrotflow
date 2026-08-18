@@ -42,6 +42,9 @@ if not any(t["name"] == "dotted" for t in transforms):
 def fixture(steps):
     return yaml.safe_dump({
         "languages": doc["transcription"]["languages"],
+        # The patterns say `{{determiners}}`; without the lists they compile to
+        # nothing and every guard silently stops guarding.
+        "lists": doc.get("lists") or {},
         "transforms": transforms,
         "pipeline": [{"transform": name} for name in steps],
     }, allow_unicode=True, sort_keys=False)

@@ -27,6 +27,7 @@ get every stage back — a missing section is silence, not a choice. Write
 | `fuzzy` | The same table against renderings you have not taught, so "super bays" reaches Supabase. Only words the spell checker does not know are eligible, which is what keeps "Excel" from becoming "Vercel". Needs `replacements` before it and says so if it does not have one, because on its own it swallows the preceding word. |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
+| `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
 | `vocabulary` | Every substitution the vocabulary pass made, put to the local model one at a time — see [The name judge](#the-name-judge). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
@@ -462,16 +463,32 @@ at least one side is nearly always a determiner, a preposition, or the head of a
 set phrase — `le point de vue`, `un bon point pour`, `a dot product`.
 
 ```
-\b(?!(?:le|la|les|…|the|a|an)\b)(\w+) (?:dot|point) (?!(?:de|du|…|product)\b)(?=\w)
+\b(?!(?:{{determiners}})\b)(\w+) (?:dot|point) (?!(?:{{prose_after_point}})\b)(?=\w)
 ```
 
 The second word is matched but not consumed, which is what lets a chain work:
 `user point profile point name` → `user.profile.name`. Consuming it would leave
 the middle token unavailable to the next match.
 
-**54/54 on `examples/transforms/dotted/cases.txt`, plus two it cannot do.** Two ordinary words
+The two lists are named rather than written out. They are in `lists:` in
+config.yaml, one definition read by every rule that needs them — see
+[configuration.md](configuration.md#lists). `dash`, `slash`, `hyphen` and
+`underscore` are the same rule with the same lists, plus one of their own where
+the trigger is also an ordinary word: `dash` needs an after-list of English
+function words, because a real join has a name part on its right and "a mad
+dash to the door" does not.
+
+A single letter either side is its own rule — "A dot B", "a underscore b". The
+before-list would otherwise throw it away, and one letter is never prose.
+
+A leading-slash path declines whole rather than half-converting: "in slash tmp
+slash x" stays words. `(?<!slash )` is what does it. Half a path is worse than
+none, and half is what a two-step rewrite would give — a `replace:` table is
+built from a Swift dictionary, so its rules run in an unspecified order.
+
+**73/73 on `examples/transforms/dotted/cases.txt`, plus three it cannot do.** Two ordinary words
 either side — "réunion point hebdomadaire" — is a shape only a dictionary would
-tell from code, and both residual cases are kept in the set, failing, rather
+tell from code, and every residual case is kept in the set, failing, rather
 than dropped to make the number look better. They are unlikely in a terminal or
 a chat window, which together with the `app:` scoping is the only reason this is
 on by default; in `replacements:` it would run everywhere and would not be
@@ -505,6 +522,89 @@ puts noise in your messages and gives you nowhere to look.
 Add the step if your chat app renders pasted markup. Getting this to work
 properly means putting rich text on the clipboard rather than markdown
 characters, which is a different feature.
+
+### `join`, which fits a clip to the box it lands in
+
+`examples/transforms/join/join.py` reads `input.*` and decides two things: what
+goes at the leading edge of the clip, and whether the trailing full stop
+survives.
+
+```yaml
+transforms:
+  - name: join
+    description: space and case the transcript to fit where the caret is
+    command: join.py
+    returns: json
+
+pipelines:
+  default:
+    - input
+    - transform: code_identifiers
+    - stage: transform
+      transform: join
+      when: input.ok
+```
+
+**The problem it solves.** The decoder writes every clip as a standalone
+sentence — leading capital, trailing stop — because it never saw what surrounds
+it. That is right when you are appending to a paragraph and wrong every other
+time: dictating into the middle of a sentence gets you a capital and a stop you
+did not want.
+
+**The leading edge is a first-match-wins table.** Five rules over what precedes
+the caret, in precedence order:
+
+| rule | when | |
+|---|---|---|
+| `line start` | a newline behind, or one in front | no space, capital |
+| `compound` | after a hyphen or a slash | no space, lower case |
+| `glued` | after a bracket or a quote | no space, lower case |
+| `new sentence` | after `.`, `!`, `?` or `…` | space, capital |
+| `mid sentence` | anything else | space, lower case |
+
+Each rule reports its own name in `join.applied`, so the trace says which branch
+decided a sentence. That is the whole reason they are named: as an `if`/`elif`
+chain the only way to find out which branch fired was to read the file and
+guess, which produced three wrong diagnoses in one evening.
+
+**Only the tagger lowers a capital.** The envelope's `tokens` say what the first
+word is. `Verb`, `Determiner`, `Adjective` and the rest of the closed classes
+are lowered; `PersonalName` and `Noun` are not. `Noun` is deliberately on the
+safe side — `User`, `Release` and `Tasmeen` all tag `Noun`, and so does any name
+the tagger does not recognise. With no tag at all nothing is lowered: a stray
+capital is a character you can see and delete, a lowercased name reads as
+correct.
+
+**It also removes a stop the decoder wrote at a hesitation.** "I think you
+should. try this" is the decoder hearing a pause. The signal is the lower-case
+word after the stop, because the decoder capitalises after a boundary it means.
+Measured over 369 mid-clip stops in one archive, 16 had a lower-case word after
+them and nearly all were wrong. Over 3,785 archived clips the rule fired 10
+times and every one was right.
+
+**The glued version of that rule was deleted.** `should.try`, with no space, is
+indistinguishable from `join.py`, `package.json` and `Method.variable`. Over the
+same 3,785 clips it fired 24 times: 19 on real dotted names and at most 2
+usefully. A word list of extensions held some and could never hold the rest —
+`work`, `example` and `variable` are ordinary words that happen to sit right of
+a dot. Deleted rather than tuned.
+
+**It respects `protected`.** A dot an earlier stage wrote is not a guess, and an
+identifier an earlier stage cased keeps that case. Without this, `max_retries`
+at a line start became `Max_retries`. See
+[`protected`](#protected-what-a-later-stage-must-not-undo).
+
+**In a terminal it still runs, and does less.** No caret is readable there, so
+no question about the edges has an answer and every leading-edge rule stands
+down. The stops inside the sentence are a different question and need no caret,
+so that half still fires.
+
+`scripts/check-join.sh` scores it — 44/44 — against
+`examples/transforms/join/cases.yaml`. It runs the deployed script on the
+envelope it really receives, because `--eval` feeds a transcript and nothing
+else. The tags come from `--tag` rather than from the case file, so what is
+scored is the tagger the app ships. A case may name the `rule:` it expects, and
+a right answer reached by the wrong rule counts as a miss.
 
 ### Writing to people: `email` and `slack`
 
@@ -781,10 +881,58 @@ the `replacements` ones: `changes` says which rules fired and `before` says
 publishes whatever it likes; see
 [docs/authoring.md](authoring.md#recipe-a-program-that-reports-what-it-did).
 
+### `protected`: what a later stage must not undo
+
+`protected` is one variable with a meaning agreed across stages: **the exact
+characters this stage wrote on purpose.** A later stage reads it and leaves
+those characters alone.
+
+It is one string, terms joined on `; `, because a scope value is a scalar. A
+condition reads it as `code_identifiers.protected.contains("max_retries")`.
+
+Two stages publish it today.
+
+- `code_identifiers` publishes the identifiers it wrote — `max_retries`,
+  `UserProfile`.
+- A `replace:` table publishes what its rules put in, as does the `replacements`
+  stage. A table has no code of its own, so `Replacements.exact` publishes on
+  its behalf. The value is the **template expanded**: `dotted` writes `$1.` and
+  publishes `user.`, not `$1.`.
+
+`join` is the consumer. It re-cases the first word of a clip and it removes a
+full stop the decoder wrote at a hesitation. Neither is right on something a
+stage wrote deliberately, and no amount of part-of-speech tagging fixes that:
+`max_retries` is a name because a stage made it one, which is a fact about the
+pipeline and not about the language.
+
+Any stage that writes a term it does not want undone publishes the same key.
+Nothing in `join` knows about `code_identifiers` in particular — `ctx.vars`
+already nests by stage name, so the stage that wrote a term names itself by
+where the value lands.
+
+**Values, not offsets.** A range published by an earlier stage is stale by the
+time a later one reads it: the stages in between rewrite the text and none of
+them can adjust somebody else's ranges. That is the same fact the envelope
+states as `aligned`. The cost is that two identical strings in one clip cannot
+be told apart, so a term a rule wrote protects an untouched twin as well. That
+errs the safe way — over-protecting leaves a capital you can see and delete,
+under-protecting turns `max_retries` into `Max_retries`.
+
+**Only what a pass actually wrote.** A pattern can match a term already written
+the way the rule would write it. That match changed nothing, so it publishes
+nothing — otherwise the speaker's own punctuation would be read as a rule's
+work. `tests/pipelines/protected.yaml` holds both halves down.
+
 Before any stage runs, the scope already holds `text`, `app`, `bundle_id`,
-`language`, and what transcription measured — `asr.confidence`, `asr.duration`,
-`asr.processing`, `asr.words`. So a stage can stand down on a recording the
-recogniser was not sure about:
+`language`, every named word list under `lists.*` — see
+[configuration.md](configuration.md#lists) — and what transcription measured:
+`asr.confidence`, `asr.duration`, `asr.processing`, `asr.words`. On a dictation
+it also holds `press.run`, which says which hotkey press this transcript came
+from. Dictations overlap, so a stage that reads something captured at the press
+has to ask for its own — `input` does. It is absent off the hotkey path,
+`--pipeline` included.
+
+So a stage can stand down on a recording the recogniser was not sure about:
 
 ```yaml
     - stage: transform
@@ -976,6 +1124,110 @@ open -na ParrotFlowDev --args --peek 6
 ```
 
 It prints what the stage would publish, in full, under `as context:`.
+
+## Input: what is already in the field
+
+`context` reads the screen *around* the box. `input` reads the box itself —
+what you have already typed, and where the caret sits in it.
+
+```yaml
+pipelines:
+  default:
+    - input
+    - stage: transform
+      transform: join
+      when: input.ok && !input.appending
+```
+
+| variable | |
+|---|---|
+| `input.before` | what precedes the caret, or the start of the selection |
+| `input.selection` | what is selected, empty for a plain caret |
+| `input.after` | what follows the caret, or the end of the selection |
+| `input.appending` | nothing after the caret and nothing selected |
+| `input.text` | the whole box, on a surface whose caret could not be located |
+| `input.total` | the size of the whole field, before the budget cut anything |
+| `input.chars`, `input.truncated` | how much came through, and whether it was cut |
+| `input.ok`, `input.declined` | whether anything was read, and why not when nothing was |
+
+**Three blocks, not a string and an offset.** An offset has to be applied by
+whoever reads it, and applying it wrong is silent: a caret off by the size of
+the cut still points at a real character and the text still reads fine. Two
+strings cannot be misapplied. `selection` is the third because dictating over a
+selection replaces it, and what is about to be replaced is worth seeing.
+
+**It never changes the transcript**, the same way `context` does not. A stage
+that could put the field into the transcript could paste what you already typed
+back on top of itself.
+
+**Why it is a separate stage.** Two reasons. `context` is terminals-only
+because reading the surrounding screen anywhere else means walking a window's
+children; the box *is* the focused element, so it is one call in a native field,
+a browser and an Electron composer alike. And naming `context` says "read my
+terminal". It must not also come to mean "read what I have typed in every app I
+dictate into". You turn each on by name.
+
+**Appending or inserting.** This is what the stage is for. A transcript joining
+the end of a paragraph wants a capital and a full stop. One dropped into the
+middle of a sentence wants neither, and nothing else in the pipeline can tell
+the two apart.
+
+**On a terminal you get `input.text` instead**, and `before`, `selection`,
+`after` and `appending` are absent. A terminal publishes the whole screen as its
+accessibility value, so the box is dug out from between the rules the TUI draws,
+and the offset does not survive that extraction. Ghostty is the measured case:
+it returns `AXError -25213` for the caret and advertises no selected range. Which
+keys you got says what the surface could answer.
+
+Absent throws in a condition, which is the point. `when: input.appending`
+should fail loudly where it cannot be answered rather than read as "no". Guard
+with `input.ok` first.
+
+**Each side gets half the budget** and keeps the end nearest the caret, where
+`context` keeps one tail over the whole screen. A single window centred on the
+caret would let a long tail crowd out the text immediately before it, which is
+the half a dictated sentence is being joined to. The budget is the same 2000
+characters `context` uses, so a plain caret discloses at most 2000. A selection
+is capped on its own at 2000 on top of that, because it is a third block and
+not part of either side.
+
+**Read at the press**, like `context`, and for the same reason: by the time the
+pipeline runs, focus may be elsewhere.
+
+**One capture per press.** The stage asks for the capture belonging to
+`press.run`, not for the newest one. Starting a second dictation while the
+first is still being transcribed is ordinary, and with one shared slot the
+first would read the second's field.
+
+**While the stage is on, the log holds what was in the field when you
+dictated** — the character counts and where the caret was, not the text itself.
+
+### Seeing what it captures
+
+`--pipeline` cannot, for the reason `context` cannot. TCC pins the
+accessibility grant to the app bundle, so a binary run from a terminal gets
+nothing and the stage declines every time.
+
+`--peek` can, because it runs inside the bundle:
+
+```sh
+open -na ParrotFlowDev --args --peek 6
+# click the field you want, then read the log
+```
+
+It prints what the stage would publish under `as input:`, with the caret marked
+`‸` and a selection in `[]`.
+
+What *is* exact is where the window lands and where the caret ends up in it,
+and getting that wrong is silent. So it is scored separately:
+
+```sh
+ParrotFlow --input-test "the quick brown fox" 4 5
+scripts/check-input.sh
+```
+
+`--input-test` takes a field, a caret, how much is selected and a budget. It
+prints the three blocks delimited with `⟪⟫`, so their own spaces are visible.
 
 ## Apps
 
