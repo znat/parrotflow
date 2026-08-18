@@ -211,6 +211,30 @@ learn Pressy Praisy person
 wants "a shorthand list still takes the rendering" "$(vocab)" "Pressy"
 rejects "and is not rewritten for a kind"          "$(vocab)" "kind:"
 
+# --- a term whose own name carries a colon ----------------------------------
+# Greptile found this one. A term with a colon in it is written as a quoted
+# key, so the first colon on the line is inside the quotes. The writer split
+# there, looked for a term called `"ACME`, and found none: the kind was
+# dropped on the way in, and the next rendering appended the term again
+# instead of joining the one already there.
+printf 'terms: {}\n' > "$WORK/vocabulary.yaml"
+learn "acme cloud" "ACME: Cloud" organization
+wants "a term with a colon is quoted"      "$(vocab)" '"ACME: Cloud":'
+wants "and it takes its kind"              "$(vocab)" "kind: organization"
+learn "acmi cloud" "ACME: Cloud"
+wants "a second rendering is added"        "$(vocab)" "heard: acmi cloud"
+n="$(grep -c 'ACME: Cloud' "$WORK/vocabulary.yaml")"
+total=$((total + 1))
+if [ "$n" = "1" ]; then
+  pass=$((pass + 1)); printf '  ✓ the term is written once, not twice\n'
+else
+  failed="$failed
+      the term is written once, not twice"
+  printf '  ✗ the term is written once, not twice\n      got %s\n' "$n"
+fi
+got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1)"
+wants "and the file reads back as one term" "$got" "1 terms in vocabulary.yaml"
+
 # --- the result always parses -----------------------------------------------
 got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1)"
 rejects "the last file written still parses" "$got" "could not be read"

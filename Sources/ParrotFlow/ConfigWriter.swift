@@ -42,7 +42,7 @@ enum ConfigWriter {
         else { return yaml }
 
         let head = lines[start]
-        guard let colon = head.firstIndex(of: ":") else { return yaml }
+        guard let colon = keyColon(in: head) else { return yaml }
         let value = String(head[head.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
         guard !value.hasPrefix("["), !value.hasPrefix("{") else { return yaml }
 
@@ -74,7 +74,7 @@ enum ConfigWriter {
             if trimmed.isEmpty { cursor += 1; continue }
             guard line.hasPrefix(" ") else { return nil }
             if indentation(of: line).count == 2, !trimmed.hasPrefix("#"),
-               let colon = trimmed.firstIndex(of: ":"),
+               let colon = keyColon(in: trimmed),
                unquoted(String(trimmed[trimmed.startIndex..<colon]))
                    .caseInsensitiveCompare(term) == .orderedSame {
                 return cursor
@@ -118,7 +118,7 @@ enum ConfigWriter {
             if trimmed.isEmpty { cursor += 1; continue }
             guard line.hasPrefix(" ") else { break }
             if indentation(of: line).count == 2, !trimmed.hasPrefix("#"),
-               let colon = trimmed.firstIndex(of: ":"),
+               let colon = keyColon(in: trimmed),
                unquoted(String(trimmed[trimmed.startIndex..<colon]))
                    .caseInsensitiveCompare(term) == .orderedSame {
                 start = cursor
@@ -135,7 +135,7 @@ enum ConfigWriter {
         }
 
         let head = lines[start]
-        guard let colon = head.firstIndex(of: ":") else { return yaml }
+        guard let colon = keyColon(in: head) else { return yaml }
         let value = String(head[head.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
 
         // Shorthand list: `Term: [a, b]`, possibly wrapped over two lines.
@@ -289,7 +289,7 @@ enum ConfigWriter {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty || trimmed.hasPrefix("#") { index += 1; continue }
             if indentation(of: line).count <= termIndent { break }
-            if let colon = trimmed.firstIndex(of: ":"),
+            if let colon = keyColon(in: trimmed),
                unquoted(String(trimmed[trimmed.startIndex..<colon]))
                    .caseInsensitiveCompare(term) == .orderedSame {
                 at = index
@@ -302,7 +302,7 @@ enum ConfigWriter {
         var removed = 0
         // `Praisy: [Prissy, Pressy]` — the whole value is the list.
         let head = lines[start]
-        if let colon = head.firstIndex(of: ":"),
+        if let colon = keyColon(in: head),
            head[head.index(after: colon)...].trimmingCharacters(in: .whitespaces).hasPrefix("[") {
             let end = closingFlow(in: lines, from: start, deeperThan: termIndent)
             removed = count(inFlow: lines[start...end].joined(separator: " "))
@@ -452,6 +452,35 @@ enum ConfigWriter {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         return "\"\(escaped)\""
+    }
+
+    /// The colon that ends a YAML key, skipping any inside a quoted one.
+    ///
+    /// `quoted` wraps a term that carries a colon, so `"ACME: Cloud":` has two
+    /// of them and only the last one separates key from value. Splitting on
+    /// the first looked for a term called `"ACME`. It found none, so `kind:`
+    /// was dropped and the next rendering wrote the term a second time.
+    private static func keyColon(in line: String) -> String.Index? {
+        var inDouble = false
+        var inSingle = false
+        var escaped = false
+        var index = line.startIndex
+        while index < line.endIndex {
+            let character = line[index]
+            if escaped {
+                escaped = false
+            } else if inDouble, character == "\\" {
+                escaped = true
+            } else if character == "\"", !inSingle {
+                inDouble.toggle()
+            } else if character == "'", !inDouble {
+                inSingle.toggle()
+            } else if character == ":", !inDouble, !inSingle {
+                return index
+            }
+            index = line.index(after: index)
+        }
+        return nil
     }
 
     private static func unquoted(_ value: String) -> String {
