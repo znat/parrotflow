@@ -132,7 +132,10 @@ def cased(words, style):
 
 
 def convert(text, converted=None):
-    """The rewrite. `converted`, if given, is appended one entry per name taken.
+    """The rewrite. `converted`, if given, gets one entry per name taken: the
+    identifier as written, `max_retries`, and not the "max retries" that was
+    heard. A later stage needs the written form to leave it alone. The spoken
+    form appears nowhere in the text it will be handed.
 
     An out-parameter rather than a second return value because
     `scripts/validate-code-identifiers.py` calls this as `shipped.convert` and
@@ -163,9 +166,10 @@ def convert(text, converted=None):
         # ordinary prose, and a search would rewrite that copy instead.
         start = match.end() + (len(window) - len(window.lstrip()))
         end = start + len(span)
-        out = out[:start] + cased(words, style_for(text, text[:match.start()])) + out[end:]
+        written = cased(words, style_for(text, text[:match.start()]))
+        out = out[:start] + written + out[end:]
         if converted is not None:
-            converted.append(span)
+            converted.append(written)
     return out
 
 
@@ -289,10 +293,10 @@ def place(reply, text, converted=None):
             if len(marked) != 1:
                 continue
             start = marked[0]
-        out = (out[:start] + cased(words, style_for(out, out[:start], language))
-               + out[start + len(span):])
+        written = cased(words, style_for(out, out[:start], language))
+        out = out[:start] + written + out[start + len(span):]
         if converted is not None:
-            converted.append(span)
+            converted.append(written)
     return out
 
 
@@ -343,7 +347,16 @@ if __name__ == "__main__":
     # re-derive the judgement from the words. `asked` is for the log rather than
     # for a condition — it is the difference between a stage that cost nothing
     # and one that cost a second, and it was previously invisible.
+    # `protected` is what a later stage reads to leave these words alone:
+    # identifiers this stage wrote on purpose. `join` capitalises the first word
+    # of a clip, and turned `max_retries` into `Max_retries` until it could ask.
+    # One string joined on "; " because a scope value is a scalar, so a
+    # condition reads it as `code_identifiers.protected.contains("max_retries")`.
     sys.stdout.write(json.dumps({
         "text": out,
-        "vars": {"count": len(converted), "asked_model": asked},
+        "vars": {
+            "count": len(converted),
+            "asked_model": asked,
+            "protected": "; ".join(dict.fromkeys(converted)),
+        },
     }))
