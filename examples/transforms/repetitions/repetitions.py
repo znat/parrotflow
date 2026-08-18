@@ -7,6 +7,9 @@ on stdout.
       command: repetitions.py
       when: /\\b(\\w+(?:\\s+\\w+){0,3})\\s+\\1\\b/
 
+Add `returns: json` and it also publishes `repetitions.applied`, the names of
+the passes that fired, and `repetitions.edits`, how many cuts they made.
+
 Not `disfluency`, which asks a model to resolve what you meant ("with John, no,
 with Mark") and is reached by voice. This one deletes only an exact copy of
 what is already there, so it can run on every transcript — no model, no
@@ -19,8 +22,11 @@ the uh the summary") and after `numbers` ("two two three" is 223, not 23 with
 Timing is not used to tell a stutter from an intentional repeat — measured and
 found not to separate them. See scripts/disfluency-signals.py.
 """
+import json
+import os
 import re
 import sys
+from collections import namedtuple
 
 # Longest repeated phrase considered; longer than 3 words is unseen in the archive.
 MAX_PHRASE = 4
@@ -73,42 +79,72 @@ def is_letter(token):
     return len(token) == 1 and token.isalpha()
 
 
-def protected(tokens, i, n, text, words):
-    """Is this repeat one the speaker meant?
+class Repeat:
+    """One candidate repetition: `tokens[i:i+n]` followed by `tokens[i+n:i+2n]`.
 
-    The repeat is `tokens[i:i+n]` followed by `tokens[i+n:i+2n]`. `words` holds
-    the match objects, for the raw spelling and the text between the copies.
+    `words` holds the match objects, so the raw spelling and the text between
+    the copies stay reachable.
     """
-    unit = tokens[i:i + n]
 
-    if any(w in NEVER_COLLAPSE for w in unit):
-        return True
+    __slots__ = ("tokens", "i", "n", "text", "words")
 
+    def __init__(self, tokens, i, n, text, words):
+        self.tokens, self.i, self.n = tokens, i, n
+        self.text, self.words = text, words
+
+    @property
+    def unit(self):
+        """The repeated run, lowercased."""
+        return self.tokens[self.i:self.i + self.n]
+
+    @property
+    def raw(self):
+        """The same run as it is actually spelled."""
+        return [self.words[j].group() for j in range(self.i, self.i + self.n)]
+
+    @property
+    def neighbours(self):
+        """The words either side of the pair, for judging a lone letter."""
+        before = self.words[self.i - 1].group() if self.i > 0 else ""
+        after_at = self.i + 2 * self.n
+        after = self.words[after_at].group() if after_at < len(self.words) else ""
+        return before, after
+
+    @property
+    def between(self):
+        """What sits between the two copies."""
+        return self.text[self.words[self.i + self.n - 1].end():
+                         self.words[self.i + self.n].start()]
+
+
+# A reason to leave a repeat alone, with a name. `holds(repeat)` is the test.
+Guard = namedtuple("Guard", ("name", "holds"))
+
+# First match wins. The order only decides which name is reported when several
+# guards hold. Every one of these was a real transcript the naive rule damaged.
+KEPT = (
+    Guard("meant twice", lambda r: any(w in NEVER_COLLAPSE for w in r.unit)),
     # A number read as digits — losing one is unrecoverable.
-    if any(w.isdigit() for w in unit):
-        return True
+    Guard("a number", lambda r: any(w.isdigit() for w in r.unit)),
+    Guard("a list", lambda r: r.n > 1 and any(w in CONJUNCTIONS for w in r.unit)),
+    # A spelled name: one doubled capital letter, or a run that is all letters.
+    # The capital-letter test is n == 1 only. Scanning a longer run with `any`
+    # kept every English repeat holding "I" — "I mean I mean".
+    Guard("spelled aloud",
+          lambda r: (r.n == 1 and is_letter(r.raw[0]) and r.raw[0].isupper())
+          or (r.n > 1 and all(is_letter(x) for x in r.raw))),
+    # A lone lower-case letter is only a spelling if it sits among letters.
+    Guard("a letter among letters",
+          lambda r: r.n == 1 and is_letter(r.raw[0])
+          and any(is_letter(x) for x in r.neighbours)),
+    Guard("across a stop", lambda r: bool(SENTENCE_END.search(r.between))),
+)
 
-    if n > 1 and any(w in CONJUNCTIONS for w in unit):
-        return True
 
-    # A spelled name: doubled uppercase letter, starts with one, or the whole
-    # unit is single letters.
-    raw = [words[j].group() for j in range(i, i + n)]
-    if any(is_letter(r) and r.isupper() for r in raw):
-        return True
-    if n > 1 and all(is_letter(r) for r in raw):
-        return True
-    # Lowercase single letter: only a spelling if it sits among other letters.
-    if n == 1 and is_letter(raw[0]):
-        before = words[i - 1].group() if i > 0 else ""
-        after = words[i + 2 * n].group() if i + 2 * n < len(words) else ""
-        if is_letter(before) or is_letter(after):
-            return True
-
-    if SENTENCE_END.search(text[words[i + n - 1].end():words[i + n].start()]):
-        return True
-
-    return False
+def protecting(tokens, i, n, text, words):
+    """The name of the guard that holds this repeat, or None."""
+    repeat = Repeat(tokens, i, n, text, words)
+    return next((g.name for g in KEPT if g.holds(repeat)), None)
 
 
 # Single letters that are real words — deleting one as a false start breaks
@@ -120,7 +156,7 @@ def protected(tokens, i, n, text, words):
 SINGLE_LETTER_WORDS = {"a", "i", "y", "à", "o", "ô"}
 
 
-def drop_fragments(text):
+def drop_fragments(text, applied):
     """A word begun, abandoned, and restarted: "I mean w we can try" -> "I
     mean we can try". Only the adjacent single-letter case; a longer fragment
     ("in the tr in the terminal") isn't reached. Thin evidence — 2 examples in
@@ -158,6 +194,7 @@ def drop_fragments(text):
         if edit is None:
             return text
 
+        applied.append("false start")
         head = text[:words[edit].start()]
         tail = text[words[edit + 1].start():]
         if words[edit].group()[:1].isupper() and tail[:1].islower():
@@ -165,17 +202,20 @@ def drop_fragments(text):
         text = head + tail
 
 
-def collapse(text):
+def collapse(text, applied):
     """Both passes, to a fixed point — a dropped fragment can expose a new
-    repetition ("w we we can")."""
+    repetition ("w we we can").
+
+    `applied` is the list each pass names itself into, once per cut.
+    """
     while True:
-        out = collapse_repeats(drop_fragments(text))
+        out = collapse_repeats(drop_fragments(text, applied), applied)
         if out == text:
             return out
         text = out
 
 
-def collapse_repeats(text):
+def collapse_repeats(text, applied):
     """Delete the earlier copy of each repetition; the last copy is kept (it
     carries the trailing punctuation/spacing). Longest phrase first, then
     restart — a short match collapsed first can hide a longer one.
@@ -189,7 +229,7 @@ def collapse_repeats(text):
             for i in range(len(tokens) - 2 * n + 1):
                 if tokens[i:i + n] != tokens[i + n:i + 2 * n]:
                     continue
-                if protected(tokens, i, n, text, words):
+                if protecting(tokens, i, n, text, words):
                     continue
                 edit = (i, n)
                 break
@@ -200,6 +240,7 @@ def collapse_repeats(text):
             return text
 
         i, n = edit
+        applied.append("phrase said twice" if n > 1 else "word said twice")
         # Whatever sits between the two copies goes with the cut.
         head, tail = text[:words[i].start()], text[words[i + n].start():]
         # Keep the deleted copy's case: "The the prompt" -> "The prompt".
@@ -209,12 +250,29 @@ def collapse_repeats(text):
 
 
 def main():
-    text = sys.stdin.read()
+    # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
+    # `returns: json`, so the config stays the only place the protocol is
+    # named. Unset is the plain path, which is what the scorers pipe.
+    structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
+    raw = sys.stdin.read()
+    text = json.loads(raw)["text"] if structured else raw
+
+    applied = []
     try:
-        sys.stdout.write(collapse(text))
+        out = collapse(text, applied)
     except Exception:
         # Fail open — never drop the whole transcript because a guard threw.
-        sys.stdout.write(text)
+        out = text
+        applied.clear()
+
+    if not structured:
+        sys.stdout.write(out)
+        return
+    print(json.dumps({
+        "text": out,
+        # Deduplicated: three of the same fault name it once.
+        "vars": {"applied": ", ".join(dict.fromkeys(applied)), "edits": len(applied)},
+    }))
 
 
 if __name__ == "__main__":
