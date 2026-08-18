@@ -350,6 +350,30 @@ if let index = arguments.firstIndex(of: "--context-test") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--tag") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --tag \"<text>\" [--lang fr]")
+        exit(2)
+    }
+    exit(TagCommand.run(text: arguments[index + 1], language: languageList(arguments)?.first))
+}
+
+if let index = arguments.firstIndex(of: "--input-test") {
+    guard arguments.indices.contains(index + 2),
+          let caret = Int(arguments[index + 2]) else {
+        print("usage: ParrotFlow --input-test \"<field>\" <caret> [selected] [limit]")
+        exit(2)
+    }
+    let selected = arguments.indices.contains(index + 3)
+        ? (Int(arguments[index + 3]) ?? 0) : 0
+    let limit = arguments.indices.contains(index + 4)
+        ? Int(arguments[index + 4]) : nil
+    exit(InputTestCommand.run(
+        field: arguments[index + 1], caret: caret, selected: selected,
+        limit: limit ?? InputBox.maxChars
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--compose") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --compose \"<template>\" [name=value ...]")

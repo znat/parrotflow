@@ -323,6 +323,37 @@ real app in front, so it runs in CI. It does not check what an app actually does
 — that Codex refuses `AXManualAccessibility`, that a ⌘V lands — only that the
 classification is what the case file says.
 
+## What kind of word each word is
+
+```sh
+$PF --tag "he asked" --lang en
+$PF --tag "Sarah a reporté la réunion" --lang fr
+```
+
+Prints the tokens a `returns: json` transform is handed as `tokens`: the offset,
+the length, the word, its tag and its lemma. The tags come from macOS
+`NLTagger` under `.nameTypeOrLexicalClass`, so `Sarah` is a `PersonalName` and
+`Postponed` is a `Verb`. That is the one question a stage cannot answer from a
+string — whether a capital is the decoder starting a clip or the speaker naming
+somebody.
+
+`--lang` matters. `NLTagger` will not guess a language from four words and
+returns `Other` for everything without one. In a pipeline the language comes
+from the scope; here it falls back to the first configured language.
+
+## Where the input stage cuts a field
+
+```sh
+$PF --input-test "the quick brown fox" 4 5 [limit]
+```
+
+Takes a field, a caret, how much is selected and a budget. Prints the three
+blocks the `input` stage would publish, delimited with `⟪⟫` so their own spaces
+are visible. `scripts/check-input.sh` scores it against
+`tests/input-cases.txt`. The capture itself needs a real focused field and the
+accessibility grant, so it is not faked here — see
+[pipelines.md](pipelines.md#input-what-is-already-in-the-field).
+
 ## Text insertion, which is the risky path
 
 ```sh
@@ -401,6 +432,7 @@ scripts/check-default-config.sh    scripts/check-transform-folders.sh
 scripts/check-eval.sh              # every case set, scored
 scripts/check-compose.sh           # what a prompt says once the scope is in it
 scripts/check-context.sh           # what the context stage publishes for a screen
+scripts/check-input.sh             # where the input stage cuts a field, and the caret
 scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
 scripts/check-vocabulary-config.sh # what vocabulary.yaml adds up to, old keys included
 scripts/check-possessive.sh        # whether a possessive survives a substitution

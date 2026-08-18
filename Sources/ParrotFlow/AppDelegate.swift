@@ -897,6 +897,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // The same press, the other half of the window. Gated separately
+        // because it is a separate disclosure: `context` reads the terminal
+        // around the box, this reads what you have typed into it, in every app.
+        if InputBox.isConfigured(in: config) {
+            let app = front?.app
+            let element = focusAtPress?.element
+            DispatchQueue.global(qos: .userInitiated).async {
+                InputBox.capturePress(app: app, element: element)
+            }
+        }
+
         // Before the recording starts, because starting it is what takes the
         // offer off the screen. A new dictation is one of the ways the offer
         // ends, so it is one of the ways the keys go back.

@@ -172,6 +172,31 @@ enum PeekCommand {
             }
         }
 
+        // And what the `input` stage would publish, which is the other half of
+        // the same window: `context` reads around the box, this reads the box.
+        // The caret is marked with ‸ and a selection with [], because where the
+        // cut falls is the whole answer.
+        report("")
+        switch InputBox.read(app: front.map {
+            Pipeline.App(name: $0.localizedName ?? "", bundleID: $0.bundleIdentifier ?? "")
+        }) {
+        case .failure(let why):
+            report("as input: declined — \(why.rawValue)")
+        case .success(let got):
+            let placement = got.before == nil ? "caret unknown"
+                : (got.appending == true ? "appending" : "inserting")
+            report("as input: \(got.chars) of \(got.total) chars, \(placement)"
+                + (got.truncated ? " (truncated to \(InputBox.maxChars))" : ""))
+            if let whole = got.text {
+                report("  | \(whole)")
+            } else {
+                let selection = got.selection ?? ""
+                report("  | \(got.before ?? "")"
+                    + (selection.isEmpty ? "" : "[\(selection)]")
+                    + "‸\(got.after ?? "")")
+            }
+        }
+
         if let sentinel {
             guard let value, value.contains(sentinel) else {
                 report("sentinel  \"\(sentinel)\" NOT in the focused element — wrong window")
