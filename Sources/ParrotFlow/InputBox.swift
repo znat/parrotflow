@@ -69,6 +69,7 @@ enum InputBox {
         case unreadable = "the focused element publishes no value"
         case noInputBox = "no input box found between the rules this terminal draws"
         case noPress = "nothing was captured when the hotkey went down"
+        case reading = "the field was still being read when this stage was reached"
     }
 
     // MARK: - The capture, which happens when the hotkey goes down
@@ -85,28 +86,25 @@ enum InputBox {
     ///
     /// Not one slot. Dictations overlap — a second press while the first is
     /// still being transcribed is an ordinary thing to do, and the app already
-    /// keys `screenAtPress` and `pressesInFlight` the same way. With one slot
-    /// the second press cleared what the first dictation had not read yet, so
-    /// the first got `noPress` and then, once the second read finished, the
-    /// second field.
+    /// keys `screenAtPress`, `pressesInFlight` and `cancelledPresses` the same
+    /// way. With one slot the second press cleared what the first dictation had
+    /// not read yet, so the first got `noPress` and then, once the second read
+    /// finished, the second field.
     ///
-    /// Emptied by `forget(_:)` from `dictationEnded`, however the dictation
-    /// finished, and capped below in case a press ever ends without one.
+    /// **A run is only ever in here between `beginPress` and `forget`.** The
+    /// entry is reserved on the main thread at the press and removed by
+    /// `dictationEnded`, so a read that finishes after its dictation is over —
+    /// the accessibility value has been observed at 237k characters — finds no
+    /// entry to write into and is dropped. That is what keeps this from
+    /// growing, and it is the same invariant `pressesInFlight` already rests
+    /// on: every way a dictation ends goes through `dictationEnded`.
+    ///
+    /// No cap, deliberately. A cap has to evict something, and the only thing
+    /// it could evict is the oldest run — which in an overlap is a dictation
+    /// still in flight. A bound that corrupts live state is worse than no
+    /// bound.
     private static let pressLock = NSLock()
     nonisolated(unsafe) private static var presses: [Int: Press] = [:]
-
-    /// Runs whose dictation is over. A read is started at the press and can
-    /// finish after that dictation has ended — the accessibility value has been
-    /// observed at 237k characters — and storing it then would put back an
-    /// entry nothing will ever remove again. Kept so a late read can be
-    /// dropped instead.
-    nonisolated(unsafe) private static var ended: Set<Int> = []
-
-    /// How many to keep of each. Nothing needs more than the presses in
-    /// flight, which is one or two; these are bounds in case a run somehow
-    /// never reaches `forget`.
-    private static let maxPresses = 8
-    private static let maxEnded = 32
 
     static func capture(for run: Int) -> Press? {
         pressLock.lock()
@@ -114,14 +112,19 @@ enum InputBox {
         return presses[run]
     }
 
+    /// Reserve this run's slot. **Main thread, at the press**, before the read
+    /// is dispatched: it is what says the run is live, so a read that comes
+    /// back late has something to check itself against.
+    static func beginPress(_ run: Int) {
+        pressLock.lock()
+        presses[run] = Press(outcome: .failure(.reading), ms: 0)
+        pressLock.unlock()
+    }
+
     /// This dictation is over, however it ended.
     static func forget(_ run: Int) {
         pressLock.lock()
         presses.removeValue(forKey: run)
-        ended.insert(run)
-        if ended.count > maxEnded {
-            for old in ended.sorted().prefix(ended.count - maxEnded) { ended.remove(old) }
-        }
         pressLock.unlock()
     }
 
@@ -129,8 +132,9 @@ enum InputBox {
         config.transcription.pipelines.values.contains { $0.stages.contains(.input) }
     }
 
-    /// Call **after** recording has started, off the main thread. The element
-    /// was resolved on the main thread at press and must not be re-resolved.
+    /// Call **after** recording has started, off the main thread, and after
+    /// `beginPress` for the same run. The element was resolved on the main
+    /// thread at press and must not be re-resolved.
     static func capturePress(run: Int, app: Pipeline.App?, element: AXUIElement?) {
         guard let element else { return }
 
@@ -139,18 +143,14 @@ enum InputBox {
         let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
 
         pressLock.lock()
-        let stale = ended.contains(run)
-        if !stale {
-            presses[run] = Press(outcome: outcome, ms: ms)
-            if presses.count > maxPresses {
-                for old in presses.keys.sorted().prefix(presses.count - maxPresses) {
-                    presses.removeValue(forKey: old)
-                }
-            }
-        }
+        // Only into a slot that is still reserved. No slot means the dictation
+        // ended while this read was running, and writing then would put back an
+        // entry nothing will remove again.
+        let live = presses[run] != nil
+        if live { presses[run] = Press(outcome: outcome, ms: ms) }
         pressLock.unlock()
 
-        guard !stale else {
+        guard live else {
             Log.write(String(
                 format: "input: a %.0fms read finished after its dictation ended; dropped", ms))
             return

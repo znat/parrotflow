@@ -913,7 +913,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // By run, not into one slot. `pressRun` was bumped above, so this
             // is the run the dictation about to start will carry, and the one
             // its pipeline asks for. Dictations overlap.
+            //
+            // The slot is reserved here, on this thread, before the read is
+            // dispatched. It is what `dictationEnded` removes, and what a read
+            // that finishes late checks itself against.
             let run = pressRun
+            InputBox.beginPress(run)
             DispatchQueue.global(qos: .userInitiated).async {
                 InputBox.capturePress(run: run, app: app, element: element)
             }
