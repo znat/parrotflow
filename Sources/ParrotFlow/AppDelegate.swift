@@ -3215,6 +3215,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for press: Press
     ) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // What lands, which is not the same string. `trimmed` answers the
+        // questions — wake phrase, empty clip, inline instruction — and none of
+        // them care about the spaces at the ends. Delivery does: a stage that
+        // continues a sentence already in the box puts a space in front of its
+        // output, and trimming here is why that space never arrived.
+        //
+        // Newlines are still cut. A newline in a composer sends the message,
+        // and no stage has a reason to ask for one at either end.
+        let delivered = text.trimmingCharacters(in: .newlines)
 
         // Heard as a command, or nothing at all: no words are going to land,
         // so there is nothing to compare a pane against.
@@ -3249,7 +3258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Log.write("transcribed: \(trimmed)")
         lastTranscript = trimmed
-        insertDictation(trimmed, to: destination, for: press)
+        insertDictation(delivered, to: destination, for: press)
     }
 
     /// An instruction found inside a dictation: route it, run it over the words

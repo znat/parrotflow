@@ -191,6 +191,7 @@ enum CommandRunner {
             environment["PARROTFLOW_PROTOCOL"] = "json"
             process.environment = environment
         }
+        applyInterpreterPath(to: process)
 
         let input = Pipe()
         let output = Pipe()
@@ -385,6 +386,85 @@ enum CommandRunner {
         let shellSyntax = CharacterSet(charactersIn: "|&;<>()$`\n")
         let prefix = arguments.rangeOfCharacter(from: shellSyntax) == nil ? "exec " : ""
         return prefix + quoted(program) + arguments
+    }
+
+    // MARK: - Getting past the version-manager shim
+
+    /// Where the real `python3` lives, resolved once per run of the app.
+    ///
+    /// A version manager puts a shell script on PATH in place of the
+    /// interpreter, and that script re-execs through its own launcher on every
+    /// call. Measured on a Mac with pyenv:
+    ///
+    ///     python3 -c pass  through the shim              301 ms
+    ///     python3 -c pass  through the real interpreter    20 ms
+    ///     repetitions.py   through the shim              308 ms
+    ///     repetitions.py   through the real interpreter    25 ms
+    ///
+    /// The interpreter reports its own path, so this asks it rather than
+    /// guessing at one manager's layout. pyenv, asdf, mise and a plain Homebrew
+    /// install all answer the same question.
+    private static let interpreterLock = NSLock()
+    /// Outer nil means "not asked yet", inner nil means "asked, found nothing".
+    nonisolated(unsafe) private static var interpreterDirectory: String??
+
+    private static func realInterpreterDirectory() -> String? {
+        interpreterLock.lock()
+        defer { interpreterLock.unlock() }
+        if let cached = interpreterDirectory { return cached }
+        let found = probeInterpreterDirectory()
+        interpreterDirectory = .some(found)
+        return found
+    }
+
+    private static func probeInterpreterDirectory() -> String? {
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: "/bin/sh")
+        probe.arguments = ["-c", "python3 -c 'import sys; print(sys.executable)'"]
+        let pipe = Pipe()
+        probe.standardOutput = pipe
+        probe.standardError = FileHandle.nullDevice
+
+        // The probe pays the shim once. Everything after it does not.
+        guard (try? probe.run()) != nil else { return nil }
+
+        // Read on another thread so the deadline below can still fire. A shim
+        // that hangs would otherwise hold every dictation from here on, and
+        // this optimisation is not worth a lost transcript.
+        let collected = Locked(Data())
+        let read = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            collected.mutate { $0 = data }
+            read.signal()
+        }
+        guard read.wait(timeout: .now() + Self.timeout) == .success else {
+            probe.terminate()
+            Log.write("command: python3 did not report its path in \(Self.timeout)s; kept PATH as it is")
+            return nil
+        }
+        probe.waitUntilExit()
+
+        let path = (String(data: collected.value, encoding: .utf8) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) else { return nil }
+        Log.write("command: python3 resolves to \(path)")
+        return (path as NSString).deletingLastPathComponent
+    }
+
+    /// Put the real interpreter ahead of the shim for one subprocess.
+    ///
+    /// PATH rather than rewriting the command: the scripts say
+    /// `#!/usr/bin/env python3`, which is what makes them runnable by hand and
+    /// portable to a machine with a different layout. Changing what `env` finds
+    /// keeps both.
+    private static func applyInterpreterPath(to process: Process) {
+        guard let directory = realInterpreterDirectory() else { return }
+        var environment = process.environment ?? ProcessInfo.processInfo.environment
+        let existing = environment["PATH"] ?? ""
+        guard !existing.hasPrefix(directory + ":"), existing != directory else { return }
+        environment["PATH"] = existing.isEmpty ? directory : directory + ":" + existing
+        process.environment = environment
     }
 
     /// A path the shell will read as one word, whatever is in it.
