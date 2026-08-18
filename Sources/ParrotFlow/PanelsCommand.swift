@@ -14,7 +14,7 @@ enum PanelsCommand {
     /// which is what the shipped config puts on the pill. A row of chips is the
     /// shape worth looking at, not one chip on its own.
     private static let offerChips = [
-        OfferedCommand(title: "Correct", key: "C"),
+        OfferedCommand(title: "Vocabulary", key: "C"),
         OfferedCommand(title: "grammar", key: "G")
     ]
 

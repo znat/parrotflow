@@ -50,8 +50,6 @@ final class CorrectionModel: ObservableObject {
         }
     }
 
-    var pendingRuleCount: Int { rules().count }
-
     /// The sentence with what the panel taught applied to it.
     ///
     /// `applyExact` rather than a string replace, so the panel and the pipeline

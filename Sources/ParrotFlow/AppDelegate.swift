@@ -338,14 +338,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// What the offer offers: Correct, then every transform that asked for a
     /// place on it with `offer: true`.
     ///
-    /// Correct is first and is not a transform. It is the one command that is
-    /// about the words rather than about rewriting them, it needs no model, and
-    /// it cannot fail.
+    /// Vocabulary is first and is not a transform. It is the one command that
+    /// is about the words rather than about rewriting them, it needs no model,
+    /// and it cannot fail.
     ///
     /// Read fresh each time rather than stored, so a config reloaded between
     /// two dictations changes what the next offer says.
     private var offerCommands: [OfferedCommand] {
-        [OfferedCommand(title: "Correct", key: "C")]
+        [OfferedCommand(title: "Vocabulary", key: "C")]
             + config.transforms.filter(\.offer).map {
                 OfferedCommand(title: $0.name, key: $0.offerKey)
             }
@@ -2346,9 +2346,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // under the pointer, and the click would run whatever took the slot.
         pill.model.onPick = { [weak self] index in
             guard let self, self.offerIsUp, commands.indices.contains(index) else { return }
-            // Index 0 is Correct, which is not a transform and cannot be one:
-            // a config free to name a transform "Correct" must not be able to
-            // take that slot over.
+            // Index 0 is Vocabulary, which is not a transform and cannot be
+            // one: a config free to name a transform "Vocabulary" must not be
+            // able to take that slot over.
             self.runOfferedCommand(index == 0 ? nil : commands[index].title)
         }
         // The highlight is the pointer's mark and does not outlive it. Leaving

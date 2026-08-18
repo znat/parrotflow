@@ -363,9 +363,9 @@ pill goes to the bottom of the screen.
 
 `correct_offer` is what the pill does after a dictation. It stays where it
 is and names what can be done to the words, one chip per command:
-`Correct` first, then every transform with `offer: true` — see
-[pipelines.md](pipelines.md#offer-and-key-or-getting-on-the-pill). `Correct`
-opens the per-word panel over what was just dictated; a transform rewrites it
+`Vocabulary` first, then every transform with `offer: true` — see
+[pipelines.md](pipelines.md#offer-and-key-or-getting-on-the-pill).
+`Vocabulary` opens the teach-a-word panel over what was just dictated; a transform rewrites it
 straight away, with no preview.
 
 **After every dictation, not only one that landed in a field.** A word the

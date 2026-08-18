@@ -44,7 +44,7 @@ struct CorrectionView: View {
             addRow
 
             PanelActions(
-                status: summary,
+                status: "",
                 cancelTitle: "Cancel",
                 confirmTitle: "Save",
                 confirmKey: "↩",
@@ -76,9 +76,9 @@ struct CorrectionView: View {
             Text("TYPE")
             Spacer()
         }
-        .font(.system(size: 9, weight: .semibold, design: .rounded))
+        .font(.system(size: 11, weight: .semibold, design: .rounded))
         .kerning(0.9)
-        .foregroundStyle(.quaternary)
+        .foregroundStyle(.secondary)
         .padding(.bottom, 6)
     }
 
@@ -93,7 +93,7 @@ struct CorrectionView: View {
                 .frame(width: CorrectionMetrics.heardWidth)
 
             Image(systemName: "arrow.right")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(
                     row.wrappedValue.corrected.isEmpty
                         ? AnyShapeStyle(.quaternary)
@@ -114,15 +114,15 @@ struct CorrectionView: View {
                 model.remove(id)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.tertiary)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .help("Leave this word alone")
         }
-        .font(.system(size: 14, weight: .medium, design: .monospaced))
+        .font(.system(size: 15, weight: .medium, design: .monospaced))
         .frame(height: CorrectionMetrics.rowHeight)
     }
 
@@ -136,7 +136,7 @@ struct CorrectionView: View {
             }
         } label: {
             Text(kind.wrappedValue.label)
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .font(.system(size: 13, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
         }
         .menuStyle(.borderlessButton)
@@ -149,22 +149,15 @@ struct CorrectionView: View {
             model.addRow()
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: "plus").font(.system(size: 9, weight: .bold))
+                Image(systemName: "plus").font(.system(size: 11, weight: .bold))
                 Text("Add a word")
             }
-            .font(.system(size: 11, weight: .medium, design: .rounded))
-            .foregroundStyle(.tertiary)
+            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
         .padding(.top, 4)
         .padding(.bottom, 2)
     }
 
-    private var summary: String {
-        switch model.pendingRuleCount {
-        case 0: return "Fill in a word to save a rule"
-        case 1: return "1 rule to save"
-        case let count: return "\(count) rules to save"
-        }
-    }
 }

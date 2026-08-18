@@ -120,17 +120,17 @@ final class CorrectionPanel {
 }
 
 enum CorrectionMetrics {
-    static let heardWidth: CGFloat = 150
+    static let heardWidth: CGFloat = 165
     static let arrowWidth: CGFloat = 12
-    static let correctedWidth: CGFloat = 170
-    static let kindWidth: CGFloat = 74
+    static let correctedWidth: CGFloat = 185
+    static let kindWidth: CGFloat = 84
     /// The three columns, the arrow, the ✕, and the gaps between them.
-    static let width: CGFloat = 540
-    static let rowHeight: CGFloat = 38
+    static let width: CGFloat = 560
+    static let rowHeight: CGFloat = 40
     static let maxRows = 7
-    /// Title, column labels, the add-a-word row, and the footer. Measured
+    /// Title, column labels, the add-a-word row, and the buttons. Measured
     /// against the drawn panel, not derived from the fonts.
-    private static let chrome: CGFloat = 158
+    private static let chrome: CGFloat = 162
 
     /// The scrolling area. Exactly the rows it shows, so a row is never drawn
     /// half over the edge of it.
