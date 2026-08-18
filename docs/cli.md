@@ -555,6 +555,30 @@ jq -r '.stages[]? | select(.skip_reason) | .skip_reason' trace.jsonl |
 jq -r 'select(.kind == "correction") | [.via, .heard, .corrected] | @tsv' trace.jsonl
 ```
 
+### Watching it live
+
+```sh
+scripts/watch.py                       # follow live dictations
+scripts/watch.py --last 10             # the last 10, then follow
+scripts/watch.py --stage repetitions   # only where that stage changed something
+scripts/watch.py --all                 # include cli sweeps and evals
+```
+
+Tails `trace.jsonl` and prints one block per dictation: the decoder's text, then
+each stage as a **word-level diff** with what it cost and what it published. It
+calls no model and reads no log — the trace record turns up complete, and a
+dictation is one to three seconds end to end, so there is no middle to
+reassemble.
+
+Two things it does that are not obvious. It filters on `source: live`, because
+the Dev trace holds roughly three `cli` records for every one you spoke and a
+check script running in another terminal otherwise floods the output. And it
+parses only lines that arrived with a newline: records reach 17.8 KB, which is
+past the size where a single append is reliably atomic, so a read can land
+mid-record.
+
+`--archive <dir>` points it at another variant's directory.
+
 `--transcribe` writes a trace line too, which is what makes it worth having:
 change a table, re-run the clips, and both sets of numbers sit in one file
 joined to the same audio.
