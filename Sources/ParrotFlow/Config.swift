@@ -101,15 +101,21 @@ struct Config: Decodable, Equatable {
     /// Longest first, so `semi colon` cannot be eaten by `colon` sitting
     /// earlier in the same alternation.
     ///
-    /// A name that is unknown, or defined and empty, is left alone rather than
-    /// emptied: `(?:)` matches everywhere, so `(?!(?:{{determiners}})\b)` would
-    /// never match and the rule would silently stop firing. Left literal it
-    /// matches nothing, which fails the other way. `replacementProblems` names
-    /// both cases before either can happen.
-    func expanded(_ pattern: String) -> String {
+    /// Nil when a name is unknown or names an empty list. The rule is then
+    /// skipped, the way one with an invalid pattern is.
+    ///
+    /// Skipped rather than expanded to something, because no expansion is safe
+    /// both ways. Emptied, `(?:)` matches everywhere: a positive rule fires on
+    /// every word. Left literal it matches nothing, so
+    /// `(?!(?:{{determiners}})\b)` always succeeds and `dotted` rewrites prose.
+    /// A guard and a plain match want opposite fallbacks, so not running is the
+    /// only answer that is right for both. `replacementProblems` refuses the
+    /// config first; this is what happens if one is loaded anyway.
+    func expanded(_ pattern: String) -> String? {
         guard pattern.contains("{{") else { return pattern }
         var out = pattern
-        for (name, words) in lists where !words.isEmpty {
+        for name in Config.listNames(in: pattern) {
+            guard let words = lists[name], !words.isEmpty else { return nil }
             let alternation = words
                 .sorted { $0.count > $1.count }
                 .map { NSRegularExpression.escapedPattern(for: $0) }

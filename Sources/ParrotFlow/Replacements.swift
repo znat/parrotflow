@@ -91,12 +91,13 @@ enum Replacements {
     ///   purpose. A `replace:` transform has no code of its own to publish
     ///   from, so this pass publishes on its behalf.
     ///
-    /// `expand` turns `{{determiners}}` in a pattern into the list it names.
-    /// Passed in rather than reached for, because this type knows about rules
-    /// and not about the config they came from.
+    /// `expand` turns `{{determiners}}` in a pattern into the list it names,
+    /// and returns nil for a name that resolves to nothing. Passed in rather
+    /// than reached for, because this type knows about rules and not about the
+    /// config they came from.
     static func exact(
         to text: String, rules: [Config.Transcription.Rule],
-        expand: (String) -> String = { $0 }
+        expand: (String) -> String? = { $0 }
     ) -> (text: String, count: Int, changes: String, protected: String) {
         var output = text
         var deleted = false
@@ -105,8 +106,13 @@ enum Replacements {
         var written: [String] = []
 
         for rule in rules {
+            guard let source = expand(rule.pattern) else {
+                Log.write("replacements: \"\(rule.source)\" names a word list that is not"
+                    + " there; skipped")
+                continue
+            }
             guard let pattern = try? NSRegularExpression(
-                pattern: expand(rule.pattern), options: [.caseInsensitive]
+                pattern: source, options: [.caseInsensitive]
             ) else {
                 Log.write("replacements: \"\(rule.source)\" is not a valid pattern; skipped")
                 continue
