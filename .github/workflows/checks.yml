@@ -154,6 +154,14 @@ jobs:
       - name: The correction panel's spans
         run: scripts/check-spans.sh
 
+      # Where the `input` stage cuts a field, and where the caret lands in it.
+      # The capture itself needs TCC and a real focused field, so it is not
+      # scored anywhere; this is the string step, which is the half that fails
+      # silently — a caret off by the size of the cut still points at a real
+      # character and the text still reads fine.
+      - name: Where the input stage cuts a field
+        run: scripts/check-input.sh
+
       # Which app gets which treatment. The one part of the destination path
       # that runs without a screen or a real app in front, and a wrong entry is
       # silent both ways — one already was, matching any app named "codex".

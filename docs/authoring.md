@@ -224,8 +224,32 @@ then do with them.
            "language": "en",
            "vars": { "asr": { "confidence": 0.91, "duration": 4.2 },
                      "replacements": { "ran": true, "count": 1,
-                                       "changed": true, "ms": 0.4 } } } }
+                                       "changed": true, "ms": 0.4 } } },
+  "tokens": [ { "at": 2, "len": 6, "text": "python",
+                "tag": "Noun", "lemma": "python" } ],
+  "aligned": false,
+  "trace": { "wav": "…", "source": "live", "lang": "en",
+             "asr": { "text": "…", "confidence": 0.91, "words": [] },
+             "vad": { "speech": 3.1, "total": 4.2, "segments": [] },
+             "stages": [] } }
 ```
+
+- **`tokens`** is every word of `text`, tagged by macOS `NLTagger` under
+  `.nameTypeOrLexicalClass`: `Noun`, `Verb`, `PersonalName`, `PlaceName`,
+  `Determiner` and so on, plus the lemma. It answers the one question a script
+  cannot answer from a string — whether a capital is the decoder starting a clip
+  or the speaker naming somebody. Recomputed per stage against the text that
+  stage was handed, so `at` and `len` are always offsets into `text`. It costs
+  0.29 ms for a sentence and 0.97 ms for two hundred words, so it is not
+  conditional. `--tag "<text>" --lang en` prints the same thing.
+- **`trace`** is what the run has gathered so far: the decoder's own text with
+  per-word timings and confidences, the speech segments, and the stages that
+  already ran with their `before`, `after` and vars. It is absent under
+  `--pipeline`, which has no trace collector, so read it defensively.
+- **`aligned`** says whether `text` is still the decoder's own, and so whether
+  the word offsets in `trace.asr.words` line up with it. It is false as soon as
+  any stage rewrites. Check it before using a word offset: acting on a stale one
+  fails silently.
 
 **Out**, on stdout — and only what this stage contributes:
 

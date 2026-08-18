@@ -526,6 +526,36 @@ cases:
       context.ok: false
       context.changed: false
 
+  # --- input, which from here can only decline -----------------------------
+  #
+  # See tests/pipelines/input.yaml. Same shape as the context cases above and
+  # for the same reason: the field is read when the hotkey goes down, and
+  # `--pipeline` has no hotkey.
+  - name: input declines with no press to publish, and says which
+    pipeline: input
+    app: Slack com.tinyspeck.slackmacgap
+    input: super base has twenty one users
+    expect: Supabase has 21 users
+    expect_vars:
+      input.ran: true
+      input.ok: false
+      input.chars: 0
+      input.total: 0
+      input.declined: nothing was captured when the hotkey went down
+
+  # Every surface, not terminals only. That is the difference from `context`,
+  # so a terminal gets its own case rather than being assumed.
+  - name: input declines in a terminal too, and leaves the stages around it alone
+    pipeline: input
+    app: Ghostty com.mitchellh.ghostty
+    input: super base has twenty one users
+    expect: Supabase has 21 users
+    expect_vars:
+      input.ok: false
+      input.changed: false
+      replacements.count: 1
+      numbers.ran: true
+
   # --- the name judge, on what a `replacements` rule did -----------------------
   #
   # `--pipeline` has no audio, so these are the path that used to have no earlier

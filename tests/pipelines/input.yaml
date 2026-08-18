@@ -1,0 +1,21 @@
+# The `input` stage, scored for the only thing a fixture can score about it.
+#
+# What it captures cannot be tested from here, for the same two reasons
+# `tests/pipelines/context.yaml` gives. The field is read when the hotkey goes
+# down and `--pipeline` has no hotkey, so there is never a capture to publish.
+# Behind that sits TCC, which pins the accessibility grant to the app bundle.
+#
+# What is worth scoring is the declining: a stage that cannot do its job leaves
+# the transcript exactly as it arrived. Where the cut falls, which is the other
+# half of this stage, is scored by `scripts/check-input.sh` instead.
+languages: [en]
+
+replacements:
+  Supabase: [super base]
+
+pipeline:
+  # Before and after, on purpose. A stage that publishes variables must not
+  # disturb the stages either side of it, including when it declines.
+  - replacements
+  - input
+  - numbers
