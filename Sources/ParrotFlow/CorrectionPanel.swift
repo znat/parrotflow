@@ -123,9 +123,9 @@ enum CorrectionMetrics {
     static let heardWidth: CGFloat = 165
     static let arrowWidth: CGFloat = 12
     static let correctedWidth: CGFloat = 185
-    static let kindWidth: CGFloat = 84
+    static let kindWidth: CGFloat = 96
     /// The three columns, the arrow, the ✕, and the gaps between them.
-    static let width: CGFloat = 560
+    static let width: CGFloat = 572
     static let rowHeight: CGFloat = 40
     static let maxRows = 7
     /// Title, column labels, the add-a-word row, and the buttons. Measured

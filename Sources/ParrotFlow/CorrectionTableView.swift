@@ -96,7 +96,7 @@ struct CorrectionView: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(
                     row.wrappedValue.corrected.isEmpty
-                        ? AnyShapeStyle(.quaternary)
+                        ? AnyShapeStyle(.secondary)
                         : AnyShapeStyle(Parrot.leaf)
                 )
                 .frame(width: CorrectionMetrics.arrowWidth)
@@ -137,11 +137,10 @@ struct CorrectionView: View {
         } label: {
             Text(kind.wrappedValue.label)
                 .font(.system(size: 13, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
         }
         .menuStyle(.borderlessButton)
-        .fixedSize()
-        .frame(width: CorrectionMetrics.kindWidth, alignment: .leading)
+        .frame(width: CorrectionMetrics.kindWidth - 18)
+        .parrotField(focused: false)
     }
 
     private var addRow: some View {
