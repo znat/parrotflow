@@ -97,10 +97,6 @@ enum VocabularyJudge {
         the original was the ordinary word and the name does not belong in that
         sentence.
 
-        Sometimes the user is teaching a correction rather than dictating — "urza
-        spells mirza", "Versal spells V E R C E L". The word before "spells" has to
-        survive. Keep those.
-
         The names in their vocabulary are: {terms}. Anything else in the sentence is an
         ordinary word, however much it looks like one of them.
 
@@ -906,6 +902,41 @@ enum VocabularyJudge {
                                 now: slot.options[1], terms: slot.terms))
         }
         return built
+    }
+
+    /// The changes a spelling lesson settles, so no model is asked about them.
+    ///
+    /// "urza spells mirza" teaches a mapping. The word before `spells` is the
+    /// source, and writing the term over it destroys the lesson — "Mirza spells
+    /// mirza" teaches nothing. `true` means revert it.
+    ///
+    /// Matched on the word after the span, not on the activation phrase. That
+    /// phrase is itself mangled in the archive — "Hey Barrot", "by the way
+    /// pirate" — so `spells` is the only reliable tell.
+    ///
+    /// **Measured on the four cases in `tests/judge-cases.yaml`**: the rule is
+    /// 4/4, and `gemma4:e4b-mlx` and `gemma3:4b` are both 0/4, each answering
+    /// KEEP to all of them. The sentence looks exactly like the one where a
+    /// name was misheard, so a model reading it has nothing to go on. Prose
+    /// telling it about the pattern was in `prompt` and did not fix them.
+    ///
+    /// The honest false positive is a sentence really about spelling — "Vercel
+    /// spells its name oddly" — which loses its substitution. Nothing in the
+    /// archive does that, and the cost is one name left as the decoder wrote
+    /// it, which is where every other failure in this stage lands.
+    static func teaching(in text: String, changes: [Change]) -> [Bool] {
+        changes.map { change in
+            var cursor = change.range.upperBound
+            while cursor < text.endIndex, text[cursor].isWhitespace {
+                cursor = text.index(after: cursor)
+            }
+            var next = ""
+            while cursor < text.endIndex, text[cursor].isLetter {
+                next.append(text[cursor])
+                cursor = text.index(after: cursor)
+            }
+            return next.compare("spells", options: .caseInsensitive) == .orderedSame
+        }
     }
 
     /// The sentence with every change taken, and the one with none of them.

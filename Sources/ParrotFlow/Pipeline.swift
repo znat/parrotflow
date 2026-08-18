@@ -1027,6 +1027,27 @@ struct Pipeline: Equatable, Codable {
         guard !changes.isEmpty else {
             return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(slots.count)])
         }
+
+        // A spelling lesson is settled here and never asked about. Both models
+        // measured answered all four of the archive's cases the wrong way, and
+        // the prompt paragraph that described the pattern did not move them.
+        let taught = VocabularyJudge.teaching(in: text, changes: changes)
+        let lessons = zip(changes, taught).filter { $0.1 }.map { "\($0.0.now) -> \($0.0.was)" }
+        if !lessons.isEmpty {
+            Log.write("vocabulary judge: spelling lesson, reverted without asking — "
+                + lessons.joined(separator: "; "))
+        }
+        // Nothing left for a model to answer. Returned before the `llm.enabled`
+        // guard so the rule still fires on a machine with no Ollama.
+        if taught.allSatisfy({ $0 }) {
+            let chosen = VocabularyJudge.applying(
+                taught.map { !$0 }, to: text, changes: changes)
+            return StageResult(text: chosen, vars: [
+                "asked": .int(0), "slots": .int(slots.count),
+                "reverted": .string(lessons.joined(separator: "; ")),
+                "judged": .string(chosen),
+            ])
+        }
         // Checked here rather than at the top so that a pipeline with no model
         // still publishes what the stage found. `vocabulary.slots` is the one
         // thing about this stage a fixture can assert — the verdict comes from
@@ -1063,7 +1084,14 @@ struct Pipeline: Equatable, Codable {
                             ["asked": .int(changes.count), "slots": .int(slots.count)])
         }
 
+        // A lesson mixed in with real questions is still shown to the model,
+        // so the numbering `question` writes and `verdicts` reads stays one
+        // list. Its answer about that change is then discarded: the rule
+        // decides it, and the rule is 4/4 where the models are 0/4.
         let verdicts = VocabularyJudge.verdicts(reply, count: changes.count)
+            .enumerated().map { index, keep in
+                index < taught.count && taught[index] ? false : keep
+            }
         let chosen = VocabularyJudge.applying(verdicts, to: text, changes: changes)
         // What the judge undid, in the words it put back. Named `reverted`
         // rather than `kept_as_decoded`: on a menu a place that kept its

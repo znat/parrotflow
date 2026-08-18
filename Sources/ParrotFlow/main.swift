@@ -196,6 +196,14 @@ if let index = arguments.firstIndex(of: "--verdicts") {
     exit(VerdictsCommand.run(count: count, reply: arguments[index + 2]))
 }
 
+if let index = arguments.firstIndex(of: "--teaching") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --teaching \"<sentence>\" <word>")
+        exit(2)
+    }
+    exit(TeachingCommand.run(text: arguments[index + 1], word: arguments[index + 2]))
+}
+
 if let index = arguments.firstIndex(of: "--command") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --command \"hey parrot, Tasmin spells T A S M E E N\""
