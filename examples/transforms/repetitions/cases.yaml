@@ -111,6 +111,18 @@ cases:
   - probe: phrase
     input: "We can um can um with ITN we can write"
     expect: "We can um with ITN we can write"
+  # "I" is a pronoun and a spellable letter. The `spelled aloud` guard used to
+  # scan the whole run with `any`, so one capital "I" anywhere kept the repeat
+  # and no English phrase starting "I ..." was ever collapsed.
+  - probe: phrase
+    input: "I mean I mean what I want is this."
+    expect: "I mean what I want is this."
+  - probe: phrase
+    input: "I mean I mean I want want this."
+    expect: "I mean I want this."
+  - probe: phrase
+    input: "I think I think we should try it."
+    expect: "I think we should try it."
 
   # --- meant ---
   - probe: meant
@@ -179,3 +191,9 @@ cases:
   # A spelled name. The letter sits among other single letters.
   - probe: meant
     input: "she spells it m a r c but says Marc"
+  # A doubled capital letter is still a spelling. This is why the guard's
+  # capital-letter test stays, scoped to a one-word run.
+  - probe: meant
+    input: "the source is B B C news"
+  - probe: meant
+    input: "it takes A A batteries"
