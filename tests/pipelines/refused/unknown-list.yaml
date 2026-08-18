@@ -1,0 +1,13 @@
+# A pattern naming a list nothing defines. Refused rather than run: the name is
+# left literal, so the rule matches nothing and every transcript comes through
+# looking exactly as it would if the rule were working.
+languages: [en]
+lists:
+  determiners: [the, a, an]
+transforms:
+  - name: guarded
+    description: a guard naming a list that is not there
+    replace:
+      '$1.': ['/\b(?!(?:{{determinors}})\b)(\w+) dot (?=\w)/']
+pipeline:
+  - transform: guarded

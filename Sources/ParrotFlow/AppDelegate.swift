@@ -1768,7 +1768,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 prompt: prompt, instruction: instruction, text: text, config: llmConfig()
             )
         case .replace:
-            return Replacements.applyExact(to: text, rules: transform.rules)
+            // `expand:`, or a table reached by voice compiles `{{determiners}}`
+            // to nothing while the same table in a pipeline works.
+            return Replacements.exact(
+                to: text, rules: transform.rules, expand: config.expanded
+            ).text
         case .command(let command):
             // Nil is every way a program can fail, and in a pipeline it means
             // keep the text — a stage that fails must not cost you a sentence.

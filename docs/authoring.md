@@ -346,8 +346,8 @@ and you stop running it.
   beats a refusal on any set without negatives. `examples/transforms/code_identifiers/cases.yaml`
   is 32 of 75 cases that must come back untouched, and that half is the one that
   catches regressions.
-- **Keep the residue in, failing.** `examples/transforms/dotted/cases.txt` scores 54/54 and
-  carries two more it cannot do. A set that reaches 100% by dropping what it
+- **Keep the residue in, failing.** `examples/transforms/dotted/cases.txt` scores 73/73 and
+  carries three more it cannot do. A set that reaches 100% by dropping what it
   cannot do is worse than a number.
 - **Write the contract at the top of the file**, in prose: what counts as a
   case for this feature and what is deliberately out of scope. It is the thing
@@ -358,6 +358,10 @@ and you stop running it.
   the case file scores that too, on the same cases. It is the only thing that
   answers "is the model earning its place", and twice in this repo the answer
   was no.
+- **State the language with `lang:`** on any case that is not in your first
+  one. Without it the pipeline detects, and detection is unreliable at the
+  length a case is — "C'est vraiment fantastique." comes back `en`. A French
+  case scored under English rules passes for the wrong reason.
 
 The sets that exist. A transform's set lives in its folder; the ones belonging
 to a built-in stage or to the router have nowhere else to be and stay in
@@ -365,7 +369,7 @@ to a built-in stage or to the router have nowhere else to be and stay in
 
 | Where | Sets |
 |---|---|
-| `examples/transforms/<name>/` | `code_identifiers` (78), `dotted` (56), `grammar` (17), `email` (26), `repetitions` (60) |
+| `examples/transforms/<name>/` | `code_identifiers` (78), `dotted` (76), `grammar` (17), `email` (26), `repetitions` (60) |
 | `tests/` | `spelling` (62), `french` (45), `numbers` (97), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement` |
 
 Each has a runner in `scripts/`; the transform sets can also be scored with

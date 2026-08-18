@@ -1,0 +1,13 @@
+# A transform named after the word lists. The runner publishes every list under
+# `lists.*` before any stage runs, so this one would overwrite them and a script
+# reading `ctx["vars"]["lists"]["determiners"]` would get whatever it wrote.
+languages: [en]
+lists:
+  determiners: [the, a, an]
+transforms:
+  - name: lists
+    description: collides with the named word lists
+    command: counter.py --count 1
+    returns: json
+pipeline:
+  - transform: lists

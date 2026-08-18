@@ -43,9 +43,13 @@ enum PipelineCommand {
         /// what to do about it — the answer comes from a model and is not
         /// deterministic, so it is not a thing a case set can hold.
         var llm: Config.LLM?
+        /// Its own `lists:`. A pattern that says `{{determiners}}` compiles to
+        /// nothing without them, and a guard that silently stops guarding is
+        /// the failure a fixture exists to catch.
+        var lists: [String: [String]] = [:]
 
         enum CodingKeys: String, CodingKey {
-            case languages, replacements, pipeline, transforms, vocabulary, llm
+            case languages, replacements, pipeline, transforms, vocabulary, llm, lists
         }
 
         init(from decoder: Decoder) throws {
@@ -62,6 +66,9 @@ enum PipelineCommand {
                 // section is handed back to the type that reads the real one.
                 let nested = try c.superDecoder(forKey: .transforms)
                 transforms = try Config.transforms(from: nested)
+            }
+            if let v = try c.decodeIfPresent([String: [String]].self, forKey: .lists) {
+                lists = v
             }
             vocabulary = try c.decodeIfPresent(Config.Vocabulary.self, forKey: .vocabulary)
             llm = try c.decodeIfPresent(Config.LLM.self, forKey: .llm)
@@ -130,6 +137,7 @@ enum PipelineCommand {
         config.transcription.replacements = fixture.replacements
         config.transcription.pipelines = ["default": pipeline]
         config.transforms = fixture.transforms
+        config.lists = fixture.lists
         if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
         if let llm = fixture.llm { config.llm = llm }
 

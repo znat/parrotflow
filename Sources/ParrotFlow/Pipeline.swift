@@ -686,6 +686,12 @@ struct Pipeline: Equatable, Codable {
             scope.set("vocabulary.count", .int(0))
             scope.set("vocabulary.changes", .string(""))
         }
+        // The named lists, so a transform that is a program reads the same
+        // words a `replace:` pattern writes as `{{determiners}}`. Under one
+        // namespace, so a script asks `ctx["vars"]["lists"]["determiners"]`.
+        for (name, value) in config.listVariables {
+            scope.set("lists.\(name)", value)
+        }
 
         for step in steps {
             let named = step.transform.map { "\(step.stage.name) \($0)" } ?? step.stage.name
@@ -825,7 +831,8 @@ struct Pipeline: Equatable, Codable {
             // person wrote; `vocabulary.yaml` holds the names the app learnt.
             // One pass, so a rule behaves the same whichever file it came from.
             let done = Replacements.exact(
-                to: text, rules: config.transcription.rules + config.vocabularyRules
+                to: text, rules: config.transcription.rules + config.vocabularyRules,
+                expand: config.expanded
             )
             // `changes` as well as `count`, so a later stage can judge what
             // this one did. A stage handed only the finished sentence cannot
@@ -1222,7 +1229,8 @@ struct Pipeline: Equatable, Codable {
             // exactly what a later stage must not undo. `dotted` writes the dot
             // in `user.name` and `join` would otherwise read it as one the
             // decoder invented.
-            let done = Replacements.exact(to: text, rules: transform.rules)
+            let done = Replacements.exact(to: text, rules: transform.rules,
+                                          expand: config.expanded)
             if done.text != text {
                 Log.write("pipeline: transform \(name) rewrote the transcript")
                 Log.write("    before: \(text)")

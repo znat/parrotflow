@@ -26,7 +26,7 @@ enum EvalCommand {
     static func run(
         target: String, cases override: String?, probe: String?, verbose: Bool
     ) -> Int32 {
-        let config: Config
+        var config: Config
         do {
             config = try ConfigStore.load()
         } catch {
@@ -36,6 +36,29 @@ enum EvalCommand {
 
         guard let found = locate(target, cases: override, config: config) else { return 1 }
         let (file, set, transform) = found
+
+        // A set that carries its own `lists:` states what it assumes, the way
+        // it already can with `transforms:`. Without this a `{{name}}` in a
+        // transform the set carries would resolve against whichever machine is
+        // scoring it. All of them, not merged: a set says what it assumes, and
+        // `lists: {}` therefore means none rather than "this machine's".
+        if let stated = set.lists { config.lists = stated }
+
+        // The rules that are about to run, checked before anything is scored.
+        // A `{{name}}` that resolves to nothing makes the rule match nothing,
+        // and a set would score that as "the transform did not fire" — a wrong
+        // number rather than an error, which is the failure a case set exists
+        // to prevent. Only this transform's rules: another entry's mistake is
+        // `--check-config`'s to report, not this run's to fail on.
+        var underTest = Config()
+        underTest.lists = config.lists
+        underTest.transforms = [transform]
+        let ruleProblems = underTest.replacementProblems()
+        guard ruleProblems.isEmpty else {
+            print("✗ \(short(file.path)) scores \"\(transform.name)\":")
+            for problem in ruleProblems { print("    \(problem)") }
+            return 1
+        }
 
         // What `--probe` selected, decided once and handed to everything that
         // reads a case — validation, the gold check, the scoring. Deciding it
@@ -172,6 +195,10 @@ enum EvalCommand {
                 + " and not in the file")
             return nil
         }
+        // The same refusal `Pipeline.validate` makes, made here because
+        // `--eval` builds its one-step pipeline rather than loading one. A
+        // transform called `lists` or `asr` would file its variables where the
+        // runner has already put something, and score against its own damage.
         return (file, set, transform)
     }
 
@@ -183,7 +210,8 @@ enum EvalCommand {
     /// the app runs, including the part where every way of failing returns the
     /// transcript exactly as it arrived.
     private static func through(
-        _ transform: Config.Transform, _ text: String, config: Config, instruction: String
+        _ transform: Config.Transform, _ text: String, config: Config, instruction: String,
+        language: String? = nil
     ) -> (output: String, seconds: TimeInterval) {
         // A prompt reached by voice is given what the speaker actually said,
         // and the same prompt in a pipeline is given nothing — "format those
@@ -211,8 +239,12 @@ enum EvalCommand {
         var output = text
         let started = Date()
         let done = DispatchSemaphore(value: 0)
+        // Seeded, so `Pipeline` keeps it instead of detecting one. Absent, the
+        // detector runs exactly as it does for a real dictation.
+        var seed = Scope()
+        if let language { seed.set("language", .string(language)) }
         Task {
-            output = await pipeline.run(text, config: config)
+            output = await pipeline.run(text, config: config, seed: seed)
             done.signal()
         }
         done.wait()
@@ -311,11 +343,13 @@ enum EvalCommand {
         // is a case that is about to be scored anyway, so this costs one extra
         // run of one input rather than one of an input nobody asked for.
         if let first = selected.first {
-            _ = through(transform, first.input, config: config, instruction: instruction)
+            _ = through(transform, first.input, config: config, instruction: instruction,
+                        language: first.language)
         }
 
         for one in selected {
-            let (got, seconds) = through(transform, one.input, config: config, instruction: instruction)
+            let (got, seconds) = through(transform, one.input, config: config,
+                                         instruction: instruction, language: one.language)
             let correct = got == one.expect
             scored.overall.add(correct)
             scored.latencies.append(seconds)

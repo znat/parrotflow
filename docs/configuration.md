@@ -239,6 +239,48 @@ and spacing included.
 The table runs as the `replacements` stage — a pipeline stage, so whether it
 runs at all is [pipelines.md](pipelines.md).
 
+## `lists`
+
+Word lists, written once and named. A pattern refers to one as `{{name}}`:
+
+```yaml
+lists:
+  determiners: ["the", "a", "an", "le", "la", "les", "un", "une"]
+
+transforms:
+  - name: dotted
+    description: spoken dotted paths as code
+    replace:
+      '$1.': ['/\b(?!(?:{{determiners}})\b)(\w+) dot (?=\w)/']
+```
+
+`{{determiners}}` becomes the words as a regex alternation, longest first —
+otherwise `colon` sitting earlier in the list eats `semi colon`. It works in
+`replacements:` and in any `replace:` transform.
+
+`--check-config` refuses a name nothing defines, and a list defined with no
+words in it, and says which rule named it. If one reaches the app anyway it is
+left as the literal `{{name}}`, so the rule matches nothing — an emptied
+alternation matches everywhere, and a guard that silently stops guarding is the
+worse of the two failures.
+
+`lists` is a reserved name. The words are published under `lists.*` before any
+stage runs, so a transform declared with that name would write over them. It is
+dropped where transforms are assembled, and `--check-config` says so — the same
+treatment an entry with no body gets. `text`, `app`, `bundle_id`, `language`,
+`instruction`, `asr`, `vad` and `vocabulary` are reserved for the same reason.
+
+A transform that is a program reads the same words from
+`ctx["vars"]["lists"]["determiners"]`, joined by `; `. So one list serves a
+table and a script, and adding a language is adding words here.
+
+**Quote every entry.** `on`, `no` and `off` are booleans in YAML 1.1, which is
+what the check scripts in `scripts/` parse with. An unquoted `on` reaches them
+as the word `true`, so the list silently stops holding the word you wrote.
+
+The lists are not split by language. `dotted` merges English and French into
+one alternation and measures clean, because the words do not collide.
+
 ## `llm`
 
 The local Ollama model behind spoken commands and every `prompt:` transform.

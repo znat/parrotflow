@@ -185,6 +185,108 @@ check "a case with no expect: is detected as must-not-change" \
      | grep -E '^  keep' | sed 's/ <-.*//;s/  */ /g;s/^ //;s/ $//')" \
   "keep 1/1 = 100%"
 
+# --- `lists:` on a set ------------------------------------------------------
+#
+# A set that carries its own transform can carry the words it guards on too,
+# the same way a `--pipeline` fixture does. Without it a `{{name}}` would
+# resolve against whichever machine is scoring, and the number would be about
+# that machine.
+cat > "$WORK/elsewhere/list-cases.yaml" <<'YAML'
+transform: guarded
+lists:
+  determiners: [the, a, an]
+transforms:
+  - name: guarded
+    description: a spoken dot as a dot, unless a determiner is in front
+    replace:
+      '$1.': ['/\b(?!(?:{{determiners}})\b)(\w+) dot (?=\w)/']
+cases:
+  - input: read user dot name
+    expect: read user.name
+  - input: the dot com bubble
+YAML
+
+check "a set carries the word lists its own transform guards on" \
+  "$("$BIN" --eval "$WORK/elsewhere/list-cases.yaml" 2>/dev/null \
+     | grep -E '^  overall' | sed 's/  */ /g;s/^ //')" \
+  "overall 2/2 = 100%"
+
+# `lists: {}` is not the same as no `lists:` at all. The first says "no words,
+# and I mean it", so the guard is refused rather than filled from this machine.
+cat > "$WORK/elsewhere/no-lists-cases.yaml" <<'YAML'
+transform: guarded
+lists: {}
+transforms:
+  - name: guarded
+    description: a guard naming a list the set deliberately empties
+    replace:
+      '$1.': ['/\b(?!(?:{{determiners}})\b)(\w+) dot (?=\w)/']
+cases:
+  - input: read user dot name
+    expect: read user.name
+YAML
+
+check "an empty lists: on a set means none, not this machine's" \
+  "$("$BIN" --eval "$WORK/elsewhere/no-lists-cases.yaml" 2>/dev/null \
+     | grep -c 'which nothing defines')" \
+  "1"
+
+# A transform named after something the runner already publishes. Dropped
+# where every transform is assembled, so a set cannot smuggle one in either.
+cat > "$WORK/elsewhere/reserved-cases.yaml" <<'YAML'
+transform: lists
+transforms:
+  - name: lists
+    description: collides with the named word lists
+    replace:
+      hush: [shout]
+cases:
+  - input: please shout about it
+    expect: please hush about it
+YAML
+
+check "a set carrying a transform named after a reserved namespace scores nothing" \
+  "$("$BIN" --eval "$WORK/elsewhere/reserved-cases.yaml" 2>/dev/null \
+     | grep -c 'not in your config and not in the file')" \
+  "1"
+
+# --- `lang:` on a case ------------------------------------------------------
+#
+# The case states its language and the pipeline keeps it. Detection is
+# unreliable at the length a case is — "C'est vraiment fantastique." comes back
+# `en` — and a French case scored under English rules passes for the wrong
+# reason. `de` is here because nothing configures it: what the case says wins.
+mkdir -p "$WORK/transforms/echolang"
+cat > "$WORK/transforms/echolang/echolang.py" <<'PY'
+#!/usr/bin/env python3
+"""The language the pipeline resolved, as the whole output."""
+import json
+import sys
+
+envelope = json.load(sys.stdin)
+print(json.dumps({"text": envelope["ctx"].get("language") or "none"}))
+PY
+chmod +x "$WORK/transforms/echolang/echolang.py"
+cat > "$WORK/transforms/echolang/cases.yaml" <<'YAML'
+cases:
+  - input: Il faut trois choses
+    lang: fr
+    expect: fr
+  - input: we ship today
+    lang: de
+    expect: de
+YAML
+cat >> "$WORK/config.yaml" <<'YAML'
+  - name: echolang
+    description: reports the language the pipeline resolved
+    command: echolang.py
+    returns: json
+YAML
+
+check "a case states its own language, and the pipeline keeps it" \
+  "$("$BIN" --eval echolang 2>/dev/null | grep -E '^  overall' | sed 's/  */ /g;s/^ //')" \
+  "overall 2/2 = 100%"
+
 # --- `tests:` on the transform ----------------------------------------------
 #
 # A transform whose default set is not cases.yaml says so once, in the config,

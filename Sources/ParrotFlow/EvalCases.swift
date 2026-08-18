@@ -28,6 +28,14 @@ struct EvalCases {
     /// assumes instead of inheriting this machine's config. Decoded by `Config`
     /// rather than re-read here, the way a `--pipeline` fixture is.
     var transforms: [Config.Transform] = []
+    /// A `lists:` section of its own, for the same reason. A transform the set
+    /// carries can guard on `{{determiners}}`, and without this the words would
+    /// come from whichever machine the set is scored on.
+    ///
+    /// Optional rather than empty-by-default, so `lists: {}` and no `lists:` at
+    /// all are different things. The first says "no words, and I mean it" and
+    /// the second says "whatever this machine has".
+    var lists: [String: [String]]?
     var cases: [Case] = []
 
     /// What the first stage of a two-stage transform should return on its own.
@@ -62,6 +70,14 @@ struct EvalCases {
         /// files to gain nothing.
         var probe: String { fields["probe"] ?? fields["category"] ?? "" }
         var name: String { fields["name"] ?? input }
+        /// `lang: fr` — which language this case is in.
+        ///
+        /// Stated rather than detected. The pipeline detects when nothing says
+        /// otherwise, and detection is unreliable on the length a case is:
+        /// "C'est vraiment fantastique." comes back `en`. A French case scored
+        /// under English rules passes for the wrong reason, which is the one
+        /// failure a set cannot see.
+        var language: String? { fields["lang"] ?? fields["language"] }
         /// True when this case must come back byte for byte.
         var mustNotChange: Bool { expect == input }
     }
@@ -99,7 +115,7 @@ struct EvalCases {
 
 extension EvalCases: Decodable {
     enum CodingKeys: String, CodingKey {
-        case transform, instruction, control, intermediate, transforms, cases
+        case transform, instruction, control, intermediate, transforms, lists, cases
     }
 
     init(from decoder: Decoder) throws {
@@ -114,6 +130,7 @@ extension EvalCases: Decodable {
         if c.contains(.transforms) {
             transforms = try Config.transforms(from: try c.superDecoder(forKey: .transforms))
         }
+        lists = try c.decodeIfPresent([String: [String]].self, forKey: .lists)
         cases = try c.decodeIfPresent([Case].self, forKey: .cases) ?? []
     }
 }

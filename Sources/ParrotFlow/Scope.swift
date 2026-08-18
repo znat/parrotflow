@@ -93,9 +93,13 @@ struct Scope: Equatable {
     /// answer. `instruction` joined it when prompts learned to read the scope —
     /// `PromptRunner.compose` puts the spoken instruction there, so it is a bare
     /// name for exactly the same reason.
+    /// `lists` joined for the ordinary reason: the runner publishes every named
+    /// word list under `lists.*` before any stage runs, so a transform of that
+    /// name would overwrite them and a script reading
+    /// `ctx["vars"]["lists"]["determiners"]` would get whatever it wrote.
     static let reserved: Set<String> = [
         "text", "app", "bundle_id", "language", "instruction",
-        "asr", "vad", "vocabulary",
+        "asr", "vad", "vocabulary", "lists",
     ]
 
     init(values: [String: Value] = [:]) {
