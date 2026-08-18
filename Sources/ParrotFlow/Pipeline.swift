@@ -849,6 +849,7 @@ struct Pipeline: Equatable, Codable {
                 "count": .int(done.count),
                 "changes": .string(done.changes),
                 "before": .string(text),
+                "protected": .string(done.protected),
             ])
         case .fuzzy:
             // From the rules, not from the table's keys. Fuzzy matching
@@ -1214,16 +1215,23 @@ struct Pipeline: Equatable, Codable {
         case .prompt:
             return await runPrompt(step, named: name, on: text, config: config, scope: scope)
         case .replace:
-            // Exact and free, so there is nothing to guard and nothing to
-            // report beyond what the table did — the log line is the same one
-            // `replacements` writes, with the name that asked for it.
+            // Exact and free, so there is nothing to guard — the log line is
+            // the same one `replacements` writes, with the name that asked for
+            // it. `protected` is the exception to "nothing to report": a table
+            // has no code of its own to publish from, and what it wrote is
+            // exactly what a later stage must not undo. `dotted` writes the dot
+            // in `user.name` and `join` would otherwise read it as one the
+            // decoder invented.
             let done = Replacements.exact(to: text, rules: transform.rules)
             if done.text != text {
                 Log.write("pipeline: transform \(name) rewrote the transcript")
                 Log.write("    before: \(text)")
                 Log.write("    after:  \(done.text)")
             }
-            return StageResult(text: done.text, vars: ["count": .int(done.count)])
+            return StageResult(text: done.text, vars: [
+                "count": .int(done.count),
+                "protected": .string(done.protected),
+            ])
         case .command(let command):
             // Someone else's program, so this is the second stage that can
             // fail and the second that must not fail loudly. `run` returns nil

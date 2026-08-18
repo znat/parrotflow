@@ -162,6 +162,13 @@ jobs:
       - name: Where the input stage cuts a field
         run: scripts/check-input.sh
 
+      # Fitting a clip to the text either side of the caret. Runs the deployed
+      # script on the envelope it really receives — `--eval` cannot, because the
+      # transform reads `ctx.vars.input.*`. The tags come from the binary's
+      # `--tag`, so this scores the tagger the app ships rather than a fixture.
+      - name: Joining a clip to the box
+        run: scripts/check-join.sh
+
       # Which app gets which treatment. The one part of the destination path
       # that runs without a screen or a real app in front, and a wrong entry is
       # silent both ways — one already was, matching any app named "codex".

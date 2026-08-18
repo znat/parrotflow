@@ -526,6 +526,82 @@ cases:
       context.ok: false
       context.changed: false
 
+  # --- protected, which a table publishes on its own behalf ----------------
+  #
+  # `protected` is the text a pass actually put in, so a later stage can leave
+  # those characters alone. A `replace:` table has no code of its own, so
+  # `Replacements.exact` publishes for it. The value is the template expanded,
+  # which is the part that needed the change: the all-at-once regex call keeps
+  # the expansion to itself and hands back only the finished string.
+  - name: a replace transform publishes the expanded template, not the template
+    pipeline: vars-shipped
+    input: read user dot name
+    expect: read user.name
+    expect_vars:
+      dotted.count: 1
+      dotted.protected: user.name
+
+  # The same rule twice in one sentence. Both are protected, and the pass walks
+  # the matches back to front so the second one's offsets are still good when
+  # the first is written.
+  - name: a replace transform publishes both substitutions it wrote
+    pipeline: vars-shipped
+    input: read user dot name and config dot yaml
+    expect: read user.name and config.yaml
+    expect_vars:
+      dotted.count: 1
+      dotted.protected: "user.name; config.yaml"
+
+  # Nothing fired, so there is nothing to protect. Empty rather than absent, so
+  # a condition reading it does not fault.
+  - name: a replace transform that fired publishes nothing when it wrote nothing
+    pipeline: vars-shipped
+    input: a python function called max retries
+    expect: a python function called max_retries
+    expect_vars:
+      dotted.ran: false
+
+  # The `replacements` stage publishes it too, from the same pass. A literal
+  # rule protects the term it wrote, and a deletion protects nothing — there is
+  # no text to leave alone.
+  - name: the replacements stage publishes what its rules wrote
+    pipeline: replacements
+    input: our app is deployed on Versailles
+    expect: our app is deployed on Vercel
+    expect_vars:
+      replacements.protected: Vercel
+
+  - name: a deletion protects nothing
+    pipeline: replacements
+    input: our app is um deployed on Vercel
+    expect: Our app is deployed on Vercel
+    expect_vars:
+      replacements.count: 1
+      replacements.protected: ""
+
+  # A pattern can match a term that is already written the way the rule would
+  # write it. That match wrote nothing, so there is nothing to protect —
+  # publishing it would have `join` read the speaker's own word as a rule's
+  # work and leave it alone where it should be re-cased.
+  - name: a match that changed nothing protects nothing
+    pipeline: protected
+    input: we deployed on Vercel
+    expect: unchanged
+    expect_vars:
+      replacements.count: 0
+      replacements.changed: false
+      replacements.protected: ""
+
+  # The same rule, the spelling it exists for. This is the half that must keep
+  # working, and it is why the case above cannot be got by deleting the rule.
+  - name: and the same rule protects what it did write
+    pipeline: protected
+    input: we deployed on Versal
+    expect: we deployed on Vercel
+    expect_vars:
+      replacements.count: 1
+      replacements.protected: Vercel
+
   # --- input, which from here can only decline -----------------------------
   #
   # See tests/pipelines/input.yaml. Same shape as the context cases above and
