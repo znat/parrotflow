@@ -385,21 +385,21 @@ def main():
         sys.stdout.write(raw)
         return
 
-    tokens = envelope.get("tokens") or []
-    tag = tokens[0].get("tag") if tokens else None
-    box = ((envelope.get("ctx") or {}).get("vars") or {}).get("input") or {}
-    before, after = box.get("before"), box.get("after")
-    protected = protected_terms(envelope)
-    if before is None and after is None:
-        # No caret, so nothing can be decided about the edges. The stops inside
-        # the sentence are a different question and do not need one, which is
-        # what makes this worth running in a terminal.
-        out, applied = unstopped(text, protected)
-        print(json.dumps({"text": out, "vars": reported(applied)}))
-        return
-
+    # One guard over the whole decision, not one over half of it. Every branch
+    # below is formatting, and none of it is worth a lost transcript.
     try:
-        out, applied = join(text, before, after, tag, protected)
+        tokens = envelope.get("tokens") or []
+        tag = tokens[0].get("tag") if tokens else None
+        box = ((envelope.get("ctx") or {}).get("vars") or {}).get("input") or {}
+        before, after = box.get("before"), box.get("after")
+        protected = protected_terms(envelope)
+        if before is None and after is None:
+            # No caret, so nothing can be decided about the edges. The stops
+            # inside the sentence are a different question and need none, which
+            # is what makes this worth running in a terminal.
+            out, applied = unstopped(text, protected)
+        else:
+            out, applied = join(text, before, after, tag, protected)
     except Exception:
         out, applied = text, []
     print(json.dumps({"text": out, "vars": reported(applied)}))
