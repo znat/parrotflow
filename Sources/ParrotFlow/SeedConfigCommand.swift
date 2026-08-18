@@ -10,6 +10,8 @@ import Foundation
 ///
 /// Nothing is ever overwritten — that is `createIfMissing`'s whole contract —
 /// so running this against a config you already have is safe and does nothing.
+/// It does say when a file you own is no longer the copy that ships, which is
+/// the only thing an upgrade can honestly do about a file that is yours.
 /// Point it somewhere else with `PARROTFLOW_CONFIG_DIR` to see the full result.
 enum SeedConfigCommand {
 
@@ -17,13 +19,22 @@ enum SeedConfigCommand {
         let directory = ConfigStore.directory
         print("config: \(directory.path)")
 
-        let watched = [ConfigStore.fileURL] + ConfigStore.seededTransforms.flatMap { name, _ in
-            ConfigStore.seededTransformFiles(name).map {
-                ConfigStore.seededTransformFolder(name).appendingPathComponent($0)
+        // Each seeded file, paired with the copy that ships now. `config.yaml`
+        // has no pair: it is written once from a template and then edited, so
+        // "differs" would be true for everyone and mean nothing.
+        var watched: [(file: URL, shipped: URL?)] = [(ConfigStore.fileURL, nil)]
+        for (name, _) in ConfigStore.seededTransforms {
+            let folder = ConfigStore.seededTransformFolder(name)
+            let source = ConfigStore.exampleTransformsDirectory
+                .appendingPathComponent(name, isDirectory: true)
+            for filename in ConfigStore.seededTransformFiles(name) {
+                watched.append((folder.appendingPathComponent(filename),
+                                source.appendingPathComponent(filename)))
             }
         }
+
         let fm = FileManager.default
-        let before = Set(watched.filter { fm.fileExists(atPath: $0.path) }.map(\.path))
+        let before = Set(watched.map(\.file).filter { fm.fileExists(atPath: $0.path) }.map(\.path))
 
         do {
             try ConfigStore.createIfMissing()
@@ -32,14 +43,28 @@ enum SeedConfigCommand {
             return 1
         }
 
-        for file in watched {
+        var differing = 0
+        for (file, shipped) in watched {
             let relative = file.path.hasPrefix(directory.path + "/")
                 ? String(file.path.dropFirst(directory.path.count + 1)) : file.path
             if before.contains(file.path) {
-                print("  · \(relative) — already there, left alone")
+                if let shipped, ConfigStore.differsFromShipped(file, shipped) {
+                    print("  · \(relative) — yours, and not the copy that ships now")
+                    differing += 1
+                } else {
+                    print("  · \(relative) — already there, left alone")
+                }
             } else if fm.fileExists(atPath: file.path) {
                 print("  ✓ \(relative) — written")
             }
+        }
+
+        if differing > 0 {
+            print("")
+            let noun = differing == 1 ? "file is" : "files are"
+            print("  \(differing) \(noun) yours, and older or edited. Nothing was overwritten.")
+            print("  The copies that ship are in \(ConfigStore.exampleTransformsDirectory.path)")
+            print("  Diff against them, or move yours aside and run this again.")
         }
         return 0
     }

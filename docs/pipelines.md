@@ -374,6 +374,20 @@ never overwritten afterwards: once it exists it is yours. The stop lists in it
 decide where a name ends, which is a judgement about how you speak rather than
 a fact, and they are meant to be edited.
 
+**So an upgrade never changes a shipped transform you already have.** It only
+adds files that are not there — a new data file next to a script you own, say.
+It does say which of your files is no longer the copy that ships, in the log at
+startup and in `ParrotFlow --seed-config`:
+
+```
+  · transforms/punctuation/punctuation.py — yours, and not the copy that ships now
+```
+
+Byte for byte, so "you edited it" and "it is from an older version" look the
+same and nothing can tell them apart. To take the new one, move yours aside and
+run `--seed-config` again. That is the whole upgrade path, and it is manual on
+purpose: the alternative is an update reverting your stop lists.
+
 It is gated twice, and both gates are in the config where you can see them:
 `app:` to editors and terminals, and `when:` to a sentence containing a kind
 word, so no process is started on prose. Delete either line to widen it, or the
@@ -618,6 +632,12 @@ nobody checked.
 `returns: json` is what sends the language and the word lists in, so it is not
 optional for this stage. Run by hand — `echo "…" | ./punctuation.py` — it falls
 back to English and its own guard list.
+
+If you already had `punctuation` before this, you have two files of your own:
+take the new `punctuation.py` the way [above](#code_identifiers-which-ships)
+says, and add `returns: json` to the step in your `config.yaml`. Without the
+script you get the old marks; with the script but not the key you get the new
+marks in English only.
 
 **A pair is a verb, an optional determiner and a noun.** "ouvrez les
 guillemets … fermez les guillemets" has the same shape as the parentheses, so

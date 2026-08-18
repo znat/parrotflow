@@ -1,6 +1,6 @@
 # Validation set for `punctuation`. Scored with `ParrotFlow --eval punctuation`.
 #
-# A language is a file: the stage loads `<lang>.yaml` beside the script, chosen
+# A language is a file: the stage loads `<lang>.py` beside the script, chosen
 # by `ctx.language`. A case states its own with `lang:`, because detection is
 # unreliable at the length a case is. A language with no file does nothing and
 # says so, and the last case holds that.

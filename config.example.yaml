@@ -266,7 +266,7 @@ transforms:
     description: spoken marks as punctuation
     command: punctuation.py
     # The script needs its context, and `returns: json` is what sends it: the
-    # language, which picks `<lang>.yaml`, and `lists.talked_about`. It reports
+    # language, which picks `<lang>.py`, and `lists.talked_about`. It reports
     # `applied` — the marks it wrote — and `declined`, which names the guard
     # that left a trigger as the ordinary word it is. Every trigger is an
     # English word, so "why is my comma still a comma" is the question this

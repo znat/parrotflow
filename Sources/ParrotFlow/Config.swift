@@ -2101,6 +2101,17 @@ enum ConfigStore {
             .sorted()
     }
 
+    /// Is the file a user owns still the copy that ships?
+    ///
+    /// Byte for byte, which answers both "you edited it" and "it is the one
+    /// from an older version" at once, and cannot tell them apart. Neither can
+    /// anything else, which is why this reports rather than overwrites.
+    static func differsFromShipped(_ file: URL, _ shipped: URL) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: shipped.path) else { return false }
+        return !fm.contentsEqual(atPath: file.path, andPath: shipped.path)
+    }
+
     /// `examples/transforms/` — the one copy of every shipped example, seeded
     /// from here instead of a string in the binary.
     ///
@@ -2147,9 +2158,19 @@ enum ConfigStore {
             let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)
             for filename in seededTransformFiles(name) {
                 let destination = folder.appendingPathComponent(filename)
-                guard !fm.fileExists(atPath: destination.path) else { continue }
+                let shipped = source.appendingPathComponent(filename)
+                guard !fm.fileExists(atPath: destination.path) else {
+                    // Never overwritten, so the most an upgrade can do is say
+                    // so. `--seed-config` prints the same thing with the path
+                    // of the copy that ships.
+                    if differsFromShipped(destination, shipped) {
+                        Log.write("config: transforms/\(name)/\(filename) is yours, "
+                                  + "and not the copy that ships now")
+                    }
+                    continue
+                }
                 try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-                try fm.copyItem(at: source.appendingPathComponent(filename), to: destination)
+                try fm.copyItem(at: shipped, to: destination)
                 if filename == script {
                     // A shebang does nothing without this.
                     try fm.setAttributes([.posixPermissions: 0o755],

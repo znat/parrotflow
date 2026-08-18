@@ -9,7 +9,7 @@ on stdout.
 
 "is that true question mark" -> "is that true?"
 
-**A language is a file.** `<lang>.yaml` beside this script holds the words and
+**A language is a file.** `<lang>.py` beside this script holds the words and
 the marks they write, and `ctx.language` picks it. No file for a language means
 the stage does nothing and says so — `declined: no rules for de` — rather than
 applying English rules nobody checked. The typography lives in the data too:
