@@ -369,7 +369,7 @@ to a built-in stage or to the router have nowhere else to be and stay in
 
 | Where | Sets |
 |---|---|
-| `examples/transforms/<name>/` | `code_identifiers` (78), `dotted` (76), `grammar` (17), `email` (26), `repetitions` (60) |
+| `examples/transforms/<name>/` | `code_identifiers` (78), `dotted` (76), `punctuation` (57), `grammar` (17), `email` (26), `repetitions` (60) |
 | `tests/` | `spelling` (62), `french` (45), `numbers` (97), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement` |
 
 Each has a runner in `scripts/`; the transform sets can also be scored with

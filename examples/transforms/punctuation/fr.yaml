@@ -1,0 +1,39 @@
+# Les mots de ponctuation en français.
+#
+# L'espace fine insécable ( ) fait partie de la marque, pas d'une règle :
+# le français en met une avant ? ! ; : et à l'intérieur des guillemets. Écrite
+# ici, elle sort toute seule — aucun code ne connaît la typographie.
+
+marks:
+  point d'interrogation: " ?"
+  point d'exclamation:   " !"
+  point-virgule:         " ;"
+  point virgule:         " ;"
+  virgule:               ","
+  points de suspension:  "…"
+  # `deux points` n'est pas ici. Mesuré : sur 3 785 dictées, "deux points"
+  # apparaît 3 fois et jamais comme une marque — "les deux points suivants",
+  # "des deux points en question". Le garde `talked_about` attrape celles-là,
+  # mais pas "il a relevé deux points importants", sans déterminant devant.
+  # Même refus que `point` tout seul dans `dotted`.
+
+pairs:
+  # Impératif et infinitif : on dicte "ouvrez" comme "ouvrir".
+  open:  [ouvre, ouvrez, ouvrir, ouvrant]
+  close: [ferme, fermez, fermer, fermant]
+  # "ouvrez LES parenthèses" — le déterminant est facultatif et se place entre
+  # le verbe et le nom. C'est la seule chose que l'anglais n'a pas.
+  between: [le, la, les, un, une, des]
+  marks:
+    - mark: ["(", ")"]
+      names: [parenthèse, parenthèses]
+    # En français les guillemets sont une paire comme les autres : c'est
+    # l'anglais qui est irrégulier avec "quote … unquote".
+    - mark: ["« ", " »"]
+      names: [guillemet, guillemets]
+    - mark: ["[", "]"]
+      names: [crochet, crochets]
+    - mark: ["{", "}"]
+      names: [accolade, accolades]
+    - mark: ["<", ">"]
+      names: [chevron, chevrons]

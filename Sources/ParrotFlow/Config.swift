@@ -2086,6 +2086,21 @@ enum ConfigStore {
         seededTransformFolder(name).appendingPathComponent(script)
     }
 
+    /// Every file a seeded transform's example folder holds, by name.
+    ///
+    /// Read rather than listed, so a transform that grows a data file is
+    /// seeded with it. `punctuation` owns `en.yaml` and `fr.yaml`, and a
+    /// script seeded without its data does nothing on every transcript.
+    static func seededTransformFiles(_ name: String) -> [String] {
+        let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)
+        let found = try? FileManager.default.contentsOfDirectory(
+            at: source, includingPropertiesForKeys: nil)
+        return (found ?? [])
+            .filter { !$0.hasDirectoryPath && !$0.lastPathComponent.hasPrefix(".") }
+            .map(\.lastPathComponent)
+            .sorted()
+    }
+
     /// `examples/transforms/` — the one copy of every shipped example, seeded
     /// from here instead of a string in the binary.
     ///
@@ -2130,19 +2145,17 @@ enum ConfigStore {
         for (name, script) in seededTransforms {
             let folder = seededTransformFolder(name)
             let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)
-            let scriptURL = seededTransformScript(name, script)
-            if !fm.fileExists(atPath: scriptURL.path) {
+            for filename in seededTransformFiles(name) {
+                let destination = folder.appendingPathComponent(filename)
+                guard !fm.fileExists(atPath: destination.path) else { continue }
                 try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-                try fm.copyItem(at: source.appendingPathComponent(script), to: scriptURL)
-                // A shebang does nothing without this.
-                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
-                Log.write("config: wrote transforms/\(name)/\(script)")
-            }
-            let cases = folder.appendingPathComponent("cases.yaml")
-            if !fm.fileExists(atPath: cases.path) {
-                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-                try fm.copyItem(at: source.appendingPathComponent("cases.yaml"), to: cases)
-                Log.write("config: wrote transforms/\(name)/cases.yaml")
+                try fm.copyItem(at: source.appendingPathComponent(filename), to: destination)
+                if filename == script {
+                    // A shebang does nothing without this.
+                    try fm.setAttributes([.posixPermissions: 0o755],
+                                         ofItemAtPath: destination.path)
+                }
+                Log.write("config: wrote transforms/\(name)/\(filename)")
             }
         }
         // The vocabulary, empty but explained. Written so the file exists to

@@ -17,9 +17,10 @@ enum SeedConfigCommand {
         let directory = ConfigStore.directory
         print("config: \(directory.path)")
 
-        let watched = [ConfigStore.fileURL] + ConfigStore.seededTransforms.flatMap { name, script in
-            [ConfigStore.seededTransformScript(name, script),
-             ConfigStore.seededTransformFolder(name).appendingPathComponent("cases.yaml")]
+        let watched = [ConfigStore.fileURL] + ConfigStore.seededTransforms.flatMap { name, _ in
+            ConfigStore.seededTransformFiles(name).map {
+                ConfigStore.seededTransformFolder(name).appendingPathComponent($0)
+            }
         }
         let fm = FileManager.default
         let before = Set(watched.filter { fm.fileExists(atPath: $0.path) }.map(\.path))
