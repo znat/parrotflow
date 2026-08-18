@@ -18,8 +18,9 @@ enum TagCommand {
         let tokens = Tagger.tokens(in: ComposeCommand.expanded(text), language: resolved)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        guard let data = try? encoder.encode(tokens) else { return 1 }
-        print(String(decoding: data, as: UTF8.self))
+        guard let data = try? encoder.encode(tokens),
+              let json = String(bytes: data, encoding: .utf8) else { return 1 }
+        print(json)
         return 0
     }
 }
