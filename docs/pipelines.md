@@ -463,16 +463,32 @@ at least one side is nearly always a determiner, a preposition, or the head of a
 set phrase — `le point de vue`, `un bon point pour`, `a dot product`.
 
 ```
-\b(?!(?:le|la|les|…|the|a|an)\b)(\w+) (?:dot|point) (?!(?:de|du|…|product)\b)(?=\w)
+\b(?!(?:{{determiners}})\b)(\w+) (?:dot|point) (?!(?:{{prose_after_point}})\b)(?=\w)
 ```
 
 The second word is matched but not consumed, which is what lets a chain work:
 `user point profile point name` → `user.profile.name`. Consuming it would leave
 the middle token unavailable to the next match.
 
-**54/54 on `examples/transforms/dotted/cases.txt`, plus two it cannot do.** Two ordinary words
+The two lists are named rather than written out. They are in `lists:` in
+config.yaml, one definition read by every rule that needs them — see
+[configuration.md](configuration.md#lists). `dash`, `slash`, `hyphen` and
+`underscore` are the same rule with the same lists, plus one of their own where
+the trigger is also an ordinary word: `dash` needs an after-list of English
+function words, because a real join has a name part on its right and "a mad
+dash to the door" does not.
+
+A single letter either side is its own rule — "A dot B", "a underscore b". The
+before-list would otherwise throw it away, and one letter is never prose.
+
+A leading-slash path declines whole rather than half-converting: "in slash tmp
+slash x" stays words. `(?<!slash )` is what does it. Half a path is worse than
+none, and half is what a two-step rewrite would give — a `replace:` table is
+built from a Swift dictionary, so its rules run in an unspecified order.
+
+**73/73 on `examples/transforms/dotted/cases.txt`, plus three it cannot do.** Two ordinary words
 either side — "réunion point hebdomadaire" — is a shape only a dictionary would
-tell from code, and both residual cases are kept in the set, failing, rather
+tell from code, and every residual case is kept in the set, failing, rather
 than dropped to make the number look better. They are unlikely in a terminal or
 a chat window, which together with the `app:` scoping is the only reason this is
 on by default; in `replacements:` it would run everywhere and would not be
@@ -908,11 +924,13 @@ nothing — otherwise the speaker's own punctuation would be read as a rule's
 work. `tests/pipelines/protected.yaml` holds both halves down.
 
 Before any stage runs, the scope already holds `text`, `app`, `bundle_id`,
-`language`, and what transcription measured — `asr.confidence`, `asr.duration`,
-`asr.processing`, `asr.words`. On a dictation it also holds `press.run`, which
-says which hotkey press this transcript came from. Dictations overlap, so a
-stage that reads something captured at the press has to ask for its own —
-`input` does. It is absent off the hotkey path, `--pipeline` included.
+`language`, every named word list under `lists.*` — see
+[configuration.md](configuration.md#lists) — and what transcription measured:
+`asr.confidence`, `asr.duration`, `asr.processing`, `asr.words`. On a dictation
+it also holds `press.run`, which says which hotkey press this transcript came
+from. Dictations overlap, so a stage that reads something captured at the press
+has to ask for its own — `input` does. It is absent off the hotkey path,
+`--pipeline` included.
 
 So a stage can stand down on a recording the recogniser was not sure about:
 

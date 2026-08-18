@@ -1,0 +1,29 @@
+# Named word lists, and what `{{name}}` does to a pattern.
+#
+# `marks` is written shortest first on purpose. `expanded` sorts the words
+# longest first, and this fixture fails if it stops.
+languages: [en, fr]
+lists:
+  determiners: [the, a, an, le, la]
+  marks: [colon, semi colon]
+  path_lead: [in]
+transforms:
+  - name: dotted
+    description: a spoken dot as a dot, unless a determiner is in front
+    replace:
+      '$1.': ['/\b(?!(?:{{determiners}})\b)(\w+) dot (?=\w)/']
+
+  - name: marked
+    description: the mark words, longest phrase first
+    replace:
+      MARK: ['/\b(?:{{marks}})\b/']
+
+  - name: pathed
+    description: a spoken slash as a slash, unless the path is the leading one
+    replace:
+      '$1/': ['/\b(?!(?:{{path_lead}})\b)(\w+) slash (?=\w)/']
+
+pipeline:
+  - transform: dotted
+  - transform: marked
+  - transform: pathed
