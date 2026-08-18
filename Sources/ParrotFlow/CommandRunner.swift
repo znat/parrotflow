@@ -191,6 +191,7 @@ enum CommandRunner {
             environment["PARROTFLOW_PROTOCOL"] = "json"
             process.environment = environment
         }
+        applyInterpreterPath(to: process)
 
         let input = Pipe()
         let output = Pipe()
@@ -385,6 +386,115 @@ enum CommandRunner {
         let shellSyntax = CharacterSet(charactersIn: "|&;<>()$`\n")
         let prefix = arguments.rangeOfCharacter(from: shellSyntax) == nil ? "exec " : ""
         return prefix + quoted(program) + arguments
+    }
+
+    // MARK: - Getting past the version-manager shim
+
+    /// Where the real `python3` lives, resolved once per run of the app.
+    ///
+    /// A version manager puts a shell script on PATH in place of the
+    /// interpreter, and that script re-execs through its own launcher on every
+    /// call. Measured on a Mac with pyenv:
+    ///
+    ///     python3 -c pass  through the shim              301 ms
+    ///     python3 -c pass  through the real interpreter    20 ms
+    ///     repetitions.py   through the shim              308 ms
+    ///     repetitions.py   through the real interpreter    25 ms
+    ///
+    /// The interpreter reports its own path, so this asks it rather than
+    /// guessing at one manager's layout. pyenv, asdf, mise and a plain Homebrew
+    /// install all answer the same question.
+    private static let interpreterLock = NSLock()
+    /// Outer nil means "not asked yet", inner nil means "asked, found nothing".
+    nonisolated(unsafe) private static var interpreterDirectory: String??
+
+    private static func realInterpreterDirectory() -> String? {
+        // Held across the probe on purpose. A second caller waits for the
+        // answer instead of starting a second probe, and the wait is bounded
+        // by the deadline in it. It happens once per run of the app.
+        interpreterLock.lock()
+        defer { interpreterLock.unlock() }
+        if let cached = interpreterDirectory { return cached }
+        let found = probeInterpreterDirectory()
+        interpreterDirectory = .some(found)
+        return found
+    }
+
+    private static func probeInterpreterDirectory() -> String? {
+        let probe = Process()
+        // `env`, not a shell. It execs the interpreter in place, so this holds
+        // one process and the deadline below signals the interpreter itself. A
+        // shell in between can hand stdout to a child that outlives it, and
+        // then nothing here knows what to terminate. PATH resolution is the
+        // whole point of the probe, and `env` is what does it.
+        probe.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        probe.arguments = ["python3", "-c", "import sys; print(sys.executable)"]
+        let pipe = Pipe()
+        probe.standardOutput = pipe
+        probe.standardError = FileHandle.nullDevice
+
+        // Read as it arrives, on Foundation's own queue. Reading to EOF from a
+        // thread of ours would hold that thread for as long as anything with
+        // the write end lives, and the deadline below cannot cut that short.
+        let collected = Locked(Data())
+        let eof = DispatchSemaphore(value: 0)
+        let exited = DispatchSemaphore(value: 0)
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+                eof.signal()
+            } else {
+                collected.mutate { $0.append(chunk) }
+            }
+        }
+        probe.terminationHandler = { _ in exited.signal() }
+
+        // The probe pays the shim once. Everything after it does not.
+        guard (try? probe.run()) != nil else {
+            pipe.fileHandleForReading.readabilityHandler = nil
+            return nil
+        }
+
+        if exited.wait(timeout: .now() + Self.timeout) == .timedOut {
+            // SIGTERM, then SIGKILL, which cannot be ignored. Waiting for the
+            // exit is what reaps it: returning from here with the process
+            // still running leaves a zombie nothing is watching.
+            probe.terminate()
+            if exited.wait(timeout: .now() + 0.5) == .timedOut {
+                kill(probe.processIdentifier, SIGKILL)
+                _ = exited.wait(timeout: .now() + 0.5)
+            }
+            pipe.fileHandleForReading.readabilityHandler = nil
+            Log.write("command: python3 did not say where it is in \(Self.timeout)s; left PATH alone")
+            return nil
+        }
+        // The line was written before the process exited, so this waits on the
+        // handoff from Foundation's queue and nothing longer. Whatever has
+        // arrived by then is what gets read.
+        _ = eof.wait(timeout: .now() + 0.25)
+        pipe.fileHandleForReading.readabilityHandler = nil
+
+        let path = (String(data: collected.value, encoding: .utf8) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) else { return nil }
+        Log.write("command: python3 resolves to \(path)")
+        return (path as NSString).deletingLastPathComponent
+    }
+
+    /// Put the real interpreter ahead of the shim for one subprocess.
+    ///
+    /// PATH rather than rewriting the command: the scripts say
+    /// `#!/usr/bin/env python3`, which is what makes them runnable by hand and
+    /// portable to a machine with a different layout. Changing what `env` finds
+    /// keeps both.
+    private static func applyInterpreterPath(to process: Process) {
+        guard let directory = realInterpreterDirectory() else { return }
+        var environment = process.environment ?? ProcessInfo.processInfo.environment
+        let existing = environment["PATH"] ?? ""
+        guard !existing.hasPrefix(directory + ":"), existing != directory else { return }
+        environment["PATH"] = existing.isEmpty ? directory : directory + ":" + existing
+        process.environment = environment
     }
 
     /// A path the shell will read as one word, whatever is in it.

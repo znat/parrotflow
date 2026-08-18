@@ -133,13 +133,34 @@ the text has moved on, because an undo fired against edited text is not an undo.
 | Bare-modifier polling | 25 ms, on top of the above |
 | Transcription of a normal sentence | about a second after you let go |
 | `replacements`, `fuzzy`, `numbers`, a `replace:` transform | 0.035 s measured on a line |
-| A `command:` transform | one process start — ~30 ms for `python3`, ~5 ms for a shell script |
+| A `command:` transform | one process start — ~25 ms for `python3`, ~5 ms for a shell script, ~300 ms if `python3` is a version-manager shim |
 | A `prompt:` transform, model warm | ~1.5 s |
 | A `prompt:` transform, model cold | 6.7 s, which `llm.keep_loaded` exists to avoid |
 
 The gap between the last three rows is the reason stages carry conditions: a
 `when:` that costs nothing is what keeps a stage that costs a second off the
 transcripts that never needed it.
+
+### The version-manager shim
+
+`python3` on a Mac with pyenv, asdf or mise is not the interpreter. It is a
+shell script that re-execs through the manager, on every call. Measured on one
+Mac with pyenv:
+
+| Command | Through the shim | Through the real interpreter |
+| --- | --- | --- |
+| `python3 -c pass` | 301 ms | 20 ms |
+| `repetitions.py` | 308 ms | 25 ms |
+
+Three Python transforms in a pipeline was about 0.9 s of launcher on every
+dictation. That is more than a warm `prompt:` stage costs, and a `command:`
+stage usually has no `when:` in front of it.
+
+`CommandRunner` asks the interpreter for `sys.executable` once per run of the
+app, then puts that directory in front of `PATH` for every command it starts.
+The same `sh -c exec` shape then costs 41 ms. It changes `PATH` rather than the
+command, so scripts keep their `#!/usr/bin/env python3` line and still run by
+hand.
 
 ### Start-up latency
 
