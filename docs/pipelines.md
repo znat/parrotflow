@@ -784,8 +784,12 @@ publishes whatever it likes; see
 
 Before any stage runs, the scope already holds `text`, `app`, `bundle_id`,
 `language`, and what transcription measured — `asr.confidence`, `asr.duration`,
-`asr.processing`, `asr.words`. So a stage can stand down on a recording the
-recogniser was not sure about:
+`asr.processing`, `asr.words`. On a dictation it also holds `press.run`, which
+says which hotkey press this transcript came from. Dictations overlap, so a
+stage that reads something captured at the press has to ask for its own —
+`input` does. It is absent off the hotkey path, `--pipeline` included.
+
+So a stage can stand down on a recording the recogniser was not sure about:
 
 ```yaml
     - stage: transform
@@ -1046,6 +1050,11 @@ not part of either side.
 
 **Read at the press**, like `context`, and for the same reason: by the time the
 pipeline runs, focus may be elsewhere.
+
+**One capture per press.** The stage asks for the capture belonging to
+`press.run`, not for the newest one. Starting a second dictation while the
+first is still being transcribed is ordinary, and with one shared slot the
+first would read the second's field.
 
 **While the stage is on, the log holds what was in the field when you
 dictated** — the character counts and where the caret was, not the text itself.

@@ -81,19 +81,36 @@ enum InputBox {
         let ms: Double
     }
 
+    /// One capture per press, by press run.
+    ///
+    /// Not one slot. Dictations overlap — a second press while the first is
+    /// still being transcribed is an ordinary thing to do, and the app already
+    /// keys `screenAtPress` and `pressesInFlight` the same way. With one slot
+    /// the second press cleared what the first dictation had not read yet, so
+    /// the first got `noPress` and then, once the second read finished, the
+    /// second field.
+    ///
+    /// Emptied by `forget(_:)` from `dictationEnded`, however the dictation
+    /// finished, and capped below in case a press ever ends without one.
     private static let pressLock = NSLock()
-    nonisolated(unsafe) private static var press: Press?
+    nonisolated(unsafe) private static var presses: [Int: Press] = [:]
 
-    /// Which press the stored capture belongs to. Two reads can be in flight at
-    /// once and nothing makes them finish in order — see `Context.pressGeneration`,
-    /// which this mirrors deliberately rather than sharing, so one stage being
-    /// configured never starts the other one's read.
-    nonisolated(unsafe) private static var pressGeneration = 0
+    /// How many captures to keep. Nothing needs more than the presses in
+    /// flight, which is one or two; this is only a bound in case a run is
+    /// somehow never forgotten.
+    private static let maxPresses = 8
 
-    static var pressCapture: Press? {
+    static func capture(for run: Int) -> Press? {
         pressLock.lock()
         defer { pressLock.unlock() }
-        return press
+        return presses[run]
+    }
+
+    /// This dictation is over, however it ended.
+    static func forget(_ run: Int) {
+        pressLock.lock()
+        presses.removeValue(forKey: run)
+        pressLock.unlock()
     }
 
     static func isConfigured(in config: Config) -> Bool {
@@ -102,12 +119,7 @@ enum InputBox {
 
     /// Call **after** recording has started, off the main thread. The element
     /// was resolved on the main thread at press and must not be re-resolved.
-    static func capturePress(app: Pipeline.App?, element: AXUIElement?) {
-        pressLock.lock()
-        pressGeneration += 1
-        let mine = pressGeneration
-        press = nil
-        pressLock.unlock()
+    static func capturePress(run: Int, app: Pipeline.App?, element: AXUIElement?) {
         guard let element else { return }
 
         let started = CFAbsoluteTimeGetCurrent()
@@ -115,15 +127,14 @@ enum InputBox {
         let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
 
         pressLock.lock()
-        let newest = mine == pressGeneration
-        if newest { press = Press(outcome: outcome, ms: ms) }
+        presses[run] = Press(outcome: outcome, ms: ms)
+        if presses.count > maxPresses {
+            for old in presses.keys.sorted().prefix(presses.count - maxPresses) {
+                presses.removeValue(forKey: old)
+            }
+        }
         pressLock.unlock()
 
-        guard newest else {
-            Log.write(String(
-                format: "input: a %.0fms read was overtaken by a newer press; dropped", ms))
-            return
-        }
         switch outcome {
         case .success(let capture):
             Log.write(String(

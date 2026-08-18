@@ -910,8 +910,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if startsDictation, InputBox.isConfigured(in: config) {
             let app = front?.app
             let element = focusAtPress?.element
+            // By run, not into one slot. `pressRun` was bumped above, so this
+            // is the run the dictation about to start will carry, and the one
+            // its pipeline asks for. Dictations overlap.
+            let run = pressRun
             DispatchQueue.global(qos: .userInitiated).async {
-                InputBox.capturePress(app: app, element: element)
+                InputBox.capturePress(run: run, app: app, element: element)
             }
         }
 
@@ -1461,7 +1465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     beside: recording.url.deletingLastPathComponent()
                 ) {
                     let text = try await self?.transcriber.transcribe(
-                        url: recording.url, config: config, app: app,
+                        url: recording.url, config: config, app: app, press: press.run,
                         progress: { label in
                             Task { @MainActor [weak self] in
                                 // Still this dictation, and still one that has
@@ -2717,6 +2721,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// reach anything that is somehow left.
     private func dictationEnded(_ run: Int) {
         screenAtPress.removeValue(forKey: run)
+        InputBox.forget(run)
         pressesInFlight.remove(run)
         cancelledPresses.remove(run)
     }

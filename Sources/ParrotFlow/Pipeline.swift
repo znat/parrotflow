@@ -867,7 +867,7 @@ struct Pipeline: Equatable, Codable {
         case .context:
             return await readContext(on: text)
         case .input:
-            return readInputBox(on: text)
+            return readInputBox(on: text, scope: scope)
         case .vocabulary:
             return await judgeVocabulary(step, on: text, config: config, scope: scope,
                                          findings: findings)
@@ -952,12 +952,22 @@ struct Pipeline: Equatable, Codable {
     /// The box is not read here. It was read when the hotkey went down — see
     /// `InputBox.capturePress` — because by then focus may have moved.
     ///
+    /// The capture is fetched by press run, seeded as `press.run`. Dictations
+    /// overlap, and "the box you were typing in" is a question about one press.
+    /// No run in scope means no press at all, which is every entry point that
+    /// is not the hotkey — `--pipeline` above all.
+    ///
     /// `before`, `selection`, `after` and `appending` are absent rather than
     /// empty where the surface publishes no caret, which is every terminal.
     /// Absent throws in a condition and that is the point: `when: input.appending`
     /// should fail loudly on a surface that cannot answer it, not read as "no".
-    private func readInputBox(on text: String) -> StageResult {
-        switch InputBox.pressCapture?.outcome ?? .failure(.noPress) {
+    private func readInputBox(on text: String, scope: Scope) -> StageResult {
+        let capture: Result<InputBox.Capture, InputBox.Declined> = {
+            guard case .int(let run)? = scope["press.run"],
+                  let press = InputBox.capture(for: run) else { return .failure(.noPress) }
+            return press.outcome
+        }()
+        switch capture {
         case .failure(let why):
             Log.write("pipeline: input declined — \(why.rawValue)")
             // The same keys a successful read publishes, emptied, plus the
