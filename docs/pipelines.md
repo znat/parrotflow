@@ -610,8 +610,8 @@ a right answer reached by the wrong rule counts as a miss.
 Spoken marks as punctuation: *"is that true question mark"* → *"is that
 true?"*. A `command:` transform, `examples/transforms/punctuation/`.
 
-The words live in `<lang>.yaml` beside the script, and `ctx.language` picks the
-file. `en.yaml` and `fr.yaml` ship. A language with no file does nothing and
+The words live in `<lang>.py` beside the script, and `ctx.language` picks the
+file. `en.py` and `fr.py` ship. A language with no file does nothing and
 says so — `declined: no rules for de` — rather than applying English rules
 nobody checked.
 

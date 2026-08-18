@@ -2089,7 +2089,7 @@ enum ConfigStore {
     /// Every file a seeded transform's example folder holds, by name.
     ///
     /// Read rather than listed, so a transform that grows a data file is
-    /// seeded with it. `punctuation` owns `en.yaml` and `fr.yaml`, and a
+    /// seeded with it. `punctuation` owns `en.py` and `fr.py`, and a
     /// script seeded without its data does nothing on every transcript.
     static func seededTransformFiles(_ name: String) -> [String] {
         let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)

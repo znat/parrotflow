@@ -142,7 +142,7 @@ cases:
   # --- paired brackets ---
   # Same shape as quote/unquote: the mark words are ordinary, so only the
   # closed pair fires. American norms: `bracket` is `[` and `parenthesis` is
-  # `(` — see en.yaml.
+  # `(` — see en.py.
   - probe: brackets
     input: What about open bracket, this close bracket?
     expect: What about [this]?
@@ -206,7 +206,7 @@ cases:
   # "C'était vraiment fantastique." comes back `en`.
   #
   # L'espace fine insécable (U+202F) fait partie de la marque, écrite dans
-  # fr.yaml. Aucun code ne connaît la typographie française.
+  # fr.py. Aucun code ne connaît la typographie française.
   - probe: fr
     lang: fr
     input: Est-ce vrai point d'interrogation

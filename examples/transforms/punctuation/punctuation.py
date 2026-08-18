@@ -63,12 +63,11 @@ and the same is true of whatever the next one turns out to be. Thin evidence,
 not an archive — this hasn't been measured against real dictation the way
 `dotted`'s guards were.
 """
+import importlib.util
 import json
 import pathlib
 import re
 import sys
-
-import yaml
 
 # What the decoder writes at a pause. A mark stands where its guess did.
 PUNCT = ".!?,:;"
@@ -100,7 +99,7 @@ def read_list(envelope, name, fallback):
     return words or fallback
 
 def language_file(language):
-    """The marks for a language, from `<lang>.yaml` beside this script.
+    """The marks for a language, from `<lang>.py` beside this script.
 
     Nothing when there is no such file. Not a fallback to English: English
     rules on a language nobody checked fire words that mean something else,
@@ -109,12 +108,31 @@ def language_file(language):
 
     `ctx.language` is what picks the file. A case states its own with `lang:`
     because detection is unreliable at the length a sentence is.
+
+    A Python module rather than YAML, because a shipped transform runs on
+    whatever `python3` the machine has. Apple's `/usr/bin/python3` has no
+    PyYAML, so importing it here would end the stage with ModuleNotFoundError
+    before it read a word — and none of the other shipped transforms need
+    anything outside the standard library either.
     """
-    path = pathlib.Path(__file__).with_name(f"{(language or 'en').lower()}.yaml")
+    path = pathlib.Path(__file__).with_name(f"{(language or 'en').lower()}.py")
     if not path.exists():
         return None
+    spec = importlib.util.spec_from_file_location(f"punctuation_{path.stem}", path)
+    if spec is None or spec.loader is None:
+        return None
     try:
-        return yaml.safe_load(path.read_text(encoding="utf-8")) or None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return {
+            "marks": dict(module.MARKS),
+            "pairs": {
+                "open": list(module.OPEN),
+                "close": list(module.CLOSE),
+                "between": list(module.BETWEEN),
+                "marks": [dict(entry) for entry in module.PAIRS],
+            },
+        }
     except Exception:
         return None
 
