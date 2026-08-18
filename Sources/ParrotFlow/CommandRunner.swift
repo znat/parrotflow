@@ -409,6 +409,9 @@ enum CommandRunner {
     nonisolated(unsafe) private static var interpreterDirectory: String??
 
     private static func realInterpreterDirectory() -> String? {
+        // Held across the probe on purpose. A second caller waits for the
+        // answer instead of starting a second probe, and the wait is bounded
+        // by the deadline in it. It happens once per run of the app.
         interpreterLock.lock()
         defer { interpreterLock.unlock() }
         if let cached = interpreterDirectory { return cached }
@@ -419,31 +422,58 @@ enum CommandRunner {
 
     private static func probeInterpreterDirectory() -> String? {
         let probe = Process()
-        probe.executableURL = URL(fileURLWithPath: "/bin/sh")
-        probe.arguments = ["-c", "python3 -c 'import sys; print(sys.executable)'"]
+        // `env`, not a shell. It execs the interpreter in place, so this holds
+        // one process and the deadline below signals the interpreter itself. A
+        // shell in between can hand stdout to a child that outlives it, and
+        // then nothing here knows what to terminate. PATH resolution is the
+        // whole point of the probe, and `env` is what does it.
+        probe.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        probe.arguments = ["python3", "-c", "import sys; print(sys.executable)"]
         let pipe = Pipe()
         probe.standardOutput = pipe
         probe.standardError = FileHandle.nullDevice
 
-        // The probe pays the shim once. Everything after it does not.
-        guard (try? probe.run()) != nil else { return nil }
-
-        // Read on another thread so the deadline below can still fire. A shim
-        // that hangs would otherwise hold every dictation from here on, and
-        // this optimisation is not worth a lost transcript.
+        // Read as it arrives, on Foundation's own queue. Reading to EOF from a
+        // thread of ours would hold that thread for as long as anything with
+        // the write end lives, and the deadline below cannot cut that short.
         let collected = Locked(Data())
-        let read = DispatchSemaphore(value: 0)
-        DispatchQueue.global(qos: .userInitiated).async {
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            collected.mutate { $0 = data }
-            read.signal()
+        let eof = DispatchSemaphore(value: 0)
+        let exited = DispatchSemaphore(value: 0)
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            if chunk.isEmpty {
+                handle.readabilityHandler = nil
+                eof.signal()
+            } else {
+                collected.mutate { $0.append(chunk) }
+            }
         }
-        guard read.wait(timeout: .now() + Self.timeout) == .success else {
-            probe.terminate()
-            Log.write("command: python3 did not report its path in \(Self.timeout)s; kept PATH as it is")
+        probe.terminationHandler = { _ in exited.signal() }
+
+        // The probe pays the shim once. Everything after it does not.
+        guard (try? probe.run()) != nil else {
+            pipe.fileHandleForReading.readabilityHandler = nil
             return nil
         }
-        probe.waitUntilExit()
+
+        if exited.wait(timeout: .now() + Self.timeout) == .timedOut {
+            // SIGTERM, then SIGKILL, which cannot be ignored. Waiting for the
+            // exit is what reaps it: returning from here with the process
+            // still running leaves a zombie nothing is watching.
+            probe.terminate()
+            if exited.wait(timeout: .now() + 0.5) == .timedOut {
+                kill(probe.processIdentifier, SIGKILL)
+                _ = exited.wait(timeout: .now() + 0.5)
+            }
+            pipe.fileHandleForReading.readabilityHandler = nil
+            Log.write("command: python3 did not say where it is in \(Self.timeout)s; left PATH alone")
+            return nil
+        }
+        // The line was written before the process exited, so this waits on the
+        // handoff from Foundation's queue and nothing longer. Whatever has
+        // arrived by then is what gets read.
+        _ = eof.wait(timeout: .now() + 0.25)
+        pipe.fileHandleForReading.readabilityHandler = nil
 
         let path = (String(data: collected.value, encoding: .utf8) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
