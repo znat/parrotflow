@@ -951,9 +951,12 @@ struct Pipeline: Equatable, Codable {
         _ step: Step, on text: String, config: Config, scope: Scope,
         findings: Vocabulary.Outcome?
     ) async -> StageResult {
-        func declined(_ why: String, _ vars: [String: Scope.Value] = [:]) -> StageResult {
+        func declined(
+            _ why: String, _ vars: [String: Scope.Value] = [:], fallback: String? = nil
+        ) -> StageResult {
             Log.write("pipeline: vocabulary — \(why)")
-            return StageResult(text: text, vars: vars.merging(["ok": .bool(false)]) { a, _ in a })
+            return StageResult(
+                text: fallback ?? text, vars: vars.merging(["ok": .bool(false)]) { a, _ in a })
         }
 
         let caps = step.caps ?? VocabularyJudge.Caps.standard
@@ -1016,25 +1019,57 @@ struct Pipeline: Equatable, Codable {
         guard !slots.isEmpty else {
             return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(0)])
         }
+        // Computed ahead of the slot cap below, so a lesson still reverts even
+        // in a sentence with too many other places to send to a model.
+        let changes = VocabularyJudge.changes(in: text, from: slots)
+        let taught = VocabularyJudge.teaching(in: text, changes: changes)
+
         // Too many places to judge at once. Keeping what arrived is the safe
-        // answer, and it is logged rather than silent.
+        // answer, and it is logged rather than silent — except a spelling
+        // lesson, which was never going to a model anyway.
         guard slots.count <= caps.slots else {
             return declined("\(slots.count) slots > \(caps.slots); kept as they are",
-                            ["asked": .int(0), "slots": .int(slots.count)])
+                            ["asked": .int(0), "slots": .int(slots.count)],
+                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
         }
 
-        let changes = VocabularyJudge.changes(in: text, from: slots)
         guard !changes.isEmpty else {
             return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(slots.count)])
+        }
+
+        // A spelling lesson is settled here and never asked about. Both models
+        // measured answered all four of the archive's cases the wrong way, and
+        // the prompt paragraph that described the pattern did not move them.
+        let lessons = zip(changes, taught).filter { $0.1 }.map { "\($0.0.now) -> \($0.0.was)" }
+        if !lessons.isEmpty {
+            Log.write("vocabulary judge: spelling lesson, reverted without asking — "
+                + lessons.joined(separator: "; "))
+        }
+        // Nothing left for a model to answer. Returned before the `llm.enabled`
+        // guard so the rule still fires on a machine with no Ollama.
+        if taught.allSatisfy({ $0 }) {
+            let chosen = VocabularyJudge.reverting(taught, in: text, changes: changes)
+            return StageResult(text: chosen, vars: [
+                "asked": .int(0), "slots": .int(slots.count),
+                "reverted": .string(lessons.joined(separator: "; ")),
+                "judged": .string(chosen),
+            ])
         }
         // Checked here rather than at the top so that a pipeline with no model
         // still publishes what the stage found. `vocabulary.slots` is the one
         // thing about this stage a fixture can assert — the verdict comes from
         // a model and is not deterministic — and it was unreachable while this
         // guard ran first.
+        //
+        // A lesson mixed with an ordinary substitution still has a model to
+        // ask about the ordinary one, but not here: the model is off. The
+        // lesson is reverted anyway — that part never needed a model — and the
+        // ordinary change is left exactly as it arrived, same as every other
+        // decline in this stage.
         guard config.llm.enabled else {
             return declined("llm.enabled is false",
-                            ["asked": .int(0), "slots": .int(slots.count)])
+                            ["asked": .int(0), "slots": .int(slots.count)],
+                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
         }
 
         let built = VocabularyJudge.sentences(in: text, from: changes)
@@ -1060,10 +1095,18 @@ struct Pipeline: Equatable, Codable {
             )
         } catch {
             return declined("\(error.localizedDescription); kept as they are",
-                            ["asked": .int(changes.count), "slots": .int(slots.count)])
+                            ["asked": .int(changes.count), "slots": .int(slots.count)],
+                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
         }
 
+        // A lesson mixed in with real questions is still shown to the model,
+        // so the numbering `question` writes and `verdicts` reads stays one
+        // list. Its answer about that change is then discarded: the rule
+        // decides it, and the rule is 4/4 where the models are 0/4.
         let verdicts = VocabularyJudge.verdicts(reply, count: changes.count)
+            .enumerated().map { index, keep in
+                index < taught.count && taught[index] ? false : keep
+            }
         let chosen = VocabularyJudge.applying(verdicts, to: text, changes: changes)
         // What the judge undid, in the words it put back. Named `reverted`
         // rather than `kept_as_decoded`: on a menu a place that kept its

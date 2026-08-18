@@ -1,0 +1,73 @@
+# Spelling-lesson cases for `VocabularyJudge.teaching`.
+#
+# The rule reverts a substitution whose word sits immediately before "spells".
+# "urza spells mirza" teaches a mapping, and writing the term over the source
+# destroys it: "Mirza spells mirza" teaches nothing.
+#
+# expect: REVERT — the rule fires, and no model is asked
+# expect: ASK    — the rule does not fire, and the model decides as before
+#
+# The four real lessons are the ones harvested into tests/judge-cases.yaml.
+# Everything else here is a control, because a rule is only worth what it
+# leaves alone: `scripts/check-spells-rule.sh` also sweeps all 59 judge cases
+# and fails if the rule fires anywhere but on those four.
+
+cases:
+  # The four from the archive. The activation phrase is mangled in every one of
+  # them — "Hey Barrot", "by the way pirate" — which is why the match is on the
+  # word after the span and not on the phrase.
+  - name: versal spells, capital S
+    said: "Hey Barrot Versal Spells V E R C E L"
+    heard: "Versal"
+    expect: REVERT
+
+  - name: irza spells, mid sentence
+    said: "Uh, by the way, Irza spells Mirza mirza."
+    heard: "Irza"
+    expect: REVERT
+
+  - name: urza spells, no punctuation
+    said: "Uh by the way pirate urza spells mirza"
+    heard: "urza"
+    expect: REVERT
+
+  - name: pressy spells, letters after
+    said: "Hey Parrot, Pressy spells Pr. A I S Y"
+    heard: "Pressy"
+    expect: REVERT
+
+  # Controls. The same words, doing their ordinary job.
+  - name: versal not before spells
+    said: "there is a compression layer before between history and upload and Versal. Sending the file to its back end."
+    heard: "Versal"
+    expect: ASK
+
+  - name: praise is not a lesson
+    said: "The team deserves praise for how quickly they shipped a Ruxby."
+    heard: "praise"
+    expect: ASK
+
+  - name: bedrock is not a lesson
+    said: "I had Salmon with Salman and we argued about bedrock principles."
+    heard: "bedrock"
+    expect: ASK
+
+  # The word after the span is the test, so a term two words away is not one.
+  - name: spells further along the sentence
+    said: "Mirza said the dashboard spells every name wrong."
+    heard: "Mirza"
+    expect: ASK
+
+  # A lesson that ends the sentence has nothing after it.
+  - name: nothing follows the span
+    said: "Um not Peter, uh Frederick."
+    heard: "Frederick."
+    expect: ASK
+
+  # The honest false positive, recorded rather than hidden. A sentence really
+  # about spelling loses its substitution. Nothing in the archive does this,
+  # and the cost is one name left as the decoder wrote it.
+  - name: genuinely about spelling, and lost
+    said: "Versal spells its name oddly, with a c."
+    heard: "Versal"
+    expect: REVERT

@@ -80,6 +80,7 @@ $PF --normalize "<text>"
 $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
 $PF --inflected <term> <heard>
 $PF --verdicts <count> "<reply>"
+$PF --teaching "<sentence>" <word>
 ```
 
 `--inflected` asks what the vocabulary pass would write where a decoded word
@@ -94,6 +95,22 @@ question it answers is whether a possessive survives a substitution, and
 into somebody's sentence or takes one out, so it has its own set:
 `scripts/check-verdicts.sh` against `tests/verdict-cases.yaml`, malformed
 replies included.
+
+`--teaching` asks whether a substitution sits inside a spelling lesson —
+`--teaching "Hey Barrot Versal Spells V E R C E L" Versal` prints `REVERT`, and
+`ASK` for anything else. The word before `spells` is what a lesson is teaching,
+so writing the term over it destroys the correction: "Mirza spells mirza"
+teaches nothing. The judge reverts those without asking a model, because every
+model measured answered all four of the archive's cases the wrong way.
+
+Most lessons never reach it. "hey parrot, Tasmin spells T A S M E E N" is a
+[spoken instruction](#testing-a-spoken-instruction) and the vocabulary stage is
+skipped for it.
+The rule is for the ones where the wake phrase was itself mangled — "Hey
+Barrot", "by the way pirate" — so the command was never recognised and the
+sentence arrived as ordinary dictation. `scripts/check-spells-rule.sh` scores
+it against `tests/spells-cases.yaml` and sweeps all 59 of
+`tests/judge-cases.yaml` to check it fires nowhere else.
 
 `--pipeline` takes a YAML file holding a pipeline — its own, not your config —
 so a case file states the setup it assumes instead of inheriting this machine's.
@@ -389,6 +406,7 @@ scripts/check-vocabulary-config.sh # what vocabulary.yaml adds up to, old keys i
 scripts/check-possessive.sh        # whether a possessive survives a substitution
 scripts/check-verdicts.sh          # what the name judge reads out of a reply
 scripts/check-judge-prompt.sh      # the judge's prompt is one its parser can read
+scripts/check-spells-rule.sh       # a spelling lesson keeps the word it is teaching
 scripts/check-no-voice.sh          # nothing in git is one person's voice
 scripts/check-audio-recovery.sh    # a microphone that changes leaves a usable engine
 scripts/check-profiles.sh          # which app gets examined, named, or read for context
