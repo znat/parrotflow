@@ -328,3 +328,28 @@ cases:
     input: 'He said "we ship. then we rest" today.'
     rule:   "stop at a pause"
     expect: 'He said "we ship then we rest" today.'
+
+  # --- what a value cannot say, written down rather than left to be found ---
+  # `protected` carries values, not offsets, because an offset published by an
+  # earlier stage is stale by the time this one runs — see `protected_terms`.
+  # The price is here: the same string twice, one occurrence written by a rule
+  # and one not, and nothing can tell them apart. Both are kept.
+  #
+  # Scored on purpose, in the direction it errs. Over-protecting leaves a stop
+  # you can see and delete; under-protecting removes one a stage put there
+  # deliberately. `applied` names the attribution once per occurrence, so the
+  # trace says plainly that this happened.
+  - probe: protected
+    before: ~
+    after: ~
+    protected: {replacements: "Update."}
+    input: "Update. then we ship and Update. then we rest"
+    expect: "Update. then we ship and Update. then we rest"
+  # The same sentence with nobody vouching for either. Both stops go, which is
+  # what says the case above is about the attribution and not about the text.
+  - probe: stop
+    before: ~
+    after: ~
+    input: "Update. then we ship and Update. then we rest"
+    rule:   "stop at a pause"
+    expect: "Update then we ship and Update then we rest"
