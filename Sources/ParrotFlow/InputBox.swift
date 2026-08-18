@@ -95,10 +95,18 @@ enum InputBox {
     private static let pressLock = NSLock()
     nonisolated(unsafe) private static var presses: [Int: Press] = [:]
 
-    /// How many captures to keep. Nothing needs more than the presses in
-    /// flight, which is one or two; this is only a bound in case a run is
-    /// somehow never forgotten.
+    /// Runs whose dictation is over. A read is started at the press and can
+    /// finish after that dictation has ended — the accessibility value has been
+    /// observed at 237k characters — and storing it then would put back an
+    /// entry nothing will ever remove again. Kept so a late read can be
+    /// dropped instead.
+    nonisolated(unsafe) private static var ended: Set<Int> = []
+
+    /// How many to keep of each. Nothing needs more than the presses in
+    /// flight, which is one or two; these are bounds in case a run somehow
+    /// never reaches `forget`.
     private static let maxPresses = 8
+    private static let maxEnded = 32
 
     static func capture(for run: Int) -> Press? {
         pressLock.lock()
@@ -110,6 +118,10 @@ enum InputBox {
     static func forget(_ run: Int) {
         pressLock.lock()
         presses.removeValue(forKey: run)
+        ended.insert(run)
+        if ended.count > maxEnded {
+            for old in ended.sorted().prefix(ended.count - maxEnded) { ended.remove(old) }
+        }
         pressLock.unlock()
     }
 
@@ -127,13 +139,22 @@ enum InputBox {
         let ms = (CFAbsoluteTimeGetCurrent() - started) * 1000
 
         pressLock.lock()
-        presses[run] = Press(outcome: outcome, ms: ms)
-        if presses.count > maxPresses {
-            for old in presses.keys.sorted().prefix(presses.count - maxPresses) {
-                presses.removeValue(forKey: old)
+        let stale = ended.contains(run)
+        if !stale {
+            presses[run] = Press(outcome: outcome, ms: ms)
+            if presses.count > maxPresses {
+                for old in presses.keys.sorted().prefix(presses.count - maxPresses) {
+                    presses.removeValue(forKey: old)
+                }
             }
         }
         pressLock.unlock()
+
+        guard !stale else {
+            Log.write(String(
+                format: "input: a %.0fms read finished after its dictation ended; dropped", ms))
+            return
+        }
 
         switch outcome {
         case .success(let capture):
