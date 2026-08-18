@@ -154,6 +154,17 @@ lists:
   # is why "add slash semicolon ellipsis" comes back as words.
   mark_names: ["semicolon", "semi", "ellipsis", "comma", "colon", "dot", "dash", "hyphen", "underscore", "period", "quote", "unquote", "bracket", "brackets", "paren", "parens", "parenthesis", "point", "virgule"]
 
+  # A word right before a spoken mark that means it is the noun, not the mark:
+  # "a comma splice", "the exclamation point". Kept short on purpose — most
+  # prepositions are also how a phrasal verb ends ("hold on", "log in"), and
+  # guarding on those broke real instructions. Read by `punctuation`, which
+  # reads `determiners` too, for the French.
+  # `oxford` is not a determiner. It is here because "the oxford comma" was
+  # `punctuation`'s one documented miss, and this is now where such a thing is
+  # fixed — one word here rather than an edit to a script.
+  talked_about: ["a", "an", "the", "and", "or", "nor", "around", "oxford"]
+
+
 # What the activation phrase can reach, and what a pipeline can name.
 #
 #   name          the id a pipeline or `when:` names
@@ -254,6 +265,13 @@ transforms:
   - name: punctuation
     description: spoken marks as punctuation
     command: punctuation.py
+    # The script needs its context, and `returns: json` is what sends it: the
+    # language, which picks `<lang>.py`, and `lists.talked_about`. It reports
+    # `applied` — the marks it wrote — and `declined`, which names the guard
+    # that left a trigger as the ordinary word it is. Every trigger is an
+    # English word, so "why is my comma still a comma" is the question this
+    # stage generates, and the trace now answers it.
+    returns: json
 
   # Cheap enough not to gate on a `when:` — 0.04s, mostly the `python3`
   # start, and it deletes nothing when it finds nothing.

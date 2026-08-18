@@ -374,6 +374,20 @@ never overwritten afterwards: once it exists it is yours. The stop lists in it
 decide where a name ends, which is a judgement about how you speak rather than
 a fact, and they are meant to be edited.
 
+**So an upgrade never changes a shipped transform you already have.** It only
+adds files that are not there — a new data file next to a script you own, say.
+It does say which of your files is no longer the copy that ships, in the log at
+startup and in `ParrotFlow --seed-config`:
+
+```
+  · transforms/punctuation/punctuation.py — yours, and not the copy that ships now
+```
+
+Byte for byte, so "you edited it" and "it is from an older version" look the
+same and nothing can tell them apart. To take the new one, move yours aside and
+run `--seed-config` again. That is the whole upgrade path, and it is manual on
+purpose: the alternative is an update reverting your stop lists.
+
 It is gated twice, and both gates are in the config where you can see them:
 `app:` to editors and terminals, and `when:` to a sentence containing a kind
 word, so no process is started on prose. Delete either line to widen it, or the
@@ -605,6 +619,53 @@ envelope it really receives, because `--eval` feeds a transcript and nothing
 else. The tags come from `--tag` rather than from the case file, so what is
 scored is the tagger the app ships. A case may name the `rule:` it expects, and
 a right answer reached by the wrong rule counts as a miss.
+### `punctuation`, where a language is a file
+
+Spoken marks as punctuation: *"is that true question mark"* → *"is that
+true?"*. A `command:` transform, `examples/transforms/punctuation/`.
+
+The words live in `<lang>.py` beside the script, and `ctx.language` picks the
+file. `en.py` and `fr.py` ship. A language with no file does nothing and
+says so — `declined: no rules for de` — rather than applying English rules
+nobody checked.
+
+`returns: json` is what sends the language and the word lists in, so it is not
+optional for this stage. Run by hand — `echo "…" | ./punctuation.py` — it falls
+back to English and its own guard list.
+
+If you already had `punctuation` before this, you have two files of your own:
+take the new `punctuation.py` the way [above](#code_identifiers-which-ships)
+says, and add `returns: json` to the step in your `config.yaml`. Without the
+script you get the old marks; with the script but not the key you get the new
+marks in English only.
+
+**A pair is a verb, an optional determiner and a noun.** "ouvrez les
+guillemets … fermez les guillemets" has the same shape as the parentheses, so
+one pass handles every paired mark. English is the irregular one: `quote …
+unquote` is an entry of data with its own `open:` and `close:`, not a special
+case in code. `between:` is the determiner slot; English leaves it empty.
+
+**The typography is in the data.** French `point d'exclamation` writes `" !"`
+and the guillemets are `["« ", " »"]`, both with a narrow no-break space.
+Nothing in the script knows about French spacing.
+
+**Quotations are read before marks.** That order is what tells a decoder's
+guess from a dictation. Before the mark pass, every punctuation character in
+the transcript is the decoder's own.
+
+**Some words are deliberately not marks.** No `period` or `full stop` in
+English, and no `deux points` in French: measured over 3,785 clips, "deux
+points" appears 3 times and never as a mark. "les deux points suivants" is the
+noun. Same call `dotted` makes on bare "point".
+
+The guard is one entry of `lists.talked_about` — an article, a conjunction, or
+"around" right before the trigger means the mark is being talked about. It
+reads `lists.determiners` too, where the French words are, or "une virgule
+sépare deux propositions" loses its "virgule". Adding a word to the list is how
+the next miss gets fixed, rather than editing the script.
+
+**57/57 on `examples/transforms/punctuation/cases.yaml`**, `fr` 9/9. Score it
+with `ParrotFlow --eval punctuation`.
 
 ### Writing to people: `email` and `slack`
 

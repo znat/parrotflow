@@ -2086,6 +2086,32 @@ enum ConfigStore {
         seededTransformFolder(name).appendingPathComponent(script)
     }
 
+    /// Every file a seeded transform's example folder holds, by name.
+    ///
+    /// Read rather than listed, so a transform that grows a data file is
+    /// seeded with it. `punctuation` owns `en.py` and `fr.py`, and a
+    /// script seeded without its data does nothing on every transcript.
+    static func seededTransformFiles(_ name: String) -> [String] {
+        let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)
+        let found = try? FileManager.default.contentsOfDirectory(
+            at: source, includingPropertiesForKeys: nil)
+        return (found ?? [])
+            .filter { !$0.hasDirectoryPath && !$0.lastPathComponent.hasPrefix(".") }
+            .map(\.lastPathComponent)
+            .sorted()
+    }
+
+    /// Is the file a user owns still the copy that ships?
+    ///
+    /// Byte for byte, which answers both "you edited it" and "it is the one
+    /// from an older version" at once, and cannot tell them apart. Neither can
+    /// anything else, which is why this reports rather than overwrites.
+    static func differsFromShipped(_ file: URL, _ shipped: URL) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: shipped.path) else { return false }
+        return !fm.contentsEqual(atPath: file.path, andPath: shipped.path)
+    }
+
     /// `examples/transforms/` — the one copy of every shipped example, seeded
     /// from here instead of a string in the binary.
     ///
@@ -2130,19 +2156,27 @@ enum ConfigStore {
         for (name, script) in seededTransforms {
             let folder = seededTransformFolder(name)
             let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)
-            let scriptURL = seededTransformScript(name, script)
-            if !fm.fileExists(atPath: scriptURL.path) {
+            for filename in seededTransformFiles(name) {
+                let destination = folder.appendingPathComponent(filename)
+                let shipped = source.appendingPathComponent(filename)
+                guard !fm.fileExists(atPath: destination.path) else {
+                    // Never overwritten, so the most an upgrade can do is say
+                    // so. `--seed-config` prints the same thing with the path
+                    // of the copy that ships.
+                    if differsFromShipped(destination, shipped) {
+                        Log.write("config: transforms/\(name)/\(filename) is yours, "
+                                  + "and not the copy that ships now")
+                    }
+                    continue
+                }
                 try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-                try fm.copyItem(at: source.appendingPathComponent(script), to: scriptURL)
-                // A shebang does nothing without this.
-                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: scriptURL.path)
-                Log.write("config: wrote transforms/\(name)/\(script)")
-            }
-            let cases = folder.appendingPathComponent("cases.yaml")
-            if !fm.fileExists(atPath: cases.path) {
-                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-                try fm.copyItem(at: source.appendingPathComponent("cases.yaml"), to: cases)
-                Log.write("config: wrote transforms/\(name)/cases.yaml")
+                try fm.copyItem(at: shipped, to: destination)
+                if filename == script {
+                    // A shebang does nothing without this.
+                    try fm.setAttributes([.posixPermissions: 0o755],
+                                         ofItemAtPath: destination.path)
+                }
+                Log.write("config: wrote transforms/\(name)/\(filename)")
             }
         }
         // The vocabulary, empty but explained. Written so the file exists to

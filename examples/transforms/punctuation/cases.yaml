@@ -1,5 +1,9 @@
-# Validation set for `punctuation`, English only. Scored with
-# `ParrotFlow --eval punctuation`.
+# Validation set for `punctuation`. Scored with `ParrotFlow --eval punctuation`.
+#
+# A language is a file: the stage loads `<lang>.py` beside the script, chosen
+# by `ctx.language`. A case states its own with `lang:`, because detection is
+# unreliable at the length a case is. A language with no file does nothing and
+# says so, and the last case holds that.
 #
 # A case with no `expect` must come back byte for byte — every trigger is an
 # ordinary word, and a false fire puts a comma in the middle of a sentence
@@ -7,15 +11,23 @@
 #
 # Inputs carry the decoder's own guessed punctuation, because that's what this
 # stage actually receives: a spoken mark replaces whatever punctuation the
-# decoder put next to it, rather than sitting beside it.
+# decoder put next to it, rather than sitting beside it. `quote` and `unquote`
+# are marks like any other here — the comma the decoder writes at the pause
+# after "quote" is absorbed the same way.
+#
+# Quotations are read before marks, and one case holds that order: until the
+# mark pass runs, every punctuation character is the decoder's guess, so a "!"
+# you dictated inside a quotation cannot be mistaken for one.
 #
 # No period rule — "period" and "full stop" are both too ordinary ("a period
 # of time", "the bus makes a full stop", "I said no, full stop") to guard
 # without an archive to build the guard from. Same call `dotted` makes on
 # bare "dot"/"point".
 #
-# Known miss, not guarded: an adjective between the article and the noun
-# ("the oxford comma") slips past the "article right before it" guard.
+# "the oxford comma" used to slip past the "article right before it" guard: the
+# word right before the trigger is the adjective. `oxford` is now a word in
+# `lists.talked_about` in config.yaml rather than a known miss, and so is
+# whatever the next one turns out to be.
 #
 # `on`/`in`/`with` etc. are deliberately not in the guard — they're how a
 # phrasal verb ends ("hold on", "log in"), and guarding on them broke real
@@ -29,6 +41,20 @@ cases:
   - probe: quote
     input: quote first unquote and quote second unquote.
     expect: "\"first\" and \"second\"."
+  # The decoder writes its own comma at the pause after "quote". That comma
+  # is its guess, not your quotation, and it used to sit exactly where the
+  # pattern needed a space — so the whole quotation was left as three words.
+  - probe: quote
+    input: he said quote, something unquote.
+    expect: he said "something".
+  - probe: quote
+    input: "he said, quote, we should ship this, unquote."
+    expect: "he said, \"we should ship this\"."
+  # A mark dictated inside a quotation is not a guess and survives: quotations
+  # are read first, while every punctuation character is still the decoder's.
+  - probe: quote
+    input: he said quote we ship today exclamation point unquote.
+    expect: he said "we ship today!".
 
   # --- marks, decoder-punctuated as they'd actually arrive ---
   - probe: mark
@@ -108,3 +134,115 @@ cases:
   # "around"/"or" right before the trigger: listing the marks, not dictating one.
   - probe: prose
     input: Look at how punctuation around Comma or exclamation point.
+  # A modifier between the article and the noun. Fixed by a word in
+  # `lists.talked_about`, not by a change to the script.
+  - probe: prose
+    input: the oxford comma is not optional here.
+
+  # --- paired brackets ---
+  # Same shape as quote/unquote: the mark words are ordinary, so only the
+  # closed pair fires. American norms: `bracket` is `[` and `parenthesis` is
+  # `(` — see en.py.
+  - probe: brackets
+    input: What about open bracket, this close bracket?
+    expect: What about [this]?
+  - probe: brackets
+    input: the flag open square bracket zero close square bracket is set
+    expect: the flag [zero] is set
+  - probe: brackets
+    input: call it open paren x comma y close paren
+    expect: call it (x, y)
+  - probe: brackets
+    input: open curly bracket a close curly bracket
+    expect: '{a}'
+  # A pair that does not match names two marks, one of them wrong, and there is
+  # no way to tell which. Neither fires.
+  - probe: prose
+    input: open bracket this close parenthesis
+  - probe: prose
+    input: open square bracket this close brace
+  # A lone opener is words. Nobody dictates half a pair.
+  - probe: prose
+    input: put it in brackets
+  - probe: prose
+    input: the opening parenthesis is missing
+
+  # --- semicolon and ellipsis ---
+  - probe: mark
+    input: we ship today semicolon they do not
+    expect: we ship today; they do not
+  - probe: mark
+    input: we ship semi colon they wait
+    expect: we ship; they wait
+  # One character, so a later stage reads it as one sentence end.
+  - probe: mark
+    input: he paused ellipsis then went on
+    expect: he paused… then went on
+  # Here rather than in `dotted`, which runs later and would write "dot.dot".
+  - probe: mark
+    input: and then dot dot dot nothing
+    expect: and then… nothing
+  - probe: prose
+    input: a semicolon splits two clauses
+  # The decoder's own spelling. It glues and camel-cases a pair it thinks it
+  # recognises ("openParen"), hears "paren" as the word "parent", and writes
+  # "closed" for "close". Three failures in one clip, none of them yours.
+  - probe: brackets
+    input: So if I say openParen this close parent, it should work as well as open curly brackets code closed curly brackets.
+    expect: So if I say (this), it should work as well as {code}.
+  - probe: brackets
+    input: openBracket zero closeBracket
+    expect: '[zero]'
+  - probe: brackets
+    input: opening parenthesis x closing parenthesis
+    expect: (x)
+  # "parent" only pairs with itself. On its own it is the ordinary word.
+  - probe: prose
+    input: the parent class is abstract
+
+  # --- français ---
+  # `lang:` is stated, not detected. The pipeline detects when nothing says
+  # otherwise, and detection is unreliable at the length a case is:
+  # "C'était vraiment fantastique." comes back `en`.
+  #
+  # L'espace fine insécable (U+202F) fait partie de la marque, écrite dans
+  # fr.py. Aucun code ne connaît la typographie française.
+  - probe: fr
+    lang: fr
+    input: Est-ce vrai point d'interrogation
+    expect: "Est-ce vrai ?"
+  - probe: fr
+    lang: fr
+    input: Il faut trois choses virgule voici la première
+    expect: Il faut trois choses, voici la première
+  # En français une paire est un verbe, un déterminant facultatif et le nom.
+  # C'est l'anglais qui est irrégulier avec "quote … unquote".
+  - probe: fr
+    lang: fr
+    input: Ouvrez les parenthèses, même encore mieux, fermer les parenthèses.
+    expect: (même encore mieux).
+  - probe: fr
+    lang: fr
+    input: Ouvrez les guillemets, ceci, fermez les guillemets.
+    expect: "« ceci »."
+  - probe: fr
+    lang: fr
+    input: ouvre parenthèse ceci ferme parenthèse
+    expect: (ceci)
+  # Le garde `talked_about` lit aussi `determiners`, où vivent les mots
+  # français — sans quoi "une virgule" devient "une,".
+  - probe: fr
+    lang: fr
+    input: une virgule sépare deux propositions
+  # `deux points` n'est pas dans la table : 3 occurrences dans les archives,
+  # aucune comme marque.
+  - probe: fr
+    lang: fr
+    input: Je veux discuter des deux points suivants
+  - probe: fr
+    lang: fr
+    input: il a relevé les deux points en question
+  # Une langue sans fichier ne fait rien, et le dit.
+  - probe: fr
+    lang: de
+    input: we ship today comma then we rest

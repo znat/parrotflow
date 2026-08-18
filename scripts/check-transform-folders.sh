@@ -229,7 +229,7 @@ seeded="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 
 check "a first launch writes the transform as a folder" \
   "$(cd "$FRESH" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')" \
-  "config.yaml transforms/code_identifiers/cases.yaml transforms/code_identifiers/code_identifiers.py transforms/punctuation/cases.yaml transforms/punctuation/punctuation.py transforms/repetitions/cases.yaml transforms/repetitions/repetitions.py vocabulary.yaml "
+  "config.yaml transforms/code_identifiers/cases.yaml transforms/code_identifiers/code_identifiers.py transforms/punctuation/cases.yaml transforms/punctuation/en.py transforms/punctuation/fr.py transforms/punctuation/punctuation.py transforms/repetitions/cases.yaml transforms/repetitions/repetitions.py vocabulary.yaml "
 
 check "the seeded script is executable" \
   "$([ -x "$FRESH/transforms/code_identifiers/code_identifiers.py" ] && echo yes || echo no)" \
@@ -243,6 +243,30 @@ check "the seeded config resolves its command into the folder" \
 check "a seeded config is clean" \
   "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --check-config > /dev/null 2>&1; echo $?)" \
   "0"
+
+check "seeding twice writes nothing the second time" \
+  "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null | grep -c '✓')" \
+  "0"
+
+# --- a file you own that is no longer the shipped one -----------------------
+#
+# Nothing is ever overwritten, so the most an upgrade can do is say which of
+# your files is older or edited. An older install with the previous script is
+# exactly this: the file is there, and it is not what ships.
+echo "# edited" >> "$FRESH/transforms/punctuation/punctuation.py"
+stale="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
+
+check "a file that differs from the shipped copy is named" \
+  "$(printf '%s\n' "$stale" | grep -c 'transforms/punctuation/punctuation.py — yours, and not the copy that ships now')" \
+  "1"
+
+check "and it is still not overwritten" \
+  "$(tail -n 1 "$FRESH/transforms/punctuation/punctuation.py")" \
+  "# edited"
+
+check "a file you did not touch is not named" \
+  "$(printf '%s\n' "$stale" | grep -c 'transforms/punctuation/en.py — already there, left alone')" \
+  "1"
 
 echo
 echo "  $pass/$total$failed"
