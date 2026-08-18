@@ -359,15 +359,24 @@ if let index = arguments.firstIndex(of: "--tag") {
 }
 
 if let index = arguments.firstIndex(of: "--input-test") {
+    let usage = "usage: ParrotFlow --input-test \"<field>\" <caret> [selected] [limit]"
     guard arguments.indices.contains(index + 2),
           let caret = Int(arguments[index + 2]) else {
-        print("usage: ParrotFlow --input-test \"<field>\" <caret> [selected] [limit]")
+        print(usage)
         exit(2)
     }
     let selected = arguments.indices.contains(index + 3)
         ? (Int(arguments[index + 3]) ?? 0) : 0
     let limit = arguments.indices.contains(index + 4)
         ? Int(arguments[index + 4]) : nil
+    // All three are offsets or lengths into a string. A negative one traps
+    // rather than misbehaving, so it is refused here and not clamped: a
+    // clamped caret would print a cut nobody asked for and look right.
+    guard caret >= 0, selected >= 0, (limit ?? 0) >= 0 else {
+        print(usage)
+        print("caret, selected and limit must not be negative")
+        exit(2)
+    }
     exit(InputTestCommand.run(
         field: arguments[index + 1], caret: caret, selected: selected,
         limit: limit ?? InputBox.maxChars
