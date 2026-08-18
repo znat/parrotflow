@@ -460,24 +460,41 @@ enum ConfigWriter {
     /// of them and only the last one separates key from value. Splitting on
     /// the first looked for a term called `"ACME`. It found none, so `kind:`
     /// was dropped and the next rendering wrote the term a second time.
+    ///
+    /// A quote only delimits when the key opens with one. `O'Brien:` is a
+    /// plain key and its apostrophe is an ordinary letter — a scanner that
+    /// took every quote as a delimiter lost that colon instead, which is the
+    /// same bug the other way round.
     private static func keyColon(in line: String) -> String.Index? {
-        var inDouble = false
-        var inSingle = false
-        var escaped = false
         var index = line.startIndex
-        while index < line.endIndex {
-            let character = line[index]
-            if escaped {
-                escaped = false
-            } else if inDouble, character == "\\" {
-                escaped = true
-            } else if character == "\"", !inSingle {
-                inDouble.toggle()
-            } else if character == "'", !inDouble {
-                inSingle.toggle()
-            } else if character == ":", !inDouble, !inSingle {
-                return index
+        while index < line.endIndex, line[index] == " " {
+            index = line.index(after: index)
+        }
+        guard index < line.endIndex else { return nil }
+
+        let quote = line[index]
+        if quote == "\"" || quote == "'" {
+            index = line.index(after: index)
+            while index < line.endIndex {
+                if quote == "\"", line[index] == "\\" {
+                    index = line.index(after: index)
+                    if index == line.endIndex { break }
+                } else if line[index] == quote {
+                    // A single-quoted scalar writes its own quote as `''`.
+                    let next = line.index(after: index)
+                    if quote == "'", next < line.endIndex, line[next] == "'" {
+                        index = line.index(after: next)
+                        continue
+                    }
+                    index = next
+                    break
+                }
+                index = line.index(after: index)
             }
+        }
+
+        while index < line.endIndex {
+            if line[index] == ":" { return index }
             index = line.index(after: index)
         }
         return nil

@@ -235,6 +235,31 @@ fi
 got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1)"
 wants "and the file reads back as one term" "$got" "1 terms in vocabulary.yaml"
 
+# --- a plain key that carries a quote character -----------------------------
+# The fix above went too far on its first try, and Greptile found that too. A
+# scanner that treated every quote as a delimiter lost the colon of `O'Brien:`
+# — a plain key whose apostrophe is an ordinary letter. Only a key that opens
+# with a quote is a quoted one.
+printf 'terms:\n  %s:\n    kind: person\n    pronunciations:\n      - heard: tass meen\n' \
+  "Tas'meen" > "$WORK/vocabulary.yaml"
+learn "tass mean" "Tas'meen" organization
+wants "an apostrophe key still takes the rendering" "$(vocab)" "heard: tass mean"
+wants "and its kind is replaced"                    "$(vocab)" "kind: organization"
+rejects "not written beside the old one"            "$(vocab)" "kind: person"
+n="$(grep -c "Tas'meen" "$WORK/vocabulary.yaml")"
+total=$((total + 1))
+if [ "$n" = "1" ]; then
+  pass=$((pass + 1)); printf '  ✓ the apostrophe term is not duplicated\n'
+else
+  failed="$failed
+      the apostrophe term is not duplicated"
+  printf '  ✗ the apostrophe term is not duplicated\n      got %s\n' "$n"
+fi
+
+printf 'terms:\n  %s: [tas meen]\n' 'Tas"meen' > "$WORK/vocabulary.yaml"
+learn tasmeen 'Tas"meen'
+wants "a double quote in a plain key is a letter too" "$(vocab)" "tas meen, tasmeen"
+
 # --- the result always parses -----------------------------------------------
 got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1)"
 rejects "the last file written still parses" "$got" "could not be read"
