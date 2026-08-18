@@ -275,8 +275,21 @@ enum CommandRunner {
                 Log.write("command: \"\(command)\" could not be given its context; sent bare text")
             }
         }
-        input.fileHandleForWriting.write(payload)
-        try? input.fileHandleForWriting.close()
+        // Off this thread, for the reason the stdout handler above is. The
+        // envelope now carries the trace, which holds every word the decoder
+        // produced with its timings, so a long dictation puts it past the 64 KB
+        // pipe buffer. A synchronous write of more than that blocks until the
+        // script reads it, and a script that never reads its stdin would hang
+        // here — before `exited.wait` and its timeout is ever reached.
+        //
+        // `write(contentsOf:)` rather than `write(_:)`: the throwing one. A
+        // script that exits before reading closes the pipe, and the
+        // non-throwing call raises an uncatchable exception on that.
+        let handed = payload
+        DispatchQueue.global(qos: .userInitiated).async {
+            try? input.fileHandleForWriting.write(contentsOf: handed)
+            try? input.fileHandleForWriting.close()
+        }
 
         if exited.wait(timeout: .now() + timeout) == .timedOut {
             stop(process)
