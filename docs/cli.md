@@ -355,10 +355,22 @@ $PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
 ```
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
-`vocabulary`, `punctuation`, `rule`, `dictation`, `preview`, `microphone` or
-`sequence`.
+`confidence`, `vocabulary`, `punctuation`, `rule`, `dictation`, `preview`,
+`microphone` or `sequence`.
 `--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
+
+`confidence` is the same offer with `feedback.confidence` on: the sentence
+above the chips, each word coloured by how sure the decoder was of it, and the
+decoder's score for the whole utterance under it, on bands of its own. It is
+the tallest pill there is — four rows when it also warns.
+
+The sheet carries two more: the warning on its own, an amber pill with one
+line, which is what `low_confidence` draws with the colours off and what most
+people will ever see of this; and the same pill in scarlet after it has held a
+Return. Those two have to read as one escalation rather than two moods, which
+is a thing you can only see side by side. See
+[configuration.md](configuration.md#low_confidence--when-the-words-may-not-be-your-words).
 
 `microphone` is the Bluetooth notice, with a made-up device name. It is the one
 surface with something to click besides the offer: *Why* opens the reasons and

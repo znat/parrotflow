@@ -36,6 +36,29 @@ feedback:
   # Click a chip to run it. Tapping the dictation hotkey — press and let go
   # — opens the correction panel too. Holding it starts the next dictation.
   correct_offer: true
+  # Put the sentence on the offer as well, each word coloured by how sure the
+  # decoder was of it: white, then amber, then scarlet. Off by default — it is
+  # for learning what your own dictation is weak at, not for every day.
+  confidence: false
+  # When the offer says the words may not be the words you said. The pill
+  # turns amber and carries one line naming the word. On by default, unlike
+  # `confidence`: it costs nothing on a dictation that went fine.
+  # Both thresholds have to trip, because either alone is noise:
+  #   sentence — the decoder's mean over the whole utterance. Below this the
+  #              decode went badly throughout, not just in one place.
+  #   word     — and it holds a word this bad. Words the vocabulary pass
+  #              wrote do not count: they carry the score of the decode they
+  #              replaced, which is low because that is why the pass fired.
+  # Zero for either turns the warning off.
+  # hold_return is how long, in seconds, a bare Return is taken rather than
+  # typed after a warned dictation — the pill turns red and asks you to check
+  # what was written. It catches the reflex press, not a considered one: past
+  # this the key goes through even with the warning still up. The next Return
+  # always goes through. Cmd+Return is left alone. 0 turns it off.
+  low_confidence:
+    sentence: 0.80
+    word: 0.50
+    hold_return: 1.5
 
 logging:
   # The line-by-line log at ~/Library/Logs/ParrotFlow.log — how

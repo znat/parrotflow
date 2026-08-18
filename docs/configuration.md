@@ -369,6 +369,140 @@ right after dictating.
 
 Off by setting it to `false`. Then no key is taken at any time.
 
+### `confidence` — how sure the decoder was
+
+Off by default. Set `feedback.confidence: true` and the offer carries the
+sentence you just dictated above the chips, one colour per word: white where
+the decoder was sure, then amber, then scarlet where it was not.
+
+It needs `correct_offer`. There is no offer to draw it on without one.
+
+**There is no published threshold this could be read against.** Parakeet gives
+one probability per token and documents nothing about what a value means.
+NVIDIA's own guidance for NeMo is that a raw probability is a weak correctness
+signal and that the operating point has to be found on your own data. So the
+colours are anchored on percentiles of the archive in `trace.jsonl` — the
+median word scores 0.995 and 68% sit at 1.0, so a ramp over the raw 0–1 scale
+would paint the whole sentence white. White is the top 75% of words, amber is
+around the bottom 10%, scarlet is the bottom 1%. Those numbers came from one
+person's voice and one microphone; `docs/cli.md` has the `jq` for measuring
+your own.
+
+Under the sentence sits one number: the decoder's own confidence for the whole
+utterance, printed raw. It is `ASRResult.confidence`, the mean over the tokens,
+the same value a pipeline condition reads as `asr.confidence` and the same one
+`trace.jsonl` records.
+
+It takes the same three colours as the words but not the same numbers. A mean
+over every token moves in a far narrower range than one word does: over 16,513
+dictations here it runs 0.73 at p1, 0.83 at p10 and 0.93 at the median. So its
+bands are the percentiles of that column — white above 0.89, amber around 0.83,
+scarlet at 0.73 and below. On the word bands three dictations in four would
+print white and the colour would say nothing.
+
+Read it knowing it barely moves. Of the dictations holding a word below the
+amber band, only 13% fall under its own p10. A sentence with one bad name in it
+still scores near 0.93 — the word colour catches that, and this number does
+not.
+
+A grey word is one with no reading at all: nothing the decoder said became it.
+That happens where a stage inserted a word — the question mark a punctuation
+pass added, a sentence a prompt rewrote whole. It is rare: 19 dictations in
+15,394 have one. A word the vocabulary or a substitution *replaced* is not
+grey — it takes the score of the decoded word it replaced, because that is the
+same piece of audio, and a name corrected from a shaky decode is exactly the
+word worth colouring.
+
+The pill grows to hold the sentence: up to 640pt wide and three lines, then it
+truncates. That is a lot of pill after every dictation, which is why this is
+off unless you ask for it. It is worth turning on for a while to learn which
+words your own dictation is weak at, and turning off again.
+
+### `low_confidence` — when the words may not be your words
+
+On by default, unlike `confidence`. A dictation that went fine costs nothing.
+
+```yaml
+feedback:
+  low_confidence:
+    sentence: 0.80   # the decode was poor overall
+    word: 0.50       # and it holds a word this bad
+```
+
+When both trip, the pill comes up amber — washed ground, amber rim, amber glow
+— and carries one line above the chips: `This may not be what you said`, then
+the word. The colour is the signal. The line says what it means.
+
+It needs `correct_offer`. It does not need `confidence`: the coloured sentence
+and the score are a separate, off-by-default view for tuning, and the warning
+is meant to work without them.
+
+**Both, not either.** Each threshold alone is noise. A mean over every token
+stays high through one mangled name — over 16,640 dictations here, one where
+the vocabulary pass had to fix a name scores a median 0.931 and one where it
+did not scores 0.931, identically. And one low word is ordinary: a fifth of all
+dictations hold a word under 0.40, usually a clipped `the` or a trailing `uh`
+that changes nothing. What is worth stopping for is a decode that is poor
+throughout *and* holds a word the decoder could not place.
+
+At the defaults that is 3.9% of dictations on this machine — about one in 26.
+The earlier either-one rule was 21.8%, better than one in five.
+
+| | rate |
+|---|---|
+| `sentence: 0.85`, `word: 0.50` | 11.0% |
+| `sentence: 0.80`, `word: 0.50` | 3.9% |
+| `sentence: 0.80`, `word: 0.40` | 3.2% |
+| `sentence: 0.75`, `word: 0.50` | 1.1% |
+
+Zero for either turns the warning off.
+
+**The reflex Return is held.** For 1.5 seconds after a warned dictation lands,
+a bare Return is taken instead of typed: the pill turns scarlet and says
+`Enter held · check what was written, then press it again`. The one after it
+goes through.
+
+```yaml
+feedback:
+  low_confidence:
+    hold_return: 1.5   # seconds; 0 lets every Return through
+```
+
+The number is what makes this a guard rather than a mode. What it catches is
+the Return already on its way down as the words land, before anything has been
+read. Past a second and a half, pressing Return is a decision — the warning is
+still on screen, and the key goes through anyway.
+
+Four more things bound it. It only arms on the 3.9% of dictations that raised
+the warning. It takes one key and disarms itself as it takes it, inside the
+tap, so nothing downstream can hold a keyboard even if it hangs. It only takes
+a bare Return — `⌘↩`, which is how most chat apps send, goes straight through.
+And it cannot outlive the offer: the tap is destroyed with the pill.
+
+It rides on the same `CGEvent` tap the offer's letters use, so it needs Input
+Monitoring in System Settings. Without that grant the tap is created and fed
+nothing — the log says so at every offer, and Return simply works as usual. A
+terminal with Secure Event Input on blocks it the same way.
+
+Set it to `0` to keep the warning and let every Return through.
+
+**Words the vocabulary pass wrote do not count.** A substituted word carries the
+score of the decode it replaced — see `confidence` above — and that score is low
+by definition, because a shaky decode is what made the pass fire. Measured here,
+38.8% of the words substitutions replaced were under 0.60 against 9.9% of words
+generally. Without this rule the warning would shout loudest about the names the
+app has just fixed for you.
+
+Worth knowing: at the defaults this rule changes nothing. All 651 warnings in
+the archive fire either way, because a decode poor enough to be under 0.80
+always holds a second bad word besides the substituted one. Loosen `sentence`
+to 0.90 and it starts to matter — 117 warnings suppressed there.
+
+**It cannot catch a confident mistake.** Confidence says how sure the decoder
+was, not whether it was right. The same archive has the vocabulary pass
+correcting words the decoder scored 0.987 and 1.000. A low score is good
+evidence something is wrong; a high one is not evidence anything is right.
+
 ## `logging`
 
 What gets written to disk about a dictation, apart from the transcript itself.
