@@ -165,6 +165,18 @@ def protected_terms(envelope):
 
     Nothing here knows about code_identifiers in particular. Any stage that
     writes a term it does not want undone publishes the same key.
+
+    **Values, not offsets, and not by choice of encoding.** An offset published
+    by an earlier stage is stale by the time this one runs: `dotted`, `numbers`
+    and any prompt stage rewrite the text in between, and none of them can
+    adjust somebody else's ranges. That is the same fact the envelope states as
+    `aligned`, which is false as soon as any stage rewrites. A value survives a
+    rewrite; a range does not.
+
+    The cost is that two identical strings in one clip cannot be told apart, so
+    a term a rule wrote protects an untouched twin as well. That errs on the
+    safe side: over-protecting leaves a capital you can see and delete, while
+    under-protecting turns `max_retries` into `Max_retries`.
     """
     found = {}
     for stage, published in ((envelope.get("ctx") or {}).get("vars") or {}).items():

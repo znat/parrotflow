@@ -894,6 +894,19 @@ Nothing in `join` knows about `code_identifiers` in particular — `ctx.vars`
 already nests by stage name, so the stage that wrote a term names itself by
 where the value lands.
 
+**Values, not offsets.** A range published by an earlier stage is stale by the
+time a later one reads it: the stages in between rewrite the text and none of
+them can adjust somebody else's ranges. That is the same fact the envelope
+states as `aligned`. The cost is that two identical strings in one clip cannot
+be told apart, so a term a rule wrote protects an untouched twin as well. That
+errs the safe way — over-protecting leaves a capital you can see and delete,
+under-protecting turns `max_retries` into `Max_retries`.
+
+**Only what a pass actually wrote.** A pattern can match a term already written
+the way the rule would write it. That match changed nothing, so it publishes
+nothing — otherwise the speaker's own punctuation would be read as a rule's
+work. `tests/pipelines/protected.yaml` holds both halves down.
+
 Before any stage runs, the scope already holds `text`, `app`, `bundle_id`,
 `language`, and what transcription measured — `asr.confidence`, `asr.duration`,
 `asr.processing`, `asr.words`. On a dictation it also holds `press.run`, which
