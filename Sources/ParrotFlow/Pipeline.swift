@@ -1019,14 +1019,20 @@ struct Pipeline: Equatable, Codable {
         guard !slots.isEmpty else {
             return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(0)])
         }
+        // Computed ahead of the slot cap below, so a lesson still reverts even
+        // in a sentence with too many other places to send to a model.
+        let changes = VocabularyJudge.changes(in: text, from: slots)
+        let taught = VocabularyJudge.teaching(in: text, changes: changes)
+
         // Too many places to judge at once. Keeping what arrived is the safe
-        // answer, and it is logged rather than silent.
+        // answer, and it is logged rather than silent — except a spelling
+        // lesson, which was never going to a model anyway.
         guard slots.count <= caps.slots else {
             return declined("\(slots.count) slots > \(caps.slots); kept as they are",
-                            ["asked": .int(0), "slots": .int(slots.count)])
+                            ["asked": .int(0), "slots": .int(slots.count)],
+                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
         }
 
-        let changes = VocabularyJudge.changes(in: text, from: slots)
         guard !changes.isEmpty else {
             return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(slots.count)])
         }
@@ -1034,7 +1040,6 @@ struct Pipeline: Equatable, Codable {
         // A spelling lesson is settled here and never asked about. Both models
         // measured answered all four of the archive's cases the wrong way, and
         // the prompt paragraph that described the pattern did not move them.
-        let taught = VocabularyJudge.teaching(in: text, changes: changes)
         let lessons = zip(changes, taught).filter { $0.1 }.map { "\($0.0.now) -> \($0.0.was)" }
         if !lessons.isEmpty {
             Log.write("vocabulary judge: spelling lesson, reverted without asking — "
