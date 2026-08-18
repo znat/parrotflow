@@ -89,6 +89,7 @@ terms:
         from: mined
   Claude:
     floor: off
+    kind: person
     pronunciations:
       - heard: cloud
         from: correction
@@ -115,6 +116,13 @@ Both ship untuned at the values above. They are the mechanism, not a
 measurement.
 
 #### Per term
+
+**`kind`** is what the term names: `person`, `place`, `organization` or `word`.
+The correction panel writes it, proposing a value from the macOS word tagger.
+Nothing reads it yet. It is here so the stages that will need it have something
+to read, the way `seen` and `from` were added to a pronunciation before anything
+counted them. A term written before the key existed has no `kind`, and that is
+not the same as `word`.
 
 **`pronunciations`** is the ways this term actually comes out of the
 recogniser. Each entry does two jobs. It is an exact rule, which is what

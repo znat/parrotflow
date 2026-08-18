@@ -5,35 +5,42 @@ colleagues' names all day. A rule you teach once is written to your
 `config.yaml` and applied to every transcript afterwards.
 
 When a name comes out wrong, select it in whatever app you're in, hold the
-hotkey and say **"hey parrot"**. A panel opens with the sentence in it,
-editable in place. What it heard sits above the word it became, struck through.
+hotkey and say **"hey parrot"**. A panel opens with a row for each word that
+looks wrong: what it heard, what it should be, and what kind of thing that is.
 
-    VOCABULARY
+    VOCABULARY  TEACH A WORD
 
-    Fix what I misheard.
+    HEARD AS            SHOULD BE          TYPE
 
-                     Tasmin           Mick
-     I    work  with Tasmeen and      Mik
-     ──   ────  ──── ───────  ───     ───
-     space splits a word in two   ⌫ at the start joins it to the word before
-     ▸ Not sure what to correct?
+    [ Tasmin        ] → [ Tasmeen      ]   Person ⌄   ✕
+    [ Versal        ] → [ Vercel       ]   Org ⌄      ✕
+    + Add a word
 
-           Undo ⌘Z   Discard   Add Tasmeen and Mik to the vocabulary ⌘↩
+    2 rules to save              Cancel esc    Save ↩
 
-The caret starts in the first word, so the sentence is a row of fields rather
-than a label. Every gesture is one a text field already has: type over a word,
-space to split one word into two, ⌫ at the start of a word to join it to the
-word before, clear a word to drop it. ⌘Z undoes, ⌘↩ saves, escape discards.
-Plain ↩ saves too, from inside a word.
+The rows are proposed, not typed from nothing. Any word the macOS dictionary
+does not know gets a row, which on the recordings on disk is 0.6 rows per
+sentence — most sentences propose one row, and a sentence with nothing suspect
+in it opens with one blank row to type into. `scripts/check-suggest.sh` scores
+this: it finds 12 of the 17 words that genuinely needed fixing.
 
-A rule is keyed on what you edited, not on a word — so when the decoder splits
-a name in two ("red crawl" for Redcrawl), joining the two words teaches
-`red crawl => Redcrawl` and leaves the colour alone. The words you did not
-touch cost nothing.
+It cannot find a real word that was simply the wrong one. "cloud" for Claude is
+a word the dictionary knows, so no row is proposed and you type it yourself.
 
-Saving writes one rule per changed word to `config.yaml` — comments and your other
-settings untouched — and puts the corrected phrase back where it came from,
-punctuation and spacing intact.
+**Both sides are fields.** The left one matters when the decoder splits a name
+in two — "red crawl" for Redcrawl arrives as two ordinary words and no proposal
+can join them. Type over the left field to widen the row to the span you meant,
+and the rule taught is `red crawl => Redcrawl`, which leaves the colour alone.
+
+**The type column** is proposed from the macOS word tagger and is often wrong
+about products: it calls Vercel a place. Change it with the menu. It is written
+to the term as `kind:` and nothing reads it yet — it is recorded now so the
+stages that will need it have something to read.
+
+Saving writes one rule per row to `vocabulary.yaml` — comments and your other
+settings untouched — and puts the corrected sentence back where it came from.
+A row with a blank right-hand side is skipped, so the words you did not come to
+fix cost nothing.
 
 ## Saying the spelling instead
 
@@ -54,7 +61,7 @@ language:
     "hey parrot, Elastic search is one word"
     "hey parrot, Jean Luc avec un trait d'union"
 
-And one breath can carry two corrections, which open as two changed words
+And one breath can carry two corrections, which open as two filled-in rows
 in the panel:
 
     "hey parrot, Tasmin spells T A S M E E N and Mick spells M I K"

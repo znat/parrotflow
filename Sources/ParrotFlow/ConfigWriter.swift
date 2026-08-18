@@ -18,11 +18,70 @@ enum ConfigWriter {
     /// replacements` stays for patterns and deletions; a name the recogniser
     /// mangled is a pronunciation, not a pattern, and belongs beside the
     /// pronunciations the acoustic pass already found on its own.
-    static func addVocabularyPronunciation(term: String, heard: String) throws {
+    static func addVocabularyPronunciation(
+        term: String, heard: String, kind: WordKind? = nil
+    ) throws {
         let url = ConfigStore.vocabularyURL
         let original = (try? String(contentsOf: url, encoding: .utf8)) ?? "terms: {}\n"
-        let updated = try insertVocabulary(term: term, heard: heard, into: original)
+        var updated = try insertVocabulary(term: term, heard: heard, into: original)
+        if let kind { updated = setting(kind: kind, of: term, in: updated) }
         try updated.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Writes `kind:` under the term, replacing whatever it said before.
+    ///
+    /// Run after `insertVocabulary`, so the term exists and any flow mapping
+    /// has already been broken into lines. A term still written as a shorthand
+    /// list (`Term: [a, b]`) is left alone: expanding it here would duplicate
+    /// that function's job, and `kind` is a label nothing reads yet. Losing the
+    /// label costs less than rewriting a line for it.
+    static func setting(kind: WordKind, of term: String, in yaml: String) -> String {
+        var lines = yaml.components(separatedBy: "\n")
+        guard let termsIndex = lines.firstIndex(where: { $0.hasPrefix("terms:") }),
+              let start = termLine(for: term, in: lines, under: termsIndex)
+        else { return yaml }
+
+        let head = lines[start]
+        guard let colon = head.firstIndex(of: ":") else { return yaml }
+        let value = String(head[head.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+        guard !value.hasPrefix("["), !value.hasPrefix("{") else { return yaml }
+
+        let line = "    kind: \(kind.rawValue)"
+        var cursor = start + 1
+        while cursor < lines.count {
+            let text = lines[cursor]
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { cursor += 1; continue }
+            guard text.hasPrefix(" "), indentation(of: text).count >= 4 else { break }
+            if indentation(of: text).count == 4, trimmed.hasPrefix("kind:") {
+                lines[cursor] = line
+                return lines.joined(separator: "\n")
+            }
+            cursor += 1
+        }
+        lines.insert(line, at: start + 1)
+        return lines.joined(separator: "\n")
+    }
+
+    /// The term's own line directly under `terms:`, or nil if it is not there.
+    private static func termLine(
+        for term: String, in lines: [String], under termsIndex: Int
+    ) -> Int? {
+        var cursor = termsIndex + 1
+        while cursor < lines.count {
+            let line = lines[cursor]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { cursor += 1; continue }
+            guard line.hasPrefix(" ") else { return nil }
+            if indentation(of: line).count == 2, !trimmed.hasPrefix("#"),
+               let colon = trimmed.firstIndex(of: ":"),
+               unquoted(String(trimmed[trimmed.startIndex..<colon]))
+                   .caseInsensitiveCompare(term) == .orderedSame {
+                return cursor
+            }
+            cursor += 1
+        }
+        return nil
     }
 
     /// Splices the rendering into the term's `pronunciations:`, adding the

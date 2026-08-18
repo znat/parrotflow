@@ -50,7 +50,7 @@ rejects() {
 }
 
 learn() {
-  PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --learn "$1" "$2" >/dev/null 2>&1
+  PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --learn "$1" "$2" ${3+"$3"} >/dev/null 2>&1
 }
 vocab() { cat "$WORK/vocabulary.yaml"; }
 config() { cat "$WORK/config.yaml"; }
@@ -180,6 +180,36 @@ else
       a case-insensitive match reuses the existing term"
   printf '  ✗ a case-insensitive match reuses the existing term\n      got %s\n' "$n"
 fi
+
+# --- the word kind, which only the correction panel fills in ----------------
+printf 'terms:\n  Tasmeen:\n' > "$WORK/vocabulary.yaml"
+learn Tasmin Tasmeen person
+wants "a bare term takes a kind"           "$(vocab)" "kind: person"
+wants "and keeps its pronunciations"       "$(vocab)" "heard: Tasmin"
+
+learn Tasmeene Tasmeen organization
+wants "a second correction replaces it"    "$(vocab)" "kind: organization"
+rejects "and does not leave the old one"   "$(vocab)" "kind: person"
+n="$(grep -c 'kind:' "$WORK/vocabulary.yaml")"
+total=$((total + 1))
+if [ "$n" = "1" ]; then
+  pass=$((pass + 1)); printf '  ✓ one kind line, not two\n'
+else
+  failed="$failed
+      one kind line, not two"
+  printf '  ✗ one kind line, not two\n      got %s\n' "$n"
+fi
+
+learn Tasmeena Tasmeen
+rejects "no kind given leaves it alone"    "$(vocab)" "kind: person"
+wants "the existing kind survives"         "$(vocab)" "kind: organization"
+
+# A shorthand list is left as it is. Expanding it would duplicate what
+# insertVocabulary does, and `kind` is a label nothing reads yet.
+printf 'terms:\n  Praisy: [Prissy]\n' > "$WORK/vocabulary.yaml"
+learn Pressy Praisy person
+wants "a shorthand list still takes the rendering" "$(vocab)" "Pressy"
+rejects "and is not rewritten for a kind"          "$(vocab)" "kind:"
 
 # --- the result always parses -----------------------------------------------
 got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1)"

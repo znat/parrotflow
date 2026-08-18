@@ -188,6 +188,15 @@ if let index = arguments.firstIndex(of: "--inflected") {
     exit(InflectedCommand.run(term: arguments[index + 1], heard: arguments[index + 2]))
 }
 
+if let index = arguments.firstIndex(of: "--suggest") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --suggest \"<sentence>\" [--lang fr]")
+        exit(2)
+    }
+    exit(SuggestCommand.run(text: arguments[index + 1],
+                            language: languageList(arguments)?.first))
+}
+
 if let index = arguments.firstIndex(of: "--verdicts") {
     guard arguments.indices.contains(index + 2), let count = Int(arguments[index + 1]) else {
         print("usage: ParrotFlow --verdicts <count> <reply>")
@@ -303,10 +312,13 @@ if let index = arguments.firstIndex(of: "--dates") {
 
 if let index = arguments.firstIndex(of: "--learn") {
     guard arguments.indices.contains(index + 2) else {
-        print("usage: ParrotFlow --learn <heard> <corrected>")
+        print("usage: ParrotFlow --learn <heard> <corrected> [person|place|organization|word]")
         exit(2)
     }
-    exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2]))
+    let kind = arguments.indices.contains(index + 3)
+        ? WordKind(rawValue: arguments[index + 3]) : nil
+    exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2],
+                          kind: kind))
 }
 
 if let index = arguments.firstIndex(of: "--forget") {

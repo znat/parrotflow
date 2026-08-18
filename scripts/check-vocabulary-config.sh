@@ -363,6 +363,22 @@ rm -rf "$WORK/voice"
 got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --forget Nothing 2>/dev/null)"
 wants "a term with nothing recorded says so" "$got" "nothing recorded for Nothing"
 
+# --- the word kind ----------------------------------------------------------
+got="$(say 'terms:
+  Vercel:
+    kind: organization
+    pronunciations:
+      - heard: Versal')"
+rejects "a known kind says nothing"      "$got" "kind:"
+
+got="$(say 'terms:
+  Vercel:
+    kind: brand
+    pronunciations:
+      - heard: Versal')"
+wants "an unknown kind is named"         "$got" "Vercel: \`kind: brand\`"
+wants "and says what it should be"       "$got" "person, place, organization, word"
+
 printf '\n  %d/%d\n' "$pass" "$total"
 if [ -n "$failed" ]; then
   printf '  failed:%s\n' "$failed"

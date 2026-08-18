@@ -3046,11 +3046,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// False means one could not be written and the user has already been shown
     /// why. Nothing after it should run: a correction that half-saved and then
     /// went on to rewrite the field would leave the two disagreeing.
-    private func learn(_ rules: [(heard: String, corrected: String)]) -> Bool {
+    private func learn(_ rules: [TaughtRule]) -> Bool {
         for rule in rules {
             do {
                 try ConfigWriter.addVocabularyPronunciation(
-                    term: rule.corrected, heard: rule.heard
+                    term: rule.corrected, heard: rule.heard, kind: rule.kind
                 )
                 Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                 Trace.correction(heard: rule.heard, corrected: rule.corrected, via: "command")
@@ -3076,7 +3076,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is still the one that was dictated into, and the clipboard when the
     /// dictation itself went there.
     private func saveOfferedCorrection(
-        _ rules: [(heard: String, corrected: String)],
+        _ rules: [TaughtRule],
         correctedText: String,
         into target: Correction,
         clipboardWhenChosen: Int
@@ -3099,7 +3099,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func saveCorrections(
-        _ rules: [(heard: String, corrected: String)],
+        _ rules: [TaughtRule],
         correctedText: String
     ) {
         guard learn(rules) else {
@@ -3546,7 +3546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for rule in rules {
                 do {
                     try ConfigWriter.addVocabularyPronunciation(
-                        term: rule.corrected, heard: rule.heard
+                        term: rule.corrected, heard: rule.heard, kind: rule.kind
                     )
                     Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                     Trace.correction(
