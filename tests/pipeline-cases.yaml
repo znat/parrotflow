@@ -434,20 +434,47 @@ cases:
 
   # The shipped script, speaking the protocol, with the stage below it gated on
   # what it published. A sentence it takes:
+  #
+  # `protected` is the written identifier and not the words that were said. The
+  # spoken form appears nowhere in the text a later stage is handed, so a stage
+  # asked to leave a name alone could not find it.
   - name: the shipped transform publishes what it converted
     pipeline: vars-shipped
     input: a python function called max retries
     expect: a python function called max_retries
     expect_vars:
       code_identifiers.count: 1
+      code_identifiers.asked_model: false
+      code_identifiers.protected: max_retries
       dotted.ran: false
+  # A class, so the written form is the one thing the two can differ by: the
+  # words are the same and only the convention changed.
+  - name: and publishes it in the convention it wrote
+    pipeline: vars-shipped
+    input: a python class called user profile
+    expect: a python class called UserProfile
+    expect_vars:
+      code_identifiers.count: 1
+      code_identifiers.protected: UserProfile
+  # The same name twice. `count` says how much work the stage did and stays 2;
+  # `protected` is the list of words to leave alone, so it holds one entry.
+  - name: and names a repeated identifier once
+    pipeline: vars-shipped
+    input: a python function called max retries and another python function called max retries
+    expect: a python function called max_retries and another python function called max_retries
+    expect_vars:
+      code_identifiers.count: 2
+      code_identifiers.protected: max_retries
   # And one it declines, which is what lets the stage below it have a turn.
+  # Nothing converted means nothing to protect, so the list is empty rather
+  # than absent — a condition reading it must not fault.
   - name: and stands aside for the next stage when it converted nothing
     pipeline: vars-shipped
     input: read user dot name
     expect: read user.name
     expect_vars:
       code_identifiers.count: 0
+      code_identifiers.protected: ""
       dotted.ran: true
       dotted.changed: true
 
