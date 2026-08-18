@@ -1,0 +1,17 @@
+# What `protected` publishes, and what it must not.
+#
+# `protected` is the text a pass actually put in, so a later stage can leave
+# those characters alone. The rule here matches a term that is already written
+# the way it would be written, which is how a pattern can fire and change
+# nothing. Publishing that would have `join` treat the speaker's own word as
+# something a rule wrote, and leave it alone where it should be re-cased.
+#
+# One rule, two spellings, one of them already correct. That is the whole
+# fixture: the alternation is what makes a no-op match reachable at all.
+languages: [en]
+
+replacements:
+  Vercel: ['/\b(?:Versal|Vercel)\b/']
+
+pipeline:
+  - replacements

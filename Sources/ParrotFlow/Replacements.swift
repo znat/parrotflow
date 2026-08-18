@@ -115,8 +115,15 @@ enum Replacements {
                 let expanded = pattern.replacementString(
                     for: match, in: output, offset: 0, template: rule.template)
                 guard let range = Range(match.range, in: output) else { continue }
+                // What stood there before this rule touched it. A match whose
+                // expansion is the text already present wrote nothing, so there
+                // is nothing to protect: publishing it would have a later stage
+                // treat the speaker's own punctuation as a rule's work.
+                let matched = String(output[range])
                 output.replaceSubrange(range, with: expanded)
-                if !rule.isDeletion, !expanded.isEmpty { wrote.append(expanded) }
+                if !rule.isDeletion, !expanded.isEmpty, expanded != matched {
+                    wrote.append(expanded)
+                }
             }
             // Back into reading order. The walk is backwards; the list a later
             // stage searches should still run left to right.

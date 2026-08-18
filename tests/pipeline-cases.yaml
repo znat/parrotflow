@@ -579,6 +579,29 @@ cases:
       replacements.count: 1
       replacements.protected: ""
 
+  # A pattern can match a term that is already written the way the rule would
+  # write it. That match wrote nothing, so there is nothing to protect —
+  # publishing it would have `join` read the speaker's own word as a rule's
+  # work and leave it alone where it should be re-cased.
+  - name: a match that changed nothing protects nothing
+    pipeline: protected
+    input: we deployed on Vercel
+    expect: unchanged
+    expect_vars:
+      replacements.count: 0
+      replacements.changed: false
+      replacements.protected: ""
+
+  # The same rule, the spelling it exists for. This is the half that must keep
+  # working, and it is why the case above cannot be got by deleting the rule.
+  - name: and the same rule protects what it did write
+    pipeline: protected
+    input: we deployed on Versal
+    expect: we deployed on Vercel
+    expect_vars:
+      replacements.count: 1
+      replacements.protected: Vercel
+
   # --- input, which from here can only decline -----------------------------
   #
   # See tests/pipelines/input.yaml. Same shape as the context cases above and
