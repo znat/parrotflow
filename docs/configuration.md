@@ -382,7 +382,7 @@ dictation's — the result is not written over it, and the menu bar says so.
 
 | | Does |
 |---|---|
-| a chip's letter — `C`, `G` | Runs that command |
+| a chip's letter — `V`, `G` | Runs that command |
 | a click on a chip | Runs that command |
 | a click anywhere else | Dismisses, and reaches whatever you clicked untouched |
 | any other key | Dismisses, and reaches whatever it was headed for untouched |
@@ -403,7 +403,7 @@ with a modifier on it is somebody else's shortcut and is left alone, `⌘C`
 still copies and `⇧G` still types a capital G. Every other key you press ends
 the offer instead, the same as clicking anywhere but the pill does, and is
 passed straight through: it still lands wherever it was headed. So a dictation
-followed straight away by a sentence starting with `C` or `G` runs a command
+followed straight away by a sentence starting with `V` or `G` runs a command
 on that first keystroke — the offer is up, and that is still its letter — but
 every keystroke after it is safe, because the offer is already gone. Pick a
 chip's letter with that in mind: one you are unlikely to start a word with

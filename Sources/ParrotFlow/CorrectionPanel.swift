@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SwiftUI
 
 /// Teach me the words I got wrong.
@@ -12,6 +13,7 @@ final class CorrectionPanel {
 
     private var panel: KeyPanel?
     private let model = CorrectionModel()
+    private var tabMonitor: Any?
 
     /// (rules to save, the full corrected text to put back).
     var onSave: (([TaughtRule], String) -> Void)?
@@ -36,6 +38,7 @@ final class CorrectionPanel {
         if panel == nil { build() }
         resize()
         reposition()
+        watchForTab()
         NSApp.activate(ignoringOtherApps: true)
         panel?.riseIntoView(makeKey: true)
 
@@ -69,8 +72,31 @@ final class CorrectionPanel {
     /// it already gone.
     private func dismiss(cancelled: Bool) {
         guard panel?.isVisible == true else { return }
+        stopWatchingForTab()
         panel?.orderOut(nil)
         if cancelled { onCancel?() }
+    }
+
+    /// Tab walks all three columns, not the two fields.
+    ///
+    /// A monitor and not `onKeyPress`: a focused text field consumes Tab in its
+    /// field editor to move to the next key view, and SwiftUI never hears it. A
+    /// local monitor sees the key before the responder chain does, so this is
+    /// the only place the ring can be decided. Shift-Tab goes back.
+    private func watchForTab() {
+        guard tabMonitor == nil else { return }
+        tabMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            guard let self, self.panel?.isKeyWindow == true,
+                  event.keyCode == UInt16(kVK_Tab) else { return event }
+            self.model.moveFocus(by: event.modifierFlags.contains(.shift) ? -1 : 1)
+            return nil
+        }
+    }
+
+    private func stopWatchingForTab() {
+        if let tabMonitor { NSEvent.removeMonitor(tabMonitor) }
+        tabMonitor = nil
     }
 
     private func build() {

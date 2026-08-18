@@ -14,7 +14,7 @@ enum PanelsCommand {
     /// which is what the shipped config puts on the pill. A row of chips is the
     /// shape worth looking at, not one chip on its own.
     private static let offerChips = [
-        OfferedCommand(title: "Vocabulary", key: "C"),
+        OfferedCommand(title: "Vocabulary", key: "V"),
         OfferedCommand(title: "grammar", key: "G")
     ]
 
@@ -74,8 +74,13 @@ enum PanelsCommand {
         rule.load(sentence: "we deployed on Ver Sal")
         rule.rows = [CorrectionRow(heard: "Ver Sal", corrected: "Vercel",
                                    kind: .organization)]
+        // The rows were replaced wholesale, so the focus `load` left points at
+        // a row that no longer exists.
+        rule.focus = CorrectionModel.Cell(row: rule.rows[0].id, column: .corrected)
 
-        // Two rows, so the picker is drawn twice against different words.
+        // Two rows, so the picker is drawn twice against different words. The
+        // sheet cannot show a focus ring on any of them: it renders offscreen,
+        // in no key window, and SwiftUI grants focus to neither.
         let several = CorrectionModel()
         several.load(sentence: "Olama runs polyma for Tasmine")
 

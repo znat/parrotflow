@@ -345,7 +345,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Read fresh each time rather than stored, so a config reloaded between
     /// two dictations changes what the next offer says.
     private var offerCommands: [OfferedCommand] {
-        [OfferedCommand(title: "Vocabulary", key: "C")]
+        [OfferedCommand(title: "Vocabulary", key: "V")]
             + config.transforms.filter(\.offer).map {
                 OfferedCommand(title: $0.name, key: $0.offerKey)
             }

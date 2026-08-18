@@ -188,7 +188,7 @@ transforms:
   - name: grammar
     description: fix grammar and punctuation mistakes, not formatting or numbers
     display: Fixing grammar
-    # `offer: true` puts this on the pill after a dictation, next to Correct.
+    # `offer: true` puts this on the pill after a dictation, next to Vocabulary.
     # `key:` is the letter drawn on its chip.
     offer: true
     key: g

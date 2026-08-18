@@ -80,6 +80,7 @@ final class CorrectionModel: ObservableObject {
             CorrectionRow(heard: $0.heard, kind: $0.kind, suggested: true)
         }
         if rows.isEmpty { rows = [CorrectionRow(heard: "")] }
+        focusFirstRow()
     }
 
     /// Open with the rules already filled in — a model proposed them, you
@@ -100,6 +101,7 @@ final class CorrectionModel: ObservableObject {
             )
         }
         if rows.isEmpty { rows = [CorrectionRow(heard: "")] }
+        focusFirstRow()
     }
 
     // MARK: - Editing
@@ -109,24 +111,64 @@ final class CorrectionModel: ObservableObject {
     func remove(_ id: UUID) {
         guard rows.count > 1 else {
             rows = [CorrectionRow(heard: "")]
+            focusFirstRow()
             return
         }
         rows.removeAll { $0.id == id }
+        if focus?.row == id { focusFirstRow() }
     }
 
-    /// A row to type a pair into that the spell check did not propose.
+    /// A row to type a pair into that the spell check did not propose. The
+    /// caret goes to it — you pressed the button because you have a word.
     func addRow() {
-        rows.append(CorrectionRow(heard: ""))
+        let row = CorrectionRow(heard: "")
+        rows.append(row)
+        focus = Cell(row: row.id, column: .heard)
     }
 
-    /// Where the caret goes when the panel opens: the right-hand side of the
-    /// first proposed row, because the left-hand side is already right. With
-    /// nothing proposed there is one blank row and the left side is the only
-    /// thing to fill in.
-    var focusTarget: (id: UUID, side: Side)? {
-        guard let first = rows.first else { return nil }
-        return (first.id, first.suggested ? .corrected : .heard)
+    // MARK: - Focus
+
+    enum Column: Hashable { case heard, corrected, kind }
+
+    /// One editable thing on the panel. The type menu is one of them: it is a
+    /// third of what a row says, so Tab has to reach it.
+    struct Cell: Hashable {
+        let row: UUID
+        let column: Column
     }
 
-    enum Side { case heard, corrected }
+    /// Where the caret is. Published rather than owned by the view, because Tab
+    /// is caught on the panel — a text field swallows it before SwiftUI sees
+    /// it — and the panel can only move focus by writing it here.
+    @Published var focus: Cell?
+
+    /// The cells Tab walks, in the order it walks them: across a row, then down
+    /// to the next.
+    private var ring: [Cell] {
+        rows.flatMap { row in
+            [Cell(row: row.id, column: .heard),
+             Cell(row: row.id, column: .corrected),
+             Cell(row: row.id, column: .kind)]
+        }
+    }
+
+    /// One cell on, or back with Shift. Wraps, so Tab off the end of the last
+    /// row returns to the first rather than dropping focus out of the panel.
+    func moveFocus(by step: Int) {
+        let ring = self.ring
+        guard !ring.isEmpty else { return }
+        guard let focus, let index = ring.firstIndex(of: focus) else {
+            self.focus = ring.first
+            return
+        }
+        self.focus = ring[(index + step + ring.count) % ring.count]
+    }
+
+    /// Where the caret starts: the right-hand side of the first proposed row,
+    /// because the left-hand side is already right. With nothing proposed there
+    /// is one blank row and the left side is the only thing to fill in.
+    private func focusFirstRow() {
+        guard let first = rows.first else { return focus = nil }
+        focus = Cell(row: first.id, column: first.suggested ? .corrected : .heard)
+    }
 }

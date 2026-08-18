@@ -20,12 +20,7 @@ import SwiftUI
 /// and each row is a line that lands in `vocabulary.yaml`.
 struct CorrectionView: View {
     @EnvironmentObject private var model: CorrectionModel
-    @FocusState private var focused: Focus?
-
-    struct Focus: Hashable {
-        let id: UUID
-        let side: Bool  // true = the corrected side
-    }
+    @FocusState private var focused: CorrectionModel.Cell?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -58,9 +53,13 @@ struct CorrectionView: View {
             RoundedRectangle(cornerRadius: Parrot.panelRadius, style: .continuous),
             solid: true
         )
-        .onAppear {
-            guard let target = model.focusTarget else { return }
-            focused = Focus(id: target.id, side: target.side == .corrected)
+        .onAppear { focused = model.focus }
+        // Two ways in and one truth. The view moves focus when you click a
+        // field; the panel moves it when you press Tab. Both write the model,
+        // and the model writes back here.
+        .onChange(of: focused) { _, now in model.focus = now }
+        .onChange(of: model.focus) { _, now in
+            if focused != now { focused = now }
         }
         .onExitCommand { model.onCancel?() }
     }
@@ -87,9 +86,9 @@ struct CorrectionView: View {
         return HStack(spacing: 12) {
             TextField("wrong word", text: row.heard)
                 .textFieldStyle(.plain)
-                .focused($focused, equals: Focus(id: id, side: false))
+                .focused($focused, equals: cell(id, .heard))
                 .onSubmit { model.onSubmit?() }
-                .parrotField(focused: focused == Focus(id: id, side: false))
+                .parrotField(focused: focused == cell(id, .heard))
                 .frame(width: CorrectionMetrics.heardWidth)
 
             Image(systemName: "arrow.right")
@@ -103,12 +102,12 @@ struct CorrectionView: View {
 
             TextField("blank to skip", text: row.corrected)
                 .textFieldStyle(.plain)
-                .focused($focused, equals: Focus(id: id, side: true))
+                .focused($focused, equals: cell(id, .corrected))
                 .onSubmit { model.onSubmit?() }
-                .parrotField(focused: focused == Focus(id: id, side: true))
+                .parrotField(focused: focused == cell(id, .corrected))
                 .frame(width: CorrectionMetrics.correctedWidth)
 
-            kindPicker(row.kind)
+            kindPicker(row.kind, id: id)
 
             Button {
                 model.remove(id)
@@ -129,7 +128,7 @@ struct CorrectionView: View {
     /// A menu rather than four segments. The proposal is right most of the time,
     /// so the common case is reading one word and moving on; four segments would
     /// spend the width of the panel on a control nobody touches.
-    private func kindPicker(_ kind: Binding<WordKind>) -> some View {
+    private func kindPicker(_ kind: Binding<WordKind>, id: UUID) -> some View {
         Menu {
             ForEach(WordKind.allCases, id: \.self) { option in
                 Button(option.label) { kind.wrappedValue = option }
@@ -140,7 +139,16 @@ struct CorrectionView: View {
         }
         .menuStyle(.borderlessButton)
         .frame(width: CorrectionMetrics.kindWidth - 18)
-        .parrotField(focused: false)
+        // A menu is not in the tab ring unless it asks to be, and macOS only
+        // tabs to non-text controls when Full Keyboard Access is on. The panel
+        // catches Tab itself, so the ring here is ours either way.
+        .focusable()
+        .focused($focused, equals: cell(id, .kind))
+        .parrotField(focused: focused == cell(id, .kind))
+    }
+
+    private func cell(_ id: UUID, _ column: CorrectionModel.Column) -> CorrectionModel.Cell {
+        CorrectionModel.Cell(row: id, column: column)
     }
 
     private var addRow: some View {
