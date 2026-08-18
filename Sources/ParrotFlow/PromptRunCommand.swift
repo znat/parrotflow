@@ -34,12 +34,7 @@ enum PromptRunCommand {
             return 1
         }
 
-        let llmConfig = LocalLLM.Config(
-            endpoint: config.llm.endpoint,
-            model: config.llm.model,
-            timeout: config.llm.timeoutSeconds,
-            keepLoaded: config.llm.keepLoaded
-        )
+        let llmConfig = config.model(for: .general)
 
         var code: Int32 = 0
         let done = DispatchSemaphore(value: 0)
@@ -57,7 +52,7 @@ enum PromptRunCommand {
                     print("in:          \(text)")
                     print("out:         \(result)")
                     print(String(format: "             %@ in %.2fs",
-                                 config.llm.model, Date().timeIntervalSince(started)))
+                                 llmConfig.model, Date().timeIntervalSince(started)))
                 }
             } catch {
                 print("✗ \(error.localizedDescription)")

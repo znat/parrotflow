@@ -31,9 +31,17 @@ transcription:
 
 llm:
   enabled: true
-  model: gemma4:e4b
+  model: gemma4:e4b     # these four keys are the model named `local`
   endpoint: http://localhost:11434
   keep_loaded: true
+  default: local        # what a prompt runs on when it names none
+
+models:                 # more models, under names you pick
+  gpt:
+    api: openai         # ollama | openai | anthropic — the protocol, not the vendor
+    model: gpt-5.6-luna
+    api_key: file:~/.config/parrotflow/openai.key
+    reasoning: off      # off | minimal | low | medium | high
 
 updates:
   after_days: 7
@@ -283,14 +291,170 @@ one alternation and measures clean, because the words do not collide.
 
 ## `llm`
 
-The local Ollama model behind spoken commands and every `prompt:` transform.
-Without it dictation still works and those stages stop.
+What is behind spoken commands and every `prompt:` transform. Without a model
+dictation still works and those stages stop.
+
+`model:`, `endpoint:`, `timeout_seconds:` and `keep_loaded:` describe one
+Ollama model, and it is named `local`. Everything runs on it unless something
+names another. A config written before `models:` existed keeps working exactly
+as it did.
 
 `keep_loaded: true` pins the model in RAM at launch. Ollama otherwise drops it
 after five minutes idle and the next command waits for a reload — measured
 **6.7 s cold against 1.5 s warm**, so in practice almost every correction paid
 for one. The cost is the model sitting in memory for as long as the app runs:
-9.6 GB for `gemma4:e4b`. On a 16 GB Mac, turn it off. On 32 GB, do not.
+9.6 GB for `gemma4:e4b`. On a 16 GB Mac, turn it off. On 32 GB, do not. It is
+an Ollama setting; the other protocols have nothing to pin.
+
+Three keys say which model runs what:
+
+| Key | What it decides | Default |
+|---|---|---|
+| `default` | what a `prompt:` transform runs on when it names none | `local` |
+| `router` | "hey parrot, …" — the call you wait on with the pill on screen | `default` |
+| `vocabulary` | the KEEP/REVERT judge, which runs on every dictation | `default` |
+
+Keep `router` and `vocabulary` local for as long as you can. They run on every
+dictation, they are timed in tenths of a second, and they see every word you
+say.
+
+## `models`
+
+Every model this config can reach, under a name you choose. The name is the
+only thing a transform mentions.
+
+```yaml
+models:
+  gpt:
+    api: openai
+    model: gpt-5.6-luna
+    endpoint: https://api.openai.com/v1
+    api_key: file:~/.config/parrotflow/openai.key
+    reasoning: off
+    timeout_seconds: 30
+
+  claude:
+    api: anthropic
+    model: claude-sonnet-5
+    api_key: env:ANTHROPIC_API_KEY
+    reasoning: off
+
+  fast:
+    api: openai              # Ollama's own OpenAI surface, same server
+    endpoint: http://localhost:11434/v1
+    model: gpt-oss:20b
+```
+
+| Key | What it is |
+|---|---|
+| `api` | The protocol: `ollama`, `openai` or `anthropic`. Not the vendor — everyone else speaks one of the three. |
+| `model` | The model id, as that provider spells it. |
+| `endpoint` | Where to send it. Left out, the default for the protocol. |
+| `api_key` | Where the key is — see below. Not needed by `ollama`. |
+| `reasoning` | `off`, `minimal`, `low`, `medium` or `high`. |
+| `temperature` | Sent only if you write it. The reasoning models reject it. |
+| `max_tokens` | Replaces whatever budget the caller worked out. |
+| `timeout_seconds` | How long before the transcript is let through untouched. |
+| `keep_loaded` | Ollama only. |
+| `params` | Put into the request body untouched — see below. |
+
+### `reasoning` is one ladder
+
+Five rungs that mean the same thing everywhere. Each protocol maps them to
+whatever it actually has:
+
+| | `off` | `low`, `medium`, `high` |
+|---|---|---|
+| `ollama` | `think: false` | `think: <rung>` |
+| `openai` | `reasoning_effort: none` | `reasoning_effort: <rung>` |
+| `anthropic` | thinking disabled | adaptive thinking, `effort: <rung>` |
+
+`minimal` is OpenAI's own rung; on Anthropic it is sent as `low`. A provider
+with no such knob gets nothing extra in the body rather than an error.
+
+Reasoning text never reaches your document. `reasoning_content` is not read,
+Anthropic thinking blocks are skipped, and a `<think>` block inlined into the
+answer is cut out — which some OpenAI-compatible servers do.
+
+### `params` reaches everything else
+
+Merged into the request body last, unchecked. It is what makes a provider this
+app has never been run against usable without a new release:
+
+```yaml
+  deepseek:
+    api: openai
+    endpoint: https://api.deepseek.com/v1
+    model: deepseek-chat
+    api_key: env:DEEPSEEK_API_KEY
+    params:
+      top_p: 0.9
+```
+
+A key here replaces whatever the envelope worked out under the same name, and
+`null` **removes** it:
+
+```yaml
+    params:
+      reasoning_effort: null    # this server has no such field
+```
+
+That is the way out of any field this app sends by default and a given server
+refuses. One special case is handled without it: naming `max_tokens` removes
+the `max_completion_tokens` that goes out by default, for a server that only
+knows the older name.
+
+### Where the key comes from
+
+`api_key:` takes a reference, not a key:
+
+| Written | Read from |
+|---|---|
+| `env:OPENAI_API_KEY` | the environment |
+| `file:~/.config/parrotflow/openai.key` | that file, trimmed |
+| anything else | taken as the key itself |
+
+ParrotFlow launches from Finder, which hands it none of your shell's
+environment — so `env:` works for `--pipeline` and `--eval` and is empty in the
+app. `file:` is the form that works in both. A key written in full works too,
+and `--check-config` announces it as plain text in your config every time.
+
+### Naming one on a transform
+
+```yaml
+transforms:
+  - name: terse
+    description: shorten text without losing anything it says
+    model: gpt
+    prompt: |
+      …
+
+  - name: plan
+    description: turn what I said into a short plan
+    model:
+      use: gpt          # a name from `models:`
+      reasoning: low    # gpt is `off` by default; this prompt gets to think
+      max_tokens: 800
+    prompt: |
+      …
+```
+
+The mapping form may change `reasoning`, `temperature`, `max_tokens`,
+`timeout_seconds` and `params` — the settings of one call. It may not change
+`api`, `model`, `endpoint` or `api_key`: a different connection is another
+entry in `models:`, not an override buried in a transform. Writing one there is
+refused by name.
+
+A name nothing defines falls back to the default model rather than failing.
+`--check-config` refuses it by name — a typo should cost you the model you
+meant, never the sentence.
+
+### Failing open
+
+Every way a model call goes wrong leaves the transcript exactly as it arrived:
+no key, an expired key, a rate limit, a timeout, a dead network. This is the
+same rule Ollama has always had here, and a cloud model needs it more, not
+less.
 
 ## `updates`
 

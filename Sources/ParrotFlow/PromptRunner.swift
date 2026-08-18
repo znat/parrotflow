@@ -56,12 +56,12 @@ enum PromptRunner {
         instruction: String,
         text: String,
         scope: Scope = Scope(),
-        config: LocalLLM.Config
+        config: ModelSpec
     ) async throws -> String {
         let composed = compose(
             prompt: prompt, instruction: instruction, text: text, scope: scope
         )
-        let raw = try await LocalLLM.complete(
+        let raw = try await LLM.complete(
             system: composed.system,
             user: composed.user,
             json: false,

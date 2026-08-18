@@ -1562,13 +1562,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func llmConfig() -> LocalLLM.Config {
-        LocalLLM.Config(
-            endpoint: config.llm.endpoint,
-            model: config.llm.model,
-            timeout: config.llm.timeoutSeconds,
-            keepLoaded: config.llm.keepLoaded
-        )
+    /// The model a job runs on — see `Config.model(for:)`.
+    private func llmConfig(for job: Config.ModelJob = .general) -> ModelSpec {
+        config.model(for: job)
     }
 
     /// Loads the Ollama model now, so the first correction doesn't pay for it.
@@ -1581,9 +1577,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// config.yaml, and re-warming there would fire a multi-GB load each time
     /// the file is touched.
     private func warmUpLLM() {
-        guard config.llm.enabled, config.llm.keepLoaded else { return }
-
-        let llm = llmConfig()
+        // Whatever the router runs on: it is the call anybody waits on. Nothing
+        // to warm up when that is not a local model — `LocalLLM.warmUp` says so
+        // too, and this saves the task.
+        let llm = llmConfig(for: .router)
+        guard config.llm.enabled, llm.keepLoaded, llm.api == .ollama else { return }
         let system = Router.prompt(
             for: Catalogue(transforms: config.transforms), freeForm: config.freeForm
         )
@@ -1649,7 +1647,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startKeepWarm() {
         keepWarmTimer?.invalidate()
         keepWarmTimer = nil
-        guard config.llm.enabled, config.llm.keepLoaded else { return }
+        let router = llmConfig(for: .router)
+        guard config.llm.enabled, router.keepLoaded, router.api == .ollama else { return }
 
         let timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.keepWarmTick()
@@ -1666,7 +1665,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !keepWarmInFlight else { return }
         guard Date().timeIntervalSince(LocalLLM.lastCallAt) >= 60 else { return }
 
-        let llm = llmConfig()
+        let llm = llmConfig(for: .router)
+        guard llm.api == .ollama else { return }
         // The same string the router will send, `free_form` included: what is
         // being kept warm is Ollama's prompt cache, and a system prompt that
         // differs by one line is a cache miss and the 3.5s this exists to avoid.
@@ -1714,7 +1714,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         beginProgress("Thinking…")
-        let llmConfig = llmConfig()
+        let llmConfig = llmConfig(for: .router)
         let freeForm = config.freeForm
 
         Task { [weak self] in
@@ -1798,7 +1798,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .prompt:
             guard let prompt = transform.asPrompt else { return text }
             return try await PromptRunner.run(
-                prompt: prompt, instruction: instruction, text: text, config: llmConfig()
+                prompt: prompt, instruction: instruction, text: text,
+                config: config.model(for: transform)
             )
         case .replace:
             // `expand:`, or a table reached by voice compiles `{{determiners}}`
@@ -3466,7 +3467,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         beginProgress("Thinking…")
-        let llm = llmConfig()
+        let llm = llmConfig(for: .router)
         let freeForm = config.freeForm
         Task { [weak self] in
             do {

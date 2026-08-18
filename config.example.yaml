@@ -124,6 +124,9 @@ transcription:
 
 # The local Ollama model behind spoken commands. Without it, dictation still
 # works, and every `prompt:` transform below stops.
+#
+# These four keys describe one model, and it is named `local`. Everything runs
+# on it unless something says otherwise — see `models:` below.
 llm:
   enabled: true
   model: gemma4:e4b-mlx
@@ -131,6 +134,47 @@ llm:
   # Pin the model in RAM at launch. Otherwise Ollama drops it after five
   # minutes, and the next command waits 7-10s for the reload.
   keep_loaded: true
+
+  # Which model runs what, by name. `default` is what a `prompt:` transform
+  # uses when it names none; the other two are jobs that run on every
+  # dictation and are worth keeping local — the router is what you wait on
+  # with the pill on screen, and both carry your transcript.
+  # default: local
+  # router: local
+  # vocabulary: local
+
+# More models, under names you pick. A transform names one with `model:`.
+#
+# `api:` is the protocol, not the company: ollama, openai or anthropic.
+# Everyone else speaks one of the three, so Groq, OpenRouter, DeepSeek, LM
+# Studio and vLLM are an `endpoint:` away rather than a new version of this
+# app. `params:` is put into the request body untouched, for anything these
+# keys do not cover.
+#
+# A model that is not `ollama` sends your dictation to somebody else's server.
+# `--check-config` says so, every time, and names which transforms do it.
+#
+# api_key: never the key itself. `env:NAME` reads the environment, which the
+# app does not have when it is launched from Finder — `file:` is the form that
+# works in both places. A key written in full still works and is announced as
+# plain text on every load.
+#
+# models:
+#   gpt:
+#     api: openai
+#     model: gpt-5.6-luna
+#     endpoint: https://api.openai.com/v1
+#     api_key: file:~/.config/parrotflow/openai.key
+#     # off | minimal | low | medium | high. One ladder, whatever the provider
+#     # calls its own knob. `off` is the right default for a rewrite.
+#     reasoning: off
+#     timeout_seconds: 30
+#
+#   claude:
+#     api: anthropic
+#     model: claude-sonnet-5
+#     api_key: env:ANTHROPIC_API_KEY
+#     reasoning: off
 
 # One call a day to GitHub's release API — the only request this app makes on
 # its own. The number is a waiting period, not a poll interval: -1 never
@@ -193,7 +237,10 @@ lists:
 #   name          the id a pipeline or `when:` names
 #   description   matched against what you say — write it as you would say it
 #   display       shown on the menu bar while the transform runs
-#   prompt:       asks the local model, about a second
+#   prompt:       asks a model, about a second on the local one
+#   model:        which model this prompt runs on — a name from `models:`, or
+#                 `{ use: gpt, reasoning: low }` to change a setting for this
+#                 prompt alone. Left out, it runs on `llm.default`.
 #   replace:      a substitution table, costs nothing
 #   command:      a program of yours — transcript in on stdin, rewrite out on stdout
 #   confirm       shows the result first; set to false to skip that

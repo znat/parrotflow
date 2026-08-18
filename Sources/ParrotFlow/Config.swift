@@ -26,6 +26,12 @@ struct Config: Decodable, Equatable {
     var feedback: Feedback = Feedback()
     var transcription: Transcription = Transcription()
     var llm: LLM = LLM()
+    /// Every model this config can reach, by the name it was given.
+    ///
+    /// A name is all a transform ever mentions — never a vendor, never an
+    /// endpoint. Empty means the one implied by `llm:`, which is what every
+    /// config written before this said and still says.
+    var models: [String: ModelSpec] = [:]
     var updates: UpdatePolicy = UpdatePolicy()
     var logging: Logging = Logging()
     /// Everything nameable: `transforms:`, plus anything still written under
@@ -81,7 +87,8 @@ struct Config: Decodable, Equatable {
     var lists: [String: [String]] = [:]
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, audio, feedback, transcription, llm, transforms, prompts, updates, logging
+        case hotkey, audio, feedback, transcription, llm, models
+        case transforms, prompts, updates, logging
         case freeForm = "free_form"
         case lists
     }
@@ -651,10 +658,12 @@ struct Config: Decodable, Equatable {
         var offer = false
         /// `key: f` — the letter shown on its chip.
         var offerKey = ""
+        /// `model: gpt`, or `model: { use: gpt, reasoning: low }`.
+        var model: ModelRef?
 
         enum CodingKeys: String, CodingKey {
             case name, description, display, confirm, prompt, content, replace, command
-            case tests, returns, offer
+            case tests, returns, offer, model
             case offerKey = "key"
             case timeout = "timeout_seconds"
         }
@@ -719,6 +728,12 @@ struct Config: Decodable, Equatable {
             } else {
                 unreadable = "`tests:` is neither a filename nor `{ path: <filename> }`"
             }
+
+            // `try?` because a `model:` this cannot read is one setting gone
+            // wrong, not a transform worth dropping: it then runs on the
+            // default model, which is what it did before the key existed.
+            // `--check-config` names anything the mapping got wrong.
+            model = (try? c.decodeIfPresent(ModelRef.self, forKey: .model)) ?? nil
 
             offer = try c.decodeIfPresent(Bool.self, forKey: .offer) ?? false
             // One letter, upper case. The chip draws it as a keycap and a
@@ -897,7 +912,7 @@ struct Config: Decodable, Equatable {
                 confirm: entry.confirm, returnsJSON: entry.returnsJSON,
                 offer: entry.offer, offerKey: entry.offerKey,
                 body: body, source: entry.source,
-                tests: entry.tests
+                tests: entry.tests, model: entry.model
             ))
         }
         return (kept, unreadable)
@@ -992,6 +1007,12 @@ struct Config: Decodable, Equatable {
         /// `cases.yaml` every folder has by convention. Relative to the folder,
         /// like everything else a transform names.
         var tests: String?
+        /// Which model this prompt runs on, and what it changes about it.
+        ///
+        /// Nil is `llm.default`, which is what nearly every transform wants.
+        /// A `replace:` or `command:` transform asks no model anything, so it
+        /// is meaningless there and `--check-config` says so.
+        var model: ModelRef?
 
         enum Body: Equatable {
             /// Instructions for the local model.
@@ -1178,6 +1199,18 @@ struct Config: Decodable, Equatable {
         }
     }
 
+    /// Which model runs what, and the Ollama one this key used to be.
+    ///
+    /// `model:`, `endpoint:`, `timeout_seconds:` and `keep_loaded:` are the
+    /// whole of the old key and still read exactly as they did: together they
+    /// define a model named `local`, which is what everything points at when
+    /// nothing says otherwise. A config written before `models:` existed is
+    /// unchanged by all of this.
+    ///
+    /// `router` and `vocabulary` are named separately because they are not
+    /// like the others: they run on every dictation, they are what you wait
+    /// on with the pill on screen, and they carry your transcript. Local is
+    /// the right answer for both far longer than it is for a rewrite.
     struct LLM: Codable, Equatable {
         var enabled: Bool = true
         var model: String = "gemma4:e4b-mlx"
@@ -1186,9 +1219,17 @@ struct Config: Decodable, Equatable {
         /// Load the model at launch and pin it in Ollama's memory. Trades a few
         /// GB of RAM for corrections that answer in 1–2s instead of 7–10s.
         var keepLoaded: Bool = true
+        /// The model a transform runs on when it names none. Empty means
+        /// `local` — the one `model:` above describes.
+        var defaultModel: String = ""
+        /// The model behind "hey parrot, …". Empty means `default`.
+        var router: String = ""
+        /// The model behind the vocabulary judge. Empty means `default`.
+        var vocabulary: String = ""
 
         enum CodingKeys: String, CodingKey {
-            case enabled, model, endpoint
+            case enabled, model, endpoint, router, vocabulary
+            case defaultModel = "default"
             case timeoutSeconds = "timeout_seconds"
             case keepLoaded = "keep_loaded"
         }
@@ -1203,7 +1244,115 @@ struct Config: Decodable, Equatable {
             if let v = try c.decodeIfPresent(String.self, forKey: .endpoint) { endpoint = v }
             if let v = try c.decodeIfPresent(Double.self, forKey: .timeoutSeconds) { timeoutSeconds = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .keepLoaded) { keepLoaded = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .defaultModel) { defaultModel = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .router) { router = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .vocabulary) { vocabulary = v }
         }
+    }
+
+    /// Which job a call belongs to, for `model(for:)`.
+    enum ModelJob: Equatable {
+        /// A transform, the free-form prompt, a correction — anything the
+        /// speaker asked for by name.
+        case general
+        /// "hey parrot, …", said before anything else and waited on.
+        case router
+        /// The KEEP/REVERT judge, which runs on every dictation.
+        case vocabulary
+    }
+
+    /// Every model this config can reach, by name.
+    ///
+    /// `local` is here whether or not `models:` mentions it: the old `llm:`
+    /// keys describe exactly one Ollama model, and that is the one everything
+    /// falls back to.
+    var modelsByName: [String: ModelSpec] {
+        var all = models
+        if all["local"] == nil {
+            all["local"] = ModelSpec(
+                name: "local", api: .ollama, model: llm.model, endpoint: llm.endpoint,
+                timeout: llm.timeoutSeconds, keepLoaded: llm.keepLoaded
+            )
+        }
+        return all
+    }
+
+    func model(named name: String) -> ModelSpec? {
+        modelsByName[name.trimmingCharacters(in: .whitespacesAndNewlines)]
+    }
+
+    /// The name a job runs under when nothing overrides it.
+    func modelName(for job: ModelJob) -> String {
+        func written(_ value: String) -> String {
+            value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let fallback = written(llm.defaultModel).isEmpty ? "local" : written(llm.defaultModel)
+        switch job {
+        case .general: return fallback
+        case .router: return written(llm.router).isEmpty ? fallback : written(llm.router)
+        case .vocabulary:
+            return written(llm.vocabulary).isEmpty ? fallback : written(llm.vocabulary)
+        }
+    }
+
+    /// The model a call runs on: what the call site named, else what the job
+    /// is bound to, else `local`.
+    ///
+    /// A name nothing defines falls back rather than failing. `--check-config`
+    /// refuses it by name, and a typo costing you the default model is better
+    /// than a typo costing you the sentence.
+    func model(for job: ModelJob = .general, override: ModelRef? = nil) -> ModelSpec {
+        let all = modelsByName
+        let asked = (override?.use).flatMap { $0.isEmpty ? nil : all[$0] }
+        let base = asked ?? all[modelName(for: job)] ?? all["local"] ?? ModelSpec()
+        return base.applying(override)
+    }
+
+    /// The model a transform's prompt runs on.
+    func model(for transform: Transform) -> ModelSpec {
+        model(for: .general, override: transform.model)
+    }
+
+    /// Everything `models:` and the keys pointing into it get wrong.
+    func modelProblems() -> [String] {
+        var found: [String] = []
+        let all = modelsByName
+        for name in all.keys.sorted() {
+            guard let spec = all[name] else { continue }
+            found += spec.refused.map { "models.\(name): \($0)" }
+            if spec.model.isEmpty {
+                found.append("models.\(name): no `model:` — nothing says what to ask for")
+            }
+            guard !spec.api.isLocal else { continue }
+            if !spec.key.isSet {
+                found.append("models.\(name): `api: \(spec.api.rawValue)` needs an `api_key:`")
+            } else if spec.key.resolve() == nil {
+                found.append("models.\(name): no key at \(spec.key.described)")
+            }
+        }
+        let names = all.keys.sorted().joined(separator: ", ")
+        for (key, written) in [
+            ("llm.default", llm.defaultModel), ("llm.router", llm.router),
+            ("llm.vocabulary", llm.vocabulary),
+        ] {
+            let name = written.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty, all[name] == nil else { continue }
+            found.append("\(key): no model named \"\(name)\" — have: \(names)")
+        }
+        for transform in transforms {
+            guard let ref = transform.model else { continue }
+            found += ref.rejected.map { "transforms.\(transform.name).model: \($0)" }
+            let name = ref.use.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty, all[name] == nil {
+                found.append("transforms: \"\(transform.name)\" names model \"\(name)\","
+                    + " which `models:` does not define — have: \(names)")
+            }
+            if !transform.isPrompt {
+                found.append("transforms: \"\(transform.name)\" has a `model:` and never"
+                    + " asks a model anything — only a `prompt:` does")
+            }
+        }
+        return found
     }
 
     /// Decodable and not Encodable, like `Config` itself and for the same
@@ -1874,6 +2023,15 @@ struct Config: Decodable, Equatable {
             self.transcription = transcription
         }
         if let llm = try c.decodeIfPresent(LLM.self, forKey: .llm) { self.llm = llm }
+        // Named after the key it was written under, because a spec cannot see
+        // its own name and every log line and check prints one.
+        if let models = try c.decodeIfPresent([String: ModelSpec].self, forKey: .models) {
+            self.models = models.reduce(into: [:]) { out, entry in
+                var spec = entry.value
+                spec.name = entry.key
+                out[entry.key] = spec
+            }
+        }
         if let updates = try c.decodeIfPresent(UpdatePolicy.self, forKey: .updates) {
             self.updates = updates
         }
@@ -1981,6 +2139,7 @@ struct Config: Decodable, Equatable {
         // they were read, so what runs is the default; said here, because a
         // setting that does nothing is exactly what this list is for.
         found += vocabulary.refused.map { "vocabulary: \($0)" }
+        found += modelProblems()
         found += replacementProblems()
         // A `path:` that named nothing readable. The entry is gone rather than
         // idle — the pipeline step that names it will say so too — and a
@@ -2049,6 +2208,22 @@ struct Config: Decodable, Equatable {
         var said: [String] = transforms.compactMap { transform in
             guard case .command(let command) = transform.body else { return nil }
             return "transforms: \"\(transform.name)\" runs a program — \(command)"
+        }
+
+        // A model that is not on this Mac means your dictation is sent to
+        // somebody else's server. Announced on every load for the same reason
+        // a `command:` transform is: it is one word in a config file, and the
+        // config may not be one you wrote.
+        let all = modelsByName
+        for name in all.keys.sorted() {
+            guard let spec = all[name], !spec.api.isLocal else { continue }
+            said.append("models: \"\(name)\" sends text off this Mac — \(spec.url),"
+                + " \(spec.model), key from \(spec.key.described)")
+        }
+        for transform in transforms where transform.isPrompt {
+            let spec = model(for: transform)
+            guard !spec.api.isLocal else { continue }
+            said.append("transforms: \"\(transform.name)\" runs on \(spec.described)")
         }
 
         // The name judge is a stage now. A pipeline that still names it as a

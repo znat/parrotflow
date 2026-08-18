@@ -38,12 +38,7 @@ enum RouteTestCommand {
             return 1
         }
 
-        let llmConfig = LocalLLM.Config(
-            endpoint: config.llm.endpoint,
-            model: config.llm.model,
-            timeout: config.llm.timeoutSeconds,
-            keepLoaded: config.llm.keepLoaded
-        )
+        let llmConfig = config.model(for: .router)
 
         var code: Int32 = 0
         let done = DispatchSemaphore(value: 0)
@@ -57,7 +52,7 @@ enum RouteTestCommand {
                     config: llmConfig
                 )
                 let elapsed = Date().timeIntervalSince(started)
-                let timing = String(format: "(%@ in %.2fs)", config.llm.model, elapsed)
+                let timing = String(format: "(%@ in %.2fs)", llmConfig.model, elapsed)
                 switch decision {
                 case .matched(let capability):
                     print(quiet ? capability.name : "→ \(capability.name)  \(timing)")
