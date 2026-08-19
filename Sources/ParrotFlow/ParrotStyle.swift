@@ -82,9 +82,15 @@ extension View {
     /// ground is the one background that stays legible over all of them, and
     /// the rim carries the identity without asking anything of the text.
     ///
-    /// `alive` is for work of unknown length. The rim turns and brightens, which
-    /// is the only motion any of these surfaces make — it means the app is busy,
-    /// so nothing else may borrow it for decoration.
+    /// `alive` is for work of unknown length. The rim turns fast and brightens,
+    /// and the glow drifts with it. That combination means the app is busy, and
+    /// nothing else may borrow it.
+    ///
+    /// `turning` is the rim alone, at a third of the speed and at its resting
+    /// weight. The offer uses it: a surface asking to be answered before it
+    /// goes should be the one thing on screen that moves. It is not the busy
+    /// signal, because the weight, the brightness and the drifting glow are
+    /// what make that one — see `PlumageRim.spin`.
     ///
     /// `glass` gives the surface a thickness: a lighter scrim, a sheen down the
     /// face, and the rim's inner hairline weighted to the top so the edge reads
@@ -116,8 +122,9 @@ extension View {
     /// the translucent ones already take their colour from what is behind
     /// them, and a wash on top of that is paint on a window.
     func parrotSurface<S: InsettableShape>(
-        _ shape: S, alive: Bool = false, glass: Bool = false, solid: Bool = false,
-        scrim: Double? = nil, wash: Color? = nil, wheel: [Color] = Parrot.wheel
+        _ shape: S, alive: Bool = false, turning: Bool = false, glass: Bool = false,
+        solid: Bool = false, scrim: Double? = nil, wash: Color? = nil,
+        wheel: [Color] = Parrot.wheel
     ) -> some View {
         background {
             if solid {
@@ -174,7 +181,9 @@ extension View {
         }
         // The lit edge is the rim's own inner hairline, weighted to the top —
         // not a line of its own. See `PlumageRim`.
-        .overlay { PlumageRim(shape: shape, alive: alive, glass: glass, wheel: wheel) }
+        .overlay {
+            PlumageRim(shape: shape, alive: alive, turning: turning, glass: glass, wheel: wheel)
+        }
     }
 }
 
@@ -182,6 +191,8 @@ extension View {
 struct PlumageRim<S: InsettableShape>: View {
     let shape: S
     var alive: Bool = false
+    /// Turn without saying the app is busy. See `spin`.
+    var turning: Bool = false
     /// Weight the inner hairline toward the top, so it reads as light on the
     /// edge. See the hairline below.
     var glass: Bool = false
@@ -212,6 +223,7 @@ struct PlumageRim<S: InsettableShape>: View {
             }
             .animation(.easeInOut(duration: 0.35), value: alive)
             .onChange(of: alive) { _, _ in spin() }
+            .onChange(of: turning) { _, _ in spin() }
             .onAppear { spin() }
     }
 
@@ -229,15 +241,32 @@ struct PlumageRim<S: InsettableShape>: View {
         )
     }
 
+    /// One turn of the feathers, at the speed the surface asked for.
+    ///
+    /// Busy is 1.8s. `turning` is `slowTurn`, which is slow enough that you
+    /// see the colours move rather than a rim spinning — and the bloom behind
+    /// it stays still either way, which is the other half of why the two do
+    /// not read alike. That stillness is also what keeps this affordable: a
+    /// drifting bloom is four Gaussian blurs re-rendered every frame, measured
+    /// at 40% of a core. See `PlumageBloom.spin`.
+    ///
+    /// The rim alone measured at about 11% of a core on the offer pill, for
+    /// the five seconds the offer is up. The pill standing still is 0-3%.
     private func spin() {
-        guard alive, !reduceMotion else {
+        guard alive || turning, !reduceMotion else {
             withAnimation(.default) { angle = -90 }
             return
         }
-        withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) {
+        withAnimation(
+            .linear(duration: alive ? 1.8 : Self.slowTurn).repeatForever(autoreverses: false)
+        ) {
             angle = 270
         }
     }
+
+    /// One trip round a rim that is not saying anything is happening.
+    /// Computed rather than stored: this type is generic over its shape.
+    static var slowTurn: TimeInterval { 6 }
 }
 
 // MARK: - Fields
@@ -531,10 +560,10 @@ struct PlumageBloom<S: InsettableShape>: View {
     /// expensive is not a decoration, it is a fan.
     ///
     /// Still, the reason to stop it is the rule that was already written on
-    /// `PlumageRim`: motion on these surfaces means the app is working, and
-    /// nothing may borrow it to look nice. A glow that drifts while nothing is
-    /// happening says something is happening. At rest the bloom is simply
-    /// there — lit, uneven, and still.
+    /// `PlumageRim`: a glow that drifts while nothing is happening says
+    /// something is happening. At rest the bloom is simply there — lit,
+    /// uneven, and still. The offer turns its rim slowly and the bloom stays
+    /// out of it, which is what keeps "busy" a signal of its own.
     private func spin() {
         guard alive, !reduceMotion else {
             withAnimation(.easeInOut(duration: 0.4)) { outer = -90; inner = 90 }

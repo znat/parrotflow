@@ -2011,7 +2011,7 @@ struct Config: Decodable, Equatable {
         ///
         /// Off by default, and it is the one thing on the pill that is about the
         /// app rather than about your words: it puts the whole sentence back on
-        /// screen for nine seconds, which is a lot of pill for something you can
+        /// screen for the length of the offer, which is a lot of pill for something you can
         /// already read where it landed. Worth turning on while you are learning
         /// what your own dictation is weak at — see `Confidence` for what the
         /// colours are anchored to, and why they cannot be anchored to anything

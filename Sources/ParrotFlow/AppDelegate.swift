@@ -343,19 +343,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// See `holdTheOffer`.
     private var offerHeld = false
 
-    /// How long the offer stays up.
+    /// How long the offer stays up: the pill's own hold plus its fade.
     ///
-    /// Long enough to read the sentence, decide it is wrong and reach for a
-    /// key, which three seconds was not. It can afford to be this long because
-    /// it does not sit there at full strength: it thins out the whole way — see
-    /// `PillHUD.offer` — and the pointer stops that clock and gives the nine
-    /// seconds back in full. A fade this generous would be clutter after every
-    /// dictation if reading it did not put it back.
+    /// Read from `PillHUD` rather than chosen here, because the keys and the
+    /// pill have to end together. A number of its own would mean letters still
+    /// being taken from the app you are typing in after the surface offering
+    /// them has gone — or the other way round, a chip on screen whose key does
+    /// nothing.
+    ///
+    /// The pointer stops that clock and gives all of it back — see
+    /// `holdTheOffer`.
     ///
     /// Not private: `--panels offer` previews the offer for as long as the app
     /// gives it, and a preview with a number of its own is a preview of
     /// something else.
-    static let offerSeconds: TimeInterval = 9
+    static let offerSeconds: TimeInterval = PillHUD.offerLife
 
     /// What the offer offers: Correct, then every transform that asked for a
     /// place on it with `offer: true`.
@@ -2587,7 +2589,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // dismissing the offer. The chips stay clickable meanwhile, and
         // `stopWatchingForEscapeIfIdle` calls back here the moment that
         // dictation is over — so an offer still on screen then gets its keys
-        // for whatever is left of its nine seconds.
+        // for whatever is left of its `offerSeconds`.
         guard !recorder.isRecording, runsInFlight <= 0 else {
             Log.write("offer keys: a dictation is still running; the keys wait for it")
             return
@@ -2724,7 +2726,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// would hold the offer open until the next dictation, with the letters it
     /// takes from every app. So the hold is checked once every `offerSeconds`,
     /// and a pointer that has gone without saying so is treated as one that
-    /// said so: the offer gets its nine seconds and runs out normally.
+    /// said so: the offer gets its `offerSeconds` back and runs out normally.
     private func offerDeadlinePassed() {
         guard offerHeld else { endTheOffer(); return }
         if pill.pointerIsOver {
@@ -2742,7 +2744,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// were reaching for it would be arguing about whether you had finished,
     /// and a pointer can rest for longer than any number chosen here. So while
     /// it is inside the offer has no deadline at all, and leaving starts a
-    /// whole new nine seconds.
+    /// whole new `offerSeconds`.
     ///
     /// Three clocks have to move together, or the pill and the keys disagree:
     /// the pill's own fade, this deadline, and the tap's expiry. The tap's is
