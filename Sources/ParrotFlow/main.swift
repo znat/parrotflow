@@ -102,6 +102,22 @@ if let index = arguments.firstIndex(of: "--transcribe") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--decode-seq") {
+    let files = arguments[(index + 1)...].filter { $0.hasSuffix(".wav") }
+    guard !files.isEmpty else {
+        print("usage: ParrotFlow --decode-seq [--parallel] [--repeat N] <a.wav> …")
+        exit(2)
+    }
+    let repeatCount = arguments.firstIndex(of: "--repeat").flatMap {
+        arguments.indices.contains($0 + 1) ? Int(arguments[$0 + 1]) : nil
+    } ?? 1
+    exit(DecodeSeqCommand.run(
+        paths: Array(files),
+        parallel: arguments.contains("--parallel"),
+        repeatCount: repeatCount
+    ))
+}
+
 if arguments.contains("--warm-models") {
     exit(WarmModelsCommand.run())
 }
