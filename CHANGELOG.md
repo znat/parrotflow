@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.7.0](https://github.com/znat/parrotflow/compare/v0.6.0...v0.7.0) (2026-08-19)
+
+
+### Features
+
+* a spelling lesson keeps the word it is teaching ([#143](https://github.com/znat/parrotflow/issues/143)) ([7e19a7e](https://github.com/znat/parrotflow/commit/7e19a7e74d6e56c153912b3f53890b2501854d49))
+* a table says what it wrote, and join fits a clip to the box ([#148](https://github.com/znat/parrotflow/issues/148)) ([461ea43](https://github.com/znat/parrotflow/commit/461ea4332725a905f294cfb358b0657b8268fed8))
+* code_identifiers publishes the identifiers it wrote ([#146](https://github.com/znat/parrotflow/issues/146)) ([649b08c](https://github.com/znat/parrotflow/commit/649b08c7962f405f72aeaec25c9bf96e514cb8d6))
+* name the word lists once, and let dotted hear dash and slash ([#149](https://github.com/znat/parrotflow/issues/149)) ([aadf036](https://github.com/znat/parrotflow/commit/aadf036a1bc8451132159a9566313caabc391f64))
+* play Morse instead of Glass for the completion chime ([#139](https://github.com/znat/parrotflow/issues/139)) ([982bc07](https://github.com/znat/parrotflow/commit/982bc071ebdddd60d7be284930f63028390a1ea3))
+* punctuation gains brackets, semicolon, ellipsis and French ([#150](https://github.com/znat/parrotflow/issues/150)) ([dbf028c](https://github.com/znat/parrotflow/commit/dbf028c951d88f914f4cd910af668848b7526e6b))
+* read the input box, tag the words, and hand a transform the whole run ([#147](https://github.com/znat/parrotflow/issues/147)) ([f079683](https://github.com/znat/parrotflow/commit/f0796833ac8569b2d31350a4fc9bf4db28e3bafb))
+* surface update alert automatically, check hourly, and drop Correct a Word from menu ([#142](https://github.com/znat/parrotflow/issues/142)) ([5cc602b](https://github.com/znat/parrotflow/commit/5cc602bb7ffa82d89c4d6838f7506a19834c4518))
+* the offer says when the words may not be your words ([#151](https://github.com/znat/parrotflow/issues/151)) ([e9c8578](https://github.com/znat/parrotflow/commit/e9c857869ef38665f7479cec27a6233f18d080ae))
+* the vocabulary panel is a table again, with the rows proposed ([#152](https://github.com/znat/parrotflow/issues/152)) ([e5ea7c4](https://github.com/znat/parrotflow/commit/e5ea7c42f721d4d774c82972b6b6f30dccf384c8))
+
+
+### Fixes
+
+* a repeat holding "I" is no longer kept as a spelled letter ([#145](https://github.com/znat/parrotflow/issues/145)) ([0dc8153](https://github.com/znat/parrotflow/commit/0dc81535c04b2e55856ac5dfff51259b6db36e1b))
+* get past the version-manager shim, and stop trimming what a stage added ([#144](https://github.com/znat/parrotflow/issues/144)) ([a0c5d17](https://github.com/znat/parrotflow/commit/a0c5d17e66056d90dc32a76a841bef7ec9239dda))
+
 ## [0.6.0](https://github.com/znat/parrotflow/compare/v0.5.0...v0.6.0) (2026-08-13)
 
 
