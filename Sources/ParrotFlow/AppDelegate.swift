@@ -1820,6 +1820,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         beginProgress("Thinking…")
         let llmConfig = llmConfig(for: .router)
         let freeForm = config.freeForm
+        let catchAll = config.commands.catchAll
 
         Task { [weak self] in
             do {
@@ -1840,7 +1841,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         // the whole specification, so it goes through unsplit,
                         // exactly as it would to a prompt of your own.
                         Log.write("router: \"\(command)\" → \(FreeForm.name)")
-                        self.runTransform(FreeForm.prompt(for: command).asTransform, instruction: command)
+                        self.runTransform(
+                            FreeForm.prompt(for: command).asTransform(model: catchAll),
+                            instruction: command
+                        )
                     case .none:
                         // Nothing fits. Deliberately not falling through to
                         // dictation: the wake phrase means you were not
@@ -3573,6 +3577,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         beginProgress("Thinking…")
         let llm = llmConfig(for: .router)
         let freeForm = config.freeForm
+        let catchAll = config.commands.catchAll
         Task { [weak self] in
             do {
                 let decision = try await Router.route(
@@ -3592,7 +3597,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         )
                     case .anything:
                         Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
-                        run(FreeForm.prompt(for: instruction).asTransform)
+                        run(FreeForm.prompt(for: instruction).asTransform(model: catchAll))
                     case .none:
                         giveUp("Not something to change in the text: \"\(instruction)\"")
                     }

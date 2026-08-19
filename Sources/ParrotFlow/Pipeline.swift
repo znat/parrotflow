@@ -154,6 +154,10 @@ struct Pipeline: Equatable, Codable {
         /// language, and the model that reads a French sentence need not be
         /// the one that reads an English one.
         var review: String?
+        /// `review: false`. Optional for the reason `nearMisses` is: a
+        /// synthesized decoder ignores a stored default, so "not written" has
+        /// to be spellable as nil.
+        var reviewEnabled: Bool?
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -983,6 +987,14 @@ struct Pipeline: Equatable, Codable {
                 "protected": .string(exact.protected),
             ]
             return StageResult(text: text, vars: wrote.merging(vars) { _, new in new })
+        }
+
+        // `review: false`. The exact matches ship as the rules wrote them, and
+        // the near-miss pass is skipped with the review rather than left to
+        // run: nothing it proposes is ever written without a model reading the
+        // sentence first.
+        guard step.reviewEnabled ?? true else {
+            return result(text, ["asked": .int(0), "slots": .int(0)])
         }
 
         let caps = step.caps ?? VocabularyJudge.Caps.standard

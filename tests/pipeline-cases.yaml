@@ -777,6 +777,29 @@ cases:
       vocabulary.changes: Versal -> Vercel
       vocabulary.slots: 1
 
+  # --- a stage with no reviewer ----------------------------------------------
+  #
+  # `review: false` is a documented value and used to be a config that would not
+  # load at all — the key decoded as a name and nothing else, so a boolean threw
+  # before the app ever saw the pipeline.
+  - name: review off still writes what the rules matched exactly
+    pipeline: review-off
+    input: super base is up
+    expect: Supabase is up
+    expect_vars:
+      vocabulary.count: 1
+      vocabulary.slots: 0
+
+  # And the other half: with nobody to read the sentence, a near miss is left
+  # where it stands rather than written on the strength of the edit alone.
+  - name: review off leaves the near misses alone
+    pipeline: review-off
+    input: our app is deployed on Versel
+    expect: unchanged
+    expect_vars:
+      vocabulary.count: 0
+      vocabulary.slots: 0
+
   # --- named word lists ------------------------------------------------------
   #
   # `{{name}}` in a pattern is the list of that name, as an alternation. The

@@ -1171,11 +1171,17 @@ struct Config: Decodable, Equatable {
         /// The transform-shaped view, for the catalogue — which now holds
         /// transforms rather than prompts, and has to be able to hold the
         /// free-form one too. It is a prompt that no config declares.
-        var asTransform: Transform {
-            Transform(
+        ///
+        /// `model:` is what `commands.catch_all` binds. A prompt no config
+        /// declares can carry no `model:` of its own, so the caller passes the
+        /// one the config named for it.
+        func asTransform(model: ModelRef? = nil) -> Transform {
+            var made = Transform(
                 name: name, description: description, display: display,
                 confirm: confirm, body: .prompt(content)
             )
+            made.model = model
+            return made
         }
 
         /// Where the spoken instruction goes if the prompt asks for it inline.
@@ -1427,6 +1433,17 @@ struct Config: Decodable, Equatable {
             guard !name.isEmpty, all[name] == nil else { continue }
             found.append("\(key): no model named \"\(name)\" — have: \(names)")
         }
+        // The third binding, and the only one that is a `ModelRef` rather than
+        // a bare name, so it can also carry what only a `models:` entry may
+        // say. Unchecked, a typo here costs the model you chose the catch-all
+        // for — the one case that most wants a model of its own.
+        if let ref = commands.catchAll {
+            found += ref.rejected.map { "commands.catch_all: \($0)" }
+            let name = ref.use.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty, all[name] == nil {
+                found.append("commands.catch_all: no model named \"\(name)\" — have: \(names)")
+            }
+        }
 
         // Which model everything falls back to. One entry needs no flag —
         // there is nothing to choose between — so this only speaks up when
@@ -1613,6 +1630,7 @@ struct Config: Decodable, Equatable {
             var caps: VocabularyJudge.Caps?
             var nearMisses: Bool?
             var review: String?
+            var reviewEnabled: Bool?
             var when: String?
             var unless: String?
             var app: String?
@@ -1674,7 +1692,14 @@ struct Config: Decodable, Equatable {
                     caps.readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings)
                     self.caps = caps
                     nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
-                    review = try c.decodeIfPresent(String.self, forKey: .review)
+                    // Two spellings, like `catch_all:`: the key says whether
+                    // the review runs and what it runs on. `false` is the only
+                    // one that turns it off.
+                    if let on = ((try? c.decodeIfPresent(Bool.self, forKey: .review)) ?? nil) {
+                        reviewEnabled = on
+                    } else {
+                        review = try c.decodeIfPresent(String.self, forKey: .review)
+                    }
                 }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
@@ -1816,6 +1841,7 @@ struct Config: Decodable, Equatable {
                                 stage: stage, transform: entry.transform,
                                 prompt: entry.prompt, caps: entry.caps,
                                 nearMisses: entry.nearMisses, review: entry.review,
+                                reviewEnabled: entry.reviewEnabled,
                                 when: entry.when,
                                 unless: entry.unless, app: entry.app
                             )
@@ -2321,6 +2347,16 @@ struct Config: Decodable, Equatable {
                         + (transforms.isEmpty ? " — `transforms:` is empty"
                             : " — have: \(transforms.map(\.name).joined(separator: ", "))"))
                 }
+            }
+            // `review:` names a model the same way `commands.router` does, and
+            // an unresolved one falls back to the default rather than failing.
+            // Said here rather than in `modelProblems`, because which pipeline
+            // wrote it is half the answer.
+            for step in pipeline.steps where step.stage == .vocabulary {
+                let named = (step.review ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !named.isEmpty, modelsByName[named] == nil else { continue }
+                found.append("pipeline \(language): `review: \(named)` names no model — have: "
+                    + modelsByName.keys.sorted().joined(separator: ", "))
             }
         }
         return found
