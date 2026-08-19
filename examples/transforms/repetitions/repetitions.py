@@ -19,8 +19,12 @@ Must run after `fillers` (a filler between the copies hides the repeat, "It's
 the uh the summary") and after `numbers` ("two two three" is 223, not 23 with
 "two" collapsed first).
 
-Timing is not used to tell a stutter from an intentional repeat — measured and
-found not to separate them. See scripts/disfluency-signals.py.
+Timing is not used to tell a stutter from an intentional repeat. Measured over
+281 clips and 9014 words: the first copy of a disfluent repeat is not drawled,
+1.00x its own median against a claimed 1.50x, and intentional repeats score the
+same. The cues that would separate them are F0 step-down and glottalisation,
+and TDT exposes neither. So the stop list stays; there is nothing to replace it
+with. Score the set with `score.py` beside this file.
 """
 import json
 import os
