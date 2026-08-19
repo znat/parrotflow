@@ -90,12 +90,16 @@ enum InputBox {
 
         /// Whitespace as its escape, so the neighbourhood stays on one log
         /// line. A newline is the difference between two of `join`'s rules, so
-        /// it has to be visible rather than acted on.
+        /// it has to be visible rather than acted on. U+2028 and U+2029 are
+        /// escaped too: both render as a line break and neither is caught by
+        /// `\n`/`\r`.
         private func escaped(_ part: String) -> String {
             part.replacingOccurrences(of: "\\", with: "\\\\")
                 .replacingOccurrences(of: "\n", with: "\\n")
                 .replacingOccurrences(of: "\r", with: "\\r")
                 .replacingOccurrences(of: "\t", with: "\\t")
+                .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+                .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
         }
     }
 
