@@ -3,111 +3,82 @@
 # get its default back. `--check-config` says what the file adds up to.
 
 hotkey:
-  # A bare modifier — right_option, left_option, right_command,
-  # left_command, right_control, left_control, right_shift, left_shift, fn
-  # — or a character key (a-z, 0-9, f1-f20, space, return, arrows,
-  # punctuation), which needs `modifiers` below.
+  # A bare modifier (right_option, right_command, right_control, fn, ...) or
+  # a character key (a-z, 0-9, f1-f20, space, arrows) plus `modifiers` below.
   key: right_command
 
   # Any of: command, control, option, shift.
   modifiers: []
 
-  # push_to_talk records while the key is held; toggle taps on and off.
-  # A bare modifier wants push_to_talk, or typing an accented character
-  # with it would start recording.
+  # push_to_talk records while held; toggle taps on/off. Bare modifiers need
+  # push_to_talk, or typing an accented character would start recording.
   mode: push_to_talk
 
-  # Keep the mic open this long after you let go, so the last syllable is
-  # not cut off. push_to_talk only. 0 turns it off.
+  # Keeps the mic open this long after release, so the last syllable is not
+  # cut. push_to_talk only; 0 turns it off.
   release_tail_seconds: 0.3
 
 audio:
-  # Where the recordings and trace.jsonl go.
+  # Where recordings and trace.jsonl go.
   output_dir: ~/Recordings/ParrotFlow
 
-  # Skip clips with no speech in them, so a stray keypress does not decode
-  # room tone into a sentence.
+  # Skip clips with no speech, so a stray keypress does not decode room tone.
   speech_gate: true
 
-  # Decode every clip a second time beside the first, with silence added at
-  # both ends, and keep that decode when it reaches further. Recovers the
-  # endings the recogniser skips over — about 2% of dictations — and costs
-  # about 100ms. Needs speech_gate. See docs/configuration.md.
+  # Decode each clip again with silence padding, keep it if it reaches
+  # further. Recovers dropped endings (~2%) for ~100ms. Needs speech_gate.
   second_opinion: false
 
 feedback:
   sound: true     # a click when recording starts and stops
   overlay: true   # the floating pill while you speak
-  # After the words land the pill names what can be done to them, for 3s.
-  # Click a chip to run it. Tapping the dictation hotkey — press and let go
-  # — opens the correction panel too. Holding it starts the next dictation.
+  # After the words land, the pill offers what to do for 3s. Click a chip to
+  # run it, or tap the hotkey to open the correction panel.
   correct_offer: true
-  # Put the sentence on the offer as well, each word coloured by how sure the
-  # decoder was of it: white, then amber, then scarlet. Off by default — it is
-  # for learning what your own dictation is weak at, not for every day.
+  # Colours each word by decoder confidence. For diagnosing your own
+  # dictation, not everyday use — off by default.
   confidence: false
-  # When the offer says the words may not be the words you said. The pill
-  # turns amber and carries one line naming the word. On by default, unlike
-  # `confidence`: it costs nothing on a dictation that went fine.
-  # Both thresholds have to trip, because either alone is noise:
-  #   sentence — the decoder's mean over the whole utterance. Below this the
-  #              decode went badly throughout, not just in one place.
-  #   word     — and it holds a word this bad. Words the vocabulary pass
-  #              wrote do not count: they carry the score of the decode they
-  #              replaced, which is low because that is why the pass fired.
-  # Zero for either turns the warning off.
-  # hold_return is how long, in seconds, a bare Return is taken rather than
-  # typed after a warned dictation — the pill turns red and asks you to check
-  # what was written. It catches the reflex press, not a considered one: past
-  # this the key goes through even with the warning still up. The next Return
-  # always goes through. Cmd+Return is left alone. 0 turns it off.
+  # Warns when a dictation may be wrong: pill turns amber, names the word.
+  # Both the sentence-mean and the worst-word confidence must trip — either
+  # alone is too noisy. hold_return delays a bare Return so a reflex press
+  # cannot confirm unread text. 0 on either setting turns it off.
   low_confidence:
     sentence: 0.80
     word: 0.50
     hold_return: 1.5
 
 logging:
-  # The line-by-line log at ~/Library/Logs/ParrotFlow.log — how
-  # every problem in this app gets diagnosed. Leave it on.
+  # Line-by-line log at ~/Library/Logs/ParrotFlow.log. Leave it on.
   text: true
 
-  # Write each dictation's recording to disk, in audio.output_dir. Off by
-  # default: a recording of your voice should not pile up there unless you
-  # asked for it. Turn it on for --transcribe, calibration, or to hear what
-  # the app heard.
+  # Saves each dictation's recording to audio.output_dir, for --transcribe,
+  # calibration, or hearing what the app heard. Off by default.
   audio: false
 
 transcription:
-  # paste     -> typed into the app you're in (needs Accessibility)
+  # paste     -> typed into the frontmost app (needs Accessibility)
   # clipboard -> copied, you press Cmd-V
   insert_mode: paste
 
-  # Say one of these, and what follows is an instruction, not dictation:
-  # "hey parrot, make that a bullet list". An empty list turns this off.
+  # Say one of these and what follows is an instruction. Empty list turns it off.
   activation_phrases: [hey parrot, by the way parrot]
 
-  # Terminals only: they cannot be edited in place, so the input line is
-  # cleared and retyped corrected. Everywhere else ignores this.
+  # Terminals only — the input line is cleared and retyped, since it cannot
+  # be edited in place.
   rewrite_line: true
 
-  # Languages you dictate in, most spoken first. Supported: en, fr. One entry
-  # turns off language detection.
+  # Languages you dictate in, most spoken first. Supported: en, fr. One
+  # entry turns off language detection.
   languages: [en, fr]
 
-  # What a finished transcript runs through, in order. Remove a line to turn
-  # off that stage. A language key wins over `default`. A transform is also a
-  # stage, and any stage takes a condition. See docs/pipelines.md.
+  # What a transcript runs through, in order. Remove a line to skip that
+  # stage. A language key wins over `default`. See docs/pipelines.md.
   pipelines:
     default:
-      # Names. Matches every `heard:` rendering in vocabulary.yaml, then puts
-      # each match to a model to keep or revert — the rules cannot read the
-      # sentence, so "Versailles" is sometimes the castle.
-      #
-      #   near_misses: false   match renderings exactly, never one edit away
+      # Matches vocabulary.yaml renderings and has a model keep or revert
+      # each match. Runs first, before anything else edits the text.
+      #   near_misses: false   match exactly, never one edit away
       #   review: gpt          who decides; `false` ships every match unread
-      #
-      # Above everything that edits text: it reads spans the acoustic pass
-      # measured before the pipeline started, and an edit moves them.
       - vocabulary
       - numbers                            # "two hundred forty-three" -> 243
       - transform: punctuation             # "is that true question mark" -> is that true?
@@ -120,157 +91,94 @@ transcription:
       - transform: code_identifiers
         app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
         when: /\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\b/
-      #
-      # A `when:` without a pattern reads what earlier stages published:
-      # `code_identifiers.count`, `numbers.language`, `asr.confidence`, and
-      # `<stage>.ran` / `.ok` / `.changed` / `.ms` for every stage. So a stage
-      # can stand down because another one already took the sentence:
-      #
-      #   - stage: transform
-      #     transform: dotted
-      #     when: code_identifiers.count == 0
-      #
-      # A stage that publishes a variable must declare `returns: json` and
-      # speak that protocol — see docs/authoring.md.
+      # A bare `when:` reads what earlier stages published, e.g.
+      # `code_identifiers.count` or `<stage>.ran`/`.ok`/`.changed`/`.ms`:
+      #   - { stage: transform, transform: dotted, when: code_identifiers.count == 0 }
+      # Publishing a variable needs `returns: json` — see docs/authoring.md.
 
-# Every model this config can reach, under names you pick.
-#
-# `api:` is the protocol, not the company: ollama, openai or anthropic.
-# Everyone else speaks one of the three, so Groq, OpenRouter, DeepSeek, LM
-# Studio and vLLM are an `endpoint:` away rather than a new version of this
-# app. `params:` is put into the request body untouched, for anything these
-# keys do not cover.
-#
-# `default: true` marks the one that runs whatever names no model. With a
-# single entry it is implied; with several, exactly one must claim it.
-#
-# A model that is not `ollama` sends your dictation to somebody else's server.
-# `--check-config` says so, every time, and names which transforms do it.
-#
-# api_key: leave it out. A cloud model with no `api_key:` reads the keychain,
-# and the app asks for the key the first time it loads a config that names one.
-# `ParrotFlow --set-key gpt` does the same from a terminal, reading stdin so
-# the key never lands in argv or shell history.
-#
-# The other forms still work, for a setup that needs them. `file:~/path` is the
-# one to use if you want the key on disk. `env:NAME` reads the environment,
-# which the app does not have when it is launched from Finder, so it works from
-# a terminal and silently does not in the app. A key written here in full works
-# too and is announced as plain text on every load.
+# Every model this config can reach, under a name you pick. `api:` is the
+# protocol (ollama, openai, anthropic); other providers work through an
+# `endpoint:`. `default: true` picks the one used when no model is named.
+# A non-ollama model sends dictation off this Mac — `--check-config` says
+# so. api_key: omit it for the keychain, or use `file:~/path`, `env:NAME`
+# (terminal only), or the key written in full.
 models:
   gemma:
     api: ollama
     model: gemma4:e4b-mlx
     endpoint: http://localhost:11434
-    # Pin the model in RAM at launch. Otherwise Ollama drops it after five
-    # minutes, and the next command waits 7-10s for the reload. Ollama only.
+    # Keeps the model in RAM — otherwise Ollama drops it after 5 minutes idle
+    # and the next command waits 7-10s to reload. Ollama only.
     keep_loaded: true
     default: true
 
-  # No `api_key:`, so the key is in the keychain and the app asks for it.
+  # No `api_key:` — keychain. reasoning: off | minimal | low | medium | high.
   # gpt:
   #   api: openai
   #   model: gpt-5.6-luna
   #   endpoint: https://api.openai.com/v1
-  #   # off | minimal | low | medium | high. One ladder, whatever the provider
-  #   # calls its own knob. `off` is the right default for a rewrite.
   #   reasoning: off
   #   timeout_seconds: 30
-  #
   # claude:
   #   api: anthropic
   #   model: claude-sonnet-5
   #   reasoning: off
 
-# What "hey parrot, …" can reach, and which model does each part. The router
-# picks a capability; `spelling` and `catch_all` are two of the things it can
-# pick, which is why all three bind together.
-#
-# Each falls back to the default model above, so a line you do not write is a
-# job that runs on the default rather than a job that does not run.
+# What "hey parrot, …" can reach, and which model runs each part. Each falls
+# back to the default model above.
 commands:
-  # Matching what you said to a capability. Runs on every "hey parrot", and it
-  # is what you wait on with the pill on screen — keep it local and fast.
+  # Matches what you said to a capability. Runs on every "hey parrot" —
+  # keep it local and fast.
   # router: gemma
 
-  # Reading a rule out of "Tasmin spells T A S M E E N". Worth pointing at a
-  # bigger model: loose capitals in speech are what a small one is worst at.
+  # Reads a rule out of "Tasmin spells T A S M E E N". Worth a bigger model.
   # spelling: gpt
 
-  # The instruction no capability covers — "use the 24 hour clock". `false`
-  # refuses them instead; a model name runs them on that model.
+  # An instruction no capability covers. `false` refuses them.
   # catch_all: gpt
 
-# One call a day to GitHub's release API — the only request this app makes on
-# its own. The number is a waiting period, not a poll interval: -1 never
-# asks, 0 offers a release the day it ships, 7 waits a week — long enough for
-# a bad release to be pulled before your Mac ever sees it.
+# One call a day to GitHub's release API. -1 never asks, 0 offers a release
+# the day it ships, 7 waits a week.
 updates:
   after_days: 0
 
-# Word lists, written once and named. A `replace:` pattern refers to one as
-# `{{determiners}}` and a transform that is a program reads the same words from
-# `ctx["vars"]["lists"]`, so there is one definition rather than a copy in every
-# regex — there were nine, and they had already drifted apart.
-#
-# Not split by language. `dotted` has always merged English and French into one
-# alternation and it measures clean, because the words do not collide. Adding a
-# language is adding words here, not adding a file.
-#
-# Every entry is quoted. `on`, `no` and `off` are booleans in YAML 1.1, which is
-# what the check scripts parse with, and an unquoted `on` reaches them as the
-# word `true`.
+# Word lists, written once and named — `{{determiners}}` in a `replace:`, or
+# `ctx["vars"]["lists"]` in a script. Quote every entry: `on`/`no`/`off` are
+# booleans in YAML 1.1.
 lists:
-  # What may sit in front of a spoken name. A determiner there means the words
-  # are prose: "the dot com bubble", "le point sur les tests".
+  # A determiner before a spoken name means prose: "the dot com bubble".
   determiners: ["le", "la", "les", "l", "un", "une", "des", "du", "de", "d", "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "notre", "nos", "votre", "vos", "leur", "leurs", "au", "aux", "à", "quel", "quelle", "chaque", "autre", "même", "premier", "première", "deuxième", "dernier", "dernière", "seul", "seule", "bon", "bonne", "mauvais", "certain", "tel", "telle", "quelque", "the", "a", "an"]
 
-  # Words that mean the speaker is joining ideas, not names. Only `dash` needs
-  # these, being an ordinary word in a way `hyphen` is not.
+  # Words meaning the speaker is joining ideas, not names — only `dash` needs these.
   connectors: ["this", "that", "about", "and", "or", "it"]
 
-  # What may sit in front of a slash that starts a path rather than joining two
-  # words: "available in slash tmp slash x".
+  # What may precede a slash that starts a path, not a join: "in slash tmp".
   path_lead: ["in", "to", "at", "from", "on", "of", "into", "onto", "under", "sure", "is", "was", "be"]
 
-  # What may follow "point"/"dot" in prose. Mostly French, because "point" is an
-  # everyday French word and English "dot" is not: "point de vue", "point
-  # commun", "point final". The last few are the English set phrases.
+  # What may follow "point"/"dot" in prose, mostly French set phrases.
   prose_after_point: ["de", "du", "des", "d", "le", "la", "les", "l", "un", "une", "sur", "dans", "en", "et", "ou", "que", "qui", "où", "à", "au", "aux", "pour", "par", "avec", "sans", "est", "sont", "était", "sera", "me", "te", "se", "ne", "n", "c", "il", "elle", "je", "tu", "nous", "vous", "ils", "elles", "ce", "plus", "moins", "très", "mais", "donc", "car", "si", "comme", "final", "finale", "barre", "virgule", "commun", "commune", "faible", "faibles", "fort", "forts", "mort", "culminant", "névralgique", "chaud", "sensible", "positif", "négatif", "clé", "focal", "nommé", "com", "net", "org", "matrix", "product", "notation", "plot"]
 
-  # Ordinary English function words. A real hyphen-join has a name part on its
-  # right, never a preposition — this is what leaves "a mad dash to the door".
+  # A real hyphen-join never has one of these on its right — English function words.
   function_words: ["to", "the", "a", "an", "of", "for", "in", "on", "at", "from", "with", "is", "was", "are", "were", "and", "or", "it", "its", "this", "that"]
 
-  # The names of the marks themselves. Saying them is talking about them, which
-  # is why "add slash semicolon ellipsis" comes back as words.
+  # Names of the marks themselves — saying them is talking about them.
   mark_names: ["semicolon", "semi", "ellipsis", "comma", "colon", "dot", "dash", "hyphen", "underscore", "period", "quote", "unquote", "bracket", "brackets", "paren", "parens", "parenthesis", "point", "virgule"]
 
-  # A word right before a spoken mark that means it is the noun, not the mark:
-  # "a comma splice", "the exclamation point". Kept short on purpose — most
-  # prepositions are also how a phrasal verb ends ("hold on", "log in"), and
-  # guarding on those broke real instructions. Read by `punctuation`, which
-  # reads `determiners` too, for the French.
-  # `oxford` is not a determiner. It is here because "the oxford comma" was
-  # `punctuation`'s one documented miss, and this is now where such a thing is
-  # fixed — one word here rather than an edit to a script.
+  # A word before a spoken mark that means it is the noun, not the mark: "a comma splice".
   talked_about: ["a", "an", "the", "and", "or", "nor", "around", "oxford"]
 
 
 # What the activation phrase can reach, and what a pipeline can name.
-#
 #   name          the id a pipeline or `when:` names
 #   description   matched against what you say — write it as you would say it
 #   display       shown on the menu bar while the transform runs
 #   prompt:       asks a model, about a second on the local one
-#   model:        which model this prompt runs on — a name from `models:`, or
-#                 `{ use: gpt, reasoning: low }` to change a setting for this
-#                 prompt alone. Left out, it runs on `llm.default`.
+#   model:        which model this runs on — a name from `models:`, or
+#                 `{ use: gpt, reasoning: low }`. Left out, uses the default.
 #   replace:      a substitution table, costs nothing
 #   command:      a program of yours — transcript in on stdin, rewrite out on stdout
 #   confirm       shows the result first; set to false to skip that
 #   path          a body too long for here — transforms/X/, e.g. prompt: { path: slack.md }
-#
 # See docs/pipelines.md.
 transforms:
   - name: terse
@@ -283,8 +191,7 @@ transforms:
   - name: grammar
     description: fix grammar and punctuation mistakes, not formatting or numbers
     display: Fixing grammar
-    # `offer: true` puts this on the pill after a dictation, next to Vocabulary.
-    # `key:` is the letter drawn on its chip.
+    # Puts this on the pill after a dictation. `key:` is the chip's letter.
     offer: true
     key: g
     prompt: |
@@ -309,21 +216,8 @@ transforms:
 
       Return only the text.
 
-  # Same pattern as `backticks`, different output — that is what a table's
-  # name is for. Refuses the match when either side is a word code does not
-  # use there, or "voilà le point sur les tests" becomes "voilà le.sur les
-  # tests". First list: what may not precede. Second: what may not follow.
-  #
-  # Hyphen and underscore reuse both lists — same risk shape.
-  #
-  # `dash` was left out until it was measured. Over 3,759 archived clips
-  # "hyphen" was said 0 times and "dash" 8, 6 of them joining a real name. It is
-  # also an ordinary word, so it carries a longer before-list and an English
-  # after-list of its own: a real join has a name part on its right, never a
-  # preposition, and that is what leaves "a mad dash to the door" alone.
-  #
-  # A single letter either side — "A dot B", "a underscore b" — is never prose.
-  # The article guard was throwing it away.
+  # Refuses when either side is not a code word, so "voilà le point sur les
+  # tests" stays as words. A single letter either side is always code.
   - name: dotted
     description: spoken dot, hyphen, dash, slash and underscore paths as code
     replace:
@@ -332,13 +226,7 @@ transforms:
       '$1-': ['/\b(?!(?:{{determiners}})\b)(\w+) (?:hyphen|tiret(?! bas)) (?!(?:{{prose_after_point}})\b)(?=\w)/',
               '/\b(?!(?:{{determiners}}|{{connectors}})\b)(\w+) (?:dash) (?!(?:{{prose_after_point}}|{{function_words}})\b)(?=\w)/',
               '/\b([A-Za-z]) (?:hyphen|tiret(?! bas)|dash) (?=[A-Za-z]\b)/']
-      # A path, or the and/or sense ("a technical slash product decision").
-      # `(?<!slash )` is what keeps a leading-slash path from half-converting:
-      # "in slash tmp slash x" declines whole rather than becoming
-      # "in slash tmp/x". A `replace:` table is a Swift dictionary, so its rules
-      # run in an arbitrary order and no two-step rewrite can be relied on.
-      # The mark names in the after-list are why "add slash semicolon ellipsis"
-      # is left as words.
+      # `(?<!slash )` stops a leading-slash path half-converting.
       '$1/': ['/\b(?!(?:{{determiners}}|{{path_lead}})\b)(?<!slash )(?<!barre oblique )(\w+) (?:slash|barre oblique) (?!(?:{{mark_names}})\b)(?=\w)/']
       '$1_': ['/\b(?!(?:{{determiners}})\b)(\w+) (?:underscore|souligné|tiret bas) (?!(?:{{prose_after_point}})\b)(?=\w)/',
               '/\b([A-Za-z]) (?:underscore|souligné|tiret bas) (?=[A-Za-z]\b)/']
@@ -348,30 +236,21 @@ transforms:
     replace:
       '`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
 
-  # A program, not a table — casing words is not something a substitution
-  # can express. `examples/code_identifiers/` is transforms/examples/, kept
-  # current by the app; copy it to transforms/code_identifiers/ to edit it.
+  # A program, not a table — casing words needs code. Copy the examples/
+  # folder to transforms/code_identifiers/ to edit it.
   - name: code_identifiers
     description: spoken names as identifiers
     display: Formatting identifiers
     command: examples/code_identifiers/code_identifiers.py
 
-  # A spoken mark replaces whatever punctuation the decoder already guessed
-  # next to it: "we could find. exclamation point" -> "we could find!".
+  # A spoken mark replaces whatever punctuation the decoder guessed next to
+  # it: "we could find. exclamation point" -> "we could find!".
   - name: punctuation
     description: spoken marks as punctuation
     command: examples/punctuation/punctuation.py
-    # The script needs its context, and `returns: json` is what sends it: the
-    # language, which picks `<lang>.py`, and `lists.talked_about`. It reports
-    # `applied` — the marks it wrote — and `declined`, which names the guard
-    # that left a trigger as the ordinary word it is. Every trigger is an
-    # English word, so "why is my comma still a comma" is the question this
-    # stage generates, and the trace now answers it.
     returns: json
 
-  # Cheap enough not to gate on a `when:` — 0.04s, mostly the `python3`
-  # start, and it deletes nothing when it finds nothing.
+  # Cheap: ~0.04s, mostly the python3 start.
   - name: repetitions
     description: delete a word or phrase said twice by accident
     command: examples/repetitions/repetitions.py
-
