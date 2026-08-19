@@ -11,7 +11,7 @@ actually use, and names anything it had to ignore. See [cli.md](cli.md).
 
 ```yaml
 hotkey:
-  key: right_option     # a bare modifier, or a character key + modifiers
+  key: right_command    # a bare modifier, or a character key + modifiers
   modifiers: []         # required for a character key, ignored for a modifier
   mode: push_to_talk    # or toggle
   release_tail_seconds: 0.3   # keep recording this long after you let go

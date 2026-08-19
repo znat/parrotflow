@@ -187,9 +187,10 @@ every transcript. `euh`, `heu`, `hein` are safe. Never add `ben`, `genre`,
 `quoi`, `voilà`, `donc` or `alors` — ordinary French words, and `ben` is an
 English name. Deleting one damages a sentence that was already correct.
 
-**2. The key.** Right Option also types `é`, `ü`, `ñ`. If they need it:
-`hotkey: key: right_command` (or `fn`, `right_control`, or a character key plus
-modifiers — all listed in the config file).
+**2. The key.** Right Command is the default. Right Option also types `é`,
+`ü`, `ñ` — steer them away from binding that one if they type accented
+characters. Alternatives: `fn`, `right_control`, or a character key plus
+modifiers — all listed in the config file.
 
 **3. Numbers.** Off by default. Show, do not explain:
 
