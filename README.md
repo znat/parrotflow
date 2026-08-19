@@ -39,6 +39,11 @@ Spoken commands and the vocabulary check need a language model as well, and that
 
 [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), NVIDIA's state-of-the-art, open-source speech model, runs locally and fast. Most dictations land in under half a second.
 
+Everything else — the hotkey, the pipeline, every transform — lives in one
+plain YAML file, `config.yaml`. Edit it by hand, or with your coding agent.
+To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
+
+
 <br>
 
 ### Rewrite transcriptions your way
