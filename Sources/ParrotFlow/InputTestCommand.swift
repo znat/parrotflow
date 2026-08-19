@@ -31,7 +31,15 @@ enum InputTestCommand {
         // would score a different string from the one the stage publishes.
         print("before ⟪\(cut.before)⟫")
         print("selection ⟪\(cut.selection)⟫")
-        print("after ⟪\(cut.after)⟫", terminator: "")
+        print("after ⟪\(cut.after)⟫")
+        // The one line that survives a newline: the blocks above print theirs
+        // raw, so a field with a break in it cannot be stated in the case file
+        // at all. This is what the log shows, escaped.
+        let capture = InputBox.Capture(
+            before: cut.before, selection: cut.selection, after: cut.after,
+            text: nil, appending: cut.appending,
+            total: text.count, truncated: cut.truncated)
+        print("caret ⟪\(capture.neighbourhood ?? "")⟫", terminator: "")
         return 0
     }
 }
