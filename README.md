@@ -142,8 +142,8 @@ transcription:
       - numbers                       # "fourteen" -> 14, so dates below has digits to work with
       - transform: priorities         # "P one" -> P1, free, every dictation
       - transform: dates              # "march 14" -> 14/03, free, every dictation
-      - transform: grammar            # only in Outlook or Slack, not terminals like coding agents
-        app: /slack|outlook/
+      - transform: grammar
+        app: /slack|outlook/          # only in Outlook or Slack, not terminals like coding agents
 
 transforms:
   - name: priorities
