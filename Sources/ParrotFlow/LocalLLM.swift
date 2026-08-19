@@ -9,14 +9,6 @@ import Foundation
 /// feature degrades to "not available" rather than failing.
 enum LocalLLM {
 
-    struct Config {
-        var endpoint: String
-        var model: String
-        var timeout: TimeInterval
-        /// Hold the model in Ollama's memory between calls — see `keepAlive`.
-        var keepLoaded: Bool = true
-    }
-
     /// Ollama's `keep_alive` value meaning "never unload".
     ///
     /// Its default is 5 minutes, and a call after that pays to read the model
@@ -81,28 +73,36 @@ enum LocalLLM {
         user: String,
         json: Bool,
         maxTokens: Int = 32,
-        config: Config
+        config: ModelSpec
     ) async throws -> String {
-        guard let url = URL(string: "\(config.endpoint)/api/generate") else {
+        guard let url = URL(string: "\(config.url)/api/generate") else {
             throw LLMError.unreachable
         }
+
+        // gemma4 and friends think by default, which for a one-line answer
+        // means ~1000 wasted tokens: measured 98s with it on, 4.5s off. `off`
+        // is that measurement; a rung above it names a level, which only the
+        // models that reason accept.
+        var think: Any = false
+        if config.reasoning != .off { think = config.reasoning.rawValue }
+
+        let options: [String: Any] = [
+            // Deterministic: this is extraction, not writing.
+            "temperature": config.temperature ?? 0,
+            "num_predict": maxTokens,
+        ]
 
         var body: [String: Any] = [
             "model": config.model,
             "system": system,
             "prompt": user,
             "stream": false,
-            // gemma4 and friends think by default, which for a one-line answer
-            // means ~1000 wasted tokens: measured 98s with it on, 4.5s off.
-            "think": false,
-            "options": [
-                // Deterministic: this is extraction, not writing.
-                "temperature": 0,
-                "num_predict": maxTokens,
-            ],
+            "think": think,
+            "options": options,
         ]
         if json { body["format"] = "json" }
         if config.keepLoaded { body["keep_alive"] = pinned }
+        LLM.merge(config.params, into: &body)
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -153,7 +153,8 @@ enum LocalLLM {
     /// prompt cache too. The router is the call the user waits on with
     /// "Thinking…" on screen, so it is the one worth holding warm.
     @discardableResult
-    static func keepWarm(system: String, config: Config) async -> Bool {
+    static func keepWarm(system: String, config: ModelSpec) async -> Bool {
+        guard config.api == .ollama else { return false }
         let reply = try? await complete(
             system: system, user: "instruction: hello",
             json: false, maxTokens: 1, config: config
@@ -176,8 +177,11 @@ enum LocalLLM {
     /// bounded by disk speed on a multi-GB file, not by how long a user will
     /// wait — nobody is watching this one.
     @discardableResult
-    static func warmUp(config: Config) async -> Bool {
-        guard let url = URL(string: "\(config.endpoint)/api/generate") else { return false }
+    static func warmUp(config: ModelSpec) async -> Bool {
+        // Loading and pinning are Ollama's, and so is the cold start they pay
+        // off. A cloud model has neither.
+        guard config.api == .ollama else { return false }
+        guard let url = URL(string: "\(config.url)/api/generate") else { return false }
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -198,8 +202,9 @@ enum LocalLLM {
 
     /// True when the server answers and has the model. Used to grey out
     /// features rather than let them fail at the moment of use.
-    static func isAvailable(config: Config) async -> Bool {
-        guard let url = URL(string: "\(config.endpoint)/api/tags") else { return false }
+    static func isAvailable(config: ModelSpec) async -> Bool {
+        guard config.api == .ollama else { return false }
+        guard let url = URL(string: "\(config.url)/api/tags") else { return false }
         var request = URLRequest(url: url)
         request.timeoutInterval = 3
         guard
@@ -467,7 +472,7 @@ enum VoiceCommand {
         command: String,
         lastTranscript: String?,
         language: String = "en",
-        config: LocalLLM.Config
+        config: ModelSpec
     ) async throws -> VoiceCommand {
         let system = extractionPrompt(for: language)
 
@@ -476,7 +481,7 @@ enum VoiceCommand {
             user = "source: (nothing yet)\ncorrection: \(command)"
         }
 
-        let raw = try await LocalLLM.complete(
+        let raw = try await LLM.complete(
             system: system, user: user, json: false, config: config
         )
         let reply = raw.trimmingCharacters(in: .whitespacesAndNewlines)

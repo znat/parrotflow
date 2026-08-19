@@ -75,12 +75,12 @@ enum Router {
         instruction: String,
         catalogue: Catalogue,
         freeForm: Bool = false,
-        config: LocalLLM.Config
+        config: ModelSpec
     ) async throws -> Decision {
         let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .none }
 
-        let raw = try await LocalLLM.complete(
+        let raw = try await LLM.complete(
             system: prompt(for: catalogue, freeForm: freeForm),
             user: "instruction: \(trimmed)",
             json: false,

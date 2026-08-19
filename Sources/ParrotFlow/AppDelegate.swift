@@ -519,6 +519,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// On change rather than on every load: the file is watched, so saving an
     /// unrelated line runs this again, and a notice that fires every time you
     /// edit your own config is one you learn to ignore.
+    /// Models already asked about this run, so saving config.yaml — which
+    /// reloads it — does not ask again for one that was declined.
+    private var askedForKey: Set<String> = []
+
+    /// A key prompt a running dictation pushed back, waiting for idle.
+    private var keyPromptDeferred = false
+
+    /// Ask for the key of any keychain-backed model that has none.
+    ///
+    /// Modal, and this is the one place that is allowed to be. It runs on a
+    /// config load — launch, or a save of config.yaml — and not on the hotkey
+    /// path, which is what `runModal` may never block; see `startRecording`'s
+    /// catch and #95. Idle is checked anyway, because a save can land while a
+    /// dictation is in flight. One that does is held and asked the moment the
+    /// dictation ends — waiting for the next load means a model configured
+    /// mid-dictation stays keyless until a restart.
+    ///
+    /// Declining is a normal answer. The model stays unusable, a transform
+    /// naming it declines with the transcript untouched, and the menu keeps
+    /// saying so.
+    private func askForMissingKeys() {
+        let wanted = config.modelsByName.values
+            .filter { $0.key.kind == .keychain && $0.key.resolve() == nil }
+            .filter { !askedForKey.contains($0.name) }
+            .sorted { $0.name < $1.name }
+        guard !wanted.isEmpty else { return }
+        guard !recorder.isRecording, runsInFlight <= 0 else {
+            keyPromptDeferred = true
+            return
+        }
+        keyPromptDeferred = false
+
+        var stored = false
+        for spec in wanted {
+            askedForKey.insert(spec.name)
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "\(spec.name) needs an API key"
+            alert.informativeText =
+                "\(spec.name) sends text to \(spec.url). Paste its key and it is "
+                + "kept in your \(Keychain.service) keychain — not in config.yaml, "
+                + "which is a file people paste to each other.\n\n"
+                + "You can do this later with: ParrotFlow --set-key \(spec.name)"
+            let field = KeyField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+            field.placeholderString = "Paste the key"
+            alert.accessoryView = field
+            alert.addButton(withTitle: "Save")
+            alert.addButton(withTitle: "Not now")
+            alert.window.initialFirstResponder = field
+            guard alert.runModal() == .alertFirstButtonReturn else { continue }
+            let typed = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !typed.isEmpty else { continue }
+            do {
+                try Keychain.write(typed, account: spec.key.value)
+                Log.write("stored a keychain key for \(spec.name)")
+                stored = true
+            } catch {
+                Log.write("could not store a key for \(spec.name): \(error.localizedDescription)")
+                flash(error.localizedDescription, tone: .failure)
+            }
+        }
+        // The menu still carries the old "no key" line otherwise, and the
+        // problem it names is the one just fixed.
+        if stored {
+            configProblems = config.problems()
+            updateUI()
+        }
+    }
+
     private func announceIfNew(_ problems: [String]) {
         defer { announcedProblems = problems }
         guard problems != announcedProblems, let first = problems.first else { return }
@@ -544,6 +613,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // about your config belongs; the notice is for what changed.
         for notice in config.notices() { Log.write("config: \(notice)") }
         announceIfNew(configProblems)
+        // Async so a launch is not held behind a modal, and so the menu bar is
+        // up before anything sits in front of it.
+        DispatchQueue.main.async { [weak self] in self?.askForMissingKeys() }
 
         hotkeyError = nil
         hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
@@ -1280,6 +1352,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         stopWatchingForEscape()
+        // Unconditional above, because a cancel takes the monitors whether or
+        // not a newer press is still running. This is the other half: cancelling
+        // can also be the moment the app goes idle, and what waits on idle —
+        // an offer's keys, a held key prompt — is the helper's to hand over. It
+        // guards on idle itself, so a cancelled transcription that is still in
+        // flight hands over nothing until it lands.
+        stopWatchingForEscapeIfIdle()
         if config.feedback.sound { NSSound(named: "Pop")?.play() }
         Log.write("escape: cancelled while \(recording ? "recording" : "transcribing")")
         flash(recording ? "Recording cancelled" : "Transcription cancelled", tone: .caution)
@@ -1338,6 +1417,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // cancel, so an offer that was raised while a dictation was still
         // running can have its keys now. See `watchTheOfferKeys`.
         if offerIsUp, !offerKeys.isRunning { watchTheOfferKeys() }
+        // And a key prompt the same dictation pushed back. Async so this run's
+        // completion unwinds before a modal blocks the main queue.
+        if keyPromptDeferred {
+            keyPromptDeferred = false
+            DispatchQueue.main.async { [weak self] in self?.askForMissingKeys() }
+        }
     }
 
     private func stopWatchingForEscape() {
@@ -1562,13 +1647,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func llmConfig() -> LocalLLM.Config {
-        LocalLLM.Config(
-            endpoint: config.llm.endpoint,
-            model: config.llm.model,
-            timeout: config.llm.timeoutSeconds,
-            keepLoaded: config.llm.keepLoaded
-        )
+    /// The model a job runs on — see `Config.model(for:)`.
+    private func llmConfig(for job: Config.ModelJob = .general) -> ModelSpec {
+        config.model(for: job)
     }
 
     /// Loads the Ollama model now, so the first correction doesn't pay for it.
@@ -1581,9 +1662,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// config.yaml, and re-warming there would fire a multi-GB load each time
     /// the file is touched.
     private func warmUpLLM() {
-        guard config.llm.enabled, config.llm.keepLoaded else { return }
-
-        let llm = llmConfig()
+        // Whatever the router runs on: it is the call anybody waits on. Nothing
+        // to warm up when that is not a local model — `LocalLLM.warmUp` says so
+        // too, and this saves the task.
+        let llm = llmConfig(for: .router)
+        guard config.llm.enabled, llm.keepLoaded, llm.api == .ollama else { return }
         let system = Router.prompt(
             for: Catalogue(transforms: config.transforms), freeForm: config.freeForm
         )
@@ -1649,7 +1732,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startKeepWarm() {
         keepWarmTimer?.invalidate()
         keepWarmTimer = nil
-        guard config.llm.enabled, config.llm.keepLoaded else { return }
+        let router = llmConfig(for: .router)
+        guard config.llm.enabled, router.keepLoaded, router.api == .ollama else { return }
 
         let timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.keepWarmTick()
@@ -1666,7 +1750,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !keepWarmInFlight else { return }
         guard Date().timeIntervalSince(LocalLLM.lastCallAt) >= 60 else { return }
 
-        let llm = llmConfig()
+        let llm = llmConfig(for: .router)
+        guard llm.api == .ollama else { return }
         // The same string the router will send, `free_form` included: what is
         // being kept warm is Ollama's prompt cache, and a system prompt that
         // differs by one line is a cache miss and the 3.5s this exists to avoid.
@@ -1714,7 +1799,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         beginProgress("Thinking…")
-        let llmConfig = llmConfig()
+        let llmConfig = llmConfig(for: .router)
         let freeForm = config.freeForm
 
         Task { [weak self] in
@@ -1798,7 +1883,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .prompt:
             guard let prompt = transform.asPrompt else { return text }
             return try await PromptRunner.run(
-                prompt: prompt, instruction: instruction, text: text, config: llmConfig()
+                prompt: prompt, instruction: instruction, text: text,
+                config: config.model(for: transform)
             )
         case .replace:
             // `expand:`, or a table reached by voice compiles `{{determiners}}`
@@ -3466,7 +3552,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         beginProgress("Thinking…")
-        let llm = llmConfig()
+        let llm = llmConfig(for: .router)
         let freeForm = config.freeForm
         Task { [weak self] in
             do {

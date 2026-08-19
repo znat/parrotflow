@@ -23,3 +23,6 @@ voice/
 # about a directory that is already under version control by another route.
 .claude/worktrees/
 .claude/skills/ste/SKILL.md
+
+# Session working files. Large and disposable.
+scratchpad/

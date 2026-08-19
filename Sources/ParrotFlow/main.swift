@@ -80,6 +80,17 @@ if arguments.contains("--audio-recovery") {
     exit(AudioRecoveryCommand.run(casesPath: casesPath))
 }
 
+if let index = arguments.firstIndex(of: "--set-key") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --set-key <model> [--forget]")
+        exit(2)
+    }
+    exit(SetKeyCommand.run(
+        model: arguments[index + 1],
+        forget: arguments.contains("--forget")
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--transcribe") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --transcribe <file.wav> [--no-vocab]")

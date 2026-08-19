@@ -149,6 +149,33 @@ enum CheckConfigCommand {
         // resolved absolute path for that reason: what the config says is
         // `slack_mentions.py`, and that is exactly the string that cannot
         // answer it.
+        // Which model each job and each prompt ends up on.
+        //
+        // Not the same question as what `models:` says: a name resolves through
+        // `llm.default`, a transform's own `model:`, and whatever that overrides
+        // — and "was that the model I think it was" is the first question when a
+        // prompt starts answering differently. The key is described, never
+        // printed.
+        let models = config.modelsByName
+        print("  · models            \(models.count) reachable")
+        let modelWidth = models.keys.map(\.count).max() ?? 0
+        for name in models.keys.sorted() {
+            guard let spec = models[name] else { continue }
+            let padded = name.padding(toLength: max(modelWidth, 1), withPad: " ", startingAt: 0)
+            let key = spec.api.isLocal ? "" : "  \(spec.key.described)"
+            print("      \(padded)  \(spec.api.rawValue)  \(spec.model)  \(spec.url)"
+                + "  reasoning \(spec.reasoning.rawValue)\(key)")
+        }
+        print("  · runs on           default=\(config.modelName(for: .general))"
+            + "  router=\(config.modelName(for: .router))"
+            + "  vocabulary=\(config.modelName(for: .vocabulary))")
+        let moved = config.transforms.filter { transform in
+            transform.isPrompt && config.model(for: transform) != config.model()
+        }
+        for transform in moved {
+            print("      \(transform.name) → \(config.model(for: transform).described)")
+        }
+
         if !config.transforms.isEmpty {
             print("  · transforms        \(config.transforms.count) defined")
             let width = config.transforms.map(\.name.count).max() ?? 0
@@ -256,10 +283,14 @@ enum CheckConfigCommand {
             ok = false
         }
 
-        // LLM — only reachability is checked here; --command exercises it.
+        // LLM — what is where is in the models table above; this is the switch
+        // that turns all of it off, and the pinning that only Ollama has.
         if config.llm.enabled {
-            print("  · llm               \(config.llm.model) at \(config.llm.endpoint)")
-            print("  · keep loaded       \(config.llm.keepLoaded ? "on (pinned in RAM)" : "off (Ollama unloads after 5 min; +7-10s on a cold call)")")
+            let router = config.model(for: .router)
+            print("  · llm               enabled, \(config.modelsByName.count) model(s)")
+            if router.api == .ollama {
+                print("  · keep loaded       \(router.keepLoaded ? "on (\(router.model) pinned in RAM)" : "off (Ollama unloads after 5 min; +7-10s on a cold call)")")
+            }
         } else {
             print("  · llm               disabled — no free-form spoken commands")
         }

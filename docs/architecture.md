@@ -11,7 +11,7 @@
 | Numbers | `NumberGrammar*.swift` | Spoken numbers as digits, English and French, no model |
 | Transforms | `PromptRunner.swift`, `CommandRunner.swift` | A prompt to the local model, or a program of yours on stdin/stdout |
 | Routing | `Router.swift`, `FreeForm.swift` | Which transform an instruction reaches, and what happens when none does |
-| Spoken commands | `LocalLLM.swift` | HTTP to a local Ollama; degrades to "unavailable" when it isn't there |
+| Spoken commands | `LLM.swift`, `LocalLLM.swift` | One call, three protocols — `ollama`, `openai`, `anthropic`. `ModelSpec.swift` is what a config resolves to; every failure degrades to "unavailable" rather than costing the transcript |
 | Config | `Config.swift` | Yams + a `DispatchSource` file watcher for live reload |
 | Permissions | `Permissions.swift` | `AVCaptureDevice` for mic, `AXIsProcessTrusted` for Accessibility |
 | Text insertion | `TextInserter.swift`, `SelectionReader.swift` | Paste-via-clipboard, then the pasteboard is put back |

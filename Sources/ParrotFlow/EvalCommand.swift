@@ -260,10 +260,8 @@ enum EvalCommand {
     private static func asked(
         _ prompt: Config.Prompt, _ text: String, instruction: String, config: Config
     ) -> (output: String, seconds: TimeInterval) {
-        let llm = LocalLLM.Config(
-            endpoint: config.llm.endpoint, model: config.llm.model,
-            timeout: config.llm.timeoutSeconds, keepLoaded: config.llm.keepLoaded
-        )
+        let llm = config.transform(named: prompt.name)
+            .map { config.model(for: $0) } ?? config.model()
         var output = text
         let started = Date()
         let done = DispatchSemaphore(value: 0)

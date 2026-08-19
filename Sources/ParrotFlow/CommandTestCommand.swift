@@ -54,12 +54,7 @@ enum CommandTestCommand {
             return 1
         }
 
-        let llmConfig = LocalLLM.Config(
-            endpoint: config.llm.endpoint,
-            model: config.llm.model,
-            timeout: config.llm.timeoutSeconds,
-            keepLoaded: config.llm.keepLoaded
-        )
+        let llmConfig = config.model(for: .general)
         let spelled = VoiceCommand.spellingSegments(in: command)
         if !spelled.isEmpty {
             let shown = spelled
@@ -85,7 +80,7 @@ enum CommandTestCommand {
                     command: command, lastTranscript: lastTranscript,
                     language: language, config: llmConfig
                 )
-                print(String(format: "→ %@ in %.2fs", config.llm.model, Date().timeIntervalSince(started)))
+                print(String(format: "→ %@ in %.2fs", llmConfig.model, Date().timeIntervalSince(started)))
                 describe(result)
             } catch {
                 print("✗ \(error.localizedDescription)")

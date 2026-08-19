@@ -1154,16 +1154,13 @@ struct Pipeline: Equatable, Codable {
 
         let reply: String
         do {
-            reply = try await LocalLLM.complete(
+            reply = try await LLM.complete(
                 system: system, user: user, json: false,
                 // A line per change and whatever the model wraps them in.
                 // Anything longer is a model explaining itself, which this
                 // shape does not read.
                 maxTokens: 8 * changes.count + 8,
-                config: LocalLLM.Config(
-                    endpoint: config.llm.endpoint, model: config.llm.model,
-                    timeout: config.llm.timeoutSeconds, keepLoaded: config.llm.keepLoaded
-                )
+                config: config.model(for: .vocabulary)
             )
         } catch {
             return declined("\(error.localizedDescription); kept as they are",
@@ -1198,7 +1195,7 @@ struct Pipeline: Equatable, Codable {
             "reverted": .string(reverted.joined(separator: "; ")),
             "judged": .string(chosen),
             "reply": .string(reply.trimmingCharacters(in: .whitespacesAndNewlines)),
-            "model": .string(config.llm.model),
+            "model": .string(config.model(for: .vocabulary).model),
         ])
     }
 
@@ -1283,10 +1280,11 @@ struct Pipeline: Equatable, Codable {
             Log.write("pipeline: skipped prompt \(name) — llm.enabled is false")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }
-        guard let prompt = config.transform(named: name)?.asPrompt else {
+        guard let transform = config.transform(named: name), let prompt = transform.asPrompt else {
             Log.write("pipeline: no prompt named \"\(name)\"; skipped")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }
+        let model = config.model(for: transform)
 
         do {
             let result = try await PromptRunner.run(
@@ -1300,12 +1298,7 @@ struct Pipeline: Equatable, Codable {
                 // What every stage before this one published. A prompt reads it
                 // by the same names a condition does.
                 scope: scope,
-                config: LocalLLM.Config(
-                    endpoint: config.llm.endpoint,
-                    model: config.llm.model,
-                    timeout: config.llm.timeoutSeconds,
-                    keepLoaded: config.llm.keepLoaded
-                )
+                config: model
             )
             guard !result.isEmpty else {
                 Log.write("pipeline: prompt \(name) returned nothing; kept the transcript")
@@ -1320,7 +1313,7 @@ struct Pipeline: Equatable, Codable {
             // nobody sees happen, and "was that the model I think it was" is
             // the first question when its answers change shape between two
             // runs — the same question `Trace` logs `asr.model` to answer.
-            return StageResult(text: result, vars: ["model": .string(config.llm.model)])
+            return StageResult(text: result, vars: ["model": .string(model.model)])
         } catch {
             Log.write("pipeline: prompt \(name) failed (\(error.localizedDescription));"
                 + " kept the transcript")
