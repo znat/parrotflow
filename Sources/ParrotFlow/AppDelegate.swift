@@ -1352,6 +1352,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         stopWatchingForEscape()
+        // Unconditional above, because a cancel takes the monitors whether or
+        // not a newer press is still running. This is the other half: cancelling
+        // can also be the moment the app goes idle, and what waits on idle —
+        // an offer's keys, a held key prompt — is the helper's to hand over. It
+        // guards on idle itself, so a cancelled transcription that is still in
+        // flight hands over nothing until it lands.
+        stopWatchingForEscapeIfIdle()
         if config.feedback.sound { NSSound(named: "Pop")?.play() }
         Log.write("escape: cancelled while \(recording ? "recording" : "transcribing")")
         flash(recording ? "Recording cancelled" : "Transcription cancelled", tone: .caution)
