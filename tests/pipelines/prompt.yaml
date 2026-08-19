@@ -7,7 +7,6 @@
 # prompt has to be survivable at runtime — Ollama absent, a renamed prompt, a
 # fixture like this one — and "survivable" means the text comes back untouched.
 languages: [en, fr]
-replacements: {}
 pipeline:
   - stage: numbers
     unless: /```/

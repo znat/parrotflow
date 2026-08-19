@@ -10,8 +10,10 @@
 # fixture: the alternation is what makes a no-op match reachable at all.
 languages: [en]
 
-replacements:
-  Vercel: ['/\b(?:Versal|Vercel)\b/']
 
+vocabulary:
+  terms:
+    Vercel:
+      heard: ['/\b(?:Versal|Vercel)\b/']
 pipeline:
-  - replacements
+  - vocabulary

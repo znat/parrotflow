@@ -26,26 +26,26 @@ transcription:
   languages: [en]       # en and fr are the supported values
   rewrite_line: true
   pipelines: …          # see pipelines.md
-  replacements: …       # see below
   transforms: …         # see pipelines.md
 
-llm:
-  enabled: true
-  model: gemma4:e4b     # these four keys are the model named `local`
-  endpoint: http://localhost:11434
-  keep_loaded: true
-  default: local        # what a prompt runs on when it names none
-
-models:                 # more models, under names you pick
+models:                 # every model, under names you pick
+  gemma:
+    api: ollama         # ollama | openai | anthropic — the protocol, not the vendor
+    model: gemma4:e4b
+    keep_loaded: true
+    default: true       # what runs whatever names no model
   gpt:
-    api: openai         # ollama | openai | anthropic — the protocol, not the vendor
+    api: openai
     model: gpt-5.6-luna
     reasoning: off      # off | minimal | low | medium | high
 
+commands:               # which model does each part of "hey parrot, …"
+  router: gemma
+  spelling: gpt
+  catch_all: gpt        # or false, to refuse what no capability covers
+
 updates:
   after_days: 0
-
-free_form: true
 
 feedback:
   sound: true
@@ -225,26 +225,30 @@ correction ended up appended to the end of a line instead of replacing a word in
 it: ⌃K clears nothing in a composer, and the paste that followed landed on the
 end of what was still there.
 
-## `transcription.replacements`
+## `transcription.replacements` is retired
 
-Patterns and deletions, hand-written. Whole words, case-insensitive. A name
-the recogniser mangles does not go here — say "hey parrot" and fix it in the
-panel, and it lands in `vocabulary.yaml` instead — but a pattern with no fixed
-spelling, or a deletion, has nowhere else to live.
+It held two kinds of rule and neither belongs there now.
+
+A name the recogniser mangles goes in `vocabulary.yaml`, where the `vocabulary`
+stage matches it and then has a model read the sentence before keeping it —
+"Versailles" is sometimes the castle, and only something reading the sentence
+can tell.
+
+A mechanical rule — a deletion, a regex template — goes in a transform's
+`replace:`, which needs no such review and already takes regexes, deletions,
+`{{lists}}` and `when:`/`app:` conditions:
 
 ```yaml
-replacements:
-  "": ['/[,]?\s*\b(?:u+m+|u+h+|erm+|hmm+)\b[,]?/']
-  '$1.$2': ['/\b(\w+) dot (\w+)\b/']
+transforms:
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:u+m+|u+h+|erm+|hmm+)\b[,]?/']
 ```
 
-A source in `/slashes/` is a regular expression, and with one the target is a
-template, so `$1` writes back what the pattern captured. An **empty target
-deletes** rather than substitutes, which is how filler words go, punctuation
-and spacing included.
-
-The table runs as the `replacements` stage — a pipeline stage, so whether it
-runs at all is [pipelines.md](pipelines.md).
+Nothing was left in the middle, which is why the table went. A rule that needs
+judging is a name; a rule that does not is a transform. `--check-config`
+refuses the old key and says this.
 
 ## `lists`
 
@@ -288,15 +292,34 @@ as the word `true`, so the list silently stops holding the word you wrote.
 The lists are not split by language. `dotted` merges English and French into
 one alternation and measures clean, because the words do not collide.
 
-## `llm`
+## `commands`
 
-What is behind spoken commands and every `prompt:` transform. Without a model
-dictation still works and those stages stop.
+Which model does each part of a spoken command. The router matches what you
+said to a capability; `spelling` and `catch_all` are two of the things it can
+pick, which is why all three bind together.
 
-`model:`, `endpoint:`, `timeout_seconds:` and `keep_loaded:` describe one
-Ollama model, and it is named `local`. Everything runs on it unless something
-names another. A config written before `models:` existed keeps working exactly
-as it did.
+| Key | What it decides | Default |
+|---|---|---|
+| `router` | "hey parrot, …" — the call you wait on with the pill on screen | the default model |
+| `spelling` | reading a rule out of "Tasmin spells T A S M E E N" | the default model |
+| `catch_all` | an instruction no capability covers; `false` refuses them | the default model |
+
+Keep `router` local for as long as you can. It runs on every "hey parrot", it
+is timed in tenths of a second, and it sees every word you say.
+
+`spelling` is the opposite case. It runs only when you ask, and reading loose
+capitals out of speech is the job a small local model is worst at — so it is
+the first one worth pointing somewhere bigger.
+
+The KEEP/REVERT review is not here. It belongs to the `vocabulary` pipeline
+stage that runs it, and binds there as `review:` — see
+[pipelines.md](pipelines.md). A pipeline is per language, so the model that
+reads a French sentence need not be the one that reads an English one.
+
+There is no `enabled:` key any more. A config that defines no `models:` calls
+no model, which says the same thing and cannot fall out of step with itself.
+
+## `models`, and pinning
 
 `keep_loaded: true` pins the model in RAM at launch. Ollama otherwise drops it
 after five minutes idle and the next command waits for a reload — measured
@@ -305,17 +328,10 @@ for one. The cost is the model sitting in memory for as long as the app runs:
 9.6 GB for `gemma4:e4b`. On a 16 GB Mac, turn it off. On 32 GB, do not. It is
 an Ollama setting; the other protocols have nothing to pin.
 
-Three keys say which model runs what:
-
-| Key | What it decides | Default |
-|---|---|---|
-| `default` | what a `prompt:` transform runs on when it names none | `local` |
-| `router` | "hey parrot, …" — the call you wait on with the pill on screen | `default` |
-| `vocabulary` | the KEEP/REVERT judge, which runs on every dictation | `default` |
-
-Keep `router` and `vocabulary` local for as long as you can. They run on every
-dictation, they are timed in tenths of a second, and they see every word you
-say.
+`default: true` marks the model everything falls back to — a `prompt:`
+transform that names none, and any binding left unwritten. With one model it is
+implied. With several, exactly one must claim it: none and more than one are
+both refused rather than guessed at.
 
 ## `models`
 
@@ -501,12 +517,17 @@ A wait has a point — a bad release is one that gets noticed and pulled, and a
 week of distance means your Mac never saw it. Set `after_days: 7` if you want
 that; the default takes the release the day it ships.
 
-## `free_form`
+## `commands.catch_all`
 
 Do what was asked even when no transform description matches: "hey parrot, use
 the 24 hour clock". A remark that was never an instruction is still refused,
-and you see every result before it replaces anything. Turn it off to go back to
-a fixed menu of transforms.
+and you see every result before it replaces anything. `false` goes back to a
+fixed menu of transforms; a model name runs it on that model.
+
+It was `free_form: true` at the top level. It is here because it is one of the
+router's answers rather than a setting of its own, and because it is the case
+that most deserves its own model — the free-form prompt is where a small local
+one is measured at its ceiling.
 
 ## `audio.speech_gate`
 

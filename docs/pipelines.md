@@ -5,8 +5,8 @@ Everything a finished transcript goes through, in order, per language:
 ```yaml
 transcription:
   pipelines:
-    default: [replacements, fuzzy, numbers]
-    fr: [replacements, fuzzy, numbers]
+    default: [vocabulary, numbers]
+    fr: [vocabulary, numbers]
 ```
 
 A language's own list wins over `default`. A key that is neither `default` nor
@@ -19,16 +19,20 @@ can see, not finding a setting you cannot. Delete `pipelines:` entirely and you
 get every stage back — a missing section is silence, not a choice. Write
 `default: []` and you get none, which is a choice.
 
+It was three stages until the shapes were counted: `replacements` wrote the
+exact matches, `fuzzy` caught the near ones, `vocabulary` judged them, and the
+order they had to run in was enforced by hand because the three were never
+independent. They are one stage, and the order is no longer something a config
+can get wrong.
+
 ## The stages
 
 | Stage | What it does |
 |---|---|
-| `replacements` | The substitutions in `replacements:` — literal, word-boundary, case-insensitive, or a regex between slashes. |
-| `fuzzy` | The same table against renderings you have not taught, so "super bays" reaches Supabase. Only words the spell checker does not know are eligible, which is what keeps "Excel" from becoming "Vercel". Needs `replacements` before it and says so if it does not have one, because on its own it swallows the preceding word. |
+| `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then puts each match to a model to keep or revert — see [The name stage](#the-name-stage). |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
 | `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
-| `vocabulary` | Every substitution the vocabulary pass made, put to the local model one at a time — see [The name judge](#the-name-judge). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
 `numbers` rewrites transcripts that were already correct, so run `--numbers` on
@@ -51,7 +55,8 @@ name or a mapping, and it cannot be both:
 ```yaml
 - stage: vocabulary
   when: vocabulary.count > 0
-  fuzzy: true         # optional; default. false matches renderings exactly
+  near_misses: true   # optional; default. false matches renderings exactly
+  review: gemma       # optional; who keeps or reverts. false ships them unread
   max_slots: 4        # optional; past this many, keep what the pass wrote
   max_per_slot: 2     # optional; readings per place, the decoder's included
   max_per_term: 2     # optional; places in one sentence about the same name
@@ -85,13 +90,13 @@ written, and the text still holds the decoder's word there. The question is the
 same either way — does this name belong here — so `after` is the sentence with
 every change taken, whether the pass took it or not, and KEEP is what writes it.
 
-A rule in `replacements:` is judged too, so a name a rule wrote for a word you
+A rule from `vocabulary.yaml` is reviewed too, so a name a rule wrote for a word you
 meant literally can be undone. The app works out which occurrences the rule
 wrote by comparing the transcript before and after it. When two rules write the
 same term into one sentence that comparison cannot say which is which, and then
 neither is offered — the log says so.
 
-**`fuzzy:` widens what a `heard:` rendering matches.** On by default. Two
+**`near_misses:` widens what a `heard:` rendering matches.** On by default. Two
 things, and they are separate mechanisms:
 
 - A word spelled like a rendering but for its apostrophes *is* that rendering.
@@ -103,7 +108,11 @@ things, and they are separate mechanisms:
 
 Neither writes anything. Each opens one more place for the model to decide, so
 the risk of the looser match is bounded by the judge rather than by the
-threshold. `fuzzy: false` puts matching back to exact and whole-word.
+threshold. `near_misses: false` puts matching back to exact and whole-word.
+
+Nothing is written by that pass. A near miss becomes one more question for the
+review, which is what makes it safe to be this loose — and it means a machine
+with no model gets the exact matches and leaves the near ones alone.
 
 **`max_per_term` is the one to move if nothing is being judged.** One name
 reaches the list from five directions — a rule that already rewrote the text,
@@ -115,16 +124,19 @@ declined. The cap keeps the two best-evidenced places and says in the log which
 it dropped. Raise it when a name really does appear three times in one
 sentence.
 
-`when: vocabulary.count > 0` is not optional in practice. Without it the stage
-costs a model call on every dictation, including the ones where nothing was
-substituted.
+The stage decides for itself whether to call a model: nothing matched means
+nothing to ask about, and it returns before the call. A `when:` of your own is
+for the cases the stage cannot know about — an app you never want it in.
 
-**Order matters, and the app refuses the wrong one.** The judge is given spans
-measured on the text the decoder produced. Put `replacements` above it — the
-judge offers a rule's substitution back, so the rules have to have fired — and
-everything that edits text below it. `--check-config` refuses a pipeline that
-puts `fuzzy`, `numbers` or a transform in between, because a span that has
-moved cannot be told from a span that was always wrong.
+**Order matters, and the app refuses the wrong one.** The review is given spans
+measured on the text the decoder produced. Put the stage above everything that
+edits text. `--check-config` refuses a pipeline that puts `numbers` or a
+transform above it, because a span that has moved cannot be told from a span
+that was always wrong.
+
+There used to be one exception, `replacements`, because the review offers a
+rule's substitution back and the rules had to have fired first. That pass is
+inside this stage now, so there is no exception left to state.
 
 When anything goes wrong — the model unreachable, a reply naming no change,
 more places than `max_slots` — the transcript ships exactly as it arrived and
@@ -159,7 +171,7 @@ transforms:
 
 `prompt:` asks the local model — about a second, and the reason conditions
 exist. `replace:` is a substitution table of its own, in the same shape as
-`transcription.replacements`, and costs nothing. `command:` runs a program of
+the `vocabulary` stage, and costs nothing. `command:` runs a program of
 yours, which costs a process start — about 30ms for `python3`, 5ms for a shell
 script.
 
@@ -440,14 +452,14 @@ not anything is wrong with it — a config that runs something you have forgotte
 about, or that arrived in a config you copied from somewhere, should not be
 able to stay quiet about it.
 
-**Why a table needs a name.** `transcription.replacements` is a single table
+**Why a table needs a name.** A `replace:` transform is one table
 applied by a single stage, so it cannot be two tables running in two places
 under two conditions. Named ones can:
 
 ```yaml
 pipelines:
   default:
-    - replacements
+    - vocabulary
     - fuzzy
     - numbers
     - transform: dotted
@@ -456,7 +468,7 @@ pipelines:
       app: /^(?!.*(term|ghostty|iterm|warp))/
 ```
 
-Two tables, two conditions, at most one matching. A single `replacements:`
+Two tables, two conditions, at most one matching. A single shared table
 cannot express that: it is one table run by one stage, in one place.
 
 **`dotted` ships.** A new install is written with it already in the default
@@ -505,7 +517,7 @@ either side — "réunion point hebdomadaire" — is a shape only a dictionary w
 tell from code, and every residual case is kept in the set, failing, rather
 than dropped to make the number look better. They are unlikely in a terminal or
 a chat window, which together with the `app:` scoping is the only reason this is
-on by default; in `replacements:` it would run everywhere and would not be
+on by default; in one shared table it would run everywhere and would not be
 defensible.
 
 `scripts/check-dotted.sh` reads the pattern out of `Config.defaultYAML` rather
@@ -876,9 +888,7 @@ A stage can carry a condition, which is what makes an expensive one affordable
 ```yaml
 pipelines:
   fr:
-    - replacements
-    - stage: fuzzy
-      unless: /```/                      # never inside a code fence
+    - vocabulary
     - stage: numbers
       when: /\b(vingt|cent|mille)\b/     # only if a number word is left
 ```
@@ -912,7 +922,7 @@ can read them:
 ```yaml
 pipelines:
   default:
-    - replacements
+    - vocabulary
     - transform: code_identifiers
     - stage: transform
       transform: dotted
@@ -932,12 +942,12 @@ any of this exists:
 They are **derived, never claimed**. A stage cannot forget to report `changed`,
 and cannot report it about the wrong string.
 
-Stages add their own on top. The built-in ones publish `replacements.count`,
-`replacements.changes` and `replacements.before` — how many rules fired, which
+Stages add their own on top. The built-in ones publish `vocabulary.count`,
+`vocabulary.changes` and `vocabulary.before` — how many rules fired, which
 ones, and the sentence the stage was handed — `numbers.language`, which grammar
 actually read the numbers and is not the same answer as the pipeline's
 language, and, for a prompt stage, `model`. The name judge reads all three of
-the `replacements` ones: `changes` says which rules fired and `before` says
+the `vocabulary` ones: `changes` says which rules fired and `before` says
 *where*, because the rules leave no positions behind. A `command:` transform
 publishes whatever it likes; see
 [docs/authoring.md](authoring.md#recipe-a-program-that-reports-what-it-did).
@@ -955,7 +965,7 @@ Two stages publish it today.
 
 - `code_identifiers` publishes the identifiers it wrote — `max_retries`,
   `UserProfile`.
-- A `replace:` table publishes what its rules put in, as does the `replacements`
+- A `replace:` table publishes what its rules put in, as does the `vocabulary`
   stage. A table has no code of its own, so `Replacements.exact` publishes on
   its behalf. The value is the **template expanded**: `dotted` writes `$1.` and
   publishes `user.`, not `$1.`.
@@ -1080,7 +1090,7 @@ publishes it, so a later stage can know what the sentence is answering.
 ```yaml
 pipelines:
   default:
-    - replacements
+    - vocabulary
     - context
     - stage: transform
       transform: reply
@@ -1298,7 +1308,7 @@ terminal and nowhere near an email:
 ```yaml
 pipelines:
   default:
-    - replacements
+    - vocabulary
     - stage: numbers
       app: /term|ghostty|iterm|warp/
     - prompt: prose

@@ -1603,14 +1603,16 @@ struct Config: Decodable, Equatable {
         ///     - vocabulary
         ///     - stage: vocabulary
         ///       when: vocabulary.count > 0
-        ///       fuzzy: false
+        ///       near_misses: false
+        ///       review: gpt
         ///       max_slots: 4
         struct PipelineEntry: Decodable {
             let name: String
             var transform: String?
             var prompt: String?
             var caps: VocabularyJudge.Caps?
-            var fuzzy: Bool?
+            var nearMisses: Bool?
+            var review: String?
             var when: String?
             var unless: String?
             var app: String?
@@ -1618,7 +1620,9 @@ struct Config: Decodable, Equatable {
             var namesBoth = false
 
             private enum CodingKeys: String, CodingKey {
-                case stage, transform, prompt, vocabulary, fuzzy, when, unless, app
+                case stage, transform, prompt, vocabulary, when, unless, app
+                case nearMisses = "near_misses"
+                case review
                 case maxSlots = "max_slots"
                 case maxReadings = "max_readings"
                 case maxPerSlot = "max_per_slot"
@@ -1669,7 +1673,8 @@ struct Config: Decodable, Equatable {
                     // Read only so `Caps.problems` can refuse it by name.
                     caps.readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings)
                     self.caps = caps
-                    fuzzy = try c.decodeIfPresent(Bool.self, forKey: .fuzzy)
+                    nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
+                    review = try c.decodeIfPresent(String.self, forKey: .review)
                 }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
@@ -1729,10 +1734,6 @@ struct Config: Decodable, Equatable {
                 }
             }
 
-            /// Fuzzy matching compares spellings, so a pattern is not a
-            /// candidate and neither is a deletion — there is nothing to match
-            /// against.
-            var isFuzzyCandidate: Bool { !isRegex && !isDeletion }
         }
 
         init() {}
@@ -1814,7 +1815,8 @@ struct Config: Decodable, Equatable {
                             return Pipeline.Step(
                                 stage: stage, transform: entry.transform,
                                 prompt: entry.prompt, caps: entry.caps,
-                                fuzzy: entry.fuzzy, when: entry.when,
+                                nearMisses: entry.nearMisses, review: entry.review,
+                                when: entry.when,
                                 unless: entry.unless, app: entry.app
                             )
                         }
@@ -1829,7 +1831,7 @@ struct Config: Decodable, Equatable {
                 throw ConfigError.invalidValue(
                     key: "transcription.pipelines",
                     value: "a bare list, or a language with nothing under it",
-                    expected: "a language, then its stages — `default: [replacements, fuzzy]`, "
+                    expected: "a language, then its stages — `default: [vocabulary, numbers]`, "
                         + "or `fr:` with `- replacements` under it"
                 )
             }
@@ -1842,20 +1844,19 @@ struct Config: Decodable, Equatable {
             for key in [LegacyKeys.numbers, .fuzzyMatching] where present(key) {
                 retired.append(key.stringValue)
             }
-            do {
-                if let grouped = try c.decodeIfPresent(
-                    [String: [String]].self, forKey: .replacements
-                ) {
-                    self.replacements = grouped
-                }
-            } catch {
-                // The flat `heard: corrected` form was the earlier shape. Say so
-                // plainly rather than leaving a type mismatch to be decoded.
-                throw ConfigError.invalidValue(
-                    key: "transcription.replacements",
-                    value: "a flat mapping",
-                    expected: "the spelling you want, listing its mishearings — Tasmeen: [Tasmin, Tasmine]"
-                )
+            // Retired, and read only so it can be refused. It held two kinds
+            // of rule and neither belongs here any more: a name the recogniser
+            // mangles goes in vocabulary.yaml, where it is reviewed in context,
+            // and a mechanical rule goes in a transform's `replace:`, which
+            // needs no review and already takes regexes, deletions, `{{lists}}`
+            // and `when:`/`app:` conditions. Nothing was left in the middle.
+            if let container = try? c.decodeIfPresent(
+                [String: [String]].self, forKey: .replacements
+            ), container != nil {
+                retired.append("replacements")
+            } else if (try? c.decodeIfPresent([String: String].self, forKey: .replacements))
+                ?? nil != nil {
+                retired.append("replacements")
             }
         }
     }
@@ -2252,7 +2253,13 @@ struct Config: Decodable, Equatable {
             found.append("\(key): \(Self.movedKeys[key] ?? "no longer does anything")")
         }
         for key in transcription.retired {
-            found.append("transcription.\(key) no longer does anything — it is a pipeline stage now")
+            let said = key == "replacements"
+                ? "a name the recogniser mangles goes in vocabulary.yaml, where the"
+                    + " `vocabulary` stage reviews it in context; a mechanical rule goes"
+                    + " in a transform's `replace:`, which takes regexes, deletions and"
+                    + " `{{lists}}` and needs no review"
+                : "it is a pipeline stage now"
+            found.append("transcription.\(key) no longer does anything — \(said)")
         }
         for name in Set(transcription.unknownStages).sorted() {
             found.append("pipelines: \"\(name)\" is not a stage — have: "

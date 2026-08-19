@@ -1,12 +1,16 @@
 # `when` rather than `unless`, and a condition that reads the text as it stands
 # after the stage above it — which is the ordering that makes conditions worth
 # having.
+#
+# The stage above is a transform, because deleting a filler is what a transform
+# does now: a rule that needs no review does not belong in vocabulary.yaml.
 languages: [en, fr]
-replacements:
-  # The exact pass deletes the filler, so the condition below sees a sentence
-  # that no longer contains it.
-  "": ['/[,]?\s*\bgenre\b[,]?/']
+transforms:
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\bgenre\b[,]?/']
 pipeline:
-  - replacements
+  - transform: fillers
   - stage: numbers
     when: /genre/

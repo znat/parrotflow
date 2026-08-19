@@ -25,5 +25,4 @@ vocabulary:
     Vercel:
       heard: [Versal]
 pipeline:
-  - replacements
   - vocabulary

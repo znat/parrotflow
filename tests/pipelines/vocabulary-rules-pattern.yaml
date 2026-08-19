@@ -12,8 +12,9 @@
 # It was `max_readings: 1` while the judge answered with a letter from a menu.
 # There is no menu now, that key is ignored, and this is the replacement.
 languages: [en]
-replacements:
-  Vercel: [Versal, '/Versa\w+/']
+vocabulary:
+  terms:
+    Vercel:
+      heard: [Versal, '/Versa\w+/']
 pipeline:
-  - replacements
   - vocabulary

@@ -3579,7 +3579,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         guard config.llmEnabled else {
-            giveUp("\"\(instruction)\" needs the local model — llm.enabled is false")
+            giveUp("\"\(instruction)\" needs a model — `models:` defines none")
             return
         }
 

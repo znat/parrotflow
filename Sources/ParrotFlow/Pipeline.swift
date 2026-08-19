@@ -31,11 +31,14 @@ struct Pipeline: Equatable, Codable {
     /// drift apart — a stage that cannot be spelled is a stage nobody can ask
     /// for.
     enum Stage: String, Equatable, Codable, CaseIterable {
-        /// Literal and regex substitutions from `transcription.replacements`.
-        case replacements
-        /// The same table, used to catch spellings it does not contain.
-        /// Meaningless before `replacements` — see `validate`.
-        case fuzzy
+        /// Names: matched from `vocabulary.yaml`, then each match put to a
+        /// model to keep or revert. `near_misses:` and `review:` on the step
+        /// say how far it reaches and who decides — see `Step`.
+        ///
+        /// One stage because it was always one algorithm. It was written as
+        /// three — `replacements` wrote the exact matches, `fuzzy` caught the
+        /// near ones, `vocabulary` judged them — and the order they had to run
+        /// in was enforced by hand, because the three were never independent.
         /// Spoken numbers as digits, in the language its own pass resolves.
         case numbers
         /// What is on screen around the field, published as `context.*` and
@@ -126,8 +129,14 @@ struct Pipeline: Equatable, Codable {
         /// How many places may be judged at once — see `VocabularyJudge.Caps`.
         /// Absent on every other stage.
         var caps: VocabularyJudge.Caps?
-        /// Whether a `heard:` rendering also matches one edit away, for a
-        /// `vocabulary` stage. Absent means true.
+        /// Whether a `heard:` rendering also matches one edit away. Absent
+        /// means true.
+        ///
+        /// Written `near_misses:`. It was `fuzzy:`, beside a *stage* also
+        /// called `fuzzy` that did something else entirely — that one matched
+        /// the text against the rule table and rewrote it, and never saw a
+        /// vocabulary rendering at all. One word, two mechanisms, and the
+        /// stage is gone now.
         ///
         /// Optional rather than defaulted so that "not written" and "written
         /// false" stay tellable apart — the seeded config writes the key only
@@ -136,7 +145,15 @@ struct Pipeline: Equatable, Codable {
         /// Not the `fuzzy` *stage*, which is a different mechanism: that one
         /// matches the text against rule replacements after the exact pass,
         /// and never sees a vocabulary rendering at all.
-        var fuzzy: Bool?
+        var nearMisses: Bool?
+        /// The model that keeps or reverts each match, for a `vocabulary`
+        /// stage. Absent means the default; `false` means no review at all,
+        /// and every match ships as the rules wrote it.
+        ///
+        /// Bound on the step rather than globally because a pipeline is per
+        /// language, and the model that reads a French sentence need not be
+        /// the one that reads an English one.
+        var review: String?
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -374,15 +391,6 @@ struct Pipeline: Equatable, Codable {
             }
             available.insert(Pipeline.namespace(of: step))
         }
-        if let fuzzy = stages.firstIndex(of: .fuzzy) {
-            guard let exact = stages.firstIndex(of: .replacements) else {
-                problems.append("fuzzy has no replacements before it; it reads that table and will find nothing")
-                return problems
-            }
-            if fuzzy < exact {
-                problems.append("fuzzy runs before replacements; it needs the exact pass to have run first")
-            }
-        }
         return problems
     }
 
@@ -393,19 +401,22 @@ struct Pipeline: Equatable, Codable {
     /// the stage then has to re-anchor by searching for the words — which is
     /// the mechanism that put the menu on the wrong `Versailles` (F3, F10).
     ///
-    /// `replacements` is not listed. The judge offers a rule's substitution
-    /// back as a reading, so the rules have to have fired first; that is the
-    /// one edit this stage is built to survive, by searching for the term. Put
-    /// `replacements` above `vocabulary:` and everything else below it.
+    /// Nothing that rewrites the transcript may run above it.
+    ///
+    /// The stage reads spans the acoustic pass measured before the pipeline
+    /// started, and any edit above it moves them (F10). The exact pass used to
+    /// be the one exception, because it ran as a separate `replacements` stage
+    /// and the judge needs the rules to have fired; it is inside this stage
+    /// now, so there is no exception left to state.
     private func vocabularyOrderProblems() -> [String] {
         guard let judge = stages.firstIndex(of: .vocabulary) else { return [] }
         let above = steps[..<judge]
-            .filter { $0.stage.editsText && $0.stage != .replacements }
+            .filter { $0.stage.editsText }
             .map { Pipeline.namespace(of: $0) }
         guard !above.isEmpty else { return [] }
         return ["vocabulary runs after \(above.joined(separator: ", ")), which rewrite the"
             + " transcript — the spans it was given no longer point at the same words."
-            + " Order: replacements, vocabulary, then the rest"]
+            + " Put it above everything that edits text"]
     }
 
     /// What is wrong with an expression, before a transcript ever reaches it.
@@ -732,55 +743,6 @@ struct Pipeline: Equatable, Codable {
             let seconds = CFAbsoluteTimeGetCurrent() - started
             output = result.text
 
-            // `vocabulary.count` answers one question: was a vocabulary term
-            // written into this transcript? Not "by which mechanism" — sound
-            // and exact rules are both ways of getting the same term in, and a
-            // caller asking whether to check the result does not care which
-            // fired. The acoustic pass seeds its own count before the pipeline
-            // starts; a rule whose target is a vocabulary term adds to it here.
-            if step.stage == .replacements, case .string(let wrote)? = result.vars["changes"] {
-                let known = Set(config.vocabulary.terms.keys)
-                var hits = wrote.split(separator: ";").filter { pair in
-                    guard let arrow = pair.range(of: "->") else { return false }
-                    return known.contains(
-                        pair[arrow.upperBound...].trimmingCharacters(in: .whitespaces)
-                    )
-                }.count
-                // A rendering the exact rules could not reach counts as well.
-                // `when: vocabulary.count > 0` is what keeps the judge off the
-                // dictations with no name in them, so a term that arrives only
-                // by a fuzzy match has to raise the count here or the stage it
-                // is for never runs — which would make `fuzzy` unreachable in
-                // the config everybody has.
-                //
-                // Counted twice, once here and once in the judge, because a
-                // `Range<String.Index>` cannot travel through a variable (F13)
-                // and nothing edits the text between the two stages. The
-                // second scan is a dictionary lookup per span and the spell
-                // checker behind it is cached.
-                if steps.contains(where: { $0.stage == .vocabulary && ($0.fuzzy ?? true) }) {
-                    hits += VocabularyJudge.fuzzyParts(
-                        in: output, rules: config.vocabularyRules, claimed: []
-                    ).count
-                }
-                if hits > 0 {
-                    let before: Int
-                    if case .int(let had)? = scope["vocabulary.count"] { before = had }
-                    else { before = 0 }
-                    scope.set("vocabulary.count", .int(before + hits))
-                    // Only what a rule actually wrote. A fuzzy match has
-                    // rewritten nothing yet, so reporting it as a change would
-                    // put a substitution nobody made into the trace.
-                    if !wrote.isEmpty {
-                        if case .string(let had)? = scope["vocabulary.changes"], !had.isEmpty {
-                            scope.set("vocabulary.changes", .string(had + "; " + wrote))
-                        } else {
-                            scope.set("vocabulary.changes", .string(wrote))
-                        }
-                    }
-                }
-            }
-
             // Derived, never claimed. `changed` is the comparison this loop just
             // made, and a stage cannot get it wrong by forgetting to report it
             // or by reporting it about the wrong string. Written *before* the
@@ -826,49 +788,6 @@ struct Pipeline: Equatable, Codable {
         findings: Vocabulary.Outcome? = nil
     ) async -> StageResult {
         switch step.stage {
-        case .replacements:
-            // Both tables. `config.yaml` holds the patterns and deletions a
-            // person wrote; `vocabulary.yaml` holds the names the app learnt.
-            // One pass, so a rule behaves the same whichever file it came from.
-            let done = Replacements.exact(
-                to: text, rules: config.transcription.rules + config.vocabularyRules,
-                expand: config.expanded
-            )
-            // `changes` as well as `count`, so a later stage can judge what
-            // this one did. A stage handed only the finished sentence cannot
-            // tell which words were rewritten, and guessing is how a judge
-            // starts reverting things nobody changed.
-            //
-            // `before` is the sentence this stage was handed. `changes` says
-            // which rules fired and not *where*, so the judge needs the earlier
-            // text to tell one occurrence of a term from another. It used to
-            // take that from the acoustic pass, which does not run under
-            // `vocabulary.acoustic: false` — a path that has audio and no
-            // earlier text. This stage always has it.
-            //
-            // Two `replacements` steps in one pipeline publish this twice and
-            // the second wins, exactly as `changes` already does. That is safe
-            // because the two move together: a reader gets the last step's
-            // changes beside the last step's input, which is the pair it needs.
-            // What it does not get is the first step's changes, and that was
-            // already true before this line existed.
-            return StageResult(text: done.text, vars: [
-                "count": .int(done.count),
-                "changes": .string(done.changes),
-                "before": .string(text),
-                "protected": .string(done.protected),
-            ])
-        case .fuzzy:
-            // From the rules, not from the table's keys. Fuzzy matching
-            // compares spellings, so a target is only a candidate if it is one
-            // — `$1.$2` is a template, not a word anything could sound like,
-            // and offering it as one puts a string in the list that every
-            // comparison has to lose to. `isFuzzyCandidate` was written for
-            // this and had never been wired to anything.
-            let targets = Set(
-                config.transcription.rules.filter(\.isFuzzyCandidate).map(\.replacement)
-            )
-            return StageResult(text: Replacements.applyFuzzy(to: text, targets: Array(targets)))
         case .numbers:
             let done = Numbers.read(text, languages: config.transcription.languages)
             return StageResult(text: done.text, vars: ["language": .string(done.language)])
@@ -1027,8 +946,43 @@ struct Pipeline: Equatable, Codable {
             _ why: String, _ vars: [String: Scope.Value] = [:], fallback: String? = nil
         ) -> StageResult {
             Log.write("pipeline: vocabulary — \(why)")
-            return StageResult(
-                text: fallback ?? text, vars: vars.merging(["ok": .bool(false)]) { a, _ in a })
+            return result(fallback ?? text, vars.merging(["ok": .bool(false)]) { a, _ in a })
+        }
+
+        // The exact pass, first and inside this stage. It was a `replacements`
+        // stage of its own and had to be listed above this one by hand; the
+        // judge offers a rule's substitution back as a reading, so the rules
+        // must already have fired. One stage, and the order is no longer
+        // something a config can get wrong.
+        let handed = text
+        let exact = Replacements.exact(
+            to: text, rules: config.vocabularyRules, expand: config.expanded
+        )
+        let text = exact.text
+
+        // `review:` on the step, else the default model. A pipeline is per
+        // language, so the model that reads a French sentence need not be the
+        // one that reads an English one.
+        let reviewer = step.review.map { ModelRef(use: $0) }
+        let judgeModel = config.model(for: .vocabulary, override: reviewer)
+
+        // What the exact pass did, published whatever the review decides
+        // afterwards. These were `replacements.*` while that was a stage of its
+        // own; a later stage reading them cares that a term was written, not
+        // which half of this stage wrote it.
+        // Raised by the near-miss pass below, which reaches terms an exact
+        // rule cannot. `when: vocabulary.count > 0` is what keeps a later stage
+        // off a dictation with no name in it, so a term that arrives only by a
+        // near miss has to raise this or that stage never runs.
+        var nearMisses = 0
+        func result(_ text: String, _ vars: [String: Scope.Value]) -> StageResult {
+            let wrote: [String: Scope.Value] = [
+                "count": .int(exact.count + nearMisses),
+                "changes": .string(exact.changes),
+                "before": .string(handed),
+                "protected": .string(exact.protected),
+            ]
+            return StageResult(text: text, vars: wrote.merging(vars) { _, new in new })
         }
 
         let caps = step.caps ?? VocabularyJudge.Caps.standard
@@ -1045,10 +999,8 @@ struct Pipeline: Equatable, Codable {
         // above `vocabulary` except `replacements` itself — so this changes
         // nothing on the path where the pass does run. `findings?.text` stays
         // as the fallback for a pipeline with no `replacements` step in it.
-        var rules = ""
-        var beforeRules: String?
-        if case .string(let wrote)? = scope["replacements.changes"] { rules = wrote }
-        if case .string(let handed)? = scope["replacements.before"] { beforeRules = handed }
+        let rules = exact.changes
+        let beforeRules: String? = handed
         var parts = VocabularyJudge.acousticParts(
             findings?.proposals ?? [], in: text, measuredOn: findings?.text ?? text
         ) + VocabularyJudge.ruleParts(rules, in: text, before: beforeRules ?? findings?.text)
@@ -1063,10 +1015,12 @@ struct Pipeline: Equatable, Codable {
         // the model, which is what makes it safe to be this loose — see
         // `VocabularyJudge.fuzzyEdits` for what it fires on and what that cost
         // over this speaker's archive.
-        if step.fuzzy ?? true {
-            parts += VocabularyJudge.fuzzyParts(
+        if step.nearMisses ?? true {
+            let reached = VocabularyJudge.fuzzyParts(
                 in: text, rules: config.vocabularyRules, claimed: parts
             )
+            nearMisses = reached.count
+            parts += reached
         }
 
         let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
@@ -1089,7 +1043,7 @@ struct Pipeline: Equatable, Codable {
         }
         Log.write(census)
         guard !slots.isEmpty else {
-            return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(0)])
+            return result(text, ["asked": .int(0), "slots": .int(0)])
         }
         // Computed ahead of the slot cap below, so a lesson still reverts even
         // in a sentence with too many other places to send to a model.
@@ -1106,7 +1060,7 @@ struct Pipeline: Equatable, Codable {
         }
 
         guard !changes.isEmpty else {
-            return StageResult(text: text, vars: ["asked": .int(0), "slots": .int(slots.count)])
+            return result(text, ["asked": .int(0), "slots": .int(slots.count)])
         }
 
         // A spelling lesson is settled here and never asked about. Both models
@@ -1117,11 +1071,11 @@ struct Pipeline: Equatable, Codable {
             Log.write("vocabulary judge: spelling lesson, reverted without asking — "
                 + lessons.joined(separator: "; "))
         }
-        // Nothing left for a model to answer. Returned before the `llm.enabled`
+        // Nothing left for a model to answer. Returned before the no-model
         // guard so the rule still fires on a machine with no Ollama.
         if taught.allSatisfy({ $0 }) {
             let chosen = VocabularyJudge.reverting(taught, in: text, changes: changes)
-            return StageResult(text: chosen, vars: [
+            return result(chosen, [
                 "asked": .int(0), "slots": .int(slots.count),
                 "reverted": .string(lessons.joined(separator: "; ")),
                 "judged": .string(chosen),
@@ -1139,7 +1093,7 @@ struct Pipeline: Equatable, Codable {
         // ordinary change is left exactly as it arrived, same as every other
         // decline in this stage.
         guard config.llmEnabled else {
-            return declined("llm.enabled is false",
+            return declined("`models:` defines no model",
                             ["asked": .int(0), "slots": .int(slots.count)],
                             fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
         }
@@ -1160,7 +1114,7 @@ struct Pipeline: Equatable, Codable {
                 // Anything longer is a model explaining itself, which this
                 // shape does not read.
                 maxTokens: 8 * changes.count + 8,
-                config: config.model(for: .vocabulary)
+                config: judgeModel
             )
         } catch {
             return declined("\(error.localizedDescription); kept as they are",
@@ -1189,13 +1143,13 @@ struct Pipeline: Equatable, Codable {
             Log.write("    before: \(text)")
             Log.write("    after:  \(chosen)")
         }
-        return StageResult(text: chosen, vars: [
+        return result(chosen, [
             "asked": .int(changes.count),
             "slots": .int(slots.count),
             "reverted": .string(reverted.joined(separator: "; ")),
             "judged": .string(chosen),
             "reply": .string(reply.trimmingCharacters(in: .whitespacesAndNewlines)),
-            "model": .string(config.model(for: .vocabulary).model),
+            "model": .string(judgeModel.model),
         ])
     }
 
@@ -1277,7 +1231,7 @@ struct Pipeline: Equatable, Codable {
         _ step: Step, named name: String, on text: String, config: Config, scope: Scope
     ) async -> StageResult {
         guard config.llmEnabled else {
-            Log.write("pipeline: skipped prompt \(name) — llm.enabled is false")
+            Log.write("pipeline: skipped prompt \(name) — `models:` defines no model")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }
         guard let transform = config.transform(named: name), let prompt = transform.asPrompt else {

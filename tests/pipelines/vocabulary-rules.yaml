@@ -11,8 +11,9 @@
 # It was `max_readings: 1` while the judge answered with a letter from a menu.
 # There is no menu now, that key is ignored, and this is the replacement.
 languages: [en]
-replacements:
-  Vercel: [Versailles]
+vocabulary:
+  terms:
+    Vercel:
+      heard: [Versailles]
 pipeline:
-  - replacements
   - vocabulary

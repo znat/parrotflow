@@ -116,7 +116,8 @@ enum PipelineCommand {
             }
             return Pipeline.Step(
                 stage: stage, transform: entry.transform, prompt: entry.prompt,
-                caps: entry.caps, fuzzy: entry.fuzzy, when: entry.when,
+                caps: entry.caps, nearMisses: entry.nearMisses,
+                review: entry.review, when: entry.when,
                 unless: entry.unless, app: entry.app
             )
         }

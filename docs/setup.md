@@ -166,17 +166,18 @@ transcription:
 ```
 
 **Then write the filler words for those languages.** Do not skip this because
-the config looks like it handles it — a new config has `replacements: {}`, and
-the rule in `config.example.yaml` is English only. A French speaker keeps every
-`euh`.
+the config looks like it handles it — the `fillers` transform in
+`config.example.yaml` is English only. A French speaker keeps every `euh`.
 
 > When people talk they make sounds like "um" and "euh". Shall I remove those?
 
 ```yaml
-transcription:
-  replacements:
-    # English; add French euh+|heu+|hein|bah to this same list
-    "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
+transforms:
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      # English; add French euh+|heu+|hein|bah to this same list
+      "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
 ```
 
 One `""` entry, not two — it is one map, and a repeated key is invalid YAML.

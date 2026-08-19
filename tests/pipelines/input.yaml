@@ -10,12 +10,14 @@
 # half of this stage, is scored by `scripts/check-input.sh` instead.
 languages: [en]
 
-replacements:
-  Supabase: [super base]
 
+vocabulary:
+  terms:
+    Supabase:
+      heard: [super base]
 pipeline:
   # Before and after, on purpose. A stage that publishes variables must not
   # disturb the stages either side of it, including when it declines.
-  - replacements
+  - vocabulary
   - input
   - numbers

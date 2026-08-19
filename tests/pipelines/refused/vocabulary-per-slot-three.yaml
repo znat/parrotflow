@@ -8,6 +8,6 @@
 # says one thing and does another. Found by review on #102.
 languages: [en]
 pipeline:
-  - replacements
+  - vocabulary
   - stage: vocabulary
     max_per_slot: 3

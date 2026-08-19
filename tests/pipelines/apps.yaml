@@ -7,9 +7,11 @@
 # case for that decision — if a lookahead cannot express exclusion here, the
 # key was needed after all.
 languages: [en, fr]
-replacements:
-  Supabase: [super base]
+vocabulary:
+  terms:
+    Supabase:
+      heard: [super base]
 pipeline:
-  - replacements
+  - vocabulary
   - stage: numbers
     app: /term|ghostty|iterm/

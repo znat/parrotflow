@@ -8,5 +8,5 @@
 # The fix is one word — delete the filename.
 languages: [en]
 pipeline:
-  - replacements
+  - vocabulary
   - vocabulary: verify_names.md

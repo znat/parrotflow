@@ -236,6 +236,10 @@ struct ModelRef: Equatable, Decodable {
 
     init() {}
 
+    /// Naming a model and changing nothing about it — what a `review:` or any
+    /// other binding that takes a bare name means.
+    init(use name: String) { use = name }
+
     init(from decoder: Decoder) throws {
         if let scalar = try? decoder.singleValueContainer().decode(String.self) {
             use = scalar.trimmingCharacters(in: .whitespacesAndNewlines)

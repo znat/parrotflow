@@ -265,8 +265,8 @@ cases:
     input: super base has vingt et un users
     expect: Supabase has 21 users
     expect_vars:
-      replacements.count: 1
-      replacements.changed: true
+      vocabulary.count: 1
+      vocabulary.changed: true
       numbers.language: fr
       numbers.changed: true
       first.count: 2
@@ -274,7 +274,7 @@ cases:
       second.label: kept
 
   # The same run, read from the far side of a pipe. `first` reports what it found
-  # at `replacements.count` and `second` reports what it found at `first.count`,
+  # at `vocabulary.count` and `second` reports what it found at `first.count`,
   # so a pass here means the scope reached two separate scripts — not merely that
   # it survived in Swift, which every other case in this section would also show.
   - name: a script sees what the stages above it published
@@ -292,7 +292,7 @@ cases:
     input: nothing here matches
     expect: unchanged
     expect_vars:
-      replacements.count: 0
+      vocabulary.count: 0
       first.saw: 0
       second.saw: 2
 
@@ -319,7 +319,7 @@ cases:
       quiet.changed: false
 
   # A condition reading a variable rather than the text. The table fires, so
-  # `replacements.count` is 1, so the stage gated on it being 0 stands down.
+  # `vocabulary.count` is 1, so the stage gated on it being 0 stands down.
   - name: a stage stands down because an earlier stage already did the work
     pipeline: vars-conditions
     app: Ghostty
@@ -509,7 +509,7 @@ cases:
     expect: Supabase has 21 users
     expect_vars:
       context.changed: false
-      replacements.count: 1
+      vocabulary.count: 1
       numbers.ran: true
 
   # A non-terminal used to decline here for its own reason. It cannot any more:
@@ -561,23 +561,25 @@ cases:
     expect_vars:
       dotted.ran: false
 
-  # The `replacements` stage publishes it too, from the same pass. A literal
-  # rule protects the term it wrote, and a deletion protects nothing — there is
-  # no text to leave alone.
-  - name: the replacements stage publishes what its rules wrote
+  # The `vocabulary` stage publishes it too, from the pass that writes the
+  # names. A rule protects the term it wrote.
+  - name: the vocabulary stage publishes what its rules wrote
     pipeline: replacements
     input: our app is deployed on Versailles
     expect: our app is deployed on Vercel
     expect_vars:
-      replacements.protected: Vercel
+      vocabulary.protected: Vercel
 
+  # A deletion protects nothing — there is no text to leave alone. It is a
+  # transform now, so the name stage has nothing to say about the sentence and
+  # reports a count of zero while the filler still goes.
   - name: a deletion protects nothing
     pipeline: replacements
     input: our app is um deployed on Vercel
     expect: Our app is deployed on Vercel
     expect_vars:
-      replacements.count: 1
-      replacements.protected: ""
+      vocabulary.count: 0
+      vocabulary.protected: ""
 
   # A pattern can match a term that is already written the way the rule would
   # write it. That match wrote nothing, so there is nothing to protect —
@@ -588,9 +590,9 @@ cases:
     input: we deployed on Vercel
     expect: unchanged
     expect_vars:
-      replacements.count: 0
-      replacements.changed: false
-      replacements.protected: ""
+      vocabulary.count: 0
+      vocabulary.changed: false
+      vocabulary.protected: ""
 
   # The same rule, the spelling it exists for. This is the half that must keep
   # working, and it is why the case above cannot be got by deleting the rule.
@@ -599,8 +601,8 @@ cases:
     input: we deployed on Versal
     expect: we deployed on Vercel
     expect_vars:
-      replacements.count: 1
-      replacements.protected: Vercel
+      vocabulary.count: 1
+      vocabulary.protected: Vercel
 
   # --- input, which from here can only decline -----------------------------
   #
@@ -629,14 +631,14 @@ cases:
     expect_vars:
       input.ok: false
       input.changed: false
-      replacements.count: 1
+      vocabulary.count: 1
       numbers.ran: true
 
   # --- the name judge, on what a `replacements` rule did -----------------------
   #
   # `--pipeline` has no audio, so these are the path that used to have no earlier
   # text to compare against. `replacements` publishes its input as
-  # `replacements.before`, and that is what says which `Vercel` a rule wrote.
+  # `vocabulary.before`, and that is what says which `Vercel` a rule wrote.
   # `vocabulary.slots` counts the places the stage found. See
   # tests/pipelines/vocabulary-rules.yaml for why no model is called.
 
@@ -649,8 +651,8 @@ cases:
     input: a list of possible alternatives for Versailles, such as Vercel
     expect: a list of possible alternatives for Vercel, such as Vercel
     expect_vars:
-      replacements.before: a list of possible alternatives for Versailles, such as Vercel
-      replacements.changes: Versailles -> Vercel
+      vocabulary.before: a list of possible alternatives for Versailles, such as Vercel
+      vocabulary.changes: Versailles -> Vercel
       vocabulary.slots: 1
 
   # One occurrence was decidable without the earlier text and still is. Here so
@@ -669,7 +671,7 @@ cases:
     input: our app is deployed on Vercel
     expect: unchanged
     expect_vars:
-      replacements.changes: ""
+      vocabulary.changes: ""
       vocabulary.slots: 0
 
   # Two renderings of one term in one sentence. The pairs are counted per term,
@@ -685,7 +687,7 @@ cases:
     input: deployed on Versal against the Versailles Castle
     expect: deployed on Vercel against the Vercel Castle
     expect_vars:
-      replacements.before: deployed on Versal against the Versailles Castle
+      vocabulary.before: deployed on Versal against the Versailles Castle
       vocabulary.slots: 2
 
   # And the counts still have to add up. A pattern rule wrote the second
@@ -710,8 +712,8 @@ cases:
     input: a list of possible alternatives for Versailles, such as Vercel
     expect: a list of possible alternatives for Vercel, such as Vercel
     expect_vars:
-      replacements.before: a list of possible alternatives for Vercel, such as Vercel
-      replacements.changes: ""
+      vocabulary.before: a list of possible alternatives for Vercel, such as Vercel
+      vocabulary.changes: ""
       vocabulary.slots: 0
 
   # --- fuzzy renderings --------------------------------------------------------
@@ -729,7 +731,6 @@ cases:
     input: She deserves Praise's work
     expect: unchanged
     expect_vars:
-      replacements.changes: ""
       vocabulary.changes: ""
       vocabulary.count: 1
       vocabulary.slots: 1
@@ -773,7 +774,7 @@ cases:
     input: our app is deployed on Versal
     expect: our app is deployed on Vercel
     expect_vars:
-      replacements.changes: Versal -> Vercel
+      vocabulary.changes: Versal -> Vercel
       vocabulary.slots: 1
 
   # --- named word lists ------------------------------------------------------

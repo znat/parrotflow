@@ -34,7 +34,7 @@ enum RouteTestCommand {
         }
 
         guard config.llmEnabled else {
-            print("✗ needs the LLM, but llm.enabled is false")
+            print("✗ needs a model, but `models:` defines none")
             return 1
         }
 
