@@ -25,13 +25,22 @@ struct Config: Decodable, Equatable {
     var audio: Audio = Audio()
     var feedback: Feedback = Feedback()
     var transcription: Transcription = Transcription()
-    var llm: LLM = LLM()
+    /// Whether there is a model to call at all.
+    ///
+    /// `llm.enabled` used to say this, from a time when the model was implicit
+    /// and there was no other way to mean "I have none". A config that defines
+    /// no model says the same thing and cannot fall out of step with itself.
+    var llmEnabled: Bool { !models.isEmpty }
     /// Every model this config can reach, by the name it was given.
     ///
     /// A name is all a transform ever mentions — never a vendor, never an
     /// endpoint. Empty means the one implied by `llm:`, which is what every
     /// config written before this said and still says.
     var models: [String: ModelSpec] = [:]
+    var commands = Commands()
+    /// Top-level keys that were read purely so they can be refused, with the
+    /// line that replaces them. See `problems`.
+    var retiredKeys: [String] = []
     var updates: UpdatePolicy = UpdatePolicy()
     var logging: Logging = Logging()
     /// Everything nameable: `transforms:`, plus anything still written under
@@ -66,7 +75,11 @@ struct Config: Decodable, Equatable {
     /// to rewrite your selection. The router is what stops that — it answers
     /// NONE for "not an edit" and ANY for "an edit with no tool", measured at
     /// 18/19 — and `confirm` is what makes the residue survivable.
-    var freeForm: Bool = true
+    /// Whether an instruction no capability covers is attempted or refused.
+    ///
+    /// A view over `commands.catch_all`, kept because a dozen call sites ask
+    /// this question and none of them care where the answer is written.
+    var freeForm: Bool { commands.catchAllEnabled }
 
     /// Read from `vocabulary.yaml` beside the config, not from `config.yaml`.
     /// It is maintained by the app rather than by hand — see `Vocabulary`.
@@ -87,7 +100,7 @@ struct Config: Decodable, Equatable {
     var lists: [String: [String]] = [:]
 
     enum CodingKeys: String, CodingKey {
-        case hotkey, audio, feedback, transcription, llm, models
+        case hotkey, audio, feedback, transcription, llm, models, commands
         case transforms, prompts, updates, logging
         case freeForm = "free_form"
         case lists
@@ -1158,11 +1171,17 @@ struct Config: Decodable, Equatable {
         /// The transform-shaped view, for the catalogue — which now holds
         /// transforms rather than prompts, and has to be able to hold the
         /// free-form one too. It is a prompt that no config declares.
-        var asTransform: Transform {
-            Transform(
+        ///
+        /// `model:` is what `commands.catch_all` binds. A prompt no config
+        /// declares can carry no `model:` of its own, so the caller passes the
+        /// one the config named for it.
+        func asTransform(model: ModelRef? = nil) -> Transform {
+            var made = Transform(
                 name: name, description: description, display: display,
                 confirm: confirm, body: .prompt(content)
             )
+            made.model = model
+            return made
         }
 
         /// Where the spoken instruction goes if the prompt asks for it inline.
@@ -1217,6 +1236,9 @@ struct Config: Decodable, Equatable {
     /// like the others: they run on every dictation, they are what you wait
     /// on with the pill on screen, and they carry your transcript. Local is
     /// the right answer for both far longer than it is for a rewrite.
+    /// Retired. Decoded only to notice that a config still carries `llm:`, so
+    /// `problems` can refuse it and name what replaced each key. Nothing reads
+    /// a value out of it.
     struct LLM: Codable, Equatable {
         var enabled: Bool = true
         var model: String = "gemma4:e4b-mlx"
@@ -1263,28 +1285,91 @@ struct Config: Decodable, Equatable {
         case general
         /// "hey parrot, …", said before anything else and waited on.
         case router
-        /// The KEEP/REVERT judge, which runs on every dictation.
+        /// The KEEP/REVERT judge. Bound on the pipeline stage that runs it,
+        /// not here — see `Pipeline.Step.review`.
         case vocabulary
+        /// Reading a rule out of a spoken spelling.
+        case spelling
+    }
+
+    /// What the activation phrase can reach, and which model does each part.
+    ///
+    /// The router picks a capability; `spelling` and `catch_all` are two of the
+    /// things it can pick. All three are the spoken-command path, so they bind
+    /// here rather than under a key named after the technology.
+    ///
+    /// A model named nowhere runs on the default — the one entry in `models:`
+    /// carrying `default: true`.
+    struct Commands: Decodable, Equatable {
+        /// Matching what you said to a capability. Runs on every "hey parrot",
+        /// and it is what you wait on with the pill on screen.
+        var router: String = ""
+        /// Reading a rule out of "Tasmin spells T A S M E E N". A built-in, so
+        /// it can carry no `model:` of its own the way a transform can.
+        var spelling: String = ""
+        /// The instruction no capability covers — "use the 24 hour clock".
+        ///
+        /// `false` refuses them instead. It was `free_form:` at the top level,
+        /// and it is here because it is one of the router's answers rather than
+        /// a setting of its own.
+        var catchAll: ModelRef? = ModelRef()
+        /// Whether the catch-all is allowed at all.
+        var catchAllEnabled = true
+
+        enum CodingKeys: String, CodingKey {
+            case router, spelling
+            case catchAll = "catch_all"
+        }
+
+        init() {}
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.init()
+            if let v = try c.decodeIfPresent(String.self, forKey: .router) { router = v }
+            if let v = try c.decodeIfPresent(String.self, forKey: .spelling) { spelling = v }
+            // Three spellings, because the key answers two questions at once:
+            // whether the catch-all runs, and what it runs on. `false` is the
+            // only one that turns it off.
+            if let on = ((try? c.decodeIfPresent(Bool.self, forKey: .catchAll)) ?? nil) {
+                catchAllEnabled = on
+                catchAll = on ? ModelRef() : nil
+            } else if let ref = try c.decodeIfPresent(ModelRef.self, forKey: .catchAll) {
+                catchAll = ref
+                catchAllEnabled = true
+            }
+        }
     }
 
     /// Every model this config can reach, by name.
     ///
-    /// `local` is here whether or not `models:` mentions it: the old `llm:`
-    /// keys describe exactly one Ollama model, and that is the one everything
-    /// falls back to.
-    var modelsByName: [String: ModelSpec] {
-        var all = models
-        if all["local"] == nil {
-            all["local"] = ModelSpec(
-                name: "local", api: .ollama, model: llm.model, endpoint: llm.endpoint,
-                timeout: llm.timeoutSeconds, keepLoaded: llm.keepLoaded
-            )
-        }
-        return all
-    }
+    /// Only what `models:` defines. There is no implicit entry.
+    ///
+    /// `llm:` used to describe one Ollama model called `local`, and everything
+    /// fell back to it. A model you cannot see in the file is a model nobody
+    /// can reason about — it read as the app's own rather than as yours, and
+    /// it was built from this struct's defaults on a config that named no
+    /// Ollama model at all. `llm:` is refused now; see `Config.problems`.
+    var modelsByName: [String: ModelSpec] { models }
 
     func model(named name: String) -> ModelSpec? {
         modelsByName[name.trimmingCharacters(in: .whitespacesAndNewlines)]
+    }
+
+    /// The name everything falls back to: the entry carrying `default: true`,
+    /// or the only entry there is.
+    ///
+    /// One model needs no flag — there is nothing to choose between. Several
+    /// with none marked is refused rather than guessed at, so this returning
+    /// the first sorted name is a value for the error path to print, not a
+    /// choice anybody relies on.
+    var defaultModelName: String {
+        let all = modelsByName
+        if let claimed = all.values.filter(\.isDefault).map(\.name).sorted().first {
+            return claimed
+        }
+        if all.count == 1, let only = all.keys.first { return only }
+        return all.keys.sorted().first ?? ""
     }
 
     /// The name a job runs under when nothing overrides it.
@@ -1292,12 +1377,14 @@ struct Config: Decodable, Equatable {
         func written(_ value: String) -> String {
             value.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-        let fallback = written(llm.defaultModel).isEmpty ? "local" : written(llm.defaultModel)
+        let fallback = defaultModelName
         switch job {
         case .general: return fallback
-        case .router: return written(llm.router).isEmpty ? fallback : written(llm.router)
+        case .router: return written(commands.router).isEmpty ? fallback : written(commands.router)
+        case .spelling:
+            return written(commands.spelling).isEmpty ? fallback : written(commands.spelling)
         case .vocabulary:
-            return written(llm.vocabulary).isEmpty ? fallback : written(llm.vocabulary)
+            return fallback
         }
     }
 
@@ -1340,12 +1427,35 @@ struct Config: Decodable, Equatable {
         }
         let names = all.keys.sorted().joined(separator: ", ")
         for (key, written) in [
-            ("llm.default", llm.defaultModel), ("llm.router", llm.router),
-            ("llm.vocabulary", llm.vocabulary),
+            ("commands.router", commands.router), ("commands.spelling", commands.spelling),
         ] {
             let name = written.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty, all[name] == nil else { continue }
             found.append("\(key): no model named \"\(name)\" — have: \(names)")
+        }
+        // The third binding, and the only one that is a `ModelRef` rather than
+        // a bare name, so it can also carry what only a `models:` entry may
+        // say. Unchecked, a typo here costs the model you chose the catch-all
+        // for — the one case that most wants a model of its own.
+        if let ref = commands.catchAll {
+            found += ref.rejected.map { "commands.catch_all: \($0)" }
+            let name = ref.use.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty, all[name] == nil {
+                found.append("commands.catch_all: no model named \"\(name)\" — have: \(names)")
+            }
+        }
+
+        // Which model everything falls back to. One entry needs no flag —
+        // there is nothing to choose between — so this only speaks up when
+        // there is a choice and the file does not make it, or makes it twice.
+        let claimed = all.values.filter(\.isDefault).map(\.name).sorted()
+        if claimed.count > 1 {
+            found.append("models: \(claimed.joined(separator: " and ")) both say"
+                + " `default: true` — exactly one may")
+        } else if claimed.isEmpty, all.count > 1 {
+            found.append("models: none says `default: true`, and there are"
+                + " \(all.count) to choose from — put it on the one that should"
+                + " run what names no model: \(names)")
         }
         for transform in transforms {
             guard let ref = transform.model else { continue }
@@ -1510,14 +1620,17 @@ struct Config: Decodable, Equatable {
         ///     - vocabulary
         ///     - stage: vocabulary
         ///       when: vocabulary.count > 0
-        ///       fuzzy: false
+        ///       near_misses: false
+        ///       review: gpt
         ///       max_slots: 4
         struct PipelineEntry: Decodable {
             let name: String
             var transform: String?
             var prompt: String?
             var caps: VocabularyJudge.Caps?
-            var fuzzy: Bool?
+            var nearMisses: Bool?
+            var review: String?
+            var reviewEnabled: Bool?
             var when: String?
             var unless: String?
             var app: String?
@@ -1525,7 +1638,9 @@ struct Config: Decodable, Equatable {
             var namesBoth = false
 
             private enum CodingKeys: String, CodingKey {
-                case stage, transform, prompt, vocabulary, fuzzy, when, unless, app
+                case stage, transform, prompt, vocabulary, when, unless, app
+                case nearMisses = "near_misses"
+                case review
                 case maxSlots = "max_slots"
                 case maxReadings = "max_readings"
                 case maxPerSlot = "max_per_slot"
@@ -1576,7 +1691,15 @@ struct Config: Decodable, Equatable {
                     // Read only so `Caps.problems` can refuse it by name.
                     caps.readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings)
                     self.caps = caps
-                    fuzzy = try c.decodeIfPresent(Bool.self, forKey: .fuzzy)
+                    nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
+                    // Two spellings, like `catch_all:`: the key says whether
+                    // the review runs and what it runs on. `false` is the only
+                    // one that turns it off.
+                    if let on = ((try? c.decodeIfPresent(Bool.self, forKey: .review)) ?? nil) {
+                        reviewEnabled = on
+                    } else {
+                        review = try c.decodeIfPresent(String.self, forKey: .review)
+                    }
                 }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
@@ -1636,10 +1759,6 @@ struct Config: Decodable, Equatable {
                 }
             }
 
-            /// Fuzzy matching compares spellings, so a pattern is not a
-            /// candidate and neither is a deletion — there is nothing to match
-            /// against.
-            var isFuzzyCandidate: Bool { !isRegex && !isDeletion }
         }
 
         init() {}
@@ -1721,7 +1840,9 @@ struct Config: Decodable, Equatable {
                             return Pipeline.Step(
                                 stage: stage, transform: entry.transform,
                                 prompt: entry.prompt, caps: entry.caps,
-                                fuzzy: entry.fuzzy, when: entry.when,
+                                nearMisses: entry.nearMisses, review: entry.review,
+                                reviewEnabled: entry.reviewEnabled,
+                                when: entry.when,
                                 unless: entry.unless, app: entry.app
                             )
                         }
@@ -1736,7 +1857,7 @@ struct Config: Decodable, Equatable {
                 throw ConfigError.invalidValue(
                     key: "transcription.pipelines",
                     value: "a bare list, or a language with nothing under it",
-                    expected: "a language, then its stages — `default: [replacements, fuzzy]`, "
+                    expected: "a language, then its stages — `default: [vocabulary, numbers]`, "
                         + "or `fr:` with `- replacements` under it"
                 )
             }
@@ -1749,20 +1870,19 @@ struct Config: Decodable, Equatable {
             for key in [LegacyKeys.numbers, .fuzzyMatching] where present(key) {
                 retired.append(key.stringValue)
             }
-            do {
-                if let grouped = try c.decodeIfPresent(
-                    [String: [String]].self, forKey: .replacements
-                ) {
-                    self.replacements = grouped
-                }
-            } catch {
-                // The flat `heard: corrected` form was the earlier shape. Say so
-                // plainly rather than leaving a type mismatch to be decoded.
-                throw ConfigError.invalidValue(
-                    key: "transcription.replacements",
-                    value: "a flat mapping",
-                    expected: "the spelling you want, listing its mishearings — Tasmeen: [Tasmin, Tasmine]"
-                )
+            // Retired, and read only so it can be refused. It held two kinds
+            // of rule and neither belongs here any more: a name the recogniser
+            // mangles goes in vocabulary.yaml, where it is reviewed in context,
+            // and a mechanical rule goes in a transform's `replace:`, which
+            // needs no review and already takes regexes, deletions, `{{lists}}`
+            // and `when:`/`app:` conditions. Nothing was left in the middle.
+            if let container = try? c.decodeIfPresent(
+                [String: [String]].self, forKey: .replacements
+            ), container != nil {
+                retired.append("replacements")
+            } else if (try? c.decodeIfPresent([String: String].self, forKey: .replacements))
+                ?? nil != nil {
+                retired.append("replacements")
             }
         }
     }
@@ -2030,7 +2150,6 @@ struct Config: Decodable, Equatable {
         if let transcription = try c.decodeIfPresent(Transcription.self, forKey: .transcription) {
             self.transcription = transcription
         }
-        if let llm = try c.decodeIfPresent(LLM.self, forKey: .llm) { self.llm = llm }
         // Named after the key it was written under, because a spec cannot see
         // its own name and every log line and check prints one.
         if let models = try c.decodeIfPresent([String: ModelSpec].self, forKey: .models) {
@@ -2042,6 +2161,9 @@ struct Config: Decodable, Equatable {
                 spec.key.adopt(account: entry.key, api: spec.api)
                 out[entry.key] = spec
             }
+        }
+        if let commands = try c.decodeIfPresent(Commands.self, forKey: .commands) {
+            self.commands = commands
         }
         if let updates = try c.decodeIfPresent(UpdatePolicy.self, forKey: .updates) {
             self.updates = updates
@@ -2056,8 +2178,13 @@ struct Config: Decodable, Equatable {
         let assembled = Self.assembled(entries)
         transforms = assembled.kept
         unreadableTransforms = assembled.unreadable
-        if let freeForm = try c.decodeIfPresent(Bool.self, forKey: .freeForm) {
-            self.freeForm = freeForm
+        // Read only so `--check-config` can refuse it and name what replaced
+        // it. `commands.catch_all` is the setting now.
+        if ((try? c.decodeIfPresent(Bool.self, forKey: .freeForm)) ?? nil) != nil {
+            retiredKeys.append("free_form")
+        }
+        if ((try? c.decodeIfPresent(LLM.self, forKey: .llm)) ?? nil) != nil {
+            retiredKeys.append("llm")
         }
         // Decoded here because this initialiser is hand-rolled. A property and
         // a CodingKey are not enough: miss this line and the lists work in a
@@ -2129,10 +2256,36 @@ struct Config: Decodable, Equatable {
         return found
     }
 
+    /// What a config written for the old shape is told, key by key.
+    ///
+    /// Not read, not honoured, and not quietly ignored. An unknown key is
+    /// dropped by `Decodable` without a word, so a config that still says
+    /// `llm:` would load, bind nothing, and look fine until a dictation did
+    /// nothing — which is the failure this list exists to prevent.
+    private static let movedKeys = [
+        "llm": "`llm.default` is now `default: true` on one entry in `models:`;"
+            + " `llm.router` and `llm.spelling` are now `commands.router` and"
+            + " `commands.spelling`; `llm.vocabulary` is now `review:` on the"
+            + " `vocabulary` stage; `llm.enabled` is gone — a config with no"
+            + " `models:` calls no model; the four keys that described a model"
+            + " are an entry in `models:`",
+        "free_form": "now `commands.catch_all`, which also takes the model it"
+            + " runs on: `catch_all: gpt`, or `false` to refuse them",
+    ]
+
     func problems() -> [String] {
         var found: [String] = []
+        for key in retiredKeys.sorted() {
+            found.append("\(key): \(Self.movedKeys[key] ?? "no longer does anything")")
+        }
         for key in transcription.retired {
-            found.append("transcription.\(key) no longer does anything — it is a pipeline stage now")
+            let said = key == "replacements"
+                ? "a name the recogniser mangles goes in vocabulary.yaml, where the"
+                    + " `vocabulary` stage reviews it in context; a mechanical rule goes"
+                    + " in a transform's `replace:`, which takes regexes, deletions and"
+                    + " `{{lists}}` and needs no review"
+                : "it is a pipeline stage now"
+            found.append("transcription.\(key) no longer does anything — \(said)")
         }
         for name in Set(transcription.unknownStages).sorted() {
             found.append("pipelines: \"\(name)\" is not a stage — have: "
@@ -2194,6 +2347,16 @@ struct Config: Decodable, Equatable {
                         + (transforms.isEmpty ? " — `transforms:` is empty"
                             : " — have: \(transforms.map(\.name).joined(separator: ", "))"))
                 }
+            }
+            // `review:` names a model the same way `commands.router` does, and
+            // an unresolved one falls back to the default rather than failing.
+            // Said here rather than in `modelProblems`, because which pipeline
+            // wrote it is half the answer.
+            for step in pipeline.steps where step.stage == .vocabulary {
+                let named = (step.review ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !named.isEmpty, modelsByName[named] == nil else { continue }
+                found.append("pipeline \(language): `review: \(named)` names no model — have: "
+                    + modelsByName.keys.sorted().joined(separator: ", "))
             }
         }
         return found

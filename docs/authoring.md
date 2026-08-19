@@ -67,13 +67,16 @@ For a name that comes out wrong, nothing needs writing — say
 $PF --learn "super base" Supabase
 ```
 
-For a pattern or a deletion, add it to `transcription.replacements` and check
+For a pattern or a deletion, put it in a transform's `replace:` and check
 it:
 
 ```yaml
-replacements:
-  "": ['/\b(?:u+m+|erm+)\b/']          # empty target deletes
-  '$1 ticket': ['/\bticket number (\d+)\b/']
+transforms:
+  - name: tidy
+    description: delete hesitations and shorten ticket numbers
+    replace:
+      "": ['/\b(?:u+m+|erm+)\b/']          # empty target deletes
+      '$1 ticket': ['/\bticket number (\d+)\b/']
 ```
 
 ```sh
@@ -96,7 +99,7 @@ transforms:
 transcription:
   pipelines:
     default:
-      - replacements
+      - vocabulary
       - transform: backticks
         app: /slack|discord/
 ```
@@ -223,7 +226,7 @@ then do with them.
   "ctx": { "app": "Ghostty", "bundle_id": "com.mitchellh.ghostty",
            "language": "en",
            "vars": { "asr": { "confidence": 0.91, "duration": 4.2 },
-                     "replacements": { "ran": true, "count": 1,
+                     "vocabulary": { "ran": true, "count": 1,
                                        "changed": true, "ms": 0.4 } } },
   "tokens": [ { "at": 2, "len": 6, "text": "python",
                 "tag": "Noun", "lemma": "python" } ],
@@ -302,8 +305,8 @@ so will you the first time a stage misbehaves.
 
 ```yaml
 pipelines:
-  default: [replacements, fuzzy, numbers]
-  fr:      [replacements, numbers]
+  default: [vocabulary, numbers]
+  fr:      [vocabulary, numbers]
 ```
 
 A key that is neither `default` nor one of your `languages:` is reported by

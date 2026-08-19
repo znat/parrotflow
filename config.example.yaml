@@ -93,11 +93,16 @@ transcription:
   # stage, and any stage takes a condition. See docs/pipelines.md.
   pipelines:
     default:
-      - replacements                       # the table below
-      # Offers a rule's substitution back as a reading, so `replacements`
-      # must fire first. Judges each one KEEP or REVERT.
-      - stage: vocabulary
-        when: vocabulary.count > 0
+      # Names. Matches every `heard:` rendering in vocabulary.yaml, then puts
+      # each match to a model to keep or revert — the rules cannot read the
+      # sentence, so "Versailles" is sometimes the castle.
+      #
+      #   near_misses: false   match renderings exactly, never one edit away
+      #   review: gpt          who decides; `false` ships every match unread
+      #
+      # Above everything that edits text: it reads spans the acoustic pass
+      # measured before the pipeline started, and an edit moves them.
+      - vocabulary
       - numbers                            # "two hundred forty-three" -> 243
       - transform: punctuation             # "is that true question mark" -> is that true?
       - transform: repetitions             # a word or phrase said twice by accident, taken out
@@ -122,34 +127,16 @@ transcription:
       # A stage that publishes a variable must declare `returns: json` and
       # speak that protocol — see docs/authoring.md.
 
-# The local Ollama model behind spoken commands. Without it, dictation still
-# works, and every `prompt:` transform below stops.
-#
-# These four keys describe one model, and it is named `local`. Everything runs
-# on it unless something says otherwise — see `models:` below.
-llm:
-  enabled: true
-  model: gemma4:e4b-mlx
-  endpoint: http://localhost:11434
-  # Pin the model in RAM at launch. Otherwise Ollama drops it after five
-  # minutes, and the next command waits 7-10s for the reload.
-  keep_loaded: true
-
-  # Which model runs what, by name. `default` is what a `prompt:` transform
-  # uses when it names none; the other two are jobs that run on every
-  # dictation and are worth keeping local — the router is what you wait on
-  # with the pill on screen, and both carry your transcript.
-  # default: local
-  # router: local
-  # vocabulary: local
-
-# More models, under names you pick. A transform names one with `model:`.
+# Every model this config can reach, under names you pick.
 #
 # `api:` is the protocol, not the company: ollama, openai or anthropic.
 # Everyone else speaks one of the three, so Groq, OpenRouter, DeepSeek, LM
 # Studio and vLLM are an `endpoint:` away rather than a new version of this
 # app. `params:` is put into the request body untouched, for anything these
 # keys do not cover.
+#
+# `default: true` marks the one that runs whatever names no model. With a
+# single entry it is implied; with several, exactly one must claim it.
 #
 # A model that is not `ollama` sends your dictation to somebody else's server.
 # `--check-config` says so, every time, and names which transforms do it.
@@ -164,32 +151,49 @@ llm:
 # which the app does not have when it is launched from Finder, so it works from
 # a terminal and silently does not in the app. A key written here in full works
 # too and is announced as plain text on every load.
+models:
+  gemma:
+    api: ollama
+    model: gemma4:e4b-mlx
+    endpoint: http://localhost:11434
+    # Pin the model in RAM at launch. Otherwise Ollama drops it after five
+    # minutes, and the next command waits 7-10s for the reload. Ollama only.
+    keep_loaded: true
+    default: true
+
+  # No `api_key:`, so the key is in the keychain and the app asks for it.
+  # gpt:
+  #   api: openai
+  #   model: gpt-5.6-luna
+  #   endpoint: https://api.openai.com/v1
+  #   # off | minimal | low | medium | high. One ladder, whatever the provider
+  #   # calls its own knob. `off` is the right default for a rewrite.
+  #   reasoning: off
+  #   timeout_seconds: 30
+  #
+  # claude:
+  #   api: anthropic
+  #   model: claude-sonnet-5
+  #   reasoning: off
+
+# What "hey parrot, …" can reach, and which model does each part. The router
+# picks a capability; `spelling` and `catch_all` are two of the things it can
+# pick, which is why all three bind together.
 #
-# models:
-#   # An Ollama entry belongs here like any other. Naming the local model
-#   # explicitly is how a second one gets a name too — a small model for the
-#   # router, a larger one for a rewrite, both on this Mac.
-#   gemma:
-#     api: ollama
-#     model: gemma4:e4b-mlx
-#     endpoint: http://localhost:11434
-#     # Only ollama reads this. Pinned in RAM, or a cold call waits 7-10s.
-#     keep_loaded: true
-#
-#   # No `api_key:`, so the key is in the keychain and the app asks for it.
-#   gpt:
-#     api: openai
-#     model: gpt-5.6-luna
-#     endpoint: https://api.openai.com/v1
-#     # off | minimal | low | medium | high. One ladder, whatever the provider
-#     # calls its own knob. `off` is the right default for a rewrite.
-#     reasoning: off
-#     timeout_seconds: 30
-#
-#   claude:
-#     api: anthropic
-#     model: claude-sonnet-5
-#     reasoning: off
+# Each falls back to the default model above, so a line you do not write is a
+# job that runs on the default rather than a job that does not run.
+commands:
+  # Matching what you said to a capability. Runs on every "hey parrot", and it
+  # is what you wait on with the pill on screen — keep it local and fast.
+  # router: gemma
+
+  # Reading a rule out of "Tasmin spells T A S M E E N". Worth pointing at a
+  # bigger model: loose capitals in speech are what a small one is worst at.
+  # spelling: gpt
+
+  # The instruction no capability covers — "use the 24 hour clock". `false`
+  # refuses them instead; a model name runs them on that model.
+  # catch_all: gpt
 
 # One call a day to GitHub's release API — the only request this app makes on
 # its own. The number is a waiting period, not a poll interval: -1 never
@@ -364,8 +368,3 @@ transforms:
     description: delete a word or phrase said twice by accident
     command: repetitions.py
 
-# Do what was asked even when no transform above matches: "hey parrot, use
-# the 24 hour clock". A remark that was never an instruction is still
-# refused, and you see every result before it replaces anything. Off means a
-# fixed menu.
-free_form: true

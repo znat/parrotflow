@@ -1,23 +1,20 @@
-# Two `replacements` steps above the judge, which a pipeline is allowed to have.
+# Two name steps in one pipeline, which a pipeline is allowed to have.
 #
-# Both steps publish under the same namespace and the second wins, for `before`
-# exactly as for `changes`. The pair stays consistent — the judge reads the last
-# step's changes beside the last step's input — and the first step's changes are
-# not readable at all, which was already true before `before` existed.
+# Both publish under the same namespace and the second wins, for `before`
+# exactly as for `changes`. The pair stays consistent — the review reads the
+# last step's changes beside the last step's input — and the first step's
+# changes are not readable at all, which was already true before `before`
+# existed.
 #
-# `llm: {enabled: false}` is how no model is called. The stage still finds the
-# places and publishes `vocabulary.slots`, then declines rather than asking —
-# so the run is the same with Ollama up or down. Every case here scores the
-# places the stage found, never what was decided at them.
-#
-# It was `max_readings: 1` while the judge answered with a letter from a menu.
-# There is no menu now, that key is ignored, and this is the replacement.
-llm:
-  enabled: false
+# No model is defined, so the stage places and publishes `vocabulary.slots` and
+# then declines rather than asking. The run is the same with Ollama up or down,
+# and every case here scores the places the stage found, never what was decided
+# at them.
 languages: [en]
-replacements:
-  Vercel: [Versailles]
+vocabulary:
+  terms:
+    Vercel:
+      heard: [Versailles]
 pipeline:
-  - replacements
-  - replacements
+  - vocabulary
   - vocabulary

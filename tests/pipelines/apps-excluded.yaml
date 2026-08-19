@@ -6,9 +6,11 @@
 # `Pipeline.validate` refuses that shape, and this fixture is what proves the
 # anchored one actually excludes.
 languages: [en, fr]
-replacements:
-  Supabase: [super base]
+vocabulary:
+  terms:
+    Supabase:
+      heard: [super base]
 pipeline:
-  - replacements
+  - vocabulary
   - stage: numbers
     app: /^(?!.*(term|ghostty|iterm))/

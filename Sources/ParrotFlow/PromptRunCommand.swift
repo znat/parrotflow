@@ -29,8 +29,8 @@ enum PromptRunCommand {
             return 1
         }
 
-        guard config.llm.enabled else {
-            print("✗ llm.enabled is false")
+        guard config.llmEnabled else {
+            print("✗ `models:` defines no model")
             return 1
         }
 

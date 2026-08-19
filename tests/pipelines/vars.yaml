@@ -6,19 +6,17 @@
 # that every namespace is still there at the end — a stage contributing nothing
 # erases nothing, and a stage contributing something erases nothing either.
 #
-# `first --echo replacements.count` is the half that cannot be faked in Swift:
+# `first --echo vocabulary.count` is the half that cannot be faked in Swift:
 # it reports back what the *script* found in its context, so a case that passes
 # proves the scope reached the far side of a pipe rather than merely surviving
 # in memory. `second --echo first.count` then proves the same for a fact
 # published by another script rather than by a built-in stage.
 languages: [en, fr]
-replacements:
-  Supabase: [super base]
 
 transforms:
   - name: first
     description: publishes a count, and reports what replacements published
-    command: counter.py --count 2 --echo replacements.count
+    command: counter.py --count 2 --echo vocabulary.count
     returns: json
 
   - name: second
@@ -26,8 +24,12 @@ transforms:
     command: counter.py --count 7 --label kept --echo first.count
     returns: json
 
+vocabulary:
+  terms:
+    Supabase:
+      heard: [super base]
 pipeline:
-  - replacements
+  - vocabulary
   - numbers
   - transform: first
   - transform: second

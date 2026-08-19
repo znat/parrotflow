@@ -20,14 +20,6 @@ enum Replacements {
     /// nineteen names are caught with nothing wrongly replaced.
     static let threshold = 0.80
 
-    /// Longest window considered. Recognition splits names it does not know,
-    /// so "Ver Sal" has to reach "Vercel". Three-word windows were measured
-    /// and caught nothing extra.
-    static let maximumWindow = 2
-
-    /// Below this, similarity stops discriminating.
-    static let minimumLength = 5
-
     /// Names first, digits last. Both name passes match on words, and a
     /// mishearing that happens to contain a number word — "Ver Sal two" — has
     /// to still look like words while they run.
@@ -180,73 +172,6 @@ enum Replacements {
         // A removed leading filler leaves the sentence starting lowercase.
         if let first = output.first, first.isLowercase {
             output = first.uppercased() + output.dropFirst()
-        }
-        return output
-    }
-
-    // MARK: - Fuzzy
-
-    static func applyFuzzy(to text: String, targets: [String]) -> String {
-        let usable = targets.filter { $0.count >= minimumLength }
-        guard !usable.isEmpty else { return text }
-
-        let words = wordRanges(in: text)
-        guard !words.isEmpty else { return text }
-
-        // Score every window, then take the best non-overlapping ones. Taking
-        // the first match above threshold instead let a two-word window win
-        // over the one-word window inside it — "on Superbase" scored enough to
-        // beat nothing, and swallowed the "on".
-        struct Candidate {
-            let indices: [Int]
-            let range: Range<String.Index>
-            let target: String
-            let score: Double
-        }
-        var candidates: [Candidate] = []
-
-        for size in 1...maximumWindow where words.count >= size {
-            for start in 0...(words.count - size) {
-                let indices = Array(start..<(start + size))
-                let span = words[indices.first!].lowerBound..<words[indices.last!].upperBound
-                let phrase = String(text[span])
-                let joined = phrase.filter { !$0.isWhitespace }
-                guard joined.count >= minimumLength, !isRealWord(joined) else { continue }
-                if size == 1, isRealWord(phrase) { continue }
-
-                // A window holding a correct spelling already is left alone.
-                // The exact pass runs first, so by now "Superbase" is already
-                // "Supabase" — and "on Supabase" still scores above threshold
-                // against "Supabase", which swallowed the preceding word.
-                let tokens = indices.map { String(text[words[$0]]).lowercased() }
-                if tokens.contains(where: { token in
-                    usable.contains { $0.lowercased() == token }
-                }) { continue }
-
-                guard let best = usable
-                    .map({ ($0, similarity(phrase, $0)) })
-                    .max(by: { $0.1 < $1.1 }),
-                    best.1 >= threshold
-                else { continue }
-
-                candidates.append(Candidate(indices: indices, range: span, target: best.0, score: best.1))
-            }
-        }
-
-        var replacements: [(range: Range<String.Index>, text: String)] = []
-        var consumed = Set<Int>()
-        for candidate in candidates.sorted(by: { $0.score > $1.score }) {
-            guard candidate.indices.allSatisfy({ !consumed.contains($0) }) else { continue }
-            replacements.append((candidate.range, candidate.target))
-            candidate.indices.forEach { consumed.insert($0) }
-        }
-
-        guard !replacements.isEmpty else { return text }
-
-        var output = text
-        for replacement in replacements.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
-            Log.write("fuzzy: \"\(text[replacement.range])\" → \(replacement.text)")
-            output.replaceSubrange(replacement.range, with: replacement.text)
         }
         return output
     }

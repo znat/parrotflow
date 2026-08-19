@@ -17,9 +17,6 @@
 #
 # Nothing is written by a match. It opens a place, and the model decides.
 #
-# See tests/pipelines/vocabulary-rules.yaml for `llm: {enabled: false}`.
-llm:
-  enabled: false
 languages: [en]
 vocabulary:
   terms:
@@ -28,5 +25,4 @@ vocabulary:
     Vercel:
       heard: [Versal]
 pipeline:
-  - replacements
   - vocabulary

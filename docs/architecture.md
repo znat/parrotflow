@@ -132,10 +132,10 @@ the text has moved on, because an undo fired against edited text is not an undo.
 | Hotkey down → capture running | ~60–70 ms, warmed at launch |
 | Bare-modifier polling | 25 ms, on top of the above |
 | Transcription of a normal sentence | about a second after you let go |
-| `replacements`, `fuzzy`, `numbers`, a `replace:` transform | 0.035 s measured on a line |
+| `the vocabulary stage`, `fuzzy`, `numbers`, a `replace:` transform | 0.035 s measured on a line |
 | A `command:` transform | one process start — ~25 ms for `python3`, ~5 ms for a shell script, ~300 ms if `python3` is a version-manager shim |
 | A `prompt:` transform, model warm | ~1.5 s |
-| A `prompt:` transform, model cold | 6.7 s, which `llm.keep_loaded` exists to avoid |
+| A `prompt:` transform, model cold | 6.7 s, which `keep_loaded:` on the model exists to avoid |
 
 The gap between the last three rows is the reason stages carry conditions: a
 `when:` that costs nothing is what keeps a stage that costs a second off the

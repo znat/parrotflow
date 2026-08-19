@@ -168,7 +168,7 @@ enum CheckConfigCommand {
         }
         print("  · runs on           default=\(config.modelName(for: .general))"
             + "  router=\(config.modelName(for: .router))"
-            + "  vocabulary=\(config.modelName(for: .vocabulary))")
+            + "  spelling=\(config.modelName(for: .spelling))")
         let moved = config.transforms.filter { transform in
             transform.isPrompt && config.model(for: transform) != config.model()
         }
@@ -214,7 +214,7 @@ enum CheckConfigCommand {
         if config.freeForm {
             print("      free-form  \(FreeForm.name) — \(FreeForm.prompt.description)")
         } else {
-            print("  · free_form         off — an instruction no prompt covers is refused")
+            print("  · catch_all         off — an instruction no prompt covers is refused")
         }
 
         // How many rules each table holds, which nothing else says. The
@@ -285,14 +285,15 @@ enum CheckConfigCommand {
 
         // LLM — what is where is in the models table above; this is the switch
         // that turns all of it off, and the pinning that only Ollama has.
-        if config.llm.enabled {
+        if config.llmEnabled {
             let router = config.model(for: .router)
-            print("  · llm               enabled, \(config.modelsByName.count) model(s)")
+            print("  · models            \(config.modelsByName.count), default"
+                + " \(config.defaultModelName)")
             if router.api == .ollama {
                 print("  · keep loaded       \(router.keepLoaded ? "on (\(router.model) pinned in RAM)" : "off (Ollama unloads after 5 min; +7-10s on a cold call)")")
             }
         } else {
-            print("  · llm               disabled — no free-form spoken commands")
+            print("  · models            none — nothing calls a model")
         }
 
         switch config.updates.afterDays {

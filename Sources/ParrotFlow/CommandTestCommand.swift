@@ -49,8 +49,8 @@ enum CommandTestCommand {
             return 0
         }
 
-        guard config.llm.enabled else {
-            print("→ needs the LLM, but llm.enabled is false")
+        guard config.llmEnabled else {
+            print("→ needs a model, but `models:` defines none")
             return 1
         }
 

@@ -38,18 +38,13 @@ enum PipelineCommand {
         /// for the `heard:` renderings — a fixture cannot make a sound, so
         /// there is nothing here for the acoustic half.
         var vocabulary: Config.Vocabulary?
-        /// Its own `llm:`. One fixture needs `enabled: false`, which is how a
-        /// vocabulary case asserts what the stage found without asking a model
-        /// what to do about it — the answer comes from a model and is not
-        /// deterministic, so it is not a thing a case set can hold.
-        var llm: Config.LLM?
         /// Its own `lists:`. A pattern that says `{{determiners}}` compiles to
         /// nothing without them, and a guard that silently stops guarding is
         /// the failure a fixture exists to catch.
         var lists: [String: [String]] = [:]
 
         enum CodingKeys: String, CodingKey {
-            case languages, replacements, pipeline, transforms, vocabulary, llm, lists
+            case languages, replacements, pipeline, transforms, vocabulary, lists
         }
 
         init(from decoder: Decoder) throws {
@@ -71,7 +66,6 @@ enum PipelineCommand {
                 lists = v
             }
             vocabulary = try c.decodeIfPresent(Config.Vocabulary.self, forKey: .vocabulary)
-            llm = try c.decodeIfPresent(Config.LLM.self, forKey: .llm)
         }
     }
 
@@ -122,7 +116,9 @@ enum PipelineCommand {
             }
             return Pipeline.Step(
                 stage: stage, transform: entry.transform, prompt: entry.prompt,
-                caps: entry.caps, fuzzy: entry.fuzzy, when: entry.when,
+                caps: entry.caps, nearMisses: entry.nearMisses,
+                review: entry.review, reviewEnabled: entry.reviewEnabled,
+                when: entry.when,
                 unless: entry.unless, app: entry.app
             )
         }
@@ -139,7 +135,6 @@ enum PipelineCommand {
         config.transforms = fixture.transforms
         config.lists = fixture.lists
         if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
-        if let llm = fixture.llm { config.llm = llm }
 
         // The fixture's own table is checked too, not just its stage list — a
         // template naming a group the pattern never captures is refused here

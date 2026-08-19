@@ -1,0 +1,23 @@
+# `review: false` on the vocabulary stage.
+#
+# The exact matches still ship — they are what the rules wrote, and a rule that
+# fired needs nobody's opinion. Nothing is put to a model.
+#
+# The near-miss pass goes with the review rather than running without it. A near
+# miss is only ever a proposal: it is never written until a model has read the
+# sentence, so with no reviewer there is nothing that could ever write one. That
+# is why `Versel` opens no place here even though `near_misses` is left on.
+#
+# The same two terms as tests/pipelines/vocabulary-exact.yaml, so the two
+# fixtures can be read against each other: that one closes the near-miss pass
+# with `near_misses: false`, this one closes it by having no reviewer.
+languages: [en]
+vocabulary:
+  terms:
+    Vercel:
+      heard: [Versal]
+    Supabase:
+      heard: [super base]
+pipeline:
+  - stage: vocabulary
+    review: false

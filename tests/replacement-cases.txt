@@ -3,9 +3,17 @@
 # Run with: scripts/check-replacements.sh
 # Targets come from tests/pipelines/replacements.yaml, not from your config, so
 # this scores the same on any machine. The last six must never change — they are
-# the guard against fuzzy matching touching ordinary language.
-I deployed it to Versel yesterday|I deployed it to Vercel yesterday
-We shipped on Ver Sal last week|We shipped on Vercel last week
+# the guard against near-miss matching touching ordinary language.
+#
+# The next two are the change of behaviour that came with the merge, and they
+# are here to record it rather than to be quietly deleted. A rendering one edit
+# away, or split across two words, used to be *written* by the `fuzzy` stage.
+# It is now proposed to the review instead: nothing is rewritten until a model
+# has read the sentence and kept it. No model is defined in the fixture — the
+# passes have to score the same with Ollama up or down — so both come back
+# unchanged here, and would be corrected on a machine with a model.
+I deployed it to Versel yesterday|I deployed it to Versel yesterday
+We shipped on Ver Sal last week|We shipped on Ver Sal last week
 I love working on Superbase|I love working on Supabase
 It runs on super base now|It runs on Supabase now
 I work with Tasmia on this|I work with Tasmia on this

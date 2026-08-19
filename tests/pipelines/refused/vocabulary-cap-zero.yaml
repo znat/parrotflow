@@ -11,6 +11,6 @@
 
 languages: [en]
 pipeline:
-  - replacements
+  - vocabulary
   - stage: vocabulary
     max_per_term: 0

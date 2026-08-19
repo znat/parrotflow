@@ -101,7 +101,7 @@ like a composer, and against Slack or Outlook directly if you focus one.
 
 ## What it needs
 
-Ollama running with the model in `llm.model` (`ollama pull gemma4:e4b`), and
+Ollama running with the model your `models:` entry names (`ollama pull gemma4:e4b`), and
 the Accessibility permission — reading your selection is exactly what that
 permission governs.
 
@@ -109,7 +109,7 @@ ParrotFlow loads that model at launch and asks Ollama to keep it there. Ollama
 otherwise drops it after five minutes idle, and reloading is most of what you
 wait for: measured 6.7 s cold against 1.5 s warm, so in practice almost every
 correction paid for a reload. The cost is the model sitting in memory for as
-long as the app runs — 9.6 GB for `gemma4:e4b`. Set `llm.keep_loaded: false` to
+long as the app runs — 9.6 GB for `gemma4:e4b`. Set `keep_loaded: false` on that entry to
 have the RAM back and the wait with it. On a 16 GB Mac that is the right
 setting; on 32 GB it is not.
 

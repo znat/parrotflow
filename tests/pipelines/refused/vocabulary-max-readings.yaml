@@ -8,6 +8,6 @@
 # person who typed it.
 languages: [en]
 pipeline:
-  - replacements
+  - vocabulary
   - stage: vocabulary
     max_readings: 16

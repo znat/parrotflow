@@ -18,14 +18,16 @@
 # has the grant, and it prints exactly what this stage would publish.
 languages: [en]
 
-replacements:
-  Supabase: [super base]
 
+vocabulary:
+  terms:
+    Supabase:
+      heard: [super base]
 pipeline:
   # Before and after, on purpose. `context` sits in the middle of a real
   # pipeline in the config it is written for, and a stage that publishes
   # variables must not disturb the stages either side of it — including when
   # it declines, which from here it always does.
-  - replacements
+  - vocabulary
   - context
   - numbers

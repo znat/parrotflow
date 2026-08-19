@@ -22,8 +22,11 @@ filler words, which a literal map cannot: `um` arrives as "um", "umm",
 with it.
 
 ```yaml
-replacements:
-  "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
+transforms:
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
 ```
 
 The punctuation in that pattern matters more than it looks. Deleting only the
@@ -33,16 +36,17 @@ straight through. A tidy pass then closes the remaining gaps — doubled spaces,
 a space stranded before a comma, a lowercase word left starting the sentence.
 
 Word boundaries do the rest of the work: "umbrella" and "hummingbird" contain
-fillers and are left alone. Fuzzy matching skips regex and deletion rules
-entirely — they are exact by construction.
+fillers and are left alone. Near-miss matching in the `vocabulary` stage never
+sees these at all — it reads `vocabulary.yaml`, and a pattern is not a spelling
+anything could sound like.
 
 A regex source can also write back what it captured. `$1` in the target refers
 to the first group, and that is the only way to express a rule whose output
 depends on its input:
 
 ```yaml
-replacements:
-  $1.$2: ['/\b(\w+) dot (\w+)\b/']    # "user dot name" -> user.name
+    replace:
+      $1.$2: ['/\b(\w+) dot (\w+)\b/']    # "user dot name" -> user.name
 ```
 
 The slashes switch the target into a template the same way they switch the
