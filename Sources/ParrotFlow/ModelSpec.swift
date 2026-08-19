@@ -74,6 +74,9 @@ struct ModelSpec: Equatable {
         return base.hasSuffix("/") ? String(base.dropLast()) : base
     }
 
+    /// Just the host, for a line with room for one thing — `api.openai.com`.
+    var host: String { URL(string: url)?.host ?? url }
+
     /// How it reads in a log line or a check: `gpt (openai, gpt-5.6-luna, reasoning low)`.
     var described: String {
         "\(name) (\(api.rawValue), \(model.isEmpty ? "no model" : model),"

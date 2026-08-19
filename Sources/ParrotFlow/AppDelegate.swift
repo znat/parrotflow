@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Shown only while `config.problems()` has something in it.
     private var configProblemsItem: NSMenuItem!
+    private var addKeyItem: NSMenuItem!
 
     /// What was last said out loud, so a problem is announced when it appears
     /// and not on every save of an unrelated setting.
@@ -519,12 +520,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// On change rather than on every load: the file is watched, so saving an
     /// unrelated line runs this again, and a notice that fires every time you
     /// edit your own config is one you learn to ignore.
+    private func announceIfNew(_ problems: [String]) {
+        defer { announcedProblems = problems }
+        guard problems != announcedProblems, let first = problems.first else { return }
+        let others = problems.count - 1
+        flash(others > 0 ? "\(first)  (+\(others) more)" : first, tone: .caution)
+    }
+
     /// Models already asked about this run, so saving config.yaml — which
     /// reloads it — does not ask again for one that was declined.
+    ///
+    /// Declining is meant to stick, which is why nothing clears this. The way
+    /// back is the menu — see `addKeyItem` — and not commenting the model out
+    /// and back in, which reloads the config but leaves the name in here.
     private var askedForKey: Set<String> = []
 
     /// A key prompt a running dictation pushed back, waiting for idle.
     private var keyPromptDeferred = false
+
+    /// Cloud models with no key in the keychain yet, for the menu row that
+    /// offers to add one.
+    ///
+    /// Held rather than worked out in `updateUI`, which runs on every change of
+    /// state: each name costs a keychain lookup, and an unsigned build is asked
+    /// about by macOS on every one of them. Refreshed where the answer can
+    /// change — a config load, and a key being stored.
+    private var keylessModels: [String] = []
+
+    private func refreshKeylessModels() {
+        keylessModels = config.modelsByName.values
+            .filter { $0.key.kind == .keychain && $0.key.resolve() == nil }
+            .map(\.name)
+            .sorted()
+    }
+
+    /// The menu's way in, for a key that was declined or never offered.
+    ///
+    /// Declining is remembered for the run, so the dialog does not come back on
+    /// its own — and commenting the model out and back in does not bring it
+    /// back either, because the name stays in `askedForKey`. This is the way
+    /// back, and it is a menu row rather than a terminal command.
+    @objc private func addMissingKeys() {
+        for name in keylessModels { askedForKey.remove(name) }
+        askForMissingKeys()
+    }
 
     /// Ask for the key of any keychain-backed model that has none.
     ///
@@ -556,12 +595,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             askedForKey.insert(spec.name)
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
-            alert.messageText = "\(spec.name) needs an API key"
-            alert.informativeText =
-                "\(spec.name) sends text to \(spec.url). Paste its key and it is "
-                + "kept in your \(Keychain.service) keychain — not in config.yaml, "
-                + "which is a file people paste to each other.\n\n"
-                + "You can do this later with: ParrotFlow --set-key \(spec.name)"
+            alert.messageText = "API key for \(spec.name)"
+            // One line, and it is the one worth reading: naming the host is how
+            // somebody sees where their words are about to go.
+            alert.informativeText = "Sent to \(spec.host). Kept in your keychain."
             let field = KeyField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
             field.placeholderString = "Paste the key"
             alert.accessoryView = field
@@ -584,15 +621,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // problem it names is the one just fixed.
         if stored {
             configProblems = config.problems()
+            refreshKeylessModels()
             updateUI()
         }
-    }
-
-    private func announceIfNew(_ problems: [String]) {
-        defer { announcedProblems = problems }
-        guard problems != announcedProblems, let first = problems.first else { return }
-        let others = problems.count - 1
-        flash(others > 0 ? "\(first)  (+\(others) more)" : first, tone: .caution)
     }
 
     private func applyConfig() {
@@ -613,6 +644,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // about your config belongs; the notice is for what changed.
         for notice in config.notices() { Log.write("config: \(notice)") }
         announceIfNew(configProblems)
+        refreshKeylessModels()
         // Async so a launch is not held behind a modal, and so the menu bar is
         // up before anything sits in front of it.
         DispatchQueue.main.async { [weak self] in self?.askForMissingKeys() }
@@ -3994,6 +4026,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configProblemsItem.isHidden = true
         menu.addItem(configProblemsItem)
 
+        // Beside the problem it answers. A model with no key is reported by the
+        // row above and fixed by this one, so the reading and the remedy are
+        // one line apart.
+        addKeyItem = NSMenuItem(title: "", action: #selector(addMissingKeys), keyEquivalent: "")
+        addKeyItem.target = self
+        addKeyItem.isHidden = true
+        menu.addItem(addKeyItem)
+
         updateItem = NSMenuItem(title: "", action: #selector(showUpdate), keyEquivalent: "")
         updateItem.target = self
         updateItem.isHidden = true
@@ -4116,6 +4156,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             statusInfoItem.title = "Idle  ·  \(shortcut)"
         }
+
+        addKeyItem.isHidden = keylessModels.isEmpty
+        addKeyItem.title = keylessModels.count == 1
+            ? "Add API Key for \(keylessModels[0])…"
+            : "Add API Keys…"
 
         configProblemsItem.isHidden = configProblems.isEmpty
         configProblemsItem.title = configProblems.count == 1
