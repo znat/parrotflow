@@ -45,6 +45,11 @@ enum CheckConfigCommand {
         print("  ✓ output dir        \(config.resolvedOutputDir.path)")
         print("  ✓ min duration      \(config.audio.minDurationSeconds)s")
         print("  · speech gate       \(config.audio.speechGate ? "on" : "off")")
+        if config.audio.secondOpinion, !config.audio.speechGate {
+            print("  ! second opinion    on, but it needs speech_gate — no padded decode will run")
+        } else {
+            print("  · second opinion    \(config.audio.secondOpinion ? "on" : "off")")
+        }
         print("  · feedback          sound=\(config.feedback.sound) overlay=\(config.feedback.overlay)"
               + " correct_offer=\(config.feedback.correctOffer)"
               + " confidence=\(config.feedback.confidence)")

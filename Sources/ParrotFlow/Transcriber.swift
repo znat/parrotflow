@@ -175,6 +175,15 @@ actor Transcriber {
         let asr = AsrManager(models: models)
         var decoderState = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
 
+        // `audio.second_opinion`: the same clip decoded again with silence at
+        // both ends, started here so it runs beside the first pass instead of
+        // after it. Nothing below is allowed to depend on it — every arm can
+        // come back empty and the dictation is whatever the first pass said.
+        var opinions: [Task<(pad: Double, result: ASRResult)?, Never>] = []
+        if config.audio.secondOpinion, let gated {
+            opinions = Self.startSecondOpinions(gate: gated, models: models)
+        }
+
         // Above 15s that batch path still chunks — 14.88s windows on a 12.88s
         // stride — so the seam is only gone for clips that fit one window. A
         // long pause mid-dictation can leave a whole window holding nothing
@@ -238,21 +247,30 @@ actor Transcriber {
         if let gated, Self.decodedNothing(result, gate: gated) {
             let speech = Self.speechSeconds(gated)
             var recovered: (pad: Double, result: ASRResult)?
-            for pad in Self.silenceRetryPads where recovered == nil {
-                do {
-                    guard let retried = try await decodePadded(gated, pad: pad, asr: asr),
-                        !retried.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                    else { continue }
-                    recovered = (pad, retried)
-                } catch {
-                    // A retry that fails leaves the clip as the first pass
-                    // decoded it. Letting this throw would turn a lost
-                    // dictation — bad, and already the case — into a failed
-                    // one, which is worse and would be caused by the repair.
-                    Log.write(String(
-                        format: "padded retry at %.0fms: %@",
-                        pad * 1000, error.localizedDescription
-                    ))
+            if opinions.isEmpty {
+                for pad in Self.silenceRetryPads where recovered == nil {
+                    do {
+                        guard let retried = try await Self.decodePadded(gated, pad: pad, asr: asr),
+                            !retried.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        else { continue }
+                        recovered = (pad, retried)
+                    } catch {
+                        // A retry that fails leaves the clip as the first pass
+                        // decoded it. Letting this throw would turn a lost
+                        // dictation — bad, and already the case — into a failed
+                        // one, which is worse and would be caused by the repair.
+                        Log.write(String(
+                            format: "padded retry at %.0fms: %@",
+                            pad * 1000, error.localizedDescription
+                        ))
+                    }
+                }
+            } else {
+                // The same pads, already decoded beside the first pass. Taken
+                // from there rather than decoded again, so a dictation costs
+                // at most one decode per arm however it ends up being repaired.
+                recovered = await Self.collect(opinions).first {
+                    !$0.result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 }
             }
             if let recovered {
@@ -267,6 +285,55 @@ actor Transcriber {
                     format: "decoder returned nothing for %.2fs of speech, "
                         + "and no padded retry returned anything either",
                     speech
+                ))
+            }
+        } else if !opinions.isEmpty {
+            // The first pass wrote something, so the padded arms have to beat
+            // it rather than replace it. Two guards, both already used by the
+            // long-pause retry above: an arm must reach further into the clip,
+            // and it must say everything the first pass said before it says
+            // anything new. The second is what stops a recovered ending being
+            // paid for with a silently rewritten opening. There is a third
+            // guard below, stricter than either.
+            let further = await Self.collect(opinions)
+                .filter { Self.lastWordEnd($0.result) > Self.lastWordEnd(result) }
+            // Ranked on what an arm recovered, not on how far it reached.
+            // Reach cannot separate two arms: `unpadTimings` clamps a word
+            // running past the end of the clip back to the clip's length, and
+            // on a short clip every arm lands there. On the three clips that
+            // lost their ending, both arms reported that same clamped end
+            // while the 1.0s arm returned "that's a good one" and "scorer"
+            // and the 0.5s arm stopped at "that's the same" and "score".
+            func mostRecovered(
+                _ arms: [(pad: Double, result: ASRResult)]
+            ) -> (pad: Double, result: ASRResult)? {
+                arms.max { Self.recovered($0.result) < Self.recovered($1.result) }
+            }
+            // `extends` is a prefix test, so it also passes an arm that says
+            // exactly what the first pass said. Taking one of those swaps a
+            // decode for an equivalent decode — same words, different token
+            // split and casing. Over 60 archived clips that was the only
+            // thing it ever did, on 2 of them: "RXV" for "RX V", and "red
+            // rock roadmap" for "Red Rock Roadmap". So an arm has to add
+            // words, not just reach a later timestamp.
+            let added = further.filter {
+                Self.extends(result, by: $0.result)
+                    && Self.recovered($0.result) > Self.recovered(result)
+            }
+            if let best = mostRecovered(added) {
+                Log.write(String(
+                    format: "second opinion: the first pass stopped at %.2fs, "
+                        + "%.0fms of silence either side reached %.2fs; taking it",
+                    Self.lastWordEnd(result), best.pad * 1000, Self.lastWordEnd(best.result)
+                ))
+                result = best.result
+            } else if let rejected = mostRecovered(
+                further.filter { !Self.extends(result, by: $0.result) }
+            ) {
+                Log.write(String(
+                    format: "second opinion: %.0fms of silence either side reached %.2fs, but it "
+                        + "rewrote text the first pass had already decoded; keeping the first pass",
+                    rejected.pad * 1000, Self.lastWordEnd(rejected.result)
                 ))
             }
         }
@@ -367,19 +434,63 @@ actor Transcriber {
     /// A fresh `TdtDecoderState` per pass: the state is per-clip, and handing
     /// the first pass's state to the second would decode the padded copy as a
     /// continuation of the clip it is a copy of.
-    private func decodePadded(
+    private nonisolated static func decodePadded(
         _ gate: SpeechGate, pad: Double, asr: AsrManager
     ) async throws -> ASRResult? {
-        guard let padded = Self.paddedWithSilence(gate, pad: pad) else { return nil }
+        guard let padded = paddedWithSilence(gate, pad: pad) else { return nil }
         var state = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
         let raw = try await asr.transcribe(padded, decoderState: &state)
-        return Self.unpadTimings(raw, by: pad, seconds: gate.seconds)
+        return unpadTimings(raw, by: pad, seconds: gate.seconds)
+    }
+
+    /// Starts one padded decode per rung of `silenceRetryPads`, running now.
+    ///
+    /// A manager per arm. `AsrManager` is an actor, so arms sharing one would
+    /// decode one after another and the whole point is that they do not.
+    /// `AsrModels` is a struct of references, so the arms share the ~1GB of
+    /// weights and cost about 12MB each.
+    ///
+    /// `nonisolated` so the tasks do not inherit `Transcriber`'s executor,
+    /// which would put them back in the same queue as the first pass.
+    private nonisolated static func startSecondOpinions(
+        gate: SpeechGate, models: AsrModels
+    ) -> [Task<(pad: Double, result: ASRResult)?, Never>] {
+        silenceRetryPads.map { pad in
+            Task {
+                do {
+                    guard let decoded = try await decodePadded(
+                        gate, pad: pad, asr: AsrManager(models: models)
+                    ) else { return nil }
+                    return (pad, decoded)
+                } catch {
+                    // An arm that fails is an arm that has nothing to say. It
+                    // must never turn a dictation the first pass completed
+                    // into a thrown one — the repair would be the cause.
+                    Log.write(String(
+                        format: "second opinion at %.0fms: %@",
+                        pad * 1000, error.localizedDescription
+                    ))
+                    return nil
+                }
+            }
+        }
+    }
+
+    /// Waits for every arm and keeps the ones that decoded, in ladder order.
+    private nonisolated static func collect(
+        _ opinions: [Task<(pad: Double, result: ASRResult)?, Never>]
+    ) async -> [(pad: Double, result: ASRResult)] {
+        var decoded: [(pad: Double, result: ASRResult)] = []
+        for opinion in opinions {
+            if let value = await opinion.value { decoded.append(value) }
+        }
+        return decoded
     }
 
     /// What the speech gate found: the clip's samples and its speech
     /// boundaries, kept rather than reduced to a yes/no. The decoder wants
     /// both — see `closeLongPauses`.
-    struct SpeechGate {
+    struct SpeechGate: Sendable {
         let samples: [Float]
         let segments: [(start: Double, end: Double)]
         /// False when the clip is not the 16 kHz mono the recorder writes, in
@@ -590,6 +701,12 @@ actor Transcriber {
 
     private nonisolated static func comparable(_ text: String) -> String {
         text.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    /// How much a decode said, on the same letters-and-digits view `extends`
+    /// compares on, so a comma or a capital does not count as a word.
+    private nonisolated static func recovered(_ result: ASRResult) -> Int {
+        comparable(result.text).count
     }
 
     /// True when the decoder stopped well before the speech did — the symptom

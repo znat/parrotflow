@@ -29,6 +29,12 @@ audio:
   # room tone into a sentence.
   speech_gate: true
 
+  # Decode every clip a second time beside the first, with silence added at
+  # both ends, and keep that decode when it reaches further. Recovers the
+  # endings the recogniser skips over — about 2% of dictations — and costs
+  # about 100ms. Needs speech_gate. See docs/configuration.md.
+  second_opinion: false
+
 feedback:
   sound: true     # a click when recording starts and stops
   overlay: true   # the floating pill while you speak
