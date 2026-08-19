@@ -523,13 +523,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// reloads it — does not ask again for one that was declined.
     private var askedForKey: Set<String> = []
 
+    /// A key prompt a running dictation pushed back, waiting for idle.
+    private var keyPromptDeferred = false
+
     /// Ask for the key of any keychain-backed model that has none.
     ///
     /// Modal, and this is the one place that is allowed to be. It runs on a
     /// config load — launch, or a save of config.yaml — and not on the hotkey
     /// path, which is what `runModal` may never block; see `startRecording`'s
     /// catch and #95. Idle is checked anyway, because a save can land while a
-    /// dictation is in flight, and asked again on the next load if it is not.
+    /// dictation is in flight. One that does is held and asked the moment the
+    /// dictation ends — waiting for the next load means a model configured
+    /// mid-dictation stays keyless until a restart.
     ///
     /// Declining is a normal answer. The model stays unusable, a transform
     /// naming it declines with the transcript untouched, and the menu keeps
@@ -539,7 +544,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .filter { $0.key.kind == .keychain && $0.key.resolve() == nil }
             .filter { !askedForKey.contains($0.name) }
             .sorted { $0.name < $1.name }
-        guard !wanted.isEmpty, !recorder.isRecording, runsInFlight <= 0 else { return }
+        guard !wanted.isEmpty else { return }
+        guard !recorder.isRecording, runsInFlight <= 0 else {
+            keyPromptDeferred = true
+            return
+        }
+        keyPromptDeferred = false
 
         var stored = false
         for spec in wanted {
@@ -1400,6 +1410,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // cancel, so an offer that was raised while a dictation was still
         // running can have its keys now. See `watchTheOfferKeys`.
         if offerIsUp, !offerKeys.isRunning { watchTheOfferKeys() }
+        // And a key prompt the same dictation pushed back. Async so this run's
+        // completion unwinds before a modal blocks the main queue.
+        if keyPromptDeferred {
+            keyPromptDeferred = false
+            DispatchQueue.main.async { [weak self] in self?.askForMissingKeys() }
+        }
     }
 
     private func stopWatchingForEscape() {
