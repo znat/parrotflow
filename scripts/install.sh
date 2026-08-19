@@ -27,7 +27,8 @@
 #
 #   PARROTFLOW_VERSION=0.2.0   install a specific version instead of the latest
 #   PARROTFLOW_DEST=~/Applications   install somewhere other than /Applications
-#   PARROTFLOW_SETUP_VOICE=0   skip installing Ollama and pulling the Gemma model
+#   PARROTFLOW_SETUP_VOICE=1   install Ollama and pull the model here, rather
+#                              than printing how to
 set -eu
 
 REPO="znat/parrotflow"
@@ -191,11 +192,13 @@ EOF
 # on first use, with a progress figure and without blocking recording, which
 # this script cannot match. See docs/distribution.md.
 #
-# Ollama and the Gemma model are installed here by default. This is not the
-# grammar checker or a nice extra: the vocabulary judge that keeps a matched
-# name from landing in the wrong sentence runs on this model, so a Mac without
-# it gets rule matches with nothing reviewing them. PARROTFLOW_SETUP_VOICE=0
-# skips it, for a script or a machine that wants the app alone.
+# Ollama is reported, never installed. `models:` in config.yaml names a model
+# per job, and an entry there may be an OpenAI- or Anthropic-shaped endpoint as
+# well as a local one — so running the vocabulary judge and spoken commands no
+# longer means running a model on this Mac. What is still true is that they
+# need *a* model: without one, a rule match ships with nothing reviewing it.
+# So this prints both ways and installs neither. PARROTFLOW_SETUP_VOICE=1 does
+# the local one here, for a machine that wants it all in one command.
 #
 # Every check below asks the filesystem or another program, never the app we
 # just installed. That is the rule, and the reason is the URLs: this script is
@@ -220,19 +223,21 @@ if [ -f "$CONFIG" ]; then
     [ -n "$NAMED" ] && MODEL="$NAMED"
 fi
 
-# Set unless the caller opted out. Read once, here, so every branch below
-# tests the same value instead of re-reading the environment.
-SETUP_VOICE="${PARROTFLOW_SETUP_VOICE:-1}"
+# Off unless the caller opted in. Read once, here, so every branch below tests
+# the same value instead of re-reading the environment.
+SETUP_VOICE="${PARROTFLOW_SETUP_VOICE:-0}"
 
 # Set by any branch below that finds something to do, so the end of this
 # section can say plainly that nothing was needed — silence reads as "did
 # this even run", not as "already done".
 NEEDED_SETUP=""
 
-# What Ollama backs: not only spoken commands, but also the check that a
+# What a model backs: not only spoken commands, but also the check that a
 # vocabulary term applied in the right context. Dictation and the deterministic
-# match still work without Ollama; that match then ships unchecked instead of
+# match still work without one; that match then ships unchecked instead of
 # reviewed, so a name can land in the wrong place with nothing to catch it.
+# Ollama is the way to run that model on this Mac, and `models:` in config.yaml
+# is the way to run it somewhere else.
 #
 # Three checks in sequence, not mutually exclusive branches: installing Ollama
 # still leaves the model to pull, and starting a stopped Ollama still leaves
@@ -241,27 +246,33 @@ NEEDED_SETUP=""
 # was actually present.
 if ! command -v ollama >/dev/null 2>&1; then
     NEEDED_SETUP=1
-    printf '    Ollama is not on this Mac. It runs the language model behind two\n'
-    printf '    things: spoken commands, and the check that a vocabulary match fits\n'
-    printf '    its sentence before it is kept. Without it, dictation still works,\n'
-    printf '    and vocabulary still matches — the match just ships unreviewed.\n\n'
-    if [ "$SETUP_VOICE" != "0" ]; then
+    printf '    Ollama is not on this Mac, and it is optional. A language model\n'
+    printf '    backs two things: spoken commands, and the check that a vocabulary\n'
+    printf '    match fits its sentence before it is kept. Without any model,\n'
+    printf '    dictation still works, and vocabulary still matches — the match\n'
+    printf '    just ships unreviewed.\n\n'
+    if [ "$SETUP_VOICE" = "1" ]; then
         printf '    ParrotFlow is already running and dictation already works — this\n'
         printf '    download only unlocks spoken commands and the vocabulary check.\n\n'
         say "Installing Ollama"
         brew install ollama && brew services start ollama \
             || die "could not install or start Ollama"
     else
+        printf '    To run the model here, on this Mac:\n\n'
         printf '      brew install ollama && brew services start ollama\n'
         printf '      ollama pull %s\n\n' "$MODEL"
+        printf '    Or run it somewhere else: `models:` in config.yaml takes an\n'
+        printf '    OpenAI- or Anthropic-shaped endpoint, and a transform names one\n'
+        printf '    with `model:`. That sends your dictation off this Mac, and\n'
+        printf '    --check-config says so every time. See docs/configuration.md.\n\n'
     fi
 fi
 
 if command -v ollama >/dev/null 2>&1 && ! INSTALLED="$(ollama list 2>/dev/null)"; then
     NEEDED_SETUP=1
-    printf '    Ollama is installed but not answering, so spoken commands and the\n'
-    printf '    vocabulary context check will not work. Start it:\n\n'
-    if [ "$SETUP_VOICE" != "0" ]; then
+    printf '    Ollama is installed but not answering, so anything pointed at it\n'
+    printf '    will not work. Start it:\n\n'
+    if [ "$SETUP_VOICE" = "1" ]; then
         say "Starting Ollama"
         brew services start ollama || die "could not start Ollama"
         # Bounded poll, not a fixed sleep: freshly started is not freshly
@@ -295,7 +306,7 @@ if command -v ollama >/dev/null 2>&1 \
     if [ "$MODEL" = "gemma4:e4b-mlx" ]; then
         printf '    About 8.8 GB.\n\n'
     fi
-    if [ "$SETUP_VOICE" != "0" ]; then
+    if [ "$SETUP_VOICE" = "1" ]; then
         printf '    ParrotFlow is already running and dictation already works — this\n'
         printf '    download only unlocks spoken commands and the vocabulary check.\n\n'
         say "Downloading $MODEL — this runs in the background, and dictation"
