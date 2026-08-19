@@ -154,17 +154,33 @@ llm:
 # A model that is not `ollama` sends your dictation to somebody else's server.
 # `--check-config` says so, every time, and names which transforms do it.
 #
-# api_key: never the key itself. `env:NAME` reads the environment, which the
-# app does not have when it is launched from Finder — `file:` is the form that
-# works in both places. A key written in full still works and is announced as
-# plain text on every load.
+# api_key: leave it out. A cloud model with no `api_key:` reads the keychain,
+# and the app asks for the key the first time it loads a config that names one.
+# `ParrotFlow --set-key gpt` does the same from a terminal, reading stdin so
+# the key never lands in argv or shell history.
+#
+# The other forms still work, for a setup that needs them. `file:~/path` is the
+# one to use if you want the key on disk. `env:NAME` reads the environment,
+# which the app does not have when it is launched from Finder, so it works from
+# a terminal and silently does not in the app. A key written here in full works
+# too and is announced as plain text on every load.
 #
 # models:
+#   # An Ollama entry belongs here like any other. Naming the local model
+#   # explicitly is how a second one gets a name too — a small model for the
+#   # router, a larger one for a rewrite, both on this Mac.
+#   gemma:
+#     api: ollama
+#     model: gemma4:e4b-mlx
+#     endpoint: http://localhost:11434
+#     # Only ollama reads this. Pinned in RAM, or a cold call waits 7-10s.
+#     keep_loaded: true
+#
+#   # No `api_key:`, so the key is in the keychain and the app asks for it.
 #   gpt:
 #     api: openai
 #     model: gpt-5.6-luna
 #     endpoint: https://api.openai.com/v1
-#     api_key: file:~/.config/parrotflow/openai.key
 #     # off | minimal | low | medium | high. One ladder, whatever the provider
 #     # calls its own knob. `off` is the right default for a rewrite.
 #     reasoning: off
@@ -173,7 +189,6 @@ llm:
 #   claude:
 #     api: anthropic
 #     model: claude-sonnet-5
-#     api_key: env:ANTHROPIC_API_KEY
 #     reasoning: off
 
 # One call a day to GitHub's release API — the only request this app makes on

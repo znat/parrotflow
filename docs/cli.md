@@ -240,6 +240,30 @@ the previous transcript does it target.
 `--learn` adds a pronunciation to `vocabulary.yaml` from the terminal, the
 same one the correction panel would have written.
 
+## Giving a model its API key
+
+```sh
+$PF --set-key <model>            # prompts, and does not echo
+printf '%s' "$KEY" | $PF --set-key <model>
+$PF --set-key <model> --forget
+```
+
+A cloud model in `models:` with no `api_key:` line reads the keychain. This is
+how the key gets there without the app asking. The key comes from stdin, never
+from an argument, so it is not in `ps` and not in your shell history.
+
+Only for a model that actually uses the keychain. One with `file:` or `env:`
+already says where to look, and an `ollama` model needs no key at all; both are
+refused rather than storing a key nothing will read.
+
+```
+$ printf '%s' "$OPENAI_KEY" | ParrotFlow --set-key gpt
+stored a key for gpt in the ParrotFlow keychain.
+
+$ ParrotFlow --check-config | grep gpt
+      gpt     openai  gpt-5.6-luna  https://api.openai.com/v1  reasoning off  the Keychain
+```
+
 ## Forgetting what a name sounds like
 
 ```sh

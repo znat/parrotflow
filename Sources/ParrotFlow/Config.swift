@@ -1327,7 +1327,9 @@ struct Config: Decodable, Equatable {
             if !spec.key.isSet {
                 found.append("models.\(name): `api: \(spec.api.rawValue)` needs an `api_key:`")
             } else if spec.key.resolve() == nil {
-                found.append("models.\(name): no key at \(spec.key.described)")
+                let fix = spec.key.kind == .keychain
+                    ? " — add one with `--set-key \(name)`" : ""
+                found.append("models.\(name): no key at \(spec.key.described)\(fix)")
             }
         }
         let names = all.keys.sorted().joined(separator: ", ")
@@ -2029,6 +2031,9 @@ struct Config: Decodable, Equatable {
             self.models = models.reduce(into: [:]) { out, entry in
                 var spec = entry.value
                 spec.name = entry.key
+                // The name is also the keychain account, and this is the first
+                // point at which the spec has one.
+                spec.key.adopt(account: entry.key, api: spec.api)
                 out[entry.key] = spec
             }
         }

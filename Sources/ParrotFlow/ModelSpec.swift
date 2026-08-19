@@ -105,11 +105,14 @@ struct ModelSpec: Equatable {
 /// `env:` is right for the CLI and useless in the app: ParrotFlow launches
 /// from Finder, which hands it none of your shell's environment. `file:` is
 /// the one that works in both.
+///
+/// `keychain` is the default for a cloud model that names no key at all, so
+/// the common case is nothing in the file and nothing on disk. See `Keychain`.
 struct KeySource: Equatable {
-    enum Kind: Equatable { case absent, environment, file, literal }
+    enum Kind: Equatable { case absent, environment, file, literal, keychain }
 
     var kind: Kind = .absent
-    /// The variable name, the path, or the key itself.
+    /// The variable name, the path, the keychain account, or the key itself.
     var value: String = ""
 
     init() {}
@@ -117,7 +120,12 @@ struct KeySource: Equatable {
     init(written raw: String) {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        if text.hasPrefix("env:") {
+        if text == "keychain" {
+            kind = .keychain
+            // Filled in with the model's own name once it has one — a spec
+            // cannot see the key it was written under. See `adopt(account:)`.
+            value = ""
+        } else if text.hasPrefix("env:") {
             kind = .environment
             value = String(text.dropFirst(4)).trimmingCharacters(in: .whitespaces)
         } else if text.hasPrefix("file:") {
@@ -129,7 +137,23 @@ struct KeySource: Equatable {
         }
     }
 
-    var isSet: Bool { kind != .absent && !value.isEmpty }
+    var isSet: Bool { kind == .keychain || (kind != .absent && !value.isEmpty) }
+
+    /// Give this source the model's name, which is the account it reads.
+    ///
+    /// Two things happen here, both needing a name the spec did not have while
+    /// it was being decoded: an explicit `api_key: keychain` learns its
+    /// account, and a cloud model that named no key at all becomes a keychain
+    /// one. An `ollama` entry is left alone — it needs no key, and turning its
+    /// silence into a keychain lookup would report a missing key for a model
+    /// that never wanted one.
+    mutating func adopt(account: String, api: ModelSpec.API) {
+        if kind == .keychain, value.isEmpty { value = account }
+        if kind == .absent, !api.isLocal {
+            kind = .keychain
+            value = account
+        }
+    }
 
     /// The key, or nil when the place it names holds nothing.
     func resolve() -> String? {
@@ -142,6 +166,8 @@ struct KeySource: Equatable {
             let found = ProcessInfo.processInfo.environment[value]?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             return (found?.isEmpty == false) ? found : nil
+        case .keychain:
+            return Keychain.read(value)
         case .file:
             let path = (value as NSString).expandingTildeInPath
             let found = try? String(contentsOfFile: path, encoding: .utf8)
@@ -159,6 +185,8 @@ struct KeySource: Equatable {
             return "a key written into config.yaml"
         case .environment:
             return "$\(value)" + (resolve() == nil ? " (not set)" : "")
+        case .keychain:
+            return "the Keychain" + (resolve() == nil ? " (no key yet)" : "")
         case .file:
             return value + (resolve() == nil ? " (unreadable or empty)" : "")
         }

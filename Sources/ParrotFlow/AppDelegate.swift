@@ -519,6 +519,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// On change rather than on every load: the file is watched, so saving an
     /// unrelated line runs this again, and a notice that fires every time you
     /// edit your own config is one you learn to ignore.
+    /// Models already asked about this run, so saving config.yaml — which
+    /// reloads it — does not ask again for one that was declined.
+    private var askedForKey: Set<String> = []
+
+    /// Ask for the key of any keychain-backed model that has none.
+    ///
+    /// Modal, and this is the one place that is allowed to be. It runs on a
+    /// config load — launch, or a save of config.yaml — and not on the hotkey
+    /// path, which is what `runModal` may never block; see `startRecording`'s
+    /// catch and #95. Idle is checked anyway, because a save can land while a
+    /// dictation is in flight, and asked again on the next load if it is not.
+    ///
+    /// Declining is a normal answer. The model stays unusable, a transform
+    /// naming it declines with the transcript untouched, and the menu keeps
+    /// saying so.
+    private func askForMissingKeys() {
+        let wanted = config.modelsByName.values
+            .filter { $0.key.kind == .keychain && $0.key.resolve() == nil }
+            .filter { !askedForKey.contains($0.name) }
+            .sorted { $0.name < $1.name }
+        guard !wanted.isEmpty, !recorder.isRecording, runsInFlight <= 0 else { return }
+
+        var stored = false
+        for spec in wanted {
+            askedForKey.insert(spec.name)
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "\(spec.name) needs an API key"
+            alert.informativeText =
+                "\(spec.name) sends text to \(spec.url). Paste its key and it is "
+                + "kept in your \(Keychain.service) keychain — not in config.yaml, "
+                + "which is a file people paste to each other.\n\n"
+                + "You can do this later with: ParrotFlow --set-key \(spec.name)"
+            let field = KeyField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+            field.placeholderString = "Paste the key"
+            alert.accessoryView = field
+            alert.addButton(withTitle: "Save")
+            alert.addButton(withTitle: "Not now")
+            alert.window.initialFirstResponder = field
+            guard alert.runModal() == .alertFirstButtonReturn else { continue }
+            let typed = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !typed.isEmpty else { continue }
+            do {
+                try Keychain.write(typed, account: spec.key.value)
+                Log.write("stored a keychain key for \(spec.name)")
+                stored = true
+            } catch {
+                Log.write("could not store a key for \(spec.name): \(error.localizedDescription)")
+                flash(error.localizedDescription, tone: .failure)
+            }
+        }
+        // The menu still carries the old "no key" line otherwise, and the
+        // problem it names is the one just fixed.
+        if stored {
+            configProblems = config.problems()
+            updateUI()
+        }
+    }
+
     private func announceIfNew(_ problems: [String]) {
         defer { announcedProblems = problems }
         guard problems != announcedProblems, let first = problems.first else { return }
@@ -544,6 +603,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // about your config belongs; the notice is for what changed.
         for notice in config.notices() { Log.write("config: \(notice)") }
         announceIfNew(configProblems)
+        // Async so a launch is not held behind a modal, and so the menu bar is
+        // up before anything sits in front of it.
+        DispatchQueue.main.async { [weak self] in self?.askForMissingKeys() }
 
         hotkeyError = nil
         hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }

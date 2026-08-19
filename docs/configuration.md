@@ -40,7 +40,6 @@ models:                 # more models, under names you pick
   gpt:
     api: openai         # ollama | openai | anthropic — the protocol, not the vendor
     model: gpt-5.6-luna
-    api_key: file:~/.config/parrotflow/openai.key
     reasoning: off      # off | minimal | low | medium | high
 
 updates:
@@ -329,14 +328,12 @@ models:
     api: openai
     model: gpt-5.6-luna
     endpoint: https://api.openai.com/v1
-    api_key: file:~/.config/parrotflow/openai.key
     reasoning: off
     timeout_seconds: 30
 
   claude:
     api: anthropic
     model: claude-sonnet-5
-    api_key: env:ANTHROPIC_API_KEY
     reasoning: off
 
   fast:
@@ -350,7 +347,7 @@ models:
 | `api` | The protocol: `ollama`, `openai` or `anthropic`. Not the vendor — everyone else speaks one of the three. |
 | `model` | The model id, as that provider spells it. |
 | `endpoint` | Where to send it. Left out, the default for the protocol. |
-| `api_key` | Where the key is — see below. Not needed by `ollama`. |
+| `api_key` | Where the key is — see below. Omit it for the keychain. Not needed by `ollama`. |
 | `reasoning` | `off`, `minimal`, `low`, `medium` or `high`. |
 | `temperature` | Sent only if you write it. The reasoning models reject it. |
 | `max_tokens` | Replaces whatever budget the caller worked out. |
@@ -386,7 +383,6 @@ app has never been run against usable without a new release:
     api: openai
     endpoint: https://api.deepseek.com/v1
     model: deepseek-chat
-    api_key: env:DEEPSEEK_API_KEY
     params:
       top_p: 0.9
 ```
@@ -406,10 +402,46 @@ knows the older name.
 
 ### Where the key comes from
 
-`api_key:` takes a reference, not a key:
+Leave `api_key:` out. A model whose `api` is not `ollama` and which names no
+key reads your keychain, and nothing about the key goes in `config.yaml`:
+
+```yaml
+models:
+  gpt:
+    api: openai
+    model: gpt-5.6-luna
+```
+
+The first time the app loads a config like that, it asks for the key and puts
+it in the keychain. Declining is fine — the model stays unusable, a transform
+naming it declines with your transcript untouched, and the menu says so until
+you add one. From a terminal:
+
+```
+ParrotFlow --set-key gpt              # prompts, and does not echo
+printf '%s' "$KEY" | ParrotFlow --set-key gpt
+ParrotFlow --set-key gpt --forget
+```
+
+The key is read from stdin, never from an argument, so it stays out of `ps` and
+out of your shell history.
+
+Keys are stored under the service `ParrotFlow`, or `ParrotFlow Dev` for the dev
+build, with the model's own name as the account. The dev and release apps
+therefore never see each other's keys, the same split as `~/.config/parrotflow`
+and `~/.config/parrotflow-dev`.
+
+**Keychain access follows the code signature.** The installed app is signed and
+keeps its access across upgrades. A `swift build` binary is not, so macOS asks
+you to allow it — once per build, because an unsigned binary's identity changes
+every compile. Use `file:` during development if that gets tiring.
+
+`api_key:` still takes a reference for the setups that need one:
 
 | Written | Read from |
 |---|---|
+| *omitted* | the keychain, for any `api` but `ollama` |
+| `keychain` | the keychain, said out loud |
 | `env:OPENAI_API_KEY` | the environment |
 | `file:~/.config/parrotflow/openai.key` | that file, trimmed |
 | anything else | taken as the key itself |
