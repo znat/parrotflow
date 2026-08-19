@@ -291,12 +291,13 @@ else:
 That branch is worth keeping. Every harness in `scripts/` pipes plain text, and
 so will you the first time a stage misbehaves.
 
-> **Upgrading an existing transform.** A transform folder is written on first
-> launch and **never overwritten**, so adding `returns: json` to a config whose
-> script predates it means the script prints bare text, the app cannot read it,
-> and the stage silently stops doing anything. Edit the script first, then the
-> config. `--pipeline <fixture> "<text>" --vars` is how you check, before it
-> matters.
+> **Upgrading an existing transform.** A transform folder you own —
+> `transforms/<name>/` — is never overwritten, so adding `returns: json` to a
+> config whose script predates it means the script prints bare text, the app
+> cannot read it, and the stage silently stops doing anything. Edit the script
+> first, then the config. `--pipeline <fixture> "<text>" --vars` is how you
+> check, before it matters. `transforms/examples/` is different: it is
+> refreshed on every launch, so the shipped scripts there are always current.
 
 ## Recipe: a language
 
@@ -376,9 +377,9 @@ to a built-in stage or to the router have nowhere else to be and stay in
 | `tests/` | `spelling` (62), `french` (45), `numbers` (97), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement` |
 
 Each has a runner in `scripts/`; the transform sets can also be scored with
-`--eval`. `examples/transforms/` is what a first launch copies into
-`~/.config/parrotflow/transforms/` — one file, not a mirror of one, so there
-is nothing to keep in sync. See `Config.exampleTransformsDirectory`.
+`--eval`. `examples/transforms/` is copied whole into
+`~/.config/parrotflow/transforms/examples/`, refreshed on every launch — one
+tree, not files kept in sync by hand. See `Config.exampleTransformsDirectory`.
 
 ## Before you call it done
 

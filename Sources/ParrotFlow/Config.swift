@@ -2531,50 +2531,42 @@ enum ConfigStore {
         directory.appendingPathComponent("transforms", isDirectory: true)
     }
 
-    /// Transforms seeded on first launch, script-only: (folder name, script
-    /// filename). Each folder is copied whole from `exampleTransformsDirectory`
-    /// — the script, plus the `cases.yaml` beside it.
-    static let seededTransforms: [(name: String, script: String)] = [
-        ("code_identifiers", "code_identifiers.py"),
-        ("punctuation", "punctuation.py"),
-        ("repetitions", "repetitions.py"),
-    ]
-
-    /// The folder a seeded transform owns.
-    static func seededTransformFolder(_ name: String) -> URL {
-        transformsDirectory.appendingPathComponent(name, isDirectory: true)
-    }
-
-    /// Where a seeded transform's program lives — in its folder, which is
-    /// what makes `command: <script>` resolve.
-    static func seededTransformScript(_ name: String, _ script: String) -> URL {
-        seededTransformFolder(name).appendingPathComponent(script)
-    }
-
-    /// Every file a seeded transform's example folder holds, by name.
+    /// `<config>/transforms/examples/` — every shipped example, in one
+    /// folder, refreshed from `exampleTransformsDirectory` on every launch.
     ///
-    /// Read rather than listed, so a transform that grows a data file is
-    /// seeded with it. `punctuation` owns `en.py` and `fr.py`, and a
-    /// script seeded without its data does nothing on every transcript.
-    static func seededTransformFiles(_ name: String) -> [String] {
-        let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)
-        let found = try? FileManager.default.contentsOfDirectory(
-            at: source, includingPropertiesForKeys: nil)
-        return (found ?? [])
-            .filter { !$0.hasDirectoryPath && !$0.lastPathComponent.hasPrefix(".") }
-            .map(\.lastPathComponent)
-            .sorted()
+    /// This folder is the app's, not yours: unlike `transforms/<name>/`,
+    /// which is written once and never touched again, this one is
+    /// overwritten every time `createIfMissing()` runs, so the shipped
+    /// examples never go stale. That is what buys one copy of a script
+    /// instead of a copy per transform that uses it —
+    /// `command: examples/punctuation/punctuation.py` reads the file here,
+    /// and every config that points a `command:` at it shares the same one.
+    /// Edit a file in here and the edit is gone at the next launch; copy it
+    /// into `transforms/<name>/` first if you want to keep changes to it.
+    static var installedExamplesDirectory: URL {
+        transformsDirectory.appendingPathComponent("examples", isDirectory: true)
     }
 
-    /// Is the file a user owns still the copy that ships?
+    /// Every file under `exampleTransformsDirectory`, as paths relative to
+    /// it — `code_identifiers/code_identifiers.py`,
+    /// `punctuation/cases.yaml`, and so on.
     ///
-    /// Byte for byte, which answers both "you edited it" and "it is the one
-    /// from an older version" at once, and cannot tell them apart. Neither can
-    /// anything else, which is why this reports rather than overwrites.
-    static func differsFromShipped(_ file: URL, _ shipped: URL) -> Bool {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: shipped.path) else { return false }
-        return !fm.contentsEqual(atPath: file.path, andPath: shipped.path)
+    /// Walked rather than named one by one, so a folder that gains a file,
+    /// or the tree that gains a folder, is picked up without a list here to
+    /// keep in sync with `examples/transforms/`.
+    static func exampleTransformFiles() -> [String] {
+        let source = exampleTransformsDirectory
+        guard let enumerator = FileManager.default.enumerator(
+            at: source, includingPropertiesForKeys: [.isDirectoryKey]
+        ) else { return [] }
+        var files: [String] = []
+        for case let url as URL in enumerator {
+            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory
+                ?? false
+            guard !isDirectory, !url.lastPathComponent.hasPrefix(".") else { continue }
+            files.append(String(url.path.dropFirst(source.path.count + 1)))
+        }
+        return files.sorted()
     }
 
     /// `examples/transforms/` — the one copy of every shipped example, seeded
@@ -2603,46 +2595,37 @@ enum ConfigStore {
             .appendingPathComponent("examples/transforms", isDirectory: true)
     }
 
-    /// Creates the config file, and the one transform it ships with, if they
-    /// are not there yet.
+    /// Creates the config file, and refreshes the shipped examples, if they
+    /// are not there yet — or, for the examples, whether they are or not.
     ///
-    /// A folder rather than two loose files, because that is the layout the
-    /// app reads and a shipped example that does not demonstrate it teaches
-    /// the wrong thing. The case set goes in with the script: a transform that
-    /// arrives with its own set is the whole argument of docs/authoring.md
-    /// made concrete, and `--eval code_identifiers` finds it by convention.
+    /// **`transforms/examples/` is the app's**, refreshed from
+    /// `exampleTransformsDirectory` on every call — every launch, and every
+    /// `--seed-config`. That is the point: an improvement to
+    /// `code_identifiers.py` reaches every config that points a `command:`
+    /// at it, from one copy, instead of a copy per transform that a person
+    /// has to notice is stale and re-seed by hand.
     ///
-    /// Copied from `exampleTransformsDirectory`, not written from a string —
-    /// one real file instead of two hand-synced copies. Nothing here is ever
-    /// overwritten: once it exists it is yours, and an update that reverted
-    /// your stop lists would be the app taking back what it gave you.
+    /// **`transforms/<name>/` is still yours**, and this never writes it. An
+    /// install from before this folder existed already has its own
+    /// `transforms/punctuation/punctuation.py`, and `command: punctuation.py`
+    /// still finds it by the bare-name rule — nothing here moves it, reads
+    /// it, or copies over it.
     static func createIfMissing() throws {
         let fm = FileManager.default
-        for (name, script) in seededTransforms {
-            let folder = seededTransformFolder(name)
-            let source = exampleTransformsDirectory.appendingPathComponent(name, isDirectory: true)
-            for filename in seededTransformFiles(name) {
-                let destination = folder.appendingPathComponent(filename)
-                let shipped = source.appendingPathComponent(filename)
-                guard !fm.fileExists(atPath: destination.path) else {
-                    // Never overwritten, so the most an upgrade can do is say
-                    // so. `--seed-config` prints the same thing with the path
-                    // of the copy that ships.
-                    if differsFromShipped(destination, shipped) {
-                        Log.write("config: transforms/\(name)/\(filename) is yours, "
-                                  + "and not the copy that ships now")
-                    }
-                    continue
-                }
-                try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-                try fm.copyItem(at: shipped, to: destination)
-                if filename == script {
-                    // A shebang does nothing without this.
-                    try fm.setAttributes([.posixPermissions: 0o755],
-                                         ofItemAtPath: destination.path)
-                }
-                Log.write("config: wrote transforms/\(name)/\(filename)")
+        let source = exampleTransformsDirectory
+        for relative in exampleTransformFiles() {
+            let shipped = source.appendingPathComponent(relative)
+            let destination = installedExamplesDirectory.appendingPathComponent(relative)
+            let isNew = !fm.fileExists(atPath: destination.path)
+            try fm.createDirectory(
+                at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !isNew { try fm.removeItem(at: destination) }
+            try fm.copyItem(at: shipped, to: destination)
+            if destination.pathExtension == "py" {
+                // A shebang does nothing without this.
+                try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
             }
+            if isNew { Log.write("config: wrote transforms/examples/\(relative)") }
         }
         // The vocabulary, empty but explained. Written so the file exists to
         // be found and read — a person who never dictates a mangled word

@@ -162,11 +162,13 @@ enum EvalCommand {
             // `--cases` wins over the transform's own `tests:`, which wins over
             // the `cases.yaml` every folder has by convention.
             let wanted = override ?? transform.tests ?? "cases.yaml"
-            guard let found = transform.folder?.resolve(wanted) else {
+            guard let found = transform.folder?.resolve(wanted)
+                ?? sharedCases(wanted, transform: transform)
+            else {
                 let folder = transform.folder?.url?.path ?? ConfigStore.directory.path
                 print("✗ no \(wanted) for \"\(transform.name)\""
                     + " — expected it in \(short(folder))")
-                print("    a transform's case set lives in its own folder;"
+                print("    a transform's case set lives beside its script;"
                     + " see docs/authoring.md")
                 return nil
             }
@@ -200,6 +202,22 @@ enum EvalCommand {
         // transform called `lists` or `asr` would file its variables where the
         // runner has already put something, and score against its own damage.
         return (file, set, transform)
+    }
+
+    /// `cases.yaml` beside a shared `command:`, for a transform whose own
+    /// folder is not where its script lives — `command: examples/punctuation/
+    /// punctuation.py` reads from `transforms/examples/punctuation/`, and its
+    /// case set is right there next to the script, not in `transforms/
+    /// punctuation/`.
+    private static func sharedCases(
+        _ wanted: String, transform: Config.Transform
+    ) -> TransformFolder.Resolved? {
+        guard let folder = transform.folder, case .command(let command) = transform.body,
+              let script = folder.resolve(command)
+        else { return nil }
+        let candidate = script.url.deletingLastPathComponent().appendingPathComponent(wanted)
+        guard FileManager.default.fileExists(atPath: candidate.path) else { return nil }
+        return TransformFolder.Resolved(url: candidate)
     }
 
     // MARK: - Running
