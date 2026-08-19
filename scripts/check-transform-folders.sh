@@ -34,7 +34,7 @@ BIN="$ROOT/.build/release/ParrotFlow"
 [ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 
 WORK="$(mktemp -d -t parrotflow-folders)"
-trap 'rm -rf "$WORK"' EXIT
+trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 
 pass=0; total=0; failed=""
 
