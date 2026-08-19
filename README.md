@@ -33,9 +33,13 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 Spoken commands and the vocabulary check need a language model as well, and that part is optional. Run one on your own Mac with [Ollama](https://ollama.com/download) (e.g [Gemma4](https://ollama.com/library/gemma4:e4b-mlx)), or use a hosted one (e.g OpenAI).
 
+---
+
 ## Not everything you say needs a remote AI provider
 
 [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), NVIDIA's state-of-the-art, open-source speech model, runs locally and fast. Most dictations land in under half a second.
+
+<br>
 
 ### Rewrite transcriptions your way
 
@@ -81,6 +85,8 @@ sys.stdout.write(text)
 ```
 
 *"let's meet march 14"* → *"let's meet 14/03"*
+
+<br>
 
 ### Use language models only when they're needed
 
@@ -136,17 +142,17 @@ transcription:
       - numbers                       # "fourteen" -> 14, so dates below has digits to work with
       - transform: priorities         # "P one" -> P1, free, every dictation
       - transform: dates              # "march 14" -> 14/03, free, every dictation
-      - transform: grammar            # prose apps only, not code editors or terminals
+      - transform: grammar            # only in Outlook or Slack, not terminals like coding agents
         app: /slack|outlook/
 
 transforms:
   - name: priorities
     description: spoken priority levels as P1 to P4
     replace:
-      "P1": ['/\bp\s*(?:one|un)\b/']
-      "P2": ['/\bp\s*(?:two|deux)\b/']
-      "P3": ['/\bp\s*(?:three|trois)\b/']
-      "P4": ['/\bp\s*(?:four|quatre)\b/']
+      "P1": ['/\bp\s*(?:one)\b/']
+      "P2": ['/\bp\s*(?:two)\b/']
+      "P3": ['/\bp\s*(?:three)\b/']
+      "P4": ['/\bp\s*(?:four)\b/']
 
   - name: dates
     description: spoken dates as DD/MM
@@ -185,6 +191,8 @@ More examples, their own test cases, in
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
 [Where the time goes](docs/architecture.md#where-the-time-goes)
 
+---
+
 ## Documentation
 
 > [!TIP]
@@ -196,6 +204,7 @@ More examples, their own test cases, in
 **[docs/README.md](docs/README.md)** — configuration, pipelines, transforms, the
 command line, permissions, architecture.
 
+---
 
 ## License
 
