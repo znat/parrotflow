@@ -182,7 +182,7 @@ cat <<'EOF'
       2. Click the 🦜 icon, choose Permissions…, grant Accessibility, and
          wait until that's granted too — without it, dictation transcribes
          but can't type the result in for you.
-      3. Hold Right Option, say something, let go.
+      3. Hold Right Command, say something, let go.
 
 EOF
 

@@ -121,7 +121,7 @@ Launch — no Dock icon, a 🦜 appears in the menu bar
   └─ Speech model     [1.2 GB, downloading… 34%]
         │
         ▼
-"Hold Right ⌥ and talk"  ← the one thing they need to know
+"Hold Right ⌘ and talk"  ← the one thing they need to know
 ```
 
 There are two of these paths now, and the agent-driven one is the front door:
