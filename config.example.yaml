@@ -343,17 +343,18 @@ transforms:
       '`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
 
   # A program, not a table — casing words is not something a substitution
-  # can express. Written to transforms/code_identifiers/ on first launch.
+  # can express. `examples/code_identifiers/` is transforms/examples/, kept
+  # current by the app; copy it to transforms/code_identifiers/ to edit it.
   - name: code_identifiers
     description: spoken names as identifiers
     display: Formatting identifiers
-    command: code_identifiers.py
+    command: examples/code_identifiers/code_identifiers.py
 
   # A spoken mark replaces whatever punctuation the decoder already guessed
   # next to it: "we could find. exclamation point" -> "we could find!".
   - name: punctuation
     description: spoken marks as punctuation
-    command: punctuation.py
+    command: examples/punctuation/punctuation.py
     # The script needs its context, and `returns: json` is what sends it: the
     # language, which picks `<lang>.py`, and `lists.talked_about`. It reports
     # `applied` — the marks it wrote — and `declined`, which names the guard
@@ -366,5 +367,5 @@ transforms:
   # start, and it deletes nothing when it finds nothing.
   - name: repetitions
     description: delete a word or phrase said twice by accident
-    command: repetitions.py
+    command: examples/repetitions/repetitions.py
 

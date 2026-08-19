@@ -66,7 +66,7 @@ logging:
 | Recordings | `~/Recordings/ParrotFlow` — empty unless `logging.audio: true` |
 | Trace | `~/Recordings/ParrotFlow/trace.jsonl` |
 | Log | `~/Library/Logs/ParrotFlow.log` — off with `logging.text: false` |
-| The example transform | `~/.config/parrotflow/transforms/code_identifiers/`, written on first launch and never overwritten |
+| The shipped examples | `~/.config/parrotflow/transforms/examples/` — refreshed from the app on every launch, not yours to edit in place |
 
 The menu bar item shows the current state and offers *Open Recordings
 Folder* — the wavs, if `logging.audio` is on, and `trace.jsonl` — *Settings*,
@@ -84,10 +84,14 @@ inside, so it can be written, scored and handed to someone else as one thing:
 ~/.config/parrotflow/
   config.yaml
   transforms/
-    code_identifiers/
-      code_identifiers.py    # the entry point, named after the transform
-      cases.yaml             # what --eval scores it against
-    slack_mentions/
+    examples/                # every shipped example — the app's, refreshed
+      code_identifiers/      # on every launch, not yours to edit in place
+        code_identifiers.py
+        cases.yaml
+      punctuation/
+        punctuation.py
+        cases.yaml
+    slack_mentions/          # yours
       slack_mentions.py
       cases.yaml
       roster.json            # data the transform owns
@@ -98,12 +102,29 @@ working directory its command runs in** — which is what pays for the extra
 directory. A script can open `roster.json` as a bare relative path, so the
 folder is self-contained: copy it to another machine and it works.
 
-That folder is the only place a transform's files are looked for. There is no
-flat alternative to fall back to: a `command:` that names neither a file in its
-folder nor anything the shell can find on `PATH` is reported by
-`--check-config` as a fault, rather than failing quietly once per transcript.
-Writing the path out in full — `transforms/slack/slack.md` — names the same
-file, because people write both.
+A bare name is only ever looked for in that folder. A path with a directory in
+it — `command: examples/punctuation/punctuation.py` — may also name a file
+elsewhere under `transforms/`, which is how the config that ships points every
+transform that uses a shipped example at the one copy in `transforms/examples/`
+instead of a copy per transform. The working directory still does not move: a
+shared script runs in the folder of whichever transform called it, so it reads
+its own data files from `__file__` rather than by bare relative name.
+
+`transforms/examples/` is the app's folder: refreshed from the copy that ships
+every time ParrotFlow starts, so an edit made there does not survive the next
+launch. The refresh also removes a file this version no longer ships, so an
+example a past version installed and this one dropped or renamed stops
+resolving through its old `examples/...` path instead of quietly going stale.
+`transforms/<name>/` is yours: nothing here ever writes it, and nothing in it
+is ever overwritten. To change a shipped example, copy its folder from
+`transforms/examples/` into `transforms/<name>/` and point `command:` at the
+bare name there.
+
+Beyond that there is no flat alternative to fall back to: a `command:` that
+names neither a file under `transforms/` nor anything the shell can find on
+`PATH` is reported by `--check-config` as a fault, rather than failing quietly
+once per transcript. Writing the path out in full — `transforms/slack/slack.md`
+— names the same file, because people write both.
 
 The dev build keeps its own copies of all of these; see
 [development.md](development.md).

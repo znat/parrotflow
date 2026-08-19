@@ -161,12 +161,19 @@ enum EvalCommand {
             }
             // `--cases` wins over the transform's own `tests:`, which wins over
             // the `cases.yaml` every folder has by convention.
-            let wanted = override ?? transform.tests ?? "cases.yaml"
-            guard let found = transform.folder?.resolve(wanted) else {
+            let explicit = override ?? transform.tests
+            let wanted = explicit ?? "cases.yaml"
+            // The shared-script fallback is only for the by-convention name.
+            // A file named explicitly, by `--cases` or by `tests:`, says
+            // where it lives; missing it there is a miss to report, not a
+            // reason to go looking beside a shared script instead.
+            guard let found = transform.folder?.resolve(wanted)
+                ?? (explicit == nil ? sharedCases(wanted, transform: transform) : nil)
+            else {
                 let folder = transform.folder?.url?.path ?? ConfigStore.directory.path
                 print("✗ no \(wanted) for \"\(transform.name)\""
                     + " — expected it in \(short(folder))")
-                print("    a transform's case set lives in its own folder;"
+                print("    a transform's case set lives beside its script;"
                     + " see docs/authoring.md")
                 return nil
             }
@@ -200,6 +207,27 @@ enum EvalCommand {
         // transform called `lists` or `asr` would file its variables where the
         // runner has already put something, and score against its own damage.
         return (file, set, transform)
+    }
+
+    /// `cases.yaml` beside a shared `command:`, for a transform whose own
+    /// folder is not where its script lives — `command: examples/punctuation/
+    /// punctuation.py` reads from `transforms/examples/punctuation/`, and its
+    /// case set is right there next to the script, not in `transforms/
+    /// punctuation/`.
+    ///
+    /// Only called for the by-convention `cases.yaml`, never for a name given
+    /// explicitly by `--cases` or `tests:` — an explicit name says where the
+    /// file lives, so not finding it there is a miss to report, not a reason
+    /// to look elsewhere.
+    private static func sharedCases(
+        _ wanted: String, transform: Config.Transform
+    ) -> TransformFolder.Resolved? {
+        guard let folder = transform.folder, case .command(let command) = transform.body,
+              let script = folder.resolve(command)
+        else { return nil }
+        let candidate = script.url.deletingLastPathComponent().appendingPathComponent(wanted)
+        guard FileManager.default.fileExists(atPath: candidate.path) else { return nil }
+        return TransformFolder.Resolved(url: candidate)
     }
 
     // MARK: - Running

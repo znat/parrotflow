@@ -5,18 +5,24 @@
 #   scripts/check-transform-folders.sh
 #
 # A transform named X owns `transforms/X/` beside the config that declared it,
-# and that is the only place its files are looked for. Three things follow, and
+# and a bare name is looked for there and nowhere else. Four things follow, and
 # each of them was a decision:
 #
-#   one place to look          `command: shout.py` is in the folder or it is
+#   one place per spelling      `command: shout.py` is in the folder or it is
 #                              nowhere — there is no second directory that
 #                              could disagree about which file runs
 #   either spelling            `transforms/X/shout.py` names the same file,
 #                              because people write both. It is accepted only
 #                              when it lands inside the folder
+#   a path may reach            `examples/shout/shout.py`, a directory in the
+#   sideways under transforms/  path, may name a file elsewhere under
+#                              `transforms/` — the shipped examples share one
+#                              copy this way instead of one per transform
 #   the folder is the          so a script opens a sibling data file by a bare
 #   working directory          relative path, and the whole transform is one
-#                              directory you can copy to another machine
+#                              directory you can copy to another machine —
+#                              even a shared script, which finds its own
+#                              sibling from `__file__` instead
 #
 # Everything is built in a temporary directory and run through `--pipeline`,
 # which carries its own `transforms:` and resolves relative paths against the
@@ -118,6 +124,50 @@ check "a command outside its folder is reported, not silently left to the shell"
 check "and that is a fault, so --check-config exits 1" \
   "$(PARROTFLOW_CONFIG_DIR="$WORK/outside" "$BIN" --check-config > /dev/null 2>&1; echo $?)" \
   "1"
+
+# --- a path with a slash may reach a shared script under transforms/ --------
+#
+# `command: examples/shared/shared.py` is not this transform's own folder —
+# `transforms/shared_user/` — so it is resolved against `transforms/` itself,
+# which is how the shipped examples are read from one copy rather than a copy
+# per transform. The working directory does not move: it is still
+# `transforms/shared_user/`, which is why the script reads its own sibling
+# file from `__file__` instead of by bare name.
+mkdir -p "$WORK/transforms/examples/shared"
+cat > "$WORK/transforms/examples/shared/shared.py" <<'PY'
+#!/usr/bin/env python3
+import pathlib, sys
+here = pathlib.Path(__file__).resolve().parent
+suffix = (here / "suffix.txt").read_text().strip()
+print(sys.stdin.read().strip().upper() + suffix)
+PY
+chmod +x "$WORK/transforms/examples/shared/shared.py"
+printf '?\n' > "$WORK/transforms/examples/shared/suffix.txt"
+
+fixture shared.yaml '  - name: shared_user
+    description: shares a script under transforms/examples
+    command: examples/shared/shared.py' shared_user
+
+check "a slash path reaches a script shared under transforms/" \
+  "$("$BIN" --pipeline "$WORK/shared.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
+  "KEEP IT DOWN?"
+
+# A bare name still means the transform's own folder and nothing else — the
+# whole point of the rule is that `loose.py` can never mean two things.
+# `transforms/loose.py`, sitting loose in `transforms/` rather than in any
+# transform's own folder, is nowhere this ever looks, so the shell is left to
+# find it and cannot: the pipeline fails open and hands the transcript back
+# untouched.
+printf '#!/usr/bin/env python3\nprint("nope")\n' > "$WORK/transforms/loose.py"
+chmod +x "$WORK/transforms/loose.py"
+
+fixture loose.yaml '  - name: loose_user
+    description: a bare name cannot reach sideways
+    command: loose.py' loose_user
+
+check "a bare name loose in transforms/ does not resolve — fails open" \
+  "$("$BIN" --pipeline "$WORK/loose.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
+  "keep it down"
 
 # --- a transform named after something the runner already publishes ---------
 #
@@ -227,46 +277,102 @@ FRESH="$WORK/fresh"
 mkdir -p "$FRESH"
 seeded="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 
-check "a first launch writes the transform as a folder" \
+# What is expected is read from `examples/transforms/` itself rather than
+# spelled out here, so a folder gaining a file — or the tree gaining a
+# folder — does not make this check stale.
+expected_examples="$(cd "$ROOT/examples/transforms" && find . -type f | sed 's|^\./|transforms/examples/|')"
+expected="$(printf 'config.yaml\nvocabulary.yaml\n%s\n' "$expected_examples" | sort | tr '\n' ' ')"
+
+check "a first launch copies the whole examples/ tree" \
   "$(cd "$FRESH" && find . -type f | sed 's|^\./||' | sort | tr '\n' ' ')" \
-  "config.yaml transforms/code_identifiers/cases.yaml transforms/code_identifiers/code_identifiers.py transforms/punctuation/cases.yaml transforms/punctuation/en.py transforms/punctuation/fr.py transforms/punctuation/punctuation.py transforms/repetitions/cases.yaml transforms/repetitions/repetitions.py vocabulary.yaml "
+  "$expected"
 
 check "the seeded script is executable" \
-  "$([ -x "$FRESH/transforms/code_identifiers/code_identifiers.py" ] && echo yes || echo no)" \
+  "$([ -x "$FRESH/transforms/examples/code_identifiers/code_identifiers.py" ] && echo yes || echo no)" \
   "yes"
 
-check "the seeded config resolves its command into the folder" \
+check "the seeded config resolves its command through transforms/examples/" \
   "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --check-config 2>/dev/null \
-     | grep -c 'transforms/code_identifiers/code_identifiers.py')" \
+     | grep -c 'transforms/examples/code_identifiers/code_identifiers.py')" \
   "1"
 
 check "a seeded config is clean" \
   "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --check-config > /dev/null 2>&1; echo $?)" \
   "0"
 
-check "seeding twice writes nothing the second time" \
+check "seeding twice writes no new file the second time" \
   "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null | grep -c '✓')" \
   "0"
 
-# --- a file you own that is no longer the shipped one -----------------------
+# --- transforms/examples/ is refreshed, not preserved ------------------------
 #
-# Nothing is ever overwritten, so the most an upgrade can do is say which of
-# your files is older or edited. An older install with the previous script is
-# exactly this: the file is there, and it is not what ships.
-echo "# edited" >> "$FRESH/transforms/punctuation/punctuation.py"
-stale="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
+# It is the app's folder, not yours: an edit there does not survive the next
+# `--seed-config`, the same as it would not survive the next launch. That is
+# what buys one copy of a script instead of a copy per transform that a
+# person has to notice has gone stale.
+echo "# edited" >> "$FRESH/transforms/examples/punctuation/punctuation.py"
+refreshed_out="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 
-check "a file that differs from the shipped copy is named" \
-  "$(printf '%s\n' "$stale" | grep -c 'transforms/punctuation/punctuation.py — yours, and not the copy that ships now')" \
+check "an edit under transforms/examples/ does not survive a refresh" \
+  "$(grep -c '# edited' "$FRESH/transforms/examples/punctuation/punctuation.py")" \
+  "0"
+
+check "and the refresh is reported" \
+  "$(printf '%s\n' "$refreshed_out" | grep -c 'transforms/examples/punctuation/punctuation.py — refreshed')" \
   "1"
 
-check "and it is still not overwritten" \
-  "$(tail -n 1 "$FRESH/transforms/punctuation/punctuation.py")" \
-  "# edited"
+# --- a file the shipped tree drops is pruned, not left stale -----------------
+#
+# An example a past version installed and this one no longer ships must not
+# keep resolving through an `examples/...` path forever. `retired` is not a
+# folder `examples/transforms/` has, so the next refresh has nothing to copy
+# there and removes what is left over from before.
+mkdir -p "$FRESH/transforms/examples/retired"
+printf '#!/usr/bin/env python3\nprint("gone")\n' > "$FRESH/transforms/examples/retired/retired.py"
+pruned_out="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 
-check "a file you did not touch is not named" \
-  "$(printf '%s\n' "$stale" | grep -c 'transforms/punctuation/en.py — already there, left alone')" \
+check "a file the app no longer ships is removed from transforms/examples/" \
+  "$([ -e "$FRESH/transforms/examples/retired/retired.py" ] && echo present || echo gone)" \
+  "gone"
+
+check "and the removal is reported" \
+  "$(printf '%s\n' "$pruned_out" | grep -c 'transforms/examples/retired/retired.py — removed, no longer shipped')" \
   "1"
+
+# It stops resolving too. Written into `$FRESH` itself, not `$WORK` — a
+# `--pipeline` fixture resolves `command:` against its own directory, and
+# `transforms/examples/` was just pruned under `$FRESH`.
+cat > "$FRESH/retired.yaml" <<YAML
+transforms:
+  - name: retired_user
+    description: points at a file the app no longer ships
+    command: examples/retired/retired.py
+pipeline:
+  - transform: retired_user
+YAML
+
+check "and a command pointed at it no longer resolves — fails open" \
+  "$("$BIN" --pipeline "$FRESH/retired.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
+  "keep it down"
+
+# --- an older install's own folder is never touched --------------------------
+#
+# `transforms/punctuation/` is what a version before this one seeded, and a
+# config that still says `command: punctuation.py` finds it through the
+# bare-name rule. Nothing here writes it, reads it, or reports on it.
+mkdir -p "$FRESH/transforms/punctuation"
+printf '#!/usr/bin/env python3\nprint("mine")\n' > "$FRESH/transforms/punctuation/punctuation.py"
+chmod +x "$FRESH/transforms/punctuation/punctuation.py"
+own_out="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
+
+check "an old install's own transforms/<name>/ is not mentioned" \
+  "$(printf '%s\n' "$own_out" | grep -c 'transforms/punctuation/punctuation.py')" \
+  "0"
+
+check "and it is left exactly as it was" \
+  "$(cat "$FRESH/transforms/punctuation/punctuation.py")" \
+  "#!/usr/bin/env python3
+print(\"mine\")"
 
 echo
 echo "  $pass/$total$failed"

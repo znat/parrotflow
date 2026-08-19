@@ -339,21 +339,38 @@ the log and `--check-config` name that case as itself rather than as "command
 not found", which would send you looking for a file that is sitting right where
 you put it.
 
-A relative path is looked for in the transform's own folder, and nowhere else:
+A bare name is looked for in the transform's own folder, and nowhere else:
 `command: code_identifiers.py` on a transform named `code_identifiers` is
 `transforms/code_identifiers/code_identifiers.py`. Writing it out in full names
 the same file. **The folder is the working directory**, so a script reads its
 neighbours by bare relative name.
 
-One place to look, deliberately. An earlier draft searched the config directory
-too, so a script left beside `config.yaml` kept running; two directories that
-can disagree turned out to cost more than they bought, because *which* one a
-command runs in stops being answerable once the command names files in both. A
-program that is in neither the folder nor on `PATH` is a fault `--check-config`
-names, and moving the file is the whole fix.
-Beside `config.yaml` is tried second, which is where a script written before
-folders existed still sits; it runs, and `--check-config` says where to move it.
-Writing the path out in full — `command:
+A path *with a directory in it* may also name a file elsewhere under
+`transforms/`, which is how two transforms share one script:
+
+```yaml
+transforms:
+  - name: punctuation
+    command: examples/punctuation/punctuation.py   # transforms/examples/…
+```
+
+The rule is the slash. `punctuation.py` can only ever mean your own folder, so
+the spelling you write every day cannot resolve in two places. `examples/…`
+says out loud that it reaches sideways, and it still cannot leave
+`transforms/`.
+
+The working directory does not move: a shared script runs in the folder of
+whichever transform called it, not in its own. So a shared script finds its own
+data files from `__file__` rather than by bare relative name — a private one
+still uses the bare name, and both keep working when you copy the folder.
+
+One place per spelling, deliberately. An earlier draft searched the config
+directory too, so a script left beside `config.yaml` kept running; two
+directories that can disagree turned out to cost more than they bought, because
+*which* one a command runs in stops being answerable once the command names
+files in both. A program that is in neither the folder, nor under
+`transforms/`, nor on `PATH` is a fault `--check-config` names, and moving the
+file is the whole fix. Writing the path out in full — `command:
 transforms/code_identifiers/code_identifiers.py` — names the same file and is
 not reported. A bare name that is not a file in either place — `sed`, `python3`
 — is left to the shell to find on PATH, so a command can be a one-liner with
@@ -381,24 +398,24 @@ sentence — snake_case for python and rust, camelCase for typescript and go,
 PascalCase for a class or a type, SCREAMING_SNAKE for a constant, camelCase
 when no language was said.
 
-A copy is written to `~/.config/parrotflow/code_identifiers.py` on first launch and
-never overwritten afterwards: once it exists it is yours. The stop lists in it
-decide where a name ends, which is a judgement about how you speak rather than
-a fact, and they are meant to be edited.
+The config that ships points at it as `command:
+examples/code_identifiers/code_identifiers.py` — the shared copy in
+`~/.config/parrotflow/transforms/examples/`, refreshed from the app on every
+launch. The stop lists in it decide where a name ends, which is a judgement
+about how you speak rather than a fact, and they are meant to be edited — but
+that folder is the app's, not yours, and an edit there does not survive the
+next launch. The refresh also drops a file this version stops shipping, so
+renaming or retiring an example does not leave a stale copy still resolving
+under its old path.
 
-**So an upgrade never changes a shipped transform you already have.** It only
-adds files that are not there — a new data file next to a script you own, say.
-It does say which of your files is no longer the copy that ships, in the log at
-startup and in `ParrotFlow --seed-config`:
-
-```
-  · transforms/punctuation/punctuation.py — yours, and not the copy that ships now
-```
-
-Byte for byte, so "you edited it" and "it is from an older version" look the
-same and nothing can tell them apart. To take the new one, move yours aside and
-run `--seed-config` again. That is the whole upgrade path, and it is manual on
-purpose: the alternative is an update reverting your stop lists.
+**To make it yours, copy it out.** `transforms/examples/code_identifiers/` to
+`transforms/code_identifiers/`, and `command:` from
+`examples/code_identifiers/code_identifiers.py` down to the bare
+`code_identifiers.py`. From then on it is a transform like any other you
+wrote: nothing here ever writes `transforms/code_identifiers/`, reads it, or
+reports on it, while `transforms/examples/code_identifiers/code_identifiers.py`
+— still pointed at by anyone who has not copied it out — keeps refreshing
+underneath it, from the log at startup and from `ParrotFlow --seed-config`.
 
 It is gated twice, and both gates are in the config where you can see them:
 `app:` to editors and terminals, and `when:` to a sentence containing a kind

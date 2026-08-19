@@ -4,37 +4,28 @@ import Foundation
 ///
 /// The app does this at startup and has always done it silently, which left
 /// "what does a new install actually get" as a question you could only answer
-/// by deleting your own config. It is now a folder rather than two loose files,
-/// so the answer is worth being able to see, and worth a check script being
-/// able to assert.
+/// by deleting your own config. It is now worth being able to see, and worth
+/// a check script being able to assert.
 ///
-/// Nothing is ever overwritten — that is `createIfMissing`'s whole contract —
-/// so running this against a config you already have is safe and does nothing.
-/// It does say when a file you own is no longer the copy that ships, which is
-/// the only thing an upgrade can honestly do about a file that is yours.
-/// Point it somewhere else with `PARROTFLOW_CONFIG_DIR` to see the full result.
+/// `config.yaml` and `vocabulary.yaml` are written once and never touched
+/// again. `transforms/examples/` is refreshed every time this runs, the same
+/// as every launch — that folder is the app's, not yours. A file it no
+/// longer ships is removed from there too, so an example an older version
+/// installed does not go on resolving after this one drops it. Point it
+/// somewhere else with `PARROTFLOW_CONFIG_DIR` to see the full result.
 enum SeedConfigCommand {
 
     static func run() -> Int32 {
         let directory = ConfigStore.directory
         print("config: \(directory.path)")
 
-        // Each seeded file, paired with the copy that ships now. `config.yaml`
-        // has no pair: it is written once from a template and then edited, so
-        // "differs" would be true for everyone and mean nothing.
-        var watched: [(file: URL, shipped: URL?)] = [(ConfigStore.fileURL, nil)]
-        for (name, _) in ConfigStore.seededTransforms {
-            let folder = ConfigStore.seededTransformFolder(name)
-            let source = ConfigStore.exampleTransformsDirectory
-                .appendingPathComponent(name, isDirectory: true)
-            for filename in ConfigStore.seededTransformFiles(name) {
-                watched.append((folder.appendingPathComponent(filename),
-                                source.appendingPathComponent(filename)))
-            }
-        }
-
         let fm = FileManager.default
-        let before = Set(watched.map(\.file).filter { fm.fileExists(atPath: $0.path) }.map(\.path))
+        let relatives = ConfigStore.exampleTransformFiles()
+        let installedBefore = Set(ConfigStore.installedExampleFiles())
+        let before = Set(relatives).intersection(installedBefore)
+        let stale = installedBefore.subtracting(relatives).sorted()
+        let configExisted = fm.fileExists(atPath: ConfigStore.fileURL.path)
+        let vocabularyExisted = fm.fileExists(atPath: ConfigStore.vocabularyURL.path)
 
         do {
             try ConfigStore.createIfMissing()
@@ -43,29 +34,39 @@ enum SeedConfigCommand {
             return 1
         }
 
-        var differing = 0
-        for (file, shipped) in watched {
-            let relative = file.path.hasPrefix(directory.path + "/")
-                ? String(file.path.dropFirst(directory.path.count + 1)) : file.path
-            if before.contains(file.path) {
-                if let shipped, ConfigStore.differsFromShipped(file, shipped) {
-                    print("  · \(relative) — yours, and not the copy that ships now")
-                    differing += 1
-                } else {
-                    print("  · \(relative) — already there, left alone")
-                }
-            } else if fm.fileExists(atPath: file.path) {
-                print("  ✓ \(relative) — written")
+        if configExisted {
+            print("  · config.yaml — already there, left alone")
+        } else {
+            print("  ✓ config.yaml — written")
+        }
+        if vocabularyExisted {
+            print("  · vocabulary.yaml — already there, left alone")
+        } else {
+            print("  ✓ vocabulary.yaml — written")
+        }
+
+        var written = 0
+        var refreshed = 0
+        for relative in relatives {
+            let label = "transforms/examples/\(relative)"
+            if before.contains(relative) {
+                print("  · \(label) — refreshed")
+                refreshed += 1
+            } else {
+                print("  ✓ \(label) — written")
+                written += 1
             }
         }
 
-        if differing > 0 {
-            print("")
-            let noun = differing == 1 ? "file is" : "files are"
-            print("  \(differing) \(noun) yours, and older or edited. Nothing was overwritten.")
-            print("  The copies that ship are in \(ConfigStore.exampleTransformsDirectory.path)")
-            print("  Diff against them, or move yours aside and run this again.")
+        for relative in stale {
+            print("  · transforms/examples/\(relative) — removed, no longer shipped")
         }
+
+        print("")
+        print("  \(written) example file(s) written, \(refreshed) refreshed"
+            + (stale.isEmpty ? "." : ", \(stale.count) removed."))
+        print("  transforms/examples/ is the app's; edits there do not survive the next launch.")
+        print("  transforms/<name>/ is yours — copy a file out of examples/ before editing it.")
         return 0
     }
 }
