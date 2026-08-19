@@ -58,13 +58,25 @@ enum SeedConfigCommand {
             }
         }
 
-        for relative in stale {
+        // Read back rather than trusted: `stale` is what the refresh was going
+        // to remove, and this reports what it did remove. The two differ when a
+        // file cannot be deleted, and that is exactly the case worth printing —
+        // a stale example that survives goes on resolving.
+        let installedAfter = Set(ConfigStore.installedExampleFiles())
+        let removed = stale.filter { !installedAfter.contains($0) }
+        let kept = stale.filter { installedAfter.contains($0) }
+        for relative in removed {
             print("  · transforms/examples/\(relative) — removed, no longer shipped")
+        }
+        for relative in kept {
+            print("  ✗ transforms/examples/\(relative) — no longer shipped, and could not"
+                + " be removed; it still resolves")
         }
 
         print("")
         print("  \(written) example file(s) written, \(refreshed) refreshed"
-            + (stale.isEmpty ? "." : ", \(stale.count) removed."))
+            + (removed.isEmpty ? "" : ", \(removed.count) removed")
+            + (kept.isEmpty ? "." : ", \(kept.count) left behind."))
         print("  transforms/examples/ is the app's; edits there do not survive the next launch.")
         print("  transforms/<name>/ is yours — copy a file out of examples/ before editing it.")
         return 0

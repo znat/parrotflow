@@ -34,7 +34,7 @@ BIN="$ROOT/.build/release/ParrotFlow"
 [ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 
 WORK="$(mktemp -d -t parrotflow-folders)"
-trap 'rm -rf "$WORK"' EXIT
+trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 
 pass=0; total=0; failed=""
 
@@ -354,6 +354,36 @@ YAML
 check "and a command pointed at it no longer resolves — fails open" \
   "$("$BIN" --pipeline "$FRESH/retired.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
   "keep it down"
+
+# --- a removal that fails says so, rather than claiming success --------------
+#
+# The prune exists so a dropped example stops resolving. A removal that fails
+# and reports "removed" says the opposite of what happened, and the stale path
+# goes on working while the log says it cannot. Read back from disk rather than
+# assumed, so the report cannot drift from the outcome.
+#
+# Skipped for root, which unlinks through a read-only directory anyway.
+if [ "$(id -u)" != "0" ]; then
+  mkdir -p "$FRESH/transforms/examples/stuck"
+  printf '#!/usr/bin/env python3\nprint("stuck")\n' > "$FRESH/transforms/examples/stuck/stuck.py"
+  chmod 500 "$FRESH/transforms/examples/stuck"
+  stuck_out="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
+  chmod 700 "$FRESH/transforms/examples/stuck"
+
+  check "a stale file that cannot be removed is reported as left behind" \
+    "$(printf '%s\n' "$stuck_out" | grep -c 'stuck/stuck.py — no longer shipped, and could not be removed')" \
+    "1"
+
+  check "and it is not also reported as removed" \
+    "$(printf '%s\n' "$stuck_out" | grep -c 'stuck/stuck.py — removed')" \
+    "0"
+
+  check "and the file really is still there, so the report was true" \
+    "$([ -e "$FRESH/transforms/examples/stuck/stuck.py" ] && echo present || echo gone)" \
+    "present"
+
+  rm -rf "$FRESH/transforms/examples/stuck"
+fi
 
 # --- an older install's own folder is never touched --------------------------
 #
