@@ -1956,12 +1956,28 @@ struct Config: Decodable, Equatable {
         /// with no speech in them. On by default; turn it off if it ever
         /// swallows something real.
         var speechGate: Bool = true
+        /// Decode the clip a second time beside the first, with silence at
+        /// both ends, and keep that decode when it reaches further. Off by
+        /// default: it recovers a rare failure and costs a second decode.
+        ///
+        /// The failure is Parakeet skipping frames it never looks at. It
+        /// predicts a token and a skip of up to 4 frames of 80ms together, so
+        /// one prediction can pass over 320ms of audio. Nothing in the output
+        /// says so: timing gap, speech coverage, tokens per second, decoder
+        /// confidence and the longest unclaimed stretch of speech were all
+        /// measured, and all five put the broken clips inside the healthy
+        /// distribution. Padding moves the speech against the frame grid,
+        /// which is the only thing that finds it.
+        ///
+        /// Needs `speech_gate`, which is what reads the clip as samples.
+        var secondOpinion: Bool = false
 
         enum CodingKeys: String, CodingKey {
             case sampleRate = "sample_rate"
             case outputDir = "output_dir"
             case minDurationSeconds = "min_duration_seconds"
             case speechGate = "speech_gate"
+            case secondOpinion = "second_opinion"
         }
 
         init() {}
@@ -1985,6 +2001,9 @@ struct Config: Decodable, Equatable {
             }
             if let gate = try c.decodeIfPresent(Bool.self, forKey: .speechGate) {
                 self.speechGate = gate
+            }
+            if let second = try c.decodeIfPresent(Bool.self, forKey: .secondOpinion) {
+                self.secondOpinion = second
             }
         }
     }

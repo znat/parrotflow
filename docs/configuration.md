@@ -19,6 +19,7 @@ hotkey:
 audio:
   output_dir: ~/Recordings/ParrotFlow
   speech_gate: true     # skip clips with no speech in them
+  second_opinion: false # decode each clip twice and keep the longer decode
 
 transcription:
   insert_mode: paste    # or clipboard
@@ -561,6 +562,63 @@ one is measured at its ceiling.
 Skips clips with no speech in them, so a key pressed by accident costs nothing.
 Gated on speech being *present*, not on how much — a one-word dictation is a
 real one.
+
+## `audio.second_opinion`
+
+Decodes the clip a second time, with silence added at both ends, and keeps that
+decode when it reaches further into the audio than the first one did. Off by
+default.
+
+**What it fixes.** Parakeet predicts a token and a duration at every step — how
+many encoder frames to skip before it looks again. A frame is 80ms and the
+model may skip 4 of them, so one prediction can pass over 320ms of audio
+without examining it. Words inside a skipped span are never seen. They are not
+mis-heard; they are not looked at. The result is a dictation that quietly loses
+its ending, or loses words mid-sentence. Measured rate: 3 of 150 random live
+dictations, about 2%.
+
+**Why a second decode and not a check.** Nothing in the output says a span was
+skipped, because the decoder leaves no record of frames it never examined. Five
+signals were measured over the archive — the timing gap to the last speech, how
+much of the speech span the words cover, tokens per second, decoder confidence,
+and the longest stretch of detected speech with no word on it. All five put the
+broken clips inside the healthy distribution, and on the last one the broken
+clips score *better* than the median healthy clip. Padding the clip moves the
+speech against the frame grid, so a different set of frames gets skipped. That
+is the only thing that finds it.
+
+**When the second decode wins.** Three guards. It has to reach further into the
+clip than the first pass did, it has to say everything the first pass said in
+order before it says anything new, and it has to actually add words.
+
+The first two are shared with the long-pause retry. The second is what stops a
+recovered ending being paid for with a silently rewritten opening. It also
+refuses some genuinely good recoveries. That is the trade: nobody re-reads the
+part that was already right.
+
+The third guard is this setting's own. A decode that says the same words is
+still a different decode — a different token split, different casing — and
+swapping one in buys nothing. Over 60 archived clips it was the only thing the
+second opinion ever did, on 2 of them: "RXV" for "RX V", and "red rock roadmap"
+for "Red Rock Roadmap". With the guard in, those 60 clips come back identical
+with the setting on and off.
+
+Two pads are tried, so two decodes can clear all three guards. The one that
+recovered the most words wins. Reach cannot separate them — a word running past
+the end of the clip is clamped back to the clip's length, and on a short clip
+every decode lands there.
+
+**What it costs.** Two padded decodes — 0.5s and 1.0s of silence, the same
+ladder the empty-decode retry uses — run at the same time as the first pass,
+each on its own decoder. The model weights are shared, so the extra memory is
+about 12MB per decode, not another copy of the ~1GB model. Measured on a 1.86s
+clip, release build, 9 runs each: 138ms median for the first pass alone, 238ms
+median for all three together. One decode costs about 140ms, so running them
+one after another would cost roughly three times as much.
+
+Needs `speech_gate`, which is what reads the clip as samples. With the gate off
+this setting does nothing, and `--check-config` says so. Clips too long to fit
+one decoder window with the padding on are left to the first pass.
 
 ## The microphone
 
