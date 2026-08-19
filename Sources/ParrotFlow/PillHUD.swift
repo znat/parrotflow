@@ -1391,7 +1391,10 @@ private struct OfferKeyCap: View {
     }
 
     private func spin() {
-        guard !reduceMotion else { return }
+        guard !reduceMotion else {
+            withAnimation(.default) { angle = -90 }
+            return
+        }
         withAnimation(.linear(duration: Self.turnSeconds).repeatForever(autoreverses: false)) {
             angle = 270
         }
