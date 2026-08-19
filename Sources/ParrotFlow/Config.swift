@@ -1729,11 +1729,87 @@ struct Config: Decodable, Equatable {
         /// recording happen and some people turn it off as noise; this is about
         /// what to do after one, and wanting one is no reason to want the other.
         var correctOffer: Bool = true
+        /// Colour the dictated sentence on the offer, word by word, by how sure
+        /// the decoder was of each one.
+        ///
+        /// Off by default, and it is the one thing on the pill that is about the
+        /// app rather than about your words: it puts the whole sentence back on
+        /// screen for nine seconds, which is a lot of pill for something you can
+        /// already read where it landed. Worth turning on while you are learning
+        /// what your own dictation is weak at — see `Confidence` for what the
+        /// colours are anchored to, and why they cannot be anchored to anything
+        /// the model documents.
+        ///
+        /// Needs `correct_offer`. There is no offer to draw it on without one.
+        var confidence: Bool = false
+
+        /// When the offer says a dictation is worth a second look.
+        ///
+        /// On by default, unlike `confidence`, and for the opposite reason: it
+        /// costs one line and only on the dictations that earned it, so it is
+        /// not a surface you have to want. It needs `correct_offer` for the
+        /// same reason the colours do.
+        var lowConfidence = LowConfidence()
+
+        /// Whether the warning is armed. Both thresholds have to trip, so
+        /// either one at zero turns it off and nothing has to be collected for
+        /// it.
+        var warnsOnLowConfidence: Bool { lowConfidence.sentence > 0 && lowConfidence.word > 0 }
+
+        /// The two thresholds a dictation is measured against. Both have to
+        /// trip — see `Confidence.warning` for why either alone is noise.
+        struct LowConfidence: Codable, Equatable {
+            /// The decode has to be poor overall: `asr.confidence` below this.
+            var sentence: Double = 0.80
+            /// And it has to hold a word this bad, ignoring the ones the
+            /// vocabulary pass wrote.
+            var word: Double = 0.50
+            /// How long after a warned dictation a bare Return is taken
+            /// instead of typed. Seconds. Zero lets every Return through.
+            ///
+            /// What this catches is the reflex press — the Return already on
+            /// its way down as the words land, before anything has been read.
+            /// Past this the press is a decision, and the key goes through even
+            /// though the warning is still on screen.
+            ///
+            /// One key, once, and only on the dictations that raised the
+            /// warning. The next Return goes through whatever happens — the tap
+            /// disarms itself as it takes the first, so nothing downstream can
+            /// hold a keyboard. Bare Return only: ⌘↩ is somebody who knows the
+            /// shortcut, and is left alone.
+            var holdReturn: Double = 1.5
+
+            /// Zero for either threshold turns the warning off, and the hold
+            /// with it — there is nothing to hold a key over.
+            init() {}
+
+            enum CodingKeys: String, CodingKey {
+                case sentence
+                case word
+                case holdReturn = "hold_return"
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.init()
+                if let s = try c.decodeIfPresent(Double.self, forKey: .sentence) {
+                    self.sentence = min(max(0, s), 1)
+                }
+                if let w = try c.decodeIfPresent(Double.self, forKey: .word) {
+                    self.word = min(max(0, w), 1)
+                }
+                if let hold = try c.decodeIfPresent(Double.self, forKey: .holdReturn) {
+                    self.holdReturn = max(0, hold)
+                }
+            }
+        }
 
         enum CodingKeys: String, CodingKey {
             case sound
             case overlay
             case correctOffer = "correct_offer"
+            case confidence
+            case lowConfidence = "low_confidence"
         }
 
         init() {}
@@ -1745,6 +1821,12 @@ struct Config: Decodable, Equatable {
             if let overlay = try c.decodeIfPresent(Bool.self, forKey: .overlay) { self.overlay = overlay }
             if let offer = try c.decodeIfPresent(Bool.self, forKey: .correctOffer) {
                 self.correctOffer = offer
+            }
+            if let shown = try c.decodeIfPresent(Bool.self, forKey: .confidence) {
+                self.confidence = shown
+            }
+            if let low = try c.decodeIfPresent(LowConfidence.self, forKey: .lowConfidence) {
+                self.lowConfidence = low
             }
         }
     }

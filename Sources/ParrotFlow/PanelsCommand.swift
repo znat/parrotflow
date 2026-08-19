@@ -22,6 +22,37 @@ enum PanelsCommand {
     /// in its first sentence and a short one would not say whether it fits.
     private static let sampleMicName = "Tasmin's AirPods Pro Max"
 
+    /// What `feedback.confidence` draws. The scores walk the whole ramp — sure,
+    /// p25, p10, p1, and a word with no reading at all — because the question
+    /// this surface answers is whether the colours are told apart, and a
+    /// sentence the decoder was sure of would show one of them.
+    private static let sampleSentence = [
+        Confidence.Word(text: "We", score: 1.0),
+        Confidence.Word(text: "deployed", score: 0.97),
+        Confidence.Word(text: "Redcrawl", score: 0.74),
+        Confidence.Word(text: "on", score: 0.99),
+        Confidence.Word(text: "Vercel", score: 0.52),
+        Confidence.Word(text: "with", score: 0.91),
+        Confidence.Word(text: "Tasmin", score: 0.28),
+        Confidence.Word(text: "yesterday", score: nil)
+    ]
+
+    /// The decoder's own score for that whole utterance. Between p1 and p10 of
+    /// the archive, which is where a decode holding words this shaky lands, and
+    /// which puts the number mid-ramp: the panel is here to show the colours
+    /// being told apart, and the median would print plain white.
+    private static let sampleOverall: Float = 0.81
+
+    /// The warning the same dictation raises. It names the word rather than a
+    /// number: the number is for the person tuning the thresholds, and this
+    /// line is for the person who has just dictated.
+    private static let sampleWarning = "This may not be what you said · Vercel"
+
+    /// The three rows together, which is the tallest the pill ever gets.
+    private static let sampleReading = Confidence.Reading(
+        words: sampleSentence, overall: sampleOverall, warning: sampleWarning
+    )
+
     /// Draws every surface into one PNG, light beside dark.
     ///
     /// The panels are the one part of the app with no test: they are looked at,
@@ -47,9 +78,33 @@ enum PanelsCommand {
         let notice = pill(.notice("Grammar applied", .done))
         let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution))
         let thinking = pill(.working("Thinking…"))
-        let offer = pill(.offer(offerChips, nil))
+        let offer = pill(.offer(offerChips, nil, Confidence.Reading()))
         // Beside the plain one: the two endings must not look the same.
-        let offerCopied = pill(.offer(offerChips, "Nowhere to type · ⌘V"))
+        let offerCopied = pill(.offer(offerChips, "Nowhere to type · ⌘V", Confidence.Reading()))
+        // The warning on its own, which is what most people will ever see of
+        // this: `feedback.confidence` is off by default and the thresholds are
+        // not, so a shaky dictation raises one line and nothing else.
+        let offerWarned = pill(.offer(
+            offerChips, nil, Confidence.Reading(warning: sampleWarning)
+        ))
+        // And the same pill after it has taken a Return: one step further
+        // along the same ramp, which is the thing to check side by side —
+        // amber and scarlet have to read as an escalation, not as two moods.
+        let offerStopped = pill(.offer(
+            offerChips, nil, Confidence.Reading(warning: Confidence.stopped, stopped: true)
+        ))
+        // The same offer with `feedback.confidence` on.
+        let offerHeard = pill(.offer(offerChips, nil, sampleReading))
+        // And a dictation long enough to wrap. On the sheet because the wrap is
+        // the one thing here that is counted before it is drawn — a line count
+        // off by one clips the words rather than costing a few points of pill.
+        let offerHeardLong = pill(.offer(
+            offerChips, nil,
+            Confidence.Reading(
+                words: sampleSentence + sampleSentence, overall: sampleOverall,
+                warning: sampleWarning
+            )
+        ))
 
         let overlay = pill(.recording, icon: sampleIcon(), level: 0.75)
 
@@ -152,6 +207,16 @@ enum PanelsCommand {
              pillSize(offer), .dark, true),
             (AnyView(PillView().environmentObject(offerCopied)),
              pillSize(offerCopied), .dark, true),
+            // The same offer with `feedback.confidence` on: two rows instead of
+            // one, and the only pill on the sheet that is not a lozenge.
+            (AnyView(PillView().environmentObject(offerWarned)),
+             pillSize(offerWarned), .dark, true),
+            (AnyView(PillView().environmentObject(offerStopped)),
+             pillSize(offerStopped), .dark, true),
+            (AnyView(PillView().environmentObject(offerHeard)),
+             pillSize(offerHeard), .dark, true),
+            (AnyView(PillView().environmentObject(offerHeardLong)),
+             pillSize(offerHeardLong), .dark, true),
             // Not a pill state at all, and the only surface here that is
             // about the hardware rather than about the words. Next to the pill
             // because that is what it appears beside.
@@ -316,6 +381,14 @@ enum PanelsCommand {
             }
             pill.model.onPick = { index in
                 print("offer: chip \(index) — \(offerChips[index].title)")
+            }
+        // The same offer with `feedback.confidence` on — the only pill that is
+        // two rows, and the only one that is not a lozenge.
+        case "confidence":
+            pill.offer(offerChips, reading: sampleReading, for: AppDelegate.offerSeconds)
+            pill.model.onHover = { inside in
+                if !inside { pill.model.selected = nil }
+                pill.hovering(inside)
             }
         case "vocabulary":
             correction.show(selection: "I work with Tasmin and Mick on Versal")

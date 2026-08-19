@@ -41,9 +41,12 @@ enum Log {
     ///   respects the setting.
     static func write(_ message: String, force: Bool = false) {
         let line = "\(timestampFormatter.string(from: Date()))  \(message)\n"
-        NSLog("[ParrotFlow] %@", message)
 
         guard force || textEnabled else { return }
+        // Behind the guard, not before it. The unified log outlives the
+        // process and `log show` reads it back, so a line carrying dictated
+        // text has to respect `logging.text` at this sink too.
+        NSLog("[ParrotFlow] %@", message)
         queue.async {
             guard let data = line.data(using: .utf8) else { return }
             let fm = FileManager.default

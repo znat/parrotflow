@@ -108,7 +108,25 @@ actor Transcriber {
 
     // MARK: - Transcription
 
+    /// What the decoder made of one clip, for a surface that draws it.
+    struct Decode: Sendable {
+        /// The decoder's own words with their scores, before any stage
+        /// rewrote them.
+        let words: [Trace.Word]
+        /// Its one score for the whole utterance. See `Confidence.overall`.
+        let confidence: Float
+        /// The terms the vocabulary pass wrote into the text.
+        let vocabulary: [String]
+    }
+
     /// Transcribes a finished recording. Returns the cleaned-up text.
+    ///
+    /// `heard` is handed what the decoder made of the clip — see `Decode`.
+    /// Handed over rather than read back off `Trace` for the same reason
+    /// the scope values below are: the collector is only bound when somebody
+    /// asked for a trace, and a feature that worked on the runs you are watching
+    /// and stopped on the runs you are not would be worse than no feature.
+    ///
     /// - Parameter press: Which hotkey press this clip came from, published to
     ///   the pipeline as `press.run`. It is how a stage reaches what was read
     ///   at *its own* press: dictations overlap, so a stage that took the
@@ -116,7 +134,8 @@ actor Transcriber {
     ///   path, where there is no press to belong to.
     func transcribe(
         url: URL, config: Config, app: Pipeline.App? = nil, press: Int? = nil,
-        progress: (@Sendable (String) -> Void)? = nil
+        progress: (@Sendable (String) -> Void)? = nil,
+        heard: (@Sendable (Decode) -> Void)? = nil
     ) async throws -> String {
         try await prepare(config: config)
 
@@ -239,6 +258,20 @@ actor Transcriber {
                 Log.write("vocabulary: \(error.localizedDescription); left as decoded")
             }
             setStatus(.ready)
+        }
+
+        // After the vocabulary pass rather than before it, though the words
+        // handed over are still the decoder's own. Whoever reads a score needs
+        // to know which words the pass wrote: those carry the score of the
+        // decode they replaced, which is low by definition — that is why the
+        // pass fired — and warning about a name the app has already fixed is
+        // warning about the fix. See `Confidence.warning`.
+        if let heard {
+            heard(Decode(
+                words: Trace.words(from: result.tokenTimings ?? []),
+                confidence: result.confidence,
+                vocabulary: findings?.proposals.filter(\.applied).map(\.term) ?? []
+            ))
         }
 
         // The same numbers the trace records, handed to the pipeline as well.

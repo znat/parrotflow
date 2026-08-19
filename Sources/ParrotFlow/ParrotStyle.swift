@@ -32,6 +32,32 @@ enum Parrot {
     /// Closes on scarlet so an angular gradient has no seam.
     static let wheel: [Color] = [scarlet, amber, leaf, sky, scarlet]
 
+    /// The wheel with the cool half taken out, for a surface that is a warning.
+    /// Still two colours and still turning, so it reads as the same rim in a
+    /// different mood rather than as a different app.
+    static let warned: [Color] = [amber, scarlet, amber, scarlet, amber]
+
+    /// And with the amber nearly gone, for the surface that has just taken a
+    /// keystroke. One step further along the same ramp, so the two states read
+    /// as an escalation rather than as two unrelated colours.
+    static let stopped: [Color] = [scarlet, scarlet, amber, scarlet, scarlet]
+
+    /// One plumage colour blended into the next, for a ramp rather than a step.
+    ///
+    /// Through sRGB components rather than through a SwiftUI gradient: this
+    /// colours a run of text, and `Text` takes a colour, not a shape style it
+    /// can fill with.
+    static func mix(_ from: Color, _ to: Color, _ amount: Double) -> Color {
+        let t = min(max(amount, 0), 1)
+        guard let a = NSColor(from).usingColorSpace(.sRGB),
+              let b = NSColor(to).usingColorSpace(.sRGB) else { return to }
+        return Color(
+            red: a.redComponent + (b.redComponent - a.redComponent) * t,
+            green: a.greenComponent + (b.greenComponent - a.greenComponent) * t,
+            blue: a.blueComponent + (b.blueComponent - a.blueComponent) * t
+        )
+    }
+
     /// The colour of anything you can act on: focus rings, the primary button,
     /// the header of a panel. Deliberately not `.accentColor` — a surface that
     /// changes colour with the system tint cannot also be the app's own.
@@ -84,13 +110,19 @@ extension View {
     /// launch panel — is not drawn yet, and the reasons written on this path
     /// would go with it. See "Not done" in
     /// `docs/proposals/hud-placement-and-offer.md`.
+    ///
+    /// `wash` is a colour laid over the ground, for a surface that has to be
+    /// read as a warning before it is read at all. Over the solid ground only:
+    /// the translucent ones already take their colour from what is behind
+    /// them, and a wash on top of that is paint on a window.
     func parrotSurface<S: InsettableShape>(
         _ shape: S, alive: Bool = false, glass: Bool = false, solid: Bool = false,
-        scrim: Double? = nil
+        scrim: Double? = nil, wash: Color? = nil, wheel: [Color] = Parrot.wheel
     ) -> some View {
         background {
             if solid {
                 shape.fill(Color(red: 0.035, green: 0.035, blue: 0.043).opacity(0.95))
+                if let wash { shape.fill(wash) }
             }
             // No `.regularMaterial` under glass. That blurs what is inside the
             // window, and on a panel with a clear background there is nothing
@@ -142,7 +174,7 @@ extension View {
         }
         // The lit edge is the rim's own inner hairline, weighted to the top —
         // not a line of its own. See `PlumageRim`.
-        .overlay { PlumageRim(shape: shape, alive: alive, glass: glass) }
+        .overlay { PlumageRim(shape: shape, alive: alive, glass: glass, wheel: wheel) }
     }
 }
 
@@ -153,6 +185,9 @@ struct PlumageRim<S: InsettableShape>: View {
     /// Weight the inner hairline toward the top, so it reads as light on the
     /// edge. See the hairline below.
     var glass: Bool = false
+    /// The colours it runs through. A wheel of two makes a rim that means one
+    /// thing, which is what a warning needs.
+    var wheel: [Color] = Parrot.wheel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var angle: Double = -90
@@ -160,7 +195,7 @@ struct PlumageRim<S: InsettableShape>: View {
     var body: some View {
         shape
             .strokeBorder(
-                AngularGradient(colors: Parrot.wheel, center: .center, angle: .degrees(angle)),
+                AngularGradient(colors: wheel, center: .center, angle: .degrees(angle)),
                 lineWidth: alive ? 2 : 1.4
             )
             .opacity(alive ? 1 : 0.9)
@@ -434,6 +469,8 @@ enum ParrotGlass {
 struct PlumageBloom<S: InsettableShape>: View {
     let shape: S
     var alive: Bool = false
+    /// The colours the glow is made of. See `PlumageRim.wheel`.
+    var wheel: [Color] = Parrot.wheel
     /// How much of it there is. The same absolute spill reads as far less
     /// around a 900pt panel than around a 46pt pill — the glow is a proportion
     /// of the edge it comes off, and the edge here is twenty times longer.
@@ -479,7 +516,7 @@ struct PlumageBloom<S: InsettableShape>: View {
     private func bloom(width: CGFloat, blur: CGFloat, opacity: Double, angle: Double) -> some View {
         shape
             .strokeBorder(
-                AngularGradient(colors: Parrot.wheel, center: .center, angle: .degrees(angle)),
+                AngularGradient(colors: wheel, center: .center, angle: .degrees(angle)),
                 lineWidth: width
             )
             .blur(radius: blur)
