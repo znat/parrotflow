@@ -22,7 +22,7 @@ enum UpdateInstaller {
         case signature(String)
         case certificate(expected: String, got: String)
         case contents(String)
-        case notWritable(String)
+        case cannotInstall(String)
 
         var errorDescription: String? {
             switch self {
@@ -38,18 +38,38 @@ enum UpdateInstaller {
                     + "(expected \(expected.prefix(12))…, found \(got.prefix(12))…)"
             case .contents(let what):
                 return "the download is not what it should be: \(what)"
-            case .notWritable(let path):
-                return "\(path) cannot be written to, so the update has to be installed by hand"
+            case .cannotInstall(let why):
+                return why
             }
         }
     }
 
-    /// Where this app is, and whether it can be replaced in place.
+    /// Where this app is.
     static var destination: URL { Bundle.main.bundleURL }
 
-    static var canInstallInPlace: Bool {
-        FileManager.default.isWritableFile(atPath: destination.deletingLastPathComponent().path)
+    /// Why this build cannot take an update in place, or nil when it can.
+    ///
+    /// A dev build cannot, and not for a reason more code would fix. The
+    /// release archive holds ParrotFlow.app signed as com.parrotflow.app; a dev
+    /// bundle is ParrotFlowDev.app signed as com.parrotflow.app.dev. Moving one
+    /// over the other does not update the dev build, it puts the released app
+    /// under the dev build's name — reading the other config directory, writing
+    /// the other log, listening to the other key, and asking for the microphone
+    /// again. A dev build is built from the source tree, and that is where its
+    /// updates come from.
+    static var blocker: String? {
+        if AppVariant.isDev {
+            return "This is a dev build, so a release cannot be installed over it. "
+                + "Build it from the source tree instead."
+        }
+        let parent = destination.deletingLastPathComponent().path
+        guard FileManager.default.isWritableFile(atPath: parent) else {
+            return "\(parent) cannot be written to, so the update has to be installed by hand."
+        }
+        return nil
     }
+
+    static var canInstallInPlace: Bool { blocker == nil }
 
     // MARK: - Fetch and verify
 
@@ -76,9 +96,12 @@ enum UpdateInstaller {
         guard run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path]).status == 0 else {
             throw Failure.contents("could not unpack the archive")
         }
-        let app = unpacked.appendingPathComponent(destination.lastPathComponent)
+        // The name the release ships under, not the name this bundle happens to
+        // carry. The two differ on a dev build, and for anyone who renamed the
+        // app after installing it.
+        let app = unpacked.appendingPathComponent(Updates.releaseAppName)
         guard FileManager.default.fileExists(atPath: app.path) else {
-            throw Failure.contents("the archive does not contain \(destination.lastPathComponent)")
+            throw Failure.contents("the archive does not contain \(Updates.releaseAppName)")
         }
 
         try verify(app, expecting: release.version)
@@ -105,8 +128,8 @@ enum UpdateInstaller {
               let shipped = plist["CFBundleShortVersionString"] as? String else {
             throw Failure.contents("no readable Info.plist")
         }
-        guard identifier == Bundle.main.bundleIdentifier else {
-            throw Failure.contents("it is \(identifier), not \(Bundle.main.bundleIdentifier ?? "us")")
+        guard identifier == Updates.releaseBundleIdentifier else {
+            throw Failure.contents("it is \(identifier), not \(Updates.releaseBundleIdentifier)")
         }
         guard shipped == version else {
             throw Failure.contents("the archive says \(shipped), the release says \(version)")
@@ -137,9 +160,7 @@ enum UpdateInstaller {
     /// space in it would otherwise become two words at the worst possible
     /// moment.
     static func swapAndRelaunch(newApp: URL) throws {
-        guard canInstallInPlace else {
-            throw Failure.notWritable(destination.deletingLastPathComponent().path)
-        }
+        if let blocker { throw Failure.cannotInstall(blocker) }
 
         // The outcome goes to the log because by then there is nobody left to
         // tell. This process has exited, and the app that comes back up is

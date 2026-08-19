@@ -21,6 +21,15 @@ enum Updates {
 
     static let repo = "znat/parrotflow"
 
+    /// What the release archive holds, whoever is asking.
+    ///
+    /// Constants, not `Bundle.main`: a dev build asking these questions of
+    /// itself gets ParrotFlowDev.app and com.parrotflow.app.dev, which is not
+    /// what any release has ever contained. `scripts/install.sh` pins the same
+    /// two values.
+    static let releaseAppName = "ParrotFlow.app"
+    static let releaseBundleIdentifier = "com.parrotflow.app"
+
     /// SHA-256 of the leaf certificate every release is signed with.
     ///
     /// The same value `scripts/install.sh` pins, and it has to stay the same
