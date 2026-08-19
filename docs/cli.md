@@ -81,6 +81,7 @@ $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
 $PF --inflected <term> <heard>
 $PF --verdicts <count> "<reply>"
 $PF --teaching "<sentence>" <word>
+$PF --suggest "<sentence>" [--lang fr]
 ```
 
 `--inflected` asks what the vocabulary pass would write where a decoded word
@@ -111,6 +112,13 @@ Barrot", "by the way pirate" — so the command was never recognised and the
 sentence arrived as ordinary dictation. `scripts/check-spells-rule.sh` scores
 it against `tests/spells-cases.yaml` and sweeps all 59 of
 `tests/judge-cases.yaml` to check it fires nowhere else.
+
+`--suggest` prints the rows the correction panel would propose for a sentence,
+one `heard<tab>kind` per line, and nothing when it proposes nothing. A row is a
+word the macOS dictionary does not know; the kind comes from the word tagger and
+is a proposal, not a verdict. `scripts/check-suggest.sh` scores it against the
+`approve` cases of `tests/judge-cases.yaml` — 12 of the 17 words that genuinely
+needed fixing, at 0.6 rows per sentence.
 
 `--pipeline` takes a YAML file holding a pipeline — its own, not your config —
 so a case file states the setup it assumes instead of inheriting this machine's.
@@ -440,6 +448,7 @@ scripts/check-possessive.sh        # whether a possessive survives a substitutio
 scripts/check-verdicts.sh          # what the name judge reads out of a reply
 scripts/check-judge-prompt.sh      # the judge's prompt is one its parser can read
 scripts/check-spells-rule.sh       # a spelling lesson keeps the word it is teaching
+scripts/check-suggest.sh           # which words the correction panel proposes
 scripts/check-no-voice.sh          # nothing in git is one person's voice
 scripts/check-audio-recovery.sh    # a microphone that changes leaves a usable engine
 scripts/check-profiles.sh          # which app gets examined, named, or read for context

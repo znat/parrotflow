@@ -18,11 +18,70 @@ enum ConfigWriter {
     /// replacements` stays for patterns and deletions; a name the recogniser
     /// mangled is a pronunciation, not a pattern, and belongs beside the
     /// pronunciations the acoustic pass already found on its own.
-    static func addVocabularyPronunciation(term: String, heard: String) throws {
+    static func addVocabularyPronunciation(
+        term: String, heard: String, kind: WordKind? = nil
+    ) throws {
         let url = ConfigStore.vocabularyURL
         let original = (try? String(contentsOf: url, encoding: .utf8)) ?? "terms: {}\n"
-        let updated = try insertVocabulary(term: term, heard: heard, into: original)
+        var updated = try insertVocabulary(term: term, heard: heard, into: original)
+        if let kind { updated = setting(kind: kind, of: term, in: updated) }
         try updated.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Writes `kind:` under the term, replacing whatever it said before.
+    ///
+    /// Run after `insertVocabulary`, so the term exists and any flow mapping
+    /// has already been broken into lines. A term still written as a shorthand
+    /// list (`Term: [a, b]`) is left alone: expanding it here would duplicate
+    /// that function's job, and `kind` is a label nothing reads yet. Losing the
+    /// label costs less than rewriting a line for it.
+    static func setting(kind: WordKind, of term: String, in yaml: String) -> String {
+        var lines = yaml.components(separatedBy: "\n")
+        guard let termsIndex = lines.firstIndex(where: { $0.hasPrefix("terms:") }),
+              let start = termLine(for: term, in: lines, under: termsIndex)
+        else { return yaml }
+
+        let head = lines[start]
+        guard let colon = keyColon(in: head) else { return yaml }
+        let value = String(head[head.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+        guard !value.hasPrefix("["), !value.hasPrefix("{") else { return yaml }
+
+        let line = "    kind: \(kind.rawValue)"
+        var cursor = start + 1
+        while cursor < lines.count {
+            let text = lines[cursor]
+            let trimmed = text.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { cursor += 1; continue }
+            guard text.hasPrefix(" "), indentation(of: text).count >= 4 else { break }
+            if indentation(of: text).count == 4, trimmed.hasPrefix("kind:") {
+                lines[cursor] = line
+                return lines.joined(separator: "\n")
+            }
+            cursor += 1
+        }
+        lines.insert(line, at: start + 1)
+        return lines.joined(separator: "\n")
+    }
+
+    /// The term's own line directly under `terms:`, or nil if it is not there.
+    private static func termLine(
+        for term: String, in lines: [String], under termsIndex: Int
+    ) -> Int? {
+        var cursor = termsIndex + 1
+        while cursor < lines.count {
+            let line = lines[cursor]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { cursor += 1; continue }
+            guard line.hasPrefix(" ") else { return nil }
+            if indentation(of: line).count == 2, !trimmed.hasPrefix("#"),
+               let colon = keyColon(in: trimmed),
+               unquoted(String(trimmed[trimmed.startIndex..<colon]))
+                   .caseInsensitiveCompare(term) == .orderedSame {
+                return cursor
+            }
+            cursor += 1
+        }
+        return nil
     }
 
     /// Splices the rendering into the term's `pronunciations:`, adding the
@@ -59,7 +118,7 @@ enum ConfigWriter {
             if trimmed.isEmpty { cursor += 1; continue }
             guard line.hasPrefix(" ") else { break }
             if indentation(of: line).count == 2, !trimmed.hasPrefix("#"),
-               let colon = trimmed.firstIndex(of: ":"),
+               let colon = keyColon(in: trimmed),
                unquoted(String(trimmed[trimmed.startIndex..<colon]))
                    .caseInsensitiveCompare(term) == .orderedSame {
                 start = cursor
@@ -76,7 +135,7 @@ enum ConfigWriter {
         }
 
         let head = lines[start]
-        guard let colon = head.firstIndex(of: ":") else { return yaml }
+        guard let colon = keyColon(in: head) else { return yaml }
         let value = String(head[head.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
 
         // Shorthand list: `Term: [a, b]`, possibly wrapped over two lines.
@@ -230,7 +289,7 @@ enum ConfigWriter {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty || trimmed.hasPrefix("#") { index += 1; continue }
             if indentation(of: line).count <= termIndent { break }
-            if let colon = trimmed.firstIndex(of: ":"),
+            if let colon = keyColon(in: trimmed),
                unquoted(String(trimmed[trimmed.startIndex..<colon]))
                    .caseInsensitiveCompare(term) == .orderedSame {
                 at = index
@@ -243,7 +302,7 @@ enum ConfigWriter {
         var removed = 0
         // `Praisy: [Prissy, Pressy]` — the whole value is the list.
         let head = lines[start]
-        if let colon = head.firstIndex(of: ":"),
+        if let colon = keyColon(in: head),
            head[head.index(after: colon)...].trimmingCharacters(in: .whitespaces).hasPrefix("[") {
             let end = closingFlow(in: lines, from: start, deeperThan: termIndent)
             removed = count(inFlow: lines[start...end].joined(separator: " "))
@@ -393,6 +452,52 @@ enum ConfigWriter {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         return "\"\(escaped)\""
+    }
+
+    /// The colon that ends a YAML key, skipping any inside a quoted one.
+    ///
+    /// `quoted` wraps a term that carries a colon, so `"ACME: Cloud":` has two
+    /// of them and only the last one separates key from value. Splitting on
+    /// the first looked for a term called `"ACME`. It found none, so `kind:`
+    /// was dropped and the next rendering wrote the term a second time.
+    ///
+    /// A quote only delimits when the key opens with one. `O'Brien:` is a
+    /// plain key and its apostrophe is an ordinary letter — a scanner that
+    /// took every quote as a delimiter lost that colon instead, which is the
+    /// same bug the other way round.
+    private static func keyColon(in line: String) -> String.Index? {
+        var index = line.startIndex
+        while index < line.endIndex, line[index] == " " {
+            index = line.index(after: index)
+        }
+        guard index < line.endIndex else { return nil }
+
+        let quote = line[index]
+        if quote == "\"" || quote == "'" {
+            index = line.index(after: index)
+            while index < line.endIndex {
+                if quote == "\"", line[index] == "\\" {
+                    index = line.index(after: index)
+                    if index == line.endIndex { break }
+                } else if line[index] == quote {
+                    // A single-quoted scalar writes its own quote as `''`.
+                    let next = line.index(after: index)
+                    if quote == "'", next < line.endIndex, line[next] == "'" {
+                        index = line.index(after: next)
+                        continue
+                    }
+                    index = next
+                    break
+                }
+                index = line.index(after: index)
+            }
+        }
+
+        while index < line.endIndex {
+            if line[index] == ":" { return index }
+            index = line.index(after: index)
+        }
+        return nil
     }
 
     private static func unquoted(_ value: String) -> String {

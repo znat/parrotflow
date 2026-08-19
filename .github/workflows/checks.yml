@@ -147,12 +147,13 @@ jobs:
       - name: A possessive across a substitution
         run: scripts/check-possessive.sh
 
-      # The model behind the correction panel: the whitespace of the selection
-      # it opened on, and where the caret lands. Both are invisible in the
-      # panel, and both were wrong. Compiles the one file on its own, so it
-      # needs no window.
-      - name: The correction panel's spans
-        run: scripts/check-spans.sh
+      # Which words the correction panel proposes a row for, scored on the
+      # archive. Two numbers, and neither passes on its own: recall, and rows
+      # per sentence. A suggester that proposed every word would score full
+      # recall and be unreadable. Runs the binary's `--suggest`, so it needs no
+      # window.
+      - name: What the correction panel proposes
+        run: scripts/check-suggest.sh
 
       # Where the `input` stage cuts a field, and where the caret lands in it.
       # The capture itself needs TCC and a real focused field, so it is not

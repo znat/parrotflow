@@ -50,7 +50,7 @@ rejects() {
 }
 
 learn() {
-  PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --learn "$1" "$2" >/dev/null 2>&1
+  PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --learn "$1" "$2" ${3+"$3"} >/dev/null 2>&1
 }
 vocab() { cat "$WORK/vocabulary.yaml"; }
 config() { cat "$WORK/config.yaml"; }
@@ -180,6 +180,85 @@ else
       a case-insensitive match reuses the existing term"
   printf '  ✗ a case-insensitive match reuses the existing term\n      got %s\n' "$n"
 fi
+
+# --- the word kind, which only the correction panel fills in ----------------
+printf 'terms:\n  Tasmeen:\n' > "$WORK/vocabulary.yaml"
+learn Tasmin Tasmeen person
+wants "a bare term takes a kind"           "$(vocab)" "kind: person"
+wants "and keeps its pronunciations"       "$(vocab)" "heard: Tasmin"
+
+learn Tasmeene Tasmeen organization
+wants "a second correction replaces it"    "$(vocab)" "kind: organization"
+rejects "and does not leave the old one"   "$(vocab)" "kind: person"
+n="$(grep -c 'kind:' "$WORK/vocabulary.yaml")"
+total=$((total + 1))
+if [ "$n" = "1" ]; then
+  pass=$((pass + 1)); printf '  ✓ one kind line, not two\n'
+else
+  failed="$failed
+      one kind line, not two"
+  printf '  ✗ one kind line, not two\n      got %s\n' "$n"
+fi
+
+learn Tasmeena Tasmeen
+rejects "no kind given leaves it alone"    "$(vocab)" "kind: person"
+wants "the existing kind survives"         "$(vocab)" "kind: organization"
+
+# A shorthand list is left as it is. Expanding it would duplicate what
+# insertVocabulary does, and `kind` is a label nothing reads yet.
+printf 'terms:\n  Praisy: [Prissy]\n' > "$WORK/vocabulary.yaml"
+learn Pressy Praisy person
+wants "a shorthand list still takes the rendering" "$(vocab)" "Pressy"
+rejects "and is not rewritten for a kind"          "$(vocab)" "kind:"
+
+# --- a term whose own name carries a colon ----------------------------------
+# Greptile found this one. A term with a colon in it is written as a quoted
+# key, so the first colon on the line is inside the quotes. The writer split
+# there, looked for a term called `"ACME`, and found none: the kind was
+# dropped on the way in, and the next rendering appended the term again
+# instead of joining the one already there.
+printf 'terms: {}\n' > "$WORK/vocabulary.yaml"
+learn "acme cloud" "ACME: Cloud" organization
+wants "a term with a colon is quoted"      "$(vocab)" '"ACME: Cloud":'
+wants "and it takes its kind"              "$(vocab)" "kind: organization"
+learn "acmi cloud" "ACME: Cloud"
+wants "a second rendering is added"        "$(vocab)" "heard: acmi cloud"
+n="$(grep -c 'ACME: Cloud' "$WORK/vocabulary.yaml")"
+total=$((total + 1))
+if [ "$n" = "1" ]; then
+  pass=$((pass + 1)); printf '  ✓ the term is written once, not twice\n'
+else
+  failed="$failed
+      the term is written once, not twice"
+  printf '  ✗ the term is written once, not twice\n      got %s\n' "$n"
+fi
+got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1)"
+wants "and the file reads back as one term" "$got" "1 terms in vocabulary.yaml"
+
+# --- a plain key that carries a quote character -----------------------------
+# The fix above went too far on its first try, and Greptile found that too. A
+# scanner that treated every quote as a delimiter lost the colon of `O'Brien:`
+# — a plain key whose apostrophe is an ordinary letter. Only a key that opens
+# with a quote is a quoted one.
+printf 'terms:\n  %s:\n    kind: person\n    pronunciations:\n      - heard: tass meen\n' \
+  "Tas'meen" > "$WORK/vocabulary.yaml"
+learn "tass mean" "Tas'meen" organization
+wants "an apostrophe key still takes the rendering" "$(vocab)" "heard: tass mean"
+wants "and its kind is replaced"                    "$(vocab)" "kind: organization"
+rejects "not written beside the old one"            "$(vocab)" "kind: person"
+n="$(grep -c "Tas'meen" "$WORK/vocabulary.yaml")"
+total=$((total + 1))
+if [ "$n" = "1" ]; then
+  pass=$((pass + 1)); printf '  ✓ the apostrophe term is not duplicated\n'
+else
+  failed="$failed
+      the apostrophe term is not duplicated"
+  printf '  ✗ the apostrophe term is not duplicated\n      got %s\n' "$n"
+fi
+
+printf 'terms:\n  %s: [tas meen]\n' 'Tas"meen' > "$WORK/vocabulary.yaml"
+learn tasmeen 'Tas"meen'
+wants "a double quote in a plain key is a letter too" "$(vocab)" "tas meen, tasmeen"
 
 # --- the result always parses -----------------------------------------------
 got="$(PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1)"

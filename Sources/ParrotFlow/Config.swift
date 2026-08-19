@@ -295,6 +295,14 @@ struct Config: Decodable, Equatable {
             /// spelling does.
             var never = false
             var pronunciations: [Pronunciation] = []
+            /// What kind of thing the term names, written by the correction
+            /// panel. Nil means nobody said, which is every term written before
+            /// the key existed. Nothing mechanical reads it yet — see
+            /// `WordKind`.
+            var kind: WordKind?
+            /// What `kind:` said, when it said something this does not know.
+            /// Kept rather than dropped so `notices()` can name it.
+            var unreadableKind: String?
             /// True when the list arrived under the old `heard:` key, so
             /// `notices()` can name the key and say what to write instead.
             var wroteHeard = false
@@ -306,15 +314,18 @@ struct Config: Decodable, Equatable {
 
             init(
                 offerBelow: Float? = nil, never: Bool = false,
-                pronunciations: [Pronunciation] = [], wroteHeard: Bool = false
+                pronunciations: [Pronunciation] = [], kind: WordKind? = nil,
+                unreadableKind: String? = nil, wroteHeard: Bool = false
             ) {
                 self.offerBelow = offerBelow
                 self.never = never
                 self.pronunciations = pronunciations
+                self.kind = kind
+                self.unreadableKind = unreadableKind
                 self.wroteHeard = wroteHeard
             }
 
-            enum CodingKeys: String, CodingKey { case floor, heard, pronunciations }
+            enum CodingKeys: String, CodingKey { case floor, heard, pronunciations, kind }
 
             /// Five shapes, because most terms need none of this:
             ///
@@ -338,6 +349,13 @@ struct Config: Decodable, Equatable {
                     }
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
+                // An unreadable `kind:` is dropped rather than refused, for the
+                // same reason `from:` is on a pronunciation: it is a label, and
+                // nothing reads it yet.
+                let labelled = (try? c.decodeIfPresent(String.self, forKey: .kind))
+                    .flatMap { $0 }
+                let kind = labelled.flatMap(WordKind.init(rawValue:))
+                let unreadableKind = kind == nil ? labelled : nil
                 let old = try c.decodeIfPresent([String].self, forKey: .heard) ?? []
                 let listed = try c.decodeIfPresent([Pronunciation].self, forKey: .pronunciations) ?? []
                 // Both keys, joined. They are the same list with different
@@ -361,7 +379,8 @@ struct Config: Decodable, Equatable {
                 // The reverse trap does not exist. `off` is not a number, so
                 // asking for a Float first throws and falls through.
                 if let number = (try? c.decodeIfPresent(Float.self, forKey: .floor)) ?? nil {
-                    self.init(offerBelow: number, pronunciations: said, wroteHeard: wroteHeard)
+                    self.init(offerBelow: number, pronunciations: said, kind: kind,
+                              unreadableKind: unreadableKind, wroteHeard: wroteHeard)
                     return
                 }
                 // `off` rather than a magic number. The previous spelling was
@@ -374,18 +393,21 @@ struct Config: Decodable, Equatable {
                 if let flag = (try? c.decodeIfPresent(Bool.self, forKey: .floor)) ?? nil {
                     self.init(
                         offerBelow: nil, never: flag == false,
-                        pronunciations: said, wroteHeard: wroteHeard
+                        pronunciations: said, kind: kind, unreadableKind: unreadableKind,
+                        wroteHeard: wroteHeard
                     )
                     return
                 }
                 if let word = (try? c.decodeIfPresent(String.self, forKey: .floor)) ?? nil {
                     self.init(
                         offerBelow: nil, never: word.lowercased() == "off",
-                        pronunciations: said, wroteHeard: wroteHeard
+                        pronunciations: said, kind: kind, unreadableKind: unreadableKind,
+                        wroteHeard: wroteHeard
                     )
                     return
                 }
-                self.init(offerBelow: nil, pronunciations: said, wroteHeard: wroteHeard)
+                self.init(offerBelow: nil, pronunciations: said, kind: kind,
+                          unreadableKind: unreadableKind, wroteHeard: wroteHeard)
             }
 
             /// One entry per spelling, first kept. Exact rather than
@@ -528,6 +550,18 @@ struct Config: Decodable, Equatable {
             if !mislabelled.isEmpty {
                 legacy.append("\(mislabelled.joined(separator: ", ")) — not one of"
                     + " correction, mined, calibration, so it is read as legacy")
+            }
+
+            // The same for `kind:`, which nothing reads yet — so a typo in it
+            // is silent in every other way.
+            let miskinded = terms
+                .compactMap { name, entry in
+                    entry.unreadableKind.map { "\(name): `kind: \($0)`" }
+                }
+                .sorted()
+            if !miskinded.isEmpty {
+                legacy.append("\(miskinded.joined(separator: ", ")) — not one of"
+                    + " person, place, organization, word, so it is not recorded")
             }
         }
 

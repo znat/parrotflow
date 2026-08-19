@@ -14,7 +14,7 @@ enum PanelsCommand {
     /// which is what the shipped config puts on the pill. A row of chips is the
     /// shape worth looking at, not one chip on its own.
     private static let offerChips = [
-        OfferedCommand(title: "Correct", key: "C"),
+        OfferedCommand(title: "Vocabulary", key: "V"),
         OfferedCommand(title: "grammar", key: "G")
     ]
 
@@ -61,39 +61,28 @@ enum PanelsCommand {
         // that is obvious side by side and invisible a week apart.
         let overlayBlind = pill(.recording, level: 0.75)
 
-        // One span changed and one span with two heard words folded into it —
-        // the two shapes the panel exists for, side by side.
-        let correction = SpansModel()
+        // A row the spell check proposed, half filled in, and a row typed by
+        // hand — the two shapes the panel exists for, side by side.
+        let correction = CorrectionModel()
         correction.load(sentence: "I work with Tasmin and Mick")
-        correction.spans[3].value = ["Tasmeen"]
+        correction.rows[0].corrected = "Tasmeen"
 
-        let rule = SpansModel()
+        // A name the decoder split in two. It arrives as no row at all — both
+        // halves are ordinary words — so the left field is typed over. This is
+        // the case the table has to be able to hold.
+        let rule = CorrectionModel()
         rule.load(sentence: "we deployed on Ver Sal")
-        rule.spans[3].heard += rule.spans[4].heard
-        rule.spans[3].value = ["Vercel"]
-        rule.spans.removeLast()
+        rule.rows = [CorrectionRow(heard: "Ver Sal", corrected: "Vercel",
+                                   kind: .organization)]
+        // The rows were replaced wholesale, so the focus `load` left points at
+        // a row that no longer exists.
+        rule.focus = CorrectionModel.Cell(row: rule.rows[0].id, column: .corrected)
 
-        // The sentence with punctuation in it. A comma is drawn, not typed, and
-        // the gap around it is the thing to look at: it belongs after the
-        // comma, never between the comma and the word it follows.
-        let punctuated = SpansModel()
-        punctuated.load(sentence: "Trois, quatre, cinq.")
-        punctuated.spans[1].value = ["quatorze"]
-
-        // A fixed room rather than this machine's screen, so the sheet is the
-        // same picture wherever it is drawn.
-        for model in [correction, rule, punctuated] {
-            model.width = CorrectionMetrics.width(fitting: model.spans, room: 1200)
-        }
-
-        // The disclosure open, because it is the state that changes the size of
-        // the panel and the only one where the explanation can be read.
-        let helped = SpansModel()
-        helped.load(sentence: "I work with Tasmin and Mick")
-        helped.width = CorrectionMetrics.width(fitting: helped.spans, room: 1200)
-        helped.help = true
-        helped.spans[3].value = ["Tasmeen"]
-        helped.hasEdited = true
+        // Two rows, so the picker is drawn twice against different words. The
+        // sheet cannot show a focus ring on any of them: it renders offscreen,
+        // in no key window, and SwiftUI grants focus to neither.
+        let several = CorrectionModel()
+        several.load(sentence: "Olama runs polyma for Tasmine")
 
         // Both states of the microphone notice, because the disclosure is the
         // shape of it: collapsed is what you read, open is the argument. A
@@ -173,13 +162,11 @@ enum PanelsCommand {
              NSSize(width: MicNoticeMetrics.width,
                     height: MicNoticeMetrics.height(expanded: true)), .dark, true),
             (AnyView(CorrectionView().environmentObject(correction)),
-             NSSize(width: correction.width, height: CorrectionMetrics.height(correction.spans, width: correction.width, help: false)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: correction.rows.count)), .dark, false),
             (AnyView(CorrectionView().environmentObject(rule)),
-             NSSize(width: rule.width, height: CorrectionMetrics.height(rule.spans, width: rule.width, help: false)), .dark, false),
-            (AnyView(CorrectionView().environmentObject(punctuated)),
-             NSSize(width: punctuated.width, height: CorrectionMetrics.height(punctuated.spans, width: punctuated.width, help: false)), .dark, false),
-            (AnyView(CorrectionView().environmentObject(helped)),
-             NSSize(width: helped.width, height: CorrectionMetrics.height(helped.spans, width: helped.width, help: true)), .dark, false),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: rule.rows.count)), .dark, false),
+            (AnyView(CorrectionView().environmentObject(several)),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: several.rows.count)), .dark, false),
             // The dictation panel is deliberately not here. Its field is an
             // `NSTextField` and its background is real Liquid Glass, and this
             // sheet can draw neither — it came out as a white block inside an
@@ -332,13 +319,12 @@ enum PanelsCommand {
             }
         case "vocabulary":
             correction.show(selection: "I work with Tasmin and Mick on Versal")
-        // The same panel over a sentence with punctuation in it. On its own
-        // because a comma is drawn rather than typed, and how it sits — against
-        // the word before it, with the gap after — is only settled by looking.
+        // A sentence where the spell check finds nothing, so the panel opens
+        // with one blank row. That is 33 of the 56 sentences measured.
         case "punctuation":
             correction.show(selection: "Trois, quatre, cinq.")
-        // One of the two rules heard two words, because that is the shape that
-        // used to land on the wrong span — see `SpansModel.load(rules:)`.
+        // One of the two rules heard two words. No proposal can produce that
+        // row, so it is what the editable left field is for.
         case "rule":
             correction.show(rules: [(heard: "Ver Sal", corrected: "Vercel"),
                                     (heard: "Mick", corrected: "Mik")])

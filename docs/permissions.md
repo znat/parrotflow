@@ -7,7 +7,7 @@ spoken corrections, because reading your selection is exactly what that
 permission governs. `insert_mode: clipboard` works without it: the transcript
 is copied and you press ⌘V.
 
-**Input Monitoring** — required for the offer's own hotkeys (`C` for Correct,
+**Input Monitoring** — required for the offer's own hotkeys (`V` for Vocabulary,
 and any `key:` on a transform with `offer: true`). The offer's chips sit in a
 window that never takes focus, so catching their letters before they land in
 whatever you were typing into needs a system-wide key tap — and macOS gates

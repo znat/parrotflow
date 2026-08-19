@@ -338,14 +338,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// What the offer offers: Correct, then every transform that asked for a
     /// place on it with `offer: true`.
     ///
-    /// Correct is first and is not a transform. It is the one command that is
-    /// about the words rather than about rewriting them, it needs no model, and
-    /// it cannot fail.
+    /// Vocabulary is first and is not a transform. It is the one command that
+    /// is about the words rather than about rewriting them, it needs no model,
+    /// and it cannot fail.
     ///
     /// Read fresh each time rather than stored, so a config reloaded between
     /// two dictations changes what the next offer says.
     private var offerCommands: [OfferedCommand] {
-        [OfferedCommand(title: "Correct", key: "C")]
+        [OfferedCommand(title: "Vocabulary", key: "V")]
             + config.transforms.filter(\.offer).map {
                 OfferedCommand(title: $0.name, key: $0.offerKey)
             }
@@ -2346,9 +2346,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // under the pointer, and the click would run whatever took the slot.
         pill.model.onPick = { [weak self] index in
             guard let self, self.offerIsUp, commands.indices.contains(index) else { return }
-            // Index 0 is Correct, which is not a transform and cannot be one:
-            // a config free to name a transform "Correct" must not be able to
-            // take that slot over.
+            // Index 0 is Vocabulary, which is not a transform and cannot be
+            // one: a config free to name a transform "Vocabulary" must not be
+            // able to take that slot over.
             self.runOfferedCommand(index == 0 ? nil : commands[index].title)
         }
         // The highlight is the pointer's mark and does not outlive it. Leaving
@@ -3046,11 +3046,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// False means one could not be written and the user has already been shown
     /// why. Nothing after it should run: a correction that half-saved and then
     /// went on to rewrite the field would leave the two disagreeing.
-    private func learn(_ rules: [(heard: String, corrected: String)]) -> Bool {
+    private func learn(_ rules: [TaughtRule]) -> Bool {
         for rule in rules {
             do {
                 try ConfigWriter.addVocabularyPronunciation(
-                    term: rule.corrected, heard: rule.heard
+                    term: rule.corrected, heard: rule.heard, kind: rule.kind
                 )
                 Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                 Trace.correction(heard: rule.heard, corrected: rule.corrected, via: "command")
@@ -3076,7 +3076,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is still the one that was dictated into, and the clipboard when the
     /// dictation itself went there.
     private func saveOfferedCorrection(
-        _ rules: [(heard: String, corrected: String)],
+        _ rules: [TaughtRule],
         correctedText: String,
         into target: Correction,
         clipboardWhenChosen: Int
@@ -3099,7 +3099,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func saveCorrections(
-        _ rules: [(heard: String, corrected: String)],
+        _ rules: [TaughtRule],
         correctedText: String
     ) {
         guard learn(rules) else {
@@ -3546,7 +3546,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for rule in rules {
                 do {
                     try ConfigWriter.addVocabularyPronunciation(
-                        term: rule.corrected, heard: rule.heard
+                        term: rule.corrected, heard: rule.heard, kind: rule.kind
                     )
                     Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                     Trace.correction(

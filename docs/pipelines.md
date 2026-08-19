@@ -243,7 +243,7 @@ preview would have told you.
 ### `offer:` and `key:`, or: getting on the pill
 
 After a dictation the pill names what can be done to the words — wherever they
-went, a field or the clipboard. `Correct` is always first — it is not a
+went, a field or the clipboard. `Vocabulary` is always first — it is not a
 transform, it needs no model, and it cannot fail. After it comes every transform
 that asked for a place:
 
@@ -281,8 +281,8 @@ The letter is taken from whatever app you are typing into, for the nine
 seconds the offer is up. Pick one you are unlikely to start a word with right
 after dictating — the first keystroke of a word that starts with it still
 runs the command, though every keystroke after that is safe: typing anything
-else ends the offer, the same as clicking off the pill does. `C` is already
-`Correct`'s; a second chip asking for it is drawn but never reached, because
+else ends the offer, the same as clicking off the pill does. `V` is already
+`Vocabulary`'s; a second chip asking for it is drawn but never reached, because
 the first chip with that letter wins.
 
 `--check-config` prints what is on the pill and the letter each chip carries.

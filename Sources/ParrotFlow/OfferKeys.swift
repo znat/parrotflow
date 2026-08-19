@@ -13,7 +13,7 @@ import IOKit.hid
 /// the offer has no business still claiming a letter over your shoulder once
 /// you have. This also bounds the one real risk left: the offer is up for nine
 /// seconds after every dictation, so a sentence that happens to start with a
-/// chip's own letter — `C` for Correct — still runs that command on its first
+/// chip's own letter — `V` for Vocabulary — still runs that command on its first
 /// keystroke. Every keystroke after that first one is safe, because the offer
 /// is already gone by then. Pick a chip's letter accordingly: one you are
 /// unlikely to start a word with right after dictating.

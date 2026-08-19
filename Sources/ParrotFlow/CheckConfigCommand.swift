@@ -225,7 +225,7 @@ enum CheckConfigCommand {
         // read as the offer simply being short.
         let offered = config.transforms.filter(\.offer)
         if !offered.isEmpty {
-            print("  · offer             \(offered.count) transform(s) on the pill, after Correct")
+            print("  · offer             \(offered.count) transform(s) on the pill, after Vocabulary")
             // Correct's letter is not a transform's to lose, and the first chip
             // with a letter is the one that key runs. So a second chip asking
             // for the same letter is drawn with a keycap that never fires, and
