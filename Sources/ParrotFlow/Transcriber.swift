@@ -189,6 +189,46 @@ actor Transcriber {
                 ))
             }
         }
+        // A clip can decode to nothing at all. The gate hears speech, the
+        // decoder commits no token, and the dictation is lost with no sign of
+        // why. Measured on three clips of "I don't know" said into Slack:
+        // 0.85s, 1.11s and 1.87s of speech at normal level, all three empty,
+        // all three still empty when replayed from the file.
+        //
+        // It is not level and it is not duration. Decoding those same clips
+        // with silence added at both ends returned the words every time, and a
+        // sweep of the pad — 0, 50, 100, 200, 300, 400, 500, 800ms — recovered
+        // them at every step but 200 and 300, and there on one clip only. A
+        // rule that is not monotonic in the pad is not a threshold; it is
+        // where the encoder's frames land against the speech. Silence either
+        // side moves them.
+        //
+        // Any text beats none, so a non-empty retry is taken as it stands.
+        // There is nothing to protect: the first pass decoded nothing. Over
+        // the archive this recovered 30 of the 56 clips that had been lost
+        // this way, and invented nothing on the other 26.
+        //
+        // Separate from the retry above, which needs words to measure a
+        // dropped tail against and so cannot reach this case at all:
+        // `droppedTail` is false on an empty decode by definition.
+        if let gated, Self.decodedNothing(result, gate: gated) {
+            let speech = Self.speechSeconds(gated)
+            if let retried = try await decodePadded(gated, asr: asr),
+                !retried.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Log.write(String(
+                    format: "decoder returned nothing for %.2fs of speech; "
+                        + "%.0fms of silence either side recovered it",
+                    speech, Self.silenceRetryPad * 1000
+                ))
+                result = retried
+            } else {
+                Log.write(String(
+                    format: "decoder returned nothing for %.2fs of speech, "
+                        + "and the padded retry returned nothing either",
+                    speech
+                ))
+            }
+        }
         Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
         // Before the pipeline, because this is the last point where the words
@@ -261,6 +301,19 @@ actor Transcriber {
             findings: findings,
             progress: progress
         )
+    }
+
+    /// Decodes the clip again with silence at both ends, on a decoder state of
+    /// its own, and puts the timings back on the recording's clock.
+    ///
+    /// A fresh `TdtDecoderState` per pass: the state is per-clip, and handing
+    /// the first pass's state to the second would decode the padded copy as a
+    /// continuation of the clip it is a copy of.
+    private func decodePadded(_ gate: SpeechGate, asr: AsrManager) async throws -> ASRResult? {
+        guard let padded = Self.paddedWithSilence(gate) else { return nil }
+        var state = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
+        let raw = try await asr.transcribe(padded, decoderState: &state)
+        return Self.unpadTimings(raw, by: Self.silenceRetryPad, seconds: gate.seconds)
     }
 
     /// What the speech gate found: the clip's samples and its speech
@@ -484,6 +537,72 @@ actor Transcriber {
     nonisolated static func droppedTail(_ result: ASRResult, gate: SpeechGate) -> Bool {
         guard !gate.segments.isEmpty, result.tokenTimings?.isEmpty == false else { return false }
         return lastSpeechEnd(gate) - lastWordEnd(result) > droppedTailSeconds
+    }
+
+    /// How much silence the empty-decode retry puts either side of the clip.
+    ///
+    /// Picked from the middle of a plateau rather than an edge. On the three
+    /// clips that prompted this, 400, 500 and 800ms all recovered the words;
+    /// 50 and 100ms did too, but 200 and 300ms did not, on one of them. The
+    /// safe reading of a gap like that is to sit well clear of it.
+    static let silenceRetryPad = 0.5
+
+    nonisolated static func speechSeconds(_ gate: SpeechGate) -> Double {
+        gate.segments.reduce(0) { $0 + ($1.end - $1.start) }
+    }
+
+    /// True when the gate heard speech and the decoder wrote nothing at all.
+    ///
+    /// The text, not the timings: a decode with no words is the thing being
+    /// caught, and whether it also carried an empty timing array is a detail
+    /// of the decoder rather than the symptom.
+    nonisolated static func decodedNothing(_ result: ASRResult, gate: SpeechGate) -> Bool {
+        guard !gate.segments.isEmpty else { return false }
+        return result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The clip with `silenceRetryPad` of silence at each end, or nil when the
+    /// retry cannot help.
+    ///
+    /// Nil for a clip whose samples cannot go to the decoder directly, and nil
+    /// when the padding would push it past a single decoder window. Past that
+    /// the batch path chunks, and the seam it opens is the bug the first pass
+    /// already works around — so a retry that created one would be trading
+    /// this failure for that one.
+    nonisolated static func paddedWithSilence(_ gate: SpeechGate) -> [Float]? {
+        guard gate.decodable, !gate.samples.isEmpty else { return nil }
+        let pad = Int((silenceRetryPad * sampleRate).rounded())
+        guard gate.samples.count + 2 * pad <= ASRConstants.maxModelSamples else { return nil }
+        return [Float](repeating: 0, count: pad) + gate.samples
+            + [Float](repeating: 0, count: pad)
+    }
+
+    /// Takes the padding back off the word timings, so they refer to the
+    /// recording and not to the padded copy this pass decoded. Same job as
+    /// `restoreTimings`, one subtraction rather than a piece map.
+    nonisolated static func unpadTimings(
+        _ result: ASRResult, by pad: Double, seconds: Double
+    ) -> ASRResult {
+        ASRResult(
+            text: result.text,
+            confidence: result.confidence,
+            duration: seconds,
+            processingTime: result.processingTime,
+            tokenTimings: result.tokenTimings.map { timings in
+                timings.map {
+                    TokenTiming(
+                        token: $0.token,
+                        tokenId: $0.tokenId,
+                        startTime: min(max($0.startTime - pad, 0), seconds),
+                        endTime: min(max($0.endTime - pad, 0), seconds),
+                        confidence: $0.confidence
+                    )
+                }
+            },
+            performanceMetrics: result.performanceMetrics,
+            ctcDetectedTerms: result.ctcDetectedTerms,
+            ctcAppliedTerms: result.ctcAppliedTerms
+        )
     }
 
     /// Only a pause approaching the decoder's own 14.88s window can starve one

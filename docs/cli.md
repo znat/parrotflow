@@ -487,6 +487,13 @@ jq -r '.asr.words[]? | select(.confidence < 0.5) | .word' trace.jsonl |
 jq -r 'select((.asr.words|length > 0) and (.vad.segments|length > 0)) |
        [.wav, (.vad.segments[-1][1]), (.asr.words[-1].end), .vad.total] | @tsv' trace.jsonl
 
+# A dictation that vanished whole: the gate heard speech and the decoder wrote
+# nothing at all. Distinct from the query above, which needs words to measure a
+# short ending against. 59 of 16,288 records over three weeks, and the reason
+# `silenceRetryPad` exists — see Transcriber.swift.
+jq -r 'select(((.asr.text // "") | length) == 0 and (.vad.segments|length > 0)) |
+       [.wav, .vad.speech, .vad.total] | @tsv' trace.jsonl
+
 # What each stage really costs on your own sentences.
 jq -r '.stages[]? | select(.seconds) | [.name, .seconds] | @tsv' trace.jsonl |
   awk '{n[$1]++; s[$1]+=$2} END {for (k in n) printf "%-28s %6.3fs  ×%d\n", k, s[k]/n[k], n[k]}' |
