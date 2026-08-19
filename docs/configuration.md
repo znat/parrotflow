@@ -637,13 +637,13 @@ dictation's — the result is not written over it, and the menu bar says so.
 | `↩` | Dismisses, and reaches the app underneath untouched |
 | the dictation hotkey | Starts the next dictation, exactly as before |
 
-It fades rather than vanishing. It arrives just below full strength and thins
-out over nine seconds, and then it is gone. The keys, the click, and the chips
-work the whole way down — the fading only says how long is left. Putting the
-pointer on the pill stops the clock, and taking it off starts the nine seconds
-again. Any of the endings above takes the pill at once.
+It fades rather than vanishing. It stands at full strength for three seconds,
+thins out over the next two, and then it is gone. The keys, the click, and the
+chips work the whole way down — the fading only says how long is left. Putting
+the pointer on the pill stops the clock, and taking it off starts the five
+seconds again. Any of the endings above takes the pill at once.
 
-**The letters are taken from every app for those nine seconds.** The pill
+**The letters are taken from every app for those five seconds.** The pill
 never holds keyboard focus, so it swallows a chip's own letter system-wide or
 it does not get it at all. Only that bare letter runs a command — a letter
 with a modifier on it is somebody else's shortcut and is left alone, `⌘C`

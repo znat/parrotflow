@@ -407,9 +407,9 @@ enum PanelsCommand {
             pill.working("Thinking…")
         case "offer":
             // The real call rather than a bare `set`. The offer is the one
-            // state that arrives below full strength and thins out, so a
-            // preview holding it at full would be a picture of a pill that
-            // never appears. It gets the duration the app gives it.
+            // state that holds and then thins out, so a preview that only held
+            // would be a picture of a pill that never leaves. It gets the
+            // duration the app gives it.
             pill.offer(offerChips, for: AppDelegate.offerSeconds)
             // The one state that takes the mouse, so the one worth being able
             // to hover. Nothing runs — this is the surface, not the app — but

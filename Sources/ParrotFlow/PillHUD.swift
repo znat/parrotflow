@@ -125,13 +125,14 @@ final class PillHUD {
     private var isDecaying = false
     /// How long the offer on screen was given, so the pointer can give it again.
     private var offerFor: TimeInterval?
-    /// A decay the pointer has stopped, as against one still running.
+    /// A decay standing still, as against one whose alpha is moving.
     ///
-    /// The two end differently. A stopped one sits at `offerAlpha`, which is a
-    /// real strength, so it can fade out the way every other state does. A
-    /// running one has already told AppKit to finish at zero, so a fade laid
-    /// over it has nothing left to move and it is cut instead.
-    private var decayIsHeld = false
+    /// True through the hold, and again once the pointer stops the fade. The
+    /// two end differently. A still one sits at `offerAlpha`, which is a real
+    /// strength, so it can fade out the way every other state does. A moving
+    /// one has already told AppKit to finish at zero, so a fade laid over it
+    /// has nothing left to move and it is cut instead.
+    private var decayIsStill = false
     /// Which decay is the live one.
     ///
     /// Replacing an animation makes the one it replaced call its completion
@@ -141,6 +142,8 @@ final class PillHUD {
     /// was the pointer dismissing the offer it was there to hold open. The
     /// handler checks this number as well, and a stale one does nothing.
     private var decayRun = 0
+    /// The offer's fade, waiting out the hold. See `decay(over:)`.
+    private var pendingDecayFade: DispatchWorkItem?
 
     /// Where this dictation's words are going, set at the press by `aim(at:)`.
     /// Every state reads it while the pill is up, and `fadeOut` clears it, so
@@ -185,14 +188,12 @@ final class PillHUD {
     ///
     /// This is the one state that leaves by going quiet rather than by
     /// disappearing. Every other one holds full strength and then goes. This
-    /// one starts below full and thins the whole way out, for two reasons. It
-    /// is the only state nobody asked for — it arrives after a dictation you
-    /// had already finished — so it should announce itself less than a notice
-    /// does. And it is the only state with a deadline you might want to beat: a
-    /// hard cut gives you the time and then nothing, while a decay says how
-    /// long is left without a clock on screen, and stays usable to the last
-    /// frame. The keys and the chips work the whole way down; the fading only
-    /// says how long is left.
+    /// one stands at full strength for `PillHUD.offerHold` and then thins out
+    /// over `PillHUD.offerFade`, because it is the only state with a deadline
+    /// you might want to beat: a hard cut gives you the time and then nothing,
+    /// while a fade says how long is left without a clock on screen, and stays
+    /// usable to the last frame. The keys and the chips work the whole way
+    /// down; the fading only says how long is left.
     func offer(
         _ commands: [OfferedCommand], headline: String? = nil,
         reading: Confidence.Reading = Confidence.Reading(), for duration: TimeInterval
@@ -203,18 +204,26 @@ final class PillHUD {
         decay(over: duration)
     }
 
-    /// From `Self.offerAlpha` to nothing, over `duration`, then gone.
+    /// Hold at `Self.offerAlpha` for what is left after the fade, then run
+    /// out over `Self.offerFade`, then gone.
     ///
-    /// Linear on purpose. An eased fade spends most of its time near the ends
-    /// and crosses the middle quickly, which reads as the surface being yanked
-    /// away at the halfway mark. A straight ramp is the one shape that says
-    /// "this is running out" at a steady rate — a clock without a clock.
+    /// The hold comes first because the offer is read before it is answered.
+    /// A surface that starts thinning on the frame it appears is one you read
+    /// against the clock; one that stands still first is one you read, and
+    /// only then decide about.
+    ///
+    /// The fade is linear on purpose. An eased fade spends most of its time
+    /// near the ends and crosses the middle quickly, which reads as the
+    /// surface being yanked away at the halfway mark. A straight ramp is the
+    /// one shape that says "this is running out" at a steady rate — a clock
+    /// without a clock.
     private func decay(over duration: TimeInterval) {
         guard let panel else { return }
         pendingDismiss?.cancel(); pendingDismiss = nil
+        pendingDecayFade?.cancel(); pendingDecayFade = nil
         isFading = false
         isDecaying = true
-        decayIsHeld = false
+        decayIsStill = true
         decayRun += 1
         let run = decayRun
 
@@ -227,14 +236,30 @@ final class PillHUD {
             context.duration = 0
             panel.animator().alphaValue = Self.offerAlpha
         }
+
+        let fade = min(Self.offerFade, duration)
+        let hold = max(0, duration - fade)
+        let start = DispatchWorkItem { [weak self] in
+            self?.runOut(panel, over: fade, run: run)
+        }
+        pendingDecayFade = start
+        DispatchQueue.main.asyncAfter(deadline: .now() + hold, execute: start)
+    }
+
+    /// The second half of the decay: the alpha finally moves.
+    private func runOut(_ panel: NSPanel, over fade: TimeInterval, run: Int) {
+        // `decayRun` and not `isDecaying` alone: see the property.
+        guard isDecaying, decayRun == run else { return }
+        pendingDecayFade = nil
+        decayIsStill = false
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
+            context.duration = fade
             context.timingFunction = CAMediaTimingFunction(name: .linear)
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
-            // `decayRun` and not `isDecaying` alone: see the property.
             guard let self, self.isDecaying, self.decayRun == run else { return }
             self.isDecaying = false
+            self.decayIsStill = false
             // The aim belonged to the dictation that has just ended, the same
             // as in `fadeOut`.
             self.near = nil
@@ -253,9 +278,9 @@ final class PillHUD {
     /// A surface that went on thinning while you were reaching for it would be
     /// arguing with you about whether you had finished.
     ///
-    /// This is also why the decay can be as long as it is. Nine seconds of
-    /// clutter would be too much to put on screen after every dictation if
-    /// reading it did not put it back.
+    /// This is also why the offer can stand at full strength the way it does.
+    /// Clutter that bright would be too much to put on screen after every
+    /// dictation if reading it did not put the whole clock back.
     func hovering(_ inside: Bool) {
         // `isVisible` as well as the flag: a decay that finished a moment ago
         // has taken the panel out, and nothing about the pointer should bring
@@ -266,8 +291,9 @@ final class PillHUD {
             // animation below replaces it, and a replaced animation calls its
             // handler at once.
             decayRun += 1
+            pendingDecayFade?.cancel(); pendingDecayFade = nil
             isDecaying = true
-            decayIsHeld = true
+            decayIsStill = true
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0
                 panel.animator().alphaValue = Self.offerAlpha
@@ -277,9 +303,20 @@ final class PillHUD {
         }
     }
 
-    /// Where the offer starts. Below full, because it is the one surface that
-    /// appears without being asked for.
-    static let offerAlpha: CGFloat = 0.92
+    /// Where the offer starts, and stands through the hold: full strength.
+    ///
+    /// It was 0.92 — quieter than the other states, because it is the one
+    /// surface that appears without being asked for. That made the chips on it
+    /// hard to read at the moment they are meant to be read, and the fade
+    /// already says the offer is optional.
+    static let offerAlpha: CGFloat = 1
+
+    /// How long the offer stands still before it starts running out.
+    static let offerHold: TimeInterval = 3
+    /// How long it takes to go, once it starts.
+    static let offerFade: TimeInterval = 2
+    /// The whole of the offer's life, hold and fade.
+    static let offerLife: TimeInterval = offerHold + offerFade
 
     /// The pill's own visible capsule right now — what a click has to land
     /// inside of to count as a click on the pill rather than a click past it.
@@ -365,9 +402,10 @@ final class PillHUD {
         if isFading || isDecaying {
             isFading = false
             isDecaying = false
-            decayIsHeld = false
+            decayIsStill = false
             // The decay's handler is now a stale one. See `decayRun`.
             decayRun += 1
+            pendingDecayFade?.cancel(); pendingDecayFade = nil
             // Zero-length rather than a plain assignment: that is what stops
             // the animation underneath, which would otherwise go on pulling
             // the alpha down under the state that has just replaced it.
@@ -472,16 +510,18 @@ final class PillHUD {
         // here, and a dismissal that took another few seconds to show would
         // read as the key not working.
         //
-        // A running decay is cut, because its alpha is already on its way to
-        // zero and a fade laid over that has nothing left to move. A decay the
-        // pointer is holding is not: it is stopped at `offerAlpha`, so it goes
-        // out the way every other state does. Clicking a chip is the common
+        // A moving decay is cut, because its alpha is already on its way to
+        // zero and a fade laid over that has nothing left to move. A decay
+        // standing still is not — in its hold, or stopped there by the pointer
+        // — because it sits at `offerAlpha`, so it goes out the way every
+        // other state does. Clicking a chip is the common
         // path and the pointer is on the pill by definition, so that is the
         // one that must not blink out. The stale handler is seen off the same
         // way as in `set`.
-        if isDecaying, !decayIsHeld {
+        if isDecaying, !decayIsStill {
             isDecaying = false
             decayRun += 1
+            pendingDecayFade?.cancel(); pendingDecayFade = nil
             near = nil
             // A zero-length animation is how the running one is stopped, and
             // it leaves the panel at full strength for the next appearance.
@@ -498,8 +538,9 @@ final class PillHUD {
         // real alpha, so it leaves as an ordinary fade — and either way the
         // flags and the handler are seen off before that fade starts.
         isDecaying = false
-        decayIsHeld = false
+        decayIsStill = false
         decayRun += 1
+        pendingDecayFade?.cancel(); pendingDecayFade = nil
 
         isFading = true
         NSAnimationContext.runAnimationGroup { context in
@@ -782,7 +823,7 @@ enum PillMetrics {
 
     /// Three lines holds about 240 characters, which is the 99th percentile of
     /// the dictations in this machine's archive. Past that it truncates: the
-    /// pill is on screen for nine seconds and a paragraph of it would cover the
+    /// pill is on screen for seconds and a paragraph of it would cover the
     /// words it is about.
     static let sentenceLines = 3
 
@@ -1000,8 +1041,11 @@ struct PillView: View {
         // said. The line says it, but the line is on a pill you have already
         // learned to ignore: the surface changing colour is what gets looked
         // at, and it is the same signal the caution notices use.
+        // The offer turns its rim slowly, on its own: it is the one state with
+        // a deadline, and the only one you are meant to answer. Slow, and with
+        // the glow behind it left still, so it does not read as the busy rim.
         .parrotSurface(
-            Self.shape, alive: isWorking, solid: true,
+            Self.shape, alive: isWorking, turning: isOffer, solid: true,
             wash: warning?.wash, wheel: warning?.wheel ?? Parrot.wheel
         )
         // Under the capsule, so it is the capsule's shape and not the glow's.
@@ -1024,6 +1068,11 @@ struct PillView: View {
 
     private var isWorking: Bool {
         if case .working = model.state { return true }
+        return false
+    }
+
+    private var isOffer: Bool {
+        if case .offer = model.state { return true }
         return false
     }
 
@@ -1127,6 +1176,14 @@ private struct OfferContent: View {
     /// The lit chip's lettering: leaf lightened almost to white, so the words
     /// stay readable over a fill of the same colour.
     private static let litText = Color(red: 0.89, green: 0.96, blue: 0.93)
+
+    /// Every other chip's lettering.
+    ///
+    /// `.secondary` was what this used to be, and on a dark capsule that is
+    /// grey: the commands read as unavailable, which is the one thing they are
+    /// not. Not white either — white is where the lit chip goes, and there
+    /// would be nothing left for the pointer to say.
+    private static let restingText = Color(white: 0.88)
 
     var body: some View {
         VStack(alignment: .leading, spacing: PillMetrics.sentenceGap) {
@@ -1238,18 +1295,7 @@ private struct OfferContent: View {
     private func chip(_ command: OfferedCommand, lit: Bool) -> some View {
         HStack(spacing: 7) {
             if !command.key.isEmpty {
-                Text(command.key)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                    // A floor rather than a width: every letter draws in the
-                    // same box, so the chips do not step in and out by a point
-                    // as the pointer moves along them.
-                    .frame(minWidth: 9)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.white.opacity(lit ? 0.2 : 0.12))
-                    }
+                OfferKeyCap(key: command.key, lit: lit)
             }
             Text(command.title)
                 .font(.system(size: 13, weight: .medium, design: .rounded))
@@ -1259,7 +1305,7 @@ private struct OfferContent: View {
                 .lineLimit(1)
                 .fixedSize()
         }
-        .foregroundStyle(lit ? Self.litText : .secondary)
+        .foregroundStyle(lit ? Self.litText : Self.restingText)
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background {
@@ -1270,6 +1316,84 @@ private struct OfferContent: View {
                         lit ? Parrot.leaf.opacity(0.62) : .clear, lineWidth: 1
                     )
                 }
+        }
+    }
+}
+
+/// The letter you can press, in a box with a light going round it.
+///
+/// The key is the only thing on the offer that is not obvious: the chips look
+/// like things to click, and a click is what people did — the letters were
+/// read as decoration and the offer timed out with the keyboard unused. A
+/// still border did not fix that, because everything else on the pill is still
+/// too. Movement is what the eye finds on a surface it is not looking at.
+///
+/// Slow and dim on purpose. One turn takes `turnSeconds`, so at a glance it is
+/// a border and only a border; what it does is make you glance.
+private struct OfferKeyCap: View {
+    let key: String
+    let lit: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var angle: Double = -90
+
+    /// One trip round the border. Long enough that the light never reads as a
+    /// spinner, short enough to be seen inside the offer's hold. It does not
+    /// divide into the rim's `PlumageRim.slowTurn`, so the two never fall into
+    /// step.
+    private static let turnSeconds: TimeInterval = 3.4
+    private static let radius: CGFloat = 4
+
+    /// The border when the light is elsewhere.
+    private var base: Double { lit ? 0.28 : 0.18 }
+
+    var body: some View {
+        Text(key)
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            // A floor rather than a width: every letter draws in the same box,
+            // so the chips do not step in and out by a point as the pointer
+            // moves along them.
+            .frame(minWidth: 9)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background {
+                RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+                    .fill(Color.white.opacity(lit ? 0.2 : 0.12))
+            }
+            .overlay { sheen }
+    }
+
+
+    /// A bright arc travelling round the box, over the resting border.
+    ///
+    /// The angle is animated, the same way `PlumageRim` turns the feathers —
+    /// the gradient is the border rather than something masked into it. The
+    /// arc is short and the rest of the ring is the resting white, so a still
+    /// frame is a border and only the movement is new.
+    private var sheen: some View {
+        RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
+            .strokeBorder(
+                AngularGradient(
+                    stops: [
+                        .init(color: .white.opacity(base), location: 0),
+                        .init(color: .white.opacity(lit ? 0.95 : 0.8), location: 0.1),
+                        .init(color: .white.opacity(base), location: 0.26),
+                        .init(color: .white.opacity(base), location: 1),
+                    ],
+                    center: .center, angle: .degrees(angle)
+                ),
+                lineWidth: 1
+            )
+            // `initial: true` covers what `onAppear` did; the view stays alive
+            // across offers, so a Reduce Motion toggle mid-session needs the
+            // same call again, not just on the first appearance.
+            .onChange(of: reduceMotion, initial: true) { _, _ in spin() }
+    }
+
+    private func spin() {
+        guard !reduceMotion else { return }
+        withAnimation(.linear(duration: Self.turnSeconds).repeatForever(autoreverses: false)) {
+            angle = 270
         }
     }
 }
