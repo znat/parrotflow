@@ -16,9 +16,6 @@
 # was before this option existed. Every sentence that opens a place in
 # tests/pipelines/vocabulary-fuzzy.yaml opens none here.
 #
-# See tests/pipelines/vocabulary-rules.yaml for `llm: {enabled: false}`.
-llm:
-  enabled: false
 languages: [en]
 vocabulary:
   terms:

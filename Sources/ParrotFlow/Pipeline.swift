@@ -1138,7 +1138,7 @@ struct Pipeline: Equatable, Codable {
         // lesson is reverted anyway — that part never needed a model — and the
         // ordinary change is left exactly as it arrived, same as every other
         // decline in this stage.
-        guard config.llm.enabled else {
+        guard config.llmEnabled else {
             return declined("llm.enabled is false",
                             ["asked": .int(0), "slots": .int(slots.count)],
                             fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
@@ -1276,7 +1276,7 @@ struct Pipeline: Equatable, Codable {
     private func runPrompt(
         _ step: Step, named name: String, on text: String, config: Config, scope: Scope
     ) async -> StageResult {
-        guard config.llm.enabled else {
+        guard config.llmEnabled else {
             Log.write("pipeline: skipped prompt \(name) — llm.enabled is false")
             return StageResult(text: text, vars: ["ok": .bool(false)])
         }

@@ -1698,7 +1698,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // to warm up when that is not a local model — `LocalLLM.warmUp` says so
         // too, and this saves the task.
         let llm = llmConfig(for: .router)
-        guard config.llm.enabled, llm.keepLoaded, llm.api == .ollama else { return }
+        guard config.llmEnabled, llm.keepLoaded, llm.api == .ollama else { return }
         let system = Router.prompt(
             for: Catalogue(transforms: config.transforms), freeForm: config.freeForm
         )
@@ -1765,7 +1765,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keepWarmTimer?.invalidate()
         keepWarmTimer = nil
         let router = llmConfig(for: .router)
-        guard config.llm.enabled, router.keepLoaded, router.api == .ollama else { return }
+        guard config.llmEnabled, router.keepLoaded, router.api == .ollama else { return }
 
         let timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.keepWarmTick()
@@ -1825,7 +1825,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard config.llm.enabled else {
+        guard config.llmEnabled else {
             flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands", tone: .caution)
             return
         }
@@ -1957,7 +1957,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The spelling extractor, which is a second model call rather than part of
     /// routing — it reads the last transcript and returns a rule, not a name.
     private func interpretSpelling(_ command: String) {
-        guard config.llm.enabled else {
+        guard config.llmEnabled else {
             endProgress()
             flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands", tone: .caution)
             return
@@ -3578,7 +3578,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard config.llm.enabled else {
+        guard config.llmEnabled else {
             giveUp("\"\(instruction)\" needs the local model — llm.enabled is false")
             return
         }
@@ -3646,7 +3646,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // "…by the way parrot, Tasmin spells T A S M E E N" — the rule has
             // to be read out of the instruction first, which is a model call of
             // its own and not part of routing.
-            guard config.llm.enabled else {
+            guard config.llmEnabled else {
                 giveUpInline(
                     text,
                     why: "\"\(instruction)\" needs the local model to read the spelling",

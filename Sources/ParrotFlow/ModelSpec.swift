@@ -57,6 +57,14 @@ struct ModelSpec: Equatable {
     var timeout: TimeInterval = 20
     /// Ollama only — see `LocalLLM.pinned`. Ignored by every other api.
     var keepLoaded: Bool = true
+    /// The model everything falls back to when nothing names one.
+    ///
+    /// Written on the model rather than as a name somewhere else, so the entry
+    /// says what it is instead of a second place repeating its key. With one
+    /// model configured it is the default whether or not it says so; with
+    /// several, exactly one must claim it, and `--check-config` refuses both
+    /// none and more than one — see `Config.modelProblems`.
+    var isDefault: Bool = false
     /// Merged into the request body last, unvalidated.
     ///
     /// The escape hatch that makes a provider this app has never been run
@@ -317,6 +325,7 @@ extension ModelSpec: Decodable {
         case maxTokens = "max_tokens"
         case timeoutSeconds = "timeout_seconds"
         case keepLoaded = "keep_loaded"
+        case isDefault = "default"
     }
 
     init(from decoder: Decoder) throws {
@@ -353,6 +362,9 @@ extension ModelSpec: Decodable {
         }
         if let value = try c.decodeIfPresent(Bool.self, forKey: .keepLoaded) {
             keepLoaded = value
+        }
+        if let value = try c.decodeIfPresent(Bool.self, forKey: .isDefault) {
+            isDefault = value
         }
         params = try c.decodeIfPresent([String: ModelParam].self, forKey: .params) ?? [:]
     }

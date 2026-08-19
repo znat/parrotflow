@@ -5,15 +5,12 @@
 # occurrence, grouped or not, and the stage has to decline rather than hand the
 # literal's spelling to a place some other rule wrote. See the cases.
 #
-# `llm: {enabled: false}` is how no model is called. The stage still finds the
 # places and publishes `vocabulary.slots`, then declines rather than asking —
 # so the run is the same with Ollama up or down. Every case here scores the
 # places the stage found, never what was decided at them.
 #
 # It was `max_readings: 1` while the judge answered with a letter from a menu.
 # There is no menu now, that key is ignored, and this is the replacement.
-llm:
-  enabled: false
 languages: [en]
 replacements:
   Vercel: [Versal, '/Versa\w+/']

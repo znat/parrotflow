@@ -29,7 +29,7 @@ enum PromptRunCommand {
             return 1
         }
 
-        guard config.llm.enabled else {
+        guard config.llmEnabled else {
             print("✗ llm.enabled is false")
             return 1
         }

@@ -33,7 +33,7 @@ enum RouteTestCommand {
             return 0
         }
 
-        guard config.llm.enabled else {
+        guard config.llmEnabled else {
             print("✗ needs the LLM, but llm.enabled is false")
             return 1
         }
