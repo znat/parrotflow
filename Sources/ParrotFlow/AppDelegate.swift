@@ -98,6 +98,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let previewPanel = PreviewPanel()
     /// Says once per microphone that this one will cost you words.
     private let micNotice = MicNotice()
+    /// The release notes, and the three answers to them.
+    private let updatePanel = UpdatePanel()
     private var pendingSelection: SelectionReader.Selection?
     /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
     private var selectionAtPress: SelectionReader.Selection?
@@ -865,54 +867,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The release notes, and the three answers to them.
     ///
-    /// No download button yet: taking the update in place means replacing a
-    /// running bundle, which is a separate piece of work and a worse thing to
-    /// get wrong than a missing button. Until then the command is the same one
-    /// that installed the app, and it is put on the clipboard rather than
-    /// printed for retyping.
+    /// The notes are drawn as Markdown in a panel of their own — see
+    /// `ReleaseNotes` and `UpdatePanel`.
     @objc private func showUpdate() {
         guard let release = updateAvailable else { return }
 
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "ParrotFlow \(release.version) is available"
-        alert.informativeText = (release.notes.isEmpty ? "No release notes." : release.notes)
-            + "\n\nYou are running \(Updates.current ?? "an unknown version")."
-        alert.alertStyle = .informational
-        // Installing in place is only offered when it can actually be done.
-        // An app in a read-only location, or one someone put somewhere odd,
-        // still gets the command it was installed with rather than a button
-        // that fails after downloading 3 MB.
-        let canInstall = UpdateInstaller.canInstallInPlace
-        if canInstall { alert.addButton(withTitle: "Update and restart") }
-        alert.addButton(withTitle: "Copy the upgrade command")
-        alert.addButton(withTitle: "Skip this version")
-        alert.addButton(withTitle: "Later")
-
-        var answer = alert.runModal()
-        if canInstall, answer == .alertFirstButtonReturn {
-            install(release)
-            return
-        }
-        // With the install button present every other answer sits one place
-        // further along, so it is shifted back rather than each case being
-        // written twice.
-        if canInstall { answer = NSApplication.ModalResponse(rawValue: answer.rawValue - 1) }
-
-        switch answer {
-        case .alertFirstButtonReturn:
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(Updates.installCommand, forType: .string)
-            flash("Upgrade command copied — paste it into a terminal", tone: .done)
-        case .alertSecondButtonReturn:
-            Updates.skip(release.version)
-            updateAvailable = nil
-            updateUI()
-        default:
-            Updates.remindLater()
-            updateAvailable = nil
-            updateUI()
-        }
+        // Installing in place is only offered when it can actually be done: a
+        // dev build, or an app in a read-only location, gets the reason and the
+        // command it was installed with rather than a button that fails after
+        // downloading 3 MB.
+        let blocker = UpdateInstaller.blocker
+        updatePanel.show(
+            release: release,
+            current: Updates.current,
+            blocker: blocker,
+            answers: UpdatePanel.Answers(
+                install: blocker == nil ? { [weak self] in self?.install(release) } : nil,
+                copyCommand: { [weak self] in
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(Updates.installCommand, forType: .string)
+                    self?.flash("Upgrade command copied — paste it into a terminal", tone: .done)
+                },
+                skip: { [weak self] in
+                    Updates.skip(release.version)
+                    self?.updateAvailable = nil
+                    self?.updateUI()
+                },
+                later: { [weak self] in
+                    Updates.remindLater()
+                    self?.updateAvailable = nil
+                    self?.updateUI()
+                }
+            )
+        )
     }
 
     private func watchConfig() {

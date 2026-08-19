@@ -22,6 +22,46 @@ enum PanelsCommand {
     /// in its first sentence and a short one would not say whether it fits.
     private static let sampleMicName = "Tasmin's AirPods Pro Max"
 
+    /// A release body longer than the panel is tall — a heading, two sections,
+    /// and two links on every line. Longer on purpose: the pane only scrolls
+    /// when the notes outgrow it, so a sample that fits proves nothing.
+    private static let sampleRelease = Updates.Release(
+        version: "0.7.0",
+        publishedAt: Date(timeIntervalSince1970: 1_755_561_600),
+        notes: """
+            ## [0.7.0](https://github.com/znat/parrotflow/compare/v0.6.0...v0.7.0) (2026-08-19)
+
+            ### Features
+
+            * a spelling lesson keeps the word it is teaching ([#143](https://github.com/znat/parrotflow/issues/143)) ([7e19a7e](https://github.com/znat/parrotflow/commit/7e19a7e74d6e56c153912b3f53890b2501854d49))
+            * a table says what it wrote, and `join` fits a clip to the box ([#148](https://github.com/znat/parrotflow/issues/148)) ([461ea43](https://github.com/znat/parrotflow/commit/461ea4332725a905f294cfb358b0657b8268fed8))
+            * **code_identifiers** publishes the identifiers it wrote ([#146](https://github.com/znat/parrotflow/issues/146)) ([649b08c](https://github.com/znat/parrotflow/commit/649b08c7962f405f72aeaec25c9bf96e514cb8d6))
+            * name the word lists once, and let dotted hear dash and slash ([#149](https://github.com/znat/parrotflow/issues/149)) ([aadf036](https://github.com/znat/parrotflow/commit/aadf036a1bc8451132159a9566313caabc391f64))
+            * punctuation gains brackets, semicolon, ellipsis and French ([#150](https://github.com/znat/parrotflow/issues/150)) ([dbf028c](https://github.com/znat/parrotflow/commit/dbf028c951d88f914f4cd910af668848b7526e6b))
+            * read the input box, tag the words, and hand a transform the whole run ([#147](https://github.com/znat/parrotflow/issues/147)) ([f079683](https://github.com/znat/parrotflow/commit/f0796833ac8569b2d31350a4fc9bf4db28e3bafb))
+            * the offer says when the words may not be your words ([#151](https://github.com/znat/parrotflow/issues/151)) ([e9c8578](https://github.com/znat/parrotflow/commit/e9c857869ef38665f7479cec27a6233f18d080ae))
+
+            ### Fixes
+
+            * a repeat holding "I" is no longer kept as a spelled letter ([#145](https://github.com/znat/parrotflow/issues/145)) ([0dc8153](https://github.com/znat/parrotflow/commit/0dc81535c04b2e55856ac5dfff51259b6db36e1b))
+            * get past the version-manager shim, and stop trimming what a stage added ([#144](https://github.com/znat/parrotflow/issues/144)) ([a0c5d17](https://github.com/znat/parrotflow/commit/a0c5d17e66056d90dc32a76a841bef7ec9239dda))
+            * the pill no longer keeps the icon of an app that has quit ([#141](https://github.com/znat/parrotflow/issues/141)) ([b31c0a2](https://github.com/znat/parrotflow/commit/b31c0a2f5d1e4c8a9b7e6f3d2c1a0b9e8d7c6f5a))
+            * a dictation that lands nowhere says so before it copies ([#140](https://github.com/znat/parrotflow/issues/140)) ([c42d1b3](https://github.com/znat/parrotflow/commit/c42d1b3a6e2f5d9c8b7a6e5f4d3c2b1a0f9e8d7c))
+            * the vocabulary judge stops asking Ollama about an empty match ([#138](https://github.com/znat/parrotflow/issues/138)) ([d53e2c4](https://github.com/znat/parrotflow/commit/d53e2c4b7f3a6e0d9c8b7a6f5e4d3c2b1a0f9e8d))
+            * two builds no longer fight over the same recording directory ([#137](https://github.com/znat/parrotflow/issues/137)) ([e64f3d5](https://github.com/znat/parrotflow/commit/e64f3d5c8a4b7f1e0d9c8b7a6f5e4d3c2b1a0f9e))
+            * a hotkey held through a screen lock releases on the way back ([#136](https://github.com/znat/parrotflow/issues/136)) ([f75a4e6](https://github.com/znat/parrotflow/commit/f75a4e6d9b5c8a2f1e0d9c8b7a6f5e4d3c2b1a0f))
+            * the log stops growing without bound on a machine left running ([#135](https://github.com/znat/parrotflow/issues/135)) ([a86b5f7](https://github.com/znat/parrotflow/commit/a86b5f7e0c6d9b3a2f1e0d9c8b7a6f5e4d3c2b1a))
+            * a spelled word ending in a full stop keeps the full stop ([#134](https://github.com/znat/parrotflow/issues/134)) ([b97c6a8](https://github.com/znat/parrotflow/commit/b97c6a8f1d7e0c4b3a2f1e0d9c8b7a6f5e4d3c2b))
+            * the preview panel stops reopening on the screen you left ([#133](https://github.com/znat/parrotflow/issues/133)) ([ca8d7b9](https://github.com/znat/parrotflow/commit/ca8d7b9a2e8f1d5c4b3a2f1e0d9c8b7a6f5e4d3c))
+            * numbers said as digits survive the grammar stage ([#132](https://github.com/znat/parrotflow/issues/132)) ([db9e8ca](https://github.com/znat/parrotflow/commit/db9e8ca3f9a2e6d5c4b3a2f1e0d9c8b7a6f5e4d3))
+            * a transform that writes nothing no longer clears the line ([#131](https://github.com/znat/parrotflow/issues/131)) ([ecaf9db](https://github.com/znat/parrotflow/commit/ecaf9db4a0b3f7e6d5c4b3a2f1e0d9c8b7a6f5e4))
+            * the menu bar icon returns after a display is unplugged ([#130](https://github.com/znat/parrotflow/issues/130)) ([fdb0aec](https://github.com/znat/parrotflow/commit/fdb0aec5b1c4a8f7e6d5c4b3a2f1e0d9c8b7a6f5))
+            * a second hotkey press during the release tail is ignored ([#129](https://github.com/znat/parrotflow/issues/129)) ([aec1bfd](https://github.com/znat/parrotflow/commit/aec1bfd6c2d5b9a8f7e6d5c4b3a2f1e0d9c8b7a6))
+            """,
+        zip: URL(string: "https://example.invalid/ParrotFlow.zip")!,
+        checksum: URL(string: "https://example.invalid/ParrotFlow.zip.sha256")!
+    )
+
     /// What `feedback.confidence` draws. The scores walk the whole ramp — sure,
     /// p25, p10, p1, and a word with no reading at all — because the question
     /// this surface answers is whether the colours are told apart, and a
@@ -353,6 +393,7 @@ enum PanelsCommand {
         let correction = CorrectionPanel()
         let preview = PreviewPanel()
         let micNotice = MicNotice()
+        let updatePanel = UpdatePanel()
         var ticker: Timer?
 
         switch surface {
@@ -419,6 +460,21 @@ enum PanelsCommand {
         // machine whose microphone is wired.
         case "microphone":
             micNotice.show(mic: sampleMicName)
+        // The one surface that is a window rather than a floating panel over
+        // the words. Sized from the notes it is given, so a long release is
+        // what shows whether it scrolls.
+        case "update":
+            updatePanel.show(
+                release: sampleRelease,
+                current: "0.6.0",
+                blocker: UpdateInstaller.blocker,
+                answers: UpdatePanel.Answers(
+                    install: UpdateInstaller.blocker == nil ? { print("update: install") } : nil,
+                    copyCommand: { print("update: copy the command") },
+                    skip: { print("update: skip") },
+                    later: { print("update: later") }
+                )
+            )
         case "pill":
             pill.recording(icon: sampleIcon())
             // A meter frozen at zero says nothing about how the meter looks.
@@ -460,7 +516,7 @@ enum PanelsCommand {
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
                 + "|vocabulary|punctuation|rule|dictation|preview|microphone|pill"
-                + "|sequence> [seconds]")
+                + "|update|sequence> [seconds]")
             return 2
         }
 
