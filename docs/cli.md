@@ -419,7 +419,7 @@ $PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
 `confidence`, `vocabulary`, `punctuation`, `rule`, `dictation`, `preview`,
-`microphone` or `sequence`.
+`microphone`, `update` or `sequence`.
 `--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
 

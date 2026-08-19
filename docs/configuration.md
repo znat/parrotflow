@@ -501,6 +501,12 @@ A wait has a point — a bad release is one that gets noticed and pulled, and a
 week of distance means your Mac never saw it. Set `after_days: 7` if you want
 that; the default takes the release the day it ships.
 
+When one is offered you get a panel with the release notes and three answers:
+**Update and restart**, which downloads, checks and replaces the app; **Skip
+this version**, which never offers that version again; and **Later**. A dev
+build offers the install command instead of the button — see
+[distribution.md](distribution.md#updates).
+
 ## `free_form`
 
 Do what was asked even when no transform description matches: "hey parrot, use
