@@ -164,14 +164,29 @@ Notes on getting this right:
 
 ## Updates
 
-Re-running the install line upgrades in place — it replaces the bundle and
-relaunches. That is the whole update story for now, and it is enough while the
-audience is people who are comfortable with a curl line.
+The app checks GitHub hourly and offers the release itself. The panel shows the
+release notes as Markdown — see `UpdatePanel` and `ReleaseNotes` — and takes
+three answers: install and restart, skip this version, or later. Installing runs
+the same three checks `install.sh` runs, in the same order: the published
+SHA-256, the code signature, and the pinned leaf certificate. Nothing is
+replaced until all three agree. See `UpdateInstaller`.
 
-It is not enough later, because it requires the user to think of it. [Sparkle](https://sparkle-project.org)
-is the standard answer: an appcast XML feed, EdDSA signatures, in-app prompts.
-Worth adding once there are users to update; a "new version available" item in
-the menu bar is a cheap intermediate step.
+Re-running the install line still upgrades in place, and it is still the way in
+when the app cannot install over itself.
+
+A dev build cannot. The archive holds `ParrotFlow.app` signed as
+`com.parrotflow.app`; a dev bundle is `ParrotFlowDev.app` signed as
+`com.parrotflow.app.dev`. Moving one over the other would not update the dev
+build — it would leave the released app under the dev build's name, reading the
+other config directory, writing the other log, and listening to the other key.
+So the dev build says a release exists and offers the install command instead of
+the button. A dev build is updated by building it.
+
+[Sparkle](https://sparkle-project.org) is what most apps use for this, and the
+window everyone recognises is Sparkle's. It was not adopted: it brings an
+appcast XML feed to publish on every release and an EdDSA key to sign with, and
+it replaces the pinned-certificate check that already ties the update path to
+`install.sh`.
 
 Note that the upgrade path is exactly where the stable signing certificate earns
 its keep. Replacing the bundle with one signed by a different identity loses

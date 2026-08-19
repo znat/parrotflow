@@ -481,7 +481,7 @@ if let index = arguments.firstIndex(of: "--panel-sheet") {
 
 if let index = arguments.firstIndex(of: "--panels") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|punctuation|rule|dictation|preview|pill|sequence> [seconds]")
+        print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|punctuation|rule|dictation|preview|pill|update|sequence> [seconds]")
         exit(2)
     }
     let seconds = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) : nil
