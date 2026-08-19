@@ -404,7 +404,9 @@ examples/code_identifiers/code_identifiers.py` — the shared copy in
 launch. The stop lists in it decide where a name ends, which is a judgement
 about how you speak rather than a fact, and they are meant to be edited — but
 that folder is the app's, not yours, and an edit there does not survive the
-next launch.
+next launch. The refresh also drops a file this version stops shipping, so
+renaming or retiring an example does not leave a stale copy still resolving
+under its old path.
 
 **To make it yours, copy it out.** `transforms/examples/code_identifiers/` to
 `transforms/code_identifiers/`, and `command:` from

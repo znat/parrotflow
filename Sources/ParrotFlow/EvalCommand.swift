@@ -161,9 +161,14 @@ enum EvalCommand {
             }
             // `--cases` wins over the transform's own `tests:`, which wins over
             // the `cases.yaml` every folder has by convention.
-            let wanted = override ?? transform.tests ?? "cases.yaml"
+            let explicit = override ?? transform.tests
+            let wanted = explicit ?? "cases.yaml"
+            // The shared-script fallback is only for the by-convention name.
+            // A file named explicitly, by `--cases` or by `tests:`, says
+            // where it lives; missing it there is a miss to report, not a
+            // reason to go looking beside a shared script instead.
             guard let found = transform.folder?.resolve(wanted)
-                ?? sharedCases(wanted, transform: transform)
+                ?? (explicit == nil ? sharedCases(wanted, transform: transform) : nil)
             else {
                 let folder = transform.folder?.url?.path ?? ConfigStore.directory.path
                 print("✗ no \(wanted) for \"\(transform.name)\""
@@ -209,6 +214,11 @@ enum EvalCommand {
     /// punctuation.py` reads from `transforms/examples/punctuation/`, and its
     /// case set is right there next to the script, not in `transforms/
     /// punctuation/`.
+    ///
+    /// Only called for the by-convention `cases.yaml`, never for a name given
+    /// explicitly by `--cases` or `tests:` — an explicit name says where the
+    /// file lives, so not finding it there is a miss to report, not a reason
+    /// to look elsewhere.
     private static func sharedCases(
         _ wanted: String, transform: Config.Transform
     ) -> TransformFolder.Resolved? {

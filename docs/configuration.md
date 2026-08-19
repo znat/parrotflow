@@ -112,10 +112,13 @@ its own data files from `__file__` rather than by bare relative name.
 
 `transforms/examples/` is the app's folder: refreshed from the copy that ships
 every time ParrotFlow starts, so an edit made there does not survive the next
-launch. `transforms/<name>/` is yours: nothing here ever writes it, and
-nothing in it is ever overwritten. To change a shipped example, copy its
-folder from `transforms/examples/` into `transforms/<name>/` and point
-`command:` at the bare name there.
+launch. The refresh also removes a file this version no longer ships, so an
+example a past version installed and this one dropped or renamed stops
+resolving through its old `examples/...` path instead of quietly going stale.
+`transforms/<name>/` is yours: nothing here ever writes it, and nothing in it
+is ever overwritten. To change a shipped example, copy its folder from
+`transforms/examples/` into `transforms/<name>/` and point `command:` at the
+bare name there.
 
 Beyond that there is no flat alternative to fall back to: a `command:` that
 names neither a file under `transforms/` nor anything the shell can find on

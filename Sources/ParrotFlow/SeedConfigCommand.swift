@@ -9,8 +9,10 @@ import Foundation
 ///
 /// `config.yaml` and `vocabulary.yaml` are written once and never touched
 /// again. `transforms/examples/` is refreshed every time this runs, the same
-/// as every launch — that folder is the app's, not yours. Point it somewhere
-/// else with `PARROTFLOW_CONFIG_DIR` to see the full result.
+/// as every launch — that folder is the app's, not yours. A file it no
+/// longer ships is removed from there too, so an example an older version
+/// installed does not go on resolving after this one drops it. Point it
+/// somewhere else with `PARROTFLOW_CONFIG_DIR` to see the full result.
 enum SeedConfigCommand {
 
     static func run() -> Int32 {
@@ -19,10 +21,9 @@ enum SeedConfigCommand {
 
         let fm = FileManager.default
         let relatives = ConfigStore.exampleTransformFiles()
-        let before = Set(relatives.filter {
-            fm.fileExists(atPath: ConfigStore.installedExamplesDirectory
-                .appendingPathComponent($0).path)
-        })
+        let installedBefore = Set(ConfigStore.installedExampleFiles())
+        let before = Set(relatives).intersection(installedBefore)
+        let stale = installedBefore.subtracting(relatives).sorted()
         let configExisted = fm.fileExists(atPath: ConfigStore.fileURL.path)
         let vocabularyExisted = fm.fileExists(atPath: ConfigStore.vocabularyURL.path)
 
@@ -57,8 +58,13 @@ enum SeedConfigCommand {
             }
         }
 
+        for relative in stale {
+            print("  · transforms/examples/\(relative) — removed, no longer shipped")
+        }
+
         print("")
-        print("  \(written) example file(s) written, \(refreshed) refreshed.")
+        print("  \(written) example file(s) written, \(refreshed) refreshed"
+            + (stale.isEmpty ? "." : ", \(stale.count) removed."))
         print("  transforms/examples/ is the app's; edits there do not survive the next launch.")
         print("  transforms/<name>/ is yours — copy a file out of examples/ before editing it.")
         return 0

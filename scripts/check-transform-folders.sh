@@ -321,6 +321,40 @@ check "and the refresh is reported" \
   "$(printf '%s\n' "$refreshed_out" | grep -c 'transforms/examples/punctuation/punctuation.py — refreshed')" \
   "1"
 
+# --- a file the shipped tree drops is pruned, not left stale -----------------
+#
+# An example a past version installed and this one no longer ships must not
+# keep resolving through an `examples/...` path forever. `retired` is not a
+# folder `examples/transforms/` has, so the next refresh has nothing to copy
+# there and removes what is left over from before.
+mkdir -p "$FRESH/transforms/examples/retired"
+printf '#!/usr/bin/env python3\nprint("gone")\n' > "$FRESH/transforms/examples/retired/retired.py"
+pruned_out="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
+
+check "a file the app no longer ships is removed from transforms/examples/" \
+  "$([ -e "$FRESH/transforms/examples/retired/retired.py" ] && echo present || echo gone)" \
+  "gone"
+
+check "and the removal is reported" \
+  "$(printf '%s\n' "$pruned_out" | grep -c 'transforms/examples/retired/retired.py — removed, no longer shipped')" \
+  "1"
+
+# It stops resolving too. Written into `$FRESH` itself, not `$WORK` — a
+# `--pipeline` fixture resolves `command:` against its own directory, and
+# `transforms/examples/` was just pruned under `$FRESH`.
+cat > "$FRESH/retired.yaml" <<YAML
+transforms:
+  - name: retired_user
+    description: points at a file the app no longer ships
+    command: examples/retired/retired.py
+pipeline:
+  - transform: retired_user
+YAML
+
+check "and a command pointed at it no longer resolves — fails open" \
+  "$("$BIN" --pipeline "$FRESH/retired.yaml" "keep it down" --quiet 2>/dev/null | tail -1)" \
+  "keep it down"
+
 # --- an older install's own folder is never touched --------------------------
 #
 # `transforms/punctuation/` is what a version before this one seeded, and a

@@ -2543,6 +2543,9 @@ enum ConfigStore {
     /// and every config that points a `command:` at it shares the same one.
     /// Edit a file in here and the edit is gone at the next launch; copy it
     /// into `transforms/<name>/` first if you want to keep changes to it.
+    /// A file a later version stops shipping is removed from here too, so a
+    /// deleted or renamed example does not go on resolving through an
+    /// `examples/...` path after the app that shipped it is gone.
     static var installedExamplesDirectory: URL {
         transformsDirectory.appendingPathComponent("examples", isDirectory: true)
     }
@@ -2555,16 +2558,34 @@ enum ConfigStore {
     /// or the tree that gains a folder, is picked up without a list here to
     /// keep in sync with `examples/transforms/`.
     static func exampleTransformFiles() -> [String] {
-        let source = exampleTransformsDirectory
-        guard let enumerator = FileManager.default.enumerator(
-            at: source, includingPropertiesForKeys: [.isDirectoryKey]
-        ) else { return [] }
+        filesUnder(exampleTransformsDirectory)
+    }
+
+    /// The same walk, over what is actually installed at
+    /// `installedExamplesDirectory` — which, right before a refresh, may
+    /// still include files an older version shipped and this one does not.
+    static func installedExampleFiles() -> [String] {
+        filesUnder(installedExamplesDirectory)
+    }
+
+    private static func filesUnder(_ root: URL) -> [String] {
+        // `enumerator(atPath:)`, not `enumerator(at:)` — it hands back paths
+        // already relative to `root`, so there is no absolute prefix to
+        // strip. Stripping one was fragile: under `/tmp` or `/var/folders`,
+        // the enumerator resolves the ancestor symlink and reports
+        // `/private/…`, while `root` does not, and the two disagreed on
+        // length.
+        guard let enumerator = FileManager.default.enumerator(atPath: root.path)
+        else { return [] }
         var files: [String] = []
-        for case let url as URL in enumerator {
-            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory
-                ?? false
-            guard !isDirectory, !url.lastPathComponent.hasPrefix(".") else { continue }
-            files.append(String(url.path.dropFirst(source.path.count + 1)))
+        for case let relative as String in enumerator {
+            var isDirectory: ObjCBool = false
+            let exists = FileManager.default.fileExists(
+                atPath: root.appendingPathComponent(relative).path, isDirectory: &isDirectory)
+            guard exists, !isDirectory.boolValue,
+                  !(relative as NSString).lastPathComponent.hasPrefix(".")
+            else { continue }
+            files.append(relative)
         }
         return files.sorted()
     }
@@ -2610,22 +2631,45 @@ enum ConfigStore {
     /// `transforms/punctuation/punctuation.py`, and `command: punctuation.py`
     /// still finds it by the bare-name rule — nothing here moves it, reads
     /// it, or copies over it.
+    ///
+    /// **A file this version no longer ships is removed from
+    /// `transforms/examples/`.** Without that, an example an earlier version
+    /// installed but this one dropped or renamed would keep sitting there,
+    /// still resolvable through its old `examples/...` path, working when it
+    /// should instead be reported as missing.
     static func createIfMissing() throws {
         let fm = FileManager.default
         let source = exampleTransformsDirectory
-        for relative in exampleTransformFiles() {
-            let shipped = source.appendingPathComponent(relative)
+        let shipped = exampleTransformFiles()
+        for relative in shipped {
+            let shippedFile = source.appendingPathComponent(relative)
             let destination = installedExamplesDirectory.appendingPathComponent(relative)
             let isNew = !fm.fileExists(atPath: destination.path)
             try fm.createDirectory(
                 at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
             if !isNew { try fm.removeItem(at: destination) }
-            try fm.copyItem(at: shipped, to: destination)
+            try fm.copyItem(at: shippedFile, to: destination)
             if destination.pathExtension == "py" {
                 // A shebang does nothing without this.
                 try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: destination.path)
             }
             if isNew { Log.write("config: wrote transforms/examples/\(relative)") }
+        }
+        let stillShipped = Set(shipped)
+        for relative in installedExampleFiles() where !stillShipped.contains(relative) {
+            var url = installedExamplesDirectory.appendingPathComponent(relative)
+            try? fm.removeItem(at: url)
+            Log.write("config: removed transforms/examples/\(relative) (no longer shipped)")
+            // A folder a removed example leaves empty — `retired/` once
+            // `retired/retired.py` is gone — is cleaned up too, stopping at
+            // the first one that still has something else in it, and never
+            // above `installedExamplesDirectory` itself.
+            url.deleteLastPathComponent()
+            while url.path != installedExamplesDirectory.path,
+                  (try? fm.contentsOfDirectory(atPath: url.path))?.isEmpty == true {
+                try? fm.removeItem(at: url)
+                url.deleteLastPathComponent()
+            }
         }
         // The vocabulary, empty but explained. Written so the file exists to
         // be found and read — a person who never dictates a mangled word
