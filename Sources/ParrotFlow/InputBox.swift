@@ -57,6 +57,46 @@ enum InputBox {
             (before?.count ?? 0) + (selection?.count ?? 0)
                 + (after?.count ?? 0) + (text?.count ?? 0)
         }
+
+        /// The caret and the text either side of it, as one short escaped
+        /// string — nil on a surface that publishes no caret.
+        ///
+        /// This is what `join` decides from, and it was the one input to that
+        /// decision the log did not record. A leading space it added could be
+        /// traced to the rule that added it, but not to the neighbourhood the
+        /// rule read, so the two states that pick different rules — a stop
+        /// behind the caret, a newline behind it — looked identical in the log.
+        /// Twenty characters a side covers a sentence end, a newline, a bracket
+        /// and a hyphen, which is everything the rules look at.
+        ///
+        /// Both edges in one string with the caret marked, rather than two
+        /// fields. The decision is about what sits either side of one point.
+        var neighbourhood: String? {
+            guard let before, let after else { return nil }
+            let edge = 20
+            let middle: String
+            if let selection, !selection.isEmpty {
+                middle = "\u{27E6}" + escaped(String(selection.prefix(edge)))
+                    + (selection.count > edge ? "\u{2026}" : "") + "\u{27E7}"
+            } else {
+                middle = "\u{2038}"
+            }
+            return (before.count > edge ? "\u{2026}" : "")
+                + escaped(String(before.suffix(edge)))
+                + middle
+                + escaped(String(after.prefix(edge)))
+                + (after.count > edge ? "\u{2026}" : "")
+        }
+
+        /// Whitespace as its escape, so the neighbourhood stays on one log
+        /// line. A newline is the difference between two of `join`'s rules, so
+        /// it has to be visible rather than acted on.
+        private func escaped(_ part: String) -> String {
+            part.replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\n", with: "\\n")
+                .replacingOccurrences(of: "\r", with: "\\r")
+                .replacingOccurrences(of: "\t", with: "\\t")
+        }
     }
 
     /// Why a read did not happen. Published as `input.declined`, because a box
@@ -163,6 +203,12 @@ enum InputBox {
                 capture.chars, capture.total, ms,
                 capture.before == nil ? "caret unknown"
                     : (capture.appending == true ? "appending" : "inserting")))
+            // Press time and pipeline time are the same snapshot, seconds
+            // apart. Anything typed between them is invisible to both, and a
+            // pipeline with no `input` stage still leaves the evidence here.
+            if let neighbourhood = capture.neighbourhood {
+                Log.write("    caret: \(neighbourhood)")
+            }
         case .failure(let why):
             Log.write(String(
                 format: "input: nothing captured at press (%@) in %.0fms", why.rawValue, ms))

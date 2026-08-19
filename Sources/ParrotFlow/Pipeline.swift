@@ -917,6 +917,12 @@ struct Pipeline: Equatable, Codable {
                 : (capture.appending == true ? "appending" : "inserting")
             Log.write("pipeline: input read \(capture.chars) of \(capture.total) chars, "
                 + placement + (capture.truncated ? ", truncated" : ""))
+            // Directly above whatever `join` then logs, because the two lines
+            // only answer the question together: which rule fired, and what it
+            // read to pick that one.
+            if let neighbourhood = capture.neighbourhood {
+                Log.write("    caret: \(neighbourhood)")
+            }
             var vars: [String: Scope.Value] = [
                 "chars": .int(capture.chars),
                 "total": .int(capture.total),

@@ -14,7 +14,7 @@ CASES="$ROOT/tests/input-cases.txt"
 [ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 
 pass=0; total=0; failed=""
-while IFS='~' read -r field caret selected limit shape where before selection after; do
+while IFS='~' read -r field caret selected limit shape where before selection after neighbourhood; do
   case "$field" in \#*) continue;; esac
   caret="$(printf '%s' "$caret" | tr -d ' ')"
   [ -z "$caret" ] && continue
@@ -31,7 +31,8 @@ while IFS='~' read -r field caret selected limit shape where before selection af
 $(trim "$where")
 before $(trim "$before")
 selection $(trim "$selection")
-after $(trim "$after")"
+after $(trim "$after")
+caret $(trim "$neighbourhood")"
 
   got="$("$BIN" --input-test "$field" "$caret" "$selected" "$limit" 2>/dev/null)"
 
