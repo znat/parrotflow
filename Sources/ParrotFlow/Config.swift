@@ -1184,7 +1184,13 @@ struct Config: Decodable, Equatable {
     struct UpdatePolicy: Codable, Equatable {
         /// Negative never asks GitHub at all. Zero takes a release the day it
         /// is published. Anything else waits that many days.
-        var afterDays: Int = 7
+        ///
+        /// Zero by default, which is what `config.example.yaml` has always
+        /// shipped — the two disagreed, so a config with no `updates:` block
+        /// waited a week and a config seeded from the example did not. Anyone
+        /// who wants the waiting period sets it; see the note above for what
+        /// it is for.
+        var afterDays: Int = 0
 
         enum CodingKeys: String, CodingKey {
             case afterDays = "after_days"

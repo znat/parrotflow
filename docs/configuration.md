@@ -43,7 +43,7 @@ models:                 # more models, under names you pick
     reasoning: off      # off | minimal | low | medium | high
 
 updates:
-  after_days: 7
+  after_days: 0
 
 free_form: true
 
@@ -495,8 +495,11 @@ about what you dictate.
 
 The number is a waiting period, not a frequency: `-1` never asks, `0` offers a
 release the day it is published, `7` only offers one that has existed for a
-week. The wait is the point — a bad release is one that gets noticed and
-pulled, and a week of distance means your Mac never saw it.
+week. `0` is the default.
+
+A wait has a point — a bad release is one that gets noticed and pulled, and a
+week of distance means your Mac never saw it. Set `after_days: 7` if you want
+that; the default takes the release the day it ships.
 
 ## `free_form`
 

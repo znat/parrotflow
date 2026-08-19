@@ -216,6 +216,13 @@ from the menu bar, and go to **Hand over**.
 
 **Yes** → keep going.
 
+**Or a hosted model instead.** Everything below runs Gemma on their own Mac,
+which is the private option and the default. Someone who would rather not
+download 10 GB can name a hosted model under `models:` in config.yaml and give
+it an API key — the app asks for the key on its next launch and keeps it in the
+keychain. That sends what they dictate to somebody else's server, so say so and
+let them choose. See [configuration.md](configuration.md).
+
 **Ollama runs the model.** These answer whether it is installed and running:
 
 ```sh

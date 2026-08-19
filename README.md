@@ -133,9 +133,15 @@ ParrotFlow requires Apple silicon and macOS 14 or later.
 curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
 
-Setup will install the Parakeet speech model (1.2 GB,
-needed for dictation), and [Ollama](https://ollama.com/download) with a
-small [Gemma4](https://ollama.com/library/gemma4:e4b-mlx) model.
+Dictation works as soon as it is installed. The Parakeet speech model it needs
+(1.2 GB) downloads itself on your first dictation.
+
+Spoken commands and the vocabulary check need a language model as well, and
+that part is optional. Run one on your own Mac with
+[Ollama](https://ollama.com/download) and a small
+[Gemma4](https://ollama.com/library/gemma4:e4b-mlx) model, or name a hosted one
+under `models:` — see [docs/configuration.md](docs/configuration.md). The
+installer prints how to do either and installs neither.
 
 ## Documentation
 
