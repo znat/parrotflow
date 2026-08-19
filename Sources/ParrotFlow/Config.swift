@@ -2658,7 +2658,17 @@ enum ConfigStore {
         let stillShipped = Set(shipped)
         for relative in installedExampleFiles() where !stillShipped.contains(relative) {
             var url = installedExamplesDirectory.appendingPathComponent(relative)
-            try? fm.removeItem(at: url)
+            do {
+                try fm.removeItem(at: url)
+            } catch {
+                // Said out loud, because the whole point of the prune is that a
+                // dropped example stops resolving. A failure that logged
+                // "removed" would report the opposite of what happened, and the
+                // stale `examples/...` path would go on working.
+                Log.write("config: could not remove transforms/examples/\(relative):"
+                    + " \(error.localizedDescription); it is stale and still resolves")
+                continue
+            }
             Log.write("config: removed transforms/examples/\(relative) (no longer shipped)")
             // A folder a removed example leaves empty — `retired/` once
             // `retired/retired.py` is gone — is cleaned up too, stopping at
