@@ -27,7 +27,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from importlib.machinery import SourceFileLoader
+import importlib.util
 
 try:
     import yaml
@@ -41,7 +41,9 @@ TRANSFORM = HERE / "repetitions.py"
 CASES = HERE / "cases.yaml"
 TRACE = Path.home() / "Recordings/ParrotFlow/trace.jsonl"
 
-repetitions = SourceFileLoader("repetitions", str(TRANSFORM)).load_module()
+_spec = importlib.util.spec_from_file_location("repetitions", TRANSFORM)
+repetitions = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(repetitions)
 
 def collapsed(text):
     """The transform's own entry point, and the passes it named itself into.
