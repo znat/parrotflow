@@ -83,9 +83,27 @@ FR|le mot souligné dans le texte|le mot souligné dans le texte
 
 EN|the hyphen key on your keyboard|the hyphen key on your keyboard
 
-# `dash` is not a trigger: an ordinary word, unguarded unlike `dot`/`point`.
+# `dash` is a trigger now, measured: over 3,759 archived clips "hyphen" was said
+# 0 times and "dash" 8, 6 of them joining a real name. It carries an after-list
+# of its own — a real join's right-hand side is a name part, never a preposition
+# — which is what leaves "a mad dash to the door" alone. Two content words
+# either side is the same residue "dot" has, and "yard dash record" is it.
 EN|a mad dash to the door|a mad dash to the door
-EN|the hundred yard dash record|the hundred yard dash record
+RESIDUE|the hundred yard dash record|the hundred yard dash record
+EN|shingrix dash test|shingrix-test
+EN|can you find the branch aeo dash prototype|can you find the branch aeo-prototype
+EN|A dash B|A-B
+EN|a underscore b|a_b
+EN|A dot B|A.B
+
+# `slash` — a path, or the and/or sense. `(?<!slash )` makes a leading-slash
+# path decline whole rather than half-convert, and the mark names in the
+# after-list are why a sentence listing them is left as words.
+EN|it is a technical slash product decision|it is a technical/product decision
+EN|folder slash file|folder/file
+FR|le dossier barre oblique fichier|le dossier/fichier
+EN|you should add slash semicolon ellipsis|you should add slash semicolon ellipsis
+RESIDUE|examples are available in slash tmp slash random|examples are available in slash tmp slash random
 
 # The residue. Two content words either side, so nothing in the sentence says
 # which one it is. Both are unlikely in a terminal or a chat window, which is

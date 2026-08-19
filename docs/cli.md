@@ -355,10 +355,19 @@ $PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
 ```
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
-`vocabulary`, `punctuation`, `rule`, `dictation`, `preview`, `microphone` or
-`sequence`.
+`confidence`, `vocabulary`, `punctuation`, `rule`, `dictation`, `preview`,
+`microphone`, `update` or `sequence`.
 `--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
+
+`confidence` is the same offer with `feedback.confidence` on: the sentence above
+the chips, each word coloured by how sure the decoder was of it, and the
+decoder's score for the whole utterance under it, on bands of its own. The
+sheet also carries the warning on its own — an amber pill with one line — which
+is what `low_confidence` draws with the colours off, and what most people will
+ever see of this. It is the only pill that is
+three rows. See
+[configuration.md](configuration.md#confidence--how-sure-the-decoder-was).
 
 `microphone` is the Bluetooth notice, with a made-up device name. It is the one
 surface with something to click besides the offer: *Why* opens the reasons and
@@ -401,6 +410,7 @@ scripts/check-default-config.sh    scripts/check-transform-folders.sh
 scripts/check-eval.sh              # every case set, scored
 scripts/check-compose.sh           # what a prompt says once the scope is in it
 scripts/check-context.sh           # what the context stage publishes for a screen
+scripts/check-input.sh             # where the input stage windows a field, and the caret
 scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
 scripts/check-vocabulary-config.sh # what vocabulary.yaml adds up to, old keys included
 scripts/check-possessive.sh        # whether a possessive survives a substitution
@@ -504,6 +514,13 @@ jq -r '.asr.words[]? | select(.confidence < 0.5) | .word' trace.jsonl |
 # its detector would not load, and a record can have every word and no segments.
 jq -r 'select((.asr.words|length > 0) and (.vad.segments|length > 0)) |
        [.wav, (.vad.segments[-1][1]), (.asr.words[-1].end), .vad.total] | @tsv' trace.jsonl
+
+# A dictation that vanished whole: the gate heard speech and the decoder wrote
+# nothing at all. Distinct from the query above, which needs words to measure a
+# short ending against. 59 of 16,288 records over three weeks, and the reason
+# `silenceRetryPad` exists — see Transcriber.swift.
+jq -r 'select(((.asr.text // "") | length) == 0 and (.vad.segments|length > 0)) |
+       [.wav, .vad.speech, .vad.total] | @tsv' trace.jsonl
 
 # What each stage really costs on your own sentences.
 jq -r '.stages[]? | select(.seconds) | [.name, .seconds] | @tsv' trace.jsonl |

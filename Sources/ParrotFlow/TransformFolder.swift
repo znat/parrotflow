@@ -22,6 +22,15 @@ import Foundation
 /// paid for a population of nobody — the layout arrived before anyone had
 /// installed the app. A config that still points outside its folder is now
 /// told so once, by `--check-config`, and moving the file is the whole fix.
+///
+/// What that invariant is really about is the *bare name*: `punctuation.py`
+/// resolves in the folder or nowhere, so the spelling written every day cannot
+/// mean two files. A path with a directory in it —
+/// `examples/punctuation/punctuation.py` — may name a file elsewhere under
+/// `transforms/`, which is how the shipped examples are read from one copy
+/// rather than copied per transform. It is still one answer per spelling, and
+/// the working directory does not move: a shared script runs in the folder of
+/// whichever transform called it, so it locates its own data from `__file__`.
 struct TransformFolder: Equatable {
     /// The directory of the file that declared the transform — where
     /// `config.yaml` is, or where a `--pipeline` fixture is.
@@ -92,22 +101,48 @@ struct TransformFolder: Equatable {
         let inFolder = url.appendingPathComponent(expanded).standardizedFileURL
         if fm.fileExists(atPath: inFolder.path) { return Resolved(url: inFolder) }
 
+        // A folder shared between transforms, resolved against `transforms/`
+        // rather than against any one transform's own folder —
+        // `examples/punctuation/punctuation.py`. The shipped examples are the
+        // case that wants it: one copy of a script, read by whoever names it,
+        // instead of a copy per transform that names it.
+        //
+        // **Only for a path with a slash in it.** A bare `punctuation.py` still
+        // means your own folder and nothing else, which is the invariant the
+        // note above is defending: the common spelling can never resolve in two
+        // places, so the two can never disagree. A path that reaches sideways
+        // says so by having a directory in it.
+        if expanded.contains("/") {
+            let shared = transformsDirectory
+                .appendingPathComponent(expanded).standardizedFileURL
+            if fm.fileExists(atPath: shared.path), shared.isInside(transformsDirectory) {
+                return Resolved(url: shared)
+            }
+        }
+
         // `transforms/slack_mentions/slack_mentions.py` spells out what
         // `slack_mentions.py` does, and people write both, so both name the
         // same file. Resolved against the config directory and then **required
-        // to land inside the folder** — which is what keeps this from being a
-        // second place to look. Nothing outside the folder can be reached this
-        // way, so there are still never two directories that could disagree.
+        // to land inside the folder**, so this is not a second place to look:
+        // the only paths it adds are longer spellings of the folder above.
         let spelledOut = configDirectory.appendingPathComponent(expanded).standardizedFileURL
-        guard fm.fileExists(atPath: spelledOut.path), contains(spelledOut) else { return nil }
+        guard fm.fileExists(atPath: spelledOut.path), spelledOut.isInside(url) else { return nil }
         return Resolved(url: spelledOut)
     }
 
-    /// Whether a path is inside the folder, compared as resolved absolute
-    /// paths rather than by matching what was written.
-    private func contains(_ candidate: URL) -> Bool {
-        guard let url else { return false }
-        let folder = url.path.hasSuffix("/") ? url.path : url.path + "/"
-        return candidate.path.hasPrefix(folder)
+    /// `<config>/transforms` — where every transform's folder sits.
+    private var transformsDirectory: URL {
+        configDirectory
+            .appendingPathComponent("transforms", isDirectory: true)
+            .standardizedFileURL
+    }
+}
+
+private extension URL {
+    /// Whether this path sits inside `directory`, compared as resolved
+    /// absolute paths rather than by matching what was written.
+    func isInside(_ directory: URL) -> Bool {
+        let folder = directory.path.hasSuffix("/") ? directory.path : directory.path + "/"
+        return path.hasPrefix(folder)
     }
 }

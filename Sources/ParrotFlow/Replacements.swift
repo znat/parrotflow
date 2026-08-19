@@ -73,31 +73,54 @@ enum Replacements {
     /// Counted per *rule*, not per substitution: "two rules fired" is the
     /// question a condition is asking, and a rule that replaced the same word
     /// four times did one thing, not four.
-    /// - Returns: the rewritten text, how many rules fired, and what each one
-    ///   wrote — `heard -> written`, joined by `; `. The third is for a stage
-    ///   that has to judge the substitutions rather than make them: a judge
-    ///   handed only the finished sentence cannot see what changed in it.
+    /// - Returns: the rewritten text, how many rules fired, what each one
+    ///   wrote — `heard -> written`, joined by `; ` — and the substitutions
+    ///   themselves. The third is for a stage that has to judge the
+    ///   substitutions rather than make them: a judge handed only the finished
+    ///   sentence cannot see what changed in it.
+    ///
+    ///   The fourth is `protected`: the text this pass actually put in, with
+    ///   the templates expanded, so `$1.` on "user dot name" reports `user.`
+    ///   and not `$1.`. A later stage reads it to leave those characters alone
+    ///   — `join` re-cases the first word of a clip and splits a dot it thinks
+    ///   the decoder invented, and neither is right on something a table wrote
+    ///   on purpose. A `replace:` transform has no code of its own to publish
+    ///   from, so this pass publishes on its behalf.
+    /// `expand` turns `{{determiners}}` in a pattern into the list it names.
+    /// Passed in rather than reached for, because this type knows about rules
+    /// and not about the config they came from.
     static func exact(
-        to text: String, rules: [Config.Transcription.Rule]
-    ) -> (text: String, count: Int, changes: String) {
+        to text: String, rules: [Config.Transcription.Rule],
+        expand: (String) -> String = { $0 }
+    ) -> (text: String, count: Int, changes: String, protected: String) {
         var output = text
         var deleted = false
         var fired = 0
         var changes: [String] = []
+        var written: [String] = []
 
         for rule in rules {
             guard let pattern = try? NSRegularExpression(
-                pattern: rule.pattern, options: [.caseInsensitive]
+                pattern: expand(rule.pattern), options: [.caseInsensitive]
             ) else {
                 Log.write("replacements: \"\(rule.source)\" is not a valid pattern; skipped")
                 continue
             }
             let before = output
-            output = pattern.stringByReplacingMatches(
-                in: output,
-                range: NSRange(output.startIndex..., in: output),
-                withTemplate: rule.template
-            )
+            // Match by match, back to front, rather than one
+            // `stringByReplacingMatches`. Same result, and it is the only way
+            // to see what each substitution actually put in: the all-at-once
+            // call hands back the finished string and keeps the expansions.
+            // Back to front so an earlier replacement cannot move a later match.
+            let found = pattern.matches(
+                in: output, range: NSRange(output.startIndex..., in: output))
+            for match in found.reversed() {
+                let expanded = pattern.replacementString(
+                    for: match, in: output, offset: 0, template: rule.template)
+                guard let range = Range(match.range, in: output) else { continue }
+                output.replaceSubrange(range, with: expanded)
+                if !rule.isDeletion, !expanded.isEmpty { written.append(expanded) }
+            }
             if output != before {
                 fired += 1
                 if rule.isDeletion { deleted = true }
@@ -107,7 +130,11 @@ enum Replacements {
 
         return (
             deleted ? tidy(output) : output, fired,
-            changes.joined(separator: "; ")
+            changes.joined(separator: "; "),
+            // Deduplicated and order-stable: a rule that fired four times wrote
+            // one term to protect, not four.
+            NSOrderedSet(array: written).array.compactMap { $0 as? String }
+                .joined(separator: "; ")
         )
     }
 

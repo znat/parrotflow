@@ -183,7 +183,8 @@ enum EvalCommand {
     /// the app runs, including the part where every way of failing returns the
     /// transcript exactly as it arrived.
     private static func through(
-        _ transform: Config.Transform, _ text: String, config: Config, instruction: String
+        _ transform: Config.Transform, _ text: String, config: Config, instruction: String,
+        language: String? = nil
     ) -> (output: String, seconds: TimeInterval) {
         // A prompt reached by voice is given what the speaker actually said,
         // and the same prompt in a pipeline is given nothing — "format those
@@ -211,8 +212,12 @@ enum EvalCommand {
         var output = text
         let started = Date()
         let done = DispatchSemaphore(value: 0)
+        // Seeded, so `Pipeline` keeps it instead of detecting one. Absent, the
+        // detector runs exactly as it does for a real dictation.
+        var seed = Scope()
+        if let language { seed.set("language", .string(language)) }
         Task {
-            output = await pipeline.run(text, config: config)
+            output = await pipeline.run(text, config: config, seed: seed)
             done.signal()
         }
         done.wait()
@@ -311,11 +316,13 @@ enum EvalCommand {
         // is a case that is about to be scored anyway, so this costs one extra
         // run of one input rather than one of an input nobody asked for.
         if let first = selected.first {
-            _ = through(transform, first.input, config: config, instruction: instruction)
+            _ = through(transform, first.input, config: config, instruction: instruction,
+                        language: first.language)
         }
 
         for one in selected {
-            let (got, seconds) = through(transform, one.input, config: config, instruction: instruction)
+            let (got, seconds) = through(transform, one.input, config: config,
+                                         instruction: instruction, language: one.language)
             let correct = got == one.expect
             scored.overall.add(correct)
             scored.latencies.append(seconds)

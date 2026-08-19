@@ -53,7 +53,13 @@ enum PillState: Equatable {
     ///
     /// The headline is where the words went. Nil when they went into the field
     /// you were looking at, set for the endings nobody asked for.
-    case offer([OfferedCommand], String?)
+    ///
+    /// The reading is what the decoder made of the dictation — the sentence
+    /// word by word, its score for the whole utterance, and a warning when it
+    /// is worth a second look. An empty one is the whole difference: it is what
+    /// decides the pill's height, so nothing about this state changes shape for
+    /// a dictation that went fine.
+    case offer([OfferedCommand], String?, Confidence.Reading)
 }
 
 /// A command on the offer, and the letter that runs it.
@@ -188,11 +194,12 @@ final class PillHUD {
     /// frame. The keys and the chips work the whole way down; the fading only
     /// says how long is left.
     func offer(
-        _ commands: [OfferedCommand], headline: String? = nil, for duration: TimeInterval
+        _ commands: [OfferedCommand], headline: String? = nil,
+        reading: Confidence.Reading = Confidence.Reading(), for duration: TimeInterval
     ) {
         model.selected = nil
         offerFor = duration
-        set(.offer(commands, headline))
+        set(.offer(commands, headline, reading))
         decay(over: duration)
     }
 
@@ -739,8 +746,110 @@ enum PillMetrics {
     static let bleed: CGFloat = 52
 
     static func panelSize(for state: PillState, hasIcon: Bool) -> NSSize {
-        NSSize(width: width(for: state, hasIcon: hasIcon) + bleed * 2,
-               height: height + bleed * 2)
+        let width = width(for: state, hasIcon: hasIcon)
+        return NSSize(width: width + bleed * 2,
+                      height: height(for: state, width: width) + bleed * 2)
+    }
+
+    /// The face the dictated sentence is set in — the same one the chips use.
+    ///
+    /// Kept as an `NSFont` because the pill is sized before it is drawn, and
+    /// this sentence is the one thing on the surface long enough to wrap. The
+    /// chips are measured at a flat rate per character; a line count off by one
+    /// would clip the words instead of costing a few points of capsule.
+    static let sentenceFont: NSFont = {
+        let plain = NSFont.systemFont(ofSize: 13, weight: .medium)
+        guard let rounded = plain.fontDescriptor.withDesign(.rounded) else { return plain }
+        return NSFont(descriptor: rounded, size: 13) ?? plain
+    }()
+
+    /// One line of it, and the air above.
+    static let sentenceLine: CGFloat = ceil(
+        NSLayoutManager().defaultLineHeight(for: sentenceFont)
+    )
+    static let sentenceGap: CGFloat = 4
+
+    /// Extra air above the sentence, on top of what centring the two rows
+    /// already leaves. The chips sit in capsules of their own and carry their
+    /// own margin with them; the sentence is bare text and read as crowded
+    /// against the rim without this.
+    static let sentenceTop: CGFloat = 5
+
+    /// Past this the sentence wraps rather than the pill growing sideways. The
+    /// pill sits under the line you dictated into, and one wider than the window
+    /// is no longer pointing at anything.
+    static let sentenceWidth: CGFloat = 640
+
+    /// Three lines holds about 240 characters, which is the 99th percentile of
+    /// the dictations in this machine's archive. Past that it truncates: the
+    /// pill is on screen for nine seconds and a paragraph of it would cover the
+    /// words it is about.
+    static let sentenceLines = 3
+
+    /// The utterance score, set under the words.
+    static let readingFont: NSFont = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+    static let readingLine: CGFloat = ceil(
+        NSLayoutManager().defaultLineHeight(for: readingFont)
+    )
+
+    /// The warning, above everything. One line, never wrapped: it names one
+    /// word and one number, and a warning that wraps is a paragraph.
+    static let warningFont: NSFont = {
+        let plain = NSFont.systemFont(ofSize: 13, weight: .bold)
+        guard let rounded = plain.fontDescriptor.withDesign(.rounded) else { return plain }
+        return NSFont(descriptor: rounded, size: 13) ?? plain
+    }()
+    static let warningLine: CGFloat = ceil(
+        NSLayoutManager().defaultLineHeight(for: warningFont)
+    )
+
+    /// The capsule, plus whatever rows the reading puts above the chips.
+    ///
+    /// An offer with nothing to say about the decode is the height the pill has
+    /// always been, so a dictation that went fine changes nothing.
+    static func height(for state: PillState, width: CGFloat) -> CGFloat {
+        guard case .offer(_, _, let reading) = state else { return height }
+        let rows = readingRows(reading, width: width)
+        guard !rows.isEmpty else { return height }
+        return height + sentenceTop + rows.reduce(0, +) + sentenceGap * CGFloat(rows.count)
+    }
+
+    /// The height of each row the reading draws, top to bottom. The count is
+    /// also the number of `sentenceGap`s: one between each pair, one more
+    /// between the last row and the chips.
+    private static func readingRows(
+        _ reading: Confidence.Reading, width: CGFloat
+    ) -> [CGFloat] {
+        var rows: [CGFloat] = []
+        if reading.warning != nil { rows.append(warningLine) }
+        if !reading.words.isEmpty {
+            rows.append(sentenceLine * CGFloat(lines(reading.words, width: width)))
+            if reading.overall != nil { rows.append(readingLine) }
+        }
+        return rows
+    }
+
+    /// Where the sentence wraps at this width, counted ahead of time.
+    static func lines(_ sentence: [Confidence.Word], width: CGFloat) -> Int {
+        let available = width - padding * 2
+        guard available > 0 else { return 1 }
+        let box = run(sentence).boundingRect(
+            with: NSSize(width: available, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin],
+            attributes: [.font: sentenceFont]
+        )
+        return max(1, min(sentenceLines, Int((box.height / sentenceLine).rounded(.up))))
+    }
+
+    /// The sentence set on one line.
+    static func sentenceRun(_ sentence: [Confidence.Word]) -> CGFloat {
+        ceil(run(sentence).size(withAttributes: [.font: sentenceFont]).width)
+    }
+
+    /// The words with the spaces the pill draws between them — what is measured
+    /// has to be what is set. See `Confidence.sentence`.
+    private static func run(_ sentence: [Confidence.Word]) -> NSString {
+        sentence.map(\.text).joined(separator: " ") as NSString
     }
 
     static let padding: CGFloat = 17
@@ -762,7 +871,8 @@ enum PillMetrics {
         case .recording: return recording(hasIcon: hasIcon)
         case .working(let message): return text(message)
         case .notice(let message, _): return text(message)
-        case .offer(let commands, let headline): return offer(commands, headline: headline)
+        case .offer(let commands, let headline, let reading):
+            return offer(commands, headline: headline, reading: reading)
         }
     }
 
@@ -799,14 +909,28 @@ enum PillMetrics {
     ///
     /// A headline widens it and is meant to: then the sentence is on the
     /// clipboard and looking like a notice is the point.
-    static func offer(_ commands: [OfferedCommand], headline: String? = nil) -> CGFloat {
+    /// A sentence widens it too, up to `sentenceWidth`, and then wraps. So
+    /// does a warning, which never wraps.
+    static func offer(
+        _ commands: [OfferedCommand], headline: String? = nil,
+        reading: Confidence.Reading = Confidence.Reading()
+    ) -> CGFloat {
         // A chip is its keycap, its words and 10pt of padding either side; then
         // 4pt between one chip and the next.
         let chips = commands.reduce(CGFloat(0)) { total, command in
             total + 20 + (command.key.isEmpty ? 0 : keycap) + title(command.title)
         }
         let lead = headline.map { title($0) + gap } ?? 0
-        return padding * 2 + lead + chips + CGFloat(max(commands.count - 1, 0)) * 4
+        let row = padding * 2 + lead + chips + CGFloat(max(commands.count - 1, 0)) * 4
+        var widest = row
+        if !reading.words.isEmpty {
+            widest = max(widest, min(sentenceWidth, padding * 2 + sentenceRun(reading.words)))
+        }
+        if let warning = reading.warning {
+            let text = ceil((warning as NSString).size(withAttributes: [.font: warningFont]).width)
+            widest = max(widest, min(sentenceWidth, padding * 2 + dot + gap + text))
+        }
+        return widest
     }
 
     /// The keycap on a chip: one character at 11pt bold, 5pt either side, and
@@ -862,8 +986,8 @@ struct PillView: View {
             case .notice(let message, let tone):
                 MessageContent(message: message, tone: tone)
                     .transition(.opacity)
-            case .offer(let commands, let headline):
-                OfferContent(commands: commands, headline: headline)
+            case .offer(let commands, let headline, let reading):
+                OfferContent(commands: commands, headline: headline, reading: reading)
                     .transition(.opacity)
             }
         }
@@ -872,13 +996,25 @@ struct PillView: View {
         // must not read as leaving the pill. What leaving costs is decided by
         // whoever raised the offer — see `PillModel.onHover`.
         .onHover { inside in model.onHover?(inside) }
-        .parrotSurface(Capsule(), alive: isWorking, solid: true)
+        // Amber right through when the words may not be the words that were
+        // said. The line says it, but the line is on a pill you have already
+        // learned to ignore: the surface changing colour is what gets looked
+        // at, and it is the same signal the caution notices use.
+        .parrotSurface(
+            Self.shape, alive: isWorking, solid: true,
+            wash: warning?.wash, wheel: warning?.wheel ?? Parrot.wheel
+        )
         // Under the capsule, so it is the capsule's shape and not the glow's.
         .shadow(color: .black.opacity(0.22), radius: 7, y: 2)
         // Behind everything above it. `.background` applied last sits furthest
         // back, which is where the bloom has to be — over the fill it would be
         // a coloured film on the surface rather than light coming off the edge.
-        .background { PlumageBloom(shape: Capsule(), alive: isWorking) }
+        .background {
+            PlumageBloom(
+                shape: Self.shape, alive: isWorking,
+                wheel: warning?.wheel ?? Parrot.wheel
+            )
+        }
         // The transparent margin the bloom spills into. See `PillMetrics.bleed`.
         .padding(PillMetrics.bleed)
         // Bound to the state alone. The meter is fed about ten times a second
@@ -890,6 +1026,30 @@ struct PillView: View {
         if case .working = model.state { return true }
         return false
     }
+
+    /// How loud this pill is, when it is an offer with something to warn
+    /// about. Nil for every other state: a notice carries its tone in its dot,
+    /// and this is the one surface whose meaning is not already written on it.
+    ///
+    /// Amber for a dictation the app is unsure of, scarlet once it has taken a
+    /// Return over it — the same surface one step along, because the second
+    /// state is the first one being ignored.
+    private var warning: (wash: Color, wheel: [Color])? {
+        guard case .offer(_, _, let reading) = model.state, reading.warning != nil else {
+            return nil
+        }
+        return reading.stopped
+            ? (Parrot.scarlet.opacity(0.26), Parrot.stopped)
+            : (Parrot.amber.opacity(0.24), Parrot.warned)
+    }
+
+    /// A fixed radius, not a `Capsule`. At the 46pt the pill has always been the
+    /// two are the same shape — but an offer carrying the dictated sentence is
+    /// taller, and a capsule would round its ends to half of that. The glass
+    /// behind it cannot follow: `ParrotGlass.backdrop` takes its corner radius
+    /// once, when the panel is built. So the shape stops growing where the glass
+    /// stops, and a tall pill is a rounded rectangle rather than a lozenge.
+    static let shape = RoundedRectangle(cornerRadius: PillMetrics.height / 2, style: .circular)
 }
 
 private struct RecordingContent: View {
@@ -961,12 +1121,86 @@ private struct OfferContent: View {
     @EnvironmentObject private var model: PillModel
     let commands: [OfferedCommand]
     let headline: String?
+    /// What the decoder made of the dictation. See `Confidence.Reading`.
+    var reading = Confidence.Reading()
 
     /// The lit chip's lettering: leaf lightened almost to white, so the words
     /// stay readable over a fill of the same colour.
     private static let litText = Color(red: 0.89, green: 0.96, blue: 0.93)
 
     var body: some View {
+        VStack(alignment: .leading, spacing: PillMetrics.sentenceGap) {
+            if let warning = reading.warning { self.warning(warning) }
+            if !reading.words.isEmpty {
+                words
+                if let overall = reading.overall { score(overall) }
+            }
+            chips
+        }
+        // The whole block is centred in the pill's height, so this lands as air
+        // above the sentence rather than being split between the two rows.
+        // `PillMetrics.height(for:width:)` adds the same number.
+        .padding(.top, reading.isEmpty ? 0 : PillMetrics.sentenceTop)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    /// What was dictated, each word in the colour of how sure the decoder was.
+    ///
+    /// Above the chips rather than beside them: it is the thing the chips are
+    /// about, and it is the one part of this surface you read rather than aim
+    /// at. Truncated rather than scrolled — the pill takes no keyboard focus and
+    /// there is nothing to scroll it with.
+    ///
+    /// Centred, unlike everything else on the pill. The chips are a row you aim
+    /// at and they start where every other pill's contents start; this is the
+    /// sentence the pill is about, and it sits in the middle of the surface it
+    /// gave its width to.
+    private var words: some View {
+        Confidence.sentence(reading.words)
+            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .multilineTextAlignment(.center)
+            .lineLimit(PillMetrics.sentenceLines)
+            .truncationMode(.tail)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, PillMetrics.padding)
+    }
+
+    /// Why this dictation is worth a second look, above everything else on the
+    /// pill.
+    ///
+    /// With the caution dot the notices use, and centred like the sentence:
+    /// the chips are a row you aim at, and both of these are things you read.
+    /// A warning off to one side of a pill that is mostly empty reads as a
+    /// label on the surface rather than as what the surface is about.
+    private func warning(_ text: String) -> some View {
+        HStack(spacing: PillMetrics.gap) {
+            ToneDot(tone: reading.stopped ? .failure : .caution)
+            Text(text)
+                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .foregroundStyle(Color(white: 0.97))
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, PillMetrics.padding)
+    }
+
+    /// The one number the decoder gives for the whole utterance, raw.
+    ///
+    /// Full strength and coloured on the utterance's own bands — see
+    /// `Confidence.overallTint`. Larger than the sentence rather than smaller:
+    /// it is the one thing on this pill you read at a glance instead of word
+    /// by word.
+    private func score(_ score: Float) -> some View {
+        Text(verbatim: Confidence.overall(score))
+            .font(.system(size: 15, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Confidence.overallTint(score))
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, PillMetrics.padding)
+    }
+
+    private var chips: some View {
         HStack(spacing: 4) {
             if let headline {
                 Text(headline)

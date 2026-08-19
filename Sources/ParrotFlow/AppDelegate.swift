@@ -97,6 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let previewPanel = PreviewPanel()
     /// Says once per microphone that this one will cost you words.
     private let micNotice = MicNotice()
+    /// The release notes, and the three answers to them.
+    private let updatePanel = UpdatePanel()
     private var pendingSelection: SelectionReader.Selection?
     /// Captured the moment the hotkey goes down — see SelectionReader.snapshot.
     private var selectionAtPress: SelectionReader.Selection?
@@ -187,6 +189,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// of. A value here has been seen at 395,489 characters, so nothing is kept
     /// on the chance that a transcript from five minutes ago is still coming.
     private var screenAtPress: [Int: (text: String, at: Date)] = [:]
+
+    /// The decoder's own words for a press, before any stage rewrote them, and
+    /// the one confidence it gave the whole utterance.
+    ///
+    /// Kept per press for the same reason the pane is: dictations overlap, and
+    /// the offer that goes up belongs to one of them. Read once, by
+    /// `showCorrectOffer`, and dropped by `dictationEnded` however the dictation
+    /// finished. Only filled when something is going to read it — the colours
+    /// or the warning — so switching both off costs nothing but the word
+    /// timings the decoder already produced.
+    private var heardAtPress: [Int: Transcriber.Decode] = [:]
 
     /// How long a pane is worth keeping, for a press that is no longer in
     /// flight. Nothing waits this long: the whole chain is a decoder and at
@@ -300,6 +313,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `watchTheOfferKeys`. A config reloaded in between must not leave a
     /// letter claimed for a chip that is not on screen.
     private var offerOnScreen: [OfferedCommand]?
+    /// The headline and the reading the offer went up with, so the pill can be
+    /// drawn again without rebuilding what it is about. See `holdTheReturn`.
+    private var offerHeadline: String?
+    private var offerReading = Confidence.Reading()
+    /// Until when this offer's Return is held. Set when the offer goes up, so
+    /// an offer whose keys arrive late — a second dictation was still running —
+    /// gets whatever is left of the moment rather than a fresh one.
+    private var offerHoldsReturnUntil: Date?
     /// Gives the keys back when the offer simply runs out.
     ///
     /// The pill fades itself off screen after `offerSeconds` and tells nobody,
@@ -742,54 +763,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The release notes, and the three answers to them.
     ///
-    /// No download button yet: taking the update in place means replacing a
-    /// running bundle, which is a separate piece of work and a worse thing to
-    /// get wrong than a missing button. Until then the command is the same one
-    /// that installed the app, and it is put on the clipboard rather than
-    /// printed for retyping.
+    /// The notes are drawn as Markdown in a panel of their own — see
+    /// `ReleaseNotes` and `UpdatePanel`.
     @objc private func showUpdate() {
         guard let release = updateAvailable else { return }
 
-        NSApp.activate(ignoringOtherApps: true)
-        let alert = NSAlert()
-        alert.messageText = "ParrotFlow \(release.version) is available"
-        alert.informativeText = (release.notes.isEmpty ? "No release notes." : release.notes)
-            + "\n\nYou are running \(Updates.current ?? "an unknown version")."
-        alert.alertStyle = .informational
-        // Installing in place is only offered when it can actually be done.
-        // An app in a read-only location, or one someone put somewhere odd,
-        // still gets the command it was installed with rather than a button
-        // that fails after downloading 3 MB.
-        let canInstall = UpdateInstaller.canInstallInPlace
-        if canInstall { alert.addButton(withTitle: "Update and restart") }
-        alert.addButton(withTitle: "Copy the upgrade command")
-        alert.addButton(withTitle: "Skip this version")
-        alert.addButton(withTitle: "Later")
-
-        var answer = alert.runModal()
-        if canInstall, answer == .alertFirstButtonReturn {
-            install(release)
-            return
-        }
-        // With the install button present every other answer sits one place
-        // further along, so it is shifted back rather than each case being
-        // written twice.
-        if canInstall { answer = NSApplication.ModalResponse(rawValue: answer.rawValue - 1) }
-
-        switch answer {
-        case .alertFirstButtonReturn:
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(Updates.installCommand, forType: .string)
-            flash("Upgrade command copied — paste it into a terminal", tone: .done)
-        case .alertSecondButtonReturn:
-            Updates.skip(release.version)
-            updateAvailable = nil
-            updateUI()
-        default:
-            Updates.remindLater()
-            updateAvailable = nil
-            updateUI()
-        }
+        // Installing in place is only offered when it can actually be done: a
+        // dev build, or an app in a read-only location, gets the reason and the
+        // command it was installed with rather than a button that fails after
+        // downloading 3 MB.
+        let blocker = UpdateInstaller.blocker
+        updatePanel.show(
+            release: release,
+            current: Updates.current,
+            blocker: blocker,
+            answers: UpdatePanel.Answers(
+                install: blocker == nil ? { [weak self] in self?.install(release) } : nil,
+                copyCommand: { [weak self] in
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(Updates.installCommand, forType: .string)
+                    self?.flash("Upgrade command copied — paste it into a terminal", tone: .done)
+                },
+                skip: { [weak self] in
+                    Updates.skip(release.version)
+                    self?.updateAvailable = nil
+                    self?.updateUI()
+                },
+                later: { [weak self] in
+                    Updates.remindLater()
+                    self?.updateAvailable = nil
+                    self?.updateUI()
+                }
+            )
+        )
     }
 
     private func watchConfig() {
@@ -894,6 +900,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let element = focusAtPress?.element
             DispatchQueue.global(qos: .userInitiated).async {
                 Context.capturePress(app: app, element: element)
+            }
+        }
+
+        // The same press, the other half of the window. Gated separately
+        // because it is a separate disclosure: `context` reads the terminal
+        // around the box, this reads what you have typed into it, in every app.
+        if InputBox.isConfigured(in: config) {
+            let app = front?.app
+            let element = focusAtPress?.element
+            DispatchQueue.global(qos: .userInitiated).async {
+                InputBox.capturePress(app: app, element: element)
             }
         }
 
@@ -1431,6 +1448,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // needs the clip on disk once this dictation is over.
             defer { Recorder.discardIfNotKept(recording, config: config) }
             do {
+                // The decoder's own words, kept for the offer to colour. Only
+                // when something is going to draw them: the decoder produces
+                // the timings either way, and this is the one line that keeps a
+                // copy of them. Written out rather than left as a ternary in
+                // the call below, where the `nil` has no type to take.
+                var heard: (@Sendable (Transcriber.Decode) -> Void)?
+                if config.feedback.confidence || config.feedback.warnsOnLowConfidence {
+                    heard = { decode in
+                        Task { @MainActor [weak self] in
+                            self?.heardAtPress[press.run] = decode
+                        }
+                    }
+                }
                 // "Transcribing…" is the truth until the decoder is done, and
                 // a lie for the second a prompt or a script spends after it.
                 // A stage that wrote a `display:` says so itself.
@@ -1452,7 +1482,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                       self.transcriptionLabel != nil else { return }
                                 self.beginProgress(label)
                             }
-                        }
+                        },
+                        heard: heard
                     ) ?? ""
                     Trace.current?.recordFinal(text)
                     return text
@@ -2309,7 +2340,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             original: text, element: press.element, owner: press.owner, landing: landing
         ))
         let commands = offerCommands
-        pill.offer(commands, headline: headline, for: Self.offerSeconds)
+        // The decoder's words matched back onto the sentence that came out of
+        // the pipeline — see `Confidence.read`. Taken rather than copied: this
+        // press's dictation is over and nothing else can want them.
+        let decoded = heardAtPress.removeValue(forKey: press.run)
+        let words = decoded.map { Confidence.read($0.words, into: text) } ?? []
+        // The words are matched whenever anything wants them, and shown only
+        // when the colours were asked for. The warning reads the same list: a
+        // threshold is about the word you are looking at, so it is the written
+        // word that is measured and the written word that gets named.
+        let low = config.feedback.lowConfidence
+        let reading = Confidence.Reading(
+            words: config.feedback.confidence ? words : [],
+            overall: config.feedback.confidence ? decoded?.confidence : nil,
+            warning: Confidence.warning(
+                words, utterance: decoded?.confidence,
+                vocabulary: decoded?.vocabulary ?? [],
+                sentenceBelow: Float(low.sentence), wordBelow: Float(low.word)
+            )
+        )
+        if let warning = reading.warning { Log.write("offer: \(warning)") }
+        offerHeadline = headline
+        offerReading = reading
+        let hold = config.feedback.lowConfidence.holdReturn
+        offerHoldsReturnUntil = reading.warning != nil && hold > 0
+            ? Date().addingTimeInterval(hold)
+            : nil
+        pill.offer(commands, headline: headline, reading: reading, for: Self.offerSeconds)
         // The list is captured, not read again in the closure: a config
         // reloaded while the offer is up would otherwise renumber the chips
         // under the pointer, and the click would run whatever took the slot.
@@ -2394,7 +2451,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let letters = Set(commands.map(\.key).filter { !$0.isEmpty })
-        offerKeys.start(until: until, letters: letters) { [weak self] key in
+        // The hold is armed only for a dictation that raised the warning, and
+        // only until it has been spent. Re-armed from here on every call, so an
+        // offer that got its keys late — a dictation was still running — is
+        // still covered, and one that has already eaten a Return is not.
+        let holds = offerReading.stopped ? nil : offerHoldsReturnUntil
+        offerKeys.start(
+            until: until, letters: letters, holdingReturnUntil: holds
+        ) { [weak self] key in
             guard let self, self.offerIsUp else { return }
             switch key {
             case .letter(let typed):
@@ -2406,10 +2470,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // two ways of running a command, or only one of them gets the
                 // guards the other one has.
                 self.pill.model.onPick?(index)
+            case .firstReturn:
+                self.holdTheReturn()
             case .dismiss:
                 self.dismissOffer(reason: "the keyboard")
             }
         }
+    }
+
+    /// A Return was taken rather than typed. Say so, and give the offer back
+    /// the time it takes to read that.
+    ///
+    /// The pill is raised again rather than edited in place: it is the same
+    /// offer with the same chips, and raising it restarts the fade, which is
+    /// the whole point — a warning that arrives with two seconds left on a
+    /// surface that is already half gone is a warning nobody reads.
+    ///
+    /// The keys are re-armed from the same call the offer normally uses, which
+    /// reads `offerReading` and finds the hold already spent. So the second
+    /// Return is not this app's business at all.
+    private func holdTheReturn() {
+        guard offerIsUp, offerReading.warning != nil, !offerReading.stopped else { return }
+        Log.write("offer: held the first Return; \(offerReading.warning ?? "")")
+        offerReading.warning = Confidence.stopped
+        offerReading.stopped = true
+        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        pill.offer(
+            offerOnScreen ?? [], headline: offerHeadline, reading: offerReading,
+            for: Self.offerSeconds
+        )
+        watchTheOfferKeys()
     }
 
     /// A click anywhere but on the offer ends it, the same way Escape or
@@ -2699,6 +2789,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// reach anything that is somehow left.
     private func dictationEnded(_ run: Int) {
         screenAtPress.removeValue(forKey: run)
+        heardAtPress.removeValue(forKey: run)
         pressesInFlight.remove(run)
         cancelledPresses.remove(run)
     }

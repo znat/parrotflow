@@ -62,6 +62,14 @@ struct EvalCases {
         /// files to gain nothing.
         var probe: String { fields["probe"] ?? fields["category"] ?? "" }
         var name: String { fields["name"] ?? input }
+        /// `lang: fr` — which language this case is in.
+        ///
+        /// Stated rather than detected. The pipeline detects when nothing says
+        /// otherwise, and detection is unreliable on the length a case is:
+        /// "C'est vraiment fantastique." comes back `en`. A French case scored
+        /// under English rules passes for the wrong reason, which is the one
+        /// failure a set cannot see.
+        var language: String? { fields["lang"] ?? fields["language"] }
         /// True when this case must come back byte for byte.
         var mustNotChange: Bool { expect == input }
     }

@@ -159,6 +159,21 @@ enum Trace {
             final = text
         }
 
+        /// Everything gathered so far, for a `returns: json` transform.
+        ///
+        /// The same fields the record on disk carries, encoded by the same
+        /// types, so the file a sweep reads and the payload a script reads
+        /// cannot drift into two shapes.
+        ///
+        /// Mid-pipeline, so `stages` is what has run *before* this one and
+        /// `final` does not exist yet. The rest — `asr`, `vad`, `lang` — is
+        /// complete: all of it is settled before the first stage starts.
+        func snapshot() -> Snapshot {
+            lock.lock(); defer { lock.unlock() }
+            return Snapshot(wav: wav, source: source.rawValue, lang: lang,
+                            asr: asr, vad: vad, stages: stages)
+        }
+
         fileprivate func record(at: String, app: App?) -> Record {
             lock.lock(); defer { lock.unlock() }
             return Record(
@@ -332,6 +347,24 @@ enum Trace {
         return formatter.string(from: Date())
     }
 
+    /// What a `returns: json` transform is handed as `trace`.
+    ///
+    /// Internal where `Record` is fileprivate, because this one leaves the
+    /// file. Same members, so the two cannot describe different things.
+    struct Snapshot: Encodable {
+        let wav: String
+        let source: String
+        let lang: String?
+        fileprivate let asr: ASR?
+        fileprivate let vad: VAD?
+        /// What ran before the stage reading this. Not the whole pipeline.
+        fileprivate let stages: [Stage]
+
+        /// What the decoder wrote, for a caller checking whether the text it
+        /// holds is still that. Nil outside a dictation.
+        var decodedText: String? { asr?.text }
+    }
+
     fileprivate struct Record: Encodable {
         let v: Int
         let kind: String
@@ -386,7 +419,7 @@ enum Trace {
         let segments: [[Double]]
     }
 
-    struct Word: Encodable {
+    struct Word: Encodable, Sendable {
         let word: String
         let start: Double
         let end: Double

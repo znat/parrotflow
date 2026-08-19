@@ -37,7 +37,7 @@ enum UpdateInstallCommand {
                 print("checksum           matches the published one")
                 print("signature          valid")
                 print("certificate        \(try UpdateInstaller.certificateFingerprint(of: app))")
-                print("identity           \(Bundle.main.bundleIdentifier ?? "?")")
+                print("identity           \(Updates.releaseBundleIdentifier)")
                 print("verified           \(app.path)")
 
                 guard !dryRun else {
@@ -45,8 +45,8 @@ enum UpdateInstallCommand {
                     done.signal()
                     return
                 }
-                guard UpdateInstaller.canInstallInPlace else {
-                    print("✗ \(UpdateInstaller.destination.path) cannot be replaced from here")
+                if let blocker = UpdateInstaller.blocker {
+                    print("✗ \(blocker)")
                     code = 1
                     done.signal()
                     return

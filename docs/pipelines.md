@@ -27,6 +27,7 @@ get every stage back — a missing section is silence, not a choice. Write
 | `fuzzy` | The same table against renderings you have not taught, so "super bays" reaches Supabase. Only words the spell checker does not know are eligible, which is what keeps "Excel" from becoming "Vercel". Needs `replacements` before it and says so if it does not have one, because on its own it swallows the preceding word. |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
+| `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
 | `vocabulary` | Every substitution the vocabulary pass made, put to the local model one at a time — see [The name judge](#the-name-judge). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
@@ -326,16 +327,36 @@ the log and `--check-config` name that case as itself rather than as "command
 not found", which would send you looking for a file that is sitting right where
 you put it.
 
-A relative path is looked for in the transform's own folder, and nowhere else:
+A bare name is looked for in the transform's own folder, and nowhere else:
 `command: code_identifiers.py` on a transform named `code_identifiers` is
 `transforms/code_identifiers/code_identifiers.py`. Writing it out in full names
 the same file. **The folder is the working directory**, so a script reads its
 neighbours by bare relative name.
 
-One place to look, deliberately. An earlier draft searched the config directory
-too, so a script left beside `config.yaml` kept running; two directories that
-can disagree turned out to cost more than they bought, because *which* one a
-command runs in stops being answerable once the command names files in both. A
+A path *with a directory in it* may also name a file elsewhere under
+`transforms/`, which is how two transforms share one script:
+
+```yaml
+transforms:
+  - name: punctuation
+    command: examples/punctuation/punctuation.py   # transforms/examples/…
+```
+
+The rule is the slash. `punctuation.py` can only ever mean your own folder, so
+the spelling you write every day cannot resolve in two places. `examples/…`
+says out loud that it reaches sideways, and it still cannot leave
+`transforms/`.
+
+The working directory does not move: a shared script runs in the folder of
+whichever transform called it, not in its own. So a shared script finds its own
+data files from `__file__` rather than by bare relative name — a private one
+still uses the bare name, and both keep working when you copy the folder.
+
+One place per spelling, deliberately. An earlier draft searched the config
+directory too, so a script left beside `config.yaml` kept running; two
+directories that can disagree turned out to cost more than they bought, because
+*which* one a command runs in stops being answerable once the command names
+files in both. A
 program that is in neither the folder nor on `PATH` is a fault `--check-config`
 names, and moving the file is the whole fix.
 Beside `config.yaml` is tried second, which is where a script written before
@@ -976,6 +997,89 @@ open -na ParrotFlowDev --args --peek 6
 ```
 
 It prints what the stage would publish, in full, under `as context:`.
+
+## Input: what is already in the field
+
+`context` reads the screen *around* the box. `input` reads the box itself —
+what you have already typed, and where the caret sits in it.
+
+```yaml
+pipelines:
+  default:
+    - input
+    - stage: transform
+      transform: join
+      when: input.ok && !input.appending
+```
+
+| variable | |
+|---|---|
+| `input.before` | what precedes the caret, or the start of the selection |
+| `input.selection` | what is selected, empty for a plain caret |
+| `input.after` | what follows the caret, or the end of the selection |
+| `input.appending` | nothing after the caret and nothing selected |
+| `input.text` | the whole box, on a surface whose caret could not be located |
+| `input.total` | the whole field, before the budget cut anything |
+| `input.chars`, `input.truncated` | how much came through, and whether it was cut |
+| `input.declined` | why nothing was read, when nothing was |
+
+**Three blocks, not a string and an offset.** An offset has to be applied by
+whoever reads it, and applying it wrong is silent — a caret off by the size of
+the cut still points at a real character and the text still reads fine. Two
+strings cannot be misapplied. `selection` is the third because dictating over a
+selection replaces it, and what is about to be replaced is worth seeing.
+
+**It never changes the transcript**, the same way `context` does not. A stage
+that could put the field into the transcript could paste what you already typed
+back on top of itself.
+
+**Why it is a separate stage.** Two reasons, and neither is tidiness. `context`
+is terminals-only because reading the surrounding screen anywhere else means
+walking a window's children; the box *is* the focused element, so it is one call
+in a native field, a browser and an Electron composer alike. And naming
+`context` says "read my terminal" — it must not also come to mean "read what I
+have typed in every app I dictate into". You turn each on by name.
+
+**Appending or inserting.** This is what the stage is for. A transcript joining
+the end of a paragraph wants a capital and a full stop; one dropped into the
+middle of a sentence wants neither, and nothing else in the pipeline can tell
+the two apart.
+
+**On a terminal you get `input.text` instead**, and `before`, `selection`,
+`after` and `appending` are absent. A terminal publishes the whole screen as its
+value, so the box is dug out from between the rules the TUI draws, and the
+offset does not survive that extraction. Which keys you got says what the
+surface could answer.
+
+Absent throws in a condition, which is the point — `when: input.appending`
+should fail loudly where it cannot be answered rather than quietly read as
+"no". Guard with `input.ok` first.
+
+**Each side gets half the budget** and keeps the end nearest the caret, where
+`context` keeps one tail over the whole screen. A single window centred on the
+caret would let a long tail crowd out the text immediately before it, which is
+the half a dictated sentence is being joined to. Same 2000 characters in total.
+
+**Read at the press**, like `context`, and for the same reason: by the time the
+pipeline runs, focus may be elsewhere.
+
+### Seeing what it captures
+
+`--pipeline` cannot, for the reason `context` cannot — TCC pins the
+accessibility grant to the app bundle, so a binary run from a terminal gets
+nothing and the stage declines every time.
+
+What *is* exact is where the window lands and where the caret ends up in it,
+and getting that wrong is silent: an offset off by the size of the cut still
+points at a real character. So it is scored:
+
+```sh
+ParrotFlow --input-test "the quick brown fox" 4 5
+scripts/check-input.sh
+```
+
+`--input-test` takes a field, a caret, how much is selected and a budget, and
+prints the three blocks delimited with `⟪⟫` so their own spaces are visible.
 
 ## Apps
 

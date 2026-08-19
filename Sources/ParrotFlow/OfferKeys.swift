@@ -52,6 +52,9 @@ final class OfferKeys {
         case dismiss
         /// Run the command this letter belongs to.
         case letter(String)
+        /// The first Return after a dictation the app is not sure about. Taken
+        /// once and given straight back — see `holdsReturn`.
+        case firstReturn
     }
 
     private var tap: CFMachPort?
@@ -61,6 +64,20 @@ final class OfferKeys {
     /// The letters the offer has claimed, uppercased. Empty is allowed — then
     /// only Escape and Return are watched.
     private var letters: Set<String> = []
+    /// Until when a bare Return is taken instead of typed.
+    ///
+    /// A moment, not a mode. What this is for is the Return already on its way
+    /// down as the words land — the reflex press, before the sentence has been
+    /// read. A second and a half after that, pressing Return is a decision, and
+    /// a decision is not something to take a key away from.
+    ///
+    /// Armed only for a dictation the app has warned about, and disarmed by
+    /// the first Return it takes as well as by the clock — so the very next one
+    /// goes through either way.
+    ///
+    /// Bare only. A Return with a modifier is somebody who knows what they are
+    /// doing — ⌘↩ sends in most chat apps — and is left alone.
+    private var holdReturnUntil = Date.distantPast
 
     var isRunning: Bool { tap != nil }
 
@@ -85,9 +102,13 @@ final class OfferKeys {
     /// `letters` must already be uppercased, which is the shape `Config` stores
     /// a `key:` in: the comparison below uppercases what was typed, so a
     /// lowercase entry here would claim a letter and then never match it.
-    func start(until: Date, letters: Set<String>, onKey: @escaping (Key) -> Void) {
+    func start(
+        until: Date, letters: Set<String>, holdingReturnUntil: Date? = nil,
+        onKey: @escaping (Key) -> Void
+    ) {
         stop()
         self.letters = letters
+        self.holdReturnUntil = holdingReturnUntil ?? .distantPast
         guard AXIsProcessTrusted() else {
             Log.write("offer keys: accessibility is not granted; the keys are not taken")
             return
@@ -168,6 +189,7 @@ final class OfferKeys {
         source = nil
         handler = nil
         letters = []
+        holdReturnUntil = .distantPast
         expiry = .distantPast
     }
 
@@ -210,7 +232,16 @@ final class OfferKeys {
         let key: Key
         var take = true
         let keycode = Int(event.getIntegerValueField(.keyboardEventKeycode))
-        if keycode == kVK_Escape, event.flags.isDisjoint(with: Self.anyModifier) {
+        if Date() < holdReturnUntil,
+           keycode == kVK_Return || keycode == kVK_ANSI_KeypadEnter,
+           event.flags.isDisjoint(with: Self.anyModifier) {
+            // Once. Disarmed here rather than by whoever handles it, so the
+            // second Return is through before the main loop has looked at the
+            // first — a key held twice by a slow handler is a key that does not
+            // work.
+            holdReturnUntil = .distantPast
+            key = .firstReturn
+        } else if keycode == kVK_Escape, event.flags.isDisjoint(with: Self.anyModifier) {
             key = .dismiss
         } else if event.flags.isDisjoint(with: Self.anyModifier),
                   !letters.isEmpty,

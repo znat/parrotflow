@@ -1,0 +1,59 @@
+# Where the `input` stage cuts a field, and what each side keeps when the
+# budget runs out. Run with scripts/check-input.sh.
+#
+# The one string step of the stage, and the only part of it with an exact
+# answer. What is genuinely in a field depends on TCC and on whatever is
+# focused, so the capture is checked with `--peek` on a real surface and not
+# faked here — a fixture that stubbed a field would be scoring the stub.
+#
+# Three blocks rather than a string and an offset, because an offset has to be
+# applied by whoever reads it and applying it wrong is silent: a caret off by
+# the size of the cut still points at a real character and the text still reads
+# fine. So every case states all three sides.
+#
+# The blocks are delimited with ⟪⟫ because they keep their own spaces. The
+# leading space on `after` is a real character.
+#
+# field ~ caret ~ selected ~ limit ~ whole|truncated ~ appending|inserting ~ before ~ selection ~ after
+
+# --- nothing to cut ---
+the quick brown fox ~ 9 ~ 0 ~ 100 ~ whole ~ inserting ~ ⟪the quick⟫ ~ ⟪⟫ ~ ⟪ brown fox⟫ ~ ⟪the quick‸ brown fox⟫
+the quick brown fox ~ 0 ~ 0 ~ 100 ~ whole ~ inserting ~ ⟪⟫ ~ ⟪⟫ ~ ⟪the quick brown fox⟫ ~ ⟪‸the quick brown fox⟫
+
+# Appending: nothing after the caret and nothing selected. This is the case the
+# punctuation rules turn on, and the one an off-by-one silently breaks.
+the quick brown fox ~ 19 ~ 0 ~ 100 ~ whole ~ appending ~ ⟪the quick brown fox⟫ ~ ⟪⟫ ~ ⟪⟫ ~ ⟪the quick brown fox‸⟫
+
+# An empty field is a real answer, not a decline — dictating into an empty box
+# is the commonest case there is, and it is also appending.
+ ~ 0 ~ 0 ~ 100 ~ whole ~ appending ~ ⟪⟫ ~ ⟪⟫ ~ ⟪⟫ ~ ⟪‸⟫
+
+# --- a selection, which dictating over will replace ---
+the quick brown fox ~ 4 ~ 5 ~ 100 ~ whole ~ inserting ~ ⟪the ⟫ ~ ⟪quick⟫ ~ ⟪ brown fox⟫ ~ ⟪the ⟦quick⟧ brown fox⟫
+
+# A selection reaching the end is not appending: there is something to replace,
+# so the sentence is not being joined to what precedes it.
+the quick brown fox ~ 10 ~ 9 ~ 100 ~ whole ~ inserting ~ ⟪the quick ⟫ ~ ⟪brown fox⟫ ~ ⟪⟫ ~ ⟪the quick ⟦brown fox⟧⟫
+
+# --- the budget, split per side ---
+# Each side gets half and keeps the end nearest the caret. A single window
+# centred on the caret would let a long tail crowd out the text immediately
+# before it, which is the half a dictated sentence is being joined to.
+abcdefghijklmnopqrstuvwxyz ~ 13 ~ 0 ~ 8 ~ truncated ~ inserting ~ ⟪jklm⟫ ~ ⟪⟫ ~ ⟪nopq⟫ ~ ⟪jklm‸nopq⟫
+
+# Near an end the other side is not given the slack. Half is half, so a caret
+# at the top still discloses only half a budget of what follows it.
+abcdefghijklmnopqrstuvwxyz ~ 0 ~ 0 ~ 8 ~ truncated ~ inserting ~ ⟪⟫ ~ ⟪⟫ ~ ⟪abcd⟫ ~ ⟪‸abcd⟫
+abcdefghijklmnopqrstuvwxyz ~ 26 ~ 0 ~ 8 ~ truncated ~ appending ~ ⟪wxyz⟫ ~ ⟪⟫ ~ ⟪⟫ ~ ⟪wxyz‸⟫
+
+# A caret past the end of the field is clamped, not trusted: the value and the
+# selection are read in two calls and an edit can land between them.
+abcdefghijklmnopqrstuvwxyz ~ 99 ~ 0 ~ 8 ~ truncated ~ appending ~ ⟪wxyz⟫ ~ ⟪⟫ ~ ⟪⟫ ~ ⟪wxyz‸⟫
+
+# A field no larger than the budget is not truncated.
+abcdefgh ~ 4 ~ 0 ~ 8 ~ whole ~ inserting ~ ⟪abcd⟫ ~ ⟪⟫ ~ ⟪efgh⟫ ~ ⟪abcd‸efgh⟫
+# The 20-character window the log shows, and the ellipsis that says a side
+# was cut to reach it. Independent of `limit`: the blocks are capped for the
+# stage, this is capped again for one log line.
+abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz ~ 26 ~ 0 ~ 100 ~ whole ~ inserting ~ ⟪abcdefghijklmnopqrstuvwxyz⟫ ~ ⟪⟫ ~ ⟪abcdefghijklmnopqrstuvwxyz⟫ ~ ⟪…ghijklmnopqrstuvwxyz‸abcdefghijklmnopqrst…⟫
+abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz ~ 10 ~ 25 ~ 100 ~ whole ~ inserting ~ ⟪abcdefghij⟫ ~ ⟪klmnopqrstuvwxyzabcdefghi⟫ ~ ⟪jklmnopqrstuvwxyz⟫ ~ ⟪abcdefghij⟦klmnopqrstuvwxyzabcd…⟧jklmnopqrstuvwxyz⟫

@@ -1,0 +1,330 @@
+# Validation set for `join`. Scored with scripts/check-join.sh.
+#
+# Each case is the transcript plus what the caret sits between. `‸` is not in
+# the data — `before` and `after` are separate fields, and the caret is where
+# they meet.
+#
+# Two halves, and `keep` is the one that decides: a stage that reformats a
+# sentence that was already right costs you your own wording, silently. Every
+# case with `expect` equal to `input` is that half.
+#
+# The recogniser writes every clip as a standalone sentence — leading capital,
+# trailing stop — because it has never seen what surrounds it. That is right
+# when appending and wrong every other time.
+
+cases:
+  # --- a stop the decoder wrote at a pause, not at a sentence end ---
+  # The decoder capitalises after a boundary it means, so a lower-case word
+  # after a stop is the sign it heard a hesitation. Highest-precision signal
+  # there is: of 369 mid-clip stops in one archive, 16 had a lower-case word
+  # after them and nearly all were wrong.
+  - probe: stop
+    before: ~
+    after: ~
+    input: "i think you should. try this"
+    rule:   "stop at a pause"
+    expect: "i think you should try this"
+  # No space after the stop and it is left alone. That shape is
+  # indistinguishable from `join.py`, `package.json` and `Method.variable`, and
+  # measured over 3,785 clips it was a real name 19 times out of 24. The rule
+  # that used to split it is gone; see `unstopped`.
+  - probe: stop
+    before: ~
+    after: ~
+    input: "I think you should.try this"
+
+  # A real boundary is followed by a capital and is left alone.
+  - probe: stop
+    before: ~
+    after: ~
+    input: "That is done. Then we ship."
+
+  # A dotted name is built one stage earlier by `dotted` and
+  # `code_identifiers`. Undoing one is worse than leaving a stop in, because
+  # the name cannot be recovered from the sentence.
+  - probe: stop
+    before: ~
+    after: ~
+    input: "run join.py now"
+  - probe: stop
+    before: ~
+    after: ~
+    input: "visit example.com today"
+
+  # Abbreviations are spelled with dots and are followed by lower case.
+  - probe: stop
+    before: ~
+    after: ~
+    input: "e.g. this one"
+  - probe: stop
+    before: ~
+    after: ~
+    input: "U.S. policy is clear"
+
+  # --- appending: the decoder was right, change nothing ---
+  - probe: append
+    before: "I sent the report. "
+    after: ""
+    input: "It should be there by now."
+    expect: "It should be there by now."
+  - probe: append
+    before: ""
+    after: ""
+    input: "Hello there."
+    expect: "Hello there."
+
+  # A stop with no space after it still needs one.
+  - probe: append
+    before: "I sent the report."
+    after: ""
+    input: "It should be there."
+    expect: " It should be there."
+
+  # --- inserting mid-sentence: lower the case, drop the stop ---
+  - probe: insert
+    before: "One, two, three, "
+    after: "four, five, six."
+    input: "Three and a half."
+    expect: "three and a half "
+  - probe: insert
+    before: "we should ship "
+    after: " tomorrow"
+    input: "The release."
+    expect: "the release"
+  # This was a known miss while the rule was a closed word list: "postponed"
+  # is open-class, so its capital was left alone. The tagger calls it a Verb
+  # and the case now passes, while "Sarah" stays a PersonalName and does not.
+  - probe: insert
+    before: "the meeting is"
+    after: "at noon"
+    input: "Postponed."
+    rule:   "mid sentence"
+    expect: " postponed "
+
+  # --- a name must survive the lowercasing ---
+  # The dictionary does not know it, so the case is left alone. A missed
+  # lowercase is a capital you can see; a lost name is not recoverable.
+  - probe: name
+    before: "we deployed it on "
+    after: " last night"
+    input: "Vercel."
+    expect: "Vercel"
+  - probe: name
+    before: "ask "
+    after: " about it"
+    input: "Tasmeen."
+    expect: "Tasmeen"
+  - probe: name
+    before: "it broke because "
+    after: " was down"
+    input: "AWS."
+    expect: "AWS"
+
+  # "I" is a word in English and is never lowered.
+  - probe: name
+    before: "he said that "
+    after: " should go"
+    input: "I."
+    expect: "I"
+
+  # --- after a clause boundary: lower case, keep going ---
+  - probe: clause
+    before: "we could ship it,"
+    after: ""
+    input: "But the tests are red."
+    expect: " but the tests are red."
+
+  # --- glued: no space, no capital ---
+  # Inside a bracket a name is plausible — "(Vercel deploy)" — so the open
+  # class is left alone here too. Only a compound hyphen lowers anything.
+  - probe: glue
+    before: "the function ("
+    after: ")"
+    input: "User name."
+    expect: "User name"
+  - probe: glue
+    before: "a well-"
+    after: " approach"
+    input: "Considered."
+    rule:   "compound"
+    expect: "considered"
+
+  # --- the trailing edge ---
+  # Punctuation already there: no space of ours, and the stop would double.
+  - probe: tail
+    before: "I called "
+    after: ", then left"
+    input: "Sarah."
+    expect: "Sarah"
+  # A question mark carries meaning a full stop does not, so it survives where
+  # a stop would be dropped.
+  - probe: tail
+    before: "she asked, "
+    after: " and nobody knew"
+    input: "Is it ready?"
+    expect: "is it ready?"
+  # A space already there is not doubled.
+  - probe: tail
+    before: "put it "
+    after: " the shelf"
+    input: "On."
+    expect: "on"
+
+  # --- more than one sentence keeps its last stop ---
+  - probe: multi
+    before: "here is the plan. "
+    after: " We ship on Friday."
+    input: "First we test. Then we review."
+    expect: "First we test. Then we review."
+
+  # Shift-enter in Slack: the caret is reported in front of the newline rather
+  # than after it, so `before` looks identical to no line break at all. The
+  # newline in `after` is the only sign, and the break is already a separator.
+  - probe: newline
+    before: "That's fantastic."
+    after: "\n"
+    input: "Even better."
+    rule:   "line start"
+    expect: "Even better."
+
+  # --- a new line starts a sentence, with no leading space ---
+  - probe: newline
+    before: "the first point\n"
+    after: ""
+    input: "The second point."
+    expect: "The second point."
+
+  # --- nothing known: the terminal case, and the stage declining ---
+  # `before` and `after` both absent means the transcript ships untouched.
+  - probe: blind
+    before: ~
+    after: ~
+    input: "Three and a half."
+    expect: "Three and a half."
+
+  # --- an identifier an earlier stage wrote ---
+  # `code_identifiers` publishes `protected` — the names it built. Without that
+  # list `join` capitalises the first word of a clip like any other, and
+  # `max_retries` lands as `Max_retries`. The tagger cannot save this: the word
+  # is a name because a stage made it one, which is a fact about the pipeline.
+  - probe: protected
+    before: "The limit is wrong.\n"
+    after: ~
+    protected: {code_identifiers: "max_retries"}
+    input: "max_retries should be higher."
+    rule:   "max_retries written by code_identifiers"
+    expect: "max_retries should be higher."
+  - probe: protected
+    before: "We renamed it. "
+    after: ~
+    protected: {code_identifiers: "retryCount"}
+    input: "retryCount is the field."
+    rule:   "retryCount written by code_identifiers"
+    expect: "retryCount is the field."
+  # The same clip with nothing protecting it is capitalised, as it should be.
+  - probe: protected
+    before: "The limit is wrong.\n"
+    after: ~
+    input: "max_retries should be higher."
+    rule:   "line start"
+    expect: "Max_retries should be higher."
+  # A protected term mid-sentence is not lowercased either.
+  - probe: protected
+    before: "we passed it to "
+    after: ~
+    protected: {code_identifiers: "UserProfile"}
+    input: "UserProfile takes it."
+    rule:   "UserProfile written by code_identifiers"
+    expect: "UserProfile takes it."
+
+  # Nothing in the contract is about identifiers. `punctuation` publishes the
+  # same key for the segment between "quote" and "unquote", and a quotation is
+  # verbatim: the capital this stage gives the first word of a clip would put a
+  # word in the speaker's mouth, who said "we".
+  - probe: protected
+    before: "The plan is clear.\n"
+    after: ~
+    protected: {punctuation: "we should ship this"}
+    input: '"we should ship this" is what he said.'
+    rule:   "we should ship this written by punctuation"
+    expect: '"we should ship this" is what he said.'
+  # And without it, the capital is right — this is not a rule about quotations.
+  - probe: protected
+    before: "The plan is clear.\n"
+    after: ~
+    input: '"we should ship this" is what he said.'
+    rule:   "line start"
+    expect: '"We should ship this" is what he said.'
+
+  # A stop an earlier stage wrote, not one the decoder invented. `dotted`
+  # publishes `method.` — the exact characters it put in — and the glued-stop
+  # rule reads that by position: the dot it wrote is that term's last character.
+  - probe: protected
+    before: ~
+    after: ~
+    protected: {dotted: "method."}
+    input: "So now if I say method.variable it should work."
+    expect: "So now if I say method.variable it should work."
+  # The same sentence with nobody vouching for the dot. It used to be split and
+  # is not any more: the attribution decides whether the dot is deliberate, and
+  # with no attribution the answer is "leave it", not "guess".
+  - probe: protected
+    before: ~
+    after: ~
+    input: "So now if I say method.variable it should work."
+
+  # --- the dotted names the glued rule used to damage ---
+  # Every one of these is a real name the decoder emitted whole, so no stage
+  # vouches for it. `work`, `example` and `variable` are ordinary English words
+  # sitting right of a dot, which is why no list of extensions could hold them.
+  - probe: stop
+    before: ~
+    after: ~
+    input: "The method.variable worked really well."
+  - probe: stop
+    before: ~
+    after: ~
+    input: "Looking only at the package.json files, what changed?"
+  - probe: stop
+    before: ~
+    after: ~
+    input: "ça me demande d'aller vers api.work OS.com."
+  - probe: stop
+    before: ~
+    after: ~
+    input: "It ships in the repo from the config.example."
+  - probe: stop
+    before: ~
+    after: ~
+    input: "Annotated examples are in slash tmp slash random.cases dot yaml."
+  # The spaced rule is the one that stays. All ten of its archive firings were
+  # real: the decoder wrote a stop at a hesitation and a lower-case word follows.
+  - probe: stop
+    before: ~
+    after: ~
+    input: "it is the responsibility of scripts. if they are implemented"
+    rule:   "stop at a pause"
+    expect: "it is the responsibility of scripts if they are implemented"
+  - probe: stop
+    before: ~
+    after: ~
+    input: "There is no explicit cap. was to only"
+    rule:   "stop at a pause"
+    expect: "There is no explicit cap was to only"
+
+  # `covering` still earns its place on the spaced rule. `punctuation` publishes
+  # a quoted segment, and a stop the speaker dictated inside one is not the
+  # decoder hesitating.
+  - probe: protected
+    before: ~
+    after: ~
+    protected: {punctuation: "we ship. then we rest"}
+    input: 'He said "we ship. then we rest" today.'
+    rule:   "we ship. then we rest written by punctuation"
+    expect: 'He said "we ship. then we rest" today.'
+  - probe: stop
+    before: ~
+    after: ~
+    input: 'He said "we ship. then we rest" today.'
+    rule:   "stop at a pause"
+    expect: 'He said "we ship then we rest" today.'

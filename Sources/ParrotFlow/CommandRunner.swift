@@ -105,9 +105,29 @@ enum CommandRunner {
     }
 
     /// What goes in on stdin when a transform declares `returns: json`.
+    ///
+    /// `tokens` sits beside `text` rather than inside `ctx` on purpose. `ctx` is
+    /// the scope, and the scope is scalars because a `when:` condition compares
+    /// scalars. An array of records has no business there and would drag
+    /// `Scope.Value` somewhere it does not need to go.
     private struct Envelope: Encodable {
         let text: String
         let ctx: Context
+        /// Recomputed per stage, against the text *this* stage was handed.
+        /// Caching it across stages would hand a script offsets into a string
+        /// that no longer exists — and at 0.29 ms there is nothing to save.
+        let tokens: [Tagger.Token]
+        /// Everything the trace has gathered for this dictation so far: the
+        /// decoder's own text with its per-word timings and confidences, the
+        /// speech segments, and the stages that already ran. Absent outside a
+        /// dictation — `--pipeline` has no collector.
+        let trace: Trace.Snapshot?
+        /// Whether `text` is still the decoder's own, and therefore whether the
+        /// word offsets in `trace.asr.words` line up with it. False as soon as
+        /// any stage rewrites, which for anything below `replacements` is
+        /// always. Stated rather than left to be worked out, because acting on
+        /// stale offsets fails silently.
+        let aligned: Bool
     }
 
     /// What must come back. Both keys optional, because a script that only
@@ -238,7 +258,17 @@ enum CommandRunner {
         var payload = Data(text.utf8)
         if structured, let context {
             let encoder = JSONEncoder()
-            if let encoded = try? encoder.encode(Envelope(text: text, ctx: context)) {
+            let language: String? = {
+                if case .string(let value)? = context.scope["language"] { return value }
+                return nil
+            }()
+            let snapshot = Trace.current?.snapshot()
+            let envelope = Envelope(
+                text: text, ctx: context,
+                tokens: Tagger.tokens(in: text, language: language),
+                trace: snapshot,
+                aligned: snapshot?.decodedText == text)
+            if let encoded = try? encoder.encode(envelope) {
                 payload = encoded
             } else {
                 Log.write("command: \"\(command)\" could not be given its context; sent bare text")

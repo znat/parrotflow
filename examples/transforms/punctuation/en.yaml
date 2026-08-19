@@ -1,0 +1,49 @@
+# The punctuation words for English. One file per language, named by the
+# language code; the script loads the one matching `ctx.language` and does
+# nothing at all if there is none.
+#
+# A mark is written verbatim, so whatever spacing a language wants lives in the
+# string rather than in a rule. English wants none — see fr.yaml, which does.
+
+marks:
+  question mark:     "?"
+  exclamation point: "!"
+  comma:             ","
+  colon:             ":"
+  # Three spellings: the decoder picks one and you do not get a say.
+  semicolon:         ";"
+  semi colon:        ";"
+  semi-colon:        ";"
+  # One character, not three dots, so `join` reads it as a sentence end — its
+  # SENTENCE_END is ".!?…". "dot dot dot" belongs here and not in `dotted`,
+  # which runs later and would make "dot.dot" of it.
+  ellipsis:          "…"
+  dot dot dot:       "…"
+  # No rule for "period" or "full stop": the bus-stop and emphatic-idiom senses
+  # win. Same call `dotted` makes on bare "point".
+
+pairs:
+  # The decoder glues and camel-cases a pair it thinks it knows ("openParen")
+  # and writes "closed" for "close", so no space is required and both endings
+  # are accepted.
+  open:  [open, opened, opening]
+  close: [close, closed, closing]
+  # Nothing between the verb and the noun in English. French has "les".
+  between: []
+  marks:
+    - mark: ["[", "]"]
+      names: [bracket, brackets, square bracket, square brackets]
+    - mark: ["(", ")"]
+      # "parent" is how the decoder writes "paren" — it hears a word it knows.
+      # Safe only because the pair has to close: "open parent … close parent"
+      # is not a sentence anyone says about a parent.
+      names: [paren, parens, parenthesis, parentheses, parent, parents]
+    - mark: ["{", "}"]
+      names: [curly bracket, curly brackets, brace, braces]
+    - mark: ["<", ">"]
+      names: [angle bracket, angle brackets]
+    # Irregular: not "open quote … close quote". Its own words instead of
+    # `names:`, which is the whole reason that key exists.
+    - mark: ['"', '"']
+      open:  [quote]
+      close: [unquote]

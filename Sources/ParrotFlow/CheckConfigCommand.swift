@@ -46,7 +46,12 @@ enum CheckConfigCommand {
         print("  ✓ min duration      \(config.audio.minDurationSeconds)s")
         print("  · speech gate       \(config.audio.speechGate ? "on" : "off")")
         print("  · feedback          sound=\(config.feedback.sound) overlay=\(config.feedback.overlay)"
-              + " correct_offer=\(config.feedback.correctOffer)")
+              + " correct_offer=\(config.feedback.correctOffer)"
+              + " confidence=\(config.feedback.confidence)")
+        print("  · low confidence    sentence<\(config.feedback.lowConfidence.sentence)"
+              + " AND word<\(config.feedback.lowConfidence.word)"
+              + " hold_return=\(config.feedback.lowConfidence.holdReturn)"
+              + (config.feedback.warnsOnLowConfidence ? "" : " (off)"))
         print("  · logging           text=\(config.logging.text ? "on" : "off")"
               + " audio=\(config.logging.audio ? "on" : "off")")
 
