@@ -54,7 +54,12 @@ final class UpdatePanel {
             answers.later()
         }
 
-        if panel == nil { build() }
+        // Built fresh every time, not reused. The notes are an AppKit view
+        // handed to SwiftUI, and SwiftUI keeps the view it already made: a
+        // second offer drew the new version's title over the old version's
+        // notes.
+        panel?.orderOut(nil)
+        build()
         resize()
         centre()
         NSApp.activate(ignoringOtherApps: true)

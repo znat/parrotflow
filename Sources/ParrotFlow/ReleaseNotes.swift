@@ -103,11 +103,6 @@ enum ReleaseNotes {
             case .header(let level):
                 size = level <= 2 ? bodySize + 2 : bodySize + 1
                 weight = .semibold
-            case .listItem(let ordinal):
-                // The marker belongs to the innermost list, so it is taken from
-                // the list intent that follows this item, not from the ordinal
-                // alone: an ordered list needs the number, a bullet does not.
-                bullet = kinds.contains(where: isOrdered) ? "\(ordinal)." : "•"
             case .unorderedList, .orderedList:
                 depth += 1
             case .codeBlock:
@@ -117,6 +112,15 @@ enum ReleaseNotes {
             default:
                 break
             }
+        }
+
+        // Intents run innermost first, so a nested item carries its own
+        // `listItem` and then its parent's. The first one is this item, and the
+        // list that owns it is the first list after it — without that, a bullet
+        // inside a numbered list takes the number.
+        if let item = kinds.firstIndex(where: isListItem),
+           case .listItem(let ordinal) = kinds[item] {
+            bullet = isOrdered(kinds[(item + 1)...].first(where: isList)) ? "\(ordinal)." : "•"
         }
 
         let indent = CGFloat(max(depth, 0)) * 16
@@ -162,7 +166,18 @@ enum ReleaseNotes {
         return out
     }
 
-    private static func isOrdered(_ kind: PresentationIntent.Kind) -> Bool {
+    private static func isListItem(_ kind: PresentationIntent.Kind) -> Bool {
+        if case .listItem = kind { return true }
+        return false
+    }
+
+    private static func isList(_ kind: PresentationIntent.Kind) -> Bool {
+        if case .orderedList = kind { return true }
+        if case .unorderedList = kind { return true }
+        return false
+    }
+
+    private static func isOrdered(_ kind: PresentationIntent.Kind?) -> Bool {
         if case .orderedList = kind { return true }
         return false
     }
