@@ -490,7 +490,7 @@ jq -r 'select((.asr.words|length > 0) and (.vad.segments|length > 0)) |
 # A dictation that vanished whole: the gate heard speech and the decoder wrote
 # nothing at all. Distinct from the query above, which needs words to measure a
 # short ending against. 59 of 16,288 records over three weeks, and the reason
-# `silenceRetryPad` exists — see Transcriber.swift.
+# `silenceRetryPads` exists — see Transcriber.swift.
 jq -r 'select(((.asr.text // "") | length) == 0 and (.vad.segments|length > 0)) |
        [.wav, .vad.speech, .vad.total] | @tsv' trace.jsonl
 

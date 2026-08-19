@@ -213,18 +213,35 @@ actor Transcriber {
         // `droppedTail` is false on an empty decode by definition.
         if let gated, Self.decodedNothing(result, gate: gated) {
             let speech = Self.speechSeconds(gated)
-            if let retried = try await decodePadded(gated, asr: asr),
-                !retried.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            var recovered: (pad: Double, result: ASRResult)?
+            for pad in Self.silenceRetryPads where recovered == nil {
+                do {
+                    guard let retried = try await decodePadded(gated, pad: pad, asr: asr),
+                        !retried.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    else { continue }
+                    recovered = (pad, retried)
+                } catch {
+                    // A retry that fails leaves the clip as the first pass
+                    // decoded it. Letting this throw would turn a lost
+                    // dictation — bad, and already the case — into a failed
+                    // one, which is worse and would be caused by the repair.
+                    Log.write(String(
+                        format: "padded retry at %.0fms: %@",
+                        pad * 1000, error.localizedDescription
+                    ))
+                }
+            }
+            if let recovered {
                 Log.write(String(
                     format: "decoder returned nothing for %.2fs of speech; "
                         + "%.0fms of silence either side recovered it",
-                    speech, Self.silenceRetryPad * 1000
+                    speech, recovered.pad * 1000
                 ))
-                result = retried
+                result = recovered.result
             } else {
                 Log.write(String(
                     format: "decoder returned nothing for %.2fs of speech, "
-                        + "and the padded retry returned nothing either",
+                        + "and no padded retry returned anything either",
                     speech
                 ))
             }
@@ -309,11 +326,13 @@ actor Transcriber {
     /// A fresh `TdtDecoderState` per pass: the state is per-clip, and handing
     /// the first pass's state to the second would decode the padded copy as a
     /// continuation of the clip it is a copy of.
-    private func decodePadded(_ gate: SpeechGate, asr: AsrManager) async throws -> ASRResult? {
-        guard let padded = Self.paddedWithSilence(gate) else { return nil }
+    private func decodePadded(
+        _ gate: SpeechGate, pad: Double, asr: AsrManager
+    ) async throws -> ASRResult? {
+        guard let padded = Self.paddedWithSilence(gate, pad: pad) else { return nil }
         var state = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
         let raw = try await asr.transcribe(padded, decoderState: &state)
-        return Self.unpadTimings(raw, by: Self.silenceRetryPad, seconds: gate.seconds)
+        return Self.unpadTimings(raw, by: pad, seconds: gate.seconds)
     }
 
     /// What the speech gate found: the clip's samples and its speech
@@ -539,13 +558,23 @@ actor Transcriber {
         return lastSpeechEnd(gate) - lastWordEnd(result) > droppedTailSeconds
     }
 
-    /// How much silence the empty-decode retry puts either side of the clip.
+    /// How much silence the empty-decode retry puts either side of the clip,
+    /// tried in order until one of them decodes to something.
     ///
-    /// Picked from the middle of a plateau rather than an edge. On the three
-    /// clips that prompted this, 400, 500 and 800ms all recovered the words;
-    /// 50 and 100ms did too, but 200 and 300ms did not, on one of them. The
-    /// safe reading of a gap like that is to sit well clear of it.
-    static let silenceRetryPad = 0.5
+    /// Two rungs rather than one, because the pad is an alignment and not an
+    /// amount. Parakeet decides how many encoder frames to skip after each
+    /// token — up to 4 of them, 80ms each — so where the speech falls against
+    /// that frame grid decides what gets skipped, and padding moves it. On the
+    /// three clips that prompted this, 400, 500 and 800ms all recovered the
+    /// words while 200 and 300ms did not, on one of them. Nothing monotonic to
+    /// tune, so a second alignment is worth more than a better first one.
+    ///
+    /// Measured over the 55 archived clips that had been lost this way: 0.5s
+    /// alone recovers 29 of them, and adding 1.0s takes it to 39. A rung at
+    /// 2.0s was measured and rejected — it recovers a *different* 10, loses 4
+    /// that 1.0s finds, and starts repeating itself ("As the rest of the
+    /// rest."). The 16 that stay empty stay empty at every pad tried.
+    static let silenceRetryPads: [Double] = [0.5, 1.0]
 
     nonisolated static func speechSeconds(_ gate: SpeechGate) -> Double {
         gate.segments.reduce(0) { $0 + ($1.end - $1.start) }
@@ -561,7 +590,7 @@ actor Transcriber {
         return result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// The clip with `silenceRetryPad` of silence at each end, or nil when the
+    /// The clip with `pad` seconds of silence at each end, or nil when the
     /// retry cannot help.
     ///
     /// Nil for a clip whose samples cannot go to the decoder directly, and nil
@@ -569,12 +598,12 @@ actor Transcriber {
     /// the batch path chunks, and the seam it opens is the bug the first pass
     /// already works around — so a retry that created one would be trading
     /// this failure for that one.
-    nonisolated static func paddedWithSilence(_ gate: SpeechGate) -> [Float]? {
+    nonisolated static func paddedWithSilence(_ gate: SpeechGate, pad: Double) -> [Float]? {
         guard gate.decodable, !gate.samples.isEmpty else { return nil }
-        let pad = Int((silenceRetryPad * sampleRate).rounded())
-        guard gate.samples.count + 2 * pad <= ASRConstants.maxModelSamples else { return nil }
-        return [Float](repeating: 0, count: pad) + gate.samples
-            + [Float](repeating: 0, count: pad)
+        let count = Int((pad * sampleRate).rounded())
+        guard gate.samples.count + 2 * count <= ASRConstants.maxModelSamples else { return nil }
+        return [Float](repeating: 0, count: count) + gate.samples
+            + [Float](repeating: 0, count: count)
     }
 
     /// Takes the padding back off the word timings, so they refer to the
