@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.8.0](https://github.com/znat/parrotflow/compare/v0.7.0...v0.8.0) (2026-08-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* every model in one place, and names are one stage ([#156](https://github.com/znat/parrotflow/issues/156))
+
+### Features
+
+* a command path may share a script under transforms/, and examples install as one tree ([#157](https://github.com/znat/parrotflow/issues/157)) ([01c03d2](https://github.com/znat/parrotflow/commit/01c03d2fa87f5c99d5e3dd8e8bf774390e9f73ed))
+* a second decode, run beside the first, gets the skipped words back ([#163](https://github.com/znat/parrotflow/issues/163)) ([6606a32](https://github.com/znat/parrotflow/commit/6606a320d0e8f00f8e91bd2c7d078825b0271a26))
+* **config:** name models, pick one per prompt, and keep the key in the keychain ([#153](https://github.com/znat/parrotflow/issues/153)) ([02862c3](https://github.com/znat/parrotflow/commit/02862c3ccf7430597011ef55538247e98f825ffa))
+* every model in one place, and names are one stage ([#156](https://github.com/znat/parrotflow/issues/156)) ([82fd06f](https://github.com/znat/parrotflow/commit/82fd06fe9265d605a29f981faacfa287cab375ab))
+* the offer holds at full strength before it fades, and its keys shimmer ([#162](https://github.com/znat/parrotflow/issues/162)) ([e352e69](https://github.com/znat/parrotflow/commit/e352e6968871f7d799589a713c626be8544f3908))
+* the repetitions transform brings its own scorer ([#160](https://github.com/znat/parrotflow/issues/160)) ([ae7f080](https://github.com/znat/parrotflow/commit/ae7f0803aeb5b852f0fe334ada7544f4956781fa))
+* the update offer draws its notes, and a dev build stops trying to install one ([#155](https://github.com/znat/parrotflow/issues/155)) ([869049a](https://github.com/znat/parrotflow/commit/869049afbd673b3cf995d114e4760d06d83ab95d))
+
+
+### Fixes
+
+* a dictation the decoder returned nothing for is decoded again ([#158](https://github.com/znat/parrotflow/issues/158)) ([0edf9fc](https://github.com/znat/parrotflow/commit/0edf9fc62d308c37044bf9f342bb459b6a6d6a97))
+* the prune reports what it did, not what it meant to do ([#161](https://github.com/znat/parrotflow/issues/161)) ([bc7ec35](https://github.com/znat/parrotflow/commit/bc7ec35dd727744e1251340cc1b77d0fdbb7be59))
+
 ## [0.7.0](https://github.com/znat/parrotflow/compare/v0.6.0...v0.7.0) (2026-08-19)
 
 
