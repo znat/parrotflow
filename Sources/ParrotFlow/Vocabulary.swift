@@ -207,6 +207,10 @@ actor Vocabulary {
     struct Proposal: Sendable {
         let heard: String
         let term: String
+        /// `term`, before inflection and trailing punctuation were added for
+        /// display. The vocabulary's own key — `config.vocabulary.terms`
+        /// looks things up by this, not by `term`.
+        let canonicalTerm: String
         let range: Range<String.Index>
         /// The decoded word's CTC score. Raw. Absent for a spotter-only hit.
         let heardScore: Float?
@@ -722,7 +726,7 @@ actor Vocabulary {
                 let holds = verdict.applied ? reading : String(text[range])
                 guard let placed = moved(range, holding: holds) else { continue }
                 proposals.append(Proposal(
-                    heard: change.originalWord, term: reading, range: placed,
+                    heard: change.originalWord, term: reading, canonicalTerm: term, range: placed,
                     heardScore: change.originalScore, termScore: verdict.raw,
                     bonus: verdict.bonus, applied: verdict.applied
                 ))
@@ -744,7 +748,8 @@ actor Vocabulary {
                 )
                 proposals.append(Proposal(
                     heard: span.heard,
-                    term: span.term + Self.trailingMarks(of: span.heard), range: placed,
+                    term: span.term + Self.trailingMarks(of: span.heard), canonicalTerm: span.canonical,
+                    range: placed,
                     heardScore: nil, termScore: nil, bonus: nil, applied: false
                 ))
             }
@@ -762,7 +767,7 @@ actor Vocabulary {
                     phrase, span.term, span.score
                 ))
                 proposals.append(Proposal(
-                    heard: phrase, term: span.term, range: placed,
+                    heard: phrase, term: span.term, canonicalTerm: span.term, range: placed,
                     heardScore: nil, termScore: span.score, bonus: nil, applied: false
                 ))
             }
@@ -916,8 +921,8 @@ actor Vocabulary {
     /// spelling near `Praisy` and arrives entirely from the spotter.
     private static func widerSpans(
         in text: String, anchors: [(range: Range<String.Index>, term: String)]
-    ) -> [(range: Range<String.Index>, heard: String, term: String)] {
-        var wider: [(range: Range<String.Index>, heard: String, term: String)] = []
+    ) -> [(range: Range<String.Index>, heard: String, term: String, canonical: String)] {
+        var wider: [(range: Range<String.Index>, heard: String, term: String, canonical: String)] = []
         for (range, term) in anchors {
             guard !term.isEmpty else { continue }
 
@@ -959,7 +964,7 @@ actor Vocabulary {
                               $0.range == range.lowerBound..<stop && $0.term == reading
                           })
                     else { continue }
-                    wider.append((range.lowerBound..<stop, phrase, reading))
+                    wider.append((range.lowerBound..<stop, phrase, reading, term))
                 }
             }
         }

@@ -1117,7 +1117,12 @@ struct Pipeline: Equatable, Codable {
         }
 
         let built = VocabularyJudge.sentences(in: text, from: changes)
-        let terms = Array(Set(changes.flatMap(\.terms))).sorted().joined(separator: ", ")
+        // `.word` means "not a name" and is not shown — see `WordKind` — and a
+        // term nobody has corrected yet has no `kind:` at all.
+        let terms = Array(Set(changes.flatMap(\.terms))).sorted().map { name -> String in
+            guard let kind = config.vocabulary.terms[name]?.kind, kind != .word else { return name }
+            return "\(name) (\(kind.rawValue))"
+        }.joined(separator: ", ")
         let system = VocabularyJudge.prompt.replacingOccurrences(of: "{terms}", with: terms)
         let user = VocabularyJudge.question(
             heard: built.heard, after: built.after, changes: changes
