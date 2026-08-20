@@ -392,6 +392,7 @@ accessibility grant, so it is not faked here — see
 $PF --peek 3 [--find <sentinel>]
 $PF --edit-test <needle> <replacement> --find <sentinel> [--after 3] [--literal]
 $PF --span-test <start> <length> <replacement> --find <sentinel> [--after 3]
+$PF --clipboard-test
 ```
 
 `--peek` reads the surface the way the app would — the value, the selection, and
@@ -408,6 +409,13 @@ characters it wants changed says so, and nothing searches for anything.
 `--find <sentinel>` is **required** for both: without it these write into
 whatever happens to be in front, which during a test run is as likely to be a
 real window as the scratch one you meant.
+
+`--clipboard-test` needs neither a window nor a sentinel. A paste borrows the
+clipboard, so an in-place edit that gets refused arrives at its own fallback
+with the count already moved by its own paste — this checks that the fallback
+writes anyway, that it still refuses once somebody else has copied, and that the
+restore queued behind the paste does not land on the rewrite. Your clipboard is
+saved and put back.
 
 ## Looking at the floating surfaces
 
@@ -489,6 +497,7 @@ scripts/check-suggest.sh           # which words the correction panel proposes
 scripts/check-no-voice.sh          # nothing in git is one person's voice
 scripts/check-audio-recovery.sh    # a microphone that changes leaves a usable engine
 scripts/check-profiles.sh          # which app gets examined, named, or read for context
+scripts/check-clipboard.sh         # when a rewrite may go to the clipboard, and stay there
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

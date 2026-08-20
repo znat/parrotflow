@@ -3318,18 +3318,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// what was on the clipboard. Anything copied since moves it, and then the
     /// clipboard is somebody's work rather than ours to overwrite.
     ///
-    /// The look and the write sit next to each other with nothing between them
-    /// — no logging, no message — because there is nothing stronger to have.
-    /// `NSPasteboard` offers no compare-and-write: `declareTypes(owner:)` names
-    /// an owner for callbacks and stops no other process from writing. Any check
-    /// is a look followed by a write, and the gap can only be made small. It is
-    /// two calls here, and the messages are left to the caller so they cannot
-    /// get in between.
+    /// Or the clipboard this app itself last wrote, which a refused in-place
+    /// edit reaches here having moved — see `TextInserter.clipboardIsOurs`.
+    ///
+    /// On the writing path the look and the write sit next to each other with
+    /// nothing between them — no message — because there is nothing stronger to
+    /// have. `NSPasteboard` offers no compare-and-write: `declareTypes(owner:)`
+    /// names an owner for callbacks and stops no other process from writing. Any
+    /// check is a look followed by a write, and the gap can only be made small.
+    /// It is two calls here, and the messages are left to the caller so they
+    /// cannot get in between. Only the refusal logs, and by then nothing is
+    /// going to be written.
     ///
     /// Returns false when it did not write.
     private func copyOverOurOwn(_ text: String, unlessChangedFrom change: Int) -> Bool {
         let pasteboard = NSPasteboard.general
-        guard pasteboard.changeCount == change else { return false }
+        guard TextInserter.clipboardIsOurs(unchangedFrom: change) else {
+            Log.write("clipboard: at \(pasteboard.changeCount), not \(change) and not"
+                + " our own \(TextInserter.ownChange); left alone")
+            return false
+        }
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
         return true
