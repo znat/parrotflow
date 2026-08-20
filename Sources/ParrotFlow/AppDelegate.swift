@@ -3008,7 +3008,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         transform, over: target, clipboardWhenChosen: clipboardWhenChosen
                     )
                 }
-                if !asked { self.setLabel(error.localizedDescription, clearAfter: 7) }
+                if !asked { self.flash(error.localizedDescription, tone: .failure) }
             }
         }
     }
@@ -3017,9 +3017,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// write.
     ///
     /// Every refusal here leaves the sentence exactly as it is — in the field or
-    /// on the clipboard — and says so in the menu bar. The pill is not used: it
-    /// sits over the words, and a notice there would cover the thing the message
-    /// is about.
+    /// on the clipboard — and says so on screen.
+    ///
+    /// On screen, not only in the menu bar. The menu bar was the whole of it,
+    /// on the argument that the pill sits over the words and a notice there
+    /// would cover the thing the message is about. True, and beside the point:
+    /// you are looking at the sentence, not at the menu bar, so an outcome
+    /// reported there alone is an outcome nobody sees. "Fix grammar: nothing to
+    /// change" arrived twice on 2026-08-20 and read both times as the app
+    /// having quietly died. Every *failure* in this flow already used the pill,
+    /// so the one shape that looked like nothing happening was the one that
+    /// said nothing.
+    ///
+    /// Covering the sentence for a moment costs a moment. Not saying anything
+    /// costs a retry, and the belief that the feature is broken.
     private func finishOfferedTransform(
         _ transform: Config.Transform, over target: Correction, before: String, after: String,
         clipboardWhenChosen: Int
@@ -3029,14 +3040,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let cleaned = after.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
             Log.write("offer: \(transform.name) returned nothing")
-            setLabel("\(transform.name) returned nothing", clearAfter: 7)
+            flash("\(transform.name) returned nothing", tone: .caution)
             return
         }
         // Saying so beats replacing text with itself and calling it done, which
         // looks identical to the prompt having silently failed.
         guard cleaned != before else {
             Log.write("offer: \(transform.name) changed nothing")
-            setLabel("\(transform.name): nothing to change", clearAfter: 7)
+            flash("\(transform.name): nothing to change", tone: .plain)
             return
         }
 
