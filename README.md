@@ -46,7 +46,7 @@ To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
 
 <br>
 
-### Rewrite transcriptions your way
+### Transcriptions follow your rules
 
 **Regex or script transforms** run in milliseconds, for a fixed rule:
 priority codes, date formats, dropping "um" and "uh".
@@ -165,6 +165,7 @@ transforms:
 
   - name: grammar
     description: fix grammar and punctuation
+    model: gemma          # stays local; omit and it falls back to whatever model is marked default
     prompt: Fix grammar and punctuation...
 
   - name: self_correction              # on demand only
