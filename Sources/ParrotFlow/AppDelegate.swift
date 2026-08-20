@@ -2270,7 +2270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if updated != before { applied += 1 }
         }
 
-        guard applied > 0, let change = Surface.minimalSpan(from: surface.content, to: updated) else {
+        guard applied > 0, let change = Surface.writableSpan(from: surface.content, to: updated) else {
             Log.write("in-place: nothing on the line matches \(edits.map(\.find))")
             return .notAttempted
         }
