@@ -253,7 +253,7 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
 - [punctuation](examples/transforms/punctuation) — spoken marks as
   punctuation, *"is that true question mark"* → *"is that true?"*.
 - [self_correction](examples/transforms/self_correction) — the prompt above,
-  and the 90 cases it is scored on: *"my config my vocabulary"* →
+  and the 89 cases it is scored on: *"my config my vocabulary"* →
   *"my vocabulary"*.
 
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
