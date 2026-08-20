@@ -22,13 +22,16 @@ enum ClipboardTestCommand {
 
     static func run() -> Int32 {
         let pasteboard = NSPasteboard.general
-        // Handed back at the end. This walks over the real clipboard, and the
-        // count it is asked to match is read at that moment, so the restore is
-        // unconditional — the point here is to leave nothing behind.
-        let usersOwn = TextInserter.snapshot(of: pasteboard)
-        defer {
-            TextInserter.putBack(usersOwn, to: pasteboard, ifStillAt: pasteboard.changeCount)
-        }
+        // Handed back at the end, every item of it.
+        //
+        // Not `TextInserter.snapshot`, which keeps the first item and drops the
+        // rest. That is a fair trade where it lives: it runs because you asked
+        // for a dictation, and it is putting back what its own paste borrowed.
+        // Here nothing was asked for — this is a check script — and copying
+        // four files in Finder is four items, so the same trade would take
+        // three of them without saying so.
+        let usersOwn = everything(on: pasteboard)
+        defer { putEverythingBack(usersOwn, to: pasteboard) }
 
         var failures = 0
         func check(_ name: String, _ passed: Bool, _ detail: String = "") {
@@ -84,6 +87,29 @@ enum ClipboardTestCommand {
 
         print(failures == 0 ? "\nall clipboard rules hold" : "\n\(failures) failed")
         return failures == 0 ? 0 : 1
+    }
+
+    /// Every item on the clipboard, copied out of it.
+    ///
+    /// Copied, not referenced: `pasteboardItems` hands back the pasteboard's
+    /// own items, and `clearContents` empties them. Reading the data afterwards
+    /// gives nil, so a restore built on them puts back nothing.
+    private static func everything(on pasteboard: NSPasteboard) -> [NSPasteboardItem] {
+        (pasteboard.pasteboardItems ?? []).map { source in
+            let copy = NSPasteboardItem()
+            for type in source.types {
+                if let data = source.data(forType: type) {
+                    copy.setData(data, forType: type)
+                }
+            }
+            return copy
+        }
+    }
+
+    private static func putEverythingBack(_ items: [NSPasteboardItem], to pasteboard: NSPasteboard) {
+        pasteboard.clearContents()
+        guard !items.isEmpty else { return }
+        pasteboard.writeObjects(items)
     }
 
     private static func write(_ text: String, to pasteboard: NSPasteboard) {
