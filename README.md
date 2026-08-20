@@ -31,7 +31,9 @@ ParrotFlow requires Apple silicon and macOS 14 or later.
 curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
 
-Spoken commands and the vocabulary check need a language model as well, and that part is optional. Run one on your own Mac with [Ollama](https://ollama.com/download) (e.g [Gemma4](https://ollama.com/library/gemma4:e4b-mlx)), or use a hosted one (e.g OpenAI).
+This also downloads Parakeet, the speech model, about 1.2 GB.
+
+Spoken commands and the vocabulary check need a language model as well, and that part is optional. Run one on your own Mac with [Ollama](https://ollama.com/download) (e.g. [Gemma4](https://ollama.com/library/gemma4:e4b-mlx)), or use a hosted one (e.g. OpenAI).
 
 ---
 
@@ -42,7 +44,6 @@ Spoken commands and the vocabulary check need a language model as well, and that
 Everything else — the hotkey, the pipeline, every transform — lives in one
 plain YAML file, `config.yaml`. Edit it by hand, or with your coding agent.
 To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
-
 
 <br>
 
@@ -91,6 +92,25 @@ sys.stdout.write(text)
 
 *"let's meet march 14"* → *"let's meet 14/03"*
 
+Both are rules. Both cost nothing and run on every dictation. A pipeline says
+in what order:
+
+```yaml
+transcription:
+  pipelines:
+    default:
+      - numbers                 # "twenty two" -> 22, so dates has digits to work with
+      - transform: priorities
+      - transform: dates
+```
+
+*"let's resolve the P one before february twenty two"* →
+*"let's resolve the P1 before 22/02"*
+
+![Dictating "let's resolve the P one before february twenty two", and the
+priorities and dates rules turning it into "let's resolve the P1 before
+22/02"](Resources/rules.gif)
+
 <br>
 
 ### Use language models only when they're needed
@@ -109,8 +129,25 @@ transforms:
 
 Say *"hey parrot, fix the grammar"*, or press `G` on the pill after any
 dictation. A version tuned and scored against real transcripts is in
-[examples/transforms/grammar](examples/transforms/grammar). Or run it
-automatically, scoped to the apps that need it — see the pipeline below.
+[examples/transforms/grammar](examples/transforms/grammar).
+
+You can run the grammar fix only in chat and mail apps, and not in coding
+agents, to avoid the latency:
+
+```yaml
+transcription:
+  pipelines:
+    default:
+      - transform: grammar
+        app: /slack|outlook/    # Grammar only checked in Slack and Outlook
+```
+
+The pill shows the app your words are going to, and that is what the step is
+scoped on.
+
+![Dictating into Slack: the pill shows the Slack icon, the grammar step runs,
+and "the panel dont show up sometimes" becomes "The panel doesn't show up
+sometimes."](Resources/grammar.gif)
 
 **A remote model** is worth it for the harder jobs. A spoken correction
 needs judgment a fixed rule does not have, and GPT-5.6 Luna does this
@@ -123,7 +160,7 @@ models:
     model: gpt-5.6-luna
 
 transforms:
-  - name: self_correction
+  - name: Self Correction
     description: keep a spoken correction, drop what it replaced
     model: gpt
     offer: true       # put a chip on the pill
@@ -136,55 +173,62 @@ transforms:
 Say *"hey parrot, correct me"*, or press `S` on the pill after any
 dictation.
 
-*"let's ship Friday, no wait, Thursday"* → *"let's ship Thursday"*
+![Dictating "let's ship Friday, no wait, Thursday", then pressing S on the pill
+to get "let's ship Thursday"](Resources/self-correct.gif)
 
-Wire them into a pipeline, or leave any of them out:
+<br>
+
+### The parrot learns your vocabulary
+
+Colleagues' names, internal jargon, acronyms, vendor names — the words a
+general speech model has never heard. Correct one once and it stays fixed.
+
+Press `V` on the pill after any dictation and say what the word should be.
+
+![Teaching the app that Versailles means Vercel, then dictating a sentence
+with Versailles twice: one becomes Vercel, the castle is left
+alone](Resources/vocabulary.gif)
+
+> *"deploying the app on Versailles, visiting the Versailles castle"* →
+> *"deploying the app on Vercel, visiting the Versailles castle"*
+
+Enabling `review` allows an LLM to intelligently decide when a vocabulary
+term should be applied: there is no Vercel Castle, and Versailles won't
+deploy your apps.
 
 ```yaml
 transcription:
   pipelines:
     default:
-      - numbers                       # "fourteen" -> 14, so dates below has digits to work with
+      - stage: vocabulary
+        review: gpt    # Currently, Gemma struggles in some cases
+      - numbers
+```
+
+### Build your own pipeline
+
+Your transcriptions can follow a complex workflow based on how you work, with
+several steps and conditions.
+
+```yaml
+transcription:
+  pipelines:
+    default:
+      - stage: vocabulary
+        review: gemma                 # names first, before anything edits the text
+      - numbers                       # "fourteen" -> 14, so dates has digits to work with
       - transform: priorities         # "P one" -> P1, free, every dictation
       - transform: dates              # "march 14" -> 14/03, free, every dictation
       - transform: grammar
-        app: /slack|outlook/          # only in Outlook or Slack, not terminals like coding agents
-
-transforms:
-  - name: priorities
-    description: spoken priority levels as P1 to P4
-    replace:
-      "P1": ['/\bp\s*(?:one)\b/']
-      "P2": ['/\bp\s*(?:two)\b/']
-      "P3": ['/\bp\s*(?:three)\b/']
-      "P4": ['/\bp\s*(?:four)\b/']
-
-  - name: dates
-    description: spoken dates as DD/MM
-    command: dates.py
-
-  - name: grammar
-    description: fix grammar and punctuation
-    model: gemma          # stays local; omit and it falls back to whatever model is marked default
-    prompt: Fix grammar and punctuation...
-
-  - name: self_correction              # on demand only
-    description: keep a spoken correction, drop what it replaced
-    model: gpt
-    offer: true                        # put a chip on the pill
-    key: s                             # press S, or say "hey parrot, correct me"
-    prompt: |
-      The speaker corrected themselves out loud. Keep only what they meant
-      to say. Return only the corrected text.
+        app: /slack|outlook/          # only there; a terminal gets the raw transcript
 ```
 
-`priorities`, `dates` and `grammar` run automatically — `grammar` only in
-Slack and Outlook, since Claude Code and other coding tools don't need
-grammar cleanup. `self_correction` runs only when you ask: hold `⌘` and say
-*"hey parrot, correct me"*, or press `S` on the pill after any dictation.
+`Self Correction` is not in the list. It runs only when you ask: hold `⌘` and
+say *"hey parrot, correct me"*, or press `S` on the pill after any dictation.
 
-More examples, their own test cases, in
-[examples/transforms](examples/transforms):
+### More examples
+
+Each with its own test cases, in [examples/transforms](examples/transforms):
 
 - [code_identifiers](examples/transforms/code_identifiers) — spoken names
   cased for the language, *"a python function called max retries"* →
@@ -202,7 +246,7 @@ More examples, their own test cases, in
 ## Documentation
 
 > [!TIP]
-> Point your coding agent, at this
+> Point your coding agent at this
 > repo and say what you want. It can edit `config.yaml`, write a transform's
 > prompt or script, and harden it against real test cases before you trust
 > it — start at [AGENTS.md](AGENTS.md).
