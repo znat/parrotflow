@@ -262,6 +262,86 @@ struct Surface {
         return (start..<end, String(after[afterStart..<afterEnd]))
     }
 
+    /// `minimalSpan`, grown until it is a span a paste can carry.
+    ///
+    /// The minimal answer is often not writable. Three real dictations, all in
+    /// Slack, all on 2026-08-20:
+    ///
+    ///   "one you" → "one do you"      nothing, at one point, becomes "do "
+    ///   "car though" → "car, though"  nothing, at one point, becomes ","
+    ///   "I'll t I told" → "I told"    "'ll t I" becomes nothing
+    ///
+    /// Each one fails, and for its own reason. `TextInserter.insert("")` does
+    /// nothing at all, so the third never writes and the ladder cannot tell
+    /// that from a write the app refused. Slack drops a trailing space off a
+    /// paste, so the first lands as "one doyou". And the first two both ask to
+    /// paste at a caret rather than over a selection, which is the one thing
+    /// step 2 of the ladder cannot check: `confirmedSelection` over an empty
+    /// range confirms that nothing is selected, which is true wherever the
+    /// caret happens to be.
+    ///
+    /// So the span grows until three things hold. It covers at least one real
+    /// character, so the app has to say in its own words which characters are
+    /// selected before anything is written. The replacement is not empty, so
+    /// there is something to paste. And neither end of the replacement is
+    /// whitespace, so an editor entitled to tidy the whitespace it is handed
+    /// has nothing of ours to tidy.
+    ///
+    /// It grows outward over text the two strings agree on, so the result is
+    /// the same edit written differently: "insert `do ` before `you`" becomes
+    /// "replace `y` with `do y`". One character at a time, and it stops as soon
+    /// as the three hold — a bigger span is more to paste and more to put back
+    /// if the paste goes wrong.
+    static func writableSpan(
+        from before: String, to after: String
+    ) -> (range: Range<String.Index>, replacement: String)? {
+        guard let (span, minimal) = minimalSpan(from: before, to: after) else { return nil }
+
+        var start = span.lowerBound
+        var end = span.upperBound
+        var replacement = minimal
+
+        // The characters outside the span are the ones both strings share, so
+        // taking one from `before` is taking the same one from `after`.
+        func growForwards() {
+            replacement.append(before[end])
+            end = before.index(after: end)
+        }
+        func growBackwards() {
+            start = before.index(before: start)
+            replacement.insert(before[start], at: replacement.startIndex)
+        }
+
+        while true {
+            // Which side is wrong decides which way to grow, and a leading
+            // space is only ever fixed by growing backwards. Growing the other
+            // way instead is how this ate a whole line the first time it ran.
+            //
+            // Whitespace against the edge of the line is not a hazard: there is
+            // nothing out there for an editor to join it to.
+            let leading = replacement.first?.isWhitespace == true && start > before.startIndex
+            let trailing = replacement.last?.isWhitespace == true && end < before.endIndex
+
+            if leading {
+                growBackwards()
+            } else if trailing || replacement.isEmpty || start == end {
+                if end < before.endIndex {
+                    growForwards()
+                } else if start > before.startIndex {
+                    growBackwards()
+                } else {
+                    // A line with nothing left to grow into. A caller that
+                    // writes this is no worse off than it was.
+                    break
+                }
+            } else {
+                break
+            }
+        }
+
+        return (start..<end, replacement)
+    }
+
     /// The range holding `needle`, nearest the end.
     ///
     /// Last rather than first: the word being corrected was dictated a moment
@@ -374,7 +454,7 @@ struct Surface {
         guard surface.folded(surface.content) == surface.folded(record.after) else {
             return .refused("the text has changed since; leaving it alone")
         }
-        guard let edit = minimalSpan(from: record.after, to: record.before) else {
+        guard let edit = writableSpan(from: record.after, to: record.before) else {
             return .refused("there is nothing to put back")
         }
         // Located against `record.after`, which we have just confirmed is what
@@ -423,6 +503,10 @@ struct Surface {
             Log.write("surface: the range write was ignored; pasting over a confirmed selection")
             TextInserter.insert(replacement, mode: .paste)
             if settled(on: fragment) {
+                // Said out loud, like the branch above. Without it a success
+                // here is an absence of failure lines, and reading the log for
+                // "did the edit land" means knowing which lines are missing.
+                Log.write("surface: pasted \(nsRange.length) chars over the selection")
                 return .replaced(undo)
             }
             return .refused(repairedAfterStrayPaste())

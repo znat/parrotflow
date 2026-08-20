@@ -97,7 +97,7 @@ enum EditTestCommand {
                 [(heard: needle, corrected: replacement)], to: updated
             )
         }
-        guard let change = Surface.minimalSpan(from: surface.content, to: updated) else {
+        guard let change = Surface.writableSpan(from: surface.content, to: updated) else {
             report("✗ \"\(needle)\" is not in the content — nothing to replace")
             return 2
         }

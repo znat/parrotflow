@@ -176,6 +176,19 @@ jobs:
       - name: What ParrotFlow makes of an app
         run: scripts/check-profiles.sh
 
+      # Which range a rewrite is written as. Pure string work — the surface half
+      # of the same question is check-span.sh, which needs a real app and does
+      # not run here. Three of the six cases are dictations that were silently
+      # lost in Slack.
+      - name: Which range a rewrite becomes
+        run: scripts/check-span-rule.sh
+
+      # When a rewrite the field refused may go to the clipboard, and stay
+      # there. Uses the real NSPasteboard, because what is under test is which
+      # calls move its change count. No window and no accessibility.
+      - name: The clipboard rules
+        run: scripts/check-clipboard.sh
+
       # Not a validation set: it checks that the file a new install is written
       # with still teaches everything config.example.yaml documents. That has
       # drifted twice, both times silently.

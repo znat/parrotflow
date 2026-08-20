@@ -471,6 +471,14 @@ if let index = arguments.firstIndex(of: "--edit-test") {
     ))
 }
 
+if arguments.contains("--clipboard-test") {
+    exit(ClipboardTestCommand.run())
+}
+
+if arguments.contains("--span-rule") {
+    exit(SpanRuleCommand.run())
+}
+
 if let index = arguments.firstIndex(of: "--panel-sheet") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --panel-sheet <out.png>")
