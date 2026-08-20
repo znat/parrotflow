@@ -65,38 +65,49 @@ enum Keychain {
     /// after a reboot without the app being frontmost — the pipeline runs from
     /// a hotkey and cannot wait for someone to unlock anything.
     ///
-    /// **Replacing means delete and add, not `SecItemUpdate`.** An update keeps
-    /// the item's existing ACL, and the ACL decides whether this app can read
-    /// the key back without asking for the login password. A key first stored
-    /// by `--set-key` from a `swift build` binary belongs to that binary, so
-    /// the app is a stranger to it and macOS asks on every launch — and
+    /// **An item this app cannot read is replaced, not updated.** `SecItemUpdate`
+    /// keeps the item's existing ACL, and the ACL decides whether this app can
+    /// read the key back without asking for the login password. A key first
+    /// stored by `--set-key` from a `swift build` binary belongs to that binary,
+    /// so the app is a stranger to it and macOS asks on every launch — and
     /// re-entering the key did not help, because the update inherited the same
-    /// ACL. A fresh item makes whoever writes it the owner, so entering the key
-    /// again is the way out.
+    /// ACL. A fresh item makes whoever writes it the owner.
+    ///
+    /// Which way round is decided by reading first, and that is what keeps the
+    /// repair safe. A key that reads back has a working ACL and is updated in
+    /// place, so nothing is ever deleted while it still has something to lose.
+    /// A key that does not read back is no use to this app whether it is
+    /// missing or locked away, so replacing it costs nothing either way.
     static func write(_ key: String, account: String) throws {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let data = trimmed.data(using: .utf8), !trimmed.isEmpty else {
             throw Failure(status: errSecParam, doing: "write an empty key to")
         }
+
+        if read(account) != nil {
+            let update = [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            ] as [String: Any]
+            let updated = SecItemUpdate(query(account) as CFDictionary, update as CFDictionary)
+            if updated == errSecSuccess { return }
+            // Gone between the read and the update. Adding below is the same
+            // end state, so this is not an error.
+            guard updated == errSecItemNotFound else {
+                throw Failure(status: updated, doing: "update")
+            }
+        } else {
+            let removed = SecItemDelete(query(account) as CFDictionary)
+            guard removed == errSecSuccess || removed == errSecItemNotFound else {
+                throw Failure(status: removed, doing: "replace the key in")
+            }
+        }
+
         var add = query(account)
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-
-        // Add first, so a key that was never there cannot be lost to a delete
-        // followed by a failing add. Only a duplicate is worth removing.
         let added = SecItemAdd(add as CFDictionary, nil)
-        if added == errSecSuccess { return }
-        guard added == errSecDuplicateItem else {
-            throw Failure(status: added, doing: "add to")
-        }
-        let removed = SecItemDelete(query(account) as CFDictionary)
-        guard removed == errSecSuccess || removed == errSecItemNotFound else {
-            throw Failure(status: removed, doing: "replace the key in")
-        }
-        let readded = SecItemAdd(add as CFDictionary, nil)
-        guard readded == errSecSuccess else {
-            throw Failure(status: readded, doing: "store the replacement key in")
-        }
+        guard added == errSecSuccess else { throw Failure(status: added, doing: "add to") }
     }
 
     /// Forget the key for a model. Missing is not an error: the end state is

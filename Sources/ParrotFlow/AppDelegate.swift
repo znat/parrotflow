@@ -695,8 +695,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Written but still not readable. An unsigned build whose keychain
         // prompt was denied reads back nil — see `Keychain.read` — so the retry
         // would throw `noKey` again and ask again, for as long as somebody kept
-        // pasting. Stop here and let the flash say it.
+        // pasting. Stop here and let the flash say it, which is still true.
         guard spec.key.resolve() != nil else { return false }
+        // Asked again, because the guard above is as old as the modal and the
+        // modal was on screen for as long as it took to paste a key. A press
+        // cannot arrive during one — `runModal` holds the run loop the hotkey
+        // is delivered on, which is the whole of #95 — but this run has no
+        // business resuming into a dictation whatever let one start.
+        guard !recorder.isRecording, runsInFlight <= 0 else {
+            flash("Key saved for \(spec.name) — ask again", tone: .done)
+            return true
+        }
         retry()
         return true
     }
