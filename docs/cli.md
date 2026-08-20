@@ -443,7 +443,7 @@ resizes the panel, *Got it* dismisses it. The sheet draws it both ways.
 one to print which was chosen. Every other state lets clicks through, so the
 pill is never a hole in your screen while you are dictating.
 
-It is also the one state that fades. It stands at full strength for three
+It is also the one state that fades. It stands at full strength for four
 seconds and thins out over the next two, the same as in the app, so it leaves
 on its own.
 Put the pointer on it and the fading stops, which is both what the app does and
