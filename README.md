@@ -173,8 +173,8 @@ efficiently, at low cost.
 
 ```yaml
 transforms:
-  - name: Self Correction
-    description: keep a spoken correction, drop what it replaced
+  - name: self_correction
+    description: correct me — drop what I said by mistake and keep what I meant
     model: gpt
     offer: true       # put a chip on the pill
     key: s            # press S to run it
@@ -188,6 +188,20 @@ dictation.
 
 ![Dictating "let's ship Friday, no wait, Thursday", then pressing S on the pill
 to get "let's ship Thursday"](Resources/self-correct.gif)
+
+Those four lines get you started, and they are not enough. Scored against 89
+cases, half of them real transcripts, they resolve some corrections and
+rewrite 30 of the 44 sentences that were already right — fixing your grammar,
+spelling your jargon the way they assume you meant it, tidying your rambling
+sentence into a clean one. You do not notice, because the result reads well.
+
+A longer version, tuned and scored against those transcripts, is in
+[examples/transforms/self_correction](examples/transforms/self_correction).
+It takes the same cases from 31 to 81. Point `prompt:` at it instead:
+
+```yaml
+    prompt: { path: examples/self_correction/self_correction.md }
+```
 
 <br>
 
@@ -236,8 +250,9 @@ transcription:
         app: /slack|outlook/          # only there; a terminal gets the raw transcript
 ```
 
-`Self Correction` is not in the list. It runs only when you ask: hold `⌘` and
-say *"hey parrot, correct me"*, or press `S` on the pill after any dictation.
+`self_correction` is not in the list. It deletes words, so it runs only when
+you ask: hold `⌘` and say *"hey parrot, correct me"*, or press `S` on the pill
+after any dictation.
 
 ### More examples
 
@@ -250,6 +265,9 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
   said twice by accident: *"the the prompt"* → *"the prompt"*.
 - [punctuation](examples/transforms/punctuation) — spoken marks as
   punctuation, *"is that true question mark"* → *"is that true?"*.
+- [self_correction](examples/transforms/self_correction) — the prompt above,
+  and the 90 cases it is scored on: *"my config my vocabulary"* →
+  *"my vocabulary"*.
 
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
 [Where the time goes](docs/architecture.md#where-the-time-goes)
