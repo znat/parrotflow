@@ -334,7 +334,7 @@ enum VocabularyJudge {
             if let already = resolved[span] {
                 parts.append(Part(
                     range: already, decoded: proposal.heard,
-                    other: proposal.term, term: proposal.term,
+                    other: proposal.term, term: proposal.canonicalTerm,
                     standing: standing(proposal)
                 ))
                 continue
@@ -368,7 +368,7 @@ enum VocabularyJudge {
             resolved[span] = found
             parts.append(Part(
                 range: found, decoded: proposal.heard,
-                other: proposal.term, term: proposal.term,
+                other: proposal.term, term: proposal.canonicalTerm,
                 standing: standing(proposal)
             ))
         }
