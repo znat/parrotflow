@@ -184,24 +184,11 @@ transforms:
 ```
 
 Say *"hey parrot, correct me"*, or press `S` on the pill after any
-dictation.
+dictation. A longer version, tuned and scored against real transcripts, is in
+[examples/transforms/self_correction](examples/transforms/self_correction).
 
 ![Dictating "let's ship Friday, no wait, Thursday", then pressing S on the pill
 to get "let's ship Thursday"](Resources/self-correct.gif)
-
-Those four lines get you started, and they are not enough. Scored against 89
-cases, half of them real transcripts, they resolve some corrections and
-rewrite 30 of the 44 sentences that were already right — fixing your grammar,
-spelling your jargon the way they assume you meant it, tidying your rambling
-sentence into a clean one. You do not notice, because the result reads well.
-
-A longer version, tuned and scored against those transcripts, is in
-[examples/transforms/self_correction](examples/transforms/self_correction).
-It takes the same cases from 31 to 81. Point `prompt:` at it instead:
-
-```yaml
-    prompt: { path: examples/self_correction/self_correction.md }
-```
 
 <br>
 
