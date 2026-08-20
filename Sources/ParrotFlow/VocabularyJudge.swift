@@ -82,6 +82,13 @@ enum VocabularyJudge {
     /// sound could decide. The largest gap in the data is 2.72, and argmax on
     /// those numbers scores 28 of 57 spans against 34 for the constant "keep
     /// what the decoder wrote". It was describing a scale that does not exist.
+    ///
+    /// `{terms}` can carry `(person)` / `(place)` / `(organization)` after a
+    /// name — see where the caller builds it, from `Config.Vocabulary.Term.kind`
+    /// — with nothing here telling the model what that means. An earlier draft
+    /// added a sentence explaining it and no worked example ever showed it in
+    /// use, which is the shape this file elsewhere argues against. Give it a
+    /// worked example before writing a sentence about it.
     static let prompt = """
         The user dictates text. A deterministic pass has already replaced some words
         with names from their vocabulary.
