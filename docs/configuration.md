@@ -11,7 +11,7 @@ actually use, and names anything it had to ignore. See [cli.md](cli.md).
 
 ```yaml
 hotkey:
-  key: right_option     # a bare modifier, or a character key + modifiers
+  key: right_command    # a bare modifier, or a character key + modifiers
   modifiers: []         # required for a character key, ignored for a modifier
   mode: push_to_talk    # or toggle
   release_tail_seconds: 0.3   # keep recording this long after you let go
@@ -695,13 +695,13 @@ dictation's — the result is not written over it, and the menu bar says so.
 | `↩` | Dismisses, and reaches the app underneath untouched |
 | the dictation hotkey | Starts the next dictation, exactly as before |
 
-It fades rather than vanishing. It stands at full strength for three seconds,
+It fades rather than vanishing. It stands at full strength for four seconds,
 thins out over the next two, and then it is gone. The keys, the click, and the
 chips work the whole way down — the fading only says how long is left. Putting
-the pointer on the pill stops the clock, and taking it off starts the five
+the pointer on the pill stops the clock, and taking it off starts the six
 seconds again. Any of the endings above takes the pill at once.
 
-**The letters are taken from every app for those five seconds.** The pill
+**The letters are taken from every app for those six seconds.** The pill
 never holds keyboard focus, so it swallows a chip's own letter system-wide or
 it does not get it at all. Only that bare letter runs a command — a letter
 with a modifier on it is somebody else's shortcut and is left alone, `⌘C`

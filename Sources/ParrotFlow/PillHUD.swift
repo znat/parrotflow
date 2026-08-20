@@ -312,7 +312,7 @@ final class PillHUD {
     static let offerAlpha: CGFloat = 1
 
     /// How long the offer stands still before it starts running out.
-    static let offerHold: TimeInterval = 3
+    static let offerHold: TimeInterval = 4
     /// How long it takes to go, once it starts.
     static let offerFade: TimeInterval = 2
     /// The whole of the offer's life, hold and fade.
@@ -974,9 +974,9 @@ enum PillMetrics {
         return widest
     }
 
-    /// The keycap on a chip: one character at 11pt bold, 5pt either side, and
+    /// The keycap on a chip: one character at 12pt bold, 5pt either side, and
     /// the 7pt between it and the words.
-    static let keycap: CGFloat = 26
+    static let keycap: CGFloat = 27
 
     /// A chip's words at 13pt rounded. Per character, which is what everything
     /// else on this surface measures text with.
@@ -1349,7 +1349,7 @@ private struct OfferKeyCap: View {
 
     var body: some View {
         Text(key)
-            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .font(.system(size: 12, weight: .bold, design: .rounded))
             // A floor rather than a width: every letter draws in the same box,
             // so the chips do not step in and out by a point as the pointer
             // moves along them.
