@@ -78,8 +78,9 @@ transcription:
       # Matches vocabulary.yaml renderings and has a model keep or revert
       # each match. Runs first, before anything else edits the text.
       #   near_misses: false   match exactly, never one edit away
-      #   review: gpt          who decides; `false` ships every match unread
-      - vocabulary
+      #   review: false        ship every match unread, and reach no model
+      - stage: vocabulary
+        review: gemma          # who decides "Versailles" is the castle here
       - numbers                            # "two hundred forty-three" -> 243
       - transform: punctuation             # "is that true question mark" -> is that true?
       - transform: repetitions             # a word or phrase said twice by accident, taken out
