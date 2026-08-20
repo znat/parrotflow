@@ -162,12 +162,16 @@ of the codebase.
 
     <details>
     <summary>Why the old behaviour was wrong</summary>
+
     ...
+
     </details>
 
     <details>
     <summary>Measurements — <the headline number></summary>
+
     ...
+
     </details>
 
 ## Before you post
@@ -180,8 +184,9 @@ of the codebase.
 - Link the issue from the PR (`Closes #NN`), and link the PR back if the issue
   stays open for a reason.
 
-Post the body from a file, not from a shell string — a heredoc mangles
-backticks and `$`:
+Post the body from a file, not from a shell string. An unquoted heredoc lets
+the shell expand backticks and `$`. Quoting the delimiter (`<<'EOF'`) stops
+that, but a file is easier to re-edit and re-post:
 
     gh pr create --title "fix: ..." --body-file <file>
     gh issue create --title "..." --body-file <file>
