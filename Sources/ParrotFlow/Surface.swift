@@ -503,6 +503,10 @@ struct Surface {
             Log.write("surface: the range write was ignored; pasting over a confirmed selection")
             TextInserter.insert(replacement, mode: .paste)
             if settled(on: fragment) {
+                // Said out loud, like the branch above. Without it a success
+                // here is an absence of failure lines, and reading the log for
+                // "did the edit land" means knowing which lines are missing.
+                Log.write("surface: pasted \(nsRange.length) chars over the selection")
                 return .replaced(undo)
             }
             return .refused(repairedAfterStrayPaste())
