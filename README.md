@@ -119,9 +119,16 @@ priorities and dates rules turning it into "let's resolve the P1 before
 grammar, tone, structure.
 
 ```yaml
+models:
+  gemma:
+    api: ollama
+    model: gemma4:e4b-mlx
+    default: true      # what a transform runs on when it names no model
+
 transforms:
   - name: grammar
     description: fix grammar and punctuation
+    model: gemma       # stays on your Mac
     offer: true        # put a chip on the pill after every dictation
     key: g             # press G to run it
     prompt: Fix grammar and punctuation...
@@ -155,7 +162,7 @@ efficiently, at low cost.
 
 ```yaml
 models:
-  gpt:
+  gpt:                 # alongside gemma above; only this transform names it
     api: openai
     model: gpt-5.6-luna
 
