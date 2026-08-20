@@ -148,7 +148,7 @@ updates:
 # booleans in YAML 1.1.
 lists:
   # A determiner before a spoken name means prose: "the dot com bubble".
-  determiners: ["le", "la", "les", "l", "un", "une", "des", "du", "de", "d", "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "notre", "nos", "votre", "vos", "leur", "leurs", "au", "aux", "à", "quel", "quelle", "chaque", "autre", "même", "premier", "première", "deuxième", "dernier", "dernière", "seul", "seule", "bon", "bonne", "mauvais", "certain", "tel", "telle", "quelque", "the", "a", "an"]
+  determiners: ["le", "la", "les", "l", "un", "une", "des", "du", "de", "d", "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "notre", "nos", "votre", "vos", "leur", "leurs", "au", "aux", "à", "quel", "quelle", "chaque", "autre", "même", "premier", "première", "deuxième", "dernier", "dernière", "seul", "seule", "bon", "bonne", "mauvais", "certain", "tel", "telle", "quelque", "the", "a", "an", "my", "your", "his", "her", "its", "our", "their", "this", "that", "these", "those", "each", "every", "another", "other", "same", "which", "what", "some", "any", "no", "one", "first", "second", "last", "only"]
 
   # Words meaning the speaker is joining ideas, not names — only `dash` needs these.
   connectors: ["this", "that", "about", "and", "or", "it"]
