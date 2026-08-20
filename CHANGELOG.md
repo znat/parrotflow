@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.9.0](https://github.com/znat/parrotflow/compare/v0.8.0...v0.9.0) (2026-08-20)
+
+
+### Features
+
+* a self-correction prompt tuned against real dictation ([#178](https://github.com/znat/parrotflow/issues/178)) ([012ff7d](https://github.com/znat/parrotflow/commit/012ff7d4f976eb92eb47ee2b78629a54a6ac569e))
+
+
+### Fixes
+
+* an offered rewrite lands in the field, or on the clipboard ([#171](https://github.com/znat/parrotflow/issues/171)) ([bfdd747](https://github.com/znat/parrotflow/commit/bfdd7471d7200072e6db0e32a95e4a1751a87c67))
+* say on screen when an offered transform changes nothing ([#176](https://github.com/znat/parrotflow/issues/176)) ([558f04e](https://github.com/znat/parrotflow/commit/558f04e9899709c9d65d1e32d7735c542f71fa53))
+* the caret walk checks the characters, not the numbers naming them ([#173](https://github.com/znat/parrotflow/issues/173)) ([3ac8147](https://github.com/znat/parrotflow/commit/3ac8147b4e783a5c6c32bad2ca21048a5811ca52))
+* the offer opens to its full width, with every chip inside the pill ([#179](https://github.com/znat/parrotflow/issues/179)) ([3a8a849](https://github.com/znat/parrotflow/commit/3a8a849105719972673aac752c56f369864ff308))
+
 ## [0.8.0](https://github.com/znat/parrotflow/compare/v0.7.0...v0.8.0) (2026-08-20)
 
 
