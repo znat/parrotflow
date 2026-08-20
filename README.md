@@ -12,6 +12,10 @@
 
 **[Install](#install)** · [Documentation](docs/README.md)
 
+<img src="Resources/hero.gif" width="760" alt="Three dictations. Versal becomes
+Vercel in Slack; in a terminal, P one becomes P1 and max retries becomes
+max_retries; in Mail, pressing S drops a spoken correction.">
+
 </div>
 
 ---
