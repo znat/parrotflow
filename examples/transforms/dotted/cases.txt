@@ -64,6 +64,17 @@ FR|revenons au point crucial maintenant|revenons au point crucial maintenant
 FR|voici mon point principal ici|voici mon point principal ici
 FR|elle marque un point décisif|elle marque un point décisif
 
+# The English determiner list was "the, a, an" while the French one carried
+# every possessive and demonstrative, so "mon point" was safe and "my point"
+# was not — "my point is that" arrived as "my.is that". Found by dictating it.
+EN|my point is that it works|my point is that it works
+EN|your point about the cache|your point about the cache
+EN|his point was different|his point was different
+EN|their point about latency|their point about latency
+EN|that point is fair|that point is fair
+EN|this point matters|this point matters
+EN|each point counts|each point counts
+EN|one point remains|one point remains
 EN|the dot com era was wild|the dot com era was wild
 EN|a dot product of two vectors|a dot product of two vectors
 EN|the dot matrix printer|the dot matrix printer
