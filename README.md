@@ -115,16 +115,23 @@ priorities and dates rules turning it into "let's resolve the P1 before
 
 ### Use language models only when they're needed
 
+Name every model you want to reach, once:
+
+```yaml
+models:
+  gemma:               # on your Mac, through Ollama
+    api: ollama
+    model: gemma4:e4b-mlx
+    default: true      # what a transform runs on when it names no model
+  gpt:                 # remote, for the harder jobs
+    api: openai
+    model: gpt-5.6-luna
+```
+
 **A small local model**, like Gemma, does quick, solid rewrites on your Mac:
 grammar, tone, structure.
 
 ```yaml
-models:
-  gemma:
-    api: ollama
-    model: gemma4:e4b-mlx
-    default: true      # what a transform runs on when it names no model
-
 transforms:
   - name: grammar
     description: fix grammar and punctuation
@@ -161,11 +168,6 @@ needs judgment a fixed rule does not have, and GPT-5.6 Luna does this
 efficiently, at low cost.
 
 ```yaml
-models:
-  gpt:                 # alongside gemma above; only this transform names it
-    api: openai
-    model: gpt-5.6-luna
-
 transforms:
   - name: Self Correction
     description: keep a spoken correction, drop what it replaced
