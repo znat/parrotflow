@@ -17,7 +17,7 @@
 # Your own clipboard is saved and put back.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT" || exit 1
+BIN="$ROOT/.build/release/ParrotFlow"
+[ -x "$BIN" ] || { echo "build first: swift build -c release"; exit 1; }
 
-swift build >/dev/null || exit 1
-exec ./.build/debug/ParrotFlow --clipboard-test 2>/dev/null
+exec "$BIN" --clipboard-test 2>/dev/null
