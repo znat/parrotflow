@@ -150,6 +150,15 @@ final class PillHUD {
     /// one dictation never inherits the aim of the last.
     private var near: CaretAnchor.Found?
 
+    /// The window the state on screen asks for, bleed included.
+    ///
+    /// The one answer to "how big is this pill", so nothing has to ask the
+    /// window — which in the middle of a morph is a width on its way somewhere
+    /// rather than a width anything chose.
+    private var wantedSize: NSSize {
+        PillMetrics.panelSize(for: model.state, hasIcon: model.appIcon != nil)
+    }
+
     /// One number for the whole surface: the rise, the morph and the fade.
     ///
     /// The panel frame animates in AppKit and the words crossfade in SwiftUI,
@@ -378,7 +387,16 @@ final class PillHUD {
         // one it will ever get arrives after the words land — which is after
         // the pill is on screen. Without this the answer would be found and
         // never used.
-        if let panel, panel.isVisible { morph(to: panel.frame.size) }
+        //
+        // The size comes from the state, not from `panel.frame`. That is the
+        // same answer at rest and the wrong one in the middle of a morph: an
+        // animating window reports the width it is passing through, so aiming a
+        // pill that was still growing set the width it had reached as the width
+        // to finish at. The offer stopped part way and stayed there, with the
+        // chips it could not fit clipped off. That is the ordinary case, not a
+        // rare one — an app with no caret at the press is aimed from a look
+        // that lands a few milliseconds after the offer goes up.
+        if let panel, panel.isVisible { morph(to: wantedSize) }
     }
 
     // MARK: - Coming and going
@@ -436,7 +454,7 @@ final class PillHUD {
             offerFor = nil
         }
 
-        let size = PillMetrics.panelSize(for: state, hasIcon: model.appIcon != nil)
+        let size = wantedSize
 
         if panel.isVisible {
             morph(to: size)
@@ -962,7 +980,8 @@ enum PillMetrics {
             total + 20 + (command.key.isEmpty ? 0 : keycap) + title(command.title)
         }
         let lead = headline.map { title($0) + gap } ?? 0
-        let row = padding * 2 + lead + chips + CGFloat(max(commands.count - 1, 0)) * 4
+        let row = padding * 2 + lead + chips
+            + CGFloat(max(commands.count - 1, 0)) * 4 + rowFit
         var widest = row
         if !reading.words.isEmpty {
             widest = max(widest, min(sentenceWidth, padding * 2 + sentenceRun(reading.words)))
@@ -978,11 +997,33 @@ enum PillMetrics {
     /// the 7pt between it and the words.
     static let keycap: CGFloat = 27
 
-    /// A chip's words at 13pt rounded. Per character, which is what everything
-    /// else on this surface measures text with.
+    /// A chip's words at 13pt rounded.
+    ///
+    /// Measured in the font they are set in, not counted at a flat rate per
+    /// character. A flat rate is generous for ordinary lowercase words and
+    /// short by a couple of points for capitals and digits, and the error is
+    /// per chip: a row of transform names that all run wide is a row that does
+    /// not fit the capsule counted for it. The chip titles come from the
+    /// config, so what they are made of is not this file's to assume.
+    ///
+    /// `chipFit` is the gap between what AppKit measures here and what SwiftUI
+    /// draws over there.
     static func title(_ words: String) -> CGFloat {
-        CGFloat(words.count) * 7.5
+        ceil((words as NSString).size(withAttributes: [.font: sentenceFont]).width) + chipFit
     }
+
+    /// What SwiftUI lays the chip row out at, over what the numbers above add
+    /// up to. Two text engines: AppKit measures a title here, SwiftUI draws it
+    /// there, and they disagree by up to 2pt per chip; the row comes out 4pt
+    /// wider than its parts whatever it holds. Both measured against the drawn
+    /// row over one to six chips, and titles of capitals, digits, accents and
+    /// the narrowest and widest letters there are.
+    ///
+    /// Generous rather than tight, because the chip title is `.fixedSize()`: a
+    /// capsule a point short does not shorten a chip, it hangs one over the
+    /// end of the pill.
+    static let chipFit: CGFloat = 2
+    static let rowFit: CGFloat = 4
 }
 
 // MARK: - View
@@ -1016,23 +1057,45 @@ struct PillView: View {
     @EnvironmentObject private var model: PillModel
 
     var body: some View {
-        ZStack {
-            switch model.state {
-            case .recording:
-                RecordingContent(level: model.level, icon: model.appIcon)
-                    .transition(.opacity)
-            case .working(let message):
-                MessageContent(message: message, tone: .thinking)
-                    .transition(.opacity)
-            case .notice(let message, let tone):
-                MessageContent(message: message, tone: tone)
-                    .transition(.opacity)
-            case .offer(let commands, let headline, let reading):
-                OfferContent(commands: commands, headline: headline, reading: reading)
-                    .transition(.opacity)
+        // The capsule is the window, whatever the contents would rather be.
+        //
+        // The window's width is animated by AppKit and the contents are laid
+        // out by SwiftUI, and for the length of a morph the two disagree: the
+        // new state's contents are at full size on the first frame while the
+        // window is still on its way there from the last state's width. A
+        // `maxWidth: .infinity` frame grows to whichever is larger, so the
+        // whole surface — capsule, rim and chips — was drawn wider than the
+        // window and cut off square by its edge. An offer with four chips
+        // arriving after a notice spilled onto the desktop for those 180ms,
+        // which is what an offer with a row of transforms on it does every
+        // time.
+        //
+        // `geo.size` is the window less its bleed, and a fixed frame at that
+        // size is the one thing that cannot grow past it. What does not fit is
+        // clipped to the capsule instead — so a morph reads as the pill opening
+        // with the chips arriving from under its rim, and the surface never
+        // leaves the window. The clip is inside `parrotSurface` and the bloom,
+        // which draw outside the shape on purpose.
+        GeometryReader { geo in
+            ZStack {
+                switch model.state {
+                case .recording:
+                    RecordingContent(level: model.level, icon: model.appIcon)
+                        .transition(.opacity)
+                case .working(let message):
+                    MessageContent(message: message, tone: .thinking)
+                        .transition(.opacity)
+                case .notice(let message, let tone):
+                    MessageContent(message: message, tone: tone)
+                        .transition(.opacity)
+                case .offer(let commands, let headline, let reading):
+                    OfferContent(commands: commands, headline: headline, reading: reading)
+                        .transition(.opacity)
+                }
             }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipShape(Self.shape)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // The whole surface, not each chip: moving from one chip to the next
         // must not read as leaving the pill. What leaving costs is decided by
         // whoever raised the offer — see `PillModel.onHover`.
