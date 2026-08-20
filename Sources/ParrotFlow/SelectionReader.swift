@@ -399,6 +399,29 @@ enum SelectionReader {
         return range
     }
 
+    /// The characters the app says are at one of *its* offsets.
+    ///
+    /// The only read that crosses between the two coordinate spaces an app can
+    /// have. `kAXValue` is one string and `kAXSelectedTextRange` is a number,
+    /// and nothing says the number addresses the string — in Chromium it does
+    /// not, and the gap grows by one for every block boundary above the offset.
+    /// This asks in the app's own numbers and answers in characters, so the two
+    /// can be lined up by comparison instead of by assumption.
+    ///
+    /// Nil when the app does not implement it, which is most of them. That is
+    /// not a failure: an app whose offsets already address its value has
+    /// nothing to translate.
+    static func string(of element: AXUIElement, at location: Int, length: Int) -> String? {
+        guard location >= 0, length > 0 else { return nil }
+        var range = CFRange(location: location, length: length)
+        guard let parameter = AXValueCreate(.cfRange, &range) else { return nil }
+        var answer: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element, kAXStringForRangeParameterizedAttribute as CFString, parameter, &answer
+        ) == .success else { return nil }
+        return answer as? String
+    }
+
     // MARK: - Synthetic copy
 
     private static func viaCopy() -> String? {

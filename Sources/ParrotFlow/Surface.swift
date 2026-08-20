@@ -582,12 +582,16 @@ struct Surface {
         }
 
         post(arrowLeft, times: target.length, flags: .maskShift)
-        let got = SelectionReader.selectedRange(of: element)
-        guard let selected = got,
-              selected.location == target.location, selected.length == target.length else {
-            let reported = got.map { "\($0.location)+\($0.length)" } ?? "nothing"
-            Log.write("surface: selected \(reported), wanted"
-                + " \(target.location)+\(target.length) — not typing")
+        // The characters, not the numbers naming them — the same standard step 2
+        // holds itself to, and for a reason step 2 measured. An app's offsets and
+        // its own value do not always address the same string: Slack reported
+        // exactly 62+25 for a selection holding the characters at 63, so a check
+        // on the numbers passed while the selection was one character out, and
+        // this pasted over the wrong 25 characters. `confirmedSelection` asks
+        // what is selected first and falls back to the numbers only where the app
+        // will not say, which is every Chromium contenteditable.
+        guard let text = Range(target, in: content).map({ String(content[$0]) }),
+              confirmedSelection(matches: text, range: target) else {
             return nil
         }
 
