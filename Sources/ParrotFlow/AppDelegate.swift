@@ -534,9 +534,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Models already asked about this run, so saving config.yaml — which
     /// reloads it — does not ask again for one that was declined.
     ///
-    /// Declining is meant to stick, which is why nothing clears this. The way
-    /// back is the menu — see `addKeyItem` — and not commenting the model out
-    /// and back in, which reloads the config but leaves the name in here.
+    /// The config-load path's alone. Nothing clears it, and commenting a model
+    /// out and back in does not either: that reloads the config but leaves the
+    /// name in here. Two things get past it, both of them something you did on
+    /// purpose — the menu row (`addKeyItem`), and using the model, which asks
+    /// through `askForKeyThenRetry` without reading this at all.
     private var askedForKey: Set<String> = []
 
     /// A key prompt a running dictation pushed back, waiting for idle.
@@ -597,37 +599,106 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         var stored = false
         for spec in wanted {
             askedForKey.insert(spec.name)
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
+            if askForKey(spec) { stored = true }
+        }
+        if stored { keyWasStored() }
+    }
+
+    /// The key dialog for one model. True when a key was stored.
+    ///
+    /// `rejected` is the model answering 401 with a key already stored, which
+    /// wants different words: the reason it is on screen is not that a key is
+    /// missing, and "Save" reads wrong for something that overwrites.
+    ///
+    /// Modal, so every caller owes the same check `askForMissingKeys` makes:
+    /// nothing recording, nothing in flight.
+    @discardableResult
+    private func askForKey(_ spec: ModelSpec, rejected: Bool = false) -> Bool {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        // One line either way, and it is the one worth reading: naming the host
+        // is how somebody sees where their words are about to go.
+        if rejected {
+            alert.messageText = "\(spec.name) rejected its API key"
+            alert.informativeText =
+                "\(spec.host) turned down the key stored for it."
+                + " A new one is kept safely in your keychain."
+        } else {
             alert.messageText = "API key for \(spec.name)"
-            // One line, and it is the one worth reading: naming the host is how
-            // somebody sees where their words are about to go.
-            alert.informativeText = "Sent to \(spec.host). Kept in your keychain."
-            let field = KeyField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-            field.placeholderString = "Paste the key"
-            alert.accessoryView = field
-            alert.addButton(withTitle: "Save")
-            alert.addButton(withTitle: "Not now")
-            alert.window.initialFirstResponder = field
-            guard alert.runModal() == .alertFirstButtonReturn else { continue }
-            let typed = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !typed.isEmpty else { continue }
-            do {
-                try Keychain.write(typed, account: spec.key.value)
-                Log.write("stored a keychain key for \(spec.name)")
-                stored = true
-            } catch {
-                Log.write("could not store a key for \(spec.name): \(error.localizedDescription)")
-                flash(error.localizedDescription, tone: .failure)
-            }
+            alert.informativeText = "Sent to \(spec.host). Kept safely in your keychain."
         }
-        // The menu still carries the old "no key" line otherwise, and the
-        // problem it names is the one just fixed.
-        if stored {
-            configProblems = config.problems()
-            refreshKeylessModels()
-            updateUI()
+        let field = KeyField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+        field.placeholderString = rejected ? "Paste the new key" : "Paste the key"
+        alert.accessoryView = field
+        alert.addButton(withTitle: rejected ? "Replace" : "Save")
+        alert.addButton(withTitle: "Not now")
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return false }
+        let typed = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty else { return false }
+        do {
+            try Keychain.write(typed, account: spec.key.value)
+            Log.write("stored a keychain key for \(spec.name)")
+            return true
+        } catch {
+            Log.write("could not store a key for \(spec.name): \(error.localizedDescription)")
+            flash(error.localizedDescription, tone: .failure)
+            return false
         }
+    }
+
+    /// The menu still carries the old "no key" line otherwise, and the problem
+    /// it names is the one just fixed.
+    private func keyWasStored() {
+        configProblems = config.problems()
+        refreshKeylessModels()
+        updateUI()
+    }
+
+    /// A run that stopped because its model has no key: ask for one, and run it
+    /// again if it arrives. True when `retry` was called.
+    ///
+    /// Asked on every deliberate use, and `askedForKey` is deliberately not
+    /// consulted. That set is the config-load path's alone, where a decline
+    /// must survive the reload every save of config.yaml causes. Here the
+    /// dialog is the answer to something just asked for by name, so declining
+    /// means "not this time" and nothing is remembered.
+    ///
+    /// Only for what somebody asked for out loud. A `prompt:` stage and the
+    /// vocabulary judge reach the same models on every dictation with nobody
+    /// asking — see `Pipeline.runPrompt` — and they keep declining in silence.
+    private func askForKeyThenRetry(_ error: Error, retry: () -> Void) -> Bool {
+        let spec: ModelSpec
+        let rejected: Bool
+        switch error {
+        case LLM.Failure.noKey(let model):
+            spec = model
+            rejected = false
+        // A key that is present and refused is the worse half of this. The
+        // model has one, so it leaves `keylessModels` and takes the menu row
+        // that would fix it with it — a mistyped paste used to leave no way
+        // back but `--set-key` in a terminal. 403 comes too: it is as much a
+        // dead end, and a dialog nobody wanted is dismissed in one press.
+        case LLM.Failure.badStatus(let model, let code, _) where code == 401 || code == 403:
+            spec = model
+            rejected = true
+        default:
+            return false
+        }
+        guard spec.key.kind == .keychain else { return false }
+        // A second dictation started while this run was in flight. The modal
+        // would land on top of it, so this one goes the way it always did: the
+        // flash names it, and the menu row is still there.
+        guard !recorder.isRecording, runsInFlight <= 0 else { return false }
+        guard askForKey(spec, rejected: rejected) else { return false }
+        keyWasStored()
+        // Written but still not readable. An unsigned build whose keychain
+        // prompt was denied reads back nil — see `Keychain.read` — so the retry
+        // would throw `noKey` again and ask again, for as long as somebody kept
+        // pasting. Stop here and let the flash say it.
+        guard spec.key.resolve() != nil else { return false }
+        retry()
+        return true
     }
 
     private func applyConfig() {
@@ -1867,9 +1938,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } catch {
                 await MainActor.run {
+                    guard let self else { return }
                     Log.write("routing failed: \(error.localizedDescription)")
-                    self?.endProgress()
-                    self?.flash(error.localizedDescription, tone: .failure)
+                    self.endProgress()
+                    let asked = self.askForKeyThenRetry(error) {
+                        self.handleVoiceCommand(command)
+                    }
+                    if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
             }
         }
@@ -1978,9 +2053,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run { self?.apply(result, command: command) }
             } catch {
                 await MainActor.run {
+                    guard let self else { return }
                     Log.write("command interpretation failed: \(error.localizedDescription)")
-                    self?.endProgress()
-                    self?.flash(error.localizedDescription, tone: .failure)
+                    self.endProgress()
+                    let asked = self.askForKeyThenRetry(error) {
+                        self.interpretSpelling(command)
+                    }
+                    if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
             }
         }
@@ -2023,6 +2102,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // wrong thing is otherwise indistinguishable in the log from one that
         // worked on the right thing badly.
         Log.write("transform: \(transform.name) over \(selection == nil ? "the last dictation" : "the selection") — \"\(target.prefix(80))\"")
+        runTransform(transform, instruction: instruction, selection: selection, on: target)
+    }
+
+    /// The run itself, over text already decided.
+    ///
+    /// Split from `runTransform` so a retry cannot go looking for the target
+    /// again. `selectionAtPress` is consumed there, so a second call through
+    /// the front door would read the selection now — by which time our own
+    /// panel may hold focus — or fall back to the last dictation, and rewrite
+    /// something other than what the first call was pointed at.
+    private func runTransform(
+        _ transform: Config.Transform,
+        instruction: String,
+        selection: SelectionReader.Selection?,
+        on target: String
+    ) {
         beginProgress(transform.progressLabel)
 
         Task { [weak self] in
@@ -2038,9 +2133,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             } catch {
                 await MainActor.run {
+                    guard let self else { return }
                     Log.write("transform failed: \(error.localizedDescription)")
-                    self?.endProgress()
-                    self?.flash(error.localizedDescription, tone: .failure)
+                    self.endProgress()
+                    let asked = self.askForKeyThenRetry(error) {
+                        self.runTransform(
+                            transform, instruction: instruction,
+                            selection: selection, on: target
+                        )
+                    }
+                    if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
             }
         }
@@ -2885,9 +2987,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Fail open: the words are untouched, wherever they are. Losing
                 // a rewrite costs a second attempt; losing the sentence costs
                 // the sentence.
+                guard let self else { return }
                 Log.write("offer: \(transform.name) failed: \(error.localizedDescription)")
-                self?.endProgress()
-                self?.setLabel(error.localizedDescription, clearAfter: 7)
+                self.endProgress()
+                // `clipboardWhenChosen` goes through the retry unchanged. It
+                // still means what it meant — the clipboard as it was when the
+                // chip was pressed — and pasting a key into the dialog moves
+                // it, which is exactly when `copyOverOurOwn` should refuse.
+                let asked = self.askForKeyThenRetry(error) {
+                    self.runOfferedTransform(
+                        transform, over: target, clipboardWhenChosen: clipboardWhenChosen
+                    )
+                }
+                if !asked { self.setLabel(error.localizedDescription, clearAfter: 7) }
             }
         }
     }
