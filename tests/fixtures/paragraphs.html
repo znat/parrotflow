@@ -1,0 +1,168 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>PFBOX|</title>
+<style>
+  body { font: 15px/1.5 -apple-system, sans-serif; margin: 0; padding: 40px; background: #1a1d21; color: #d1d2d3; }
+  h1 { font-size: 13px; font-weight: 600; color: #868686; margin: 0 0 12px; letter-spacing: .04em; text-transform: uppercase; }
+  #composer { min-height: 96px; padding: 12px 14px; border: 1px solid #565856; border-radius: 8px; background: #222529; outline: none; }
+  #composer p { margin: 0; color: inherit; font-size: inherit; }
+  p.note { color: #868686; font-size: 12px; margin: 14px 0 0; }
+</style>
+</head>
+<body>
+
+<!--
+  The same composer as composer.html, in the shape that breaks the offsets.
+
+  composer.html is one text node. This is one <p> per line, which is what Quill
+  builds and therefore what Slack's message box actually is. The distinction is
+  the whole point of this file: the accessibility *value* renders a block
+  boundary as "\n" and counts it as a character, and the question under test is
+  whether AXSelectedTextRange counts it too.
+
+  Measured in Slack on 2026-08-20, three times, and never with one line: an
+  offset the app reported was short by one for every line break above it. A
+  selection asked for at 62 came back holding the characters at 63, and a caret
+  the app called 95 was really at 96. So the app's numbers and the app's own
+  value do not address the same string, and every write aimed by arithmetic on
+  that value lands one character off per line.
+
+  Seeded from the URL fragment, with "|" between paragraphs:
+
+      file://…/paragraphs.html#one|two|three
+
+  The title publishes the box the same way — PFBOX|<contents>, newlines as "\n"
+  — so a harness can read the real text without asking accessibility anything.
+-->
+
+<h1>ParrotFlow paragraph fixture</h1>
+<div id="composer" contenteditable="true" spellcheck="false"></div>
+<p class="note">The title mirrors this box. <code>PFBOX|&lt;contents, \n per break&gt;</code></p>
+
+<script>
+  var composer = document.getElementById('composer');
+
+  function publish() {
+    document.title = 'PFBOX|' + composer.innerText
+      .replace(/ /g, ' ')
+      .replace(/\n+$/, '')
+      .replace(/\n/g, '\\n');
+  }
+
+  function seed() {
+    // The seed is everything before the first "&": the parameters after it are
+    // the harness talking to this page, not text to put in the box.
+    var text = decodeURIComponent(location.hash.slice(1).split('&')[0]);
+    composer.innerHTML = '';
+    text.split('|').forEach(function (line) {
+      var p = document.createElement('p');
+      // <br> for an empty line, which is what a real editor puts there, and it
+      // leaves the paragraph genuinely empty. A zero-width space was tried and
+      // hid a bug: it gives the line a character to probe with, so a caret on a
+      // blank line looked measurable when in the real thing it is not.
+      if (line.length) {
+        p.appendChild(document.createTextNode(line));
+      } else {
+        p.appendChild(document.createElement('br'));
+      }
+      composer.appendChild(p);
+    });
+    publish();
+    composer.focus();
+
+    // "#lines&at=12,7" puts the selection over exactly those characters of the
+    // value — offsets counted the way innerText counts them, with one "\n" per
+    // break. Without it the caret goes to the very end, where a composer leaves
+    // it after you type.
+    //
+    // This is the page telling the harness where the selection really is, in
+    // the one coordinate space that is not in question. Everything the app
+    // reports about that selection can then be checked rather than assumed.
+    var want = /(?:^|&)at=(\d+),(\d+)/.exec(location.hash);
+    var range = document.createRange();
+    if (want) {
+      place(range, +want[1], +want[2]);
+    } else {
+      range.selectNodeContents(composer);
+      range.collapse(false);
+    }
+    var selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    report(selection);
+  }
+
+  /// Where the selection really is, in value offsets, published for the
+  /// harness to check against.
+  ///
+  /// A caret has no text, so `selection.toString()` is empty for one and says
+  /// nothing about where it is. Without this the two positions either side of a
+  /// line break look identical in the title, and an experiment about exactly
+  /// those two positions has no oracle at all.
+  function report(selection) {
+    var at = offsetOf(selection.anchorNode, selection.anchorOffset);
+    var to = offsetOf(selection.focusNode, selection.focusOffset);
+    document.title = document.title + '|AT|' + at + ',' + (to - at)
+      + '|SAID|' + selection.toString();
+  }
+
+  function offsetOf(node, within) {
+    var offset = 0;
+    var blocks = composer.getElementsByTagName('p');
+    for (var i = 0; i < blocks.length; i++) {
+      var text = blocks[i].firstChild;
+      var length = (text && text.nodeType === 3) ? text.nodeValue.length : 0;
+      if (node === text) { return offset + within; }
+      if (node === blocks[i]) { return offset + Math.min(within, length); }
+      offset += length + 1;   // the break between blocks
+    }
+    // The selection is anchored on the composer itself rather than on any
+    // paragraph, which is what a caret at the very end looks like. The loop has
+    // counted a break after the last block that innerText does not, so take it
+    // back off.
+    return Math.max(0, offset - 1);
+  }
+
+  /// Walk the paragraphs counting one "\n" per break, and set the range over
+  /// value offsets [from, from + length).
+  function place(range, from, length) {
+    var offset = 0, set = false;
+    var blocks = composer.getElementsByTagName('p');
+    for (var i = 0; i < blocks.length; i++) {
+      var node = blocks[i].firstChild;
+      var text = (node && node.nodeType === 3) ? node.nodeValue : '';
+      if (!set && from <= offset + text.length) {
+        range.setStart(node && node.nodeType === 3 ? node : blocks[i], node && node.nodeType === 3 ? from - offset : 0);
+        set = true;
+      }
+      if (set && from + length <= offset + text.length) {
+        range.setEnd(node && node.nodeType === 3 ? node : blocks[i], node && node.nodeType === 3 ? from + length - offset : 0);
+        return;
+      }
+      offset += text.length + 1;   // the break between blocks
+    }
+  }
+
+  composer.addEventListener('input', publish);
+  window.addEventListener('hashchange', seed);
+
+  // Same reason as composer.html: navigating by URL often leaves Chrome's focus
+  // in the omnibox, and a fixture that measures that is not measuring this.
+  // Taking focus back must not move the selection. `composer.focus()` on its
+  // own puts the caret wherever the browser likes, which silently rewrites the
+  // state a case has just set up — so the seed is re-run instead, which places
+  // it again. Clicking on the page while a case is measuring would otherwise
+  // change the answer and leave no trace of having done so.
+  window.addEventListener('focus', seed);
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) seed();
+  });
+
+  seed();
+  setTimeout(seed, 250);
+</script>
+
+</body>
+</html>

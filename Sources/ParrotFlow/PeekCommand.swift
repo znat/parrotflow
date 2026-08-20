@@ -132,6 +132,8 @@ enum PeekCommand {
         // apps it will work in — see `caretDescription`.
         report("caret     \(caretDescription(of: element))")
         report("field     \(fieldDescription(of: element))")
+        report("offsets   \(offsetDescription(of: element, value: value))")
+        if let value { reportLineRanges(of: element, value: value) }
 
         // What the write path will actually be handed. Everything above is raw
         // accessibility; this is the one coordinate space the app edits in, and
@@ -328,6 +330,119 @@ enum PeekCommand {
         var range = CFRange()
         guard AXValueGetValue(wrapped as! AXValue, .cfRange, &range) else { return "unreadable" }
         return "location \(range.location), length \(range.length)"
+    }
+
+    /// Whether the app's offsets address the same string as its own value.
+    ///
+    /// They do not always, and nothing else here would show it. Measured in a
+    /// Chromium contenteditable on 2026-08-20: a value of 96 characters over
+    /// three paragraphs, the caret at the very end, and the app reporting 94.
+    /// The same 34-character value in one text node reported 34. So the offsets
+    /// run short by the block boundaries above them — not by the newlines in
+    /// the value, which are equal in both — and no arithmetic on the value can
+    /// tell the two apart.
+    ///
+    /// `kAXStringForRange` is the way out if the app answers it: hand it an
+    /// offset and it hands back the characters there, which converts one space
+    /// to the other by measurement rather than by theory. This line says
+    /// whether it is advertised, and what it returns for the first ten
+    /// characters — where the value and the answer differ, the offsets are
+    /// shifted, and by how much the two strings differ.
+    /// What the app calls each of its lines, against what the value calls them.
+    ///
+    /// `kAXRangeForLine` answers in the app's own numbers, so it maps the two
+    /// spaces line by line without any probing. Whether that is usable depends
+    /// on one thing this prints and nothing else can tell you: whether the
+    /// app's idea of a line is the value's idea of a line. A soft-wrapped
+    /// paragraph is one line in the value and may be several to the app, and a
+    /// mapping built on the assumption that they agree would be wrong for every
+    /// message long enough to wrap.
+    private static func reportLineRanges(of element: AXUIElement, value: String) {
+        let text = value as NSString
+        var names: CFArray?
+        let advertised = AXUIElementCopyParameterizedAttributeNames(element, &names) == .success
+            ? ((names as? [String]) ?? []) : []
+        guard advertised.contains(kAXRangeForLineParameterizedAttribute as String) else {
+            report("lines     AXRangeForLine not advertised")
+            return
+        }
+
+        var starts: [Int] = [0]
+        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length),
+                                 options: [.byLines, .substringNotRequired]) { _, _, enclosing, _ in
+            starts.append(enclosing.location + enclosing.length)
+        }
+        report("lines     (the app's range for each line, then what the value has there)")
+        for line in 0..<max(1, starts.count - 1) {
+            var answer: CFTypeRef?
+            let error = AXUIElementCopyParameterizedAttributeValue(
+                element, kAXRangeForLineParameterizedAttribute as CFString,
+                NSNumber(value: line), &answer
+            )
+            guard error == .success, let wrapped = answer,
+                  CFGetTypeID(wrapped) == AXValueGetTypeID() else {
+                report("  \(line)       answered \(error.rawValue)")
+                continue
+            }
+            var range = CFRange()
+            guard AXValueGetValue(wrapped as! AXValue, .cfRange, &range) else { continue }
+            let start = starts[line]
+            let end = line + 1 < starts.count ? starts[line + 1] : text.length
+            let here = text.substring(with: NSRange(location: start, length: max(0, end - start)))
+            report("  \(line)       app \(range.location)+\(range.length)"
+                + "   value \(start)+\(max(0, end - start))   \"\(preview(here))\"")
+        }
+    }
+
+    private static func offsetDescription(of element: AXUIElement, value: String?) -> String {
+        var names: CFArray?
+        let advertised = AXUIElementCopyParameterizedAttributeNames(element, &names) == .success
+            ? ((names as? [String]) ?? []) : []
+        let attribute = kAXStringForRangeParameterizedAttribute as String
+        guard advertised.contains(attribute) else {
+            return "AXStringForRange not advertised — offsets can only be measured by selecting"
+        }
+
+        // The start of the last line, where any drift has had every boundary
+        // above it to accumulate over. Asking at 0 proves nothing: the two
+        // spaces always agree before the first block boundary.
+        //
+        // Counted as UTF-16, not as characters. The accessibility range API is
+        // UTF-16 throughout, and `String.count` is grapheme clusters — one emoji
+        // above the last line and the two disagree, so this would ask about a
+        // different place than it prints.
+        guard let value, !value.isEmpty else {
+            return "AXStringForRange advertised, no value to ask about"
+        }
+        let text = value as NSString
+        let lastBreak = text.range(of: "\n", options: .backwards)
+        let start = lastBreak.location == NSNotFound ? 0 : lastBreak.location + 1
+        let length = min(12, text.length - start)
+        guard length > 0 else { return "AXStringForRange advertised, last line is empty" }
+
+        var range = CFRange(location: start, length: length)
+        guard let parameter = AXValueCreate(.cfRange, &range) else {
+            return "AXStringForRange advertised, but the range would not encode"
+        }
+        var answer: CFTypeRef?
+        let error = AXUIElementCopyParameterizedAttributeValue(
+            element, attribute as CFString, parameter, &answer
+        )
+        guard error == .success, let said = answer as? String else {
+            return "AXStringForRange advertised but answered \(error.rawValue) at \(start)+\(length)"
+        }
+        let here = text.substring(with: NSRange(location: start, length: length))
+        if said == here {
+            return "the app and its value agree at \(start)+\(length) — \"\(preview(said))\""
+        }
+        // How far out, said as a number rather than left to the reader. Where
+        // the answer turns up later in the value than it was asked for, that
+        // distance is how far the app's numbers and its own value have parted.
+        let found = text.range(of: said)
+        let drift = found.location == NSNotFound ? nil : found.location - start
+        return "asked \(start)+\(length), the app answered \"\(preview(said))\""
+            + " where the value has \"\(preview(here))\""
+            + (drift.map { " — the app's offsets run \($0) behind" } ?? "")
     }
 
     /// Where the caret is on screen, if the app will say.

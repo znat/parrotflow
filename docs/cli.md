@@ -402,6 +402,25 @@ as offsets into it. That last block is the one that decides what a write does;
 when it and the raw accessibility lines above it disagree, the surface block is
 the one that matters.
 
+The `offsets` line says whether the two can disagree at all. An app's value is a
+string and its selected range is a number, and nothing guarantees the number
+indexes the string — Chromium's does not. Every block boundary appears in the
+value as `\n` and is skipped by the offsets, so a caret at the end of a
+three-paragraph message reports two characters early:
+
+```
+value     96 chars, 3 line(s)
+range     location 94, length 0
+offsets   asked 62+12, the app answered "es Tuesday m" where the value has "Does Tuesday" — the app's offsets run 2 behind
+  span    96+0 — ""
+```
+
+`range` is what the app said. `span` is what it meant, measured with
+`AXStringForRange` and corrected. When the two differ, everything aimed by
+arithmetic on the value — where a rewrite is written, what the `input` stage
+reports either side of the caret — was wrong by that much before the
+correction.
+
 `--edit-test` performs a real in-place edit after a delay, finding the text by
 searching for it. `--span-test` does the same to a character range given
 outright, which is how the app itself now works — a caller that knows which
@@ -495,6 +514,7 @@ scripts/check-context.sh           # what the context stage publishes for a scre
 scripts/check-input.sh             # where the input stage cuts a field, and the caret
 scripts/check-join.sh              # fitting a clip to the text either side of the caret
 scripts/check-span.sh              # a composer-shaped page, or Slack, or Outlook
+scripts/probe-offsets.sh           # measures whether an app's offsets index its own value
 scripts/check-vocabulary-config.sh # what vocabulary.yaml adds up to, old keys included
 scripts/check-possessive.sh        # whether a possessive survives a substitution
 scripts/check-verdicts.sh          # what the name judge reads out of a reply

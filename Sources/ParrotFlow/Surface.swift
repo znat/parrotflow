@@ -582,12 +582,16 @@ struct Surface {
         }
 
         post(arrowLeft, times: target.length, flags: .maskShift)
-        let got = SelectionReader.selectedRange(of: element)
-        guard let selected = got,
-              selected.location == target.location, selected.length == target.length else {
-            let reported = got.map { "\($0.location)+\($0.length)" } ?? "nothing"
-            Log.write("surface: selected \(reported), wanted"
-                + " \(target.location)+\(target.length) — not typing")
+        // The characters, not the numbers naming them — the same standard step 2
+        // holds itself to, and for a reason step 2 measured. An app's offsets and
+        // its own value do not always address the same string: Slack reported
+        // exactly 62+25 for a selection holding the characters at 63, so a check
+        // on the numbers passed while the selection was one character out, and
+        // this pasted over the wrong 25 characters. `confirmedSelection` asks
+        // what is selected first and falls back to the numbers only where the app
+        // will not say, which is every Chromium contenteditable.
+        guard let text = Range(target, in: content).map({ String(content[$0]) }),
+              confirmedSelection(matches: text, range: target) else {
             return nil
         }
 
@@ -825,14 +829,23 @@ struct Surface {
     /// whatever happened. The question has to be one the app answers out of its
     /// own state.
     ///
-    /// Two ways it can answer, because the surfaces that matter answer
-    /// differently. A native field hands back the selected *text*, which is the
-    /// stronger evidence and is tried first. Chromium hands back `""` for the
-    /// selected text of a contenteditable however the selection was made — by
-    /// hand, by us, at all — so insisting on text refuses every browser and
-    /// every Electron app on earth. What it does report honestly is the
-    /// *range*, and a range that reads back as the one we asked for, when the
-    /// one before it was different, is the app saying it moved the selection.
+    /// Three ways it can answer, in descending order of how much they prove.
+    ///
+    /// The selected *text* is the strongest and is tried first. A native field
+    /// gives it, and so does Slack — it named "est tunday morning works " for a
+    /// selection asked for one character earlier, which is the whole reason
+    /// this function exists. Chromium hands back `""` for a contenteditable
+    /// whose selection was set through the accessibility API, so insisting on
+    /// text alone would refuse every browser.
+    ///
+    /// Then the characters at the range, via `AXStringForRange`. Asked in the
+    /// app's own numbers, so it says what the app took those numbers to mean —
+    /// which is the question, because an app's offsets need not address its own
+    /// value and the same numbers can name different characters.
+    ///
+    /// Then the *range* alone, for an app that implements neither. A range that
+    /// reads back as the one asked for, when the one before it was different,
+    /// is the app saying it moved the selection — and nothing more than that.
     ///
     /// Neither answer is taken as proof that the write worked. They only decide
     /// whether pasting is safe to attempt; what happened afterwards is settled
@@ -857,14 +870,37 @@ struct Surface {
                 }
                 lastSeen = "\"\(selected.prefix(40))\""
             } else if let echoed = SelectionReader.selectedRange(of: element) {
-                // Chromium reports `""` for the selected text of a
-                // contenteditable however the selection was made — by hand, by
-                // us, at all — so insisting on text refuses every browser and
-                // every Electron app. The range it does report honestly.
+                // No selected text to check, so the range is all there is —
+                // and a range that reads back as the one asked for is weaker
+                // evidence than it looks. An app's offsets need not address its
+                // own value, so the same numbers can name different characters:
+                // Slack echoed 62+25 for a selection holding the characters at
+                // 63, and this said yes.
+                //
+                // `AXStringForRange` closes that without having to work out
+                // where the selection really is. It is asked in the app's own
+                // numbers — the same ones `select` passed it — so it answers
+                // with the characters the app took those numbers to mean. If
+                // they are not the ones intended, the selection is somewhere
+                // else, whatever the numbers say.
                 if echoed.location == range.location, echoed.length == range.length {
-                    return true
+                    guard let said = SelectionReader.string(
+                        of: element, at: range.location, length: range.length
+                    ) else {
+                        // Not implemented. The numbers are all there is, which
+                        // is where this stood before.
+                        return true
+                    }
+                    if folded(said).compare(
+                        folded(expected), options: .caseInsensitive
+                    ) == .orderedSame {
+                        return true
+                    }
+                    lastSeen = "\(echoed.location)+\(echoed.length), holding"
+                        + " \"\(said.prefix(40))\""
+                } else {
+                    lastSeen = "\(echoed.location)+\(echoed.length)"
                 }
-                lastSeen = "\(echoed.location)+\(echoed.length)"
             }
             Thread.sleep(forTimeInterval: 0.03)
         } while Date() < deadline
