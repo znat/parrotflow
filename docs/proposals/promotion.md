@@ -1,4 +1,4 @@
-# Making ParrotFlow the default dictation tool for devs
+# Promoting ParrotFlow, the programmable dictation tool
 
 Status: **plan, nothing executed yet.**
 
@@ -16,20 +16,29 @@ distribution, not polish.
 
 One sentence, used everywhere, verbatim:
 
-> **ParrotFlow is dictation configured like a dev tool: local speech, one YAML
-> file, transforms you can script, and a vocabulary your coding agent can
-> build from your repo.**
+> **ParrotFlow is dictation you configure like Neovim: pipelines, transforms
+> and vocabulary in one YAML file, in your dotfiles, editable by your coding
+> agent.**
 
-Two things make this defensible:
+The landscape (August 2026) decides this framing. "Local" is table stakes
+now: Handy is free, MIT and minimal; VoiceInk is a polished open-source Mac
+app; Wispr is the no-config cloud product; Claude Code ships its own
+`/voice`. None of them is programmable. A user-defined pipeline of regexes,
+scripts and scoped prompts, versioned in a dotfiles repo, is a position
+ParrotFlow holds alone — the same position espanso holds against
+TextExpander, and Hammerspoon and karabiner-elements hold against every
+polished Mac utility. That crowd is the audience: **devs who
+version-control their tools.** They are also exactly the people who star,
+fork, share configs, and contribute.
 
-- **Local and fast.** Wispr Flow and Aqua Voice are cloud and paid.
-  superwhisper and VoiceInk are local but configured through a GUI. Nobody
-  else is "a plain YAML file your agent edits".
-- **The coding-agent wedge.** Devs now spend hours a day writing prose to
-  Claude Code and Cursor. Prompts are long, typing is slow, and the words are
-  full of repo jargon a general speech model mangles. ParrotFlow's vocabulary
-  plus `AGENTS.md` plus the `vocabulary-corpus` skill answer exactly that.
-  Lead with this use case, not with "dictate emails".
+Two consequences:
+
+- **Lead with programmable, not with local.** Local, fast and private are
+  said once, as table stakes, then the demo is the pipeline.
+- **Against per-tool voice modes** (Claude Code `/voice`, editor plugins):
+  ParrotFlow is system-wide — one vocabulary and one pipeline across Claude
+  Code, Cursor, Slack, the terminal, everywhere. That is the answer, not
+  "better recognition".
 
 Do not chase cross-platform now. Devs skew Mac, the story is coherent, and a
 port would eat the whole time budget.
@@ -73,18 +82,24 @@ Order matters: small rooms first to catch install bugs, HN when the path is
 proven. Each launch is ~2h: post in the morning, answer comments same day.
 
 - **Week 3 — r/macapps and r/LocalLLaMA.** Different angles: r/macapps gets
-  "local Wispr Flow alternative", r/LocalLLaMA gets "Parakeet + local Gemma,
-  here is the pipeline and the latency numbers". Honest maker posts, numbers
-  included. Fix whatever breaks.
+  "local and programmable, here is the YAML", r/LocalLLaMA gets "Parakeet +
+  local Gemma, here is the pipeline and the latency numbers". The crowded
+  pitch ("another Wispr alternative") is the one to avoid; the pipeline demo
+  is the one nobody else can post. Honest maker posts, numbers included.
+  Fix whatever breaks.
 - **Week 4 — Show HN.** The one shot that matters. Suggested title:
-  *Show HN: ParrotFlow – local dictation for macOS, programmable in one YAML
-  file*. First comment (yours): why it exists, the latency numbers, what is
-  local vs optional-remote, and the coding-agent vocabulary story. Post
-  Tue–Thu, 8–10am ET. Stay in the thread all day; answers from the author
-  are what keep a Show HN alive.
+  *Show HN: ParrotFlow – dictation for macOS you configure like Neovim*.
+  First comment (yours): why it exists when Handy and VoiceInk exist — the
+  pipeline, the scripted transforms, the tested prompts — plus the latency
+  numbers and what is local vs optional-remote. Post Tue–Thu, 8–10am ET.
+  Stay in the thread all day; answers from the author are what keep a
+  Show HN alive.
 - **Week 5 — awesome lists and directories.** PRs to awesome-mac,
-  awesome-macos, local-AI and whisper-adjacent lists. Submit to lobste.rs.
-  These are 15-minute tasks that compound; they are also the long-tail SEO.
+  awesome-macos, local-AI and whisper-adjacent lists — and the dotfiles and
+  Mac-automation ecosystems (awesome-dotfiles, the espanso, Hammerspoon and
+  karabiner-adjacent lists), which is where the actual audience lives.
+  Submit to lobste.rs. These are 15-minute tasks that compound; they are
+  also the long-tail SEO.
 - **Week 6 — newsletters.** Console.dev, TLDR, MacStories tips, Dense
   Discovery. Short pitch email each, link to the video. Console alone has
   moved four figures of stars for tools like this.
@@ -114,6 +129,10 @@ by material already in the tree:
   (examples/transforms/self_correction)
 - "I let my coding agent configure my dictation app" (AGENTS.md +
   vocabulary-corpus; also the best short-video demo for X)
+- "Why another dictation app when Handy and VoiceInk exist" — the honest
+  comparison post: minimal free, polished app, no-config cloud, and
+  programmable; where each wins, written straight. Also becomes a
+  docs/comparison page, which is what half the search traffic wants.
 
 Cadence: one post every two weeks. A post is 3–4h with Claude drafting from
 the source doc and you rewriting in your voice. Host on a personal blog or
@@ -129,8 +148,12 @@ between posts. The "Versal → Vercel" clip is the hook.
 - Label `good-first-issue` honestly; transforms are the natural first
   contribution. Nudge every "here is my transform" discussion toward a PR to
   `examples/transforms/`.
-- A user-contributed transform gallery is the moat: rules are shareable,
-  GUI settings are not.
+- **The transform gallery is the whole bet**, not one bullet among four.
+  Shareable config is the community mechanic that GUI apps structurally
+  cannot have, and it is what carried espanso and Hammerspoon past
+  better-funded competitors. Make sharing frictionless: a transform is one
+  folder with its tests, `examples/transforms` is the gallery, and every
+  post and demo ends by pointing at it.
 - Release monthly minimum, even if small. release-please makes this cheap.
   A moving project gets starred; a quiet one gets bookmarked.
 
@@ -172,10 +195,15 @@ discussions started by people you don't know.
 - **~1,000 stars** — a Show HN or a post hit the front page. If week 8
   passes without one, the message is wrong, not the product: revisit §1
   with the comment threads as data.
+- **A stranger shares a transform or a config** — PR, gist, or blog post.
+  This is the signal that matters more than any star count: it means the
+  espanso mechanic caught. Everything in Phases 2 and 3 is aimed at making
+  this happen and then compounding it.
 - **Enough popularity for `homebrew/cask`** — submit, and the install line
   becomes `brew install parrotflow`. That line in a thousand dotfiles repos
-  is what "default dictation tool for devs" looks like.
-- **First external transform PR merged** — the flywheel exists.
+  is what winning this niche looks like.
 
-The realistic arc to "default" is 12–18 months, and it is carried by the
-biweekly posts and the transform gallery, not by launch week.
+The model is espanso, Hammerspoon, karabiner-elements: tools that won a
+durable community of people who version-control their setup, against bigger
+and better-funded products. The realistic arc is 12–18 months, carried by
+the biweekly posts and the transform gallery, not by launch week.
