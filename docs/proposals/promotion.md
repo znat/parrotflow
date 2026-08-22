@@ -16,22 +16,32 @@ distribution, not polish.
 
 One sentence, used everywhere, verbatim:
 
-> **ParrotFlow is dictation you configure like Neovim: pipelines, transforms
-> and vocabulary in one YAML file, in your dotfiles, editable by your coding
-> agent.**
+> **ParrotFlow is the dictation app your coding agent can program: pipelines,
+> transforms and vocabulary live in one YAML file that the agent — or you —
+> reads, edits and tests.**
 
-The landscape (August 2026) decides this framing. "Local" is table stakes
+One substrate, two framings, picked per channel:
+
+- **"Your agent programs it."** For AI-native devs, who are most devs now.
+  They never open the YAML: they say "make my dictation turn P one into P1
+  and stop mangling our product names", and the agent writes the transform,
+  runs its tests, and updates the vocabulary from the repo. No GUI app can
+  offer this — an agent cannot click through settings, but it can edit a
+  file. This framing leads on X, Reddit, and in every demo.
+- **"Configure it like Neovim."** For the dotfiles crowd — smaller, but
+  they are the ones who star, share configs, and contribute. This framing
+  leads on HN and lobste.rs.
+
+The landscape (August 2026) decides this position. "Local" is table stakes
 now: Handy is free, MIT and minimal; VoiceInk is a polished open-source Mac
 app; Wispr is the no-config cloud product; Claude Code ships its own
-`/voice`. None of them is programmable. A user-defined pipeline of regexes,
-scripts and scoped prompts, versioned in a dotfiles repo, is a position
-ParrotFlow holds alone — the same position espanso holds against
-TextExpander, and Hammerspoon and karabiner-elements hold against every
-polished Mac utility. That crowd is the audience: **devs who
-version-control their tools.** They are also exactly the people who star,
-fork, share configs, and contribute.
+`/voice`. None of them is programmable — by a person or by an agent. A
+pipeline of regexes, scripts and scoped prompts in a plain file is a
+position ParrotFlow holds alone: for the dotfiles crowd it is espanso
+against TextExpander, and for everyone else it is the only dictation app
+their agent can actually operate.
 
-Two consequences:
+Two more consequences:
 
 - **Lead with programmable, not with local.** Local, fast and private are
   said once, as table stakes, then the demo is the pipeline.
@@ -39,6 +49,11 @@ Two consequences:
   ParrotFlow is system-wide — one vocabulary and one pipeline across Claude
   Code, Cursor, Slack, the terminal, everywhere. That is the answer, not
   "better recognition".
+- **Agents are a distribution channel of their own.** AI-native devs ask
+  their agent what to install. Being the answer to "best dictation app that
+  works with Claude Code" means docs an agent can find, cite and execute:
+  AGENTS.md, the comparison page, install steps that run unattended. Every
+  doc now has two readers.
 
 Do not chase cross-platform now. Devs skew Mac, the story is coherent, and a
 port would eat the whole time budget.
