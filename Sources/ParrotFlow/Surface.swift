@@ -489,7 +489,7 @@ struct Surface {
 
         // 1. Set the range, then write the text into it. Disturbs nothing, and
         //    is what a native field accepts.
-        if select(nsRange), setSelectedText(replacement), landed(fragment) {
+        if select(nsRange), setSelectedText(replacement), landed(fragment, needle: folded(fragment.text)) {
             Log.write("surface: wrote \(nsRange.length) chars via the accessibility range")
             return .replaced(undo)
         }
@@ -648,8 +648,9 @@ struct Surface {
     /// back — pressing Cmd-Z then would undo whatever the person did before we
     /// arrived, which is a far worse outcome than the failed correction.
     private func repairedAfterStrayPaste() -> String {
+        let foldedContent = folded(content)
         guard let now = SelectionReader.visibleText(of: element),
-              folded(now) != folded(content) else {
+              folded(now) != foldedContent else {
             Log.write("surface: the paste changed nothing; leaving the field alone")
             return "this app would not let me edit it"
         }
@@ -660,7 +661,7 @@ struct Surface {
         let deadline = Date().addingTimeInterval(1.0)
         repeat {
             if let value = SelectionReader.visibleText(of: element),
-               folded(value) == folded(content) {
+               folded(value) == foldedContent {
                 Log.write("surface: the stray paste is undone; the text is as it was")
                 return "this app would not let me edit it"
             }
@@ -691,8 +692,9 @@ struct Surface {
         // that is busy laying the paste out, so a single read can eat most of
         // the old budget and only two or three ever happened.
         let deadline = Date().addingTimeInterval(2.5)
+        let needle = folded(fragment.text)
         repeat {
-            if landed(fragment) { return true }
+            if landed(fragment, needle: needle) { return true }
             Thread.sleep(forTimeInterval: 0.05)
         } while Date() < deadline
 
@@ -778,10 +780,9 @@ struct Surface {
         return text.range(of: needle, range: first.upperBound..<text.endIndex) == nil
     }
 
-    private func landed(_ fragment: Fragment) -> Bool {
+    private func landed(_ fragment: Fragment, needle: String) -> Bool {
         guard let value = SelectionReader.visibleText(of: element) else { return false }
         let text = folded(value)
-        let needle = folded(fragment.text)
         guard fragment.atStart else { return text.contains(needle) }
         // Leading whitespace on both sides, because a rich-text editor can put
         // a blank line above what it holds and that is not a failed write.
@@ -793,18 +794,36 @@ struct Surface {
     /// apostrophe curly as it arrives, so "they're" comes back as "they’re" — the
     /// edit landed, and a literal comparison would call it a refusal.
     private func folded(_ text: String) -> String {
-        text.replacingOccurrences(of: "\u{2019}", with: "'")
-            .replacingOccurrences(of: "\u{2018}", with: "'")
-            .replacingOccurrences(of: "\u{201C}", with: "\"")
-            .replacingOccurrences(of: "\u{201D}", with: "\"")
+        var result = String.UnicodeScalarView()
+        result.reserveCapacity(text.utf8.count)
+        let scalars = text.unicodeScalars
+        var index = scalars.startIndex
+        while index < scalars.endIndex {
+            let scalar = scalars[index]
+            index = scalars.index(after: index)
+            switch scalar {
+            case "\u{2019}", "\u{2018}":
+                result.append("'")
+            case "\u{201C}", "\u{201D}":
+                result.append("\"")
             // What a rich-text editor does to text on the way in. Outlook and
             // Mail put non-breaking spaces around pasted runs and keep carriage
             // returns in the value; both make a literal comparison fail on text
             // that is plainly correct on screen.
-            .replacingOccurrences(of: "\u{00A0}", with: " ")
-            .replacingOccurrences(of: "\u{202F}", with: " ")
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
+            case "\u{00A0}", "\u{202F}":
+                result.append(" ")
+            case "\r":
+                result.append("\n")
+                // A lone \r folds to \n same as \r\n does, so the \n that
+                // follows a \r must not also fold — otherwise \r\n becomes \n\n.
+                if index < scalars.endIndex, scalars[index] == "\n" {
+                    index = scalars.index(after: index)
+                }
+            default:
+                result.append(scalar)
+            }
+        }
+        return String(result)
     }
 
     private func select(_ range: NSRange) -> Bool {
@@ -861,10 +880,11 @@ struct Surface {
     private func confirmedSelection(matches expected: String, range: NSRange) -> Bool {
         var lastSeen = "nothing"
         let deadline = Date().addingTimeInterval(0.6)
+        let foldedExpected = folded(expected)
         repeat {
             if let selected = SelectionReader.selectedText(of: element), !selected.isEmpty {
                 if folded(selected).compare(
-                    folded(expected), options: .caseInsensitive
+                    foldedExpected, options: .caseInsensitive
                 ) == .orderedSame {
                     return true
                 }
@@ -892,7 +912,7 @@ struct Surface {
                         return true
                     }
                     if folded(said).compare(
-                        folded(expected), options: .caseInsensitive
+                        foldedExpected, options: .caseInsensitive
                     ) == .orderedSame {
                         return true
                     }
@@ -991,10 +1011,11 @@ struct Surface {
     /// that append as a clean retype for as long as this bug existed.
     private func box(reads expected: String) -> Bool {
         let deadline = Date().addingTimeInterval(1.5)
+        let foldedExpected = folded(expected)
         repeat {
             if let value = SelectionReader.visibleText(of: element),
                let box = SelectionReader.joinedInputBox(in: value),
-               folded(box) == folded(expected) {
+               folded(box) == foldedExpected {
                 return true
             }
             Thread.sleep(forTimeInterval: 0.05)
