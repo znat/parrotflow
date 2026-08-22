@@ -25,7 +25,7 @@ Do not relitigate these. Each was argued and settled.
 | Default | **No project.** The local `vocabulary.yaml` always loads; no shared folder loads until one is picked. |
 | The pick | Sticky and global. Held in a state file beside the config, never in `config.yaml` — that file is written by a person. |
 | Shown | In the dictating pill, beside the app icon. Nothing shown, and nothing wider, when no project is active. |
-| Switched | On the offer, as chips with letters — `hud-placement-and-offer.md` §3 settled that this surface is buttons, not a menu. The full list lives in the menu bar. |
+| Switched | On the offer, from a popup attached to the pill — rows with a letter each, through the tap the chips already use. Not a drop-down, not an `NSMenu`, and it never takes focus. The full list also lives in the menu bar. |
 | A switch repairs | Re-run the vocabulary pass on the last dictation; if its text changed, re-run the transforms and replace what landed. |
 | Precedence | Local always wins, per term, whole. No key-by-key blending. |
 | Transforms | **Phase 2.** A `command:` from a repository is code execution by `git pull`, and it needs its own opt-in. |
@@ -130,13 +130,72 @@ the same rule a stage has.
 
 ### The pill
 
-- **No project active:** the pill is what it is today. `PillMetrics.panelSize`
+**Before the words land, the pill is about where they are going. After they
+land, it is about what can be done to them.** That line decides what each
+state shows.
+
+#### Dictating
+
+- **No project active:** what it is today. `PillMetrics.panelSize`
   (`PillHUD.swift:807`) is not asked for another pixel.
-- **A project active:** its name beside the app icon, in the dictating state
-  and in the offer.
-- **The switch:** project chips on the offer, letters like every other chip,
-  capped by recency at about three. The rest of the list is in the menu bar.
-  A pick from the menu bar sets the project and touches no text.
+- **A project active:** its mark and short name, beside the destination icon.
+- **The destination icon stays.** Its *absence* is load-bearing: it is nil when
+  nothing was in front, when the app has no icon, and when there was nothing in
+  it to type into — "the icon is a promise about where the words are going, and
+  a window with no caret in it is not somewhere they can go"
+  (`PillHUD.swift:81`). The narrow no-icon pill is how the app says the
+  sentence has nowhere to go. Removing the icon deletes that signal and puts
+  nothing in its place, so it would have to be carried some other way first.
+- **When the width is tight**, the project's name goes before either icon does.
+  It is a label, not a path: truncate it hard.
+
+#### The offer
+
+**The app icon is already gone here.** It is drawn only in `RecordingContent`
+(`PillHUD.swift:1083`), so the offer has never carried it — the destination
+question is answered by then, and the words are on screen. Nothing to remove;
+the selector is free to be the prominent thing.
+
+#### The mark
+
+A repository gets a branch glyph — the SF Symbol `arrow.triangle.branch` — and
+a project that is not a repository gets a folder glyph, so the difference reads
+at a glance.
+
+**Not GitHub's.** Three reasons, and the first two are enough. The Octocat is a
+trademark with its own usage terms, and shipping it inside a menu is not what
+those terms are for. This detects `.git`, not a host, so a GitLab checkout, a
+sourcehut one and a repo with no remote at all would each be wearing somebody
+else's badge. And an SF Symbol needs no asset, scales with the text, and
+follows the theme.
+
+#### The selector
+
+A popup attached to the pill, not a drop-down and not an `NSMenu`: rows with a
+mark, a name, and the term count that project would contribute. A project whose
+folder did not resolve, or that has no `.parrot/`, says so quietly on its own
+row — that is where the question "why did it not propose that name" is actually
+asked.
+
+Four constraints, all from decisions already made about this surface:
+
+1. **It never takes focus.** The pill is a `nonactivatingPanel` on purpose,
+   because it appears over the window you are typing into. A popup that took
+   focus would pull it out of the field the words just landed in, which is the
+   one thing this surface must not do.
+2. **A letter per row**, through the same `CGEvent` tap the chips already use —
+   `hud-placement-and-offer.md` §3, with its three fences. The popup claims its
+   letters while open and releases them when it closes. So it is chips in a
+   column, not a menu, and it stays inside the rule that this surface is
+   buttons.
+3. **The clock stops while it is open**, the way hovering the pill already
+   stops it. `esc` closes the popup back to the offer rather than dismissing
+   everything, since dismissing is a decision and closing a popup is not.
+4. **It is placed against the pill**, which is at the caret — not against the
+   screen.
+
+A pick from the menu bar sets the project and touches no text. A pick from the
+selector sets it *and* repairs the last dictation.
 
 ### The repair
 
@@ -241,6 +300,10 @@ $PF --check-config
 - [ ] a term in both files takes the local entry whole
 - [ ] with no project picked, the merged vocabulary equals the local one exactly
 - [ ] the pill is not one pixel wider with no project active
+- [ ] the dictating pill still shows the destination icon, and still goes narrow and icon-less when the words have nowhere to go
+- [ ] the selector opens without the pill taking focus, and the field keeps its caret
+- [ ] a letter picks a row, `esc` closes the popup back to the offer, and the offer's clock is stopped while it is open
+- [ ] a project whose folder is missing, or that has no `.parrot/`, says so on its own row
 - [ ] a switch whose vocabulary output is unchanged reaches no model and replaces nothing
 - [ ] a switch whose output changed replaces the text **in the destination** — the field it was pasted into
 - [ ] the same, in a terminal, through `rewrite_line`
