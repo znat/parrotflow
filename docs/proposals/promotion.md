@@ -163,6 +163,14 @@ between posts. The "Versal → Vercel" clip is the hook.
 - Label `good-first-issue` honestly; transforms are the natural first
   contribution. Nudge every "here is my transform" discussion toward a PR to
   `examples/transforms/`.
+- **The per-repo vocabulary folder** (spec'd separately) is the second
+  spread mechanic: a repo that commits it teaches every contributor's
+  dictation the project's jargon, and shows every contributor the tool
+  exists — the `.editorconfig` effect. It also gives teams shared
+  vocabulary through git alone, no service. It does not gate the launch;
+  if it lands before the Show HN, it is the demo's second act, and either
+  way it gets its own flywheel post ("your repo carries its own dictation
+  vocabulary").
 - **The transform gallery is the whole bet**, not one bullet among four.
   Shareable config is the community mechanic that GUI apps structurally
   cannot have, and it is what carried espanso and Hammerspoon past
