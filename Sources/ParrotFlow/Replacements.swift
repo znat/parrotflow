@@ -103,8 +103,8 @@ enum Replacements {
                     + " there; skipped")
                 continue
             }
-            guard let pattern = try? NSRegularExpression(
-                pattern: source, options: [.caseInsensitive]
+            guard let pattern = Regexes.compiled(
+                source, options: [.caseInsensitive]
             ) else {
                 Log.write("replacements: \"\(rule.source)\" is not a valid pattern; skipped")
                 continue
@@ -154,15 +154,18 @@ enum Replacements {
 
     /// Closes the gaps a deletion leaves — doubled spaces, a space before a
     /// comma, a lowercase word left at the start of a sentence.
+    private static let tidyRules: [(NSRegularExpression, String)] = [
+        ("[ \\t]{2,}", " "),          // "So  I was" after a filler went
+        (" +([,.;:!?])", "$1"),      // "thinking ,"
+        ("([,;:]) *([,.;:])", "$2"), // "was, , thinking"
+        ("^[ \\t]+", ""),
+    ].compactMap { pattern, template in
+        (try? NSRegularExpression(pattern: pattern)).map { ($0, template) }
+    }
+
     static func tidy(_ text: String) -> String {
         var output = text
-        for (pattern, template) in [
-            ("[ \\t]{2,}", " "),          // "So  I was" after a filler went
-            (" +([,.;:!?])", "$1"),      // "thinking ," 
-            ("([,;:]) *([,.;:])", "$2"), // "was, , thinking"
-            ("^[ \\t]+", ""),
-        ] {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+        for (regex, template) in tidyRules {
             output = regex.stringByReplacingMatches(
                 in: output, range: NSRange(output.startIndex..., in: output),
                 withTemplate: template
@@ -183,8 +186,10 @@ enum Replacements {
     /// Not private: `VocabularyJudge.fuzzyParts` walks the same words, and two
     /// definitions of "a word" in one transcript is how a span ends up in one
     /// pass and not the other.
+    static let wordPattern = try? NSRegularExpression(pattern: "[\\p{L}\\p{N}']+")
+
     static func wordRanges(in text: String) -> [Range<String.Index>] {
-        guard let pattern = try? NSRegularExpression(pattern: "[\\p{L}\\p{N}']+") else { return [] }
+        guard let pattern = wordPattern else { return [] }
         return pattern
             .matches(in: text, range: NSRange(text.startIndex..., in: text))
             .compactMap { Range($0.range, in: text) }

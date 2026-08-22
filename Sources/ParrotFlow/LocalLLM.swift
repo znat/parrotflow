@@ -290,8 +290,8 @@ enum VoiceCommand {
             // Punctuation between the words because a transcript has it —
             // "by the way, parrot" is what gets written down when you pause.
             let pattern = "\\b" + words.joined(separator: "[\\s,]+") + "\\b"
-            guard let expression = try? NSRegularExpression(
-                pattern: pattern, options: [.caseInsensitive]
+            guard let expression = Regexes.compiled(
+                pattern, options: [.caseInsensitive]
             ) else { continue }
 
             for match in expression.matches(in: text, range: whole) {

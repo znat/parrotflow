@@ -965,8 +965,11 @@ struct Pipeline: Equatable, Codable {
         // must already have fired. One stage, and the order is no longer
         // something a config can get wrong.
         let handed = text
+        // Flattened from the vocabulary once here; the near-miss pass below
+        // reads the same table.
+        let vocabularyRules = config.vocabularyRules
         let exact = Replacements.exact(
-            to: text, rules: config.vocabularyRules, expand: config.expanded
+            to: text, rules: vocabularyRules, expand: config.expanded
         )
         let text = exact.text
 
@@ -1035,7 +1038,7 @@ struct Pipeline: Equatable, Codable {
         // over this speaker's archive.
         if step.nearMisses ?? true {
             let reached = VocabularyJudge.fuzzyParts(
-                in: text, rules: config.vocabularyRules, claimed: parts
+                in: text, rules: vocabularyRules, claimed: parts
             )
             nearMisses = reached.count
             parts += reached

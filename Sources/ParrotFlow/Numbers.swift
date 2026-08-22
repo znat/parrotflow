@@ -172,7 +172,7 @@ enum Numbers {
     }
 
     private static func tokenize(_ text: String) -> [Token] {
-        guard let pattern = try? NSRegularExpression(pattern: "[\\p{L}\\p{N}']+") else { return [] }
+        guard let pattern = Replacements.wordPattern else { return [] }
         let ranges = pattern
             .matches(in: text, range: NSRange(text.startIndex..., in: text))
             .compactMap { Range($0.range, in: text) }

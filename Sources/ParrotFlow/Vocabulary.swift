@@ -390,10 +390,11 @@ actor Vocabulary {
     ///
     /// Kept where it is because it is cheaper here: a detection refused now
     /// never becomes a proposal, and a 19-second clip yields ninety of them.
-    static var spansPerTerm: Int {
+    /// Read once: the environment cannot change under a running process, and
+    /// this is asked per detection — ninety times on a 19-second clip.
+    static let spansPerTerm: Int =
         ProcessInfo.processInfo.environment["PARROTFLOW_SPANS_PER_TERM"]
             .flatMap(Int.init) ?? 2
-    }
 
     /// How far the audio may contradict a proposal before it stops being one.
     ///
@@ -407,9 +408,12 @@ actor Vocabulary {
     /// stays because the harness sweeps this number, and a harness that has to
     /// rewrite the user's file to measure one point is a harness that
     /// eventually leaves it rewritten.
-    static func proposalMargin(_ config: Config) -> Float {
+    private static let proposalMarginOverride: Float? =
         ProcessInfo.processInfo.environment["PARROTFLOW_PROPOSAL_MARGIN"]
-            .flatMap(Float.init) ?? config.vocabulary.decideAbove
+            .flatMap(Float.init)
+
+    static func proposalMargin(_ config: Config) -> Float {
+        proposalMarginOverride ?? config.vocabulary.decideAbove
     }
 
     /// How well the spotter has to hear a term before its span is offered.
@@ -442,10 +446,9 @@ actor Vocabulary {
     /// once the rendering is registered, so it clears either number by a
     /// distance. What -5.0 cuts is the tail that got there by having more
     /// draws.
-    static var spotterFloor: Float {
+    static let spotterFloor: Float =
         ProcessInfo.processInfo.environment["PARROTFLOW_SPOTTER_FLOOR"]
             .flatMap(Float.init) ?? -5.0
-    }
 
     /// The term as it should be written where this word stood.
     ///

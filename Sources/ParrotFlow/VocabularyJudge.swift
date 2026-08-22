@@ -780,9 +780,13 @@ enum VocabularyJudge {
     static func fuzzyParts(
         in text: String, rules: [Config.Transcription.Rule], claimed: [Part]
     ) -> [Part] {
-        let renderings = rules.filter { !$0.isRegex && !$0.isDeletion && !$0.source.isEmpty }
+        // Each rule's word count, taken once: the loop below asks for it per
+        // window, and a transcript has hundreds of windows.
+        let renderings = rules
+            .filter { !$0.isRegex && !$0.isDeletion && !$0.source.isEmpty }
+            .map { (rule: $0, words: $0.source.split(separator: " ").count) }
         guard !renderings.isEmpty else { return [] }
-        let widest = max(1, renderings.map { $0.source.split(separator: " ").count }.max() ?? 1)
+        let widest = max(1, renderings.map { $0.words }.max() ?? 1)
 
         var found: [Part] = []
         var taken = claimed.map(\.range)
@@ -808,8 +812,7 @@ enum VocabularyJudge {
                 // as it does there: the span is left alone and a name is not
                 // corrected, rather than an ordinary word being written over.
                 var ordinary: Bool?
-                for rule in renderings
-                where rule.source.split(separator: " ").count == count {
+                for (rule, size) in renderings where size == count {
                     // An exact match is the rule's own job, and a word that is
                     // already the term is not a substitution.
                     if word.compare(rule.source, options: .caseInsensitive) == .orderedSame
