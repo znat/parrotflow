@@ -17,6 +17,7 @@ Start from the question you have.
 | [corrections.md](corrections.md) | Teach it a name — by panel, by spelling it out, or by description. |
 | [pipelines.md](pipelines.md) | What a transcript goes through: stages, transforms, conditions, per-app and per-language gates. |
 | [cli.md](cli.md) | Every terminal flag. Test a config change without a microphone. |
+| [sharing.md](sharing.md) | Share a vocabulary and transforms with a team, through a `.parrot/` folder in a repository. |
 
 ## Changing it
 

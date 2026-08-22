@@ -219,6 +219,17 @@ transcription:
       - numbers
 ```
 
+### Share it with your team
+
+Everyone on a team says the same names, and today everyone teaches them again.
+Commit a `.parrot/` folder to your repository and the next person pulls the
+names — and the transforms you wrote — out of it.
+
+The app never reads that folder. An agent does, and screens every term against
+your own voice before it is written into your config: a name that is safe for
+the person who committed it is not therefore safe for you. See
+[docs/sharing.md](docs/sharing.md).
+
 ### Build your own pipeline
 
 Your transcriptions can follow a complex workflow based on how you work, with

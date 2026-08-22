@@ -75,6 +75,18 @@ them means nothing to argue about.
 
     Supabase, Playwright, Drizzle, Tailwind, GitHub, OpenAI, TypeScript
 
+## Step 0 — look for a `.parrot/` folder first
+
+If the repository has one, somebody has already done this for this project.
+`.parrot/vocabulary.yaml` holds the terms their team says out loud, and the
+comments hold the ones they screened and threw away, with the reason.
+
+Start there rather than from the manifests. It is still hints: screen every
+term against this speaker with step 3 and step 5 below, because the risk a
+term carries depends on the accent and the languages of whoever dictates it.
+`.claude/skills/parrot-folder/SKILL.md` is the procedure, and
+`docs/sharing.md` is what the folder is.
+
 ## Step 1 — mine the codebase
 
 Read a **subset**, not the tree. What you want is words the person says out
@@ -309,3 +321,12 @@ it does not remove the need. Mishearings that land far from the spelling —
 **Terms are not free.** Each one is another chance to overwrite a correct word,
 and the risk is dominated by *which* terms rather than how many. Nine terms
 where three collide with ordinary words is worse than thirty that do not.
+
+## When the team should have it too
+
+Screening a term takes real work, and on a shared project the next person will
+repeat it. Offer to publish what survived — and the rejected list, which is the
+half that gets repeated — into a `.parrot/` folder in their repository. What
+travels and what does not is in `.claude/skills/parrot-folder/SKILL.md`. The
+short version: the names travel, one person's corrections and one person's two
+numbers do not.

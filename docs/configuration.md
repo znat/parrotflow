@@ -68,6 +68,7 @@ logging:
 | Trace | `~/Recordings/ParrotFlow/trace.jsonl` |
 | Log | `~/Library/Logs/ParrotFlow.log` — off with `logging.text: false` |
 | The shipped examples | `~/.config/parrotflow/transforms/examples/` — refreshed from the app on every launch, not yours to edit in place |
+| A team's folder | `<repo>/.parrot/` — names and transforms shared through a repository, imported by an agent, never read by the app. See [sharing.md](sharing.md) |
 
 The menu bar item shows the current state and offers *Open Recordings
 Folder* — the wavs, if `logging.audio` is on, and `trace.jsonl` — *Settings*,
@@ -129,6 +130,18 @@ once per transcript. Writing the path out in full — `transforms/slack/slack.md
 
 The dev build keeps its own copies of all of these; see
 [development.md](development.md).
+
+### A folder per team
+
+A repository can carry the names its team says out loud and the transforms
+they wrote, in a `.parrot/` folder at its root. Nothing in this app reads it.
+An agent does — `.claude/skills/parrot-folder/SKILL.md` — screens every term
+against your voice and the languages you dictate in, and writes what survives
+into `vocabulary.yaml` and `config.yaml` here. What runs is still only what is
+in your own folder.
+
+[sharing.md](sharing.md) has the layout, what travels and what does not, and
+`scripts/check-parrot-folder.sh`.
 
 ## `hotkey`
 

@@ -214,6 +214,13 @@ jobs:
       - name: Both install paths pin the same certificate
         run: scripts/check-pinned-certificate.sh
 
+      # A `.parrot/` folder is read by an agent and by nothing else, so no
+      # parser complains when a key stops meaning what it meant. The faults
+      # that matter are what does not travel: one machine's two numbers, one
+      # person's corrections, and a `command:` naming a file outside the folder.
+      - name: What a shared .parrot/ folder carries
+        run: scripts/check-parrot-folder.sh
+
       # One person's voice is not source. `.gitignore` stops `git add .` and
       # nothing else — not `-f`, not a file tracked before the rule existed,
       # not a rebase from the frozen prototype branch, which does carry the

@@ -169,6 +169,13 @@ lists:
   talked_about: ["a", "an", "the", "and", "or", "nor", "around", "oxford"]
 
 
+# Sharing with a team — a `.parrot/` folder in a repository, holding the names
+# that team says out loud and the transforms they wrote. Nothing here reads it:
+# an agent does, screens each term against your voice and your languages, and
+# writes what survives into vocabulary.yaml and this file. A term that is safe
+# for the person who committed it is not therefore safe for you, and a shared
+# `command:` is someone else's program running on your Mac. See docs/sharing.md.
+
 # What the activation phrase can reach, and what a pipeline can name.
 #   name          the id a pipeline or `when:` names
 #   description   matched against what you say — write it as you would say it

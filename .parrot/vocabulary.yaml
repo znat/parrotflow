@@ -1,0 +1,38 @@
+# What this project's words are, for anyone dictating about it.
+#
+# Hints, not settings. Nothing reads this file while you dictate — an agent
+# reads it, screens it against your voice and your languages, and writes what
+# survives into vocabulary.yaml beside your config. See docs/sharing.md, and
+# `.claude/skills/parrot-folder/SKILL.md` for the procedure.
+#
+# None of these has been screened against a speaker. Read them aloud before
+# trusting them — that is step 5 of the vocabulary skill, and nothing else
+# settles accent.
+
+terms:
+  # Compounds the decoder splits. The safest kind of term: glued back
+  # together they match exactly, so nothing else is in reach.
+  ParrotFlow:
+    kind: organization
+  FluidAudio:
+    kind: organization
+  SwiftLint:
+    kind: organization
+
+  # Names with nothing ordinary near them.
+  Ollama:
+    kind: organization
+  Kokoro:
+    kind: organization
+  Levenshtein:
+    kind: person
+
+# Rejected, and why. Do not re-add these without a measurement.
+#   Parakeet, Whisper, Swift, Xcode, GitHub
+#       written correctly already — a term with no gain is pure risk
+#   Yams
+#       four letters, so it is never searched for by sound at all, and "yams"
+#       is an ordinary word
+#   Vercel, Versailles, Praisy, Sentry, Tasmeen, Matthieu
+#       they appear all over docs/ as worked examples. They are not this
+#       project's vocabulary and belong to whoever measured them
