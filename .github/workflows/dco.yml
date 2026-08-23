@@ -1,0 +1,74 @@
+name: dco
+
+# Every commit has to carry a Signed-off-by line matching its author. That line
+# is the contributor certifying the DCO in the repository root: the code is
+# theirs to give, under this project's license. It is one line at commit time
+# (`git commit -s`) and the only record of origin the project keeps.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dco:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every commit is signed off
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/pulls/$PR/commits" --paginate > commits.json
+
+          # Two kinds of commit are skipped, and both would otherwise fail every
+          # run. A merge commit (two parents) is written by git, not by a person.
+          # A bot commit — release-please cuts one on every release — has no
+          # human author to certify anything.
+          #
+          # The match is on the email, lowercased: a sign-off naming someone
+          # other than the author certifies nothing.
+          jq -r '
+            .[]
+            | . as $c
+            | select(($c.parents | length) < 2)
+            | select(($c.author.type // "User") != "Bot")
+            | select((($c.commit.author.name // "") | endswith("[bot]")) | not)
+            | (($c.commit.author.email // "") | ascii_downcase) as $author
+            | ([ $c.commit.message
+                 | split("\n")[]
+                 | capture("^[[:space:]]*signed-off-by:.*<(?<mail>[^>]+)>"; "i")
+                 | .mail
+                 | ascii_downcase ]) as $signoffs
+            | select(($signoffs | index($author)) == null)
+            | "  \($c.sha[0:8])  \($c.commit.message | split("\n")[0])"
+          ' commits.json > missing.txt
+
+          if [ ! -s missing.txt ]; then
+            echo "ok: every commit is signed off"
+            exit 0
+          fi
+
+          {
+            echo "These commits carry no Signed-off-by line for their author:"
+            echo
+            cat missing.txt
+            cat <<'EOF'
+
+          The sign-off certifies the DCO in the repository root — that the code
+          is yours to give, under this project's license. See CONTRIBUTING.md.
+
+          On the next commits:
+
+            git commit -s -m "fix: …"
+
+          On the ones above, in one go, then force-push the branch:
+
+            git rebase --signoff main
+          EOF
+          } >&2
+          exit 1

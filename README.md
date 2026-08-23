@@ -272,6 +272,10 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
 **[docs/README.md](docs/README.md)** — configuration, pipelines, transforms, the
 command line, permissions, architecture.
 
+**[CONTRIBUTING.md](CONTRIBUTING.md)** — build it, test it, send a change.
+Questions that are not bugs go to
+[Discussions](https://github.com/znat/parrotflow/discussions).
+
 ---
 
 ## License
