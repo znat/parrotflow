@@ -13,7 +13,9 @@
 #
 # Exit codes:
 #   0  no drift, or drift printed by a dry run
-#   1  --check found drift, or --apply could not write something
+#   1  --check found drift, or --apply could not write something, or --apply
+#      left drift behind — a write the API accepted and did not store reads
+#      back unchanged, and that has to be louder than a line of output
 #
 # A setting this token cannot read or write is printed as a skip and the run
 # carries on. That is the normal case in CI: the default GITHUB_TOKEN has no
@@ -248,9 +250,12 @@ while i < len(text):
     while i < len(text) and text[i].isspace(): i += 1
 ' "$TMP/labels.json" > "$TMP/live-labels.tsv"
 
-  local name color desc live live_color live_desc
+  # GitHub treats label names case-insensitively, so `bug` and `Bug` are the
+  # same label and creating the second one is a 422. Match that: find it
+  # regardless of case, then rename it to the case this file names.
+  local name color desc live live_name live_color live_desc
   while IFS=$'\t' read -r _ name color desc; do
-    live="$(awk -F'\t' -v k="$name" '$1==k {print; exit}' "$TMP/live-labels.tsv")"
+    live="$(awk -F'\t' -v k="$name" 'BEGIN{k=tolower(k)} tolower($1)==k {print; exit}' "$TMP/live-labels.tsv")"
     if [ -z "$live" ]; then
       drift=$((drift + 1))
       printf '  ✗ %-30s missing\n' "$name"
@@ -265,21 +270,25 @@ while i < len(text):
       continue
     fi
 
+    live_name="$(printf '%s' "$live" | cut -f1)"
     live_color="$(printf '%s' "$live" | cut -f2)"
     live_desc="$(printf '%s' "$live" | cut -f3)"
-    if [ "$live_color" = "$color" ] && [ "$live_desc" = "$desc" ]; then
+    if [ "$live_name" = "$name" ] && [ "$live_color" = "$color" ] && [ "$live_desc" = "$desc" ]; then
       say_same "$name" "#$color"
       continue
     fi
     drift=$((drift + 1))
+    [ "$live_name" = "$name" ]  || printf '  ✗ %-30s named "%s"\n' "$name" "$live_name"
     [ "$live_color" = "$color" ] || printf '  ✗ %-30s #%s → #%s\n' "$name" "$live_color" "$color"
     [ "$live_desc" = "$desc" ]   || printf '  ✗ %-30s "%s" → "%s"\n' "$name" "$live_desc" "$desc"
 
     [ "$MODE" = apply ] || continue
+    # Addressed by the name the repository has, renamed to the one this file
+    # has. new_name is a no-op when the two already agree.
     local path
-    path="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$name")"
+    path="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$live_name")"
     if api "$TMP/label-out.json" --method PATCH "repos/$REPO/labels/$path" \
-         -f "color=$color" -f "description=$desc"; then
+         -f "new_name=$name" -f "color=$color" -f "description=$desc"; then
       printf '  → updated\n'
     else
       failed=$((failed + 1))
@@ -290,8 +299,8 @@ while i < len(text):
   # Nothing is deleted here. A label removed from this file stays on the
   # repository, because deleting one strips it from every issue that carries it.
   local unlisted
-  cut -f1 "$TMP/live-labels.tsv" | sort > "$TMP/live-names.txt"
-  cut -f2 "$TMP/want-labels.tsv" | sort > "$TMP/want-names.txt"
+  cut -f1 "$TMP/live-labels.tsv" | tr '[:upper:]' '[:lower:]' | sort > "$TMP/live-names.txt"
+  cut -f2 "$TMP/want-labels.tsv" | tr '[:upper:]' '[:lower:]' | sort > "$TMP/want-names.txt"
   unlisted="$(comm -13 "$TMP/want-names.txt" "$TMP/live-names.txt" | oneline)"
   [ -n "$unlisted" ] && printf '    not in settings/repo.yml, left alone: %s\n' "$unlisted"
   return 0
@@ -321,8 +330,11 @@ if [ "$MODE" = apply ]; then
     printf '  Settings → General: the API accepts some fields it does not store.\n'
   fi
   [ "$skipped" -gt 0 ] && printf '  %d skipped — the token could not read them.\n' "$skipped"
-  if [ "$failed" -gt 0 ]; then
-    printf '  %d write(s) failed.\n' "$failed"
+  [ "$failed" -gt 0 ] && printf '  %d write(s) failed.\n' "$failed"
+  # Drift after the read-back is a failure, not a note. Exiting 0 there tells
+  # a scheduled run, and the person reading the last line, that a setting was
+  # applied when the repository says otherwise.
+  if [ "$drift" -gt 0 ] || [ "$failed" -gt 0 ]; then
     exit 1
   fi
   printf '  Done.\n'
