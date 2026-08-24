@@ -466,27 +466,35 @@ restore queued behind the paste does not land on the rewrite. Your clipboard is
 saved and put back.
 
 `--paste-probe` answers a different question: which pasteboard flavour each app
-accepts. It renders through `Markup`, which is what `TextInserter` writes with —
-one registry, two callers, so what you score here is what the app will get. A pasteboard item can carry `public.html`, `public.rtf` and plain text
-at once and the receiving app picks, so this puts one fixture on the clipboard
-in **one** flavour and stops. You press ⌘V yourself, which keeps the test about
-the flavour and not about the event tap.
+accepts. A pasteboard item can carry `public.html`, `public.rtf` and plain text
+at once and the receiving app picks, and nothing in this repository can say
+which. So this puts one fixture on the clipboard and stops. You press ⌘V
+yourself, which keeps the test about the flavour and not about the event tap.
+
+It renders through `Markup`, which is what `TextInserter` writes with. One
+registry, two callers, so what you score here is what the app will get.
 
 The fixture exercises seven things in one paste — bold, italic, code, bullet,
 nested bullet, numbered list, link — and a link counts twice: the words it was
-written on, and the URL behind them. `--file` swaps in your own Markdown,
-`--show` prints the plain text and the HTML it generated.
+written on, and the URL behind them. `--file` swaps in your own Markdown and
+refuses to run without a path, rather than falling back to the fixture and
+scoring a document you did not ask for. `--show` prints the Markdown, the plain
+text and the HTML.
 
-Plain text rides along with every flavour, because a rich flavour alone is not
-a shape anything puts on a real clipboard — a clipboard manager reads it as
-empty, and a paste that lands as plain looks the same as a paste that did not
-land. `--bare` withholds it. That is the follow-up run, for when a cell renders
-as plain and the question becomes whether the app *could* have taken the rich
-flavour or only preferred not to.
+**Run `all` first.** It puts HTML and RTF on one item, which is the shape a
+shipping paste has, so an app that keeps everything under it is finished and
+needs no entry. A single flavour is the follow-up, for an app that scored badly,
+to find out which one to withhold.
 
-`all` puts HTML and RTF on one item, which is the shape a shipping paste would
-have. Run it only after the single-flavour runs have priced each one: it says
-what an app preferred, not what it can take.
+Plain text rides along with every flavour, because a rich flavour alone is not a
+shape anything puts on a real clipboard — a clipboard manager reads it as empty,
+and a paste that lands as plain looks the same as a paste that did not land.
+`--bare` withholds it, to ask whether an app *could* have taken the rich flavour
+or only preferred not to.
+
+`--bare` works for `html` and not for `rtf`. Setting `public.rtf` on an item
+makes AppKit derive the plain-text types from it, so RTF is never offered alone
+and that question cannot be asked of it. The command says which case it is in.
 
 Unlike `--clipboard-test`, this does **not** put your clipboard back. The
 payload has to survive for you to paste it.
