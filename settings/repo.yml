@@ -110,9 +110,9 @@ topics:
 # this is on, so the link in SECURITY.md is dead without it.
 private_vulnerability_reporting: true
 
-# The issue templates apply `bug` and `question` — see the `labels:` line in
-# .github/ISSUE_TEMPLATE/bug.yml and question.yml. A template that applies a
-# label the repository does not have opens the issue with no label at all.
+# The bug form applies `bug` — see the `labels:` line in
+# .github/ISSUE_TEMPLATE/bug.yml. A template that applies a label the
+# repository does not have opens the issue with no label at all.
 #
 # The script creates a label that is missing and corrects the colour or the
 # description of one that exists. It never deletes a label this file does not
@@ -122,10 +122,6 @@ labels:
   - name: bug
     color: d73a4a
     description: A crash, a permission that fails, text that lands wrong.
-
-  - name: question
-    color: d876e3
-    description: Documented behaviour is unclear or looks wrong.
 
   # The name has to be exactly "good first issue", spaces and all. GitHub's
   # contribute page (/znat/parrotflow/contribute) and the "good first issues"
