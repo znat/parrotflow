@@ -137,6 +137,12 @@ enum ModifierKey: String, CaseIterable {
 /// from the app in front. Monitors exist only while the key is down: an idle
 /// app is not watching the keyboard.
 ///
+/// The poll finds the down edge up to 25 ms late, and the monitors only exist
+/// from that moment, so a key typed inside those 25 ms is seen by neither. The
+/// third source covers exactly that gap: `secondsSinceLastEventType` says how
+/// long ago the last key or click was, and one more recent than the modifier's
+/// own `flagsChanged` came after it.
+///
 /// Polling rather than an event tap is still a deliberate trade: a cheap read
 /// every 25 ms, and no Input Monitoring grant, in exchange for not being able
 /// to swallow the keystroke. Nothing here wants to swallow one — the shortcut
@@ -239,6 +245,14 @@ final class ModifierKeyMonitor {
             deliverPress()
             return
         }
+        // The monitors above start here, which is up to one poll interval after
+        // the key physically went down. A `⌘S` typed faster than that lands in
+        // the gap and is never seen, so the delay would expire on silence and
+        // open the mic. Ask the event source about the gap instead.
+        if sawInputBeforeTheMonitors() {
+            somethingElseHappened()
+            return
+        }
         let timer = Timer(timeInterval: pressDelay, repeats: false) { [weak self] _ in
             self?.armTimer = nil
             self?.deliverPress()
@@ -282,6 +296,28 @@ final class ModifierKeyMonitor {
     }
 
     // MARK: Watching for everything that is not the key
+
+    /// Whether a key or a click landed between the modifier going down and the
+    /// poll noticing it.
+    ///
+    /// `secondsSinceLastEventType` timestamps the last event of a type without
+    /// reading any of them, so it costs no permission — the same trade as
+    /// `flagsState` above. The modifier's own down edge is a `flagsChanged`, so
+    /// anything with a *smaller* age than that arrived after it, which is the
+    /// definition of a shortcut.
+    ///
+    /// No scroll here, on purpose. Momentum cannot be told from a real scroll
+    /// through this API, and a trackpad flick keeps sending events for about a
+    /// second — so asking would abort every dictation started after scrolling a
+    /// page. The monitor half still catches scrolls, with the momentum filter.
+    private func sawInputBeforeTheMonitors() -> Bool {
+        func age(_ type: CGEventType) -> CFTimeInterval {
+            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: type)
+        }
+        let modifierWentDown = age(.flagsChanged)
+        let others: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        return others.contains { age($0) < modifierWentDown }
+    }
 
     private func watchForOtherInput() {
         guard monitors.isEmpty else { return }
