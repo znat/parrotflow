@@ -123,6 +123,30 @@ enum ClipboardTestCommand {
                   quoted(pasteboard))
         }
 
+        // A link on one line, which is what a transform emits deliberately.
+        // The whole point of the path: a dictated "PR 123" reaches Slack as a
+        // link you can click, not as brackets.
+        let link = "[#123](https://github.com/znat/parrotflow/pull/123) is ready"
+        TextInserter.insert(link, mode: .clipboard, paste: .html)
+        let linkHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("a link on one line is a link",
+              linkHTML?.contains("href=\"https://github.com/znat/parrotflow/pull/123\"") == true,
+              linkHTML ?? "no html")
+
+        // And a code span, which is what `backticks` emits.
+        TextInserter.insert("read `user.name` first", mode: .clipboard, paste: .html)
+        let codeHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("a code span on one line is code",
+              codeHTML?.contains("<code>user.name</code>") == true,
+              codeHTML ?? "no html")
+
+        // A bare URL is not deliberate — the parser makes those out of ordinary
+        // text, so a sentence that mentions an address stays a sentence.
+        TextInserter.insert("see https://example.com/x for details", mode: .clipboard, paste: .html)
+        check("a bare URL is left as a sentence",
+              pasteboard.data(forType: .html) == nil,
+              quoted(pasteboard))
+
         // And the case the whole path exists for: block structure, over more
         // than one line. The fallback rides along, so an app that takes neither
         // flavour still gets the sentence.

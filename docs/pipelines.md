@@ -561,13 +561,15 @@ way. A default that depends on a setting in another application, and does not
 work when that setting is on, is not a default: it puts noise in your messages
 and gives you nowhere to look.
 
-The other half of that has since been built. Slack does render **rich text**
-that arrives by paste, and the app now sends it — see
-[bullets, bold and links](configuration.md#bullets-bold-and-links). It does not
-rescue `backticks`: markup is only sent for block structure over more than one
-line, and a dotted path inside a sentence is one line, so it is still pasted
-with its backticks showing. Add the step if your chat app renders pasted
-markdown characters.
+**That has since changed.** Slack renders rich text that arrives by paste, the
+app now sends it, and a code span counts on a single line — see
+[bullets, bold and links](configuration.md#bullets-bold-and-links). So
+`` `config.port` `` from this transform reaches Slack as a real code span, not
+as two backticks.
+
+It is still not in the shipped pipeline, and that is now a decision rather than
+a limit. Enabling it needs the numbers: what it does to ordinary sentences in a
+chat window, scored, before it runs on every dictation there.
 
 ### `join`, which fits a clip to the box it lands in
 

@@ -44,6 +44,16 @@ struct Markup {
     /// yet. This is the conservative half of that: refusing wrongly costs a
     /// bold, letting through wrongly costs the characters.
     var isPlain: Bool {
+        // A link written on its own words, or a code span. Both need
+        // characters nobody utters — brackets, parentheses, backticks — so
+        // neither arrives by accident. Scanned over 1355 lines of the case
+        // files: 0 links, and the only 2 code spans were a transform's own
+        // output and a fixture about code. Emphasis is excluded on purpose;
+        // that is where `__init__` and `a*b*c` live.
+        if blocks.contains(where: { $0.pieces.contains(where: Self.isDeliberate) }) {
+            return false
+        }
+        // Everything else needs block structure over more than one line.
         guard source.contains("\n") else { return true }
         return !blocks.contains { block in
             !Self.containers(block.kinds).isEmpty
@@ -51,6 +61,17 @@ struct Markup {
                 || Self.headerLevel(block.kinds) != nil
                 || Self.isCodeBlock(block.kinds)
         }
+    }
+
+    /// A link whose words differ from its URL, or a code span.
+    ///
+    /// An autolinked bare URL is not one: the parser makes those out of
+    /// ordinary text, so accepting them would send a whole sentence as markup
+    /// because it happened to mention an address.
+    private static func isDeliberate(_ piece: Piece) -> Bool {
+        if piece.code { return true }
+        if let link = piece.link { return piece.text != link.absoluteString }
+        return false
     }
 
     // MARK: - Flavours
