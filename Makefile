@@ -114,6 +114,15 @@ hooks:
 	@git config core.hooksPath .githooks
 	@echo "==> Commit subjects are now checked against Conventional Commits."
 
+.PHONY: repo-settings
+
+## Compare GitHub's own settings for the repository with settings/repo.yml.
+## Reads only. Writing them is `scripts/repo-settings.sh --apply`, kept out of
+## here on purpose: a target that changes the live repository is one you can
+## run by mistake.
+repo-settings:
+	@scripts/repo-settings.sh
+
 ## Rehearse the curl install against dist/. Leaves /Applications alone, but does
 ## quit a running release build — the installer will not leave two of them
 ## fighting over the hotkey.

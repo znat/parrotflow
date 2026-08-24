@@ -28,6 +28,7 @@ Start from the question you have.
 | [architecture.md](architecture.md) | What each file is for, where the time goes, and what the app does not do. |
 | [transcription.md](transcription.md) | The speech model, its limits, and the stages that cover them. |
 | [distribution.md](distribution.md) | How the app ships, how it is signed, and how updates work. |
+| [repo-settings.md](repo-settings.md) | GitHub's own settings for the repository, kept in `settings/repo.yml` and applied from one script. |
 
 ---
 
