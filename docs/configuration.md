@@ -248,7 +248,7 @@ Ordinary dictation parses as Markdown:
 | dictated | would have become |
 |---|---|
 | `use the __init__ method` | bold "init", underscores gone |
-| `multiply a*b*c and check the result` | `a`, italic `b`, `c` |
+| `multiply a*b*c and check the result` | an italic *b*, the asterisks gone |
 | `1. Draft 2. Review` | a numbered list |
 
 Each loses characters you said, and `__init__` is a word a developer dictates.
@@ -258,7 +258,7 @@ one-line `Call **Dana** about it` stays plain.
 
 ### Measuring your own app
 
-If an app of yours takes formatting and is not on the list, it can be measured.
+An app of yours that takes formatting and is not on the list can be measured.
 Put the fixture on the clipboard and paste it in yourself:
 
 ```sh
