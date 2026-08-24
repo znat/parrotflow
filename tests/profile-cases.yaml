@@ -76,6 +76,14 @@
   readsPane: false
   paste: html
 
+- what: an impostor calling itself Slack still gets plain text
+  bundle: com.example.whatever
+  name: Slack
+  focus: examine
+  anchor: ladder
+  readsPane: false
+  paste: plain
+
 - what: an app nobody has classified
   bundle: com.apple.finder
   name: Finder

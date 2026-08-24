@@ -35,7 +35,12 @@ production stage is worthless until something can carry its output.
 RTF goes through AppKit's HTML importer rather than being built by hand: that is
 what produces a real `\listtable` and real `HYPERLINK` fields. It also keeps the
 two rich flavours the same document, so a difference in the target app is the
-target app. Measured at 400ms, no `NSApplication` needed.
+target app. No `NSApplication` needed, so it runs in a command too.
+
+Measured on the fixture: **637ms the first time in a process, then 2ms.** The
+cost is WebKit starting, not the document. Nothing reaches it yet — no app is
+`.rtf` — but the first formatted paste of a session into one would pay it. The
+fix, when an app is promoted, is to import a byte of HTML at launch.
 
 ### The gate: block structure, over more than one line
 

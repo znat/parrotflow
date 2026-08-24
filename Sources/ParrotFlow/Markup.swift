@@ -197,8 +197,13 @@ struct Markup {
     /// AppKit's HTML importer writes a real `\listtable` and real `HYPERLINK`
     /// fields, which attributed text built by hand does not. Going through it
     /// also keeps the two rich flavours the same document, so a difference in
-    /// the target app is the target app. Measured at 400ms, and it needs no
-    /// `NSApplication`, so it runs in a command as happily as in the app.
+    /// the target app is the target app. It needs no `NSApplication`, so it
+    /// runs in a command as happily as in the app.
+    ///
+    /// Measured on the fixture: 637ms the first time in a process, then 2ms.
+    /// The cost is WebKit starting, not the document. Nothing reaches this yet
+    /// — no app is `.rtf` — but the first formatted paste of a session into one
+    /// would pay it, and the fix would be to import a byte of HTML at launch.
     func richText() -> Data? {
         guard
             let document = try? NSAttributedString(

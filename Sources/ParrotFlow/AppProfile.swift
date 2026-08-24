@@ -60,6 +60,7 @@ struct AppProfile: Equatable {
     /// and anything built from source signs itself however the build did.
     /// Blind apps by bundle id alone: the list is one measured build each, and
     /// a name is something any app can claim.
+    ///
     /// A terminal and a blind app return before the paste lookup is reached, so
     /// neither can be promoted out of plain text by adding a line to a set
     /// below. That is deliberate: a terminal renders no markup and shows the
@@ -71,13 +72,13 @@ struct AppProfile: Equatable {
         if blindBundleIDs.contains(bundle) { return .blind }
 
         var profile = AppProfile.ordinary
-        profile.paste = pasteFlavour(bundle: bundle, name: name)
+        profile.paste = pasteFlavour(bundle: bundle)
         return profile
     }
 
-    private static func pasteFlavour(bundle: String, name: String) -> Paste {
-        if htmlBundleIDs.contains(bundle) || htmlNames.contains(name) { return .html }
-        if rtfBundleIDs.contains(bundle) || rtfNames.contains(name) { return .rtf }
+    private static func pasteFlavour(bundle: String) -> Paste {
+        if htmlBundleIDs.contains(bundle) { return .html }
+        if rtfBundleIDs.contains(bundle) { return .rtf }
         return .plain
     }
 
@@ -105,12 +106,15 @@ struct AppProfile: Equatable {
     /// real window. Not measured means plain, which is the answer that cannot
     /// lose a sentence.
     ///
+    /// Bundle id alone, for the reason `blindBundleIDs` is: each line is one
+    /// measured build, and a name is something any app can claim. Terminals are
+    /// the exception in this file because a terminal really is built from
+    /// source and signed however the build did. Slack is not.
+    ///
     /// Measured 2026-08-24: Slack takes `public.html` whole — bold, italic, a
     /// code span, bullets, a real second level, an ordered list, and a link on
     /// its own words.
     private static let htmlBundleIDs: Set<String> = ["com.tinyspeck.slackmacgap"]
-    private static let htmlNames: Set<String> = ["slack"]
 
     private static let rtfBundleIDs: Set<String> = []
-    private static let rtfNames: Set<String> = []
 }
