@@ -219,9 +219,14 @@ way that one typed into somebody else's window is not.
 
 ## Bullets, bold and links
 
-A transcript that carries Markdown reaches an app that takes it as real
-formatting rather than as `**stars**`. Bold, italic, a code span, bullets with
-a real second level, numbered lists, and a link on the words it was written on.
+A transcript that carries a Markdown **list, heading, code block or quote**,
+over more than one line, reaches an app that takes it as real formatting rather
+than as `**stars**`. Inside it, bold, italic, code spans, a real second level of
+bullets, numbered lists and links all survive.
+
+A single line never does, whatever is in it. `Call **Dana** about it` is pasted
+as you said it, markers and all. That is deliberate — see *What counts as
+formatting* below.
 
 **Slack only, so far.** It is the one app measured. Every other app gets plain
 text, byte for byte as before. There is nothing to configure and nothing to
