@@ -329,12 +329,13 @@ if [ "$MODE" = apply ]; then
     printf '  %d setting(s) still differ after applying. Check them by hand in\n' "$drift"
     printf '  Settings → General: the API accepts some fields it does not store.\n'
   fi
-  [ "$skipped" -gt 0 ] && printf '  %d skipped — the token could not read them.\n' "$skipped"
+  [ "$skipped" -gt 0 ] && printf '  %d skipped — could not read them back to confirm the write held.\n' "$skipped"
   [ "$failed" -gt 0 ] && printf '  %d write(s) failed.\n' "$failed"
-  # Drift after the read-back is a failure, not a note. Exiting 0 there tells
-  # a scheduled run, and the person reading the last line, that a setting was
-  # applied when the repository says otherwise.
-  if [ "$drift" -gt 0 ] || [ "$failed" -gt 0 ]; then
+  # Drift, a failed write, or a read-back that could not even be attempted are
+  # all a failure, not a note. Exiting 0 for any of them tells a scheduled run,
+  # and the person reading the last line, that a setting was confirmed applied
+  # when it was not.
+  if [ "$drift" -gt 0 ] || [ "$failed" -gt 0 ] || [ "$skipped" -gt 0 ]; then
     exit 1
   fi
   printf '  Done.\n'
