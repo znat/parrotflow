@@ -76,6 +76,16 @@ struct OfferedCommand: Equatable {
 
 final class PillModel: ObservableObject {
     @Published var state: PillState = .recording
+
+    /// Whether the panel is on screen. False unmounts the surface.
+    ///
+    /// An ordered-out panel still commits its layers. The rim's angle animates
+    /// a conic gradient, which is rasterised on the CPU every frame — so an
+    /// offer left mounted under a hidden panel measured at 57% of a core with
+    /// nothing on screen. The state does not stop it: nothing clears `state`
+    /// on the way out, and `.offer` means a rim that turns.
+    @Published var onScreen = true
+
     @Published var level: Float = 0
     @Published var elapsed: TimeInterval = 0
     /// The icon of the app the text is going to land in — the one an `app:`
@@ -240,7 +250,10 @@ final class PillHUD {
         // animating alpha. Usually nothing — the offer follows a pill already
         // on screen — but raised from cold, `set` starts a fade to full and the
         // two would pull opposite ways.
-        if !panel.isVisible { panel.orderFrontRegardless() }
+        if !panel.isVisible {
+            model.onScreen = true
+            panel.orderFrontRegardless()
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0
             panel.animator().alphaValue = Self.offerAlpha
@@ -273,6 +286,7 @@ final class PillHUD {
             // as in `fadeOut`.
             self.near = nil
             panel.orderOut(nil)
+            self.model.onScreen = false
             // Back to full strength while off screen, or the next appearance
             // starts from a panel that is already invisible and stays that way.
             panel.alphaValue = 1
@@ -503,6 +517,7 @@ final class PillHUD {
     /// the next state morphed it there. Nothing to animate is nothing to get
     /// wrong.
     private func fadeIn(_ panel: NSPanel) {
+        model.onScreen = true
         panel.alphaValue = 0
         panel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
@@ -550,6 +565,7 @@ final class PillHUD {
                 panel.animator().alphaValue = 1
             }
             panel.orderOut(nil)
+            model.onScreen = false
             return
         }
         // Nothing is decaying past this line. A held decay is standing at a
@@ -574,6 +590,7 @@ final class PillHUD {
             // otherwise inherit a caret that has long since moved.
             self.near = nil
             panel.orderOut(nil)
+            self.model.onScreen = false
             // Back to full strength while off screen, or the next appearance
             // starts from a panel that is already invisible and stays that way.
             panel.alphaValue = 1
@@ -1057,6 +1074,11 @@ struct PillView: View {
     @EnvironmentObject private var model: PillModel
 
     var body: some View {
+        // Nothing at all while the panel is out. See `PillModel.onScreen`.
+        if model.onScreen { pill }
+    }
+
+    private var pill: some View {
         // The capsule is the window, whatever the contents would rather be.
         //
         // The window's width is animated by AppKit and the contents are laid
@@ -1477,26 +1499,44 @@ struct ToneDot: View {
     let tone: NoticeTone
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var step = 0
-
-    private let clock = Timer.publish(every: 0.6, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        // The clock belongs to `WalkingDot`, which exists only while the dot is
+        // walking. Held here it was a stored property, so it ticked 1.67 times
+        // a second on every tone for the life of the view and `onReceive` threw
+        // the ticks away.
+        if tone == .thinking, !reduceMotion {
+            WalkingDot()
+        } else {
+            Self.dot(resting)
+        }
+    }
+
+    /// Thinking with the motion turned off is the first feather, held. Every
+    /// other tone is its own colour.
+    private var resting: Color {
+        tone == .thinking ? Parrot.wheel[0] : tone.color
+    }
+
+    static func dot(_ color: Color) -> some View {
         Circle()
             .fill(color)
             .frame(width: 9, height: 9)
             .shadow(color: color, radius: 4)
             .shadow(color: color.opacity(0.6), radius: 9)
-            .animation(.easeInOut(duration: 0.5), value: step)
-            .onReceive(clock) { _ in
-                guard tone == .thinking, !reduceMotion else { return }
-                step += 1
-            }
     }
+}
 
-    private var color: Color {
-        guard tone == .thinking else { return tone.color }
-        return Parrot.wheel[step % 4]
+/// The dot walking the plumage: the one tone that needs a clock.
+private struct WalkingDot: View {
+    @State private var step = 0
+
+    private let clock = Timer.publish(every: 0.6, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        ToneDot.dot(Parrot.wheel[step % 4])
+            .animation(.easeInOut(duration: 0.5), value: step)
+            .onReceive(clock) { _ in step += 1 }
     }
 }
 
