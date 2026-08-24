@@ -1,0 +1,75 @@
+name: Something is broken
+description: A crash, a permission that fails, a dictation that never lands, a rewrite that mangles text.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Two commands answer most of this form. Run them and paste the output —
+        it is faster than a description, and it says what the app really uses.
+
+        ```sh
+        PF=/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow
+        $PF --check-config
+        tail -50 ~/Library/Logs/ParrotFlow.log
+        ```
+
+  - type: textarea
+    id: what-happens
+    attributes:
+      label: What happens
+      description: What you did, what you expected, what you got. If it is about text, give the sentence you said and the text that landed.
+      placeholder: |
+        I said "let's ship the P one today" in Slack.
+        Expected: let's ship the P1 today
+        Got: nothing was pasted.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`defaults read /Applications/ParrotFlow.app/Contents/Info.plist CFBundleShortVersionString`"
+      placeholder: "0.9.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS and Mac
+      placeholder: "macOS 15.5, M2 Pro"
+    validations:
+      required: true
+
+  - type: input
+    id: app
+    attributes:
+      label: Which app you were dictating into
+      description: Pipelines and transforms can be gated per app, so this often decides which stages ran.
+      placeholder: "Slack, Terminal, Cursor…"
+
+  - type: textarea
+    id: check-config
+    attributes:
+      label: "`--check-config`"
+      description: The whole output. It names the pipeline, every transform and every resolved path.
+      render: text
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log
+      description: "`tail -50 ~/Library/Logs/ParrotFlow.log`, taken right after the failure."
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send it
+      options:
+        - label: I searched the open and closed issues.
+          required: true
+        - label: I removed anything private from the log and the config.
+          required: true

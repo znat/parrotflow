@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: How do I write this transform?
+    url: https://github.com/znat/parrotflow/discussions
+    about: Open questions, pipeline design, sharing a config. Discussions, not issues.
+  - name: Documentation
+    url: https://github.com/znat/parrotflow/blob/main/docs/README.md
+    about: Setup, configuration, pipelines, the command line, permissions.
+  - name: A security problem
+    url: https://github.com/znat/parrotflow/security/advisories/new
+    about: Report it privately. Do not open an issue.

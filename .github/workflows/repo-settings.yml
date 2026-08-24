@@ -1,0 +1,51 @@
+name: repo-settings
+
+# Whether GitHub's settings for this repository still match settings/repo.yml.
+# Once a week, and on demand.
+#
+# It never writes, and it could not if it wanted to. Changing repository
+# settings needs the `administration` permission, and the default GITHUB_TOKEN
+# has no such scope — `permissions:` cannot grant it either. Applying would
+# take a personal access token stored as a secret, which is a token with admin
+# on the repository sitting in CI. Writes stay on the maintainer's laptop:
+#
+#     make repo-settings          # dry run
+#     scripts/repo-settings.sh --apply
+#
+# So this job only ever reads, and drift fails the run rather than opening an
+# issue. A failed scheduled run already emails the owner, and an issue would
+# need `issues: write` plus code to find, reuse and close it — more moving
+# parts than the thing it reports.
+#
+# Private vulnerability reporting is the one setting this token cannot even
+# read. The script prints it as skipped and carries on, so it never fails the
+# run on its own.
+on:
+  schedule:
+    # Monday 07:17 UTC. Off the hour, because everything scheduled at :00 waits
+    # in the same queue.
+    - cron: "17 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The settings file is YAML, and the script reads it with python3.
+      - name: Install pyyaml
+        run: |
+          python3 -m pip install --quiet pyyaml \
+            || python3 -m pip install --quiet --break-system-packages pyyaml
+
+      # `gh` is on the runner image already.
+      - name: Compare the live settings with settings/repo.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/repo-settings.sh --check

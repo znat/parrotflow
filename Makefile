@@ -15,7 +15,7 @@ V := . scripts/variant.sh &&
 
 .PHONY: app run install uninstall uninstall-dev uninstall-release stop clean \
         reset-permissions logs dev-certificate release release-certificate \
-        try-install which hooks
+        try-install which hooks test
 
 ## Build the app bundle into .build/
 app:
@@ -80,11 +80,48 @@ release:
 release-certificate:
 	@scripts/release-certificate.sh
 
+## Every check that runs without a model, a microphone or a screen — the same
+## scripts CI runs, in the same order. Keep this list and
+## .github/workflows/checks.yml in step.
+##
+## Not here, and not skippable if you touched a prompt: check-grammar,
+## check-routing and check-spelling need Ollama and gemma4:e4b, and
+## check-inplace needs a real screen, the Accessibility grant and tmux. Run
+## those by hand and put the numbers in the pull request.
+CHECKS := numbers replacements pipeline wake split dotted dates \
+          transform-folders eval audio-recovery possessive suggest input join \
+          profiles span-rule clipboard default-config vocabulary-config learn \
+          pinned-certificate no-voice
+
+test:
+	@swift build -c release
+	@if command -v swiftlint >/dev/null; then \
+	  swiftlint lint --quiet; \
+	else \
+	  echo "==> swiftlint is not installed, lint skipped"; \
+	fi
+	@failed=""; \
+	for c in $(CHECKS); do \
+	  printf '\n==> %s\n' "$$c"; \
+	  scripts/check-$$c.sh || failed="$$failed $$c"; \
+	done; \
+	if [ -n "$$failed" ]; then printf '\nFailed:%s\n' "$$failed"; exit 1; fi; \
+	printf '\nEvery check passed.\n'
+
 ## Point git at .githooks, so commit subjects are checked before they land.
 ## Once per clone: hooks are not cloned with the repository.
 hooks:
 	@git config core.hooksPath .githooks
 	@echo "==> Commit subjects are now checked against Conventional Commits."
+
+.PHONY: repo-settings
+
+## Compare GitHub's own settings for the repository with settings/repo.yml.
+## Reads only. Writing them is `scripts/repo-settings.sh --apply`, kept out of
+## here on purpose: a target that changes the live repository is one you can
+## run by mistake.
+repo-settings:
+	@scripts/repo-settings.sh
 
 ## Rehearse the curl install against dist/. Leaves /Applications alone, but does
 ## quit a running release build — the installer will not leave two of them

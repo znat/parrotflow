@@ -1,0 +1,152 @@
+# What GitHub's own settings for znat/parrotflow are supposed to be.
+#
+# This file is the record. `scripts/repo-settings.sh` reads it and compares it
+# with the live repository; `--apply` writes it back. Change a value here first,
+# then apply — a setting changed in the browser and not here is drift, and the
+# weekly check in .github/workflows/repo-settings.yml will say so.
+#
+# Most values below already match the live repository, so the first `--apply`
+# is close to a no-op. Three do not, on purpose: has_wiki, has_projects and
+# web_commit_signoff_required. Each says why underneath. Run the dry run first
+# and read them before applying.
+#
+# Only what is listed here is managed. Branch protection, Actions permissions
+# and secrets are untouched.
+
+repository:
+  # The live description, kept word for word — it is the README's one-liner
+  # trimmed, and the owner wrote it. Two places say what this app is, so change
+  # them together.
+  description: Local, fast and programmable dictation app
+
+  # Deliberately empty. There is no site yet. The owner sets this in
+  # Settings → General when there is one; do not invent a URL here.
+  homepage: ""
+
+  has_issues: true
+
+  # Already on — the owner enabled it. Recorded so it stays on.
+  #
+  # The issue templates send anything open-ended here: pipeline design, sharing
+  # a config, "how do I write this transform". See
+  # .github/ISSUE_TEMPLATE/config.yml, which links to /discussions.
+  #
+  # Discussion CATEGORIES cannot be created by any API — not REST, not GraphQL.
+  # There is no mutation for it. The owner creates them once, by hand, in
+  # Settings → Discussions. Nothing here can do it, so do not go looking.
+  has_discussions: true
+
+  # CHANGES THE LIVE SETTING: both are on today.
+  #
+  # The documentation is in docs/, in the same commit as the code it describes.
+  # A wiki is a second copy that drifts and no pull request touches. Turning it
+  # off hides the wiki; it does not delete it, and turning it back on returns
+  # whatever was there.
+  has_wiki: false
+  has_projects: false
+
+  # Squash only, and this is load-bearing rather than taste. release-please
+  # computes the version and the changelog from the commit subjects on main.
+  # One pull request has to arrive as one subject it can read. A merge commit
+  # or a rebase merge puts every branch commit on main, including the "wip"
+  # ones, and the changelog is then whatever was typed at 2am.
+  allow_squash_merge: true
+  allow_merge_commit: false
+  allow_rebase_merge: false
+
+  # COMMIT_OR_PR_TITLE is the whole reason .githooks/commit-msg is worth
+  # running. Read the comment at the top of .github/workflows/pr-title.yml: a
+  # single-commit pull request squashes to that commit's subject, which the
+  # hook already checked on the contributor's machine, and only the
+  # multi-commit case falls through to the workflow. Set this to PR_TITLE and
+  # the hook protects nothing — every squash takes the title instead, and the
+  # one check that runs before a commit exists stops mattering.
+  squash_merge_commit_title: COMMIT_OR_PR_TITLE
+
+  # The pull request body becomes the commit body. The alternative,
+  # COMMIT_MESSAGES, concatenates every commit on the branch.
+  squash_merge_commit_message: PR_BODY
+
+  # The branch is merged and gone; nothing reads it again.
+  delete_branch_on_merge: true
+
+  # Offers the "Update branch" button, so a stale branch can be brought up to
+  # main without a local checkout.
+  allow_update_branch: true
+
+  # Auto-merge off: one maintainer, who is the person clicking merge anyway.
+  allow_auto_merge: false
+
+  # CHANGES THE LIVE SETTING: off today.
+  #
+  # Makes GitHub add a Signed-off-by line to commits made through the web UI —
+  # editing a file on github.com, or the "Commit suggestion" button in a
+  # review. Without it those commits carry none and
+  # .github/workflows/dco.yml fails the pull request they land in.
+  web_commit_signoff_required: true
+
+# `PUT /repos/{owner}/{repo}/topics` REPLACES the whole list. This is the whole
+# list: a topic dropped from here is dropped from the repository on the next
+# apply.
+#
+# The first seven are live today and four of them are search terms rather than
+# description — someone looking for a way off Wispr Flow types those words.
+# Keep them. Lowercase, hyphens, 20 at most; GitHub rejects anything else.
+topics:
+  - dictation
+  - macos
+  - parakeet
+  - speech-to-text
+  - whisper
+  - wispr-flow
+  - wispr-flow-alternative
+  # Added: what the app is and what it runs on.
+  - swift
+  - voice-typing
+  - local-first
+  - ollama
+
+# SECURITY.md sends people to the advisory form. That form only exists when
+# this is on, so the link in SECURITY.md is dead without it.
+private_vulnerability_reporting: true
+
+# The issue templates apply `bug` and `question` — see the `labels:` line in
+# .github/ISSUE_TEMPLATE/bug.yml and question.yml. A template that applies a
+# label the repository does not have opens the issue with no label at all.
+#
+# The script creates a label that is missing and corrects the colour or the
+# description of one that exists. It never deletes a label this file does not
+# name: deleting a label strips it from every issue that carries it, and that
+# cannot be undone.
+labels:
+  - name: bug
+    color: d73a4a
+    description: A crash, a permission that fails, text that lands wrong.
+
+  - name: question
+    color: d876e3
+    description: Documented behaviour is unclear or looks wrong.
+
+  # The name has to be exactly "good first issue", spaces and all. GitHub's
+  # contribute page (/znat/parrotflow/contribute) and the "good first issues"
+  # search both match that literal string. "good-first-issue" is invisible to
+  # both.
+  #
+  # The description is the promise. An issue only gets this label if it names
+  # the file and the check to run, and if the answer is not "read the whole
+  # pipeline first".
+  - name: good first issue
+    color: 7057ff
+    description: Small, self-contained, names the file to change and the check to run.
+
+  - name: help wanted
+    color: 008672
+    description: The maintainer is not getting to this. Worth picking up.
+
+  - name: documentation
+    color: 0075ca
+    description: docs/, README, or a comment that says something untrue.
+
+  - name: enhancement
+    color: a2eeef
+    description: A capability that is not there yet.
