@@ -153,6 +153,20 @@ enum ClipboardTestCommand {
               boldHTML?.contains("<strong>Dana</strong>") == true,
               boldHTML ?? "no html")
 
+        // The forms a narrower pattern got wrong: a title after the address,
+        // and an escaped bracket inside the label. Both are links the parser
+        // accepts, so both have to reach the app as links.
+        for written in [
+            "[#123](https://example.com \"Fix the thing\") is ready",
+            "[foo\\]bar](https://example.com) is odd but valid",
+        ] {
+            TextInserter.insert(written, mode: .clipboard, paste: .html)
+            let html = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+            check("a written link is a link: \(written.prefix(28))…",
+                  html?.contains("<a href=\"https://example.com\"") == true,
+                  html ?? "no html")
+        }
+
         // And a code span, which is what `backticks` emits.
         TextInserter.insert("read `user.name` first", mode: .clipboard, paste: .html)
         let codeHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }

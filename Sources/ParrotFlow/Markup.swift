@@ -86,23 +86,23 @@ struct Markup {
     private static let emphasisSyntax = try? NSRegularExpression(
         pattern: "(?<![\\w*])\\*{1,2}(?![\\s*])(?:[^*]|\\*(?!\\*))+?(?<![\\s*])\\*{1,2}(?![\\w*])")
 
-    /// Whether the source writes a link out, `[words](url)`.
+    /// Whether the source writes a link out rather than merely naming an
+    /// address.
     ///
-    /// The syntax is the evidence, not the label. `[https://x](https://x)` is
-    /// deliberate even though its words are its URL, and a bare URL the parser
-    /// autolinked is not deliberate however it reads — accepting those would
-    /// send a whole sentence as markup for mentioning an address.
+    /// `](` is the whole test. Every inline link has it — labelled, titled,
+    /// or with an escaped bracket in the label — and an autolinked bare URL
+    /// never does. A pattern that tried to spell the forms out instead got
+    /// `[foo](url "title")` and `[foo\]bar](url)` wrong, because it was a
+    /// narrower grammar than the parser's.
     ///
-    /// Paired with the parser having found a link, so text shaped like the
-    /// syntax but not parsed as one changes nothing.
+    /// The syntax is the evidence, not the label: `[https://x](https://x)` is
+    /// deliberate even though its words are its address.
+    ///
+    /// Paired with the parser having found a link, so `](` sitting in ordinary
+    /// text changes nothing on its own.
     private static func writesALink(_ source: String) -> Bool {
-        guard let pattern = linkSyntax else { return false }
-        let whole = NSRange(source.startIndex..., in: source)
-        return pattern.firstMatch(in: source, range: whole) != nil
+        source.contains("](")
     }
-
-    private static let linkSyntax = try? NSRegularExpression(
-        pattern: "\\[[^\\]\n]*\\]\\([^)\\s]*\\)")
 
     // MARK: - Flavours
 
