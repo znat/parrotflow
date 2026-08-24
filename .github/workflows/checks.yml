@@ -195,6 +195,14 @@ jobs:
       - name: The config a new install gets
         run: scripts/check-default-config.sh
 
+      # What the menu item and `--bug-report` put in front of someone before
+      # they send it. The sections, and the one thing this cannot be wrong
+      # about: no home path, so no account name, reaches a public issue. Runs
+      # against an empty config directory in /tmp, which is what a runner has
+      # and also what a broken install looks like.
+      - name: What a bug report carries
+        run: scripts/check-bug-report.sh
+
       # The other learnt file. Nobody rereads vocabulary.yaml, so a key that
       # quietly stops meaning what it meant is invisible — and one already did:
       # Yams answers `Bool.self` for `0.85`, so a decoder that asks about

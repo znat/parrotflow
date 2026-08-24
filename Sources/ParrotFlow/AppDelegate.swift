@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = Recorder()
     private let pill = PillHUD()
     private let permissions = PermissionsWindowController()
+    private let bugReport = BugReportWindow()
 
     private var statusItem: NSStatusItem!
     private var statusInfoItem: NSMenuItem!
@@ -4223,6 +4224,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
+        let bugReportItem = NSMenuItem(
+            title: "Report a Bug…",
+            action: #selector(reportBug),
+            keyEquivalent: ""
+        )
+        bugReportItem.target = self
+        menu.addItem(bugReportItem)
+
         let aboutItem = NSMenuItem(
             title: "About \(AppVariant.displayName)",
             action: #selector(showAbout),
@@ -4475,6 +4484,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openPermissions() {
         permissions.show(.revisiting)
+    }
+
+    /// The app in front is read before the window opens, because opening it
+    /// makes ParrotFlow the app in front.
+    @objc private func reportBug() {
+        let front = NSWorkspace.shared.frontmostApplication
+        let name = front?.bundleIdentifier == Bundle.main.bundleIdentifier
+            ? nil : front?.localizedName
+        bugReport.show(app: name)
     }
 
     @objc private func showAbout() {
