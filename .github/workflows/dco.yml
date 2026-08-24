@@ -25,10 +25,10 @@ jobs:
           set -euo pipefail
           gh api "repos/$REPO/pulls/$PR/commits" --paginate > commits.json
 
-          # Two kinds of commit are skipped, and both would otherwise fail every
-          # run. A merge commit (two parents) is written by git, not by a person.
-          # A bot commit — release-please cuts one on every release — has no
-          # human author to certify anything.
+          # Two kinds of commit are skipped here, and both would otherwise fail
+          # every run. A merge commit (two parents) is written by git, not by a
+          # person. A bot commit — release-please cuts one on every release —
+          # has no human author to certify anything.
           #
           # The match is on the email, lowercased: a sign-off naming someone
           # other than the author certifies nothing.
@@ -45,8 +45,34 @@ jobs:
                  | .mail
                  | ascii_downcase ]) as $signoffs
             | select(($signoffs | index($author)) == null)
-            | "  \($c.sha[0:8])  \($c.commit.message | split("\n")[0])"
-          ' commits.json > missing.txt
+            | "\($c.sha)\t\($c.commit.message | split("\n")[0])"
+          ' commits.json > candidates.tsv
+
+          # The third skip, and it needs the API rather than the commit itself.
+          #
+          # A squash merge rewrites the author to whoever pressed the button,
+          # while the Signed-off-by lines inside the message stay as the person
+          # who wrote the code. So the commit a merged pull request leaves
+          # behind carries a sign-off that no longer matches its author, and it
+          # fails here — on a branch where the only fix is rewriting history
+          # that other people have already pulled. Seen on #189, when #188 was
+          # merged into the branch underneath it.
+          #
+          # That work was certified on its own pull request. So a commit
+          # another, already merged pull request introduced is not asked again.
+          # Only commits that already failed reach this loop, so the usual run
+          # makes no extra API call.
+          : > missing.txt
+          while IFS="$(printf '\t')" read -r sha subject; do
+            [ -n "$sha" ] || continue
+            if gh api "repos/$REPO/commits/$sha/pulls" 2>/dev/null \
+               | jq -e --argjson pr "$PR" \
+                   'any(.[]; .merged_at != null and .number != $pr)' >/dev/null; then
+              printf 'certified on its own pull request: %s  %s\n' "${sha:0:8}" "$subject"
+              continue
+            fi
+            printf '  %s  %s\n' "${sha:0:8}" "$subject" >> missing.txt
+          done < candidates.tsv
 
           if [ ! -s missing.txt ]; then
             echo "ok: every commit is signed off"
