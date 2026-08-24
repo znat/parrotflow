@@ -127,6 +127,12 @@ the fallback is the default and `--bare` is the follow-up: when a cell renders
 as plain, `--bare` says whether the app could have taken the rich flavour or
 only preferred not to.
 
+**`--bare` works for `html` and not for `rtf`.** Measured: setting `public.rtf`
+on an item makes AppKit derive `public.utf8-plain-text` from it by itself. So
+"does this app take RTF with nothing to fall back to" is a question that cannot
+be asked, and RTF is never risky the way HTML-only is. Nothing is derived from
+`public.html`. The probe says which case it is in its own output.
+
 **Your clipboard is not put back.** The payload has to survive for you to paste
 it.
 

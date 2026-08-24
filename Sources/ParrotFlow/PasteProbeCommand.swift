@@ -68,6 +68,14 @@ enum PasteProbeCommand {
         let markup = Markup.parse(markdown)
         let item = markup.item(chosen, fallback: !bare)
 
+        // Reachable only with `--bare`, and only if the one flavour asked for
+        // would not render. Without this the clipboard is cleared and the run
+        // still reports that the fixture is on it.
+        guard !item.types.isEmpty else {
+            print("✗ \(flavour) would not render, and --bare left nothing to fall back to")
+            return 1
+        }
+
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.writeObjects([item])
@@ -84,6 +92,12 @@ enum PasteProbeCommand {
         print("clipboard the fixture is on it now; what you had is gone")
         if !item.types.contains(.string) {
             print("          no plain text — a clipboard manager will read this as empty")
+        } else if bare, !chosen.contains(where: { $0.type == .string }) {
+            // Measured: setting `public.rtf` on an item makes AppKit derive the
+            // plain-text types from it. So `rtf --bare` is not bare, and "does
+            // this app take RTF with nothing to fall back to" cannot be asked.
+            // `html --bare` is bare — nothing is derived from `public.html`.
+            print("          plain text is there anyway — AppKit derives it from the RTF")
         }
         print("")
         print("Paste with ⌘V and score seven things:")
