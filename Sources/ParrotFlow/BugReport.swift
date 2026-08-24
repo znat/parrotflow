@@ -118,7 +118,10 @@ enum BugReport {
         var out = text.replacingOccurrences(of: "/private\(home)", with: "~")
         out = out.replacingOccurrences(of: home, with: "~")
 
-        guard let accounts = try? NSRegularExpression(pattern: "/Users/[^/\\s\"']+") else { return out }
+        // Everything up to the next slash or space, quotes included: an
+        // apostrophe is legal in an account name, and stopping at one left
+        // "~'connor" in the report.
+        guard let accounts = try? NSRegularExpression(pattern: "/Users/[^/\\s]+") else { return out }
         return accounts.stringByReplacingMatches(
             in: out,
             range: NSRange(out.startIndex..., in: out),

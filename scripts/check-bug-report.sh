@@ -134,6 +134,26 @@ check "and the home directory is written as ~ instead" \
   "$(printf '%s\n' "$home_report" | grep -c '^config: ~/')" \
   "1"
 
+# An apostrophe is legal in a macOS account name, and the pattern used to stop
+# at one — `/Users/o'connor/…` came out as `~'connor/…`, which is still the
+# name. Written into `output_dir`, which --check-config prints as an absolute
+# path whatever is there.
+QUOTED="$WORK/quoted"
+mkdir -p "$QUOTED"
+cat > "$QUOTED/config.yaml" <<'YAML'
+audio:
+  output_dir: "/Users/o'connor/Recordings"
+YAML
+quoted="$(PARROTFLOW_CONFIG_DIR="$QUOTED" "$BIN" --bug-report 2>/dev/null)"
+
+check "an account name holding an apostrophe is redacted too" \
+  "$(printf '%s\n' "$quoted" | grep -c "o'connor")" \
+  "0"
+
+check "and nothing under /Users/ is left in that report either" \
+  "$(printf '%s\n' "$quoted" | grep -c '/Users/')" \
+  "0"
+
 # --- the URL ----------------------------------------------------------------
 url="$(PARROTFLOW_CONFIG_DIR="$EMPTY" "$BIN" --bug-report --url 2>/dev/null)"
 
