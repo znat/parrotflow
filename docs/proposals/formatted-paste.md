@@ -37,15 +37,49 @@ what produces a real `\listtable` and real `HYPERLINK` fields. It also keeps the
 two rich flavours the same document, so a difference in the target app is the
 target app. Measured at 400ms, no `NSApplication` needed.
 
+### The gate: block structure, over more than one line
+
+Asking "does this parse as Markdown" is the wrong question, because ordinary
+dictation does. Measured on plain sentences, before the gate was tightened:
+
+| dictated | became |
+|---|---|
+| `use the __init__ method` | `use the <strong>init</strong> method` |
+| `multiply a*b*c and check the result` | `multiply a<em>b</em>c and …` |
+| `1. Draft 2. Review` | `<ol><li>Draft 2. Review</li></ol>` |
+| `see https://example.com/x for the details` | the URL autolinked |
+
+Each one loses characters the speaker said, and `__init__` is a word a
+developer dictates. So **inline emphasis alone never counts.** What counts is
+block structure — a list, a heading, a code block, a quote — spread over more
+than one line. A transform that formats deliberately produces that; a single
+dictated sentence cannot produce it by accident.
+
+The cost is that a one-line `Call **Dana** about it` stays plain. Nothing
+produces that today, and refusing wrongly costs a bold where letting through
+wrongly costs the characters.
+
+The real gate is a stage declaring its output as Markdown. This is the
+conservative half of it until one does.
+
+**Residual, not fixed.** Inside a genuine multi-line list, `__init__` is still
+read as bold. Once a stage produces the Markdown deliberately, escaping is that
+stage's job.
+
 ### The contract, checked by `--clipboard-test`
 
 ```
 ✓ an unmeasured app gets plain text, verbatim
 ✓ a transcript with no markup gets plain text, verbatim
-✓ a measured app gets the markup and the fallback
+✓ one line stays one line: "use the __init__ method"
+✓ one line stays one line: "multiply a*b*c and check the result"
+✓ one line stays one line: "1. Draft 2. Review"
+✓ one line stays one line: "Call **Dana** about the invoice"
+✓ a dictated list is written as one
+✓ a measured app is not enough on its own
 ```
 
-"Verbatim" is the load-bearing word. Both ways down to plain write the text
+"Verbatim" is the load-bearing word. Every way down to plain writes the text
 itself and not a rendering of it, because stripping markers that were never
 there can still move whitespace.
 

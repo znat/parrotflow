@@ -107,14 +107,36 @@ enum ClipboardTestCommand {
                   && pasteboard.string(forType: .string) == flat,
               quoted(pasteboard))
 
-        // And the case the whole path exists for. The fallback rides along, so
-        // an app that takes neither flavour still gets the sentence.
+        // Ordinary dictation the Markdown parser reads as formatting. Each of
+        // these lost characters the speaker said before `isPlain` asked for
+        // block structure over more than one line.
+        for spoken in [
+            "use the __init__ method",
+            "multiply a*b*c and check the result",
+            "1. Draft 2. Review",
+            formatted,
+        ] {
+            TextInserter.insert(spoken, mode: .clipboard, paste: .html)
+            check("one line stays one line: \"\(spoken)\"",
+                  pasteboard.data(forType: .html) == nil
+                      && pasteboard.string(forType: .string) == spoken,
+                  quoted(pasteboard))
+        }
+
+        // And the case the whole path exists for: block structure, over more
+        // than one line. The fallback rides along, so an app that takes neither
+        // flavour still gets the sentence.
+        let list = "Before Friday:\n\n- call **Dana**\n- reconcile the ledger"
+        TextInserter.insert(list, mode: .clipboard, paste: .html)
+        let listHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("a dictated list is written as one",
+              listHTML?.contains("<li>call <strong>Dana</strong></li>") == true,
+              listHTML ?? "no html")
+
         TextInserter.insert(formatted, mode: .clipboard, paste: .html)
-        let html = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
-        check("a measured app gets the markup and the fallback",
-              html?.contains("<strong>Dana</strong>") == true
-                  && pasteboard.string(forType: .string) == flat,
-              html ?? "no html")
+        check("a measured app is not enough on its own",
+              pasteboard.data(forType: .html) == nil,
+              quoted(pasteboard))
 
         print(failures == 0 ? "\nall clipboard rules hold" : "\n\(failures) failed")
         return failures == 0 ? 0 : 1

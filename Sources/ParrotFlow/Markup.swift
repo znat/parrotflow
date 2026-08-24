@@ -24,22 +24,32 @@ struct Markup {
         Markup(source: markdown, blocks: Self.blocks(of: markdown))
     }
 
-    /// True when the parser found nothing to format: no emphasis, no code, no
-    /// link, no list, no heading.
+    /// True when this has to be written as the text itself rather than as
+    /// markup. The gate on the whole path, and deliberately hard to leave.
     ///
-    /// The gate on the whole path. A transcript that reads as plain is written
-    /// as `source` and never as `plain`, because stripping markers that are not
-    /// there can still move whitespace, and a dictation has to arrive as it
-    /// left.
+    /// Asking "does this parse as Markdown" is the wrong question, because
+    /// ordinary dictation does. Measured on plain sentences:
+    ///
+    ///     use the __init__ method   ->  use the <strong>init</strong> method
+    ///     multiply a*b*c            ->  multiply a<em>b</em>c
+    ///     1. Draft 2. Review        ->  <ol><li>Draft 2. Review</li></ol>
+    ///
+    /// Each one loses characters the speaker said, and `__init__` is a word a
+    /// developer dictates. So inline emphasis alone never counts. What counts
+    /// is block structure — a list, a heading, a code block, a quote — spread
+    /// over more than one line. A transform that formats deliberately produces
+    /// that; a single dictated sentence cannot produce it by accident.
+    ///
+    /// The real gate is a stage saying its output is Markdown, which none does
+    /// yet. This is the conservative half of that: refusing wrongly costs a
+    /// bold, letting through wrongly costs the characters.
     var isPlain: Bool {
-        blocks.allSatisfy { block in
-            Self.containers(block.kinds).isEmpty
-                && Self.marker(block.kinds) == nil
-                && Self.headerLevel(block.kinds) == nil
-                && !Self.isCodeBlock(block.kinds)
-                && block.pieces.allSatisfy {
-                    !$0.bold && !$0.italic && !$0.code && !$0.struck && $0.link == nil
-                }
+        guard source.contains("\n") else { return true }
+        return !blocks.contains { block in
+            !Self.containers(block.kinds).isEmpty
+                || Self.marker(block.kinds) != nil
+                || Self.headerLevel(block.kinds) != nil
+                || Self.isCodeBlock(block.kinds)
         }
     }
 
