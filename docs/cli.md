@@ -23,6 +23,7 @@ means it did what it says**, so these compose into scripts — which is what
 | `--route "<what you'd say>"` | Which transform does this instruction reach? |
 | `--eval <transform>` | How does it score against its own case set? |
 | `--seed-config` | What does a first launch write, and what did it leave alone? |
+| `--bug-report` | Everything a bug report needs, in one paste. |
 
 Every one of them reads `~/.config/parrotflow/`. Set `PARROTFLOW_CONFIG_DIR` to
 point them somewhere else — a whole config directory in `/tmp`, say — which is
@@ -69,6 +70,26 @@ launch and writes the answer down:
 ```sh
 grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 ```
+
+### `--bug-report`
+
+Prints what the bug form asks for: the version, macOS and the chip, the
+permission state, the whole `--check-config` output and the last 50 lines of the
+log. Every absolute home path is written as `~`, so the report carries no
+account name.
+
+```sh
+$PF --bug-report            # the report, on stdout
+$PF --bug-report --url      # the prefilled issue form, without the report
+```
+
+It exits 0 with no config and no log file. A report about an install that does
+not work is the one that has to come out.
+
+🦜 → **Report a Bug…** shows the same text in a window, and copies it only after
+you have read it — the log can carry what you dictated. The URL it opens fills
+in the short fields; the report itself goes on the clipboard, because a log in a
+URL overflows what GitHub accepts and gives an error page rather than a form.
 
 ## Testing a rewrite
 
@@ -526,6 +547,7 @@ scripts/check-audio-recovery.sh    # a microphone that changes leaves a usable e
 scripts/check-profiles.sh          # which app gets examined, named, or read for context
 scripts/check-clipboard.sh         # when a rewrite may go to the clipboard, and stay there
 scripts/check-span-rule.sh         # which range a rewrite is written as, before any app sees it
+scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

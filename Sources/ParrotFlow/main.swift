@@ -62,6 +62,20 @@ if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
 
+// Everything the bug form asks for, in one paste. `--url` prints the prefilled
+// issue URL instead, which is what the menu item opens.
+//
+// Always 0, config or no config: a report about a broken install is exactly the
+// one that has to come out.
+if arguments.contains("--bug-report") {
+    if arguments.contains("--url") {
+        print(BugReport.issueURL()?.absoluteString ?? "\(AppVariant.repository)/issues/new")
+    } else {
+        print(BugReport.text(fromTerminal: true))
+    }
+    exit(0)
+}
+
 /// `--app <name>`, for the commands that run a pipeline. Shared so the flag
 /// means the same thing to each of them.
 let appArgument: String? = arguments.firstIndex(of: "--app").flatMap { index in

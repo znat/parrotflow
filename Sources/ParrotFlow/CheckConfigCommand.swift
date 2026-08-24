@@ -6,14 +6,28 @@ enum CheckConfigCommand {
 
     /// Returns the process exit code: 0 if the config is usable, 1 otherwise.
     static func run() -> Int32 {
-        print("config: \(ConfigStore.fileURL.path)")
+        let checked = report()
+        print(checked.text)
+        return checked.ok ? 0 : 1
+    }
+
+    /// The same lines, returned instead of printed, so `--bug-report` carries
+    /// this output without a second copy of it.
+    static func report() -> (text: String, ok: Bool) {
+        var lines: [String] = []
+        func emit(_ line: String) { lines.append(line) }
+        func finished(_ ok: Bool) -> (text: String, ok: Bool) {
+            (lines.joined(separator: "\n"), ok)
+        }
+
+        emit("config: \(ConfigStore.fileURL.path)")
 
         let config: Config
         do {
             config = try ConfigStore.load()
         } catch {
-            print("  ✗ \(describe(error))")
-            return 1
+            emit("  ✗ \(describe(error))")
+            return finished(false)
         }
 
         var ok = true
@@ -21,58 +35,58 @@ enum CheckConfigCommand {
         // Hotkey
         let mode = config.hotkey.mode == .toggle ? "toggle" : "push-to-talk"
         if let modifierKey = ModifierKey(name: config.hotkey.key) {
-            print("  ✓ hotkey            \(modifierKey.displayName)  (\(mode), polled)")
+            emit("  ✓ hotkey            \(modifierKey.displayName)  (\(mode), polled)")
             if !config.hotkey.modifiers.isEmpty {
-                print("  · note              hotkey.modifiers is ignored for a bare modifier key")
+                emit("  · note              hotkey.modifiers is ignored for a bare modifier key")
             }
         } else if KeyCodes.code(for: config.hotkey.key) == nil {
-            print("  ✗ hotkey.key: \"\(config.hotkey.key)\" is not a known key name")
+            emit("  ✗ hotkey.key: \"\(config.hotkey.key)\" is not a known key name")
             ok = false
         } else if KeyCodes.carbonModifiers(config.hotkey.modifiers) == 0 {
-            print("  ✗ hotkey.modifiers: need at least one of command, control, option, shift")
+            emit("  ✗ hotkey.modifiers: need at least one of command, control, option, shift")
             ok = false
         } else {
             let shortcut = KeyCodes.displayString(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
-            print("  ✓ hotkey            \(shortcut)  (\(mode), Carbon)")
+            emit("  ✓ hotkey            \(shortcut)  (\(mode), Carbon)")
         }
         if config.hotkey.mode == .pushToTalk {
             let tail = config.hotkey.releaseTailSeconds
-            print("  · release tail      \(tail > 0 ? "\(tail)s after the key comes up" : "off — stops on the release")")
+            emit("  · release tail      \(tail > 0 ? "\(tail)s after the key comes up" : "off — stops on the release")")
         }
 
         // Audio
-        print("  ✓ sample rate       \(Int(config.audio.sampleRate)) Hz mono")
-        print("  ✓ output dir        \(config.resolvedOutputDir.path)")
-        print("  ✓ min duration      \(config.audio.minDurationSeconds)s")
-        print("  · speech gate       \(config.audio.speechGate ? "on" : "off")")
+        emit("  ✓ sample rate       \(Int(config.audio.sampleRate)) Hz mono")
+        emit("  ✓ output dir        \(config.resolvedOutputDir.path)")
+        emit("  ✓ min duration      \(config.audio.minDurationSeconds)s")
+        emit("  · speech gate       \(config.audio.speechGate ? "on" : "off")")
         if config.audio.secondOpinion, !config.audio.speechGate {
-            print("  ! second opinion    on, but it needs speech_gate — no padded decode will run")
+            emit("  ! second opinion    on, but it needs speech_gate — no padded decode will run")
         } else {
-            print("  · second opinion    \(config.audio.secondOpinion ? "on" : "off")")
+            emit("  · second opinion    \(config.audio.secondOpinion ? "on" : "off")")
         }
-        print("  · feedback          sound=\(config.feedback.sound) overlay=\(config.feedback.overlay)"
+        emit("  · feedback          sound=\(config.feedback.sound) overlay=\(config.feedback.overlay)"
               + " correct_offer=\(config.feedback.correctOffer)"
               + " confidence=\(config.feedback.confidence)")
-        print("  · low confidence    sentence<\(config.feedback.lowConfidence.sentence)"
+        emit("  · low confidence    sentence<\(config.feedback.lowConfidence.sentence)"
               + " AND word<\(config.feedback.lowConfidence.word)"
               + " hold_return=\(config.feedback.lowConfidence.holdReturn)"
               + (config.feedback.warnsOnLowConfidence ? "" : " (off)"))
-        print("  · logging           text=\(config.logging.text ? "on" : "off")"
+        emit("  · logging           text=\(config.logging.text ? "on" : "off")"
               + " audio=\(config.logging.audio ? "on" : "off")")
 
         // Transcription — printed so a mis-decoded config is visible rather
         // than silently falling back to "no vocabulary".
         let transcription = config.transcription
-        print("  · transcription     \(transcription.enabled ? "enabled" : "disabled")")
+        emit("  · transcription     \(transcription.enabled ? "enabled" : "disabled")")
         if transcription.enabled {
             let mode = transcription.insertMode == .paste
                 ? "paste into frontmost app (needs Accessibility)"
                 : "copy to clipboard"
-            print("  · insert mode       \(mode)")
+            emit("  · insert mode       \(mode)")
             let listed = transcription.activationPhrases
                 .map { "\"\($0)\"" }.joined(separator: ", ")
-            print("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
-            print("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
+            emit("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
+            emit("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
             // The pipeline, per language, because "why was this not
             // converted" is a question about the order and not about a
             // setting any more.
@@ -97,7 +111,7 @@ enum CheckConfigCommand {
                         if let app = step.app { described += " in \(app)" }
                         return described
                     }.joined(separator: " → ")
-                print("  · pipeline \(language)        \(stages)  (\(source))")
+                emit("  · pipeline \(language)        \(stages)  (\(source))")
             }
         }
 
@@ -105,18 +119,18 @@ enum CheckConfigCommand {
         // wrong: nothing fails, and two passes quietly stop running. So it is
         // an error, with the replacement spelled out.
         for problem in config.problems() {
-            print("  ✗ \(problem)")
+            emit("  ✗ \(problem)")
             ok = false
         }
         // Said, not complained about. These are true of a config that works —
         // a ✗ here used to fail the whole command over a `command:` transform
         // doing exactly what it was written to do.
         for notice in config.notices() {
-            print("  · \(notice)")
+            emit("  · \(notice)")
         }
         if !transcription.retired.isEmpty {
-            print("      pipelines:")
-            print("        default: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
+            emit("      pipelines:")
+            emit("        default: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
         }
 
         // What `voice/` has piled up, per term. Printed because it is the one
@@ -126,11 +140,11 @@ enum CheckConfigCommand {
         // learnt anything yet.
         let recorded = VoiceStore.counts()
         if !recorded.isEmpty {
-            print("  · voice             \(recorded.count) term(s) in"
+            emit("  · voice             \(recorded.count) term(s) in"
                 + " \(VoiceStore.directory.path)")
             let width = recorded.map(\.term.count).max() ?? 0
             for entry in recorded {
-                print("      \(entry.term.padding(toLength: width, withPad: " ", startingAt: 0))"
+                emit("      \(entry.term.padding(toLength: width, withPad: " ", startingAt: 0))"
                     + "  \(entry.observations) observation(s), \(entry.samples) sample(s)"
                     + "  — `--forget \(entry.term)` drops both")
             }
@@ -139,7 +153,7 @@ enum CheckConfigCommand {
         // says no threshold will ever separate that term for this speaker,
         // whatever `offer_below` is set to.
         if let bands = VoiceStore.calibration() {
-            print("  · calibration       measured \(bands.measured), \(bands.terms) term(s)"
+            emit("  · calibration       measured \(bands.measured), \(bands.terms) term(s)"
                 + (bands.closed > 0
                     ? ", \(bands.closed) with no band — those want `floor: off`"
                         + " and pronunciations, not a number"
@@ -162,33 +176,33 @@ enum CheckConfigCommand {
         // prompt starts answering differently. The key is described, never
         // printed.
         let models = config.modelsByName
-        print("  · models            \(models.count) reachable")
+        emit("  · models            \(models.count) reachable")
         let modelWidth = models.keys.map(\.count).max() ?? 0
         for name in models.keys.sorted() {
             guard let spec = models[name] else { continue }
             let padded = name.padding(toLength: max(modelWidth, 1), withPad: " ", startingAt: 0)
             let key = spec.api.isLocal ? "" : "  \(spec.key.described)"
-            print("      \(padded)  \(spec.api.rawValue)  \(spec.model)  \(spec.url)"
+            emit("      \(padded)  \(spec.api.rawValue)  \(spec.model)  \(spec.url)"
                 + "  reasoning \(spec.reasoning.rawValue)\(key)")
         }
-        print("  · runs on           default=\(config.modelName(for: .general))"
+        emit("  · runs on           default=\(config.modelName(for: .general))"
             + "  router=\(config.modelName(for: .router))"
             + "  spelling=\(config.modelName(for: .spelling))")
         let moved = config.transforms.filter { transform in
             transform.isPrompt && config.model(for: transform) != config.model()
         }
         for transform in moved {
-            print("      \(transform.name) → \(config.model(for: transform).described)")
+            emit("      \(transform.name) → \(config.model(for: transform).described)")
         }
 
         if !config.transforms.isEmpty {
-            print("  · transforms        \(config.transforms.count) defined")
+            emit("  · transforms        \(config.transforms.count) defined")
             let width = config.transforms.map(\.name.count).max() ?? 0
             for transform in config.transforms {
                 let name = transform.name.padding(
                     toLength: max(width, 1), withPad: " ", startingAt: 0
                 )
-                print("      \(name)  \(kind(of: transform))  \(bodyPath(transform))")
+                emit("      \(name)  \(kind(of: transform))  \(bodyPath(transform))")
             }
         }
 
@@ -196,13 +210,13 @@ enum CheckConfigCommand {
         // because the built-ins are the answer to "why did it do that" as
         // often as a prompt of your own is.
         let catalogue = Catalogue(transforms: config.transforms)
-        print("  ✓ capabilities      \(catalogue.capabilities.count) reachable by \"\(transcription.activationPhrase)\"")
+        emit("  ✓ capabilities      \(catalogue.capabilities.count) reachable by \"\(transcription.activationPhrase)\"")
         // What each one is made of, because the three cost wildly different
         // things — a model call, a process start, nothing at all — and because
         // a program reachable by voice is a program run by saying a sentence,
         // which this file says out loud everywhere else it happens.
         for capability in catalogue.capabilities {
-            print("      \(capability.kind)  \(capability.name) — \(capability.describedAs)")
+            emit("      \(capability.kind)  \(capability.name) — \(capability.describedAs)")
         }
         // A transform with no description cannot be routed to, so it is not in
         // the list above. It still runs from a pipeline, where the name is
@@ -210,16 +224,16 @@ enum CheckConfigCommand {
         // since "I wrote it and it does not answer" is otherwise a mystery.
         let unroutable = config.transforms.filter { $0.description.isEmpty }
         if !unroutable.isEmpty {
-            print("  · not by voice      \(unroutable.map(\.name).joined(separator: ", "))"
+            emit("  · not by voice      \(unroutable.map(\.name).joined(separator: ", "))"
                 + " — no description to match spoken words against")
         }
         // Not one of the capabilities above — the router reaches it by
         // answering ANY, not by picking it off the list — so it is printed
         // apart from them rather than pretending to be a catalogue entry.
         if config.freeForm {
-            print("      free-form  \(FreeForm.name) — \(FreeForm.prompt.description)")
+            emit("      free-form  \(FreeForm.name) — \(FreeForm.prompt.description)")
         } else {
-            print("  · catch_all         off — an instruction no prompt covers is refused")
+            emit("  · catch_all         off — an instruction no prompt covers is refused")
         }
 
         // How many rules each table holds, which nothing else says. The
@@ -234,10 +248,10 @@ enum CheckConfigCommand {
         // table rather than as a script.
         let tables = config.transforms.filter(\.isTable)
         if !tables.isEmpty {
-            print("  · replace           \(tables.count) transform(s)")
+            emit("  · replace           \(tables.count) transform(s)")
             for table in tables {
                 let rules = table.rules.count
-                print("      table     \(table.name) — \(rules) rule(s)"
+                emit("      table     \(table.name) — \(rules) rule(s)"
                     + (table.description.isEmpty ? "" : ", \(table.description)"))
             }
         }
@@ -250,9 +264,9 @@ enum CheckConfigCommand {
             transform.displayLabel.map { (transform.name, $0) }
         }
         if !announced.isEmpty {
-            print("  · display           \(announced.count) transform(s) say what they are doing")
+            emit("  · display           \(announced.count) transform(s) say what they are doing")
             for (name, label) in announced {
-                print("      \(name) — \"\(label)\"")
+                emit("      \(name) — \"\(label)\"")
             }
         }
 
@@ -262,7 +276,7 @@ enum CheckConfigCommand {
         // read as the offer simply being short.
         let offered = config.transforms.filter(\.offer)
         if !offered.isEmpty {
-            print("  · offer             \(offered.count) transform(s) on the pill, after Vocabulary")
+            emit("  · offer             \(offered.count) transform(s) on the pill, after Vocabulary")
             // Correct's letter is not a transform's to lose, and the first chip
             // with a letter is the one that key runs. So a second chip asking
             // for the same letter is drawn with a keycap that never fires, and
@@ -279,12 +293,12 @@ enum CheckConfigCommand {
                     note = " — \(key)"
                     taken.insert(key)
                 }
-                print("      \(transform.name)\(note)")
+                emit("      \(transform.name)\(note)")
             }
         }
 
         for prompt in config.prompts where prompt.description.isEmpty {
-            print("  ✗ prompt \"\(prompt.name)\" has no description; the router cannot pick it")
+            emit("  ✗ prompt \"\(prompt.name)\" has no description; the router cannot pick it")
             ok = false
         }
 
@@ -292,33 +306,33 @@ enum CheckConfigCommand {
         // that turns all of it off, and the pinning that only Ollama has.
         if config.llmEnabled {
             let router = config.model(for: .router)
-            print("  · models            \(config.modelsByName.count), default"
+            emit("  · models            \(config.modelsByName.count), default"
                 + " \(config.defaultModelName)")
             if router.api == .ollama {
-                print("  · keep loaded       \(router.keepLoaded ? "on (\(router.model) pinned in RAM)" : "off (Ollama unloads after 5 min; +7-10s on a cold call)")")
+                emit("  · keep loaded       \(router.keepLoaded ? "on (\(router.model) pinned in RAM)" : "off (Ollama unloads after 5 min; +7-10s on a cold call)")")
             }
         } else {
-            print("  · models            none — nothing calls a model")
+            emit("  · models            none — nothing calls a model")
         }
 
         switch config.updates.afterDays {
         case ..<0:
-            print("  · updates           never checked")
+            emit("  · updates           never checked")
         case 0:
-            print("  · updates           checked hourly, offered as soon as published")
+            emit("  · updates           checked hourly, offered as soon as published")
         case let days:
-            print("  · updates           checked hourly, offered after \(days) day\(days == 1 ? "" : "s")")
+            emit("  · updates           checked hourly, offered after \(days) day\(days == 1 ? "" : "s")")
         }
 
         // Environment
         let mic = Permissions.microphone
-        print("  \(mic == .granted ? "✓" : "✗") microphone        \(mic.label)")
+        emit("  \(mic == .granted ? "✓" : "✗") microphone        \(mic.label)")
         if mic != .granted { ok = false }
 
         if let device = AVCaptureDevice.default(for: .audio) {
-            print("  ✓ input device      \(device.localizedName)")
+            emit("  ✓ input device      \(device.localizedName)")
         } else {
-            print("  ✗ input device      none found")
+            emit("  ✗ input device      none found")
             ok = false
         }
 
@@ -333,13 +347,13 @@ enum CheckConfigCommand {
         // when the answer is yes is worse than no check, so it reports where the
         // real answer lives instead — the app tests it at launch and logs it.
         if transcription.insertMode == .paste || !transcription.activationPhrases.isEmpty {
-            print("  · accessibility     needed, but not checkable from a terminal")
-            print("      macOS credits this check to the shell, not to ParrotFlow.")
-            print("      The app records the true value each time it starts:")
-            print("      grep 'launched —' \(Log.fileURL.path) | tail -1")
+            emit("  · accessibility     needed, but not checkable from a terminal")
+            emit("      macOS credits this check to the shell, not to ParrotFlow.")
+            emit("      The app records the true value each time it starts:")
+            emit("      grep 'launched —' \(Log.fileURL.path) | tail -1")
         }
 
-        return ok ? 0 : 1
+        return finished(ok)
     }
 
     /// Which of the three bodies this is, in one column.
