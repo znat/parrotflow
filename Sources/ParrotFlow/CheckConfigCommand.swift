@@ -49,6 +49,16 @@ enum CheckConfigCommand {
             let shortcut = KeyCodes.displayString(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
             emit("  ✓ hotkey            \(shortcut)  (\(mode), Carbon)")
         }
+        if ModifierKey(name: config.hotkey.key) != nil {
+            let delay = config.hotkey.pressDelaySeconds
+            let held = delay > 0
+                ? "held alone for \(delay)s, or it is a shortcut"
+                : "off — starts on the down edge"
+            print("  · press delay       \(held)")
+            if delay > 0, Permissions.accessibility != .granted {
+                print("  · note              without Accessibility, only a second modifier is caught")
+            }
+        }
         if config.hotkey.mode == .pushToTalk {
             let tail = config.hotkey.releaseTailSeconds
             emit("  · release tail      \(tail > 0 ? "\(tail)s after the key comes up" : "off — stops on the release")")

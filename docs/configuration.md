@@ -15,6 +15,7 @@ hotkey:
   modifiers: []         # required for a character key, ignored for a modifier
   mode: push_to_talk    # or toggle
   release_tail_seconds: 0.3   # keep recording this long after you let go
+  press_delay_seconds: 0.18   # hold a bare modifier this long before it counts
 
 audio:
   output_dir: ~/Recordings/ParrotFlow
@@ -151,6 +152,31 @@ item says so. Pick another one.
 Keeps the mic open after you let go, because the hand is faster than the mouth
 and the last syllable lands after the key is up. Push-to-talk only. Raise it if
 endings still get clipped, `0` to stop the moment you release.
+
+### `press_delay_seconds`
+
+A bare modifier is never really bare. ⌘ is the front half of every shortcut in
+every app. ⌥ is a live character key on most non-US layouts — on the French
+layout it types `#`, `{`, `|` and `~` — and everywhere it is ⌥← to jump a word
+and ⌥⌫ to delete one. Taken at face value, every ⌘S opened the mic.
+
+So a bare modifier has to be held **alone** for this long before it starts a
+dictation, and anything else arriving while it is still down — a key, a click,
+a scroll, a second modifier — drops the dictation it started. That happens
+silently: you pressed ⌘S to save, and a notice about a dictation you never
+started would be an apology for something you were not supposed to see.
+
+The wait costs nothing. `release_tail_seconds` exists because the hand beats
+the mouth on the way *up*; there is no matching problem on the way down, since
+nobody starts a word within 180 ms of pressing the key. Raise it if a shortcut
+still slips through, `0` to start on the down edge as before.
+
+Bare modifiers only — a `⌃⌥Space`-style combo is unambiguous by construction
+and goes through Carbon, which swallows it.
+
+Keys and clicks are seen through a global event monitor, which needs
+Accessibility. Without it only the second-modifier check works, and the log
+says so at launch.
 
 ### Bare modifiers want push-to-talk
 

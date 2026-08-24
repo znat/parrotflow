@@ -7,6 +7,12 @@ spoken corrections, because reading your selection is exactly what that
 permission governs. `insert_mode: clipboard` works without it: the transcript
 is copied and you press ⌘V.
 
+It is also what lets a bare-modifier hotkey tell ⌘S from a dictation. The app
+watches for a key or a click arriving while the modifier is held, which is a
+global event monitor and so is gated here. Without it, only a second modifier
+is caught — see `press_delay_seconds` in
+[configuration.md](configuration.md).
+
 **Input Monitoring** — required for the offer's own hotkeys (`V` for Vocabulary,
 and any `key:` on a transform with `offer: true`). The offer's chips sit in a
 window that never takes focus, so catching their letters before they land in

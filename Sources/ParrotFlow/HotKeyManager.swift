@@ -7,7 +7,8 @@ import Carbon.HIToolbox
 ///   `RegisterEventHotKey` — no Accessibility permission, and it swallows the
 ///   keystroke so the combo doesn't leak into the frontmost app.
 /// - A bare modifier (Right ⌥) can't be expressed that way, so it falls to
-///   `ModifierKeyMonitor`, which polls the global flag state.
+///   `ModifierKeyMonitor`, which polls the global flag state and holds the
+///   press back long enough to tell a dictation from a shortcut.
 ///
 /// Both are permission-free. Which one is in play is visible via `binding`.
 final class HotKeyManager {
@@ -50,6 +51,10 @@ final class HotKeyManager {
 
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
+    /// A press already delivered turned out to be part of a shortcut — see
+    /// `ModifierKeyMonitor`. Never fires on the Carbon path: a combo is
+    /// unambiguous by construction.
+    var onAbort: (() -> Void)?
 
     private(set) var binding: Binding?
 
@@ -61,18 +66,21 @@ final class HotKeyManager {
     init() {
         modifierMonitor.onPress = { [weak self] in self?.onPress?() }
         modifierMonitor.onRelease = { [weak self] in self?.onRelease?() }
+        modifierMonitor.onAbort = { [weak self] in self?.onAbort?() }
     }
 
     // MARK: Lifecycle
 
     @discardableResult
-    func register(key: String, modifiers: [String]) throws -> Binding {
+    func register(
+        key: String, modifiers: [String], pressDelay: TimeInterval = 0
+    ) throws -> Binding {
         unregister()
 
         // A bare modifier wins over the combo path, and any `modifiers:` list
         // alongside it is meaningless — the key *is* the modifier.
         if let modifierKey = ModifierKey(name: key) {
-            modifierMonitor.start(key: modifierKey)
+            modifierMonitor.start(key: modifierKey, pressDelay: pressDelay)
             let binding = Binding.modifier(modifierKey)
             self.binding = binding
             return binding

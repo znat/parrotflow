@@ -236,6 +236,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// so it cannot be mistaken for a later one's.
     private var pressRun = 0
 
+    /// `transcriptionRun` as it stood when the current press arrived. It says
+    /// whether a transcription now in flight was started by this press or was
+    /// already running behind it, which is the difference between an abort
+    /// dropping its own dictation and an abort eating somebody else's words.
+    private var transcriptionRunAtPress = 0
+
     /// The newest press that has had the pill for an offer.
     ///
     /// Two things read it: the landing search, which only moves the pill while
@@ -737,8 +743,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyError = nil
         hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
         hotKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }
+        hotKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
         do {
-            try hotKeys.register(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
+            try hotKeys.register(
+                key: config.hotkey.key,
+                modifiers: config.hotkey.modifiers,
+                pressDelay: config.hotkey.pressDelaySeconds
+            )
         } catch {
             hotkeyError = error.localizedDescription
             Log.write("hotkey registration FAILED: \(error.localizedDescription)")
@@ -1023,6 +1034,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey handling
 
     private func handleHotKeyPress() {
+        // Read before anything this press does, so an abort later can tell the
+        // transcription this press started from one that was already running.
+        transcriptionRunAtPress = transcriptionRun
         // Grab the selection now: by the time a transcript exists, a terminal
         // will very likely have dropped it. Timed out hard inside snapshot(),
         // because this is the main thread and recording must start regardless.
@@ -1401,6 +1415,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Escape
 
+    private enum CancelReason {
+        case escape
+        /// The hotkey was the front half of a shortcut, and the dictation
+        /// started on its down edge has to go — see `ModifierKeyMonitor`.
+        case notTheHotkey
+    }
+
     /// Stop a dictation that is already under way.
     ///
     /// Escape is the one key everybody already presses to mean "not that". You
@@ -1419,12 +1440,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// flight is marked so its result is dropped when it lands: the model call
     /// is not interruptible, so this cannot make it stop sooner — it only makes
     /// sure nothing is written when it does.
-    private func cancelDictation() {
+    private func cancelDictation(_ reason: CancelReason = .escape) {
         let recording = recorder.isRecording
         // A run is in flight when one has been started and nothing has retired
         // it yet. `transcriptionRun` is bumped per dictation and already carries
         // through the whole chain, so it is the identity to cancel against.
+        // An abort takes the dictation its own press started and nothing else.
+        // Push-to-talk does not wait for the previous transcript, so a
+        // transcription is routinely in flight from an earlier press while this
+        // one records — and those words were said on purpose. You pressed ⌘S;
+        // you are not asking for the sentence you finished a second ago to be
+        // thrown away. Escape still means the lot, which is what Escape is for.
+        let startedItsOwn = transcriptionRun > transcriptionRunAtPress
         let transcribing = transcriptionLabel != nil
+            && (reason == .escape || startedItsOwn)
         guard recording || transcribing else { return }
 
         if recording {
@@ -1461,9 +1490,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // guards on idle itself, so a cancelled transcription that is still in
         // flight hands over nothing until it lands.
         stopWatchingForEscapeIfIdle()
-        if config.feedback.sound { NSSound(named: "Pop")?.play() }
-        Log.write("escape: cancelled while \(recording ? "recording" : "transcribing")")
-        flash(recording ? "Recording cancelled" : "Transcription cancelled", tone: .caution)
+        switch reason {
+        case .escape:
+            if config.feedback.sound { NSSound(named: "Pop")?.play() }
+            Log.write("escape: cancelled while \(recording ? "recording" : "transcribing")")
+            flash(recording ? "Recording cancelled" : "Transcription cancelled", tone: .caution)
+        case .notTheHotkey:
+            // Silent, and deliberately so. The user pressed ⌘S and is owed a
+            // save. A notice about a dictation they never started would be an
+            // apology for something they are not supposed to have seen.
+            Log.write("hotkey: dropped — the modifier was part of a shortcut")
+        }
         updateUI()
     }
 

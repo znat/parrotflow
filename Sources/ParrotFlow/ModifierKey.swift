@@ -44,6 +44,12 @@ enum ModifierKey: String, CaseIterable {
         CGEventSource.flagsState(.combinedSessionState).rawValue
     }
 
+    /// Every device-specific bit above, ORed together. Used to ask "is any
+    /// modifier other than this one down" — which is the cheap half of telling
+    /// a dictation apart from a shortcut, and the only half that needs no
+    /// permission.
+    static let allDeviceMasks: UInt64 = allCases.reduce(0) { $0 | $1.mask }
+
     var displayName: String {
         switch self {
         case .rightOption:  return "Right ⌥"
@@ -91,33 +97,108 @@ enum ModifierKey: String, CaseIterable {
     }
 }
 
-/// Edge-detects a single modifier key by polling the global flag state.
+/// Edge-detects a single modifier key, and refuses the edges that were part of
+/// somebody else's shortcut.
 ///
-/// Polling rather than an event tap is a deliberate trade: it costs a cheap
-/// read every 25 ms and gives up the ability to swallow the keystroke, in
-/// exchange for needing no permissions at all. A bare modifier types nothing on
-/// its own, so there is nothing to swallow.
+/// ## Why a bare modifier is never really bare
+///
+/// The first version of this assumed a modifier alone types nothing, so a
+/// press could be taken at face value. That is not true of any modifier on a
+/// Mac. ⌘ is half of every shortcut in every app. ⌥ is a live character key on
+/// most non-US layouts — on the French layout it is what types `#`, `{`, `|`
+/// and `~` — and everywhere it is ⌥← to jump a word and ⌥⌫ to delete one. So
+/// the down edge on its own says nothing about whether a dictation was meant.
+/// Taken at face value, every ⌘S opened the mic.
+///
+/// ## What tells them apart
+///
+/// Held alone, and nothing else touched. A shortcut is a modifier plus
+/// something; a dictation is a modifier and then silence on the keyboard.
+/// Waiting is what makes the difference visible, so the press is held back for
+/// `pressDelay` and only delivered if nothing else happened in that window.
+///
+/// The wait costs nothing at this end. `release_tail_seconds` exists because
+/// the hand beats the mouth on the way *up* — the key is released while the
+/// last syllable is still being said. There is no matching problem on the way
+/// down: nobody starts a word within 180 ms of pressing the key.
+///
+/// A shortcut can also be slow — a modifier held while you think, then a click
+/// — so the watch does not stop when the press is delivered. Something else
+/// arriving after that aborts the dictation instead of never starting it, and
+/// `onRelease` does not fire for a hold that was aborted.
+///
+/// ## What it watches
+///
+/// Two sources, because they cost different things. Another modifier is read
+/// straight out of the flags the poll already reads, so a ⌘⌥ chord is caught
+/// with no permission at all. Keys, clicks and scrolls need
+/// `NSEvent.addGlobalMonitorForEvents`, which needs Accessibility — already
+/// required by the app, and it observes without consuming, so nothing is taken
+/// from the app in front. Monitors exist only while the key is down: an idle
+/// app is not watching the keyboard.
+///
+/// The poll finds the down edge up to 25 ms late, and the monitors only exist
+/// from that moment, so a key typed inside those 25 ms is seen by neither. The
+/// third source covers exactly that gap: `secondsSinceLastEventType` says how
+/// long ago the last key or click was, and one more recent than the modifier's
+/// own `flagsChanged` came after it.
+///
+/// Polling rather than an event tap is still a deliberate trade: a cheap read
+/// every 25 ms, and no Input Monitoring grant, in exchange for not being able
+/// to swallow the keystroke. Nothing here wants to swallow one — the shortcut
+/// is meant to work.
+///
+/// Secure Event Input — what a terminal turns on around a password prompt —
+/// hides keys from the monitor the same way it hides them from a tap, so the
+/// watch falls back to its modifier half there. Left as is: a modifier held
+/// alone is not what happens while somebody is typing a password.
 final class ModifierKeyMonitor {
     var onPress: (() -> Void)?
     var onRelease: (() -> Void)?
+    /// A press that was already delivered turned out to be a shortcut. Whoever
+    /// started a dictation on `onPress` has to drop it, silently: the user
+    /// pressed ⌘S and is owed a save, not a notice about dictation.
+    var onAbort: (() -> Void)?
 
     private var timer: Timer?
+    private var monitors: [Any] = []
+    private var armTimer: Timer?
+
+    private var key: ModifierKey?
+    private var pressDelay: TimeInterval = 0
+    /// The key is physically down.
     private var isDown = false
+    /// `onPress` has been delivered for the current hold.
+    private var pressDelivered = false
+    /// This hold has been ruled out. Stays set until the key comes up, so a
+    /// second key in the same shortcut cannot abort twice.
+    private var isSpent = false
 
     var isMonitoring: Bool { timer != nil }
 
-    func start(key: ModifierKey) {
+    /// `pressDelay` of 0 restores the old behaviour: the press fires on the
+    /// down edge, and only the abort path is left to catch a shortcut.
+    func start(key: ModifierKey, pressDelay: TimeInterval = 0) {
         stop()
+        self.key = key
+        self.pressDelay = pressDelay
         // Treat a key that is already held at registration time as "down", so a
-        // config reload mid-press doesn't fire a spurious edge.
+        // config reload mid-press doesn't fire a spurious edge. Spent as well:
+        // there is no way to know now what else has been pressed since it went
+        // down, and a dictation nobody asked for is worse than one that needs
+        // the key pressed again.
         isDown = key.isPressed
+        isSpent = isDown
+
+        // The flags half of the watch works regardless; the keys and clicks
+        // half does not, and its absence looks exactly like a shortcut that
+        // never came. Said once here rather than on every press.
+        if Permissions.accessibility != .granted {
+            Log.write("hotkey: accessibility is not granted; a shortcut cannot be told from a dictation")
+        }
 
         let timer = Timer(timeInterval: 0.025, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            let down = key.isPressed
-            guard down != self.isDown else { return }
-            self.isDown = down
-            if down { self.onPress?() } else { self.onRelease?() }
+            self?.poll()
         }
         // .common so the key keeps working while a menu is open or a window is
         // being dragged — .default timers stall during those tracking loops.
@@ -128,8 +209,145 @@ final class ModifierKeyMonitor {
     func stop() {
         timer?.invalidate()
         timer = nil
+        endHold()
+        key = nil
         isDown = false
     }
 
     deinit { stop() }
+
+    // MARK: The poll
+
+    private func poll() {
+        guard let key else { return }
+        // One read, used for both questions below.
+        let flags = ModifierKey.currentFlags
+        let down = flags & key.mask == key.mask
+
+        if down != isDown {
+            isDown = down
+            if down { beginHold() } else { finishHold() }
+            return
+        }
+
+        // Held, and another modifier joined it: a chord, not a dictation.
+        if down, !isSpent, flags & ModifierKey.allDeviceMasks & ~key.mask != 0 {
+            somethingElseHappened()
+        }
+    }
+
+    private func beginHold() {
+        isSpent = false
+        pressDelivered = false
+        watchForOtherInput()
+
+        guard pressDelay > 0 else {
+            deliverPress()
+            return
+        }
+        // The monitors above start here, which is up to one poll interval after
+        // the key physically went down. A `⌘S` typed faster than that lands in
+        // the gap and is never seen, so the delay would expire on silence and
+        // open the mic. Ask the event source about the gap instead.
+        if sawInputBeforeTheMonitors() {
+            somethingElseHappened()
+            return
+        }
+        let timer = Timer(timeInterval: pressDelay, repeats: false) { [weak self] _ in
+            self?.armTimer = nil
+            self?.deliverPress()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        armTimer = timer
+    }
+
+    private func deliverPress() {
+        guard isDown, !isSpent, !pressDelivered else { return }
+        pressDelivered = true
+        onPress?()
+    }
+
+    private func finishHold() {
+        let wasPressed = pressDelivered
+        endHold()
+        if wasPressed { onRelease?() }
+    }
+
+    /// The one path out of a hold that was meant for something else. Delivered
+    /// as an abort only if a press went out for it — otherwise the press
+    /// simply never happens and there is nothing to tell anyone about.
+    private func somethingElseHappened() {
+        guard !isSpent else { return }
+        let wasPressed = pressDelivered
+        isSpent = true
+        pressDelivered = false
+        armTimer?.invalidate(); armTimer = nil
+        // Nothing more to learn from this hold, so the monitors go now rather
+        // than at the release.
+        removeMonitors()
+        if wasPressed { onAbort?() }
+    }
+
+    private func endHold() {
+        armTimer?.invalidate(); armTimer = nil
+        removeMonitors()
+        pressDelivered = false
+        isSpent = false
+    }
+
+    // MARK: Watching for everything that is not the key
+
+    /// Whether a key or a click landed between the modifier going down and the
+    /// poll noticing it.
+    ///
+    /// `secondsSinceLastEventType` timestamps the last event of a type without
+    /// reading any of them, so it costs no permission — the same trade as
+    /// `flagsState` above. The modifier's own down edge is a `flagsChanged`, so
+    /// anything with a *smaller* age than that arrived after it, which is the
+    /// definition of a shortcut.
+    ///
+    /// No scroll here, on purpose. Momentum cannot be told from a real scroll
+    /// through this API, and a trackpad flick keeps sending events for about a
+    /// second — so asking would abort every dictation started after scrolling a
+    /// page. The monitor half still catches scrolls, with the momentum filter.
+    private func sawInputBeforeTheMonitors() -> Bool {
+        func age(_ type: CGEventType) -> CFTimeInterval {
+            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: type)
+        }
+        let modifierWentDown = age(.flagsChanged)
+        let others: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
+        return others.contains { age($0) < modifierWentDown }
+    }
+
+    private func watchForOtherInput() {
+        guard monitors.isEmpty else { return }
+        let mask: NSEvent.EventTypeMask = [
+            .keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown, .scrollWheel,
+        ]
+        let sawInput: (NSEvent) -> Void = { [weak self] event in
+            // A flick that ended before the key went down keeps sending scroll
+            // events for about a second afterwards. Coasting is not an action,
+            // and treating it as one would abort a dictation started right
+            // after scrolling a page.
+            guard event.type != .scrollWheel || event.momentumPhase.isEmpty else { return }
+            self?.somethingElseHappened()
+        }
+        // The global monitor sees events while another app is in front, which
+        // is every ordinary dictation. The local one sees them while a panel of
+        // ours is up. Neither consumes anything.
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: sawInput) {
+            monitors.append(global)
+        }
+        if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { event in
+            sawInput(event)
+            return event
+        }) {
+            monitors.append(local)
+        }
+    }
+
+    private func removeMonitors() {
+        for monitor in monitors { NSEvent.removeMonitor(monitor) }
+        monitors = []
+    }
 }

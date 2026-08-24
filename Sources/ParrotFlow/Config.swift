@@ -1899,10 +1899,16 @@ struct Config: Decodable, Equatable {
         /// How long the mic stays open after the key comes up, in push-to-talk.
         /// The hand beats the mouth: the last syllable lands after the release.
         var releaseTailSeconds: Double = 0.3
+        /// How long a bare modifier must be held *alone* before it starts a
+        /// dictation. ⌘ is half of every shortcut and ⌥ types `#` on a French
+        /// layout, so the down edge alone does not mean dictation. Bare
+        /// modifiers only; 0 fires on the down edge as before.
+        var pressDelaySeconds: Double = 0.18
 
         enum CodingKeys: String, CodingKey {
             case key, modifiers, mode
             case releaseTailSeconds = "release_tail_seconds"
+            case pressDelaySeconds = "press_delay_seconds"
         }
 
         enum Mode: String, Codable, Equatable {
@@ -1942,6 +1948,16 @@ struct Config: Decodable, Equatable {
                     )
                 }
                 self.releaseTailSeconds = tail
+            }
+            if let delay = try c.decodeIfPresent(Double.self, forKey: .pressDelaySeconds) {
+                guard delay >= 0, delay <= 1 else {
+                    throw ConfigError.invalidValue(
+                        key: "hotkey.press_delay_seconds",
+                        value: String(delay),
+                        expected: "a delay between 0 and 1 second"
+                    )
+                }
+                self.pressDelaySeconds = delay
             }
         }
     }
