@@ -94,7 +94,8 @@ transcription:
       # "read user dot name" -> read user.name, in code-ish windows only.
       - transform: dotted
         app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
-      # `backticks` does the same for chat, so pasted markup stays literal.
+      # `backticks` does the same for chat. Not enabled: its output is one
+      # line, and markup is only sent as rich text for block structure.
       - transform: code_identifiers
         app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
         when: /\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\b/
