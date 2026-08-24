@@ -489,6 +489,23 @@ if arguments.contains("--clipboard-test") {
     exit(ClipboardTestCommand.run())
 }
 
+if let index = arguments.firstIndex(of: "--paste-probe") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --paste-probe <plain|markdown|html|rtf|all>"
+            + " [--file <fixture.md>] [--bare] [--show]")
+        exit(2)
+    }
+    let file = arguments.firstIndex(of: "--file").flatMap { found in
+        arguments.indices.contains(found + 1) ? arguments[found + 1] : nil
+    }
+    exit(PasteProbeCommand.run(
+        flavour: arguments[index + 1],
+        file: file,
+        bare: arguments.contains("--bare"),
+        show: arguments.contains("--show")
+    ))
+}
+
 if arguments.contains("--span-rule") {
     exit(SpanRuleCommand.run())
 }

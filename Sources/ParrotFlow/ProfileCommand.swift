@@ -13,6 +13,7 @@ enum ProfileCommand {
         print("focus      \(profile.focus.rawValue)")
         print("anchor     \(profile.anchor.rawValue)")
         print("readsPane  \(profile.readsPane)")
+        print("paste      \(profile.paste.rawValue)")
         return 0
     }
 }

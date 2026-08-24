@@ -361,10 +361,16 @@ $PF --profile com.openai.codex ChatGPT
 $PF --profile com.mitchellh.ghostty Ghostty
 ```
 
-Prints the three things `AppProfile` decides from an app's identity: whether its
+Prints the four things `AppProfile` decides from an app's identity: whether its
 focused element can be believed (`examine`, `screen` or `blind`), where the pill
-opens (`ladder` or `window`), and whether the visible pane can be read as
-context.
+opens (`ladder` or `window`), whether the visible pane can be read as context,
+and which rich pasteboard flavour a paste into it may carry (`plain`, `html` or
+`rtf`).
+
+`paste` is `plain` until the app is measured — see
+[proposals/formatted-paste.md](proposals/formatted-paste.md) and `--paste-probe`
+below. A terminal and a blind app return before the lookup is reached, so
+neither can be promoted out of plain by adding a line to a set.
 
 The name is optional and matters only for terminals, which are matched on either
 half — one terminal ships under several bundle ids. Blind apps are matched on the
@@ -415,6 +421,7 @@ $PF --edit-test <needle> <replacement> --find <sentinel> [--after 3] [--literal]
 $PF --span-test <start> <length> <replacement> --find <sentinel> [--after 3]
 $PF --clipboard-test
 $PF --span-rule
+$PF --paste-probe <plain|markdown|html|rtf|all> [--file <fixture.md>] [--bare] [--show]
 ```
 
 `--peek` reads the surface the way the app would — the value, the selection, and
@@ -457,6 +464,35 @@ with the count already moved by its own paste — this checks that the fallback
 writes anyway, that it still refuses once somebody else has copied, and that the
 restore queued behind the paste does not land on the rewrite. Your clipboard is
 saved and put back.
+
+`--paste-probe` answers a different question: which pasteboard flavour each app
+accepts. It renders through `Markup`, which is what `TextInserter` writes with —
+one registry, two callers, so what you score here is what the app will get. A pasteboard item can carry `public.html`, `public.rtf` and plain text
+at once and the receiving app picks, so this puts one fixture on the clipboard
+in **one** flavour and stops. You press ⌘V yourself, which keeps the test about
+the flavour and not about the event tap.
+
+The fixture exercises seven things in one paste — bold, italic, code, bullet,
+nested bullet, numbered list, link — and a link counts twice: the words it was
+written on, and the URL behind them. `--file` swaps in your own Markdown,
+`--show` prints the plain text and the HTML it generated.
+
+Plain text rides along with every flavour, because a rich flavour alone is not
+a shape anything puts on a real clipboard — a clipboard manager reads it as
+empty, and a paste that lands as plain looks the same as a paste that did not
+land. `--bare` withholds it. That is the follow-up run, for when a cell renders
+as plain and the question becomes whether the app *could* have taken the rich
+flavour or only preferred not to.
+
+`all` puts HTML and RTF on one item, which is the shape a shipping paste would
+have. Run it only after the single-flavour runs have priced each one: it says
+what an app preferred, not what it can take.
+
+Unlike `--clipboard-test`, this does **not** put your clipboard back. The
+payload has to survive for you to paste it.
+
+The matrix it exists to fill is in
+[proposals/formatted-paste.md](proposals/formatted-paste.md).
 
 `--span-rule` needs nothing at all. It scores the range a rewrite is turned into
 before any app sees it: the smallest range is often one no paste can carry — an

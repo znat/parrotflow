@@ -1,5 +1,6 @@
 # What `AppProfile.of` must make of an app: which focus rule, which pill anchor,
-# and whether the visible pane can be read as context.
+# whether the visible pane can be read as context, and which rich pasteboard
+# flavour a paste into it may carry.
 #
 # `bundle` and `name` are what `NSWorkspace` reports — the bundle identifier and
 # the localized name. Both are matched for terminals; only the bundle id is
@@ -9,6 +10,11 @@
 # app that could have been examined pastes without checking what has focus, and
 # `ordinary` on an app that answers nothing sends every dictation to the
 # clipboard.
+#
+# `paste` is `plain` until the matrix in docs/proposals/formatted-paste.md
+# scores the app with `--paste-probe` against a real window. A wrong one here
+# does not lose the sentence — plain text rides along with every flavour — but
+# it does put markup in front of an app that will show it as tags.
 
 - what: a terminal by bundle id
   bundle: com.mitchellh.ghostty
@@ -16,6 +22,7 @@
   focus: screen
   anchor: ladder
   readsPane: true
+  paste: plain
 
 - what: a terminal by name, built from source and signed however the build did
   bundle: com.example.somebodys-build
@@ -23,6 +30,7 @@
   focus: screen
   anchor: ladder
   readsPane: true
+  paste: plain
 
 - what: one terminal, several bundle ids
   bundle: dev.warp.warp-preview
@@ -30,6 +38,7 @@
   focus: screen
   anchor: ladder
   readsPane: true
+  paste: plain
 
 - what: Codex, which refuses both Chromium accessibility switches
   bundle: com.openai.codex
@@ -37,6 +46,7 @@
   focus: blind
   anchor: window
   readsPane: false
+  paste: plain
 
 # The hole this file exists for. `blind` was matched on the name "codex" as well
 # as the bundle id, so any app calling itself Codex skipped the focus check
@@ -48,6 +58,7 @@
   focus: examine
   anchor: ladder
   readsPane: false
+  paste: plain
 
 - what: VS Code, which takes the unlock and can then be examined
   bundle: com.microsoft.VSCode
@@ -55,13 +66,15 @@
   focus: examine
   anchor: ladder
   readsPane: false
+  paste: plain
 
-- what: Slack, which never needed anything
+- what: Slack, which never needed anything, and takes HTML whole
   bundle: com.tinyspeck.slackmacgap
   name: Slack
   focus: examine
   anchor: ladder
   readsPane: false
+  paste: html
 
 - what: an app nobody has classified
   bundle: com.apple.finder
@@ -69,6 +82,7 @@
   focus: examine
   anchor: ladder
   readsPane: false
+  paste: plain
 
 - what: matching ignores case
   bundle: COM.MITCHELLH.GHOSTTY
@@ -76,3 +90,4 @@
   focus: screen
   anchor: ladder
   readsPane: true
+  paste: plain

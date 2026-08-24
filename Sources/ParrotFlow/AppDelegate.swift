@@ -113,6 +113,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// without Accessibility — an app condition has no business needing a
     /// permission that gating a stage by app does not otherwise require.
     private var appAtPress: Pipeline.App?
+    /// Which pasteboard flavour that app is known to take, over and above the
+    /// plain text every paste carries. Plain when nobody was in front, which is
+    /// the answer that cannot lose a sentence.
+    private var pasteFlavour: AppProfile.Paste {
+        appAtPress.map { AppProfile.of($0).paste } ?? .plain
+    }
     /// The same app as a pid, for the window anchor. Kept from the press so the
     /// pill is measured against the app the words are aimed at.
     private var pidAtPress: pid_t?
@@ -2518,7 +2524,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-            switch TextInserter.insert(text, mode: config.transcription.insertMode) {
+            switch TextInserter.insert(
+                text, mode: config.transcription.insertMode, paste: pasteFlavour
+            ) {
             case .pasted, .copied:
                 if config.feedback.sound { NSSound(named: "Morse")?.play() }
                 flash("\(transform.name) applied", tone: .done)
@@ -4061,7 +4069,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            Permissions.accessibility == .granted {
             let now = SelectionReader.focusedElement()
             if now == nil || !CFEqual(now!, element) {
-                TextInserter.insert(text, mode: .clipboard)
+                TextInserter.insert(text, mode: .clipboard, paste: pasteFlavour)
                 // Not the paste sound — see the nowhere-to-type ending below.
                 if config.feedback.sound { NSSound(named: "Tink")?.play() }
                 Log.write(now == nil
@@ -4096,7 +4104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `.clipboardOnly` branch below.
         if config.transcription.insertMode == .paste,
            case .nowhere(let reason) = destination, reason != .noAccessibility {
-            TextInserter.insert(text, mode: .clipboard)
+            TextInserter.insert(text, mode: .clipboard, paste: pasteFlavour)
             // Not Morse: a sound that cannot be told from success is no sound.
             if config.feedback.sound { NSSound(named: "Tink")?.play() }
             Log.write("nothing to type into (\(reason.described)); copied instead")
@@ -4109,7 +4117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        switch TextInserter.insert(text, mode: config.transcription.insertMode) {
+        switch TextInserter.insert(
+            text, mode: config.transcription.insertMode, paste: pasteFlavour
+        ) {
         case .pasted:
             if config.feedback.sound { NSSound(named: "Morse")?.play() }
             // The words are in the field and you are looking at them. This is

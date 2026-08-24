@@ -5,7 +5,7 @@
 # This is the routing every dictation turns on, and it is the one part of the
 # destination path that can be checked without a screen, a microphone or a real
 # app in front: given a bundle id and a name, which focus rule, which pill
-# anchor, and whether the pane is readable.
+# anchor, whether the pane is readable, and which paste flavour it may carry.
 #
 # It cannot check the things underneath it — that Codex really does refuse
 # `AXManualAccessibility`, that VS Code really does take it, that a ⌘V really
@@ -43,7 +43,7 @@ for case in cases:
         if len(parts) == 2:
             got[parts[0]] = parts[1]
 
-    for field in ("focus", "anchor", "readsPane"):
+    for field in ("focus", "anchor", "readsPane", "paste"):
         want = str(case[field]).lower()
         if got.get(field, "").lower() != want:
             print(f"  ✗ {case['what']}")
