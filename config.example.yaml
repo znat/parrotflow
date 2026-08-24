@@ -18,6 +18,12 @@ hotkey:
   # cut. push_to_talk only; 0 turns it off.
   release_tail_seconds: 0.3
 
+  # A bare modifier is still a real modifier: ⌘S saves, ⌥3 types # on a French
+  # layout. So it has to be held this long with nothing else pressed before it
+  # counts as dictation, and a key or click that arrives later drops the
+  # dictation it started. Bare modifiers only; 0 starts on the down edge.
+  press_delay_seconds: 0.18
+
 audio:
   # Where recordings and trace.jsonl go.
   output_dir: ~/Recordings/ParrotFlow

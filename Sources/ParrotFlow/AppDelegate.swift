@@ -736,8 +736,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotkeyError = nil
         hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
         hotKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }
+        hotKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
         do {
-            try hotKeys.register(key: config.hotkey.key, modifiers: config.hotkey.modifiers)
+            try hotKeys.register(
+                key: config.hotkey.key,
+                modifiers: config.hotkey.modifiers,
+                pressDelay: config.hotkey.pressDelaySeconds
+            )
         } catch {
             hotkeyError = error.localizedDescription
             Log.write("hotkey registration FAILED: \(error.localizedDescription)")
@@ -1400,6 +1405,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Escape
 
+    private enum CancelReason {
+        case escape
+        /// The hotkey was the front half of a shortcut, and the dictation
+        /// started on its down edge has to go — see `ModifierKeyMonitor`.
+        case notTheHotkey
+    }
+
     /// Stop a dictation that is already under way.
     ///
     /// Escape is the one key everybody already presses to mean "not that". You
@@ -1418,7 +1430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// flight is marked so its result is dropped when it lands: the model call
     /// is not interruptible, so this cannot make it stop sooner — it only makes
     /// sure nothing is written when it does.
-    private func cancelDictation() {
+    private func cancelDictation(_ reason: CancelReason = .escape) {
         let recording = recorder.isRecording
         // A run is in flight when one has been started and nothing has retired
         // it yet. `transcriptionRun` is bumped per dictation and already carries
@@ -1460,9 +1472,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // guards on idle itself, so a cancelled transcription that is still in
         // flight hands over nothing until it lands.
         stopWatchingForEscapeIfIdle()
-        if config.feedback.sound { NSSound(named: "Pop")?.play() }
-        Log.write("escape: cancelled while \(recording ? "recording" : "transcribing")")
-        flash(recording ? "Recording cancelled" : "Transcription cancelled", tone: .caution)
+        switch reason {
+        case .escape:
+            if config.feedback.sound { NSSound(named: "Pop")?.play() }
+            Log.write("escape: cancelled while \(recording ? "recording" : "transcribing")")
+            flash(recording ? "Recording cancelled" : "Transcription cancelled", tone: .caution)
+        case .notTheHotkey:
+            // Silent, and deliberately so. The user pressed ⌘S and is owed a
+            // save. A notice about a dictation they never started would be an
+            // apology for something they are not supposed to have seen.
+            Log.write("hotkey: dropped — the modifier was part of a shortcut")
+        }
         updateUI()
     }
 
