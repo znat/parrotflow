@@ -27,13 +27,19 @@ repository:
 
   # Already on — the owner enabled it. Recorded so it stays on.
   #
-  # The issue templates send anything open-ended here: pipeline design, sharing
-  # a config, "how do I write this transform". See
-  # .github/ISSUE_TEMPLATE/config.yml, which links to /discussions.
+  # The issue picker sends anything open-ended here: pipeline design, sharing a
+  # config, "how do I write this transform". See
+  # .github/ISSUE_TEMPLATE/config.yml, which links to Q&A by its slug.
   #
-  # Discussion CATEGORIES cannot be created by any API — not REST, not GraphQL.
-  # There is no mutation for it. The owner creates them once, by hand, in
-  # Settings → Discussions. Nothing here can do it, so do not go looking.
+  # Discussion CATEGORIES cannot be created, renamed or deleted by any API —
+  # not REST, not GraphQL. There is no mutation for it. They are managed by
+  # hand at github.com/znat/parrotflow/discussions/categories — the Discussions
+  # tab, not the repository Settings page. Nothing here can do it, so do not go
+  # looking.
+  #
+  # Turning Discussions on creates six. Four of them are unused here:
+  # Announcements, General, Ideas and Polls. An empty category deletes cleanly;
+  # one that holds threads makes you move them first.
   has_discussions: true
 
   # CHANGES THE LIVE SETTING: both are on today.

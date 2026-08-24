@@ -56,6 +56,6 @@ maintainer's laptop.
 | | |
 |---|---|
 | `homepage` | Empty on purpose. There is no site. The owner sets it in Settings → General when there is one. |
-| Discussion categories | **No API can create one.** Not REST, not GraphQL — there is no mutation for it. `has_discussions: true` turns Discussions on; the categories are made by hand in Settings → Discussions. |
+| Discussion categories | **No API can create, rename or delete one.** Not REST, not GraphQL — there is no mutation for it. `has_discussions: true` turns Discussions on; the categories are managed by hand at [/discussions/categories](https://github.com/znat/parrotflow/discussions/categories), on the Discussions tab rather than the Settings page. |
 | Branch protection, Actions permissions, secrets | Untouched. The script only reads and writes what the file names. |
 | Deleting a label | Never. A label the file no longer names is left alone and reported, because deleting one strips it from every issue that carries it. |
