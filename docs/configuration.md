@@ -259,19 +259,24 @@ is deliberate even though its words are its address. A bare URL the parser
 noticed on its own is not, however it reads — accepting those would send a whole
 sentence as markup for mentioning an address.
 
-**Emphasis never counts on its own**, and that is the deliberate part. Ordinary
-dictation parses as Markdown:
+**Or emphasis you asked for.** Asterisks, and not inside a word — which is what
+*"start bold … end bold"* produces through `punctuation`. Underscores never
+count, and neither does an asterisk inside a word. Those are the two ways
+ordinary dictation trips over emphasis:
 
 | dictated | would have become |
 |---|---|
 | `use the __init__ method` | bold "init", underscores gone |
+| `we need __slots__ on that class` | bold "slots" |
 | `multiply a*b*c and check the result` | an italic *b*, the asterisks gone |
+| `rate is 3*4*5` | an italic *4* |
 | `1. Draft 2. Review` | a numbered list |
 
 Each loses characters you said, and `__init__` is a word a developer dictates.
-Each is emphasis, and emphasis is what a speaker trips over. The cost is that a
-one-line `Call **Dana** about it` stays plain. A link or a code span in the same
-sentence would not — nothing about `[` or `` ` `` happens by accident.
+All of them stay exactly as you said them. What separates them from `**Dana**`
+is the delimiter and the position: underscores, or an asterisk pressed against a
+letter. Nothing you dictate produces a word wrapped in loose asterisks unless
+you asked for it.
 
 ### Measuring your own app
 

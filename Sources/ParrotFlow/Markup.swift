@@ -52,6 +52,7 @@ struct Markup {
         // that is where `__init__` and `a*b*c` live.
         if blocks.contains(where: { $0.pieces.contains(where: \.code) }) { return false }
         if hasLink, Self.writesALink(source) { return false }
+        if hasEmphasis, Self.writesEmphasis(source) { return false }
         // Everything else needs block structure over more than one line.
         guard source.contains("\n") else { return true }
         return !blocks.contains { block in
@@ -65,6 +66,25 @@ struct Markup {
     private var hasLink: Bool {
         blocks.contains { $0.pieces.contains { $0.link != nil } }
     }
+
+    private var hasEmphasis: Bool {
+        blocks.contains { $0.pieces.contains { $0.bold || $0.italic } }
+    }
+
+    /// Whether the source marks emphasis the way a speaker asks for it.
+    ///
+    /// Asterisks, and not inside a word. That is what "start bold … end bold"
+    /// produces through `punctuation`, and it is what the two ways of tripping
+    /// over emphasis do not: `__init__` and `__slots__` are underscores, and
+    /// `a*b*c` and `3*4*5` are inside a word. Both stay plain.
+    private static func writesEmphasis(_ source: String) -> Bool {
+        guard let pattern = emphasisSyntax else { return false }
+        let whole = NSRange(source.startIndex..., in: source)
+        return pattern.firstMatch(in: source, range: whole) != nil
+    }
+
+    private static let emphasisSyntax = try? NSRegularExpression(
+        pattern: "(?<![\\w*])\\*{1,2}(?![\\s*])(?:[^*]|\\*(?!\\*))+?(?<![\\s*])\\*{1,2}(?![\\w*])")
 
     /// Whether the source writes a link out, `[words](url)`.
     ///

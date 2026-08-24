@@ -92,7 +92,8 @@ enum ClipboardTestCommand {
         // must write the text itself rather than a rendering of it — stripping
         // markers that were never there can still move whitespace, and a
         // dictation has to arrive as it left.
-        let formatted = "Call **Dana** about the invoice"
+        // Underscores, so it is emphasis the speaker never asked for.
+        let formatted = "Call __Dana__ about the invoice"
         let flat = "Call Dana about the invoice"
 
         TextInserter.insert(formatted, mode: .clipboard, paste: .plain)
@@ -112,9 +113,11 @@ enum ClipboardTestCommand {
         // block structure over more than one line.
         for spoken in [
             "use the __init__ method",
+            "call __main__ before __exit__",
+            "we need __slots__ on that class",
             "multiply a*b*c and check the result",
+            "rate is 3*4*5",
             "1. Draft 2. Review",
-            formatted,
         ] {
             TextInserter.insert(spoken, mode: .clipboard, paste: .html)
             check("one line stays one line: \"\(spoken)\"",
@@ -142,6 +145,14 @@ enum ClipboardTestCommand {
               sameHTML?.contains("<a href=\"https://example.com\"") == true,
               sameHTML ?? "no html")
 
+        // Emphasis the speaker asked for: "start bold Dana end bold" reaches
+        // `punctuation` as **Dana**, which is asterisks and not inside a word.
+        TextInserter.insert("call **Dana** about the invoice", mode: .clipboard, paste: .html)
+        let boldHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("emphasis a speaker asked for is emphasis",
+              boldHTML?.contains("<strong>Dana</strong>") == true,
+              boldHTML ?? "no html")
+
         // And a code span, which is what `backticks` emits.
         TextInserter.insert("read `user.name` first", mode: .clipboard, paste: .html)
         let codeHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
@@ -166,7 +177,7 @@ enum ClipboardTestCommand {
               listHTML?.contains("<li>call <strong>Dana</strong></li>") == true,
               listHTML ?? "no html")
 
-        TextInserter.insert(formatted, mode: .clipboard, paste: .html)
+        TextInserter.insert(flat, mode: .clipboard, paste: .html)
         check("a measured app is not enough on its own",
               pasteboard.data(forType: .html) == nil,
               quoted(pasteboard))
