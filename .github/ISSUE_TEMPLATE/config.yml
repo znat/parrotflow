@@ -1,9 +1,12 @@
 blank_issues_enabled: false
 
 contact_links:
-  - name: How do I write this transform?
+  - name: Ask a question
+    url: https://github.com/znat/parrotflow/discussions/categories/q-a
+    about: How do I write this transform? Why does this stage not fire? Ask in Q&A — answers there stay findable.
+  - name: Show your transform or your config
     url: https://github.com/znat/parrotflow/discussions
-    about: Open questions, pipeline design, sharing a config. Discussions, not issues.
+    about: Post what you built. The good ones become examples in the repository.
   - name: Documentation
     url: https://github.com/znat/parrotflow/blob/main/docs/README.md
     about: Setup, configuration, pipelines, the command line, permissions.
