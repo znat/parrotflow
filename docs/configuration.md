@@ -257,7 +257,7 @@ If an app of yours takes formatting and is not on the list, it can be measured.
 Put the fixture on the clipboard and paste it in yourself:
 
 ```sh
-$PF --paste-probe all
+/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --paste-probe all
 ```
 
 Then score seven things: bold, italic, code, bullet, nested bullet, numbered
