@@ -495,8 +495,16 @@ if let index = arguments.firstIndex(of: "--paste-probe") {
             + " [--file <fixture.md>] [--bare] [--show]")
         exit(2)
     }
-    let file = arguments.firstIndex(of: "--file").flatMap { found in
-        arguments.indices.contains(found + 1) ? arguments[found + 1] : nil
+    var file: String?
+    if let found = arguments.firstIndex(of: "--file") {
+        // Not defaulted back to the built-in fixture. You asked to measure your
+        // own document; measuring a different one and saying nothing is how a
+        // matrix gets filled with the wrong numbers.
+        guard arguments.indices.contains(found + 1) else {
+            print("✗ --file needs a path; without one this would score the built-in fixture")
+            exit(2)
+        }
+        file = arguments[found + 1]
     }
     exit(PasteProbeCommand.run(
         flavour: arguments[index + 1],
