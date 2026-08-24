@@ -44,15 +44,14 @@ struct Markup {
     /// yet. This is the conservative half of that: refusing wrongly costs a
     /// bold, letting through wrongly costs the characters.
     var isPlain: Bool {
-        // A link written on its own words, or a code span. Both need
-        // characters nobody utters — brackets, parentheses, backticks — so
-        // neither arrives by accident. Scanned over 1355 lines of the case
-        // files: 0 links, and the only 2 code spans were a transform's own
+        // A code span, or a link the source writes out as `[words](url)`.
+        // Both take characters a speaker only produces on purpose, so neither
+        // arrives by accident. Scanned over 1355 lines of the case files: no
+        // links at all, and the only two code spans were a transform's own
         // output and a fixture about code. Emphasis is excluded on purpose;
         // that is where `__init__` and `a*b*c` live.
-        if blocks.contains(where: { $0.pieces.contains(where: Self.isDeliberate) }) {
-            return false
-        }
+        if blocks.contains(where: { $0.pieces.contains(where: \.code) }) { return false }
+        if hasLink, Self.writesALink(source) { return false }
         // Everything else needs block structure over more than one line.
         guard source.contains("\n") else { return true }
         return !blocks.contains { block in
@@ -63,16 +62,27 @@ struct Markup {
         }
     }
 
-    /// A link whose words differ from its URL, or a code span.
-    ///
-    /// An autolinked bare URL is not one: the parser makes those out of
-    /// ordinary text, so accepting them would send a whole sentence as markup
-    /// because it happened to mention an address.
-    private static func isDeliberate(_ piece: Piece) -> Bool {
-        if piece.code { return true }
-        if let link = piece.link { return piece.text != link.absoluteString }
-        return false
+    private var hasLink: Bool {
+        blocks.contains { $0.pieces.contains { $0.link != nil } }
     }
+
+    /// Whether the source writes a link out, `[words](url)`.
+    ///
+    /// The syntax is the evidence, not the label. `[https://x](https://x)` is
+    /// deliberate even though its words are its URL, and a bare URL the parser
+    /// autolinked is not deliberate however it reads — accepting those would
+    /// send a whole sentence as markup for mentioning an address.
+    ///
+    /// Paired with the parser having found a link, so text shaped like the
+    /// syntax but not parsed as one changes nothing.
+    private static func writesALink(_ source: String) -> Bool {
+        guard let pattern = linkSyntax else { return false }
+        let whole = NSRange(source.startIndex..., in: source)
+        return pattern.firstMatch(in: source, range: whole) != nil
+    }
+
+    private static let linkSyntax = try? NSRegularExpression(
+        pattern: "\\[[^\\]\n]*\\]\\([^)\\s]*\\)")
 
     // MARK: - Flavours
 

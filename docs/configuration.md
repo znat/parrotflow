@@ -224,10 +224,11 @@ over more than one line, reaches an app that takes it as real formatting rather
 than as `**stars**`. Inside it, bold, italic, code spans, a real second level of
 bullets, numbered lists and links all survive.
 
-A single line qualifies too, but only for a **link written on its own words**
-or a **code span** — `[the PR](https://…)` and `` `user.name` ``. Emphasis on a
-single line does not: `Call **Dana** about it` is pasted as you said it, markers
-and all. That is deliberate — see *What counts as formatting* below.
+A single line qualifies too, but only for a **link written out as
+`[words](url)`** or a **code span** — `[the PR](https://…)` and
+`` `user.name` ``. Emphasis on a single line does not: `Call **Dana** about it`
+is pasted as you said it, markers and all. That is deliberate — see *What counts
+as formatting* below.
 
 **Slack only, so far.** It is the one app measured. Every other app gets plain
 text, byte for byte as before. There is nothing to configure and nothing to
@@ -247,11 +248,16 @@ Two ways in.
 **Block structure** — a list, a heading, a code block, a quote — spread over
 more than one line.
 
-**Or a link or a code span, on any number of lines.** Both need characters
-nobody utters: brackets, parentheses, backticks. A transform that emits
-`[#123](https://…)` means it; a speaker cannot produce it by accident. Scanned
-over 1355 lines of the case files, there were no links at all and the only two
-code spans were a transform's own output.
+**Or a link or a code span, on any number of lines.** Both take characters a
+speaker only produces on purpose: brackets, parentheses, backticks. A transform
+that emits `[#123](https://…)` means it. Scanned over 1355 lines of the case
+files, there were no links at all and the only two code spans were a transform's
+own output.
+
+It is the **syntax** that counts, not what the link says. `[https://x](https://x)`
+is deliberate even though its words are its address. A bare URL the parser
+noticed on its own is not, however it reads — accepting those would send a whole
+sentence as markup for mentioning an address.
 
 **Emphasis never counts on its own**, and that is the deliberate part. Ordinary
 dictation parses as Markdown:

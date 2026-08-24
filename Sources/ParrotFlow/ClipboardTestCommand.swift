@@ -133,6 +133,15 @@ enum ClipboardTestCommand {
               linkHTML?.contains("href=\"https://github.com/znat/parrotflow/pull/123\"") == true,
               linkHTML ?? "no html")
 
+        // A link whose words are its own URL. Deliberate — the syntax says so —
+        // even though the label cannot be told from an autolink.
+        let sameLabel = "[https://example.com](https://example.com) is the one"
+        TextInserter.insert(sameLabel, mode: .clipboard, paste: .html)
+        let sameHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("a link labelled with its own URL is still a link",
+              sameHTML?.contains("<a href=\"https://example.com\"") == true,
+              sameHTML ?? "no html")
+
         // And a code span, which is what `backticks` emits.
         TextInserter.insert("read `user.name` first", mode: .clipboard, paste: .html)
         let codeHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
