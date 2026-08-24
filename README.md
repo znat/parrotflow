@@ -241,6 +241,14 @@ transcription:
 you ask: hold `⌘` and say *"hey parrot, correct me"*, or press `S` on the pill
 after any dictation.
 
+A transform that returns a Markdown **list** lands in Slack as a real list,
+with the bold and the links inside it intact, rather than as `**stars**`. It
+takes block structure over more than one line: a lone `**bold**` in a sentence
+stays exactly as you said it, so an ordinary dictation is never reinterpreted.
+Other apps get plain text until they are measured, and plain text rides along
+either way, so nothing is lost to an app that does not take it. See
+[bullets, bold and links](docs/configuration.md#bullets-bold-and-links).
+
 ### More examples
 
 Each with its own test cases, in [examples/transforms](examples/transforms):

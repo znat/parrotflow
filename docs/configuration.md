@@ -217,6 +217,63 @@ that counts as moved and the transcript is copied. Not knowing is not the same
 as knowing it is fine, and a transcript on your clipboard is recoverable in a
 way that one typed into somebody else's window is not.
 
+## Bullets, bold and links
+
+A transcript that carries a Markdown **list, heading, code block or quote**,
+over more than one line, reaches an app that takes it as real formatting rather
+than as `**stars**`. Inside it, bold, italic, code spans, a real second level of
+bullets, numbered lists and links all survive.
+
+A single line never does, whatever is in it. `Call **Dana** about it` is pasted
+as you said it, markers and all. That is deliberate — see *What counts as
+formatting* below.
+
+**Slack only, so far.** It is the one app measured. Every other app gets plain
+text, byte for byte as before. There is nothing to configure and nothing to
+turn on — the app is either measured or it is not, and an unmeasured one is
+never sent markup it might show as tags. Plain text also rides along beside
+every rich flavour, so an app that takes neither still gets the sentence.
+
+**Nothing turns speech into Markdown yet.** This is the delivery half. It
+carries what a transform already emits, so a prompt of yours that returns a
+bullet list lands as a bullet list. Dictating *"bullet point call the client"*
+does not, and that is separate work.
+
+### What counts as formatting
+
+Block structure — a list, a heading, a code block, a quote — spread over more
+than one line. Inline emphasis on its own never counts, and that is deliberate.
+Ordinary dictation parses as Markdown:
+
+| dictated | would have become |
+|---|---|
+| `use the __init__ method` | bold "init", underscores gone |
+| `multiply a*b*c and check the result` | an italic *b*, the asterisks gone |
+| `1. Draft 2. Review` | a numbered list |
+
+Each loses characters you said, and `__init__` is a word a developer dictates.
+A transform that formats deliberately produces block structure over several
+lines; one dictated sentence cannot produce it by accident. The cost is that a
+one-line `Call **Dana** about it` stays plain.
+
+### Measuring your own app
+
+An app of yours that takes formatting and is not on the list can be measured.
+Put the fixture on the clipboard and paste it in yourself:
+
+```sh
+/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --paste-probe all
+```
+
+Then score seven things: bold, italic, code, bullet, nested bullet, numbered
+list, and the link — twice, once for its words and once for the URL behind
+them. [cli.md](cli.md) has the flags,
+[proposals/formatted-paste.md](proposals/formatted-paste.md) has the table to
+fill and what promoting an app costs.
+
+Adding one is a line in `AppProfile.swift` today, so it needs a release. Making
+it a config setting is [#197](https://github.com/znat/parrotflow/issues/197).
+
 ## Escape stops a dictation
 
 Press ⎋ while recording, or while it is transcribing, and the dictation ends.
