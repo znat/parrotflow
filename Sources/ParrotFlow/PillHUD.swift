@@ -1499,26 +1499,44 @@ struct ToneDot: View {
     let tone: NoticeTone
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var step = 0
-
-    private let clock = Timer.publish(every: 0.6, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        // The clock belongs to `WalkingDot`, which exists only while the dot is
+        // walking. Held here it was a stored property, so it ticked 1.67 times
+        // a second on every tone for the life of the view and `onReceive` threw
+        // the ticks away.
+        if tone == .thinking, !reduceMotion {
+            WalkingDot()
+        } else {
+            Self.dot(resting)
+        }
+    }
+
+    /// Thinking with the motion turned off is the first feather, held. Every
+    /// other tone is its own colour.
+    private var resting: Color {
+        tone == .thinking ? Parrot.wheel[0] : tone.color
+    }
+
+    static func dot(_ color: Color) -> some View {
         Circle()
             .fill(color)
             .frame(width: 9, height: 9)
             .shadow(color: color, radius: 4)
             .shadow(color: color.opacity(0.6), radius: 9)
-            .animation(.easeInOut(duration: 0.5), value: step)
-            .onReceive(clock) { _ in
-                guard tone == .thinking, !reduceMotion else { return }
-                step += 1
-            }
     }
+}
 
-    private var color: Color {
-        guard tone == .thinking else { return tone.color }
-        return Parrot.wheel[step % 4]
+/// The dot walking the plumage: the one tone that needs a clock.
+private struct WalkingDot: View {
+    @State private var step = 0
+
+    private let clock = Timer.publish(every: 0.6, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        ToneDot.dot(Parrot.wheel[step % 4])
+            .animation(.easeInOut(duration: 0.5), value: step)
+            .onReceive(clock) { _ in step += 1 }
     }
 }
 
