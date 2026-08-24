@@ -88,12 +88,20 @@ def bare(word):
     return re.sub(r"[^\w']", "", word).lower()
 
 
+PAD = 0.25
+
+
 def cut(wav, start, end, target):
-    """The span, padded a little — a word's edges are where it is least clear."""
+    """The span plus 0.25 s each side.
+
+    The decoder's word times land inside the word. Measured 2026-08-24 on 122
+    samples: 0.05 s of padding gave a phoneme matcher AUC 0.952, 0.25 s gave
+    0.999, and 7 of its 9 errors were clipped spans.
+    """
     with wave.open(str(CLIPS / wav), "rb") as src:
         rate, width, channels = src.getframerate(), src.getsampwidth(), src.getnchannels()
-        first = max(0, int((start - 0.05) * rate))
-        last = min(src.getnframes(), int((end + 0.05) * rate))
+        first = max(0, int((start - PAD) * rate))
+        last = min(src.getnframes(), int((end + PAD) * rate))
         src.setpos(first)
         frames = src.readframes(last - first)
     target.parent.mkdir(parents=True, exist_ok=True)
