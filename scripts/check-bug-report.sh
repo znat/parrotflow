@@ -65,27 +65,31 @@ for section in \
   "--check-config" \
   "Log — last 50 lines"
 do
+  # `--` first: a pattern starting with a dash is otherwise read as an option,
+  # and BSD grep exits 2 with a usage message.
   check "the report names \"$section\"" \
-    "$(printf '%s\n' "$report" | grep -cF "$section")" \
+    "$(printf '%s\n' "$report" | grep -cF -- "$section")" \
     "1"
 done
 
 check "the version line is filled in" \
-  "$(printf '%s\n' "$report" | grep -cE '^  app        .+')" \
+  "$(printf '%s\n' "$report" | grep -cE '^  app +[^ ]')" \
   "1"
 
 check "macOS and the chip are named" \
-  "$(printf '%s\n' "$report" | grep -cE '^  (macOS|chip)       .+')" \
+  "$(printf '%s\n' "$report" | grep -cE '^  (macOS|chip) +[^ ]')" \
   "2"
 
 check "the microphone permission is reported" \
-  "$(printf '%s\n' "$report" | grep -cE '^  microphone     .+')" \
+  "$(printf '%s\n' "$report" | grep -cE '^  microphone +[^ ]')" \
   "1"
 
 # Accessibility read from a terminal is credited to the terminal, so the answer
 # would be "not granted" on a Mac where it is granted. It says so instead.
+# Anchored on the report's own line. `--check-config` carries the same caveat
+# further down, and an unanchored pattern counts both.
 check "accessibility says it cannot be answered from a terminal" \
-  "$(printf '%s\n' "$report" | grep -c 'not checkable from a terminal')" \
+  "$(printf '%s\n' "$report" | grep -cE '^  accessibility  not checkable from a terminal')" \
   "1"
 
 check "--check-config output is included, not summarised" \
@@ -146,7 +150,7 @@ check "it opens the issue form from AppVariant.repository" \
 # finds out why.
 for field in "template=bug.yml" "labels=bug" "version=" "macos="; do
   check "the URL carries $field" \
-    "$(printf '%s\n' "$url" | grep -cF "$field")" \
+    "$(printf '%s\n' "$url" | grep -cF -- "$field")" \
     "1"
 done
 
