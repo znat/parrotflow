@@ -1,7 +1,7 @@
 import AppKit
 
-/// `--clipboard-test` — checks the two rules that decide whether this app may
-/// write to the clipboard, against the real `NSPasteboard`.
+/// `--clipboard-test` — checks when this app may write to the clipboard, and
+/// what it writes, against the real `NSPasteboard`.
 ///
 /// Both rules are arithmetic on `NSPasteboard.changeCount`, and both were wrong
 /// in a way that only showed up as lost work. An in-place edit that Slack
@@ -83,6 +83,59 @@ enum ClipboardTestCommand {
         TextInserter.putBack(borrowedAgain, to: pasteboard, ifStillAt: paste)
         check("the restore leaves a later write alone",
               pasteboard.string(forType: .string) == "the rewrite, left here by the refused edit",
+              quoted(pasteboard))
+
+        // What goes on the clipboard, as well as when.
+        //
+        // Plain text is the floor and there are two ways down to it: an app
+        // nobody has measured, and a transcript with no formatting in it. Both
+        // must write the text itself rather than a rendering of it — stripping
+        // markers that were never there can still move whitespace, and a
+        // dictation has to arrive as it left.
+        let formatted = "Call **Dana** about the invoice"
+        let flat = "Call Dana about the invoice"
+
+        TextInserter.insert(formatted, mode: .clipboard, paste: .plain)
+        check("an unmeasured app gets plain text, verbatim",
+              pasteboard.data(forType: .html) == nil
+                  && pasteboard.string(forType: .string) == formatted,
+              quoted(pasteboard))
+
+        TextInserter.insert(flat, mode: .clipboard, paste: .html)
+        check("a transcript with no markup gets plain text, verbatim",
+              pasteboard.data(forType: .html) == nil
+                  && pasteboard.string(forType: .string) == flat,
+              quoted(pasteboard))
+
+        // Ordinary dictation the Markdown parser reads as formatting. Each of
+        // these lost characters the speaker said before `isPlain` asked for
+        // block structure over more than one line.
+        for spoken in [
+            "use the __init__ method",
+            "multiply a*b*c and check the result",
+            "1. Draft 2. Review",
+            formatted,
+        ] {
+            TextInserter.insert(spoken, mode: .clipboard, paste: .html)
+            check("one line stays one line: \"\(spoken)\"",
+                  pasteboard.data(forType: .html) == nil
+                      && pasteboard.string(forType: .string) == spoken,
+                  quoted(pasteboard))
+        }
+
+        // And the case the whole path exists for: block structure, over more
+        // than one line. The fallback rides along, so an app that takes neither
+        // flavour still gets the sentence.
+        let list = "Before Friday:\n\n- call **Dana**\n- reconcile the ledger"
+        TextInserter.insert(list, mode: .clipboard, paste: .html)
+        let listHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("a dictated list is written as one",
+              listHTML?.contains("<li>call <strong>Dana</strong></li>") == true,
+              listHTML ?? "no html")
+
+        TextInserter.insert(formatted, mode: .clipboard, paste: .html)
+        check("a measured app is not enough on its own",
+              pasteboard.data(forType: .html) == nil,
               quoted(pasteboard))
 
         print(failures == 0 ? "\nall clipboard rules hold" : "\n\(failures) failed")

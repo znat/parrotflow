@@ -15,6 +15,8 @@
 | Config | `Config.swift` | Yams + a `DispatchSource` file watcher for live reload |
 | Permissions | `Permissions.swift` | `AVCaptureDevice` for mic, `AXIsProcessTrusted` for Accessibility |
 | Text insertion | `TextInserter.swift`, `SelectionReader.swift` | Paste-via-clipboard, then the pasteboard is put back |
+| Formatted paste | `Markup.swift` | Markdown in, `public.html` / `public.rtf` / plain out. Plain always rides along, and an unmeasured app gets nothing else — [proposals/formatted-paste.md](proposals/formatted-paste.md) |
+| What an app affords | `AppProfile.swift` | One entry per app: which focus rule, which pill anchor, whether the pane reads, which paste flavour. Scored by `scripts/check-profiles.sh` |
 | Editing in place | `Surface.swift` | The field as one string plus one span, and the ladder that substitutes a range of it — [below](#editing-text-that-is-already-there) |
 | Where the words go | `Destination.swift` | Asks the focused element whether it takes text, at the press — decides the pill's icon and whether the transcript is typed or copied |
 | Menu bar & wiring | `AppDelegate.swift` | |

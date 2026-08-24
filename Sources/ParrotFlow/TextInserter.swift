@@ -55,14 +55,18 @@ enum TextInserter {
     }
 
     @discardableResult
-    static func insert(_ text: String, mode: Config.Transcription.InsertMode = .paste) -> Outcome {
+    static func insert(
+        _ text: String,
+        mode: Config.Transcription.InsertMode = .paste,
+        paste: AppProfile.Paste = .plain
+    ) -> Outcome {
         guard !text.isEmpty else { return .pasted }
 
         let pasteboard = NSPasteboard.general
         let saved = snapshot(of: pasteboard)
 
         pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        pasteboard.writeObjects([item(for: text, paste: paste)])
         let ours = pasteboard.changeCount
         ownChange = ours
 
@@ -83,6 +87,27 @@ enum TextInserter {
         }
 
         return .pasted
+    }
+
+    /// Plain text, unless the app in front is known to take more.
+    ///
+    /// Two ways out before anything is rendered: an app nobody has measured,
+    /// and a transcript with no formatting in it. Both write `text` itself
+    /// rather than a rendering of it, so a dictation that carries no markup
+    /// arrives byte for byte as it left. Stripping markers that were never
+    /// there can still move whitespace.
+    private static func item(for text: String, paste: AppProfile.Paste) -> NSPasteboardItem {
+        guard paste != .plain else { return verbatim(text) }
+        let markup = Markup.parse(text)
+        guard !markup.isPlain else { return verbatim(text) }
+        Log.write("paste: \(paste.rawValue) alongside plain text")
+        return markup.item(paste.flavours)
+    }
+
+    private static func verbatim(_ text: String) -> NSPasteboardItem {
+        let item = NSPasteboardItem()
+        item.setString(text, forType: .string)
+        return item
     }
 
     // MARK: - Keystroke

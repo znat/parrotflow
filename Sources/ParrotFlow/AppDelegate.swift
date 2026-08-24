@@ -159,6 +159,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// device in System Settings — and the notice is about the microphone
         /// that recorded these words. See `micAtPress`.
         let mic: Recorder.InputDevice?
+        /// Which pasteboard flavour the app this was aimed at takes, over and
+        /// above the plain text every paste carries.
+        ///
+        /// Frozen here rather than read from `appAtPress` at the end, for the
+        /// reason that field is read once: it only ever holds the newest press.
+        /// A Slack dictation still decoding while you press again in a terminal
+        /// would be delivered with the terminal's answer, and the reverse puts
+        /// markup in front of an app that shows the tags.
+        let paste: AppProfile.Paste
     }
 
     /// The words the offer on screen is about, and the field they went into.
@@ -1694,7 +1703,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // device. Taken here rather than read at the end for the same reason as
         // the rest: the default input can change while the decoder runs.
         let press = Press(
-            run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress
+            run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress,
+            // Plain when nobody was in front, which is the answer that cannot
+            // lose a sentence.
+            paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain
         )
         Task { [weak self] in
             // Whatever happens below — decoded, cancelled, or thrown — nothing
@@ -2518,7 +2530,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-            switch TextInserter.insert(text, mode: config.transcription.insertMode) {
+            // From the selection this transform was aimed at, not from
+            // `appAtPress`: this runs after a model call, and that field holds
+            // the newest press by then. Without a selection there is nothing
+            // saying where the text is going, and plain is the answer that
+            // cannot lose it.
+            let paste = selection?.owner.map {
+                AppProfile.of(
+                    Pipeline.App(name: $0.localizedName ?? "", bundleID: $0.bundleIdentifier ?? "")
+                ).paste
+            } ?? .plain
+            switch TextInserter.insert(
+                text, mode: config.transcription.insertMode, paste: paste
+            ) {
             case .pasted, .copied:
                 if config.feedback.sound { NSSound(named: "Morse")?.play() }
                 flash("\(transform.name) applied", tone: .done)
@@ -4061,7 +4085,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            Permissions.accessibility == .granted {
             let now = SelectionReader.focusedElement()
             if now == nil || !CFEqual(now!, element) {
-                TextInserter.insert(text, mode: .clipboard)
+                TextInserter.insert(text, mode: .clipboard, paste: press.paste)
                 // Not the paste sound — see the nowhere-to-type ending below.
                 if config.feedback.sound { NSSound(named: "Tink")?.play() }
                 Log.write(now == nil
@@ -4096,7 +4120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // `.clipboardOnly` branch below.
         if config.transcription.insertMode == .paste,
            case .nowhere(let reason) = destination, reason != .noAccessibility {
-            TextInserter.insert(text, mode: .clipboard)
+            TextInserter.insert(text, mode: .clipboard, paste: press.paste)
             // Not Morse: a sound that cannot be told from success is no sound.
             if config.feedback.sound { NSSound(named: "Tink")?.play() }
             Log.write("nothing to type into (\(reason.described)); copied instead")
@@ -4109,7 +4133,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        switch TextInserter.insert(text, mode: config.transcription.insertMode) {
+        switch TextInserter.insert(
+            text, mode: config.transcription.insertMode, paste: press.paste
+        ) {
         case .pasted:
             if config.feedback.sound { NSSound(named: "Morse")?.play() }
             // The words are in the field and you are looking at them. This is
