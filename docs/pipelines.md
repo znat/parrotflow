@@ -554,17 +554,20 @@ not consume the word after the dot, so it has nowhere to put a closing backtick
 — the first attempt produced ``lis `config.`port``. It requires a letter to
 start, so `21.5` is left alone.
 
-**It is not in the shipped pipeline.** Slack's composer converts markdown as you
-type it and never re-reads text that arrives by paste, which is every way this
-app inserts text — so the backticks land in the message as characters. Tried on
-a real Slack, including with *Format messages with markup* enabled, and it did
-not render either way. A default that depends on a setting in another
-application, and does not work when that setting is on, is not a default: it
-puts noise in your messages and gives you nowhere to look.
+**It is not in the shipped pipeline.** Markdown *characters* arriving by paste
+are not rendered. Tried on a real Slack, including with *Format messages with
+markup* enabled, and the backticks landed in the message as characters either
+way. A default that depends on a setting in another application, and does not
+work when that setting is on, is not a default: it puts noise in your messages
+and gives you nowhere to look.
 
-Add the step if your chat app renders pasted markup. Getting this to work
-properly means putting rich text on the clipboard rather than markdown
-characters, which is a different feature.
+The other half of that has since been built. Slack does render **rich text**
+that arrives by paste, and the app now sends it — see
+[bullets, bold and links](configuration.md#bullets-bold-and-links). It does not
+rescue `backticks`: markup is only sent for block structure over more than one
+line, and a dotted path inside a sentence is one line, so it is still pasted
+with its backticks showing. Add the step if your chat app renders pasted
+markdown characters.
 
 ### `join`, which fits a clip to the box it lands in
 
@@ -717,10 +720,15 @@ your words, and it is not something a table can be taught.
 `email` puts the greeting on its own line with a blank line under it, breaks
 the body where the subject changes, and treats a name at the end as a
 signature. `slack` does almost none of that — no greeting, no sign-off, one
-paragraph — and is explicitly told to emit no markup at all, for the reason
-`backticks` is not in the shipped pipeline: Slack's composer does not render
-markdown that arrives by paste, so bold or bullets land in the message as
-characters.
+paragraph — and is explicitly told to emit no markup at all.
+
+**That instruction is older than the delivery path.** It was written because
+markup pasted into Slack showed as characters. A multi-line list now reaches
+Slack as a real list, with the bold and the links inside it — see
+[bullets, bold and links](configuration.md#bullets-bold-and-links) — so the
+reason no longer holds. Loosening it is a prompt change and needs scoring
+against its case set first; nothing has been changed here on the strength of
+the delivery path alone.
 
 Both are told twice not to write anything. That is the failure worth spending
 tokens on: a model handed a dictated email will gladly return a better one, in
