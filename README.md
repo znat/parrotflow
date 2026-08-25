@@ -65,6 +65,13 @@ transforms:
         ['/\b(?:pull request|PR)\s*(?:(?:number|nr|no|hash)\s+)?#?(\d+)\b/']
 ```
 
+*"merged P R one two three, ready to ship"* → *"merged **#123**, ready to
+ship"*, where #123 links straight to the pull request.
+
+The rule writes a Markdown link and the paste turns it into a real one — see
+[bullets, bold and links](docs/configuration.md#bullets-bold-and-links). The
+spoken digits are already `123` by then: the built-in `numbers` stage turned
+"one two three" into it first.
 
 ![Dictating "merged P R one two three, ready to ship" and the github_refs rule
 turning PR123 into a clickable #123 that points at

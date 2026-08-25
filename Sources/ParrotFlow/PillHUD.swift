@@ -795,7 +795,7 @@ final class PillHUD {
 // MARK: - Metrics
 
 enum PillMetrics {
-    static let height: CGFloat = 46
+    static let height: CGFloat = 42
 
     /// Transparent margin between the capsule and the edge of the window.
     ///
@@ -834,9 +834,9 @@ enum PillMetrics {
     /// chips are measured at a flat rate per character; a line count off by one
     /// would clip the words instead of costing a few points of capsule.
     static let sentenceFont: NSFont = {
-        let plain = NSFont.systemFont(ofSize: 13, weight: .medium)
+        let plain = NSFont.systemFont(ofSize: 12, weight: .medium)
         guard let rounded = plain.fontDescriptor.withDesign(.rounded) else { return plain }
-        return NSFont(descriptor: rounded, size: 13) ?? plain
+        return NSFont(descriptor: rounded, size: 12) ?? plain
     }()
 
     /// One line of it, and the air above.
@@ -849,7 +849,7 @@ enum PillMetrics {
     /// already leaves. The chips sit in capsules of their own and carry their
     /// own margin with them; the sentence is bare text and read as crowded
     /// against the rim without this.
-    static let sentenceTop: CGFloat = 5
+    static let sentenceTop: CGFloat = 4
 
     /// Past this the sentence wraps rather than the pill growing sideways. The
     /// pill sits under the line you dictated into, and one wider than the window
@@ -863,7 +863,7 @@ enum PillMetrics {
     static let sentenceLines = 3
 
     /// The utterance score, set under the words.
-    static let readingFont: NSFont = .monospacedDigitSystemFont(ofSize: 15, weight: .semibold)
+    static let readingFont: NSFont = .monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
     static let readingLine: CGFloat = ceil(
         NSLayoutManager().defaultLineHeight(for: readingFont)
     )
@@ -871,9 +871,9 @@ enum PillMetrics {
     /// The warning, above everything. One line, never wrapped: it names one
     /// word and one number, and a warning that wraps is a paragraph.
     static let warningFont: NSFont = {
-        let plain = NSFont.systemFont(ofSize: 13, weight: .bold)
+        let plain = NSFont.systemFont(ofSize: 12, weight: .bold)
         guard let rounded = plain.fontDescriptor.withDesign(.rounded) else { return plain }
-        return NSFont(descriptor: rounded, size: 13) ?? plain
+        return NSFont(descriptor: rounded, size: 12) ?? plain
     }()
     static let warningLine: CGFloat = ceil(
         NSLayoutManager().defaultLineHeight(for: warningFont)
@@ -928,19 +928,19 @@ enum PillMetrics {
         sentence.map(\.text).joined(separator: " ") as NSString
     }
 
-    static let padding: CGFloat = 17
-    static let gap: CGFloat = 11
+    static let padding: CGFloat = 15
+    static let gap: CGFloat = 10
     /// The gap on the meter's right, 2pt tighter than the one on its left.
     ///
-    /// Both were 11 and did not look it. The dot is small, round and spills a
-    /// little glow into its gap; the meter closes on its shortest, dimmest bar
-    /// and the icon has a hard edge — so the eye measures from the last bar it
-    /// can actually see to that edge, and reads that side as wider. Equal
-    /// numbers, unequal gaps. These two are equal to look at.
-    static let tuck: CGFloat = 9
-    static let dot: CGFloat = 9
-    static let icon: CGFloat = 24
-    static let meter: CGFloat = 72
+    /// Both were the same and did not look it. The dot is small, round and
+    /// spills a little glow into its gap; the meter closes on its shortest,
+    /// dimmest bar and the icon has a hard edge — so the eye measures from the
+    /// last bar it can actually see to that edge, and reads that side as wider.
+    /// Equal numbers, unequal gaps. These two are equal to look at.
+    static let tuck: CGFloat = 8
+    static let dot: CGFloat = 8
+    static let icon: CGFloat = 22
+    static let meter: CGFloat = 66
 
     static func width(for state: PillState, hasIcon: Bool) -> CGFloat {
         switch state {
@@ -952,7 +952,7 @@ enum PillMetrics {
         }
     }
 
-    /// 17 + 9 + 11 + 72 + 17, and the icon after the meter when there is one
+    /// 15 + 8 + 10 + 66 + 15, and the icon after the meter when there is one
     /// to show.
     static func recording(hasIcon: Bool) -> CGFloat {
         let base = padding * 2 + dot + gap + meter
@@ -963,13 +963,13 @@ enum PillMetrics {
     /// the text is one line and truncating it would lose the half that says
     /// what to do about it.
     static func text(_ message: String) -> CGFloat {
-        min(600, max(300, CGFloat(message.count) * 8 + 86))
+        min(540, max(270, CGFloat(message.count) * 7.5 + 78))
     }
 
     /// A row of chips, and no minimum.
     ///
     /// Unlike a message, which is a sentence you have to be able to read to the
-    /// end, this is a shape you learn after seeing it twice. Held to the 300pt
+    /// end, this is a shape you learn after seeing it twice. Held to the 270pt
     /// floor it would be a mostly empty pill, and an offer that looks like a
     /// notice reads as something having gone wrong.
     ///
@@ -991,10 +991,10 @@ enum PillMetrics {
         _ commands: [OfferedCommand], headline: String? = nil,
         reading: Confidence.Reading = Confidence.Reading()
     ) -> CGFloat {
-        // A chip is its keycap, its words and 10pt of padding either side; then
+        // A chip is its keycap, its words and 9pt of padding either side; then
         // 4pt between one chip and the next.
         let chips = commands.reduce(CGFloat(0)) { total, command in
-            total + 20 + (command.key.isEmpty ? 0 : keycap) + title(command.title)
+            total + 18 + (command.key.isEmpty ? 0 : keycap) + title(command.title)
         }
         let lead = headline.map { title($0) + gap } ?? 0
         let row = padding * 2 + lead + chips
@@ -1010,11 +1010,11 @@ enum PillMetrics {
         return widest
     }
 
-    /// The keycap on a chip: one character at 12pt bold, 5pt either side, and
-    /// the 7pt between it and the words.
-    static let keycap: CGFloat = 27
+    /// The keycap on a chip: one character at 11pt bold, 4pt either side, and
+    /// the 6pt between it and the words.
+    static let keycap: CGFloat = 24
 
-    /// A chip's words at 13pt rounded.
+    /// A chip's words at 12pt rounded.
     ///
     /// Measured in the font they are set in, not counted at a flat rate per
     /// character. A flat rate is generous for ordinary lowercase words and
@@ -1177,7 +1177,7 @@ struct PillView: View {
             : (Parrot.amber.opacity(0.24), Parrot.warned)
     }
 
-    /// A fixed radius, not a `Capsule`. At the 46pt the pill has always been the
+    /// A fixed radius, not a `Capsule`. At the pill's resting height the
     /// two are the same shape — but an offer carrying the dictated sentence is
     /// taller, and a capsule would round its ends to half of that. The glass
     /// behind it cannot follow: `ParrotGlass.backdrop` takes its corner radius
@@ -1203,7 +1203,7 @@ private struct RecordingContent: View {
                 .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: pulse)
 
             Meter(level: level)
-                .frame(width: PillMetrics.meter, height: 16)
+                .frame(width: PillMetrics.meter, height: 14)
                 .padding(.leading, PillMetrics.gap)
 
             if let icon {
@@ -1231,7 +1231,7 @@ private struct MessageContent: View {
             ToneDot(tone: tone)
 
             Text(message)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
                 .lineLimit(1)
 
             Spacer(minLength: 0)
@@ -1299,7 +1299,7 @@ private struct OfferContent: View {
     /// gave its width to.
     private var words: some View {
         Confidence.sentence(reading.words)
-            .font(.system(size: 13, weight: .medium, design: .rounded))
+            .font(.system(size: 12, weight: .medium, design: .rounded))
             .multilineTextAlignment(.center)
             .lineLimit(PillMetrics.sentenceLines)
             .truncationMode(.tail)
@@ -1319,7 +1319,7 @@ private struct OfferContent: View {
         HStack(spacing: PillMetrics.gap) {
             ToneDot(tone: reading.stopped ? .failure : .caution)
             Text(text)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
+                .font(.system(size: 12, weight: .bold, design: .rounded))
                 .foregroundStyle(Color(white: 0.97))
                 .lineLimit(1)
                 .fixedSize()
@@ -1336,7 +1336,7 @@ private struct OfferContent: View {
     /// by word.
     private func score(_ score: Float) -> some View {
         Text(verbatim: Confidence.overall(score))
-            .font(.system(size: 15, weight: .semibold, design: .monospaced))
+            .font(.system(size: 14, weight: .semibold, design: .monospaced))
             .foregroundStyle(Confidence.overallTint(score))
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.horizontal, PillMetrics.padding)
@@ -1346,7 +1346,7 @@ private struct OfferContent: View {
         HStack(spacing: 4) {
             if let headline {
                 Text(headline)
-                    .font(.system(size: 13, weight: .medium, design: .rounded))
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(NoticeTone.caution.color)
                     .lineLimit(1)
                     .fixedSize()
@@ -1378,12 +1378,12 @@ private struct OfferContent: View {
     /// they are the same claim — this is the one that will happen — so the eye
     /// learns the colour once.
     private func chip(_ command: OfferedCommand, lit: Bool) -> some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             if !command.key.isEmpty {
                 OfferKeyCap(key: command.key, lit: lit)
             }
             Text(command.title)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
                 // One line whatever the capsule thinks. The width is measured
                 // in `PillMetrics.offer`, and without this the capsule would
                 // win the argument and wrap a name to two lines.
@@ -1391,8 +1391,8 @@ private struct OfferContent: View {
                 .fixedSize()
         }
         .foregroundStyle(lit ? Self.litText : Self.restingText)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
         .background {
             Capsule()
                 .fill(lit ? Parrot.leaf.opacity(0.28) : Color.white.opacity(0.05))
@@ -1434,12 +1434,12 @@ private struct OfferKeyCap: View {
 
     var body: some View {
         Text(key)
-            .font(.system(size: 12, weight: .bold, design: .rounded))
+            .font(.system(size: 11, weight: .bold, design: .rounded))
             // A floor rather than a width: every letter draws in the same box,
             // so the chips do not step in and out by a point as the pointer
             // moves along them.
-            .frame(minWidth: 9)
-            .padding(.horizontal, 5)
+            .frame(minWidth: 8)
+            .padding(.horizontal, 4)
             .padding(.vertical, 2)
             .background {
                 RoundedRectangle(cornerRadius: Self.radius, style: .continuous)
@@ -1521,7 +1521,7 @@ struct ToneDot: View {
     static func dot(_ color: Color) -> some View {
         Circle()
             .fill(color)
-            .frame(width: 9, height: 9)
+            .frame(width: PillMetrics.dot, height: PillMetrics.dot)
             .shadow(color: color, radius: 4)
             .shadow(color: color.opacity(0.6), radius: 9)
     }
@@ -1573,6 +1573,6 @@ struct Meter: View {
         // again, which reads as a shape with a peak — something that has
         // already happened. Rising the whole way reads as something still
         // opening, which is what a microphone that is still listening is.
-        6 + CGFloat(index) / CGFloat(bars - 1) * 13
+        5 + CGFloat(index) / CGFloat(bars - 1) * 12
     }
 }
