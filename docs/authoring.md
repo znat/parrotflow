@@ -96,11 +96,10 @@ transforms:
     replace:
       '`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
 
-transcription:
-  pipeline:
-    - vocabulary
-    - transform: backticks
-      app: /slack|discord/
+pipeline:
+  - vocabulary
+  - transform: backticks
+    app: /slack|discord/
 ```
 
 ```sh
@@ -112,6 +111,10 @@ Write the pipeline you are testing into its own YAML file rather than editing
 your real config: `--pipeline` takes the file, so the test states its own setup
 and does not inherit this machine's. `tests/pipelines/` holds the ones the
 check scripts use.
+
+A fixture has no `transcription:` level. `pipeline:` and `transforms:` sit at
+the top of the file, and the list under `pipeline:` is written exactly as it is
+in a config.
 
 **There is no `not_app:`.** Exclusion is a negative lookahead —
 `/^(?!.*(term|ghostty))/` — and the `^` anchor is not optional. Unanchored it
@@ -304,6 +307,7 @@ There is one pipeline, and it runs whatever the language. A step that belongs
 to one language says so on its own line:
 
 ```yaml
+languages: [en, fr]
 pipeline:
   - vocabulary
   - numbers
@@ -315,12 +319,15 @@ pipeline:
 it like any other variable, so a step can ask for a language and something else
 at once — `when: language == "fr" && asr.confidence < 0.7`.
 
-Test it without changing your machine's setup. A fixture carries its own
-`languages:`, and `--vars` prints what was detected:
+Test it without changing your machine's setup. Detection needs two or more
+`languages:` in the fixture, and `--vars` prints what it decided:
 
 ```sh
 $PF --pipeline my-test.yaml "on en a vingt et un" --vars
 ```
+
+A skipped step names the values that skipped it, so a step that did not run
+tells you which language it saw.
 
 ## Writing the case set
 

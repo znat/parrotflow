@@ -57,7 +57,8 @@ It also names, every time and whether or not anything is wrong:
 - a file still at the old location beside `config.yaml`, and where to move it —
   a notice, not a fault: it runs, and nothing is moved for you
 - a pipeline step naming a transform that does not exist
-- a pipeline key that is neither `default` nor one of your `languages:`
+- a `pipelines:` map, the old spelling: a language key is refused, and a lone
+  `default:` is read once more with a notice saying to rewrite it
 - an `app:` lookahead that is not anchored, which would run the stage
   everywhere it was written to exclude
 - a `fuzzy` stage with no `replacements` stage before it
@@ -655,9 +656,9 @@ it arrived.
 `v` is the schema version — records written before it existed have no `v` and
 should be read as 1.
 
-A note on what is **not** here. `lang` is ParrotFlow's own verdict, the one that
-picked the pipeline; Parakeet reports no language of its own, so there is
-nothing else to log. `app` carries the name and the bundle id and deliberately
+A note on what is **not** here. `lang` is ParrotFlow's own verdict, the one a
+`when: language == "fr"` step reads; Parakeet reports no language of its own,
+so there is nothing else to log. `app` carries the name and the bundle id and deliberately
 not the window title, which is the highest-yield field available and the one
 that leaks document names, client names and ticket subjects. And a correction is
 only recorded when ParrotFlow mediates it — reading the field back after the

@@ -192,15 +192,17 @@ English name. Deleting one damages a sentence that was already correct.
 characters. Alternatives: `fn`, `right_control`, or a character key plus
 modifiers — all listed in the config file.
 
-**3. Numbers.** Off by default. Show, do not explain:
+**3. Numbers.** On by default. Show, do not explain:
 
 ```sh
 PF=/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow
 $PF --numbers "I need two hundred and forty three of them by nineteen eighty four"
 ```
 
-The grammar used comes from `languages`, so run this after that edit. If they
-want it: `transcription: numbers: true`.
+The grammar used comes from `languages`, so run this after that edit. It is a
+pipeline step, so if they do not want it, delete the `- numbers` line from
+`transcription.pipeline:`. There is no `numbers:` setting — a config carrying
+one is refused by `--check-config`.
 
 Check every edit with `--check-config`. It prints each rule and reports a
 pattern it cannot compile.
