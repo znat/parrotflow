@@ -31,7 +31,16 @@ if [ -n "$REGION" ]; then
 else
   screencapture -v -V "$SECONDS_LIMIT" "$MOV"
 fi
-[ -s "$MOV" ] || { echo "✗ nothing was recorded — grant Screen Recording and run it again"; exit 1; }
+if [ ! -s "$MOV" ]; then
+  # macOS credits the permission to the top-level bundle, not to this script,
+  # so what needs ticking is the terminal you are in — or whatever launched it.
+  owner="$(ps -o comm= -p "$(ps -o ppid= -p $PPID | tr -d ' ')" 2>/dev/null | sed 's|.*/||')"
+  echo "✗ nothing was recorded."
+  echo "  System Settings > Privacy & Security > Screen & System Audio Recording"
+  echo "  Tick ${owner:-your terminal}, then quit and reopen it. The grant only"
+  echo "  takes effect on a fresh launch, and until then this writes no file."
+  exit 1
+fi
 
 echo "==> Converting at ${FPS}fps, ${WIDTH}px wide"
 ffmpeg -hide_banner -loglevel error -i "$MOV" \
