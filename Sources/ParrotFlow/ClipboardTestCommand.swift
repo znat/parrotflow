@@ -92,7 +92,8 @@ enum ClipboardTestCommand {
         // must write the text itself rather than a rendering of it — stripping
         // markers that were never there can still move whitespace, and a
         // dictation has to arrive as it left.
-        let formatted = "Call **Dana** about the invoice"
+        // Underscores, so it is emphasis the speaker never asked for.
+        let formatted = "Call __Dana__ about the invoice"
         let flat = "Call Dana about the invoice"
 
         TextInserter.insert(formatted, mode: .clipboard, paste: .plain)
@@ -112,9 +113,11 @@ enum ClipboardTestCommand {
         // block structure over more than one line.
         for spoken in [
             "use the __init__ method",
+            "call __main__ before __exit__",
+            "we need __slots__ on that class",
             "multiply a*b*c and check the result",
+            "rate is 3*4*5",
             "1. Draft 2. Review",
-            formatted,
         ] {
             TextInserter.insert(spoken, mode: .clipboard, paste: .html)
             check("one line stays one line: \"\(spoken)\"",
@@ -122,6 +125,61 @@ enum ClipboardTestCommand {
                       && pasteboard.string(forType: .string) == spoken,
                   quoted(pasteboard))
         }
+
+        // A link on one line, which is what a transform emits deliberately.
+        // The whole point of the path: a dictated "PR 123" reaches Slack as a
+        // link you can click, not as brackets.
+        let link = "[#123](https://github.com/znat/parrotflow/pull/123) is ready"
+        TextInserter.insert(link, mode: .clipboard, paste: .html)
+        let linkHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("a link on one line is a link",
+              linkHTML?.contains("href=\"https://github.com/znat/parrotflow/pull/123\"") == true,
+              linkHTML ?? "no html")
+
+        // A link whose words are its own URL. Deliberate — the syntax says so —
+        // even though the label cannot be told from an autolink.
+        let sameLabel = "[https://example.com](https://example.com) is the one"
+        TextInserter.insert(sameLabel, mode: .clipboard, paste: .html)
+        let sameHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("a link labelled with its own URL is still a link",
+              sameHTML?.contains("<a href=\"https://example.com\"") == true,
+              sameHTML ?? "no html")
+
+        // Emphasis the speaker asked for: "start bold Dana end bold" reaches
+        // `punctuation` as **Dana**, which is asterisks and not inside a word.
+        TextInserter.insert("call **Dana** about the invoice", mode: .clipboard, paste: .html)
+        let boldHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("emphasis a speaker asked for is emphasis",
+              boldHTML?.contains("<strong>Dana</strong>") == true,
+              boldHTML ?? "no html")
+
+        // The forms a narrower pattern got wrong: a title after the address,
+        // and an escaped bracket inside the label. Both are links the parser
+        // accepts, so both have to reach the app as links.
+        for written in [
+            "[#123](https://example.com \"Fix the thing\") is ready",
+            "[foo\\]bar](https://example.com) is odd but valid",
+        ] {
+            TextInserter.insert(written, mode: .clipboard, paste: .html)
+            let html = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+            check("a written link is a link: \(written.prefix(28))…",
+                  html?.contains("<a href=\"https://example.com\"") == true,
+                  html ?? "no html")
+        }
+
+        // And a code span, which is what `backticks` emits.
+        TextInserter.insert("read `user.name` first", mode: .clipboard, paste: .html)
+        let codeHTML = pasteboard.data(forType: .html).flatMap { String(data: $0, encoding: .utf8) }
+        check("a code span on one line is code",
+              codeHTML?.contains("<code>user.name</code>") == true,
+              codeHTML ?? "no html")
+
+        // A bare URL is not deliberate — the parser makes those out of ordinary
+        // text, so a sentence that mentions an address stays a sentence.
+        TextInserter.insert("see https://example.com/x for details", mode: .clipboard, paste: .html)
+        check("a bare URL is left as a sentence",
+              pasteboard.data(forType: .html) == nil,
+              quoted(pasteboard))
 
         // And the case the whole path exists for: block structure, over more
         // than one line. The fallback rides along, so an app that takes neither
@@ -133,7 +191,7 @@ enum ClipboardTestCommand {
               listHTML?.contains("<li>call <strong>Dana</strong></li>") == true,
               listHTML ?? "no html")
 
-        TextInserter.insert(formatted, mode: .clipboard, paste: .html)
+        TextInserter.insert(flat, mode: .clipboard, paste: .html)
         check("a measured app is not enough on its own",
               pasteboard.data(forType: .html) == nil,
               quoted(pasteboard))

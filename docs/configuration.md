@@ -224,9 +224,11 @@ over more than one line, reaches an app that takes it as real formatting rather
 than as `**stars**`. Inside it, bold, italic, code spans, a real second level of
 bullets, numbered lists and links all survive.
 
-A single line never does, whatever is in it. `Call **Dana** about it` is pasted
-as you said it, markers and all. That is deliberate — see *What counts as
-formatting* below.
+A single line qualifies too, but only for a **link written out as
+`[words](url)`** or a **code span** — `[the PR](https://…)` and
+`` `user.name` ``. Emphasis on a single line does not: `Call **Dana** about it`
+is pasted as you said it, markers and all. That is deliberate — see *What counts
+as formatting* below.
 
 **Slack only, so far.** It is the one app measured. Every other app gets plain
 text, byte for byte as before. There is nothing to configure and nothing to
@@ -241,20 +243,40 @@ does not, and that is separate work.
 
 ### What counts as formatting
 
-Block structure — a list, a heading, a code block, a quote — spread over more
-than one line. Inline emphasis on its own never counts, and that is deliberate.
-Ordinary dictation parses as Markdown:
+Two ways in.
+
+**Block structure** — a list, a heading, a code block, a quote — spread over
+more than one line.
+
+**Or a link or a code span, on any number of lines.** Both take characters a
+speaker only produces on purpose: brackets, parentheses, backticks. A transform
+that emits `[#123](https://…)` means it. Scanned over 1355 lines of the case
+files, there were no links at all and the only two code spans were a transform's
+own output.
+
+It is the **syntax** that counts, not what the link says. `[https://x](https://x)`
+is deliberate even though its words are its address. A bare URL the parser
+noticed on its own is not, however it reads — accepting those would send a whole
+sentence as markup for mentioning an address.
+
+**Or emphasis you asked for.** Asterisks, and not inside a word — which is what
+*"start bold … end bold"* produces through `punctuation`. Underscores never
+count, and neither does an asterisk inside a word. Those are the two ways
+ordinary dictation trips over emphasis:
 
 | dictated | would have become |
 |---|---|
 | `use the __init__ method` | bold "init", underscores gone |
+| `we need __slots__ on that class` | bold "slots" |
 | `multiply a*b*c and check the result` | an italic *b*, the asterisks gone |
+| `rate is 3*4*5` | an italic *4* |
 | `1. Draft 2. Review` | a numbered list |
 
 Each loses characters you said, and `__init__` is a word a developer dictates.
-A transform that formats deliberately produces block structure over several
-lines; one dictated sentence cannot produce it by accident. The cost is that a
-one-line `Call **Dana** about it` stays plain.
+All of them stay exactly as you said them. What separates them from `**Dana**`
+is the delimiter and the position: underscores, or an asterisk pressed against a
+letter. Nothing you dictate produces a word wrapped in loose asterisks unless
+you asked for it.
 
 ### Measuring your own app
 

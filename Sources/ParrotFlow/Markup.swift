@@ -44,6 +44,16 @@ struct Markup {
     /// yet. This is the conservative half of that: refusing wrongly costs a
     /// bold, letting through wrongly costs the characters.
     var isPlain: Bool {
+        // A code span, or a link the source writes out as `[words](url)`.
+        // Both take characters a speaker only produces on purpose, so neither
+        // arrives by accident. Scanned over 1355 lines of the case files: no
+        // links at all, and the only two code spans were a transform's own
+        // output and a fixture about code. Emphasis is excluded on purpose;
+        // that is where `__init__` and `a*b*c` live.
+        if blocks.contains(where: { $0.pieces.contains(where: \.code) }) { return false }
+        if hasLink, Self.writesALink(source) { return false }
+        if hasEmphasis, Self.writesEmphasis(source) { return false }
+        // Everything else needs block structure over more than one line.
         guard source.contains("\n") else { return true }
         return !blocks.contains { block in
             !Self.containers(block.kinds).isEmpty
@@ -51,6 +61,47 @@ struct Markup {
                 || Self.headerLevel(block.kinds) != nil
                 || Self.isCodeBlock(block.kinds)
         }
+    }
+
+    private var hasLink: Bool {
+        blocks.contains { $0.pieces.contains { $0.link != nil } }
+    }
+
+    private var hasEmphasis: Bool {
+        blocks.contains { $0.pieces.contains { $0.bold || $0.italic } }
+    }
+
+    /// Whether the source marks emphasis the way a speaker asks for it.
+    ///
+    /// Asterisks, and not inside a word. That is what "start bold … end bold"
+    /// produces through `punctuation`, and it is what the two ways of tripping
+    /// over emphasis do not: `__init__` and `__slots__` are underscores, and
+    /// `a*b*c` and `3*4*5` are inside a word. Both stay plain.
+    private static func writesEmphasis(_ source: String) -> Bool {
+        guard let pattern = emphasisSyntax else { return false }
+        let whole = NSRange(source.startIndex..., in: source)
+        return pattern.firstMatch(in: source, range: whole) != nil
+    }
+
+    private static let emphasisSyntax = try? NSRegularExpression(
+        pattern: "(?<![\\w*])\\*{1,2}(?![\\s*])(?:[^*]|\\*(?!\\*))+?(?<![\\s*])\\*{1,2}(?![\\w*])")
+
+    /// Whether the source writes a link out rather than merely naming an
+    /// address.
+    ///
+    /// `](` is the whole test. Every inline link has it — labelled, titled,
+    /// or with an escaped bracket in the label — and an autolinked bare URL
+    /// never does. A pattern that tried to spell the forms out instead got
+    /// `[foo](url "title")` and `[foo\]bar](url)` wrong, because it was a
+    /// narrower grammar than the parser's.
+    ///
+    /// The syntax is the evidence, not the label: `[https://x](https://x)` is
+    /// deliberate even though its words are its address.
+    ///
+    /// Paired with the parser having found a link, so `](` sitting in ordinary
+    /// text changes nothing on its own.
+    private static func writesALink(_ source: String) -> Bool {
+        source.contains("](")
     }
 
     // MARK: - Flavours
