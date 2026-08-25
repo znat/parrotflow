@@ -46,8 +46,19 @@ echo "==> Converting at ${FPS}fps, ${WIDTH}px wide"
 ffmpeg -hide_banner -loglevel error -i "$MOV" \
   -vf "fps=$FPS,scale=$WIDTH:-1:flags=lanczos,palettegen=stats_mode=diff" \
   -y "$TMP/palette.png" || exit 1
-ffmpeg -hide_banner -loglevel error -i "$MOV" -i "$TMP/palette.png" \
+# Encoded beside the destination and moved onto it only once ffmpeg is happy.
+# `-y` truncates the output when it opens it, so a conversion that dies partway
+# — Ctrl-C, a full disk, a bad frame — leaves a fragment where the good GIF
+# was. Measured: an 804K recording came back as a 2.3M half-file. Beside it
+# rather than in $TMP so the move is a rename on the same filesystem.
+PART="$OUT.partial.$$"
+trap 'rm -rf "$TMP"; rm -f "$PART"' EXIT
+if ! ffmpeg -hide_banner -loglevel error -i "$MOV" -i "$TMP/palette.png" \
   -lavfi "fps=$FPS,scale=$WIDTH:-1:flags=lanczos[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=3" \
-  -y "$OUT" || exit 1
+  -y "$PART"; then
+  echo "✗ conversion failed — ${OUT} is untouched"
+  exit 1
+fi
+mv -f "$PART" "$OUT" || exit 1
 
 printf '==> %s  %s\n' "$OUT" "$(du -h "$OUT" | cut -f1)"
