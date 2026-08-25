@@ -65,12 +65,13 @@ transforms:
         ['/\b(?:pull request|PR)\s*(?:(?:number|nr|no|hash)\s+)?#?(\d+)\b/']
 ```
 
-*"P R one two three is ready"* → *"[#123](https://github.com/OWNER/REPO/pull/123) is ready"*
+*"P R one two three is ready"* → *"**#123** is ready"*, where #123 is a link
+straight to the pull request.
 
-In Slack that arrives as a clickable **#123**, not as brackets — see
+The rule writes a Markdown link and the paste turns it into a real one — see
 [bullets, bold and links](docs/configuration.md#bullets-bold-and-links). The
-spoken digits are already `123` by the time this runs: the built-in `numbers`
-stage turned "one two three" into it first.
+spoken digits are already `123` by then: the built-in `numbers` stage turned
+"one two three" into it first.
 
 ```yaml
 transforms:
