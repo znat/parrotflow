@@ -62,7 +62,7 @@ transforms:
     description: spoken PR and issue numbers as links
     replace:
       '[#$1](https://github.com/OWNER/REPO/pull/$1)':
-        ['/\b(?:pull request|PR|P\.R\.)\s*(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
+        ['/\b(?:pull request|PR)\s*(?:(?:number|nr|no|hash)\s+)?#?(\d+)\b/']
 ```
 
 *"P R one two three is ready"* → *"[#123](https://github.com/OWNER/REPO/pull/123) is ready"*
