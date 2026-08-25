@@ -99,7 +99,7 @@ text = sys.stdin.read()
 for name, handle in roster.items():
     # Skip a name already written as a handle, and a name used as an
     # ordinary word — "mark it as done" is a verb.
-    text = re.sub(rf"(?<![@\w.]){name}\b", handle, text, flags=re.I)
+    text = re.sub(rf"(?<![@\w.]){re.escape(name)}\b", handle, text, flags=re.I)
 
 sys.stdout.write(text)
 ```
