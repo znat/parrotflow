@@ -54,7 +54,7 @@ To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
 ### Transcriptions follow your rules
 
 **Regex or script transforms** run in milliseconds, for a fixed rule: issue
-links, priority codes, date formats, dropping "um" and "uh".
+links, date formats, dropping "um" and "uh".
 
 ```yaml
 transforms:
@@ -65,26 +65,17 @@ transforms:
         ['/\b(?:pull request|PR)\s*(?:(?:number|nr|no|hash)\s+)?#?(\d+)\b/']
 ```
 
-*"P R one two three is ready"* → *"**#123** is ready"*, where #123 is a link
-straight to the pull request.
+*"merged P R one two three, ready to ship"* → *"merged **#123**, ready to
+ship"*, where #123 links straight to the pull request.
 
 The rule writes a Markdown link and the paste turns it into a real one — see
 [bullets, bold and links](docs/configuration.md#bullets-bold-and-links). The
 spoken digits are already `123` by then: the built-in `numbers` stage turned
 "one two three" into it first.
 
-```yaml
-transforms:
-  - name: priorities
-    description: spoken priority levels as P1 to P4
-    replace:
-      "P1": ['/\bp\s*(?:one)\b/']
-      "P2": ['/\bp\s*(?:two)\b/']
-      "P3": ['/\bp\s*(?:three)\b/']
-      "P4": ['/\bp\s*(?:four)\b/']
-```
-
-*"that's a P one, this one's a P two"* → *"that's a P1, this one's a P2"*
+![Dictating "merged P R one two three, ready to ship" and the github_refs rule
+turning PR123 into a clickable #123 that points at
+github.com/znat/parrotflow/pull/123](Resources/refs.gif)
 
 A rule too fiddly for a regex is a script instead. This one runs after the
 built-in `numbers` stage, which already turned "fourteen" into `14`:
