@@ -108,10 +108,6 @@ enum PipelineCommand {
             return 1
         }
 
-        // Not `Config.Transcription.steps(from:)`, which drops an entry writing
-        // both `stage: transform` and `transform: <name>`. Fixtures use that
-        // spelling and are scored on what they produce, so sharing the builder
-        // would refuse the fixtures rather than run them.
         var unknown: [String] = []
         let steps = fixture.pipeline.compactMap { entry -> Pipeline.Step? in
             guard let stage = Pipeline.stage(named: entry.name) else {

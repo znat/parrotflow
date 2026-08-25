@@ -57,8 +57,8 @@ It also names, every time and whether or not anything is wrong:
 - a file still at the old location beside `config.yaml`, and where to move it —
   a notice, not a fault: it runs, and nothing is moved for you
 - a pipeline step naming a transform that does not exist
-- a `pipelines:` map, the old spelling: a language key is refused, and a lone
-  `default:` is read once more with a notice saying to rewrite it
+- a `pipelines:` key, which is retired: nothing under it is read, so it is
+  refused and the built-in default runs until you write `pipeline:`
 - an `app:` lookahead that is not anchored, which would run the stage
   everywhere it was written to exclude
 - a `fuzzy` stage with no `replacements` stage before it

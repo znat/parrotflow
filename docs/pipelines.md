@@ -25,16 +25,12 @@ you can see, not finding a setting you cannot. Delete `pipeline:` entirely and
 you get every stage back — a missing section is silence, not a choice. Write
 `pipeline: []` and you get none, which is a choice.
 
-`pipelines:`, the map keyed by language, is the old spelling. A `pipelines:`
-with only a `default:` key still runs, and `--check-config` says to rewrite it.
-A `pipelines:` with a language key is refused: `--check-config` exits non-zero
-and names the key, and you write `when: language == "<key>"` on the steps that
-differ.
-
-Refused does not mean dropped. One of the lists keeps running until you
-migrate, and `--check-config` says which — `default:` if it is there, otherwise
-the first of your `languages:` that has a key. A refusal that also cost you
-your stages would be the worse of the two failures.
+`pipelines:`, the map keyed by language, is retired. Nothing under it is read.
+`--check-config` exits non-zero and says to write one `pipeline:` list, and the
+app says the same at launch, in the log and in the menu bar. Until you rewrite
+it none of your steps run — the built-in default does, which is `numbers` and
+nothing else. Move the lists into `pipeline:` and put
+`when: language == "fr"` on the steps that only belong to one language.
 
 It was three stages until the shapes were counted: `replacements` wrote the
 exact matches, `fuzzy` caught the near ones, `vocabulary` judged them, and the

@@ -1574,78 +1574,12 @@ struct Config: Decodable, Equatable {
         var unknownStages: [String] = []
 
         /// Whether the config still carries `pipelines:`, the map keyed by
-        /// language. Read only so `problems()` and `notices()` can say so.
+        /// language. Nothing under it is read — see `problems()`.
         var legacyPipelines = false
-
-        /// The `pipelines:` keys other than `default`. Refused rather than
-        /// merged: a `fr:` list that became the one pipeline would run on
-        /// English too, and nothing on screen would show it.
-        var legacyPipelineLanguages: [String] = []
-
-        /// `pipeline:` and `pipelines:` both written. `pipeline:` is the one
-        /// that runs.
-        var pipelineWrittenTwice = false
-
-        /// Which key of a retired `pipelines:` map is running until the config
-        /// is migrated. Named in `problems()`, so a refused config still says
-        /// what it is doing.
-        var legacyPipelineRunning: String?
 
         /// Entries naming both `stage:` and `prompt:`. Their own list, because
         /// "grammar is not a stage" is not what went wrong.
         var contradictoryEntries: [String] = []
-
-        /// The steps a list of entries names, with the ones that name no stage
-        /// and the ones that name two kept aside for `problems()`.
-        static func steps(from entries: [PipelineEntry])
-            -> (steps: [Pipeline.Step], unknownStages: [String], contradictory: [String]) {
-            var unknown: [String] = []
-            var contradictory: [String] = []
-            let steps = entries.compactMap { entry -> Pipeline.Step? in
-                guard let stage = Pipeline.stage(named: entry.name) else {
-                    unknown.append(entry.name)
-                    return nil
-                }
-                if entry.namesBoth {
-                    // Silently preferring one would delete a stage the config
-                    // asked for.
-                    contradictory.append(entry.transform ?? entry.prompt ?? "transform")
-                    return nil
-                }
-                return Pipeline.Step(
-                    stage: stage, transform: entry.transform,
-                    prompt: entry.prompt, caps: entry.caps,
-                    nearMisses: entry.nearMisses, review: entry.review,
-                    reviewEnabled: entry.reviewEnabled,
-                    when: entry.when, unless: entry.unless, app: entry.app
-                )
-            }
-            return (steps, unknown, contradictory)
-        }
-
-        /// Which list of a retired `pipelines:` map keeps running while the
-        /// config is migrated.
-        ///
-        /// `default` if it is there. Otherwise the first of `languages:` with a
-        /// key, which is the speaker's own order — `languages:` is written most
-        /// spoken first. Otherwise the first key by name, so the answer does
-        /// not depend on dictionary order.
-        static func legacyPipeline(
-            from raw: [String: [PipelineEntry]], languages: [String]
-        ) -> (key: String, entries: [PipelineEntry])? {
-            func entry(_ named: String) -> (key: String, entries: [PipelineEntry])? {
-                guard let found = raw.first(where: {
-                    $0.key.caseInsensitiveCompare(named) == .orderedSame
-                }) else { return nil }
-                return (found.key, found.value)
-            }
-            if let found = entry("default") { return found }
-            for language in languages {
-                if let found = entry(language) { return found }
-            }
-            guard let first = raw.keys.sorted().first else { return nil }
-            return (first, raw[first] ?? [])
-        }
 
         /// One rule per mishearing, flattened for the substitution pass.
         var rules: [Rule] { Self.rules(from: replacements) }
@@ -1890,10 +1824,28 @@ struct Config: Decodable, Equatable {
                 if let entries = try c.decodeIfPresent(
                     [PipelineEntry].self, forKey: .pipeline
                 ) {
-                    let built = Self.steps(from: entries)
-                    pipeline = Pipeline(steps: built.steps)
-                    unknownStages += built.unknownStages
-                    contradictoryEntries += built.contradictory
+                    let steps = entries.compactMap { entry -> Pipeline.Step? in
+                        guard let stage = Pipeline.stage(named: entry.name) else {
+                            unknownStages.append(entry.name)
+                            return nil
+                        }
+                        if entry.namesBoth {
+                            // Silently preferring one would delete a stage the
+                            // config asked for.
+                            contradictoryEntries.append(
+                                entry.transform ?? entry.prompt ?? "transform"
+                            )
+                            return nil
+                        }
+                        return Pipeline.Step(
+                            stage: stage, transform: entry.transform,
+                            prompt: entry.prompt, caps: entry.caps,
+                            nearMisses: entry.nearMisses, review: entry.review,
+                            reviewEnabled: entry.reviewEnabled,
+                            when: entry.when, unless: entry.unless, app: entry.app
+                        )
+                    }
+                    pipeline = Pipeline(steps: steps)
                 }
             } catch {
                 throw ConfigError.invalidValue(
@@ -1903,42 +1855,9 @@ struct Config: Decodable, Equatable {
                         + " `- ` per line"
                 )
             }
-            // The map keyed by language, read so it can be refused — see
-            // `problems()`. Wrapped for the same reason as `pipeline:` above,
-            // and the shape most people get wrong is a bare list where a map
-            // belongs, because `languages:` a few lines above is a bare list.
-            if legacy.contains(.pipelines) {
-                legacyPipelines = true
-                pipelineWrittenTwice = pipeline != nil
-                let raw: [String: [PipelineEntry]]
-                do {
-                    raw = try legacy.decodeIfPresent(
-                        [String: [PipelineEntry]].self, forKey: .pipelines
-                    ) ?? [:]
-                } catch {
-                    throw ConfigError.invalidValue(
-                        key: "transcription.pipelines",
-                        value: "a bare list, or a language with nothing under it",
-                        expected: "one list under `pipeline:` — `pipeline: [vocabulary,"
-                            + " numbers]`. `pipelines:` took a key per language and is retired"
-                    )
-                }
-                legacyPipelineLanguages = raw.keys
-                    .filter { $0.lowercased() != "default" }
-                    .sorted()
-                // Taken even when a language key is present, which `problems()`
-                // still refuses. Refusing must not cost the steps as well: a
-                // config naming fourteen stages that quietly runs one is the
-                // worse of the two failures.
-                if pipeline == nil,
-                   let taken = Self.legacyPipeline(from: raw, languages: languages) {
-                    legacyPipelineRunning = taken.key
-                    let built = Self.steps(from: taken.entries)
-                    pipeline = Pipeline(steps: built.steps)
-                    unknownStages += built.unknownStages
-                    contradictoryEntries += built.contradictory
-                }
-            }
+            // Detected, never decoded: a value nothing reads cannot be
+            // mis-read, whatever shape it is in.
+            legacyPipelines = legacy.contains(.pipelines)
             // `try?` on an optional decode gives Bool??, and both layers mean
             // "absent" — flattened here so the condition reads as the question
             // being asked: is the key in the file at all.
@@ -2418,19 +2337,13 @@ struct Config: Decodable, Equatable {
             found.append("pipeline: an entry names both `stage:` and `prompt: \(name)`"
                 + " — it can be one or the other")
         }
-        if transcription.pipelineWrittenTwice {
-            found.append("transcription: `pipeline:` and `pipelines:` are both written."
-                + " `pipeline:` is the one that runs — delete `pipelines:`")
-        }
-        for key in transcription.legacyPipelineLanguages {
-            found.append("pipelines: \"\(key)\" is a language key, and there is one pipeline"
-                + " now. Put those steps in `pipeline:` and write"
-                + " `when: language == \"\(key)\"` on the ones that differ")
-        }
-        if !transcription.legacyPipelineLanguages.isEmpty,
-           let running = transcription.legacyPipelineRunning {
-            found.append("pipelines: until that is done, the \"\(running)\" list is what"
-                + " runs, in every language")
+        if transcription.legacyPipelines {
+            let running = transcription.pipeline == nil
+                ? "no pipeline of yours is running — the built-in default is"
+                : "the `pipeline:` list is what runs"
+            found.append("transcription.pipelines: is retired and nothing under it is read."
+                + " Write one `pipeline:` list, with `when: language == \"fr\"` on a step"
+                + " that belongs to one language. Until then \(running)")
         }
         // Numbers `vocabulary.yaml` asked for and did not get. Refused where
         // they were read, so what runs is the default; said here, because a
@@ -2542,15 +2455,6 @@ struct Config: Decodable, Equatable {
         if legacyJudge {
             said.append("pipeline: `- transform: verify_names` is the old name judge."
                 + " The app does this itself now — write `- vocabulary`")
-        }
-
-        // Not a fault: the `default:` list still runs. Said on every load so
-        // the spelling gets fixed before the next release drops it.
-        if transcription.legacyPipelines, transcription.legacyPipelineLanguages.isEmpty,
-           !transcription.pipelineWrittenTwice {
-            said.append("transcription.pipelines: is the old spelling. It is read for one"
-                + " more release — delete the `pipelines:` and `default:` lines, dedent"
-                + " the steps, and call the key `pipeline:`")
         }
 
         // The vocabulary is learnt rather than written, so it is the part of
