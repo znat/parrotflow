@@ -10,10 +10,9 @@
         timeout_seconds: 12                                 # only with --model
 
     transcription:
-      pipelines:
-        default:
-          - transform: code_identifiers
-            when: /\b(?:function|variable|class|constant|fonction|classe)\b/
+      pipeline:
+        - transform: code_identifiers
+          when: /\b(?:function|variable|class|constant|fonction|classe)\b/
 
 "a python function called max retries"  ->  "a python function called max_retries"
 

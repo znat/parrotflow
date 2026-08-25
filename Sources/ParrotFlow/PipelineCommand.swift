@@ -11,7 +11,7 @@ import Yams
 ///
 /// So a fixture carries everything the pipeline needs — the stages, the
 /// languages, and its own replacement table — and running it touches no config
-/// at all:
+/// at all. `pipeline:` is the same key a config writes:
 ///
 ///     languages: [fr, en]
 ///     replacements:
@@ -108,6 +108,10 @@ enum PipelineCommand {
             return 1
         }
 
+        // Not `Config.Transcription.steps(from:)`, which drops an entry writing
+        // both `stage: transform` and `transform: <name>`. Fixtures use that
+        // spelling and are scored on what they produce, so sharing the builder
+        // would refuse the fixtures rather than run them.
         var unknown: [String] = []
         let steps = fixture.pipeline.compactMap { entry -> Pipeline.Step? in
             guard let stage = Pipeline.stage(named: entry.name) else {
@@ -131,7 +135,7 @@ enum PipelineCommand {
         var config = Config()
         config.transcription.languages = fixture.languages
         config.transcription.replacements = fixture.replacements
-        config.transcription.pipelines = ["default": pipeline]
+        config.transcription.pipeline = pipeline
         config.transforms = fixture.transforms
         config.lists = fixture.lists
         if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
@@ -164,10 +168,10 @@ enum PipelineCommand {
         // The same seed a live dictation gets from `Replacements.apply`. Without
         // it a condition reading `language` would work in the app and fail here,
         // and a fixture that cannot reproduce the app is not a fixture.
-        // `Pipeline.forText` is asked rather than `DictationLanguage` directly,
-        // so the answer is the one that would have selected the stages.
+        // `Pipeline.language` is asked rather than `DictationLanguage` directly,
+        // so the answer is the one a dictation would have got.
         var seed = Scope()
-        seed.set("language", .string(Pipeline.forText(text, config: config).1))
+        seed.set("language", .string(Pipeline.language(of: text, config: config)))
 
         let done = DispatchSemaphore(value: 0)
         if quiet {

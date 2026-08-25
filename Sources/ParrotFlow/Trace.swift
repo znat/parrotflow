@@ -97,14 +97,13 @@ enum Trace {
             self.source = source
         }
 
-        /// Which language the pipeline was chosen for.
+        /// Which language the transcript was judged to be in.
         ///
         /// Ours, not Parakeet's — `ASRResult` carries no language and
         /// `TokenLanguageFilter` takes a hint rather than reporting one, so
-        /// there is nothing to log from the model. This is the verdict that
-        /// actually selected the stages, which makes it the more useful of the
-        /// two anyway. `Pipeline.forText` has always computed it and
-        /// `Replacements.apply` has always thrown it away.
+        /// there is nothing to log from the model. It is what a
+        /// `when: language == "fr"` condition reads and what `numbers`
+        /// resolves its grammar with.
         func recordLanguage(_ language: String) {
             lock.lock(); defer { lock.unlock() }
             lang = language

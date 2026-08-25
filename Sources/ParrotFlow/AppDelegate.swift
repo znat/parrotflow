@@ -50,8 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Resolved once per config load, never in `updateUI`.
     ///
-    /// `problems()` re-resolves and re-validates every pipeline for every
-    /// configured language, and `updateUI` runs on a 0.1s timer for as long as
+    /// `problems()` re-validates the whole pipeline and every transform, and
+    /// `updateUI` runs on a 0.1s timer for as long as
     /// someone is talking. That is not work to repeat ten times a second to
     /// draw a menu item whose answer cannot have changed.
     private var configProblems: [String] = []

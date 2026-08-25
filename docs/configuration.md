@@ -27,7 +27,7 @@ transcription:
   activation_phrases: [hey parrot, by the way parrot]
   languages: [en]       # en and fr are the supported values
   rewrite_line: true
-  pipelines: …          # see pipelines.md
+  pipeline: …           # see pipelines.md
   transforms: …         # see pipelines.md
 
 models:                 # every model, under names you pick
@@ -440,8 +440,8 @@ the first one worth pointing somewhere bigger.
 
 The KEEP/REVERT review is not here. It belongs to the `vocabulary` pipeline
 stage that runs it, and binds there as `review:` — see
-[pipelines.md](pipelines.md). A pipeline is per language, so the model that
-reads a French sentence need not be the one that reads an English one.
+[pipelines.md](pipelines.md). It binds on the step, so two `vocabulary` steps
+under different conditions can reach different models.
 
 There is no `enabled:` key any more. A config that defines no `models:` calls
 no model, which says the same thing and cannot fall out of step with itself.
@@ -1000,7 +1000,7 @@ keep the file you asked them to, because you asked for it by running them.
 
 ## See also
 
-- [pipelines.md](pipelines.md) — `pipelines:`, `transforms:`, conditions, apps
+- [pipelines.md](pipelines.md) — `pipeline:`, `transforms:`, conditions, apps
 - [corrections.md](corrections.md) — teaching it a word, spoken corrections
 - [cli.md](cli.md) — validating a config, and testing a change without speaking
 - [permissions.md](permissions.md) — what needs Accessibility and what does not

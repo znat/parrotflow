@@ -52,15 +52,14 @@ BUILTIN_STAGES = {"replacements", "fuzzy", "numbers", "vocabulary"}
 
 def steps(doc):
     found = []
-    for entries in ((doc.get("transcription") or {}).get("pipelines") or {}).values():
-        for entry in entries or []:
-            if isinstance(entry, str):
-                found.append(("stage", entry))
-            elif isinstance(entry, dict):
-                if entry.get("transform"):
-                    found.append(("transform", entry["transform"]))
-                elif entry.get("stage"):
-                    found.append(("stage", entry["stage"]))
+    for entry in (doc.get("transcription") or {}).get("pipeline") or []:
+        if isinstance(entry, str):
+            found.append(("stage", entry))
+        elif isinstance(entry, dict):
+            if entry.get("transform"):
+                found.append(("transform", entry["transform"]))
+            elif entry.get("stage"):
+                found.append(("stage", entry["stage"]))
     return found
 
 for kind, step in steps(example):
@@ -75,7 +74,7 @@ for kind, step in steps(example):
 # The regression this whole check exists to catch: defaultYAML growing back
 # into a second, hand-synced copy of the config's shape. It should be a few
 # lines that read the file and swap in the variant-specific ones — not
-# something that itself defines `transforms:`, `pipelines:`, or `llm:`.
+# something that itself defines `transforms:`, `pipeline:`, or `llm:`.
 config_swift = (root / "Sources/ParrotFlow/Config.swift").read_text()
 start = config_swift.index("static var defaultYAML: String {")
 end = config_swift.index("\n}", start) if "\n}" in config_swift[start:] else len(config_swift)
@@ -85,9 +84,9 @@ if "configTemplateURL" not in body:
     print("  ✗ Config.defaultYAML no longer reads configTemplateURL — has it gone back to"
           " being a literal string? That is the two-copies problem this check exists to catch.")
     ok = False
-if re.search(r"\btransforms:\s*$", body, re.MULTILINE) or "pipelines:" in body:
+if re.search(r"\btransforms:\s*$", body, re.MULTILINE) or "pipeline:" in body:
     print("  ✗ Config.defaultYAML appears to embed config content directly (`transforms:` or"
-          " `pipelines:` found in its body) — that is the two-copies problem this check exists"
+          " `pipeline:` found in its body) — that is the two-copies problem this check exists"
           " to catch")
     ok = False
 

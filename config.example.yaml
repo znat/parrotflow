@@ -79,31 +79,31 @@ transcription:
   languages: [en, fr]
 
   # What a transcript runs through, in order. Remove a line to skip that
-  # stage. A language key wins over `default`. See docs/pipelines.md.
-  pipelines:
-    default:
-      # Matches vocabulary.yaml renderings and has a model keep or revert
-      # each match. Runs first, before anything else edits the text.
-      #   near_misses: false   match exactly, never one edit away
-      #   review: false        ship every match unread, and reach no model
-      - stage: vocabulary
-        review: gemma          # who decides "Versailles" is the castle here
-      - numbers                            # "two hundred forty-three" -> 243
-      - transform: punctuation             # "is that true question mark" -> is that true?
-      - transform: repetitions             # a word or phrase said twice by accident, taken out
+  # stage. One list for every language: a step that should only run in one
+  # takes `when: language == "fr"`. See docs/pipelines.md.
+  pipeline:
+    # Matches vocabulary.yaml renderings and has a model keep or revert
+    # each match. Runs first, before anything else edits the text.
+    #   near_misses: false   match exactly, never one edit away
+    #   review: false        ship every match unread, and reach no model
+    - stage: vocabulary
+      review: gemma          # who decides "Versailles" is the castle here
+    - numbers                            # "two hundred forty-three" -> 243
+    - transform: punctuation             # "is that true question mark" -> is that true?
+    - transform: repetitions             # a word or phrase said twice by accident, taken out
 
-      # "read user dot name" -> read user.name, in code-ish windows only.
-      - transform: dotted
-        app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
-      # `backticks` does the same for chat. Not enabled: its output is one
-      # line, and markup is only sent as rich text for block structure.
-      - transform: code_identifiers
-        app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
-        when: /\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\b/
-      # A bare `when:` reads what earlier stages published, e.g.
-      # `code_identifiers.count` or `<stage>.ran`/`.ok`/`.changed`/`.ms`:
-      #   - { stage: transform, transform: dotted, when: code_identifiers.count == 0 }
-      # Publishing a variable needs `returns: json` — see docs/authoring.md.
+    # "read user dot name" -> read user.name, in code-ish windows only.
+    - transform: dotted
+      app: /term|ghostty|warp|kitty|alacritty|hyper|slack|discord/
+    # `backticks` does the same for chat. Not enabled: its output is one
+    # line, and markup is only sent as rich text for block structure.
+    - transform: code_identifiers
+      app: /term|ghostty|warp|kitty|alacritty|hyper|code|cursor|zed|xcode|jetbrains|idea|pycharm|webstorm/
+      when: /\b(?:function|method|variable|class|constant|type|struct|interface|enum|fonction|méthode|classe|constante)\b/
+    # A bare `when:` reads what earlier stages published, e.g.
+    # `code_identifiers.count` or `<stage>.ran`/`.ok`/`.changed`/`.ms`:
+    #   - { transform: dotted, when: code_identifiers.count == 0 }
+    # Publishing a variable needs `returns: json` — see docs/authoring.md.
 
 # Every model this config can reach, under a name you pick. `api:` is the
 # protocol (ollama, openai, anthropic); other providers work through an

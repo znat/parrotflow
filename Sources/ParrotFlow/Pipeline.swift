@@ -5,23 +5,22 @@ import Foundation
 ///
 /// It was always a pipeline — exact replacements, then fuzzy ones, then spoken
 /// numbers — but the order lived in one function and each step was switched by
-/// a boolean of its own. That works until you want a fourth step, or the same
-/// three in a different order for a different language, and neither is
-/// expressible in a flag.
+/// a boolean of its own. That works until you want a fourth step, or one step
+/// gated on something a flag cannot express.
 ///
-/// So the order becomes data: a list of stages per language, read from the
-/// config. This type is the list and the running of it, and nothing else. Every
-/// stage is `String -> String` and already had its own validation set before it
-/// was a stage; what is new here is only that they are named, ordered and
-/// selected from outside the code.
+/// So the order becomes data: one list of stages, read from the config. This
+/// type is the list and the running of it, and nothing else. Every stage is
+/// `String -> String` and already had its own validation set before it was a
+/// stage; what is new here is only that they are named, ordered and selected
+/// from outside the code.
 ///
-/// The language a transcript is in is resolved here, because it is what picks
-/// the pipeline. It is *not* handed down to the stages: `numbers` keeps its own
-/// resolution, and has to. Its rule is not "read this language" but "try the
-/// detected one, then the others, and let a candidate win only on real
-/// evidence" — the guard that stops French reading the "cents" in "I have 99
-/// cents" as hundreds. Collapsing that to one language here would quietly
-/// delete it.
+/// The language a transcript is in is seeded into the scope here, so a step
+/// can say `when: language == "fr"`. It is *not* handed down to the stages:
+/// `numbers` keeps its own resolution, and has to. Its rule is not "read this
+/// language" but "try the detected one, then the others, and let a candidate
+/// win only on real evidence" — the guard that stops French reading the
+/// "cents" in "I have 99 cents" as hundreds. Collapsing that to one language
+/// here would quietly delete it.
 struct Pipeline: Equatable, Codable {
 
     /// One step. Deliberately not a closure: a stage has to be nameable in a
@@ -75,7 +74,7 @@ struct Pipeline: Equatable, Codable {
         /// same reason — it names a prompt file.
         ///
         /// `context` cannot, for a different and stronger reason. It reads the
-        /// screen. Turning that on for everybody who never wrote a `pipelines:`
+        /// screen. Turning that on for everybody who never wrote a `pipeline:`
         /// block would be a silent change to what the app looks at, which is the
         /// one kind of change that has to be asked for by name.
         var isAutomatic: Bool {
@@ -150,9 +149,8 @@ struct Pipeline: Equatable, Codable {
         /// stage. Absent means the default; `false` means no review at all,
         /// and every match ships as the rules wrote it.
         ///
-        /// Bound on the step rather than globally because a pipeline is per
-        /// language, and the model that reads a French sentence need not be
-        /// the one that reads an English one.
+        /// Bound on the step rather than globally, so two `vocabulary` steps
+        /// under different conditions can reach different models.
         var review: String?
         /// `review: false`. Optional for the reason `nearMisses` is: a
         /// synthesized decoder ignores a stored default, so "not written" has
@@ -275,34 +273,27 @@ struct Pipeline: Equatable, Codable {
     /// default the moment it exists, which is what keeps that promise true
     /// without anyone having to remember this line.
     ///
-    /// An empty list is not the same as no list. `default: []` is a choice and
-    /// runs nothing; a missing `pipelines:` is silence and runs everything.
+    /// An empty list is not the same as no list. `pipeline: []` is a choice and
+    /// runs nothing; a missing `pipeline:` is silence and runs everything.
     static let everything = Pipeline(
         steps: Stage.allCases.filter(\.isAutomatic).map { Step(stage: $0) }
     )
 
-    /// The pipeline for a transcript in `language`, from the config.
-    ///
-    /// A language's own list wins, then `default`, then `unconfigured`. Falling
-    /// back rather than merging: a pipeline is an order, and an order that is
-    /// half yours and half inherited is not one anybody can read off the page.
-    static func resolved(config: Config, language: String) -> Pipeline {
-        config.transcription.pipelines[language]
-            ?? config.transcription.pipelines["default"]
-            ?? everything
+    /// The pipeline the config names, or `everything` when it names none.
+    static func resolved(config: Config) -> Pipeline {
+        config.transcription.pipeline ?? everything
     }
 
-    /// The pipeline for this text, and the language it was judged to be in.
+    /// The language this text was judged to be in.
     ///
-    /// Detection happens here because the pipeline is what it selects. It is
-    /// skipped entirely when there is nothing to select between, which is the
+    /// Skipped entirely when there is nothing to choose between, which is the
     /// common case and saves the recogniser a call.
-    static func forText(_ text: String, config: Config) -> (Pipeline, String) {
+    static func language(of text: String, config: Config) -> String {
         let languages = config.transcription.languages
-        let language = languages.count > 1
-            ? DictationLanguage.detect(text, allowed: languages, fallback: languages.first ?? "en")
-            : (languages.first ?? "en")
-        return (resolved(config: config, language: language), language)
+        guard languages.count > 1 else { return languages.first ?? "en" }
+        return DictationLanguage.detect(
+            text, allowed: languages, fallback: languages.first ?? "en"
+        )
     }
 
     /// The stage a config line names, or nil if it names nothing.
@@ -338,7 +329,7 @@ struct Pipeline: Equatable, Codable {
             // sees the judge behave exactly as before has no way to find out
             // why. Refusing says it once, at load, where they typed it.
             if let named = step.prompt, !named.isEmpty {
-                problems.append("pipelines: `- vocabulary: \(named)` names a prompt file."
+                problems.append("pipeline: `- vocabulary: \(named)` names a prompt file."
                     + " The prompt is part of the app now — a wording is right or wrong"
                     + " against a measurement, not a matter of taste. Delete the filename"
                     + " and write `- vocabulary`")
@@ -690,7 +681,7 @@ struct Pipeline: Equatable, Codable {
         // absent from a condition and from a script's context. Absent is better
         // than wrong, and present-and-right is better than either.
         if scope["language"] == nil {
-            scope.set("language", .string(Pipeline.forText(output, config: config).1))
+            scope.set("language", .string(Pipeline.language(of: output, config: config)))
         }
         // Same reason, for the acoustic pass. It runs inside transcription and
         // seeds these itself; every other way in — `--replace`, `--pipeline`,

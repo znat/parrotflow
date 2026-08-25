@@ -97,11 +97,10 @@ transforms:
       '`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
 
 transcription:
-  pipelines:
-    default:
-      - vocabulary
-      - transform: backticks
-        app: /slack|discord/
+  pipeline:
+    - vocabulary
+    - transform: backticks
+      app: /slack|discord/
 ```
 
 ```sh
@@ -301,21 +300,26 @@ so will you the first time a stage misbehaves.
 
 ## Recipe: a language
 
-`pipelines:` takes a key per language, and a language's own list wins over
-`default:`:
+There is one pipeline, and it runs whatever the language. A step that belongs
+to one language says so on its own line:
 
 ```yaml
-pipelines:
-  default: [vocabulary, numbers]
-  fr:      [vocabulary, numbers]
+pipeline:
+  - vocabulary
+  - numbers
+  - transform: hesitation
+    when: language == "fr"
 ```
 
-A key that is neither `default` nor one of your `languages:` is reported by
-`--check-config` rather than silently never running. Test one without changing
-your machine's setup:
+`language` holds one of your `languages:`, detected from the transcript. Read
+it like any other variable, so a step can ask for a language and something else
+at once — `when: language == "fr" && asr.confidence < 0.7`.
+
+Test it without changing your machine's setup. A fixture carries its own
+`languages:`, and `--vars` prints what was detected:
 
 ```sh
-$PF --pipeline my-test.yaml "on en a vingt et un" --lang fr
+$PF --pipeline my-test.yaml "on en a vingt et un" --vars
 ```
 
 ## Writing the case set
@@ -399,7 +403,7 @@ tree, not files kept in sync by hand. See `Config.exampleTransformsDirectory`.
 - [pipelines.md](pipelines.md) — the reference: stages, conditions, apps, the
   ordering constraints, and what each shipped transform costs
 - [cli.md](cli.md) — every flag these recipes use
-- [configuration.md](configuration.md) — where `transforms:` and `pipelines:`
+- [configuration.md](configuration.md) — where `transforms:` and `pipeline:`
   sit in the file
 - `.claude/skills/prompt-iteration/SKILL.md` — deciding between a prompt, a
   regex and a script by measuring instead of by eye
