@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Records a region of the screen and writes an optimised GIF, which is how the
+# ones in Resources/ are made.
+#
+# Two passes, because a one-pass GIF from ffmpeg is dithered against the 216
+# web-safe colours and the pill's glass goes to mud. `palettegen` reads the
+# whole clip first and picks 256 colours that suit it.
+#
+#   scripts/record-gif.sh Resources/refs.gif 12 "0,0,1280,800"
+#
+# The region is x,y,width,height in points. Leave it out for the whole screen,
+# which is almost never what you want — a full retina screen makes a 20 MB GIF.
+#
+# Needs Screen Recording permission for whatever runs it. The first run raises
+# the system prompt and records nothing, so run it twice.
+set -uo pipefail
+
+OUT="${1:?usage: record-gif.sh <out.gif> [seconds] [x,y,w,h]}"
+SECONDS_LIMIT="${2:-12}"
+REGION="${3:-}"
+FPS="${FPS:-12}"
+WIDTH="${WIDTH:-760}"
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+MOV="$TMP/capture.mov"
+
+echo "==> Recording ${SECONDS_LIMIT}s${REGION:+ of $REGION}. Go."
+if [ -n "$REGION" ]; then
+  screencapture -v -V "$SECONDS_LIMIT" -R"$REGION" "$MOV"
+else
+  screencapture -v -V "$SECONDS_LIMIT" "$MOV"
+fi
+[ -s "$MOV" ] || { echo "✗ nothing was recorded — grant Screen Recording and run it again"; exit 1; }
+
+echo "==> Converting at ${FPS}fps, ${WIDTH}px wide"
+ffmpeg -hide_banner -loglevel error -i "$MOV" \
+  -vf "fps=$FPS,scale=$WIDTH:-1:flags=lanczos,palettegen=stats_mode=diff" \
+  -y "$TMP/palette.png" || exit 1
+ffmpeg -hide_banner -loglevel error -i "$MOV" -i "$TMP/palette.png" \
+  -lavfi "fps=$FPS,scale=$WIDTH:-1:flags=lanczos[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=3" \
+  -y "$OUT" || exit 1
+
+printf '==> %s  %s\n' "$OUT" "$(du -h "$OUT" | cut -f1)"

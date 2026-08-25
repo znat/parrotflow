@@ -154,6 +154,9 @@ updates:
 # `ctx["vars"]["lists"]` in a script. Quote every entry: `on`/`no`/`off` are
 # booleans in YAML 1.1.
 lists:
+  # What may sit between "PR" and its number. `github_refs` only.
+  ref_words: ["number", "nr", "no", "num", "hash", "numéro"]
+
   # A determiner before a spoken name means prose: "the dot com bubble".
   determiners: ["le", "la", "les", "l", "un", "une", "des", "du", "de", "d", "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "notre", "nos", "votre", "vos", "leur", "leurs", "au", "aux", "à", "quel", "quelle", "chaque", "autre", "même", "premier", "première", "deuxième", "dernier", "dernière", "seul", "seule", "bon", "bonne", "mauvais", "certain", "tel", "telle", "quelque", "the", "a", "an", "my", "your", "his", "her", "its", "our", "their", "this", "that", "these", "those", "each", "every", "another", "other", "same", "which", "what", "some", "any", "no", "one", "first", "second", "last", "only"]
 
@@ -243,6 +246,22 @@ transforms:
     description: wrap dotted paths in backticks, for chat
     replace:
       '`$1`': ['/\b([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+)/']
+
+  # "PR one two three is ready" -> a clickable #123. Defined, not in the
+  # pipeline: the repository is yours, not this file's. Put your own in both
+  # URLs and add `- transform: github_refs` after `numbers`, which has already
+  # turned the spoken digits into 123 by then.
+  #
+  # `\s*` and not `\s+` before the number, because the decoder writes "PR123"
+  # with no space when you say "P R one two three". Measured, and it is the
+  # most common spelling of the lot.
+  - name: github_refs
+    description: spoken PR and issue numbers as links
+    replace:
+      '[#$1](https://github.com/OWNER/REPO/pull/$1)':
+        ['/\b(?:pull request|PR|P\.R\.)\s*(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
+      '[#$1](https://github.com/OWNER/REPO/issues/$1)':
+        ['/\bissues?\s+(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
 
   # A program, not a table — casing words needs code. Copy the examples/
   # folder to transforms/code_identifiers/ to edit it.

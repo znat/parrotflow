@@ -53,8 +53,24 @@ To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
 
 ### Transcriptions follow your rules
 
-**Regex or script transforms** run in milliseconds, for a fixed rule:
-priority codes, date formats, dropping "um" and "uh".
+**Regex or script transforms** run in milliseconds, for a fixed rule: issue
+links, priority codes, date formats, dropping "um" and "uh".
+
+```yaml
+transforms:
+  - name: github_refs
+    description: spoken PR and issue numbers as links
+    replace:
+      '[#$1](https://github.com/OWNER/REPO/pull/$1)':
+        ['/\b(?:pull request|PR|P\.R\.)\s*(?:(?:{{ref_words}})\s+)?#?(\d+)\b/']
+```
+
+*"P R one two three is ready"* → *"[#123](https://github.com/OWNER/REPO/pull/123) is ready"*
+
+In Slack that arrives as a clickable **#123**, not as brackets — see
+[bullets, bold and links](docs/configuration.md#bullets-bold-and-links). The
+spoken digits are already `123` by the time this runs: the built-in `numbers`
+stage turned "one two three" into it first.
 
 ```yaml
 transforms:
