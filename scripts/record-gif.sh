@@ -51,7 +51,9 @@ ffmpeg -hide_banner -loglevel error -i "$MOV" \
 # — Ctrl-C, a full disk, a bad frame — leaves a fragment where the good GIF
 # was. Measured: an 804K recording came back as a 2.3M half-file. Beside it
 # rather than in $TMP so the move is a rename on the same filesystem.
-PART="$OUT.partial.$$"
+# Keeps the .gif on the end: ffmpeg picks its muxer from the extension, and
+# "$OUT.partial.123" has none it recognises.
+PART="$OUT.partial.$$.gif"
 trap 'rm -rf "$TMP"; rm -f "$PART"' EXIT
 if ! ffmpeg -hide_banner -loglevel error -i "$MOV" -i "$TMP/palette.png" \
   -lavfi "fps=$FPS,scale=$WIDTH:-1:flags=lanczos[v];[v][1:v]paletteuse=dither=bayer:bayer_scale=3" \
