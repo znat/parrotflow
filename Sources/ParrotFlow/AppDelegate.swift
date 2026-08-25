@@ -1405,7 +1405,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         watchForEscape()
 
-        if config.feedback.sound { NSSound(named: "Tink")?.play() }
+        playFeedback("Tink")
         if config.feedback.overlay {
             pill.aim(at: anchorAtPress)
             pill.recording(icon: appIconAtPress)
@@ -1501,7 +1501,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stopWatchingForEscapeIfIdle()
         switch reason {
         case .escape:
-            if config.feedback.sound { NSSound(named: "Pop")?.play() }
+            playFeedback("Pop")
             Log.write("escape: cancelled while \(recording ? "recording" : "transcribing")")
             flash(recording ? "Recording cancelled" : "Transcription cancelled", tone: .caution)
         case .notTheHotkey:
@@ -1587,7 +1587,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pushToTalkPoll?.invalidate(); pushToTalkPoll = nil
         releaseTail?.invalidate(); releaseTail = nil
         pill.hide()
-        if config.feedback.sound { NSSound(named: "Pop")?.play() }
+        playFeedback("Pop")
 
         // Transcription takes the watch over from here — it is the other half
         // of the dictation Escape can still stop. With transcription off there
@@ -2421,7 +2421,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// moment you can tell it went wrong is the moment you are looking at the
     /// text and not at the menu bar. It has to already be on screen.
     private func applied(_ what: String) {
-        if config.feedback.sound { NSSound(named: "Morse")?.play() }
+        playFeedback("Morse")
         flash("\(what) applied\(undoHint)", tone: .done)
     }
 
@@ -2463,7 +2463,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .replaced:
             Log.write("undo: put back \(quoted(record.before))")
             lastSubstitution = nil
-            if config.feedback.sound { NSSound(named: "Morse")?.play() }
+            playFeedback("Morse")
             flash("Undone", tone: .done)
         case .refused(let why):
             Log.write("undo: refused — \(why)")
@@ -2544,7 +2544,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 text, mode: config.transcription.insertMode, paste: paste
             ) {
             case .pasted, .copied:
-                if config.feedback.sound { NSSound(named: "Morse")?.play() }
+                playFeedback("Morse")
                 flash("\(transform.name) applied", tone: .done)
             case .clipboardOnly:
                 flash("\(transform.name) copied — grant Accessibility to paste", tone: .caution)
@@ -3558,7 +3558,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingSelection = nil
         focusAtPress = nil
 
-        if config.feedback.sound { NSSound(named: "Morse")?.play() }
+        playFeedback("Morse")
         if landedOnClipboard {
             flash("Rule saved · \"\(rules.first?.corrected ?? "")\" copied — this app won't let me edit it", tone: .caution)
             return
@@ -3583,6 +3583,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let head = flat.prefix(limit / 2).trimmingCharacters(in: .whitespaces)
         let tail = flat.suffix(limit / 2 - 1).trimmingCharacters(in: .whitespaces)
         return "\"\(head)…\(tail)\""
+    }
+
+    /// Play one of the system sounds, if sounds are on, at the configured volume.
+    private func playFeedback(_ name: String) {
+        guard config.feedback.sound, let sound = NSSound(named: name) else { return }
+        sound.volume = config.feedback.soundVolume
+        sound.play()
     }
 
     /// Show a message on screen, and in the menu bar for as long as it lasts.
@@ -4087,7 +4094,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if now == nil || !CFEqual(now!, element) {
                 TextInserter.insert(text, mode: .clipboard, paste: press.paste)
                 // Not the paste sound — see the nowhere-to-type ending below.
-                if config.feedback.sound { NSSound(named: "Tink")?.play() }
+                playFeedback("Tink")
                 Log.write(now == nil
                     ? "could not read what is focused; copied instead of pasting"
                     : "focus moved since the press; copied instead of pasting")
@@ -4122,7 +4129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            case .nowhere(let reason) = destination, reason != .noAccessibility {
             TextInserter.insert(text, mode: .clipboard, paste: press.paste)
             // Not Morse: a sound that cannot be told from success is no sound.
-            if config.feedback.sound { NSSound(named: "Tink")?.play() }
+            playFeedback("Tink")
             Log.write("nothing to type into (\(reason.described)); copied instead")
             setLabel("Nowhere to type — the transcription is on your clipboard", clearAfter: 4)
             // And on the pill: the menu bar row is inside a menu you must open.
@@ -4137,17 +4144,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             text, mode: config.transcription.insertMode, paste: press.paste
         ) {
         case .pasted:
-            if config.feedback.sound { NSSound(named: "Morse")?.play() }
+            playFeedback("Morse")
             // The words are in the field and you are looking at them. This is
             // the only second in which correcting one is free.
             showCorrectOffer(for: press, landing: .field)
         case .copied:
             // Deliberate clipboard mode — confirm it landed.
-            if config.feedback.sound { NSSound(named: "Morse")?.play() }
+            playFeedback("Morse")
             setLabel("Copied — ⌘V to paste", clearAfter: 4)
             showCorrectOffer(for: press, landing: .clipboardNow())
         case .clipboardOnly:
-            if config.feedback.sound { NSSound(named: "Morse")?.play() }
+            playFeedback("Morse")
             // Don't nag on every dictation — the text is safe on the clipboard.
             Log.write("Accessibility not granted; left transcript on the clipboard")
             setLabel("Copied — grant Accessibility to auto-paste", clearAfter: 4)

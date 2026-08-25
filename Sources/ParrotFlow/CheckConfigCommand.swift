@@ -74,7 +74,8 @@ enum CheckConfigCommand {
         } else {
             emit("  · second opinion    \(config.audio.secondOpinion ? "on" : "off")")
         }
-        emit("  · feedback          sound=\(config.feedback.sound) overlay=\(config.feedback.overlay)"
+        emit("  · feedback          sound=\(config.feedback.sound)"
+              + " volume=\(config.feedback.soundVolume) overlay=\(config.feedback.overlay)"
               + " correct_offer=\(config.feedback.correctOffer)"
               + " confidence=\(config.feedback.confidence)")
         emit("  · low confidence    sentence<\(config.feedback.lowConfidence.sentence)"

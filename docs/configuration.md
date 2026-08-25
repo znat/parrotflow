@@ -760,6 +760,12 @@ thing that costs you the words.
 that shows the mic is hot. Both on by default; the pill is the only thing on
 screen that says recording is happening, so turning it off is a real choice.
 
+`sound_volume` is how loud the chimes are, from 0 to 1, on top of system
+volume. Default 0.3. The macOS system sounds are mixed to be heard once, as an
+alert; dictation plays them several times a sentence, and at 1.0 that is a lot
+of chime for something you already know happened. Set it to 1.0 for the alert
+level. Values outside the range are clamped.
+
 **Where the pill appears.** Next to the place your words are about to go, so you
 can see where they are headed before you have said any of them. Where the app
 will not say where that is, it sits at the bottom of the screen instead. That is

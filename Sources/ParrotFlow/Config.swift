@@ -2027,6 +2027,12 @@ struct Config: Decodable, Equatable {
     struct Feedback: Codable, Equatable {
         /// Play a short system sound on start/stop.
         var sound: Bool = true
+        /// How loud those sounds are, from 0 to 1, relative to system volume.
+        ///
+        /// The system sounds are mixed loud for alerts. Dictation plays them
+        /// several times a sentence, so full volume reads as shouting — hence
+        /// the low default. Values outside the range are clamped.
+        var soundVolume: Float = 0.3
         /// Show the floating recording pill near the bottom of the screen.
         var overlay: Bool = true
         /// After a dictation lands, offer to correct it for a few seconds.
@@ -2118,6 +2124,7 @@ struct Config: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey {
             case sound
+            case soundVolume = "sound_volume"
             case overlay
             case correctOffer = "correct_offer"
             case confidence
@@ -2130,6 +2137,9 @@ struct Config: Decodable, Equatable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self.init()
             if let sound = try c.decodeIfPresent(Bool.self, forKey: .sound) { self.sound = sound }
+            if let volume = try c.decodeIfPresent(Float.self, forKey: .soundVolume) {
+                self.soundVolume = min(max(volume, 0), 1)
+            }
             if let overlay = try c.decodeIfPresent(Bool.self, forKey: .overlay) { self.overlay = overlay }
             if let offer = try c.decodeIfPresent(Bool.self, forKey: .correctOffer) {
                 self.correctOffer = offer

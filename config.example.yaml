@@ -37,6 +37,7 @@ audio:
 
 feedback:
   sound: true     # a click when recording starts and stops
+  sound_volume: 0.3  # 0 to 1, on top of system volume. 1.0 is the alert level.
   overlay: true   # the floating pill while you speak
   # After the words land, the pill offers what to do for 6s, the last 2 of
   # them fading. Click a chip to run it, or tap the hotkey for the panel.
