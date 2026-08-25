@@ -2,17 +2,20 @@
 # Records a region of the screen and writes an optimised GIF, which is how the
 # ones in Resources/ are made.
 #
-# Two passes, because a one-pass GIF from ffmpeg is dithered against the 216
-# web-safe colours and the pill's glass goes to mud. `palettegen` reads the
-# whole clip first and picks 256 colours that suit it.
+# Two passes, because ffmpeg on its own encodes a GIF against a fixed generic
+# palette rather than one taken from the clip. `palettegen` reads the whole
+# recording first and picks 256 colours that suit it, which is what keeps a
+# gradient — the pill's glass, a Slack background — from banding.
 #
 #   scripts/record-gif.sh Resources/refs.gif 12 "0,0,1280,800"
 #
 # The region is x,y,width,height in points. Leave it out for the whole screen,
 # which is almost never what you want — a full retina screen makes a 20 MB GIF.
 #
-# Needs Screen Recording permission for whatever runs it. The first run raises
-# the system prompt and records nothing, so run it twice.
+# Needs Screen Recording permission, and macOS credits it to the terminal you
+# are in rather than to this script. Without it `screencapture` prints nothing
+# and writes no file — there is no prompt to accept — and the grant only takes
+# effect once that terminal is quit and reopened. The check below says so.
 set -uo pipefail
 
 OUT="${1:?usage: record-gif.sh <out.gif> [seconds] [x,y,w,h]}"
