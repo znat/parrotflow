@@ -100,6 +100,12 @@ jobs:
       - name: Pipeline
         run: scripts/check-pipeline.sh
 
+      # Which pipeline a whole config resolves to, including the retired
+      # `pipelines:` map. Both halves of a refusal: the message, and the steps
+      # the app is left running.
+      - name: The pipeline a config resolves to
+        run: scripts/check-pipeline-config.sh
+
       # Where the wake phrase ends and the instruction begins. Deterministic,
       # unlike the routing that follows it, so it runs here.
       - name: Wake phrase

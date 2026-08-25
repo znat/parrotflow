@@ -109,6 +109,23 @@ the dictation changed. The app logs it at launch the same way — `applyConfig`
 already writes every `problems()` and every `notices()` line. The refusals are
 `problems()` entries, so they exit 1 and go to the log with no new plumbing.
 
+**[built]** "Refused" is a verdict on the config, not on the steps. The first
+build let `pipeline` stay nil when a language key was present, so the app fell
+back to `Pipeline.everything` — which is the automatic stages only. A config
+naming fourteen stages then ran one, in both languages, with nothing on screen
+saying so. That is a worse outcome than the silent merge this section was
+written to avoid, so the two were split: `--check-config` still refuses and
+exits non-zero, and the app keeps running one of the lists. `default:` if it is
+there, otherwise the first of `languages:` with a key, and `--check-config`
+names which. The rule the split holds to is that the app never ends up with
+fewer stages than the config asked for without saying so.
+
+**[built]** A `pipelines:` that is present but is not a map — a bare list,
+which is what half a migration produces — throws `ConfigError.invalidValue`, as
+`pipeline:` does for the same mistake. An earlier build read the decode failure
+as an empty map, which accepted the config and dropped every step it named.
+`scripts/check-pipeline-config.sh` holds both of these down.
+
 ---
 
 ## Part 2 — `steps:`, a fourth body

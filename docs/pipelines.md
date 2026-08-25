@@ -27,8 +27,14 @@ you get every stage back — a missing section is silence, not a choice. Write
 
 `pipelines:`, the map keyed by language, is the old spelling. A `pipelines:`
 with only a `default:` key still runs, and `--check-config` says to rewrite it.
-A `pipelines:` with a language key is refused: name the key on the steps that
-differ with `when: language == "<key>"`.
+A `pipelines:` with a language key is refused: `--check-config` exits non-zero
+and names the key, and you write `when: language == "<key>"` on the steps that
+differ.
+
+Refused does not mean dropped. One of the lists keeps running until you
+migrate, and `--check-config` says which — `default:` if it is there, otherwise
+the first of your `languages:` that has a key. A refusal that also cost you
+your stages would be the worse of the two failures.
 
 It was three stages until the shapes were counted: `replacements` wrote the
 exact matches, `fuzzy` caught the near ones, `vocabulary` judged them, and the
