@@ -180,15 +180,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ownership `offerPressRun` already asserts, carrying what it is about.
     private var offeredCorrection: (run: Int, target: Correction)?
 
-    /// Where the last dictation went, kept after its offer has gone.
+    /// The last dictation a tap can summon an offer over: its words, and where
+    /// they went.
     ///
     /// `offeredCorrection` is cleared by every ending, because it asserts that
-    /// an offer is up and about these words. This asserts nothing of the sort:
-    /// it is the field half of what `lastTranscript` already remembers, and it
-    /// lives exactly as long — one slot, replaced by the next dictation and
-    /// never cleared. `summonOffer` builds a new offer out of the two.
-    private var lastDictationLanding: (
-        element: AXUIElement?, owner: NSRunningApplication?, landing: Correction.Landing
+    /// an offer is up and about these words. This asserts nothing of the sort —
+    /// one slot, replaced by the next dictation and never cleared.
+    ///
+    /// The words are held here rather than read from `lastTranscript` at the
+    /// tap, because the two are written at different moments and a superseded
+    /// run can separate them. `lastTranscript` is set for every transcription
+    /// that finishes; this is set below the guard that refuses an offer to a
+    /// run a newer one has already overtaken. Dictate twice with the first
+    /// still decoding, and the older finish overwrites the transcript while the
+    /// landing stays with the newer run — so a tap would have offered one
+    /// dictation's words at another's field, and taking it would have rewritten
+    /// there. One record, written once, cannot come apart that way.
+    private var lastDictated: (
+        text: String, element: AXUIElement?,
+        owner: NSRunningApplication?, landing: Correction.Landing
     )?
 
     /// The focused element's text as it was at the press, for an app that gave
@@ -2660,9 +2670,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Kept past the offer this is about to raise, so a tap can build
-        // another one out of it once this has faded. See `lastDictationLanding`.
-        lastDictationLanding = (press.element, press.owner, landing)
+        // Kept past the offer this is about to raise, so a tap can build another
+        // one out of it once this has faded. Below the newer-run guard above,
+        // and carrying the words as well as the field — see `lastDictated`.
+        lastDictated = (text, press.element, press.owner, landing)
 
         // The decoder's words matched back onto the sentence that came out of
         // the pipeline — see `Confidence.read`. Taken rather than copied: this
@@ -2798,8 +2809,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty, let landing = lastDictationLanding else {
+        guard let last = lastDictated,
+              !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             Log.write("summon: nothing selected and nothing dictated yet")
             return
         }
@@ -2813,8 +2824,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // answer where the caret is *now*, which is a different question.
         raiseOffer(
             over: Correction(
-                original: text, element: landing.element, owner: landing.owner,
-                landing: landing.landing
+                original: last.text, element: last.element, owner: last.owner,
+                landing: last.landing
             ),
             run: pressRun, headline: nil, reading: Confidence.Reading()
         )
@@ -3476,7 +3487,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        if config.transcription.insertMode == .paste, let aimed = target.element {
+        // Only when this offer was not about a selection. `replaceSelected`
+        // returns `.notAttempted` precisely when the field holds several copies
+        // of the words and nothing says which was meant — and the search below
+        // takes the last copy, which is the guess it just declined to make. A
+        // highlighted earlier copy would be left alone while a later one was
+        // rewritten. So a selection that could not be written falls to the
+        // clipboard, which is what the comment above always claimed.
+        if target.selection == nil,
+           config.transcription.insertMode == .paste, let aimed = target.element {
             let now = SelectionReader.focusedElement()
             if let now, CFEqual(now, aimed), !SelectionReader.isOurs(now) {
                 // `fuzzy: false`: the words on screen are the ones we typed
@@ -3572,6 +3591,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) == original
         else { return }
         lastTranscript = corrected
+        // And the words a tap would summon over, which are the same words in
+        // the same field. Left behind, a summon after a rewrite would offer the
+        // sentence that is no longer on screen.
+        if lastDictated?.text.trimmingCharacters(in: .whitespacesAndNewlines) == original {
+            lastDictated?.text = corrected
+        }
     }
 
     private func beginCorrection() {
