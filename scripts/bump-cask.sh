@@ -2,7 +2,11 @@
 #
 # Points the Homebrew cask at the release that was just published.
 #
-#   VERSION=0.10.0 TAG=v0.10.0 GH_TOKEN=... scripts/bump-cask.sh
+#   VERSION=0.10.0 TAG=v0.10.0 GH_TOKEN=... TAP_TOKEN=... scripts/bump-cask.sh
+#
+# Two tokens, because they reach two repositories. GH_TOKEN reads the release
+# in this one, and the workflow's own token is enough for that. TAP_TOKEN
+# pushes to the tap, and a token scoped to the tap cannot read a release here.
 #
 # The cask lives in znat/homebrew-tap and is written from here, so the thing
 # that decides what a `brew install` gets is reviewed in the same repository as
@@ -19,13 +23,17 @@ set -euo pipefail
 # A warning, not an error. The release itself is already published by the time
 # this runs, so a missing token should leave the cask behind rather than mark a
 # good release failed.
-if [ -z "${GH_TOKEN:-}" ]; then
+if [ -z "${TAP_TOKEN:-}" ]; then
     echo "::warning::TAP_TOKEN is not set — the Homebrew cask still points at the previous version."
     exit 0
 fi
+: "${GH_TOKEN:?GH_TOKEN is required to read the release}"
 
 TAP="${TAP:-znat/homebrew-tap}"
 REPO="${REPO:-znat/parrotflow}"
+# Overridable so the push can be rehearsed against a local clone, the way
+# PARROTFLOW_BASE_URL lets install.sh be rehearsed against dist/.
+TAP_URL="${TAP_URL:-https://x-access-token:$TAP_TOKEN@github.com/$TAP.git}"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -36,7 +44,7 @@ SHA256="$(cut -d' ' -f1 < "$TMP/ParrotFlow.zip.sha256")"
 [ -n "$SHA256" ] || { echo "error: no checksum in the release asset" >&2; exit 1; }
 
 echo "==> Cloning $TAP"
-git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$TAP.git" "$TMP/tap"
+git clone --depth 1 "$TAP_URL" "$TMP/tap"
 mkdir -p "$TMP/tap/Casks"
 
 cat > "$TMP/tap/Casks/parrotflow.rb" <<EOF

@@ -122,10 +122,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The tag, so the cask is written by the script the release shipped.
+          ref: ${{ needs.release-please.outputs.tag_name }}
 
       - name: Bump the cask
         env:
-          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+          # Reads the release here. Pushes to the tap with the other one.
+          GH_TOKEN: ${{ github.token }}
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
           VERSION: ${{ needs.release-please.outputs.version }}
         run: scripts/bump-cask.sh
