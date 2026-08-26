@@ -43,7 +43,7 @@ Spoken commands and the vocabulary check need a language model as well, and that
 
 ## Not everything you say needs a remote AI provider
 
-[Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), NVIDIA's state-of-the-art, open-source speech model, runs locally and fast. Most dictations land in under half a second.
+[Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), NVIDIA's speech model, runs locally and fast. Most dictations land in under half a second.
 
 Everything else — the hotkey, the pipeline, every transform — lives in one
 plain YAML file, `config.yaml`. Edit it by hand, or with your coding agent.
@@ -53,8 +53,11 @@ To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
 
 ### Transcriptions follow your rules
 
-**Regex or script transforms** run in milliseconds, for a fixed rule: issue
-links, date formats, dropping "um" and "uh".
+Use regexes, scripts or prompts to customize your dictations.
+
+
+
+**Example 1: add PR links to your dictations**
 
 ```yaml
 transforms:
@@ -77,9 +80,7 @@ spoken digits are already `123` by then: the built-in `numbers` stage turned
 turning PR123 into a clickable #123 that points at
 github.com/znat/parrotflow/pull/123](Resources/refs.gif)
 
-**A rule with data behind it is a script instead.** Slack handles are the
-example: a table needs one line of config per colleague, so on a real team the
-data belongs in a file the script reads.
+**Example 2: Automatically add Slack handles.**
 
 ```yaml
 transforms:
@@ -87,6 +88,7 @@ transforms:
     description: use Slack handles for the people named
     command: slack_handles.py
 ```
+Where `slack_handles.py` is:
 
 ```python
 #!/usr/bin/env python3
@@ -106,6 +108,8 @@ sys.stdout.write(text)
 ![Dictating "Ada and Mark are both on it", and the slack_handles script turning
 the names into "@ada.lovelace and @mark.reyes"](Resources/handles.gif)
 
+**Combine transforms in a pipeline**
+
 ```yaml
 transcription:
   pipelines:
@@ -123,7 +127,7 @@ github_refs and slack_handles rules turning it into "merged #123,
 
 ### Use language models only when they're needed
 
-Name every model you want to reach, once:
+Add models to your config:
 
 ```yaml
 models:
@@ -150,10 +154,14 @@ transforms:
 ```
 
 Say *"hey parrot, fix the grammar"*, or press `G` on the pill after any
-dictation. See
-[examples/transforms/grammar](examples/transforms/grammar) for a more elaborated version.
+dictation.
 
-Or can run the grammar fix in chat and mail apps for all dictations:
+![Dictating into Slack: the pill shows the Slack icon, the grammar step runs,
+and "the panel dont show up sometimes" becomes "The panel doesn't show up
+sometimes."](Resources/grammar.gif)
+
+
+Or you can run the grammar fix in chat and mail apps (but not in coding agents, for instance) for all dictations:
 
 ```yaml
 transcription:
@@ -163,16 +171,10 @@ transcription:
         app: /slack|outlook/    # Grammar only checked in Slack and Outlook
 ```
 
-The pill shows the app your words are going to, and that is what the step is
-scoped on.
+> See [examples/transforms/grammar](examples/transforms/grammar) for a more elaborate version.
 
-![Dictating into Slack: the pill shows the Slack icon, the grammar step runs,
-and "the panel dont show up sometimes" becomes "The panel doesn't show up
-sometimes."](Resources/grammar.gif)
-
-**A remote model** is worth it for the harder jobs. A spoken correction
-needs judgment a fixed rule does not have, and GPT-5.6 Luna does this
-efficiently, at low cost.
+**A remote model** for harder jobs. A spoken correction
+needs judgment a fixed rule or a too small local model does not have.
 
 ```yaml
 transforms:
@@ -195,10 +197,10 @@ to get "let's ship Thursday"](Resources/self-correct.gif)
 
 <br>
 
-### The parrot learns your vocabulary
+### Vocabulary
 
 Colleagues' names, internal jargon, acronyms, vendor names — the words a
-general speech model has never heard. Correct a few times and it stays fixed.
+general speech model has never heard. Correct it a few times and it stays fixed.
 
 Press `V` on the pill after any dictation and say what the word should be.
 
