@@ -64,12 +64,38 @@ enum WatchModifiersCommand {
         monitor.onAbort = { note("abort   — that was a shortcut") }
         monitor.onTap = { note("tap     — the offer would be summoned") }
         monitor.start(key: key, pressDelay: pressDelay)
-        RunLoop.current.run(until: Date().addingTimeInterval(seconds))
+
+        // Pumped in slices so the key can be sampled alongside the monitor. An
+        // edge that never arrives has three causes and they need different
+        // answers — nothing was pressed, the flags never reached us, or every
+        // hold was somebody's shortcut — and a summary that cannot tell them
+        // apart sends you looking at the wrong one. Same cadence the monitor
+        // polls at, so a press cannot fall between two samples.
+        var samples = 0
+        var sawDown = 0
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            samples += 1
+            if key.isPressed { sawDown += 1 }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.025))
+        }
         monitor.stop()
 
         print("")
-        if counts.isEmpty {
-            print("✗ no edges at all — the flag state isn't reaching this process")
+        guard samples > 1 else {
+            print("✗ the run loop never pumped — no key could have been seen")
+            return 1
+        }
+        guard sawDown > 0 else {
+            print("✗ \(key.displayName) was never down in those \(Int(seconds))s")
+            print("  Either it was not pressed, or the flag state is not reaching this")
+            print("  process — `--watch-modifiers` says which.")
+            return 1
+        }
+        guard !counts.isEmpty else {
+            print("✗ \(key.displayName) went down \(sawDown) sample(s) and produced no edge")
+            print("  Every hold was ruled out as a shortcut: something else was pressed,")
+            print("  clicked or scrolled while it was held. See `press_delay_seconds`.")
             return 1
         }
         for edge in counts.keys.sorted() {
