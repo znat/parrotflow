@@ -102,10 +102,20 @@ cask "parrotflow" do
     ticked but the app says it is not granted, remove it from that list and add
     it back — the entry belongs to the old certificate.
 
-    The speech model downloads on first launch, about 460 MB. Recording works
+    The speech model downloads on first launch, about 470 MB. Recording works
     straight away. Transcription starts when the download finishes.
 
-    Then hold Right Command and talk.
+    Then hold Right Command and talk. That much needs nothing else.
+
+    Spoken commands and the vocabulary check need a language model too. That
+    part is optional, and it runs on your own Mac:
+
+      brew install ollama && brew services start ollama
+      ollama pull gemma4:e4b-mlx
+
+    Ollama 0.22.0 or later — older builds cannot run gemma4 e-series models.
+    The model needs 9.6 GB of RAM while loaded. A hosted model works instead;
+    see docs/configuration.md.
   EOS
 end
 EOF
