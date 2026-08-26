@@ -76,13 +76,17 @@ end
 EOF
 
 cd "$TMP/tap"
-if git diff --quiet; then
+# `add` rather than `commit -a`: the first release ever writes a file the tap
+# does not track yet, and `-a` stages only what is already tracked. That would
+# push nothing and report success.
+git add Casks/parrotflow.rb
+if git diff --cached --quiet; then
     echo "==> Cask already points at $VERSION, nothing to do"
     exit 0
 fi
 
 git -c user.name="github-actions[bot]" \
     -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-    commit -am "parrotflow $VERSION"
+    commit -qm "parrotflow $VERSION"
 git push
 echo "==> $TAP now serves parrotflow $VERSION"
