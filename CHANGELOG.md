@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.10.0](https://github.com/znat/parrotflow/compare/v0.9.0...v0.10.0) (2026-08-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* the signing identity changes, so everyone on v0.9.0 or earlier grants Microphone and Accessibility once more. The updater in those builds refuses the first notarized release rather than swapping the identity and leaving the app with no microphone. Those users re-run the install line or install with brew.
+* one pipeline, and pipelines: is refused ([#202](https://github.com/znat/parrotflow/issues/202))
+
+### Features
+
+* a dictation keeps its bullets, bold and links when the app takes them ([#196](https://github.com/znat/parrotflow/issues/196)) ([bffbc87](https://github.com/znat/parrotflow/commit/bffbc879c2cc3e1cee2014c671968b0e159b99a0))
+* one pipeline, and pipelines: is refused ([#202](https://github.com/znat/parrotflow/issues/202)) ([5b03475](https://github.com/znat/parrotflow/commit/5b03475f47fee98a9cc9275faa293c777fb7e7ae))
+* releases are notarized, and there is a Homebrew cask ([#205](https://github.com/znat/parrotflow/issues/205)) ([763fffb](https://github.com/znat/parrotflow/commit/763fffbc5382c41b3addcd79c3d0405ff5fe024b))
+* report a bug from the menu, with the config and the log already in it ([#193](https://github.com/znat/parrotflow/issues/193)) ([1f970b7](https://github.com/znat/parrotflow/commit/1f970b798c556a5228661bdf0c05e22de32fedac))
+* say "PR one two three" and get a link you can click ([#201](https://github.com/znat/parrotflow/issues/201)) ([006acac](https://github.com/znat/parrotflow/commit/006acac0da7c938b2cc24976bdd017e7db5ad04a))
+* the pill is smaller and its chimes are quieter ([#203](https://github.com/znat/parrotflow/issues/203)) ([e233609](https://github.com/znat/parrotflow/commit/e2336093da537a2dda3c927205c4063c85359d82))
+
+
+### Fixes
+
+* a bare-modifier hotkey ignores a press that belongs to a shortcut ([#194](https://github.com/znat/parrotflow/issues/194)) ([040de86](https://github.com/znat/parrotflow/commit/040de86512a07d09f724d0d19cb07d4869d2e15a))
+
+
+### Performance
+
+* the hidden pill stops redrawing, the settle loop stops re-folding ([#190](https://github.com/znat/parrotflow/issues/190)) ([363cc79](https://github.com/znat/parrotflow/commit/363cc795d701cdaf60eca59eb59a073d23f06ea7))
+
 ## [0.9.0](https://github.com/znat/parrotflow/compare/v0.8.0...v0.9.0) (2026-08-20)
 
 
