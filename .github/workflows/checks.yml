@@ -223,10 +223,11 @@ jobs:
       - name: --learn writes a pronunciation
         run: scripts/check-learn.sh
 
-      # Two ways in, one certificate. A pin that is only right in the script or
-      # only right in the app is a door that checks less than the other one.
-      - name: Both install paths pin the same certificate
-        run: scripts/check-pinned-certificate.sh
+      # Two ways in, one signing identity. A check that is only right in the
+      # script or only right in the app is a door that checks less than the
+      # other one.
+      - name: Both install paths expect the same Team ID
+        run: scripts/check-signing-identity.sh
 
       # One person's voice is not source. `.gitignore` stops `git add .` and
       # nothing else — not `-f`, not a file tracked before the rule existed,

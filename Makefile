@@ -91,7 +91,7 @@ release-certificate:
 CHECKS := numbers replacements pipeline pipeline-config wake split dotted dates \
           transform-folders eval audio-recovery possessive suggest input join \
           profiles span-rule clipboard default-config vocabulary-config learn \
-          pinned-certificate no-voice
+          signing-identity no-voice
 
 test:
 	@swift build -c release

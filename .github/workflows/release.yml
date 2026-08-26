@@ -41,18 +41,23 @@ jobs:
       - name: Show toolchain
         run: swift --version
 
-      # Signing with a stable certificate is what keeps users' Microphone and
-      # Accessibility grants alive across an upgrade — see
-      # scripts/release-certificate.sh. Without the secrets the release still
-      # happens, ad-hoc signed, and upgrading users re-grant permissions.
+      # The Developer ID does two jobs. Gatekeeper accepts it, which is what
+      # notarization and the Homebrew cask need. And TCC keys Microphone and
+      # Accessibility to the signing certificate, so signing every release with
+      # the same one is what stops an upgrade silently costing users both
+      # permissions.
+      #
+      # Missing secrets are a hard failure now, not a warning. An ad-hoc signed
+      # release is one install.sh refuses and the app's own updater refuses —
+      # publishing it would only produce an asset nobody can install.
       - name: Import signing certificate
         env:
           CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
           CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
         run: |
           if [ -z "$CERT_P12" ]; then
-            echo "::warning::SIGNING_CERT_P12 is not set — signing ad-hoc. Upgrading users will lose their permissions."
-            exit 0
+            echo "::error::SIGNING_CERT_P12 is not set — cannot sign a release."
+            exit 1
           fi
           KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
           KEYCHAIN_PASSWORD="$(uuidgen)"
@@ -67,13 +72,33 @@ jobs:
           # Put it on the search list so codesign can find the identity.
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
           rm -f "$RUNNER_TEMP/cert.p12"
-          echo "CODESIGN_IDENTITY=ParrotFlow Release" >> "$GITHUB_ENV"
+          # The identity is not named here. scripts/codesign.sh picks the
+          # Developer ID out of the keychain, and picking it in one place is
+          # what keeps a hand-run release and this one signing the same way.
+          security find-identity -vp codesigning "$KEYCHAIN"
+
+      # An App Store Connect API key, not an Apple ID and password. The key
+      # carries the Developer role and nothing else, it is revocable on its own,
+      # and it does not stop working when the account gets a new password.
+      - name: Write the notarization key
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+        run: |
+          if [ -z "$NOTARY_KEY" ]; then
+            echo "::error::NOTARY_KEY is not set — cannot notarize."
+            exit 1
+          fi
+          printf '%s' "$NOTARY_KEY" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+          chmod 600 "$RUNNER_TEMP/notary.p8"
+          echo "NOTARY_KEY_PATH=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
 
       # Interpolations go through env rather than straight into the script, so
       # nothing from a workflow context is ever spliced into a shell command.
-      - name: Build and package
+      - name: Build, sign, notarize and package
         env:
           VERSION: ${{ needs.release-please.outputs.version }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
         run: scripts/release.sh "$VERSION"
 
       - name: Attach to the release
@@ -83,3 +108,24 @@ jobs:
         run: |
           gh release upload "$TAG" \
             dist/ParrotFlow.zip dist/ParrotFlow.zip.sha256 --clobber
+
+      - name: Remove the notarization key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/notary.p8"
+
+  # The cask lives in znat/homebrew-tap, so this needs a token that can push
+  # there. Separate job because it must not run until the assets are attached:
+  # it reads the checksum off the release it is bumping to.
+  homebrew:
+    needs: [release-please, build]
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bump the cask
+        env:
+          GH_TOKEN: ${{ secrets.TAP_TOKEN }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+          VERSION: ${{ needs.release-please.outputs.version }}
+        run: scripts/bump-cask.sh

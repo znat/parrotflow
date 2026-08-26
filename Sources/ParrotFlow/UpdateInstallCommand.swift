@@ -36,7 +36,8 @@ enum UpdateInstallCommand {
                 let app = try await UpdateInstaller.prepare(release)
                 print("checksum           matches the published one")
                 print("signature          valid")
-                print("certificate        \(try UpdateInstaller.certificateFingerprint(of: app))")
+                print("team id            \(Updates.expectedTeamID)")
+                print("notarized          yes")
                 print("identity           \(Updates.releaseBundleIdentifier)")
                 print("verified           \(app.path)")
 
