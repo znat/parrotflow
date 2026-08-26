@@ -69,6 +69,24 @@ struct Surface {
     /// gets by not asking.
     var paste: AppProfile.Paste { AppProfile.of(owner).paste }
 
+    /// What the field will show once `replacement` has been pasted.
+    ///
+    /// Not the same string when the app takes a rich flavour: `**Alex**` goes
+    /// onto the pasteboard as markup and arrives as bold Alex, with the markers
+    /// gone. Every write here is verified by reading the field back, so the
+    /// check has to look for what will be *there* rather than for what was
+    /// sent. Measured the moment the flavour was carried into a rewrite: a
+    /// bold that applied correctly reported "this app won't let me edit it",
+    /// because the read-back went looking for two asterisks Slack had consumed.
+    ///
+    /// Only the paste renders. `setSelectedText` writes the string literally,
+    /// so that branch still reads back the markers it put there.
+    func asShown(_ replacement: String) -> String {
+        guard paste != .plain else { return replacement }
+        let markup = Markup.parse(replacement)
+        return markup.isPlain ? replacement : markup.plain
+    }
+
     // MARK: - Reading
 
     /// What is in front, read once.
@@ -495,6 +513,15 @@ struct Surface {
         // value should read afterwards, and the fragment is widened against it
         // until it names one place there.
         let fragment = self.fragment(around: range, replacement: replacement, in: updated)
+        // The same check for the branches that paste, against what a paste
+        // actually leaves in the field. Identical to `fragment` whenever the
+        // app takes plain text or the replacement carries no markup, which is
+        // most of the time — see `asShown`.
+        let shown = asShown(replacement)
+        let pasted = shown == replacement ? fragment : self.fragment(
+            around: range, replacement: shown,
+            in: content.replacingCharacters(in: range, with: shown)
+        )
 
         // 1. Set the range, then write the text into it. Disturbs nothing, and
         //    is what a native field accepts.
@@ -511,7 +538,7 @@ struct Surface {
            confirmedSelection(matches: String(content[range]), range: nsRange) {
             Log.write("surface: the range write was ignored; pasting over a confirmed selection")
             TextInserter.insert(replacement, mode: .paste, paste: paste)
-            if settled(on: fragment) {
+            if settled(on: pasted) {
                 // Said out loud, like the branch above. Without it a success
                 // here is an absence of failure lines, and reading the log for
                 // "did the edit land" means knowing which lines are missing.
@@ -535,7 +562,7 @@ struct Surface {
         //    it is to where the span starts, and every step of that walk can be
         //    checked against the app's own account before anything is typed.
         if let outcome = writeByWalkingTheCaret(
-            nsRange, replacement: replacement, fragment: fragment, undo: undo
+            nsRange, replacement: replacement, fragment: pasted, undo: undo
         ) {
             return outcome
         }
