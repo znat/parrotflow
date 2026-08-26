@@ -48,29 +48,29 @@ cask "parrotflow" do
   url "https://github.com/$REPO/releases/download/v#{version}/ParrotFlow.zip",
       verified: "github.com/$REPO/"
   name "ParrotFlow"
-  desc "Programmable dictation for macOS"
+  desc "Programmable dictation with local speech recognition"
   homepage "https://github.com/$REPO"
-
-  # The app checks GitHub hourly and installs its own updates, so brew should
-  # not treat a self-updated copy as outdated. See docs/distribution.md.
-  auto_updates true
 
   livecheck do
     url :url
     strategy :github_latest
   end
 
-  # macOS 14 is FluidAudio's floor — the speech models need CoreML on the ANE.
-  depends_on macos: ">= :sonoma"
+  # The app checks GitHub hourly and installs its own updates, so brew should
+  # not treat a self-updated copy as outdated. See docs/distribution.md.
+  auto_updates true
+  # Read as a minimum. macOS 14 is FluidAudio's floor: the speech models need
+  # CoreML on the ANE.
+  depends_on macos: :sonoma
 
   app "ParrotFlow.app"
 
   zap trash: [
     "~/.config/parrotflow",
-    "~/Library/Logs/ParrotFlow.log",
-    "~/Library/Preferences/com.parrotflow.app.plist",
     # The speech models, about 1.2 GB of them.
     "~/Library/Application Support/FluidAudio",
+    "~/Library/Logs/ParrotFlow.log",
+    "~/Library/Preferences/com.parrotflow.app.plist",
   ]
 end
 EOF
