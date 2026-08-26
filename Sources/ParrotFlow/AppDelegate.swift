@@ -1491,7 +1491,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if transcribing {
             cancelledThroughRun = transcriptionRun
-            endProgress()
+            endProgress(for: transcriptionRun)
         }
 
         stopWatchingForEscape()
@@ -1679,7 +1679,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A dictation into a mail window spends a second in the `email` prompt
         // with nothing on screen at all, which reads as the app having dropped
         // it. Same pair the spoken-command path has used all along.
-        beginProgress("Transcribing…")
+        // "Transcribing…" is a lie while the model is still arriving, and the
+        // first dictation after an install is exactly when that happens: the
+        // download is about 470 MB and the pill would sit on one word for all
+        // of it. Say what is actually happening, with the figure.
+        if case .downloading(let what) = transcriberStatus {
+            pillDownloadRun = run
+            beginProgress("Downloading \(what)")
+        } else {
+            beginProgress("Transcribing…")
+        }
 
         let config = self.config
         // Taken at the press, not here: a transcript arrives seconds later and
@@ -1765,7 +1774,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // screen — the bug this is meant to fix, one press later.
                     // The text is delivered either way: `destination` was
                     // captured at the press for exactly that reason.
-                    if self.transcriptionRun == run { self.endProgress() }
+                    if self.transcriptionRun == run { self.endProgress(for: run) }
                     // Escape, while this was decoding. The decoder cannot be
                     // stopped part-way, so the text exists — it simply goes
                     // nowhere. Logged, because a dictation that vanishes with
@@ -1787,7 +1796,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await MainActor.run {
                     guard let self else { return }
-                    if self.transcriptionRun == run { self.endProgress() }
+                    if self.transcriptionRun == run { self.endProgress(for: run) }
                     self.runsInFlight -= 1
                     self.stopWatchingForEscapeIfIdle()
                     // Cancelled or failed, nothing is going to be written.
@@ -3610,7 +3619,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setLabel(message)
     }
 
-    private func endProgress() {
+    /// `run` is the dictation this ends, where there is one. Only that run may
+    /// give up its claim on the download pill. Push-to-talk leaves an older
+    /// dictation running a transform while a newer one waits on a model — the
+    /// vocabulary model is fetched mid-dictation at `Transcriber.swift:356` —
+    /// and clearing the claim from the older one would cost the newer one the
+    /// pill it gets back at `.ready`.
+    private func endProgress(for run: Int? = nil) {
+        if pillDownloadRun == run { pillDownloadRun = nil }
         pill.hide()
         setLabel(nil)
     }
@@ -4171,11 +4187,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// dictation may have put up in the meantime.
     private var transcriberLabelToken: Int?
 
+    /// The transcriber's last reported status, mirrored here because the
+    /// actor's own copy cannot be read without an await, and a key release has
+    /// no time for one. Both sides are the main queue — `onStatusChange` hops
+    /// there before it lands — so it needs no lock.
+    private var transcriberStatus: Transcriber.Status = .idle
+
+    /// The `transcriptionRun` whose pill is showing the model download instead
+    /// of the dictation, if any.
+    ///
+    /// A run and not a flag, for the reason every other late arrival in this
+    /// file carries one. Push-to-talk does not wait, so two dictations sit on
+    /// the same download, and the older one's `.ready` would otherwise take the
+    /// pill from the newer one that has since put its own message up.
+    private var pillDownloadRun: Int?
+
+    /// The `transcriptionRun == run` test the rest of the chain makes, asked of
+    /// the pill: the run that put the download up is still the newest one.
+    private var ownsDownloadPill: Bool { pillDownloadRun == transcriptionRun }
+
     private func handleTranscriberStatus(_ status: Transcriber.Status) {
+        transcriberStatus = status
         switch status {
         case .downloading(let what):
             setLabel("Downloading \(what)")
             transcriberLabelToken = labelToken
+            // `what` already carries the percentage, so replacing the text in
+            // place is what makes the number climb. Only for the dictation that
+            // put the download up: it is waiting on exactly this, and
+            // "Transcribing…" over a 470 MB fetch reads as a hang.
+            if ownsDownloadPill { pill.working("Downloading \(what)") }
             // `what` reads like "speech model 43%" — the number, if this is
             // the one download that carries one, is the only part worth a
             // second field for; the rest is already the sentence above.
@@ -4186,10 +4227,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .loading:
             setLabel("Loading speech model…")
             transcriberLabelToken = labelToken
+            if ownsDownloadPill { pill.working("Loading speech model…") }
             permissions.model.speechModel = .preparing(percent: nil)
         case .failed(let message):
             setLabel("Model error: \(message)")
             transcriberLabelToken = labelToken
+            // The pill is left to the dictation. `.loading` is the same wait
+            // continuing, so it says so; a failure is the wait ending, and the
+            // run waiting on the model gets it as a thrown error whose catch
+            // already hides the pill and puts up the alert. Two endings on
+            // screen for one failure is worse than one.
             // Not surfaced as "preparing" forever: the permissions window
             // isn't the place a transcription failure gets diagnosed, and a
             // stuck "downloading" badge there would outlive the one place
@@ -4198,6 +4245,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .ready, .idle:
             if transcriberLabelToken == labelToken { setLabel(nil) }
             transcriberLabelToken = nil
+            // The dictation that was waiting on the model gets its pill back.
+            if ownsDownloadPill { pill.working("Transcribing…") }
+            pillDownloadRun = nil
             permissions.model.speechModel = .ready
         }
     }

@@ -29,20 +29,24 @@ max_retries; in Mail, pressing S drops a spoken correction.">
 
 ## Install
 
-ParrotFlow requires Apple silicon and macOS 14 or later.
+ParrotFlow requires Apple silicon and macOS 14 or later. Both routes install the
+same app. Take Homebrew if you already use it — upgrading and removing go
+through `brew`. Otherwise run the script.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
-```
-
-Or with Homebrew:
+**Homebrew**
 
 ```sh
 brew install znat/tap/parrotflow
 ```
 
-Either way this also downloads Parakeet, the speech model, about 1.2 GB.
-Releases are signed with a Developer ID and notarized by Apple.
+**Script**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
+```
+
+Neither one downloads the speech model. ParrotFlow fetches Parakeet itself the
+first time it launches, about 470 MB, and says how far along it is.
 
 Spoken commands and the vocabulary check need a language model as well, and that part is optional. Run one on your own Mac with [Ollama](https://ollama.com/download) (e.g. [Gemma4](https://ollama.com/library/gemma4:e4b-mlx)), or use a hosted one (e.g. OpenAI).
 

@@ -214,7 +214,7 @@ EOF
 MODELS="$HOME/Library/Application Support/FluidAudio/Models"
 if ! ls -d "$MODELS"/parakeet-* >/dev/null 2>&1; then
     printf '    The speech model is not on this Mac yet. Your first dictation\n'
-    printf '    downloads it: about 1.2 GB, a few minutes, once. That wait is\n'
+    printf '    downloads it: about 470 MB, a minute or two, once. That wait is\n'
     printf '    normal and only happens the first time.\n\n'
 fi
 

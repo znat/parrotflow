@@ -1983,7 +1983,7 @@ struct Config: Decodable, Equatable {
         /// which is the only thing that finds it.
         ///
         /// Needs `speech_gate`, which is what reads the clip as samples.
-        var secondOpinion: Bool = false
+        var secondOpinion: Bool = true
 
         enum CodingKeys: String, CodingKey {
             case sampleRate = "sample_rate"
