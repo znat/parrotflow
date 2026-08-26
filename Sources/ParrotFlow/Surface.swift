@@ -56,6 +56,19 @@ struct Surface {
 
     var selectedText: String? { span.map { String(content[$0]) } }
 
+    /// The pasteboard flavours this app takes, over and above plain text.
+    ///
+    /// A rewrite is written the same way a dictation is, because it is the same
+    /// text going into the same field. Without this it went in plain, so a
+    /// transform that answered `**Alex**` put four asterisks into Slack where a
+    /// dictation of the same words arrives bold. Nothing said so: a paste that
+    /// lands is a paste that worked, and the markers look like the model's
+    /// fault rather than the paste's.
+    ///
+    /// A terminal answers `.plain` here, which is what `writeScreen` needs and
+    /// gets by not asking.
+    var paste: AppProfile.Paste { AppProfile.of(owner).paste }
+
     // MARK: - Reading
 
     /// What is in front, read once.
@@ -131,11 +144,7 @@ struct Surface {
         }
 
         let front = app ?? NSWorkspace.shared.frontmostApplication
-        let isTerminal = front.map {
-            AppProfile.of(Pipeline.App(
-                name: $0.localizedName ?? "", bundleID: $0.bundleIdentifier ?? ""
-            )).focus == .screen
-        } ?? false
+        let isTerminal = AppProfile.of(front).focus == .screen
 
         if isTerminal {
             return screen(element: element, owner: front, value: value, dictated: dictated)
@@ -501,7 +510,7 @@ struct Surface {
         if select(nsRange),
            confirmedSelection(matches: String(content[range]), range: nsRange) {
             Log.write("surface: the range write was ignored; pasting over a confirmed selection")
-            TextInserter.insert(replacement, mode: .paste)
+            TextInserter.insert(replacement, mode: .paste, paste: paste)
             if settled(on: fragment) {
                 // Said out loud, like the branch above. Without it a success
                 // here is an absence of failure lines, and reading the log for
@@ -596,7 +605,7 @@ struct Surface {
         }
 
         Log.write("surface: walked the caret to \(target.location)+\(target.length); pasting")
-        TextInserter.insert(replacement, mode: .paste)
+        TextInserter.insert(replacement, mode: .paste, paste: paste)
         if settled(on: fragment) { return .replaced(undo) }
         return .refused(repairedAfterStrayPaste())
     }

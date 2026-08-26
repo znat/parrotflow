@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// What an app affords, decided from its identity rather than by asking it.
 ///
@@ -65,6 +65,16 @@ struct AppProfile: Equatable {
     /// neither can be promoted out of plain text by adding a line to a set
     /// below. That is deliberate: a terminal renders no markup and shows the
     /// tags instead, and a blind app is one nothing about is known by asking.
+    /// From a running application, which is what every accessibility path has
+    /// in hand. Nil is the ordinary profile: an app nobody could name takes
+    /// plain text, which is the answer that cannot corrupt anything.
+    static func of(_ app: NSRunningApplication?) -> AppProfile {
+        guard let app else { return .ordinary }
+        return of(Pipeline.App(
+            name: app.localizedName ?? "", bundleID: app.bundleIdentifier ?? ""
+        ))
+    }
+
     static func of(_ app: Pipeline.App) -> AppProfile {
         let bundle = app.bundleID.lowercased()
         let name = app.name.lowercased()
