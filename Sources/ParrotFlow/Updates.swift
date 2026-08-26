@@ -44,7 +44,7 @@ enum Updates {
     /// certificate.
     ///
     ///     security find-identity -vp codesigning
-    static let expectedTeamID = "PENDING"
+    static let expectedTeamID = "VCCU2WY6HS"
 
     /// The designated requirement a downloaded release has to satisfy.
     ///

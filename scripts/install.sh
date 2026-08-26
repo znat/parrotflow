@@ -120,7 +120,7 @@ codesign --verify --deep --strict "$TMP/unpacked/$APP_NAME.app" 2>/dev/null \
 # with a new hash. A pin would then be wrong in every copy of the app already
 # installed, and every user would have to re-run this script. The Team ID does
 # not change when the certificate does.
-TEAM_ID="PENDING"
+TEAM_ID="VCCU2WY6HS"
 
 if [ -n "${PARROTFLOW_BASE_URL:-}" ]; then
     # A local rehearsal (make try-install) builds and signs with whatever
