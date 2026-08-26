@@ -208,6 +208,14 @@ transform and the catch-all besides — with no phrase to remember, because the
 key already said it was an instruction. The pill says **editing the selection**
 or **say an edit** while you hold, and ⎋ cancels.
 
+**It applies in place**, whatever the transform's `confirm:` says — the same
+rule a chip on the pill already follows. The target was named on the pill
+before you spoke, ⎋ was live the whole time you were speaking, and
+`"hey parrot, undo"` puts the substitution back. A preview after all three is
+a question that was answered before it was asked. `"hey parrot, …"` still
+previews: that command is *found* in a sentence rather than declared by a key,
+so being wrong about it is a real possibility.
+
 A bare tap waits 0.4s before the pill appears, because that is how long it
 takes to find out whether a hold is coming. Nothing waits on a pill; the
 dictation path is untouched.

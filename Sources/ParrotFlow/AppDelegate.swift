@@ -1985,7 +1985,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func handleVoiceCommand(_ command: String) {
+    /// `confirm: false` applies a rewrite in place instead of previewing it.
+    ///
+    /// The gesture path passes it. Tap-then-hold has already named its target
+    /// on the pill and offered ⎋ for the whole time you were speaking, and
+    /// "hey parrot, undo" puts the substitution back afterwards — so a preview
+    /// is a question that was answered twice before it was asked. The wake
+    /// phrase does not pass it: that one is found in a sentence rather than
+    /// declared by a key, so being wrong about it is a real possibility.
+    private func handleVoiceCommand(_ command: String, confirm: Bool = true) {
         let catalogue = Catalogue(transforms: config.transforms)
 
         // Deterministic phrases first: no model needed, and they work when
@@ -1999,7 +2007,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let capability = Router.local(instruction: command, catalogue: catalogue) {
             Log.write("router: \"\(command)\" named \(capability.name) outright")
-            run(capability, instruction: command, progress: nil)
+            run(capability, instruction: command, progress: nil, confirm: confirm)
             return
         }
 
@@ -2026,7 +2034,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     switch decision {
                     case .matched(let capability):
                         Log.write("router: \"\(command)\" → \(capability.name)")
-                        self.run(capability, instruction: command, progress: token)
+                        self.run(
+                            capability, instruction: command,
+                            progress: token, confirm: confirm
+                        )
                     case .anything:
                         // An edit with no prompt behind it. The instruction is
                         // the whole specification, so it goes through unsplit,
@@ -2034,7 +2045,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("router: \"\(command)\" → \(FreeForm.name)")
                         self.runTransform(
                             FreeForm.prompt(for: command).asTransform(model: catchAll),
-                            instruction: command, progress: token
+                            instruction: command, progress: token, confirm: confirm
                         )
                     case .none:
                         // Nothing fits. Deliberately not falling through to
@@ -2060,7 +2071,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Log.write("routing failed: \(error.localizedDescription)")
                     self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
-                        self.handleVoiceCommand(command)
+                        self.handleVoiceCommand(command, confirm: confirm)
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
@@ -2073,7 +2084,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `progress` is the "Thinking…" the router put up, where a router ran, so
     /// whichever branch ends without putting its own message up takes that one
     /// down and nothing else.
-    private func run(_ capability: Capability, instruction: String, progress token: Int?) {
+    private func run(
+        _ capability: Capability, instruction: String,
+        progress token: Int?, confirm: Bool = true
+    ) {
         switch capability {
         case .action(.vocabulary):
             endProgress(token: token)
@@ -2081,7 +2095,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .action(.spelling):
             interpretSpelling(instruction, progress: token)
         case .transform(let transform):
-            runTransform(transform, instruction: instruction, progress: token)
+            runTransform(
+                transform, instruction: instruction, progress: token, confirm: confirm
+            )
         }
     }
 
@@ -2197,7 +2213,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// not read now — by the time this runs, our own panel may hold focus, and
     /// reading then returns nothing or something of ours.
     private func runTransform(
-        _ transform: Config.Transform, instruction: String, progress inherited: Int?
+        _ transform: Config.Transform, instruction: String,
+        progress inherited: Int?, confirm: Bool = true
     ) {
         // Never the clipboard. `read()` falls back to it for the correction
         // panel, where you see the words before anything happens and can
@@ -2228,7 +2245,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // wrong thing is otherwise indistinguishable in the log from one that
         // worked on the right thing badly.
         Log.write("transform: \(transform.name) over \(selection == nil ? "the last dictation" : "the selection") — \"\(target.prefix(80))\"")
-        runTransform(transform, instruction: instruction, selection: selection, on: target)
+        runTransform(
+            transform, instruction: instruction, selection: selection, on: target,
+            confirm: confirm
+        )
     }
 
     /// The run itself, over text already decided.
@@ -2242,7 +2262,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ transform: Config.Transform,
         instruction: String,
         selection: SelectionReader.Selection?,
-        on target: String
+        on target: String,
+        confirm: Bool = true
     ) {
         let token = beginProgress(transform.progressLabel)
 
@@ -2254,7 +2275,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     self?.finishTransform(
                         transform: transform, selection: selection,
-                        before: target, after: result, progress: token
+                        before: target, after: result,
+                        progress: token, confirm: confirm
                     )
                 }
             } catch {
@@ -2265,7 +2287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let asked = self.askForKeyThenRetry(error) {
                         self.runTransform(
                             transform, instruction: instruction,
-                            selection: selection, on: target
+                            selection: selection, on: target, confirm: confirm
                         )
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
@@ -2279,7 +2301,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         selection: SelectionReader.Selection?,
         before: String,
         after: String,
-        progress token: Int?
+        progress token: Int?,
+        confirm: Bool = true
     ) {
         endProgress(token: token)
 
@@ -2303,7 +2326,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard transform.confirm else {
+        // `confirm: false` overrides the transform's own setting, the way the
+        // offer's chips already do. A preview is for a command whose target you
+        // could have got wrong; tap-then-hold has already shown you the target
+        // on the pill and given you ⎋ to take it back, and the undo phrase
+        // survives the rewrite. Asking again after all that is a second answer
+        // to a question already answered.
+        guard transform.confirm, confirm else {
             applyTransform(cleaned, to: selection, replacing: before, transform: transform)
             return
         }
@@ -3978,7 +4007,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             Log.write("command spoken: \"\(trimmed)\"")
-            handleVoiceCommand(trimmed)
+            handleVoiceCommand(trimmed, confirm: false)
             return
         }
 
