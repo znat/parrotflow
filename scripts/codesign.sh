@@ -33,10 +33,18 @@ pf_signing_identity() {
         candidates=("ParrotFlow Dev" "ParrotFlow Release")
     fi
 
-    local candidate
+    # The full common name, not the substring that matched it. codesign takes a
+    # substring, but it refuses one that matches two identities — and two is
+    # exactly what a keychain holds for a while after a certificate is renewed.
+    # Prefer the one carrying our Team ID, so a machine that also signs for
+    # another team cannot pick the wrong certificate.
+    local candidate match team
+    team="$(pf_team_id)"
     for candidate in "${candidates[@]}"; do
-        if printf '%s' "$available" | grep -qF "$candidate"; then
-            printf '%s\n' "$candidate"
+        match="$(printf '%s\n' "$available" | grep -F "$candidate" | grep -F "($team)" | head -1)"
+        [ -n "$match" ] || match="$(printf '%s\n' "$available" | grep -F "$candidate" | head -1)"
+        if [ -n "$match" ]; then
+            printf '%s\n' "$match" | sed -n 's/.*"\(.*\)".*/\1/p'
             return
         fi
     done
