@@ -148,6 +148,27 @@ Otherwise return only the text.
 # v5 — v3 with one edit: the worked example is a properly punctuated sentence.
 # v3 and v4 both dropped the full stop off grammar fixes that v1 and v2 got
 # right, and the only thing they added was an example written without one.
+# v6 = v3 plus two examples for a correction — an instruction with the
+# imperative taken out. v3 scored 3/6 on them and failed in one particular way:
+# handed "no I meant three of them", it edited *the instruction* and returned
+# that, having read the corrective phrasing as prose and so as the subject. The
+# pair teaches both halves at once, which is what the existing three examples
+# already do for questions.
+VARIANTS["v6"] = VARIANTS["v3"].replace(
+    "Return only the text.",
+    """instruction: I meant Tuesday
+text:
+the meeting is on Monday
+the meeting is on Tuesday
+
+instruction: this is not what I had in mind
+text:
+the migration runs on friday
+the migration runs on friday
+
+Return only the text.""",
+)
+
 VARIANTS["v5"] = VARIANTS["v3"].replace(
     "we saw about forty of them\nwe saw about 40 of them",
     "We saw about forty of them.\nWe saw about 40 of them.",
@@ -447,3 +468,32 @@ if __name__ == "__main__":
 #
 # granite4:3b scores 6/19 on the same gate and collapses everything into
 # `bullets`. Three-way routing is a gemma-class job.
+
+# --- 2026-08-26: corrections -------------------------------------------------
+#
+# Six cases added for a *correction* — an instruction with the imperative taken
+# out. "make it Tuesday" and "I meant Tuesday" ask for the same edit, and the
+# second is what people say to a machine that has just written their own
+# sentence down. Four ask for the edit; two are the phrase with no edit behind
+# it, which is the reason the category needed negatives: "I meant" is not a
+# marker. It introduces an edit only when it names the replacement, and bare it
+# is a complaint.
+#
+#   gemma4:e4b-mlx v3 (shipped)   37/44   corrections 3/6
+#   gemma4:e4b-mlx v6             39/44   corrections 5/6
+#
+# v6 is v3 plus two examples, one of each kind. Every other category is
+# identical between them, so the two points are the corrections and nothing
+# else. v6 shipped.
+#
+# The failure v3 had is worth keeping in mind, because it is not the one you
+# would guess: handed "no I meant three of them" it edited *the instruction*
+# and returned that. Corrective phrasing reads as prose, and prose in the
+# instruction slot reads as the subject.
+#
+# That case still fails on v6, and is left standing. Fixing one case with a
+# third example is tuning on the set — it wants fresh cases first.
+#
+# The runner's default is v1, which has never been what ships. v3 was the
+# shipped prompt before this and v6 is now; check which one matches
+# FreeForm.swift before reading any number here as a statement about the app.
