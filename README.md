@@ -47,7 +47,6 @@ curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/instal
 
 Neither one downloads the speech model. ParrotFlow fetches Parakeet itself the
 first time it launches, about 470 MB, and says how far along it is.
-Releases are signed with a Developer ID and notarized by Apple.
 
 Spoken commands and the vocabulary check need a language model as well, and that part is optional. Run one on your own Mac with [Ollama](https://ollama.com/download) (e.g. [Gemma4](https://ollama.com/library/gemma4:e4b-mlx)), or use a hosted one (e.g. OpenAI).
 
