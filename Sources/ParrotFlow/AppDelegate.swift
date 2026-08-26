@@ -1488,7 +1488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if transcribing {
             cancelledThroughRun = transcriptionRun
-            endProgress()
+            endProgress(for: transcriptionRun)
         }
 
         stopWatchingForEscape()
@@ -1771,7 +1771,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // screen — the bug this is meant to fix, one press later.
                     // The text is delivered either way: `destination` was
                     // captured at the press for exactly that reason.
-                    if self.transcriptionRun == run { self.endProgress() }
+                    if self.transcriptionRun == run { self.endProgress(for: run) }
                     // Escape, while this was decoding. The decoder cannot be
                     // stopped part-way, so the text exists — it simply goes
                     // nowhere. Logged, because a dictation that vanishes with
@@ -1793,7 +1793,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await MainActor.run {
                     guard let self else { return }
-                    if self.transcriptionRun == run { self.endProgress() }
+                    if self.transcriptionRun == run { self.endProgress(for: run) }
                     self.runsInFlight -= 1
                     self.stopWatchingForEscapeIfIdle()
                     // Cancelled or failed, nothing is going to be written.
@@ -3616,8 +3616,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setLabel(message)
     }
 
-    private func endProgress() {
-        pillDownloadRun = nil
+    /// `run` is the dictation this ends, where there is one. Only that run may
+    /// give up its claim on the download pill. Push-to-talk leaves an older
+    /// dictation running a transform while a newer one waits on a model — the
+    /// vocabulary model is fetched mid-dictation at `Transcriber.swift:356` —
+    /// and clearing the claim from the older one would cost the newer one the
+    /// pill it gets back at `.ready`.
+    private func endProgress(for run: Int? = nil) {
+        if pillDownloadRun == run { pillDownloadRun = nil }
         pill.hide()
         setLabel(nil)
     }
