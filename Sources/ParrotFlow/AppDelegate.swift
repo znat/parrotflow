@@ -1676,7 +1676,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A dictation into a mail window spends a second in the `email` prompt
         // with nothing on screen at all, which reads as the app having dropped
         // it. Same pair the spoken-command path has used all along.
-        beginProgress("Transcribing…")
+        // "Transcribing…" is a lie while the model is still arriving, and the
+        // first dictation after an install is exactly when that happens: the
+        // download is 469 MB and the pill would sit on one word for all of it.
+        // Say what is actually happening, with the figure.
+        if case .downloading(let what) = transcriberStatus {
+            pillShowsDownload = true
+            beginProgress("Downloading \(what)")
+        } else {
+            beginProgress("Transcribing…")
+        }
 
         let config = self.config
         // Taken at the press, not here: a transcript arrives seconds later and
@@ -3608,6 +3617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func endProgress() {
+        pillShowsDownload = false
         pill.hide()
         setLabel(nil)
     }
@@ -4168,11 +4178,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// dictation may have put up in the meantime.
     private var transcriberLabelToken: Int?
 
+    /// The transcriber's last reported status, mirrored here because this runs
+    /// on the main thread and the actor's own copy cannot be read without an
+    /// await — which a key release has no time for.
+    private var transcriberStatus: Transcriber.Status = .idle
+
+    /// Set while the pill is showing the model download instead of the
+    /// dictation. Two jobs: a new percentage replaces the text in place rather
+    /// than putting up a second pill, and `.ready` knows the pill is owed back
+    /// to "Transcribing…".
+    private var pillShowsDownload = false
+
     private func handleTranscriberStatus(_ status: Transcriber.Status) {
+        transcriberStatus = status
         switch status {
         case .downloading(let what):
             setLabel("Downloading \(what)")
             transcriberLabelToken = labelToken
+            // `what` already carries the percentage, so this is the live
+            // figure. Only while the pill is this download's: a dictation that
+            // started before the model was ready is waiting on exactly this,
+            // and "Transcribing…" over a 469 MB fetch reads as a hang.
+            if pillShowsDownload { pill.working("Downloading \(what)") }
             // `what` reads like "speech model 43%" — the number, if this is
             // the one download that carries one, is the only part worth a
             // second field for; the rest is already the sentence above.
@@ -4183,6 +4210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .loading:
             setLabel("Loading speech model…")
             transcriberLabelToken = labelToken
+            if pillShowsDownload { pill.working("Loading speech model…") }
             permissions.model.speechModel = .preparing(percent: nil)
         case .failed(let message):
             setLabel("Model error: \(message)")
@@ -4195,6 +4223,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .ready, .idle:
             if transcriberLabelToken == labelToken { setLabel(nil) }
             transcriberLabelToken = nil
+            // The dictation that was waiting on the model gets the pill back.
+            // `endProgress` clears the flag, so it is still set only while one
+            // is genuinely in flight.
+            if pillShowsDownload {
+                pillShowsDownload = false
+                pill.working("Transcribing…")
+            }
             permissions.model.speechModel = .ready
         }
     }
