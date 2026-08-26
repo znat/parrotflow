@@ -4,7 +4,7 @@
 
 # ParrotFlow
 
-### A local, fast and programmable dictation app shaped around your voice and your work
+### A fast and programmable dictation app you can shape around your work
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
@@ -46,8 +46,8 @@ Spoken commands and the vocabulary check need a language model as well, and that
 [Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), NVIDIA's speech model, runs locally and fast. Most dictations land in under half a second.
 
 Everything else — the hotkey, the pipeline, every transform — lives in one
-plain YAML file, `config.yaml`. Edit it by hand, or with your coding agent.
-To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
+plain YAML file, `config.yaml` you can edit it by hand or with your coding agent.
+> To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
 
 <br>
 
@@ -57,7 +57,7 @@ Use regexes, scripts or prompts to customize your dictations.
 
 
 
-**Example 1: add PR links to your dictations**
+**Example: add PR links to your dictations**
 
 ```yaml
 transforms:
@@ -80,7 +80,7 @@ spoken digits are already `123` by then: the built-in `numbers` stage turned
 turning PR123 into a clickable #123 that points at
 github.com/znat/parrotflow/pull/123](Resources/refs.gif)
 
-**Example 2: Automatically add Slack handles.**
+**Example: Automatically add Slack handles.**
 
 ```yaml
 transforms:
