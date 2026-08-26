@@ -855,6 +855,12 @@ vim and less all work this way, and the pill follows your words there. A pane
 sitting at an ordinary shell prompt keeps everything you have run in it, and the
 pill goes to the bottom of the screen.
 
+A rewrite that lands says nothing. The text is the confirmation — it changes
+where you are already looking, with the pill sitting under it — so a notice
+would be describing what you just watched happen. A chime plays and the log
+records it. Every way of *not* landing still speaks: nothing to change, the app
+refused the edit, the words went to the clipboard instead.
+
 `correct_offer` is what the pill does after a dictation. It stays where it
 is and names what can be done to the words, one chip per command:
 `Vocabulary` first, then every transform with `offer: true` — see

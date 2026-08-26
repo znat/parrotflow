@@ -2642,14 +2642,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSRange(range, in: text).location
     }
 
-    /// The toast after a substitution, and the phrase that takes it back.
+    /// The chime after a substitution, and nothing on screen.
     ///
-    /// Said every time rather than only when something looks wrong, because the
-    /// moment you can tell it went wrong is the moment you are looking at the
-    /// text and not at the menu bar. It has to already be on screen.
+    /// It used to say "<name> applied" with the undo phrase after it. Two
+    /// things retired that. The text is the confirmation — a rewrite lands
+    /// where you are already looking, and the pill sits under it — so the
+    /// notice was telling you what you had just watched happen. And the
+    /// catch-all is called `anything`, a name written for the log and for
+    /// `--check-config`, which made the message read "anything applied".
+    ///
+    /// The failures still speak. Nothing changed, the app refused the edit,
+    /// the words went to the clipboard instead: those are the cases you cannot
+    /// see, and every one of them still puts a line on the pill.
     private func applied(_ what: String) {
+        Log.write("applied: \(what)\(undoHint)")
         playFeedback("Morse")
-        flash("\(what) applied\(undoHint)", tone: .done)
     }
 
     /// `· "Hey parrot, undo"` — empty when there is no phrase to say it with.
