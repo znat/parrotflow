@@ -180,6 +180,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ownership `offerPressRun` already asserts, carrying what it is about.
     private var offeredCorrection: (run: Int, target: Correction)?
 
+    /// The last dictation a tap can summon an offer over: its words, and where
+    /// they went.
+    ///
+    /// `offeredCorrection` is cleared by every ending, because it asserts that
+    /// an offer is up and about these words. This asserts nothing of the sort —
+    /// one slot, replaced by the next dictation and never cleared.
+    ///
+    /// The words are held here rather than read from `lastTranscript` at the
+    /// tap, because the two are written at different moments and a superseded
+    /// run can separate them. `lastTranscript` is set for every transcription
+    /// that finishes; this is set below the guard that refuses an offer to a
+    /// run a newer one has already overtaken. Dictate twice with the first
+    /// still decoding, and the older finish overwrites the transcript while the
+    /// landing stays with the newer run — so a tap would have offered one
+    /// dictation's words at another's field, and taking it would have rewritten
+    /// there. One record, written once, cannot come apart that way.
+    private var lastDictated: (
+        run: Int, text: String, element: AXUIElement?,
+        owner: NSRunningApplication?, landing: Correction.Landing
+    )?
+
     /// The focused element's text as it was at the press, for an app that gave
     /// no caret. What changed in it afterwards is where the words went.
     ///
@@ -753,6 +774,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
         hotKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }
         hotKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
+        hotKeys.onTap = { [weak self] in self?.summonOffer() }
         do {
             try hotKeys.register(
                 key: config.hotkey.key,
@@ -2648,15 +2670,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
-        // A new offer is never born held, whatever the last one ended as.
-        offerHeld = false
-        offerPressRun = press.run
-        // This dictation's own words and its own field, frozen with the offer.
-        offeredCorrection = (press.run, Correction(
-            original: text, element: press.element, owner: press.owner, landing: landing
-        ))
-        let commands = offerCommands
+        // Kept past the offer this is about to raise, so a tap can build another
+        // one out of it once this has faded. Below the newer-run guard above,
+        // and carrying the words as well as the field — see `lastDictated`.
+        lastDictated = (press.run, text, press.element, press.owner, landing)
+
         // The decoder's words matched back onto the sentence that came out of
         // the pipeline — see `Confidence.read`. Taken rather than copied: this
         // press's dictation is over and nothing else can want them.
@@ -2677,6 +2695,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         )
         if let warning = reading.warning { Log.write("offer: \(warning)") }
+
+        raiseOffer(
+            over: Correction(
+                original: text, element: press.element, owner: press.owner,
+                landing: landing, dictation: press.run
+            ),
+            run: press.run, headline: headline, reading: reading
+        )
+
+        // Taken at the press, and only when that press found no caret. Matched
+        // by run, so it is this dictation's own pane and nobody else's. A
+        // remembered anchor is still a guess, and this is what replaces it with
+        // the answer.
+        //
+        // Dropped on every ending, not only the one that uses it. A pane
+        // belongs to one run and no later dictation can want it, so it is
+        // retired here as `dictationEnded` would retire it — leaving it for the
+        // sweep would be keeping a copy of somebody's screen for no reason.
+        let pane = screenAtPress.removeValue(forKey: press.run)?.text
+        // Nothing landed in a field on the clipboard endings, so the diff has
+        // nothing to find. Whatever it did find would be something else moving
+        // on screen.
+        if case .field = landing, let pane, let element = press.element {
+            findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
+        }
+    }
+
+    /// Put the offer on screen over one target, however it got there.
+    ///
+    /// Split out of `showCorrectOffer` so `summonOffer` can reach it. What
+    /// stayed behind there is everything a *dictation's* ending owes and
+    /// nothing else does: the microphone notice, the decoder's reading, and the
+    /// search for where the words landed.
+    private func raiseOffer(
+        over target: Correction, run: Int, headline: String?, reading: Confidence.Reading
+    ) {
+        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        // A new offer is never born held, whatever the last one ended as.
+        offerHeld = false
+        offerPressRun = run
+        offeredCorrection = (run, target)
+        let commands = offerCommands
         offerHeadline = headline
         offerReading = reading
         let hold = config.feedback.lowConfidence.holdReturn
@@ -2707,23 +2767,91 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerOnScreen = commands
         watchTheOfferKeys()
         watchForOfferOutsideClick()
+    }
 
-        // Taken at the press, and only when that press found no caret. Matched
-        // by run, so it is this dictation's own pane and nobody else's. A
-        // remembered anchor is still a guess, and this is what replaces it with
-        // the answer.
-        //
-        // Dropped on every ending, not only the one that uses it. A pane
-        // belongs to one run and no later dictation can want it, so it is
-        // retired here as `dictationEnded` would retire it — leaving it for the
-        // sweep would be keeping a copy of somebody's screen for no reason.
-        let pane = screenAtPress.removeValue(forKey: press.run)?.text
-        // Nothing landed in a field on the clipboard endings, so the diff has
-        // nothing to find. Whatever it did find would be something else moving
-        // on screen.
-        if case .field = landing, let pane, let element = press.element {
-            findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
+    /// The offer asked for rather than offered: the hotkey tapped, not held.
+    ///
+    /// Over the last dictation, in the field it landed in. This is what stops
+    /// `offerSeconds` being a deadline — an offer you can call back does not
+    /// have to be kept on screen against the chance that you want it, so
+    /// nothing here lengthens it.
+    ///
+    /// No reading. The colours and the low-confidence warning are what the
+    /// decoder said about a sentence as it arrived, and a tap minutes later is
+    /// not that moment. Showing them again would also re-arm `holdReturn`,
+    /// which exists for the Return already on its way down.
+    private func summonOffer() {
+        // Nothing while a dictation is in the air. On `toggle` the key is what
+        // stops a recording, and a stop that came out short is a stop — the
+        // press was simply never delivered. Summoning there would answer a key
+        // meant for the microphone, and do it over the *previous* sentence.
+        guard !recorder.isRecording, runsInFlight <= 0 else { return }
+        // A tap while the offer is up is a tap at nothing. Raising a second one
+        // over the first would take the letters again and restart a clock the
+        // pointer may be deliberately holding.
+        guard !offerIsUp else { return }
+        guard config.feedback.correctOffer else { return }
+
+        // The selection wins, and it never goes stale: it is what you are
+        // pointing at now. It is also the only target this can have in an app
+        // ParrotFlow has never written a word into, which is the whole of why
+        // the tap reaches further than the last dictation.
+        if let selection = SelectionReader.snapshot(),
+           !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Log.write("summon: the offer, over the selection — \"\(selection.text.prefix(80))\"")
+            aim(at: selection)
+            raiseOffer(
+                over: Correction(
+                    original: selection.text, element: selection.element,
+                    owner: selection.owner, landing: .field, selection: selection
+                ),
+                run: pressRun, headline: "the selection", reading: Confidence.Reading()
+            )
+            return
         }
+
+        guard let last = lastDictated,
+              !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            Log.write("summon: nothing selected and nothing dictated yet")
+            return
+        }
+        Log.write("summon: the offer, over the last dictation")
+        // `pressRun` rather than a number of its own: this offer is about that
+        // dictation, and saying so is what lets a newer one take the pill off
+        // it through the guard in `showCorrectOffer`.
+        //
+        // Not re-aimed. The pill is already pointed where the words landed,
+        // which is what "back where it was" means — and a fresh read would
+        // answer where the caret is *now*, which is a different question.
+        raiseOffer(
+            over: Correction(
+                original: last.text, element: last.element, owner: last.owner,
+                landing: last.landing, dictation: last.run
+            ),
+            run: pressRun, headline: nil, reading: Confidence.Reading()
+        )
+    }
+
+    /// Put the pill under the selection instead of where the last dictation
+    /// left it.
+    ///
+    /// `CaretAnchor.read` already answers this and needed no new call: what it
+    /// asks the element for is the selected *range*, which is the caret only
+    /// when nothing is selected. A selection over several lines comes back as
+    /// one box around the whole of it, so the pill lands under its last line,
+    /// which is where it belongs.
+    ///
+    /// Left where it is when the read misses. `aim(at: nil)` means the bottom
+    /// of the screen, and a pill still near the words it is about beats one
+    /// parked away from them — Outlook answers `0+0` for a pane holding
+    /// hundreds of thousands of characters, and `trust` is what catches it.
+    private func aim(at selection: SelectionReader.Selection) {
+        guard let element = selection.element,
+              case .found(let anchor) = CaretAnchor.read(at: element) else {
+            Log.write("summon: no geometry for the selection; the pill stays where it was")
+            return
+        }
+        pill.aim(at: anchor)
     }
 
     /// Take the offer's letters and Escape for as long as the offer is up.
@@ -3222,6 +3350,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let owner: NSRunningApplication?
         /// Where the words went, so the correction can follow them.
         let landing: Landing
+        /// The dictation these words came from, or nil when they came from a
+        /// selection instead.
+        ///
+        /// Only `noteRewritten` reads it, and only to decide whether a rewrite
+        /// belongs to the record a tap would summon. Matching text is not proof
+        /// of that: say the same short sentence twice, take the first one's
+        /// offer after the second has landed, and the text matches while the
+        /// dictation is somebody else's.
+        var dictation: Int?
+        /// The selection this offer was summoned over, when it was summoned
+        /// over one rather than raised after a dictation.
+        ///
+        /// It is here for the range. `replace` otherwise finds the words by
+        /// their text and takes the last copy, which is the right answer for a
+        /// dictation — the newest thing written is the thing the offer is
+        /// about. A selection is not: the copy that matters is the one you
+        /// highlighted, and only the range says which that is. Carrying the
+        /// whole `Selection` rather than the range alone is what lets this hand
+        /// straight to `replaceSelected`, which already recovers a range that
+        /// has moved.
+        var selection: SelectionReader.Selection?
 
         /// The two places a dictation can end up.
         ///
@@ -3314,7 +3463,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return false
             }
             Log.write("offer: the dictation went to the clipboard; \(what) went there too")
-            noteRewritten(original, as: corrected)
+            noteRewritten(original, as: corrected, from: target.dictation)
             flash("\(what) copied — ⌘V to paste", tone: .done)
             return false
         }
@@ -3329,7 +3478,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Thread.sleep(forTimeInterval: 0.15)
         }
 
-        if config.transcription.insertMode == .paste, let aimed = target.element {
+        // Summoned over a selection: the path that already knows how to write
+        // one back, range and all. The text search below would take the last
+        // copy of the words in the field, and for a selection the last copy is
+        // not the one you highlighted.
+        //
+        // A miss falls through to the clipboard rather than returning, the same
+        // as every other way of not reaching the field: the rewrite is done and
+        // it has to go somewhere.
+        if let selection = target.selection {
+            switch replaceSelected(with: corrected, in: selection, describedAs: what) {
+            case .replaced:
+                noteRewritten(original, as: corrected, from: target.dictation)
+                applied(what)
+                return true
+            case .failed, .notAttempted:
+                break
+            }
+        }
+
+        // Only when this offer was not about a selection. `replaceSelected`
+        // returns `.notAttempted` precisely when the field holds several copies
+        // of the words and nothing says which was meant — and the search below
+        // takes the last copy, which is the guess it just declined to make. A
+        // highlighted earlier copy would be left alone while a later one was
+        // rewritten. So a selection that could not be written falls to the
+        // clipboard, which is what the comment above always claimed.
+        if target.selection == nil,
+           config.transcription.insertMode == .paste, let aimed = target.element {
             let now = SelectionReader.focusedElement()
             if let now, CFEqual(now, aimed), !SelectionReader.isOurs(now) {
                 // `fuzzy: false`: the words on screen are the ones we typed
@@ -3355,7 +3531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     dictated: original, in: now, describedAs: what
                 ) {
                 case .replaced:
-                    noteRewritten(original, as: corrected)
+                    noteRewritten(original, as: corrected, from: target.dictation)
                     applied(what)
                     return true
                 case .failed, .notAttempted:
@@ -3421,10 +3597,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// Only if this is still the sentence the app thinks it wrote last. A newer
     /// dictation has its own, and it is one slot.
-    private func noteRewritten(_ original: String, as corrected: String) {
+    private func noteRewritten(_ original: String, as corrected: String, from dictation: Int?) {
         guard lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) == original
         else { return }
         lastTranscript = corrected
+        // And the words a tap would summon over, which are the same words in
+        // the same field. Left behind, a summon after a rewrite would offer the
+        // sentence that is no longer on screen.
+        //
+        // By run, not by text. The panel can be open for as long as it takes to
+        // think about a spelling and push-to-talk does not wait, so an older
+        // correction can finish after a newer dictation — and if the two said
+        // the same thing, the text matches while the record belongs to the
+        // newer one. Relabelling it there would leave the older correction's
+        // words pointing at the newer dictation's field.
+        guard let dictation, dictation == lastDictated?.run else { return }
+        lastDictated?.text = corrected
     }
 
     private func beginCorrection() {

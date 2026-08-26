@@ -551,6 +551,19 @@ if let index = arguments.firstIndex(of: "--watch-modifiers") {
     exit(WatchModifiersCommand.run(seconds: seconds ?? 10))
 }
 
+if let index = arguments.firstIndex(of: "--watch-taps") {
+    // The configured key and delay by default, since what this answers is
+    // whether the gesture works on the hotkey you actually use.
+    let loaded = (try? ConfigStore.load()) ?? Config()
+    let key = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("-")
+        ? arguments[index + 1]
+        : loaded.hotkey.key
+    let seconds = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) : nil
+    exit(WatchModifiersCommand.taps(
+        key: key, seconds: seconds ?? 10, pressDelay: loaded.hotkey.pressDelaySeconds
+    ))
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate

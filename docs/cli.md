@@ -316,6 +316,7 @@ $ ParrotFlow --forget Praisy
 $PF --record 3           # record 3s and verify the file it produced
 $PF --transcribe a.wav   # transcribe a clip
 $PF --watch-modifiers    # print which modifier keys are physically down, live
+$PF --watch-taps         # tap, hold or shortcut — which edge each press comes out as
 $PF --audio-recovery     # what the recorder does when the microphone changes
 ```
 
@@ -326,6 +327,14 @@ A silent clip or a short file gets a non-zero exit.
 `--watch-modifiers` is the one to reach for if a bare-modifier hotkey seems
 dead — it shows whether the key is reaching the app at all, and whether left
 and right are distinguishable on your keyboard.
+
+`--watch-taps` runs the same key through the real monitor and names the edge
+each press came out as: `press`/`release` for a hold, `tap` for one shorter
+than `press_delay_seconds`, `abort` for a hold that turned out to be a
+shortcut. It reads your configured hotkey and delay unless you name another
+(`--watch-taps right_option 20`). A tap is a length of time on a physical key,
+so no fixture can score it — the case worth checking by hand is that ⌘S prints
+nothing at all.
 
 `--audio-recovery` is for the other kind of dead: the microphone changed —
 AirPods connected, a headset came out — and since then dictation records
