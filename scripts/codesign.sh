@@ -59,6 +59,11 @@ pf_sign() {
     local app="$1" identity="$2" root
     root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+    # An interrupted codesign leaves a .cstemp behind, and the next run fails on
+    # it with "invalid or unsupported format for signature" — which names the
+    # temp file, not the cause, and sends you looking at the wrong thing.
+    find "$app" -name '*.cstemp' -delete 2>/dev/null || true
+
     if pf_is_developer_id "$identity"; then
         codesign --force --options runtime --timestamp \
             --entitlements "$root/Resources/entitlements.plist" \

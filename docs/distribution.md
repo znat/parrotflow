@@ -115,6 +115,17 @@ For a release cut by hand, `xcrun notarytool store-credentials parrotflow`
 saves an Apple ID and an app-specific password in the keychain once.
 `scripts/notarize.sh` uses that profile when no API key is in the environment.
 
+The first local build that uses the Developer ID puts a keychain dialog on
+screen — *codesign wants to sign using key ... in your keychain*. Answer
+**Always Allow**, not Allow. Until something answers it, `codesign` waits, with
+no output and no timeout, and the build looks frozen rather than blocked. It
+was measured taking 300 seconds and still waiting; once allowed the same signing
+step takes under half a second.
+
+CI never meets this. `release.yml` builds its own keychain and runs
+`set-key-partition-list` against it with that keychain's password, which grants
+codesign the key up front.
+
 ### The entitlement that is easy to get wrong
 
 Notarization requires the hardened runtime, and the hardened runtime blocks
