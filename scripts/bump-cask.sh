@@ -90,33 +90,30 @@ cask "parrotflow" do
     "~/Library/Preferences/com.parrotflow.app.plist",
   ]
 
-  caveats <<~EOS
-    ParrotFlow asks for two permissions the first time it runs:
+  # A block, not a plain string, so Formatter can be interpolated. Homebrew
+  # strips the escapes when the output is not a terminal, so a piped install
+  # log stays readable.
+  caveats do
+    <<~EOS
+      #{Formatter.headline("Hold Right Command and talk.")}
 
-      Microphone     a system prompt
-      Accessibility  System Settings > Privacy & Security > Accessibility
+      Your first dictation will have to wait for the speech model to download: about 470 MB, once.
 
-    Upgrading from 0.9.0 or earlier: this release is signed with a different
-    certificate, and macOS ties both permissions to the one that signed the
-    app. You will be asked again. If Accessibility already lists ParrotFlow as
-    ticked but the app says it is not granted, remove it from that list and add
-    it back — the entry belongs to the old certificate.
+      #{Formatter.headline("Add a language model — recommended")}
 
-    The speech model downloads on first launch, about 470 MB. Recording works
-    straight away. Transcription starts when the download finishes.
+      It unlocks spoken commands and the vocabulary check. Dictation keeps working
+      while it downloads, so there is no reason to wait:
 
-    Then hold Right Command and talk. That much needs nothing else.
+        #{Formatter.identifier("brew install ollama && brew services start ollama")}
+        #{Formatter.identifier("ollama pull gemma4:e4b-mlx")}
 
-    Spoken commands and the vocabulary check need a language model too. That
-    part is optional, and it runs on your own Mac:
+      For harder formatting, a transform can name a hosted model instead using the OpenAI or Anthropic API protocols.
+      See docs/configuration.md.
 
-      brew install ollama && brew services start ollama
-      ollama pull gemma4:e4b-mlx
-
-    Ollama 0.22.0 or later — older builds cannot run gemma4 e-series models.
-    The model needs 9.6 GB of RAM while loaded. A hosted model works instead;
-    see docs/configuration.md.
-  EOS
+      Or hand the setup to your coding agent: docs/setup.md is written for one to
+      execute.
+    EOS
+  end
 end
 EOF
 
