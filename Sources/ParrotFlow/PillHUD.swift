@@ -248,8 +248,8 @@ final class PillHUD {
 
         // Land on the starting strength at once, cancelling whatever was
         // animating alpha. Usually nothing — the offer follows a pill already
-        // on screen — but raised from cold, `set` starts a fade to full and the
-        // two would pull opposite ways.
+        // on screen — but raised from cold, `set` has just put it at full, and
+        // this is what takes it down to the offer's own strength.
         if !panel.isVisible {
             model.onScreen = true
             panel.orderFrontRegardless()
@@ -447,11 +447,26 @@ final class PillHUD {
             }
         }
 
+        let arriving = !panel.isVisible
+
         // The words change with the frame, not after it: SwiftUI is told inside
         // the same turn that starts the AppKit animation, and both read
         // `PillHUD.motion`.
-        withAnimation(.easeInOut(duration: Self.motion)) {
-            model.state = state
+        //
+        // Except on arrival, where there is nothing to change *from*. The pill
+        // is raised at the moment the microphone starts recording, so a
+        // crossfade there is 180 ms of looking absent while it is already
+        // listening — on top of the ~200 ms the microphone itself took. The
+        // panel's own alpha is cut the same way in `fadeIn`; both halves of the
+        // entrance have to go, or the surviving one still paces it.
+        if arriving {
+            var instant = Transaction()
+            instant.disablesAnimations = true
+            withTransaction(instant) { model.state = state }
+        } else {
+            withAnimation(.easeInOut(duration: Self.motion)) {
+                model.state = state
+            }
         }
 
         // The pill ignores the mouse in every state but this one. It sits over
@@ -470,7 +485,7 @@ final class PillHUD {
 
         let size = wantedSize
 
-        if panel.isVisible {
+        if !arriving {
             morph(to: size)
         } else {
             panel.setContentSize(size)
@@ -516,15 +531,19 @@ final class PillHUD {
     /// through the whole recording and only climbed to where it belonged when
     /// the next state morphed it there. Nothing to animate is nothing to get
     /// wrong.
+    ///
+    /// And in without fading. It was a 180 ms ease-out, and it was the last
+    /// 180 ms of a wait that measured ~700 ms from the key going down: 183 ms
+    /// of `press_delay_seconds`, ~200 ms of the microphone opening, and then
+    /// this. The other two buy something — the delay keeps ⌘C out, and the pill
+    /// may not appear before the microphone is actually recording or people
+    /// talk into a promise. This one bought a nicety, and paid for it in the
+    /// only part of the wait where the app is already listening and not saying
+    /// so. `fadeOut` keeps its fade: an exit has no one waiting on it.
     private func fadeIn(_ panel: NSPanel) {
         model.onScreen = true
-        panel.alphaValue = 0
+        panel.alphaValue = 1
         panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.motion
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            panel.animator().alphaValue = 1
-        }
     }
 
     /// Out the same way: alpha only.
@@ -614,6 +633,21 @@ final class PillHUD {
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             panel.animator().setFrame(frame, display: true)
         }
+    }
+
+    /// Builds the panel before anything is waiting on it.
+    ///
+    /// An NSPanel, an NSHostingView and the glass container, all on the main
+    /// thread. Measured at 219 ms on the first press of a launch, between the
+    /// key going down and the pill appearing. Every press after it cost 25 ms.
+    ///
+    /// `onScreen` goes false here because the default is true: a panel built
+    /// and not shown would otherwise draw the pill into a window nobody can
+    /// see. `fadeIn` sets it back when the pill is actually raised.
+    func warm() {
+        guard panel == nil else { return }
+        model.onScreen = false
+        build()
     }
 
     private func build() {
