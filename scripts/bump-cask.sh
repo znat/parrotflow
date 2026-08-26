@@ -73,6 +73,15 @@ cask "parrotflow" do
 
   app "ParrotFlow.app"
 
+  # Launched with LaunchServices, not by running the binary. TCC credits a
+  # permission to the responsible process, and a binary exec'd from a shell is
+  # credited to the terminal — the app then holds grants it cannot use. `open`
+  # makes the app responsible for itself. scripts/install.sh ends the same way,
+  # for the same reason. See docs/distribution.md.
+  postflight do
+    system_command "/usr/bin/open", args: ["--background", appdir/"ParrotFlow.app"]
+  end
+
   zap trash: [
     "~/.config/parrotflow",
     # The speech models, about 470 MB of them.
@@ -80,6 +89,24 @@ cask "parrotflow" do
     "~/Library/Logs/ParrotFlow.log",
     "~/Library/Preferences/com.parrotflow.app.plist",
   ]
+
+  caveats <<~EOS
+    ParrotFlow asks for two permissions the first time it runs:
+
+      Microphone     a system prompt
+      Accessibility  System Settings > Privacy & Security > Accessibility
+
+    Upgrading from 0.9.0 or earlier: this release is signed with a different
+    certificate, and macOS ties both permissions to the one that signed the
+    app. You will be asked again. If Accessibility already lists ParrotFlow as
+    ticked but the app says it is not granted, remove it from that list and add
+    it back — the entry belongs to the old certificate.
+
+    The speech model downloads on first launch, about 460 MB. Recording works
+    straight away. Transcription starts when the download finishes.
+
+    Then hold Right Command and talk.
+  EOS
 end
 EOF
 
