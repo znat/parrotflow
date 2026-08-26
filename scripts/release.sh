@@ -37,14 +37,28 @@ VERSION="${VERSION#v}"
 # ad-hoc is the floor. See scripts/codesign.sh.
 CODESIGN_IDENTITY="$(pf_signing_identity)"
 
-if [ "$CODESIGN_IDENTITY" = "-" ]; then
-    echo "warning: no signing identity found; signing ad-hoc." >&2
-    echo "         Users who upgrade will have to grant Microphone and" >&2
-    echo "         Accessibility again, and this build cannot be notarized." >&2
-elif ! pf_is_developer_id "$CODESIGN_IDENTITY"; then
-    echo "warning: signing with '$CODESIGN_IDENTITY', not a Developer ID." >&2
-    echo "         Fine for a rehearsal. A published release signed this way" >&2
-    echo "         is refused by install.sh and by the app's own updater." >&2
+# Fail closed. Everything after this point succeeds whatever the identity is:
+# the bundle is signed, the archive is written, the checksum is computed, and
+# the workflow uploads both. So a wrong SIGNING_CERT_P12 would publish a green
+# release that install.sh, the app's own updater and Gatekeeper all refuse, and
+# nothing would say so until a user tried to install it.
+#
+# PARROTFLOW_REHEARSAL=1 is the way to build without a Developer ID, for
+# `make try-install`. The release workflow does not set it and must not.
+if ! pf_is_developer_id "$CODESIGN_IDENTITY"; then
+    if [ -z "${PARROTFLOW_REHEARSAL:-}" ]; then
+        if [ "$CODESIGN_IDENTITY" = "-" ]; then
+            echo "error: no signing identity found — refusing to build a release." >&2
+        else
+            echo "error: '$CODESIGN_IDENTITY' is not a Developer ID — refusing to build a release." >&2
+        fi
+        echo "       A release has to be signed with the Developer ID Application" >&2
+        echo "       certificate for Team ID $(pf_team_id). See docs/distribution.md." >&2
+        echo "       To rehearse the installer without one: PARROTFLOW_REHEARSAL=1" >&2
+        exit 1
+    fi
+    echo "warning: rehearsal build, signed with '$CODESIGN_IDENTITY'." >&2
+    echo "         Not notarized. install.sh and the updater refuse it." >&2
 fi
 export CODESIGN_IDENTITY
 

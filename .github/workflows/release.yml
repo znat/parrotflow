@@ -81,6 +81,13 @@ jobs:
           # Developer ID out of the keychain, and picking it in one place is
           # what keeps a hand-run release and this one signing the same way.
           security find-identity -vp codesigning "$KEYCHAIN"
+          # But say now if the secret does not hold one. release.sh refuses the
+          # build anyway; failing here names the cause instead of the symptom.
+          security find-identity -vp codesigning "$KEYCHAIN" \
+            | grep -q "Developer ID Application" || {
+              echo "::error::SIGNING_CERT_P12 holds no Developer ID Application certificate."
+              exit 1
+            }
 
       # An App Store Connect API key, not an Apple ID and password. The key
       # carries the Developer role and nothing else, it is revocable on its own,
