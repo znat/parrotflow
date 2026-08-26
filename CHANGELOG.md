@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.11.0](https://github.com/znat/parrotflow/compare/v0.10.0...v0.11.0) (2026-08-26)
+
+
+### Features
+
+* the pill shows the speech model downloading, with the percentage ([#206](https://github.com/znat/parrotflow/issues/206)) ([877090e](https://github.com/znat/parrotflow/commit/877090e409ea239dbdd78a141208d624ca6ea929))
+
+
+### Fixes
+
+* the pill no longer goes blank while a second dictation is running ([#210](https://github.com/znat/parrotflow/issues/210)) ([f89fea8](https://github.com/znat/parrotflow/commit/f89fea8acb371b3c908e05bd76379be6d9afdb79)), closes [#209](https://github.com/znat/parrotflow/issues/209)
+
+
+### Performance
+
+* the pill arrives when the microphone opens, not 180 ms later ([#207](https://github.com/znat/parrotflow/issues/207)) ([6184786](https://github.com/znat/parrotflow/commit/6184786625f586b66ae6e26d42c3b2900b3a6249))
+
 ## [0.10.0](https://github.com/znat/parrotflow/compare/v0.9.0...v0.10.0) (2026-08-26)
 
 
