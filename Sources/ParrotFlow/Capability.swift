@@ -56,6 +56,15 @@ enum Capability: Equatable {
         }
     }
 
+    /// Every way of naming this out loud: its own name, and whatever `say:`
+    /// adds. Only `Router.local` reads them — see `Config.Transform.say`.
+    var spokenNames: [String] {
+        switch self {
+        case .action(let action): return [action.rawValue]
+        case .transform(let transform): return [transform.name] + transform.say
+        }
+    }
+
     /// Which of the three bodies it is, for anything printing the catalogue.
     /// The router never sees this: what a tool is made of is not a reason to
     /// pick it, and putting it in the listing would be one more thing for the

@@ -671,12 +671,14 @@ struct Config: Decodable, Equatable {
         var offer = false
         /// `key: f` — the letter shown on its chip.
         var offerKey = ""
+        /// `say: [slack handles, handles]` — what to call it out loud.
+        var say: [String] = []
         /// `model: gpt`, or `model: { use: gpt, reasoning: low }`.
         var model: ModelRef?
 
         enum CodingKeys: String, CodingKey {
             case name, description, display, confirm, prompt, content, replace, command
-            case tests, returns, offer, model
+            case tests, returns, offer, model, say
             case offerKey = "key"
             case timeout = "timeout_seconds"
         }
@@ -753,6 +755,16 @@ struct Config: Decodable, Equatable {
             // keycap holds one character; a key is printed in capitals whatever
             // the config wrote it as.
             offerKey = String(try trimmed(.offerKey).prefix(1)).uppercased()
+            // One string or a list, because most transforms want one alias and
+            // writing `say: bullets` should not be an error.
+            let spoken: [String]
+            if let one = ((try? c.decodeIfPresent(String.self, forKey: .say)) ?? nil) {
+                spoken = [one]
+            } else {
+                spoken = ((try? c.decodeIfPresent([String].self, forKey: .say)) ?? nil) ?? []
+            }
+            say = spoken.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
 
             // A body written either way. The mapping is tried first and only
             // succeeds on `{ path: <string> }`, so nothing that decoded before
@@ -923,7 +935,7 @@ struct Config: Decodable, Equatable {
                 display: entry.display,
                 folder: entry.folder, timeout: entry.timeout,
                 confirm: entry.confirm, returnsJSON: entry.returnsJSON,
-                offer: entry.offer, offerKey: entry.offerKey,
+                offer: entry.offer, offerKey: entry.offerKey, say: entry.say,
                 body: body, source: entry.source,
                 tests: entry.tests, model: entry.model
             ))
@@ -1007,6 +1019,15 @@ struct Config: Decodable, Equatable {
         /// The letter shown on that chip. Empty when the config named none; the
         /// chip is still there and still clickable.
         var offerKey: String = ""
+        /// What to call this out loud, besides its name.
+        ///
+        /// A name is written for a config file — `slack_handles`, `code_identifiers` — and nobody says an underscore. An alias is what you would actually
+        /// ask for, and it is the difference between a script the keyed path
+        /// can reach without a model and one it cannot reach at all.
+        ///
+        /// Only the keyed path reads these. `"hey parrot"` goes to the router,
+        /// where a `description` is the thing written to be matched against.
+        var say: [String] = []
         var body: Body
         /// Where the body was read from, when it was read from a file at all —
         /// `prompt: { path: slack.md }`. Nil for an inline body, and nil for a

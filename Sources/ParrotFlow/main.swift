@@ -262,11 +262,12 @@ if let index = arguments.firstIndex(of: "--command") {
 
 if let index = arguments.firstIndex(of: "--route") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --route \"hey parrot, make that a bullet list\" [--quiet]")
+        print("usage: ParrotFlow --route \"hey parrot, make that a bullet list\" [--quiet] [--keyed]")
         exit(2)
     }
     exit(RouteTestCommand.run(
-        text: arguments[index + 1], quiet: arguments.contains("--quiet")
+        text: arguments[index + 1], quiet: arguments.contains("--quiet"),
+        keyed: arguments.contains("--keyed")
     ))
 }
 
