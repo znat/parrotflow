@@ -186,13 +186,31 @@ also why apps in this category gravitate to `fn` or a right-hand modifier.
 
 ### Tap it to bring the offer back
 
-Hold the hotkey and you dictate. **Tap it** — shorter than
-`press_delay_seconds` — and the pill comes back with its commands on it.
+One key, three lengths. The tap means "me"; what you do next says what.
 
-| What is selected | What the offer is about |
+| Gesture | What happens |
+|---|---|
+| **Hold** | Dictate. Unchanged. |
+| **Tap** | The pill comes back, with its commands on it |
+| **Tap, then hold** | Speak an instruction — any command, not just the chips |
+
+A tap is a press shorter than `press_delay_seconds`. Tap and hold again within
+0.4s and the hold is the second half of one gesture rather than a dictation.
+
+| What is selected | What the gesture is about |
 |---|---|
 | A selection, anywhere | Those words, and the pill appears under them |
 | Nothing | The last dictation, and the pill stays where it was |
+
+**Tap-then-hold speaks the whole catalogue.** The chips are a short list; what
+you say is routed the way `"hey parrot, …"` is routed, so it reaches every
+transform and the catch-all besides — with no phrase to remember, because the
+key already said it was an instruction. The pill says **editing the selection**
+or **say an edit** while you hold, and ⎋ cancels.
+
+A bare tap waits 0.4s before the pill appears, because that is how long it
+takes to find out whether a hold is coming. Nothing waits on a pill; the
+dictation path is untouched.
 
 The selection wins because it is what you are pointing at now, and it is the
 only target the tap can have in an app ParrotFlow has never written into:

@@ -59,7 +59,11 @@ enum WatchModifiersCommand {
             counts[edge, default: 0] += 1
             print("  \(edge)")
         }
-        monitor.onPress = { note("press   — a dictation would start here") }
+        monitor.onPress = { afterTap in
+            note(afterTap
+                ? "tap+hold — what you say would be routed as a command"
+                : "press   — a dictation would start here")
+        }
         monitor.onRelease = { note("release — and end here") }
         monitor.onAbort = { note("abort   — that was a shortcut") }
         monitor.onTap = { note("tap     — the offer would be summoned") }

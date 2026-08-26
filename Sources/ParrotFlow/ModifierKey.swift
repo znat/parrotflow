@@ -153,7 +153,11 @@ enum ModifierKey: String, CaseIterable {
 /// watch falls back to its modifier half there. Left as is: a modifier held
 /// alone is not what happens while somebody is typing a password.
 final class ModifierKeyMonitor {
-    var onPress: (() -> Void)?
+    /// The key is being held. `afterTap` is a hold that a tap led straight
+    /// into — tap, release, press again — which is a different request from a
+    /// plain hold and is delivered here rather than through a callback of its
+    /// own, so no caller can wire one and forget the other.
+    var onPress: ((_ afterTap: Bool) -> Void)?
     var onRelease: (() -> Void)?
     /// A press that was already delivered turned out to be a shortcut. Whoever
     /// started a dictation on `onPress` has to drop it, silently: the user
@@ -164,9 +168,13 @@ final class ModifierKeyMonitor {
     ///
     /// This edge already existed and already did nothing: a hold shorter than
     /// the delay never delivers a press, so `onRelease` does not fire for it
-    /// either. Naming it costs the dictation path nothing, because a tap is
-    /// decided by the release rather than by waiting to see whether one is
-    /// coming.
+    /// either. Naming it costs the *dictation* path nothing — that one is
+    /// untouched, because a hold is still delivered on its own timing.
+    ///
+    /// It costs the tap `tapGrace`. A tap is held back that long to see whether
+    /// a hold follows it, because tap-then-hold has to be told from a tap and
+    /// the only difference is what happens next. Nothing waits on a pill, so
+    /// this is the cheap side of the trade.
     ///
     /// Never fires at `pressDelay` of 0 — there the press goes out on the down
     /// edge, so every hold has delivered one by the time it ends.
@@ -175,6 +183,18 @@ final class ModifierKeyMonitor {
     private var timer: Timer?
     private var monitors: [Any] = []
     private var armTimer: Timer?
+    /// A tap waiting to find out whether a hold is coming after it.
+    private var tapTimer: Timer?
+    /// This hold began inside `tapGrace` of a tap, so it is tap-then-hold.
+    private var afterTap = false
+
+    /// How long a tap waits for a hold to follow it.
+    ///
+    /// Long enough to release the key and press it again deliberately, short
+    /// enough that a tap meant on its own does not feel ignored. It buys the
+    /// two gestures a shared prefix: the tap says "me", and what happens inside
+    /// this window says what.
+    static let tapGrace: TimeInterval = 0.4
 
     private var key: ModifierKey?
     private var pressDelay: TimeInterval = 0
@@ -221,6 +241,8 @@ final class ModifierKeyMonitor {
     func stop() {
         timer?.invalidate()
         timer = nil
+        tapTimer?.invalidate()
+        tapTimer = nil
         endHold()
         key = nil
         isDown = false
@@ -251,6 +273,13 @@ final class ModifierKeyMonitor {
     private func beginHold() {
         isSpent = false
         pressDelivered = false
+        // A tap still waiting out its grace is this gesture's first half, not a
+        // gesture of its own. Cancelled rather than delivered: summoning the
+        // pill and then opening the microphone over it is two answers to one
+        // request.
+        afterTap = tapTimer != nil
+        tapTimer?.invalidate()
+        tapTimer = nil
         watchForOtherInput()
 
         guard pressDelay > 0 else {
@@ -276,7 +305,7 @@ final class ModifierKeyMonitor {
     private func deliverPress() {
         guard isDown, !isSpent, !pressDelivered else { return }
         pressDelivered = true
-        onPress?()
+        onPress?(afterTap)
     }
 
     private func finishHold() {
@@ -284,9 +313,20 @@ final class ModifierKeyMonitor {
         // `isSpent` is the whole of what keeps a shortcut out. ⌥P types π on a
         // French layout and is over in well under the delay, but the P marks
         // the hold, so it can never be read as a tap.
-        let wasTap = !wasPressed && !isSpent
+        //
+        // A tap that followed a tap is not a second tap. Two of them in a row
+        // is somebody who meant to tap-and-hold and let go too early, and
+        // summoning twice for it would be answering a gesture nobody made.
+        let wasTap = !wasPressed && !isSpent && !afterTap
         endHold()
-        if wasPressed { onRelease?() } else if wasTap { onTap?() }
+        guard !wasPressed else { onRelease?(); return }
+        guard wasTap else { return }
+        let timer = Timer(timeInterval: Self.tapGrace, repeats: false) { [weak self] _ in
+            self?.tapTimer = nil
+            self?.onTap?()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        tapTimer = timer
     }
 
     /// The one path out of a hold that was meant for something else. Delivered
@@ -306,6 +346,7 @@ final class ModifierKeyMonitor {
 
     private func endHold() {
         armTimer?.invalidate(); armTimer = nil
+        afterTap = false
         removeMonitors()
         pressDelivered = false
         isSpent = false

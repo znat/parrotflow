@@ -42,7 +42,13 @@ enum NoticeTone: Equatable {
 /// state change animates.
 enum PillState: Equatable {
     /// The mic is hot. Width depends on whether there is an app icon to show.
-    case recording
+    ///
+    /// The label is what this recording is *for*, and it is nil for the one
+    /// that needs no explaining: dictation. Tap-then-hold sets it, because a
+    /// hold that routes what you say instead of writing it down looks exactly
+    /// like one that writes it down, and the difference has to be readable
+    /// before you speak rather than after.
+    case recording(String?)
     /// Work of no predictable length — decoding, a prompt, a download.
     case working(String)
     /// A sentence, for a few seconds.
@@ -75,7 +81,7 @@ struct OfferedCommand: Equatable {
 }
 
 final class PillModel: ObservableObject {
-    @Published var state: PillState = .recording
+    @Published var state: PillState = .recording(nil)
 
     /// Whether the panel is on screen. False unmounts the surface.
     ///
@@ -178,11 +184,11 @@ final class PillHUD {
 
     // MARK: - The states
 
-    func recording(icon: NSImage?) {
+    func recording(icon: NSImage?, label: String? = nil) {
         model.elapsed = 0
         model.level = 0
         model.appIcon = icon
-        set(.recording)
+        set(.recording(label))
     }
 
     /// Stays up until something replaces it or `hide()` is called.
@@ -653,7 +659,7 @@ final class PillHUD {
     private func build() {
         let hosting = NSHostingView(rootView: PillView().environmentObject(model))
         hosting.frame = NSRect(origin: .zero,
-                               size: PillMetrics.panelSize(for: .recording, hasIcon: false))
+                               size: PillMetrics.panelSize(for: .recording(nil), hasIcon: false))
         // The panel is what resizes; the view follows it. Done this way round
         // because a SwiftUI frame inside a fixed panel centres a narrow pill in
         // a wide transparent box and takes the shadow with it.
@@ -978,7 +984,7 @@ enum PillMetrics {
 
     static func width(for state: PillState, hasIcon: Bool) -> CGFloat {
         switch state {
-        case .recording: return recording(hasIcon: hasIcon)
+        case .recording(let label): return recording(hasIcon: hasIcon, label: label)
         case .working(let message): return text(message)
         case .notice(let message, _): return text(message)
         case .offer(let commands, let headline, let reading):
@@ -988,9 +994,11 @@ enum PillMetrics {
 
     /// 15 + 8 + 10 + 66 + 15, and the icon after the meter when there is one
     /// to show.
-    static func recording(hasIcon: Bool) -> CGFloat {
+    static func recording(hasIcon: Bool, label: String? = nil) -> CGFloat {
         let base = padding * 2 + dot + gap + meter
-        return hasIcon ? base + icon + tuck : base
+        let width = hasIcon ? base + icon + tuck : base
+        guard let label else { return width }
+        return width + gap + title(label)
     }
 
     /// Wide enough for the message, the dot in front of it and the padding —
@@ -1135,8 +1143,8 @@ struct PillView: View {
         GeometryReader { geo in
             ZStack {
                 switch model.state {
-                case .recording:
-                    RecordingContent(level: model.level, icon: model.appIcon)
+                case .recording(let label):
+                    RecordingContent(level: model.level, icon: model.appIcon, label: label)
                         .transition(.opacity)
                 case .working(let message):
                     MessageContent(message: message, tone: .thinking)
@@ -1223,6 +1231,8 @@ struct PillView: View {
 private struct RecordingContent: View {
     let level: Float
     let icon: NSImage?
+    /// What this recording is for, when it is not dictation.
+    var label: String?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
@@ -1246,6 +1256,14 @@ private struct RecordingContent: View {
                     .interpolation(.high)
                     .frame(width: PillMetrics.icon, height: PillMetrics.icon)
                     .padding(.leading, PillMetrics.tuck)
+            }
+
+            if let label {
+                Text(label)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color(white: 0.88))
+                    .fixedSize()
+                    .padding(.leading, PillMetrics.gap)
             }
         }
         .padding(.horizontal, PillMetrics.padding)

@@ -168,6 +168,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// would be delivered with the terminal's answer, and the reverse puts
         /// markup in front of an app that shows the tags.
         let paste: AppProfile.Paste
+        /// Tap-then-hold: what is said is an instruction, not text.
+        ///
+        /// Decided at the press because that is where the gesture is known, and
+        /// carried here for the same reason everything else is — a second press
+        /// landing mid-transcription must not be able to change what this one
+        /// was for.
+        var isCommand = false
     }
 
     /// The words the offer on screen is about, and the field they went into.
@@ -179,6 +186,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// one dictation's words against another's field. This is the same
     /// ownership `offerPressRun` already asserts, carrying what it is about.
     private var offeredCorrection: (run: Int, target: Correction)?
+
+    /// The current press was tap-then-hold, so its words are an instruction.
+    private var commandAtPress = false
 
     /// The last dictation a tap can summon an offer over: its words, and where
     /// they went.
@@ -774,7 +784,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in self?.askForMissingKeys() }
 
         hotkeyError = nil
-        hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
+        hotKeys.onPress = { [weak self] afterTap in self?.handleHotKeyPress(afterTap: afterTap) }
         hotKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }
         hotKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
         hotKeys.onTap = { [weak self] in self?.summonOffer() }
@@ -1067,7 +1077,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Hotkey handling
 
-    private func handleHotKeyPress() {
+    private func handleHotKeyPress(afterTap: Bool = false) {
+        // The gesture, kept for the `Press` built when the recording stops.
+        // Only for a press that starts a dictation: the second press of a
+        // toggle belongs to the one already running, and it did not ask for
+        // anything different.
+        if !recorder.isRecording { commandAtPress = afterTap }
         // Read before anything this press does, so an abort later can tell the
         // transcription this press started from one that was already running.
         transcriptionRunAtPress = transcriptionRun
@@ -1432,8 +1447,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         playFeedback("Tink")
         if config.feedback.overlay {
-            pill.aim(at: anchorAtPress)
-            pill.recording(icon: appIconAtPress)
+            // Under the selection when there is one and this is a command: the
+            // words are about those words, and the pill belongs with them.
+            if commandAtPress, let selection = selectionAtPress {
+                aim(at: selection)
+            } else {
+                pill.aim(at: anchorAtPress)
+            }
+            pill.recording(icon: appIconAtPress, label: recordingLabel)
         }
 
         let tick = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -1741,7 +1762,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress,
             // Plain when nobody was in front, which is the answer that cannot
             // lose a sentence.
-            paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain
+            paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain,
+            isCommand: commandAtPress
         )
         Task { [weak self] in
             // Whatever happens below — decoded, cancelled, or thrown — nothing
@@ -2856,6 +2878,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
+    /// What the pill says the hold is for, or nil for the one that needs no
+    /// saying.
+    ///
+    /// A command hold looks exactly like a dictation from outside — same key,
+    /// same mic, same meter — and the difference is that the words are routed
+    /// instead of written down. That has to be readable *before* you speak, not
+    /// worked out afterwards from a sentence that never landed. Escape is live
+    /// the whole time, so a wrong answer here costs one keystroke.
+    private var recordingLabel: String? {
+        guard commandAtPress else { return nil }
+        return selectionAtPress == nil ? "say an edit" : "editing the selection"
+    }
+
     /// Put the pill under the selection instead of where the last dictation
     /// left it.
     ///
@@ -3929,6 +3964,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Newlines are still cut. A newline in a composer sends the message,
         // and no stage has a reason to ask for one at either end.
         let delivered = text.trimmingCharacters(in: .newlines)
+
+        // The gesture already said this is an instruction, so nothing is
+        // looked for in the words. That is the whole point of it: the phrase
+        // exists to mark a command inside an ordinary dictation, and there is
+        // nothing to mark when the key said so first.
+        if press.isCommand {
+            dictationEnded(press.run)
+            guard !trimmed.isEmpty else {
+                Log.write("command: nothing was said")
+                flash("Didn't catch that", tone: .caution)
+                updateUI()
+                return
+            }
+            Log.write("command spoken: \"\(trimmed)\"")
+            handleVoiceCommand(trimmed)
+            return
+        }
 
         // Heard as a command, or nothing at all: no words are going to land,
         // so there is nothing to compare a pane against.

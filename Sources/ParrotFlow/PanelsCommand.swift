@@ -146,7 +146,7 @@ enum PanelsCommand {
             )
         ))
 
-        let overlay = pill(.recording, icon: sampleIcon(), level: 0.75)
+        let overlay = pill(.recording(nil), icon: sampleIcon(), level: 0.75)
 
         // The pill has two states now and the difference is the whole point of
         // the slot: with somewhere to type it holds that app's icon, with
@@ -154,7 +154,14 @@ enum PanelsCommand {
         // are told the words are going to the clipboard instead. Both are on
         // the sheet because "it looks wrong with no icon" is the kind of thing
         // that is obvious side by side and invisible a week apart.
-        let overlayBlind = pill(.recording, level: 0.75)
+        let overlayBlind = pill(.recording(nil), level: 0.75)
+
+        // And the third, which is not dictation at all: tap-then-hold, where
+        // what you say is routed instead of written down. The label is the only
+        // thing that says so, which is exactly why it belongs on this sheet.
+        let overlayCommand = pill(
+            .recording("editing the selection"), icon: sampleIcon(), level: 0.75
+        )
 
         // A row the spell check proposed, half filled in, and a row typed by
         // hand — the two shapes the panel exists for, side by side.
@@ -207,6 +214,8 @@ enum PanelsCommand {
              pillSize(overlay), .dark, true),
             (AnyView(PillView().environmentObject(overlayBlind)),
              pillSize(overlayBlind), .dark, true),
+            (AnyView(PillView().environmentObject(overlayCommand)),
+             pillSize(overlayCommand), .dark, true),
             // The one real window the app has, and the first thing anyone sees.
             // On the sheet for the same reason as the rest: it is looked at,
             // not asserted on, and two screens that drift apart are obvious
