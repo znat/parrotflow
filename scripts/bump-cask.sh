@@ -75,7 +75,7 @@ cask "parrotflow" do
 
   zap trash: [
     "~/.config/parrotflow",
-    # The speech models, about 1.2 GB of them.
+    # The speech models, about 470 MB of them.
     "~/Library/Application Support/FluidAudio",
     "~/Library/Logs/ParrotFlow.log",
     "~/Library/Preferences/com.parrotflow.app.plist",
