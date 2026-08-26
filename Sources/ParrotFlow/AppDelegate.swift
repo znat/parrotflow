@@ -197,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// dictation's words at another's field, and taking it would have rewritten
     /// there. One record, written once, cannot come apart that way.
     private var lastDictated: (
-        text: String, element: AXUIElement?,
+        run: Int, text: String, element: AXUIElement?,
         owner: NSRunningApplication?, landing: Correction.Landing
     )?
 
@@ -2673,7 +2673,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Kept past the offer this is about to raise, so a tap can build another
         // one out of it once this has faded. Below the newer-run guard above,
         // and carrying the words as well as the field — see `lastDictated`.
-        lastDictated = (text, press.element, press.owner, landing)
+        lastDictated = (press.run, text, press.element, press.owner, landing)
 
         // The decoder's words matched back onto the sentence that came out of
         // the pipeline — see `Confidence.read`. Taken rather than copied: this
@@ -2698,7 +2698,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         raiseOffer(
             over: Correction(
-                original: text, element: press.element, owner: press.owner, landing: landing
+                original: text, element: press.element, owner: press.owner,
+                landing: landing, dictation: press.run
             ),
             run: press.run, headline: headline, reading: reading
         )
@@ -2825,7 +2826,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         raiseOffer(
             over: Correction(
                 original: last.text, element: last.element, owner: last.owner,
-                landing: last.landing
+                landing: last.landing, dictation: last.run
             ),
             run: pressRun, headline: nil, reading: Confidence.Reading()
         )
@@ -3349,6 +3350,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let owner: NSRunningApplication?
         /// Where the words went, so the correction can follow them.
         let landing: Landing
+        /// The dictation these words came from, or nil when they came from a
+        /// selection instead.
+        ///
+        /// Only `noteRewritten` reads it, and only to decide whether a rewrite
+        /// belongs to the record a tap would summon. Matching text is not proof
+        /// of that: say the same short sentence twice, take the first one's
+        /// offer after the second has landed, and the text matches while the
+        /// dictation is somebody else's.
+        var dictation: Int?
         /// The selection this offer was summoned over, when it was summoned
         /// over one rather than raised after a dictation.
         ///
@@ -3453,7 +3463,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return false
             }
             Log.write("offer: the dictation went to the clipboard; \(what) went there too")
-            noteRewritten(original, as: corrected)
+            noteRewritten(original, as: corrected, from: target.dictation)
             flash("\(what) copied — ⌘V to paste", tone: .done)
             return false
         }
@@ -3479,7 +3489,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let selection = target.selection {
             switch replaceSelected(with: corrected, in: selection, describedAs: what) {
             case .replaced:
-                noteRewritten(original, as: corrected)
+                noteRewritten(original, as: corrected, from: target.dictation)
                 applied(what)
                 return true
             case .failed, .notAttempted:
@@ -3521,7 +3531,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     dictated: original, in: now, describedAs: what
                 ) {
                 case .replaced:
-                    noteRewritten(original, as: corrected)
+                    noteRewritten(original, as: corrected, from: target.dictation)
                     applied(what)
                     return true
                 case .failed, .notAttempted:
@@ -3587,16 +3597,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// Only if this is still the sentence the app thinks it wrote last. A newer
     /// dictation has its own, and it is one slot.
-    private func noteRewritten(_ original: String, as corrected: String) {
+    private func noteRewritten(_ original: String, as corrected: String, from dictation: Int?) {
         guard lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines) == original
         else { return }
         lastTranscript = corrected
         // And the words a tap would summon over, which are the same words in
         // the same field. Left behind, a summon after a rewrite would offer the
         // sentence that is no longer on screen.
-        if lastDictated?.text.trimmingCharacters(in: .whitespacesAndNewlines) == original {
-            lastDictated?.text = corrected
-        }
+        //
+        // By run, not by text. The panel can be open for as long as it takes to
+        // think about a spelling and push-to-talk does not wait, so an older
+        // correction can finish after a newer dictation — and if the two said
+        // the same thing, the text matches while the record belongs to the
+        // newer one. Relabelling it there would leave the older correction's
+        // words pointing at the newer dictation's field.
+        guard let dictation, dictation == lastDictated?.run else { return }
+        lastDictated?.text = corrected
     }
 
     private func beginCorrection() {
