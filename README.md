@@ -4,7 +4,7 @@
 
 # ParrotFlow
 
-### A local, fast and programmable dictation app shaped around your voice and your work
+### A fast and programmable dictation app you can shape around your work
 
 [![Release](https://img.shields.io/github/v/release/znat/parrotflow?color=0c8c7c&label=release)](https://github.com/znat/parrotflow/releases)
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B%20·%20Apple%20silicon-1d1d1f?logo=apple&logoColor=white)
@@ -43,18 +43,21 @@ Spoken commands and the vocabulary check need a language model as well, and that
 
 ## Not everything you say needs a remote AI provider
 
-[Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), NVIDIA's state-of-the-art, open-source speech model, runs locally and fast. Most dictations land in under half a second.
+[Parakeet](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), NVIDIA's speech model, runs locally and fast. Most dictations land in under half a second.
 
 Everything else — the hotkey, the pipeline, every transform — lives in one
-plain YAML file, `config.yaml`. Edit it by hand, or with your coding agent.
-To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
+plain YAML file, `config.yaml` you can edit it by hand or with your coding agent.
+> To find it: the 🦜 icon in the menu bar → Settings → Edit Config…
 
 <br>
 
 ### Transcriptions follow your rules
 
-**Regex or script transforms** run in milliseconds, for a fixed rule: issue
-links, date formats, dropping "um" and "uh".
+Use regexes, scripts or prompts to customize your dictations.
+
+
+
+**Example: add PR links to your dictations**
 
 ```yaml
 transforms:
@@ -77,57 +80,54 @@ spoken digits are already `123` by then: the built-in `numbers` stage turned
 turning PR123 into a clickable #123 that points at
 github.com/znat/parrotflow/pull/123](Resources/refs.gif)
 
-A rule too fiddly for a regex is a script instead. This one runs after the
-built-in `numbers` stage, which already turned "fourteen" into `14`:
+**Example: Automatically add Slack handles.**
 
 ```yaml
 transforms:
-  - name: dates
-    description: spoken dates as DD/MM
-    command: dates.py
+  - name: slack_handles
+    description: use Slack handles for the people named
+    command: slack_handles.py
 ```
+Where `slack_handles.py` is:
 
 ```python
 #!/usr/bin/env python3
-import re, sys
-months = ("january", "february", "march", "april", "may", "june",
-          "july", "august", "september", "october", "november", "december")
+# roster.json sits beside this file: {"Ada": "@ada.lovelace", ...}
+import json, pathlib, re, sys
+
+roster = json.loads((pathlib.Path(__file__).parent / "roster.json").read_text())
 text = sys.stdin.read()
-for n, month in enumerate(months, start=1):
-    text = re.sub(
-        rf"\b{month}\s+(\d{{1,2}})\b",
-        lambda m: f"{int(m.group(1)):02d}/{n:02d}",
-        text, flags=re.I,
-    )
+
+for name, handle in roster.items():
+    # Skip a name already written as a handle, and a name used as an
+    # ordinary word — "mark it as done" is a verb.
+    text = re.sub(rf"(?<![@\w.]){re.escape(name)}\b", handle, text, flags=re.I)
+
 sys.stdout.write(text)
 ```
+![Dictating "Ada and Mark are both on it", and the slack_handles script turning
+the names into "@ada.lovelace and @mark.reyes"](Resources/handles.gif)
 
-*"let's meet march 14"* → *"let's meet 14/03"*
-
-Both are rules. Both cost nothing and run on every dictation. A pipeline says
-in what order:
+**Combine transforms in a pipeline**
 
 ```yaml
 transcription:
   pipelines:
     default:
-      - numbers                 # "twenty two" -> 22, so dates has digits to work with
-      - transform: priorities
-      - transform: dates
+      - numbers                 # "one two three" -> 123, so github_refs has digits
+      - transform: github_refs
+      - transform: slack_handles
 ```
 
-*"let's resolve the P one before february twenty two"* →
-*"let's resolve the P1 before 22/02"*
-
-![Dictating "let's resolve the P one before february twenty two", and the
-priorities and dates rules turning it into "let's resolve the P1 before
-22/02"](Resources/rules.gif)
+![Dictating "merged P R one two three, Ada can you take a look", and the
+github_refs and slack_handles rules turning it into "merged #123,
+@ada.lovelace can you take a look"](Resources/rules.gif)
 
 <br>
 
 ### Use language models only when they're needed
 
-Name every model you want to reach, once:
+Add models to your config:
 
 ```yaml
 models:
@@ -154,11 +154,14 @@ transforms:
 ```
 
 Say *"hey parrot, fix the grammar"*, or press `G` on the pill after any
-dictation. A version tuned and scored against real transcripts is in
-[examples/transforms/grammar](examples/transforms/grammar).
+dictation.
 
-You can run the grammar fix only in chat and mail apps, and not in coding
-agents, to avoid the latency:
+![Dictating into Slack: the pill shows the Slack icon, the grammar step runs,
+and "the panel dont show up sometimes" becomes "The panel doesn't show up
+sometimes."](Resources/grammar.gif)
+
+
+Or you can run the grammar fix in chat and mail apps (but not in coding agents, for instance) for all dictations:
 
 ```yaml
 transcription:
@@ -168,16 +171,10 @@ transcription:
         app: /slack|outlook/    # Grammar only checked in Slack and Outlook
 ```
 
-The pill shows the app your words are going to, and that is what the step is
-scoped on.
+> See [examples/transforms/grammar](examples/transforms/grammar) for a more elaborate version.
 
-![Dictating into Slack: the pill shows the Slack icon, the grammar step runs,
-and "the panel dont show up sometimes" becomes "The panel doesn't show up
-sometimes."](Resources/grammar.gif)
-
-**A remote model** is worth it for the harder jobs. A spoken correction
-needs judgment a fixed rule does not have, and GPT-5.6 Luna does this
-efficiently, at low cost.
+**A remote model** for harder jobs. A spoken correction
+needs judgment a fixed rule or a too small local model does not have.
 
 ```yaml
 transforms:
@@ -200,10 +197,10 @@ to get "let's ship Thursday"](Resources/self-correct.gif)
 
 <br>
 
-### The parrot learns your vocabulary
+### Vocabulary
 
 Colleagues' names, internal jargon, acronyms, vendor names — the words a
-general speech model has never heard. Correct one once and it stays fixed.
+general speech model has never heard. Correct it a few times and it stays fixed.
 
 Press `V` on the pill after any dictation and say what the word should be.
 
@@ -211,8 +208,6 @@ Press `V` on the pill after any dictation and say what the word should be.
 with Versailles twice: one becomes Vercel, the castle is left
 alone](Resources/vocabulary.gif)
 
-> *"deploying the app on Versailles, visiting the Versailles castle"* →
-> *"deploying the app on Vercel, visiting the Versailles castle"*
 
 Enabling `review` allows an LLM to intelligently decide when a vocabulary
 term should be applied: there is no Vercel Castle, and Versailles won't
@@ -223,39 +218,9 @@ transcription:
   pipelines:
     default:
       - stage: vocabulary
-        review: gpt    # Currently, Gemma struggles in some cases
+        review: gpt
       - numbers
 ```
-
-### Build your own pipeline
-
-Your transcriptions can follow a complex workflow based on how you work, with
-several steps and conditions.
-
-```yaml
-transcription:
-  pipelines:
-    default:
-      - stage: vocabulary
-        review: gemma                 # names first, before anything edits the text
-      - numbers                       # "fourteen" -> 14, so dates has digits to work with
-      - transform: priorities         # "P one" -> P1, free, every dictation
-      - transform: dates              # "march 14" -> 14/03, free, every dictation
-      - transform: grammar
-        app: /slack|outlook/          # only there; a terminal gets the raw transcript
-```
-
-`self_correction` is not in the list. It deletes words, so it runs only when
-you ask: hold `⌘` and say *"hey parrot, correct me"*, or press `S` on the pill
-after any dictation.
-
-A transform that returns Markdown reaches Slack as real formatting rather than
-as `**stars**` — a list as a list, and `[#123](https://…)` as a link you can
-click. Emphasis on its own is left alone: a lone `**bold**` in a sentence stays
-exactly as you said it, so an ordinary dictation is never reinterpreted. Other
-apps get plain text until they are measured, and plain text rides along either
-way, so nothing is lost to an app that does not take it. See
-[bullets, bold and links](docs/configuration.md#bullets-bold-and-links).
 
 ### More examples
 
