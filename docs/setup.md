@@ -28,7 +28,7 @@ Say which download you are on. A silent 10 GB download looks like a hang.
 | What | Size | When | Needed for |
 | --- | --- | --- | --- |
 | The app | 3 MB | Step 2 | everything |
-| Parakeet, the speech model | 1.2 GB | Step 3, automatic | dictation |
+| Parakeet, the speech model | 470 MB | Step 3, automatic | dictation |
 | Gemma, the language model | 10 GB | Step 5, optional | voice commands |
 
 Dictation works after Step 3. Everything after is extra.
@@ -145,8 +145,8 @@ say -o /tmp/pf-check.wav --data-format=LEI16@16000 --channels=1 "Testing one two
 
 The first run downloads that model — tell them first:
 
-> Downloading the speech model now. It is called Parakeet, about 1.2 GB, and it
-> runs on your Mac. A few minutes.
+> Downloading the speech model now. It is called Parakeet, about 470 MB, and it
+> runs on your Mac. A minute or two.
 
 `Testing 123.` is a correct result; what matters is that text came back. If this
 fails, stop and fix it — nothing after this step can work.

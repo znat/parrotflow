@@ -444,6 +444,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Permissions.microphone == .granted {
             recorder.warmUp()
         }
+        // The other half of the first press. The engine warms above; this is
+        // the pill's own window, which costs as much again.
+        pill.warm()
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }
@@ -962,18 +965,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// waits for this process to exit before it moves anything, so an update
     /// that could not close the app would simply hang.
     private func install(_ release: Updates.Release) {
-        beginProgress("Downloading ParrotFlow \(release.version)…")
+        let token = beginProgress("Downloading ParrotFlow \(release.version)…")
         Task<Void, Never> {
             do {
                 let app = try await UpdateInstaller.prepare(release)
                 try await MainActor.run {
-                    self.endProgress()
+                    self.endProgress(token: token)
                     try UpdateInstaller.swapAndRelaunch(newApp: app)
                     NSApp.terminate(nil)
                 }
             } catch {
                 await MainActor.run {
-                    self.endProgress()
+                    self.endProgress(token: token)
                     Log.write("updates: install failed — \(error.localizedDescription)")
                     self.presentAlert(
                         title: "Could not install the update",
@@ -1510,7 +1513,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if transcribing {
             cancelledThroughRun = transcriptionRun
-            endProgress()
+            endProgress(token: dictationProgressToken, for: transcriptionRun)
         }
 
         stopWatchingForEscape()
@@ -1698,7 +1701,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // A dictation into a mail window spends a second in the `email` prompt
         // with nothing on screen at all, which reads as the app having dropped
         // it. Same pair the spoken-command path has used all along.
-        beginProgress("Transcribing…")
+        // "Transcribing…" is a lie while the model is still arriving, and the
+        // first dictation after an install is exactly when that happens: the
+        // download is about 470 MB and the pill would sit on one word for all
+        // of it. Say what is actually happening, with the figure.
+        var starting = "Transcribing…"
+        if case .downloading(let what) = transcriberStatus {
+            pillDownloadRun = run
+            starting = "Downloading \(what)"
+        }
+        let token = beginProgress(starting)
+        dictationProgressToken = token
 
         let config = self.config
         // Taken at the press, not here: a transcript arrives seconds later and
@@ -1763,11 +1776,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         url: recording.url, config: config, app: app, press: press.run,
                         progress: { label in
                             Task { @MainActor [weak self] in
-                                // Still this dictation, and still one that has
-                                // something on screen to replace.
-                                guard let self, self.transcriptionRun == run,
-                                      self.transcriptionLabel != nil else { return }
-                                self.beginProgress(label)
+                                // Only over this dictation's own message. A
+                                // second press, or a command, and the pill is
+                                // no longer ours to write on.
+                                self?.updateProgress(label, token: token)
                             }
                         },
                         heard: heard
@@ -1777,14 +1789,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 await MainActor.run {
                     guard let self else { return }
-                    // Only if the screen is still ours. Push-to-talk does not
-                    // wait, so a second press while this one was in flight has
-                    // already put its own "Transcribing…" up, and clearing it
-                    // here would leave that dictation running behind a blank
-                    // screen — the bug this is meant to fix, one press later.
+                    // The token is what makes this only take down our own
+                    // message. Push-to-talk does not wait, so a second press
+                    // while this one was in flight has already put its own
+                    // "Transcribing…" up, and clearing that would leave the
+                    // newer dictation running behind a blank pill. Same for a
+                    // spoken command or an update that took the pill.
                     // The text is delivered either way: `destination` was
                     // captured at the press for exactly that reason.
-                    if self.transcriptionRun == run { self.endProgress() }
+                    self.endProgress(token: token, for: run)
                     // Escape, while this was decoding. The decoder cannot be
                     // stopped part-way, so the text exists — it simply goes
                     // nowhere. Logged, because a dictation that vanishes with
@@ -1806,7 +1819,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await MainActor.run {
                     guard let self else { return }
-                    if self.transcriptionRun == run { self.endProgress() }
+                    self.endProgress(token: token, for: run)
                     self.runsInFlight -= 1
                     self.stopWatchingForEscapeIfIdle()
                     // Cancelled or failed, nothing is going to be written.
@@ -1957,12 +1970,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Ollama is not running. This also covers the wake phrase said on its
         // own, which means the panel rather than anything the router could pick.
         if let local = VoiceCommand.local(from: command) {
-            apply(local, command: command)
+            // Nothing on the pill is ours: no model was asked, so no
+            // "Thinking…" went up.
+            apply(local, command: command, progress: nil)
             return
         }
         if let capability = Router.local(instruction: command, catalogue: catalogue) {
             Log.write("router: \"\(command)\" named \(capability.name) outright")
-            run(capability, instruction: command)
+            run(capability, instruction: command, progress: nil)
             return
         }
 
@@ -1971,7 +1986,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        beginProgress("Thinking…")
+        let token = beginProgress("Thinking…")
         let llmConfig = llmConfig(for: .router)
         let freeForm = config.freeForm
         let catchAll = config.commands.catchAll
@@ -1989,7 +2004,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     switch decision {
                     case .matched(let capability):
                         Log.write("router: \"\(command)\" → \(capability.name)")
-                        self.run(capability, instruction: command)
+                        self.run(capability, instruction: command, progress: token)
                     case .anything:
                         // An edit with no prompt behind it. The instruction is
                         // the whole specification, so it goes through unsplit,
@@ -1997,7 +2012,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("router: \"\(command)\" → \(FreeForm.name)")
                         self.runTransform(
                             FreeForm.prompt(for: command).asTransform(model: catchAll),
-                            instruction: command
+                            instruction: command, progress: token
                         )
                     case .none:
                         // Nothing fits. Deliberately not falling through to
@@ -2010,7 +2025,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         // was not an edit at all", so it says so — the two
                         // reasons want different fixes, and "no prompt for it"
                         // would send you writing one that would never be used.
-                        self.endProgress()
+                        self.endProgress(token: token)
                         Log.write("router: nothing matched \"\(command)\"")
                         self.flash(freeForm
                             ? "Not something to change in the text: \"\(command)\""
@@ -2021,7 +2036,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     guard let self else { return }
                     Log.write("routing failed: \(error.localizedDescription)")
-                    self.endProgress()
+                    self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
                         self.handleVoiceCommand(command)
                     }
@@ -2032,15 +2047,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Runs whatever the router picked.
-    private func run(_ capability: Capability, instruction: String) {
+    ///
+    /// `progress` is the "Thinking…" the router put up, where a router ran, so
+    /// whichever branch ends without putting its own message up takes that one
+    /// down and nothing else.
+    private func run(_ capability: Capability, instruction: String, progress token: Int?) {
         switch capability {
         case .action(.vocabulary):
-            endProgress()
+            endProgress(token: token)
             beginCorrection()
         case .action(.spelling):
-            interpretSpelling(instruction)
+            interpretSpelling(instruction, progress: token)
         case .transform(let transform):
-            runTransform(transform, instruction: instruction)
+            runTransform(transform, instruction: instruction, progress: token)
         }
     }
 
@@ -2105,14 +2124,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The spelling extractor, which is a second model call rather than part of
     /// routing — it reads the last transcript and returns a rule, not a name.
-    private func interpretSpelling(_ command: String) {
+    private func interpretSpelling(_ command: String, progress inherited: Int?) {
         guard config.llmEnabled else {
-            endProgress()
+            endProgress(token: inherited)
             flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands", tone: .caution)
             return
         }
 
-        beginProgress("Thinking…")
+        let token = beginProgress("Thinking…")
         let llmConfig = llmConfig()
         let context = lastTranscript
         // From the transcript, never the command: the command is short and its
@@ -2131,14 +2150,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     command: command, lastTranscript: context,
                     language: language, config: llmConfig
                 )
-                await MainActor.run { self?.apply(result, command: command) }
+                await MainActor.run { self?.apply(result, command: command, progress: token) }
             } catch {
                 await MainActor.run {
                     guard let self else { return }
                     Log.write("command interpretation failed: \(error.localizedDescription)")
-                    self.endProgress()
+                    self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
-                        self.interpretSpelling(command)
+                        // The message above is already down, so the retry
+                        // inherits nothing.
+                        self.interpretSpelling(command, progress: nil)
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
@@ -2153,7 +2174,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The selection is taken from the snapshot made when the hotkey went down,
     /// not read now — by the time this runs, our own panel may hold focus, and
     /// reading then returns nothing or something of ours.
-    private func runTransform(_ transform: Config.Transform, instruction: String) {
+    private func runTransform(
+        _ transform: Config.Transform, instruction: String, progress inherited: Int?
+    ) {
         // Never the clipboard. `read()` falls back to it for the correction
         // panel, where you see the words before anything happens and can
         // cancel; a transform gets no such look. The clipboard holds whatever
@@ -2173,7 +2196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // grammar" work immediately after speaking, with nothing selected.
         let target = selection?.text ?? lastTranscript ?? ""
         guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            endProgress()
+            endProgress(token: inherited)
             Log.write("transform: nothing selected and nothing dictated yet")
             flash("Select some text first, or dictate something", tone: .caution)
             return
@@ -2199,7 +2222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         selection: SelectionReader.Selection?,
         on target: String
     ) {
-        beginProgress(transform.progressLabel)
+        let token = beginProgress(transform.progressLabel)
 
         Task { [weak self] in
             do {
@@ -2209,14 +2232,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     self?.finishTransform(
                         transform: transform, selection: selection,
-                        before: target, after: result
+                        before: target, after: result, progress: token
                     )
                 }
             } catch {
                 await MainActor.run {
                     guard let self else { return }
                     Log.write("transform failed: \(error.localizedDescription)")
-                    self.endProgress()
+                    self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
                         self.runTransform(
                             transform, instruction: instruction,
@@ -2233,9 +2256,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         transform: Config.Transform,
         selection: SelectionReader.Selection?,
         before: String,
-        after: String
+        after: String,
+        progress token: Int?
     ) {
-        endProgress()
+        endProgress(token: token)
 
         let cleaned = after.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
@@ -2575,9 +2599,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastTranscript = text
     }
 
-    private func apply(_ command: VoiceCommand, command spoken: String) {
+    private func apply(_ command: VoiceCommand, command spoken: String, progress token: Int?) {
         // Whatever happens next replaces it: a panel, or a flash of its own.
-        endProgress()
+        endProgress(token: token)
 
         switch command {
         case .openCorrectionPanel:
@@ -3167,7 +3191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !before.isEmpty else { return }
 
         Log.write("offer: \(transform.name) over \"\(before.prefix(80))\"")
-        beginProgress(transform.progressLabel)
+        let token = beginProgress(transform.progressLabel)
 
         // On the main actor for the whole of it, so the answer is handled where
         // every other caller hands it back with `MainActor.run`. `perform` is
@@ -3180,7 +3204,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ) else { return }
                 self?.finishOfferedTransform(
                     transform, over: target, before: before, after: result,
-                    clipboardWhenChosen: clipboardWhenChosen
+                    clipboardWhenChosen: clipboardWhenChosen, progress: token
                 )
             } catch {
                 // Fail open: the words are untouched, wherever they are. Losing
@@ -3188,7 +3212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // the sentence.
                 guard let self else { return }
                 Log.write("offer: \(transform.name) failed: \(error.localizedDescription)")
-                self.endProgress()
+                self.endProgress(token: token)
                 // `clipboardWhenChosen` goes through the retry unchanged. It
                 // still means what it meant — the clipboard as it was when the
                 // chip was pressed — and pasting a key into the dialog moves
@@ -3223,9 +3247,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// costs a retry, and the belief that the feature is broken.
     private func finishOfferedTransform(
         _ transform: Config.Transform, over target: Correction, before: String, after: String,
-        clipboardWhenChosen: Int
+        clipboardWhenChosen: Int, progress token: Int?
     ) {
-        endProgress()
+        endProgress(token: token)
 
         let cleaned = after.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
@@ -3786,16 +3810,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setLabel(message, clearAfter: 4)
     }
 
-    /// A message that stays up until `endProgress()`, for work of no
+    /// Who the message on the pill belongs to. Bumped for every message put
+    /// up, so only the last one handed out is live.
+    ///
+    /// There is one pill and every job shares it. Push-to-talk does not wait
+    /// for the previous transcript, so two dictations are routinely in flight,
+    /// and a spoken command or an update can put a message up over either. A
+    /// caller that hides the pill without saying which message it meant takes
+    /// down whatever is on screen — including one a newer job put there, which
+    /// leaves that job running behind a blank pill and reads as a dropped
+    /// dictation.
+    private var progressToken = 0
+
+    /// A message that stays up until `endProgress`, for work of no
     /// predictable length. "Thinking…" was a `flash`, so it timed out after
     /// 3.5s while a cold Ollama was still loading — leaving the rest of a 10s
     /// wait with nothing on screen at all.
-    private func beginProgress(_ message: String) {
+    ///
+    /// The token it returns is what takes this message down again. Hold it
+    /// until the work ends, and hand it back to whatever ends on your behalf.
+    /// Not discardable: a message put up with the token thrown away is one
+    /// nothing can take down.
+    private func beginProgress(_ message: String) -> Int {
+        progressToken += 1
+        pill.working(message)
+        setLabel(message)
+        return progressToken
+    }
+
+    /// The same caller's next message — a pipeline stage label, a download
+    /// percentage climbing — over the one it already has up. The token is kept,
+    /// so the token the caller holds still ends it.
+    ///
+    /// Nothing is drawn once something else owns the pill. Redrawing there
+    /// would take the screen from a job that is still working, and the token
+    /// held by this caller could no longer take the message down.
+    private func updateProgress(_ message: String, token: Int?) {
+        guard let token, token == progressToken else { return }
         pill.working(message)
         setLabel(message)
     }
 
-    private func endProgress() {
+    /// `token` is what `beginProgress` returned. A stale one — someone else's
+    /// message is on the pill now — takes nothing down, and neither does `nil`,
+    /// which is what a path that inherited no message of its own passes.
+    ///
+    /// `run` is the dictation this ends, where there is one. Only that run may
+    /// give up its claim on the download pill. Push-to-talk leaves an older
+    /// dictation running a transform while a newer one waits on a model — the
+    /// vocabulary model is fetched mid-dictation at `Transcriber.swift:356` —
+    /// and clearing the claim from the older one would cost the newer one the
+    /// pill it gets back at `.ready`. Keyed on the run and not on what is
+    /// drawn, so the claim is given up whether or not this hides anything.
+    private func endProgress(token: Int?, for run: Int? = nil) {
+        if pillDownloadRun == run { pillDownloadRun = nil }
+        guard let token, token == progressToken else { return }
+        // An empty pill has no owner: no token still out there can put a
+        // message back on it, or take a newer one down.
+        progressToken += 1
         pill.hide()
         setLabel(nil)
     }
@@ -3916,8 +3988,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let catalogue = Catalogue(transforms: config.transforms)
 
         /// Write what was said, and say why it is not what was asked for.
-        func giveUp(_ why: String, tone: NoticeTone = .caution) {
-            endProgress()
+        ///
+        /// `progress` is the message this path still has up, if any: the
+        /// router's "Thinking…", or the transform's own label.
+        func giveUp(_ why: String, tone: NoticeTone = .caution, progress token: Int?) {
+            endProgress(token: token)
             Log.write("inline: \(why); wrote the text as dictated")
             insertDictation(text, to: destination, for: press)
             pill.notice(why, tone: tone, duration: 7)
@@ -3925,7 +4000,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         func run(_ transform: Config.Transform) {
-            beginProgress(transform.progressLabel)
+            let token = beginProgress(transform.progressLabel)
             Task { [weak self] in
                 do {
                     guard let result = try await self?.perform(
@@ -3933,10 +4008,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     ) else { return }
                     await MainActor.run {
                         guard let self else { return }
-                        self.endProgress()
+                        self.endProgress(token: token)
                         let cleaned = result.trimmingCharacters(in: .whitespacesAndNewlines)
                         guard !cleaned.isEmpty else {
-                            giveUp("\(transform.name) returned nothing", tone: .failure)
+                            giveUp(
+                                "\(transform.name) returned nothing", tone: .failure,
+                                progress: nil
+                            )
                             return
                         }
                         if cleaned != text {
@@ -3949,7 +4027,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 } catch {
                     await MainActor.run {
-                        giveUp(error.localizedDescription, tone: .failure)
+                        giveUp(error.localizedDescription, tone: .failure, progress: token)
                     }
                 }
             }
@@ -3962,18 +4040,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .action(let action):
                 runInlineAction(
                     action, text: text, instruction: instruction,
-                    destination: destination, focus: focus, for: press
+                    destination: destination, focus: focus, for: press, progress: nil
                 )
             }
             return
         }
 
         guard config.llmEnabled else {
-            giveUp("\"\(instruction)\" needs a model — `models:` defines none")
+            giveUp(
+                "\"\(instruction)\" needs a model — `models:` defines none", progress: nil
+            )
             return
         }
 
-        beginProgress("Thinking…")
+        let token = beginProgress("Thinking…")
         let llm = llmConfig(for: .router)
         let freeForm = config.freeForm
         let catchAll = config.commands.catchAll
@@ -3992,17 +4072,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     case .matched(.action(let action)):
                         self.runInlineAction(
                             action, text: text, instruction: instruction,
-                            destination: destination, focus: focus, for: press
+                            destination: destination, focus: focus, for: press,
+                            progress: token
                         )
                     case .anything:
                         Log.write("inline router: \"\(instruction)\" → \(FreeForm.name)")
                         run(FreeForm.prompt(for: instruction).asTransform(model: catchAll))
                     case .none:
-                        giveUp("Not something to change in the text: \"\(instruction)\"")
+                        giveUp(
+                            "Not something to change in the text: \"\(instruction)\"",
+                            progress: token
+                        )
                     }
                 }
             } catch {
-                await MainActor.run { giveUp(error.localizedDescription, tone: .failure) }
+                await MainActor.run {
+                    giveUp(error.localizedDescription, tone: .failure, progress: token)
+                }
             }
         }
     }
@@ -4021,13 +4107,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// mind about a rule.
     private func runInlineAction(
         _ action: Capability.Action, text: String, instruction: String,
-        destination: Destination, focus: SelectionReader.Selection?, for press: Press
+        destination: Destination, focus: SelectionReader.Selection?, for press: Press,
+        progress inherited: Int?
     ) {
         switch action {
         case .vocabulary:
             // "…by the way parrot, fix vocabulary" — nothing to extract, the
             // panel opens on the sentence itself and you correct it by hand.
-            endProgress()
+            endProgress(token: inherited)
             Log.write("inline: correction panel over \"\(text)\"")
             showInlineCorrection(
                 over: text, rules: nil, destination: destination, focus: focus, for: press
@@ -4041,11 +4128,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 giveUpInline(
                     text,
                     why: "\"\(instruction)\" needs the local model to read the spelling",
-                    destination: destination, focus: focus, for: press
+                    destination: destination, focus: focus, for: press, progress: inherited
                 )
                 return
             }
-            beginProgress("Thinking…")
+            let token = beginProgress("Thinking…")
             let llm = llmConfig()
             // From the dictated text, not the instruction: the instruction is a
             // name plus a run of loose capitals, which reads as English
@@ -4061,7 +4148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                     await MainActor.run {
                         guard let self else { return }
-                        self.endProgress()
+                        self.endProgress(token: token)
                         switch result {
                         case .addRules(let rules):
                             for rule in rules {
@@ -4085,17 +4172,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                             // — the text is still in this function.
                             self.giveUpInline(
                                 text, why: "Didn't understand \"\(instruction)\"",
-                                destination: destination, focus: focus, for: press
+                                destination: destination, focus: focus, for: press,
+                                progress: nil
                             )
                         }
                     }
                 } catch {
                     await MainActor.run {
                         guard let self else { return }
-                        self.endProgress()
                         self.giveUpInline(
                             text, why: error.localizedDescription, tone: .failure,
-                            destination: destination, focus: focus, for: press
+                            destination: destination, focus: focus, for: press, progress: token
                         )
                     }
                 }
@@ -4203,9 +4290,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Write what was said, and say why it is not what was asked for.
     private func giveUpInline(
         _ text: String, why: String, tone: NoticeTone = .caution,
-        destination: Destination, focus: SelectionReader.Selection?, for press: Press
+        destination: Destination, focus: SelectionReader.Selection?, for press: Press,
+        progress token: Int?
     ) {
-        endProgress()
+        endProgress(token: token)
         Log.write("inline: \(why); wrote the text as dictated")
         insertDictation(text, to: destination, for: press)
         pill.notice(why, tone: tone, duration: 7)
@@ -4356,10 +4444,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// dictation may have put up in the meantime.
     private var transcriberLabelToken: Int?
 
+    /// The transcriber's last reported status, mirrored here because the
+    /// actor's own copy cannot be read without an await, and a key release has
+    /// no time for one. Both sides are the main queue — `onStatusChange` hops
+    /// there before it lands — so it needs no lock.
+    private var transcriberStatus: Transcriber.Status = .idle
+
+    /// The `transcriptionRun` whose pill is showing the model download instead
+    /// of the dictation, if any.
+    ///
+    /// A run and not a flag, for the reason every other late arrival in this
+    /// file carries one. Push-to-talk does not wait, so two dictations sit on
+    /// the same download, and the older one's `.ready` would otherwise take the
+    /// pill from the newer one that has since put its own message up.
+    private var pillDownloadRun: Int?
+
+    /// The `progressToken` of the newest dictation's message, for the two
+    /// places that write to that message without holding the token: the
+    /// transcriber's own status, which replaces the download percentage as it
+    /// climbs, and Escape, which takes the message down.
+    private var dictationProgressToken: Int?
+
+    /// The `transcriptionRun == run` test the rest of the chain makes, asked of
+    /// the pill: the run that put the download up is still the newest one.
+    private var ownsDownloadPill: Bool { pillDownloadRun == transcriptionRun }
+
     private func handleTranscriberStatus(_ status: Transcriber.Status) {
+        transcriberStatus = status
         switch status {
         case .downloading(let what):
             setLabel("Downloading \(what)")
+            // `what` already carries the percentage, so replacing the text in
+            // place is what makes the number climb. Only for the dictation that
+            // put the download up: it is waiting on exactly this, and
+            // "Transcribing…" over a 470 MB fetch reads as a hang.
+            if ownsDownloadPill {
+                updateProgress("Downloading \(what)", token: dictationProgressToken)
+            }
+            // After the pill, which writes the label too: this has to hold the
+            // token of the last write, or `.ready` never clears the menu bar.
             transcriberLabelToken = labelToken
             // `what` reads like "speech model 43%" — the number, if this is
             // the one download that carries one, is the only part worth a
@@ -4370,11 +4493,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             permissions.model.speechModel = .preparing(percent: percent)
         case .loading:
             setLabel("Loading speech model…")
+            if ownsDownloadPill {
+                updateProgress("Loading speech model…", token: dictationProgressToken)
+            }
             transcriberLabelToken = labelToken
             permissions.model.speechModel = .preparing(percent: nil)
         case .failed(let message):
             setLabel("Model error: \(message)")
             transcriberLabelToken = labelToken
+            // The pill is left to the dictation. `.loading` is the same wait
+            // continuing, so it says so; a failure is the wait ending, and the
+            // run waiting on the model gets it as a thrown error whose catch
+            // already hides the pill and puts up the alert. Two endings on
+            // screen for one failure is worse than one.
             // Not surfaced as "preparing" forever: the permissions window
             // isn't the place a transcription failure gets diagnosed, and a
             // stuck "downloading" badge there would outlive the one place
@@ -4383,6 +4514,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .ready, .idle:
             if transcriberLabelToken == labelToken { setLabel(nil) }
             transcriberLabelToken = nil
+            // The dictation that was waiting on the model gets its pill back,
+            // unless something else has taken it in the meantime — that job is
+            // still working, and it is the one holding the live token.
+            if ownsDownloadPill {
+                updateProgress("Transcribing…", token: dictationProgressToken)
+            }
+            pillDownloadRun = nil
             permissions.model.speechModel = .ready
         }
     }

@@ -20,7 +20,7 @@ hotkey:
 audio:
   output_dir: ~/Recordings/ParrotFlow
   speech_gate: true     # skip clips with no speech in them
-  second_opinion: false # decode each clip twice and keep the longer decode
+  second_opinion: true  # decode each clip twice and keep the longer decode
 
 transcription:
   insert_mode: paste    # or clipboard
@@ -700,8 +700,10 @@ real one.
 ## `audio.second_opinion`
 
 Decodes the clip a second time, with silence added at both ends, and keeps that
-decode when it reaches further into the audio than the first one did. Off by
-default.
+decode when it reaches further into the audio than the first one did. On by
+default: every dictation pays about 100ms so that the ~2% that lose words stop
+losing them. Set it to `false` to keep the 100ms. A config written from an
+older template carries `second_opinion: false` explicitly and keeps it.
 
 **What it fixes.** Parakeet predicts a token and a duration at every step — how
 many encoder frames to skip before it looks again. A frame is 80ms and the

@@ -170,7 +170,7 @@ Launch — no Dock icon, a 🦜 appears in the menu bar
         ▼
   ├─ Microphone       [Grant]   ← system prompt, required
   ├─ Accessibility    [Grant]   ← System Settings, required to type text
-  └─ Speech model     [1.2 GB, downloading… 34%]
+  └─ Speech model     [470 MB, downloading… 34%]
         │
         ▼
 "Hold Right ⌘ and talk"  ← the one thing they need to know
@@ -208,7 +208,7 @@ Notes on getting this right:
   launch and logs the result; that log line is the reliable read.
 - **The model download must not block.** Recording should work immediately;
   transcription unlocks when the download finishes. Resumable, cancellable,
-  with a real progress figure — a silent 1.2 GB fetch reads as a hang.
+  with a real progress figure — a silent 470 MB fetch reads as a hang.
 - **Ship a fallback.** If Apple's `SpeechTranscriber` proves good enough, offer
   it as the zero-download default and make Parakeet the opt-in upgrade.
 - **First run after install is the only chance.** Someone evaluating a dictation
