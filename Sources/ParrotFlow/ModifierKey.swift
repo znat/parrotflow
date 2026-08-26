@@ -159,6 +159,18 @@ final class ModifierKeyMonitor {
     /// started a dictation on `onPress` has to drop it, silently: the user
     /// pressed ⌘S and is owed a save, not a notice about dictation.
     var onAbort: (() -> Void)?
+    /// The key went down and came back up inside `pressDelay`, with nothing
+    /// else touched.
+    ///
+    /// This edge already existed and already did nothing: a hold shorter than
+    /// the delay never delivers a press, so `onRelease` does not fire for it
+    /// either. Naming it costs the dictation path nothing, because a tap is
+    /// decided by the release rather than by waiting to see whether one is
+    /// coming.
+    ///
+    /// Never fires at `pressDelay` of 0 — there the press goes out on the down
+    /// edge, so every hold has delivered one by the time it ends.
+    var onTap: (() -> Void)?
 
     private var timer: Timer?
     private var monitors: [Any] = []
@@ -269,8 +281,12 @@ final class ModifierKeyMonitor {
 
     private func finishHold() {
         let wasPressed = pressDelivered
+        // `isSpent` is the whole of what keeps a shortcut out. ⌥P types π on a
+        // French layout and is over in well under the delay, but the P marks
+        // the hold, so it can never be read as a tap.
+        let wasTap = !wasPressed && !isSpent
         endHold()
-        if wasPressed { onRelease?() }
+        if wasPressed { onRelease?() } else if wasTap { onTap?() }
     }
 
     /// The one path out of a hold that was meant for something else. Delivered

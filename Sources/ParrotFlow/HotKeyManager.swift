@@ -55,6 +55,12 @@ final class HotKeyManager {
     /// `ModifierKeyMonitor`. Never fires on the Carbon path: a combo is
     /// unambiguous by construction.
     var onAbort: (() -> Void)?
+    /// The key was tapped rather than held — see `ModifierKeyMonitor.onTap`.
+    ///
+    /// Bare modifiers only. Carbon delivers a press on the down edge and
+    /// swallows the keystroke, so there is no sub-threshold edge to claim: a
+    /// tap of `⌃⌥Space` is a dictation, and a short one.
+    var onTap: (() -> Void)?
 
     private(set) var binding: Binding?
 
@@ -67,6 +73,7 @@ final class HotKeyManager {
         modifierMonitor.onPress = { [weak self] in self?.onPress?() }
         modifierMonitor.onRelease = { [weak self] in self?.onRelease?() }
         modifierMonitor.onAbort = { [weak self] in self?.onAbort?() }
+        modifierMonitor.onTap = { [weak self] in self?.onTap?() }
     }
 
     // MARK: Lifecycle

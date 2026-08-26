@@ -180,6 +180,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ownership `offerPressRun` already asserts, carrying what it is about.
     private var offeredCorrection: (run: Int, target: Correction)?
 
+    /// Where the last dictation went, kept after its offer has gone.
+    ///
+    /// `offeredCorrection` is cleared by every ending, because it asserts that
+    /// an offer is up and about these words. This asserts nothing of the sort:
+    /// it is the field half of what `lastTranscript` already remembers, and it
+    /// lives exactly as long — one slot, replaced by the next dictation and
+    /// never cleared. `summonOffer` builds a new offer out of the two.
+    private var lastDictationLanding: (
+        element: AXUIElement?, owner: NSRunningApplication?, landing: Correction.Landing
+    )?
+
     /// The focused element's text as it was at the press, for an app that gave
     /// no caret. What changed in it afterwards is where the words went.
     ///
@@ -753,6 +764,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
         hotKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }
         hotKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
+        hotKeys.onTap = { [weak self] in self?.summonOffer() }
         do {
             try hotKeys.register(
                 key: config.hotkey.key,
@@ -2648,15 +2660,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
-        // A new offer is never born held, whatever the last one ended as.
-        offerHeld = false
-        offerPressRun = press.run
-        // This dictation's own words and its own field, frozen with the offer.
-        offeredCorrection = (press.run, Correction(
-            original: text, element: press.element, owner: press.owner, landing: landing
-        ))
-        let commands = offerCommands
+        // Kept past the offer this is about to raise, so a tap can build
+        // another one out of it once this has faded. See `lastDictationLanding`.
+        lastDictationLanding = (press.element, press.owner, landing)
+
         // The decoder's words matched back onto the sentence that came out of
         // the pipeline — see `Confidence.read`. Taken rather than copied: this
         // press's dictation is over and nothing else can want them.
@@ -2677,6 +2684,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         )
         if let warning = reading.warning { Log.write("offer: \(warning)") }
+
+        raiseOffer(
+            over: Correction(
+                original: text, element: press.element, owner: press.owner, landing: landing
+            ),
+            run: press.run, headline: headline, reading: reading
+        )
+
+        // Taken at the press, and only when that press found no caret. Matched
+        // by run, so it is this dictation's own pane and nobody else's. A
+        // remembered anchor is still a guess, and this is what replaces it with
+        // the answer.
+        //
+        // Dropped on every ending, not only the one that uses it. A pane
+        // belongs to one run and no later dictation can want it, so it is
+        // retired here as `dictationEnded` would retire it — leaving it for the
+        // sweep would be keeping a copy of somebody's screen for no reason.
+        let pane = screenAtPress.removeValue(forKey: press.run)?.text
+        // Nothing landed in a field on the clipboard endings, so the diff has
+        // nothing to find. Whatever it did find would be something else moving
+        // on screen.
+        if case .field = landing, let pane, let element = press.element {
+            findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
+        }
+    }
+
+    /// Put the offer on screen over one target, however it got there.
+    ///
+    /// Split out of `showCorrectOffer` so `summonOffer` can reach it. What
+    /// stayed behind there is everything a *dictation's* ending owes and
+    /// nothing else does: the microphone notice, the decoder's reading, and the
+    /// search for where the words landed.
+    private func raiseOffer(
+        over target: Correction, run: Int, headline: String?, reading: Confidence.Reading
+    ) {
+        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        // A new offer is never born held, whatever the last one ended as.
+        offerHeld = false
+        offerPressRun = run
+        offeredCorrection = (run, target)
+        let commands = offerCommands
         offerHeadline = headline
         offerReading = reading
         let hold = config.feedback.lowConfidence.holdReturn
@@ -2707,23 +2755,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerOnScreen = commands
         watchTheOfferKeys()
         watchForOfferOutsideClick()
+    }
 
-        // Taken at the press, and only when that press found no caret. Matched
-        // by run, so it is this dictation's own pane and nobody else's. A
-        // remembered anchor is still a guess, and this is what replaces it with
-        // the answer.
-        //
-        // Dropped on every ending, not only the one that uses it. A pane
-        // belongs to one run and no later dictation can want it, so it is
-        // retired here as `dictationEnded` would retire it — leaving it for the
-        // sweep would be keeping a copy of somebody's screen for no reason.
-        let pane = screenAtPress.removeValue(forKey: press.run)?.text
-        // Nothing landed in a field on the clipboard endings, so the diff has
-        // nothing to find. Whatever it did find would be something else moving
-        // on screen.
-        if case .field = landing, let pane, let element = press.element {
-            findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
+    /// The offer asked for rather than offered: the hotkey tapped, not held.
+    ///
+    /// Over the last dictation, in the field it landed in. This is what stops
+    /// `offerSeconds` being a deadline — an offer you can call back does not
+    /// have to be kept on screen against the chance that you want it, so
+    /// nothing here lengthens it.
+    ///
+    /// No reading. The colours and the low-confidence warning are what the
+    /// decoder said about a sentence as it arrived, and a tap minutes later is
+    /// not that moment. Showing them again would also re-arm `holdReturn`,
+    /// which exists for the Return already on its way down.
+    private func summonOffer() {
+        // Nothing while a dictation is in the air. On `toggle` the key is what
+        // stops a recording, and a stop that came out short is a stop — the
+        // press was simply never delivered. Summoning there would answer a key
+        // meant for the microphone, and do it over the *previous* sentence.
+        guard !recorder.isRecording, runsInFlight <= 0 else { return }
+        // A tap while the offer is up is a tap at nothing. Raising a second one
+        // over the first would take the letters again and restart a clock the
+        // pointer may be deliberately holding.
+        guard !offerIsUp else { return }
+        guard config.feedback.correctOffer else { return }
+        guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty, let landing = lastDictationLanding else {
+            Log.write("summon: nothing has been dictated yet")
+            return
         }
+        Log.write("summon: the offer, over the last dictation")
+        // `pressRun` rather than a number of its own: this offer is about that
+        // dictation, and saying so is what lets a newer one take the pill off
+        // it through the guard in `showCorrectOffer`.
+        raiseOffer(
+            over: Correction(
+                original: text, element: landing.element, owner: landing.owner,
+                landing: landing.landing
+            ),
+            run: pressRun, headline: nil, reading: Confidence.Reading()
+        )
     }
 
     /// Take the offer's letters and Escape for as long as the offer is up.
