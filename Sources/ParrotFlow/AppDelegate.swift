@@ -1678,10 +1678,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // it. Same pair the spoken-command path has used all along.
         // "Transcribing…" is a lie while the model is still arriving, and the
         // first dictation after an install is exactly when that happens: the
-        // download is 469 MB and the pill would sit on one word for all of it.
-        // Say what is actually happening, with the figure.
+        // download is about 470 MB and the pill would sit on one word for all
+        // of it. Say what is actually happening, with the figure.
         if case .downloading(let what) = transcriberStatus {
-            pillShowsDownload = true
+            pillDownloadRun = run
             beginProgress("Downloading \(what)")
         } else {
             beginProgress("Transcribing…")
@@ -3617,7 +3617,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func endProgress() {
-        pillShowsDownload = false
+        pillDownloadRun = nil
         pill.hide()
         setLabel(nil)
     }
@@ -4178,16 +4178,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// dictation may have put up in the meantime.
     private var transcriberLabelToken: Int?
 
-    /// The transcriber's last reported status, mirrored here because this runs
-    /// on the main thread and the actor's own copy cannot be read without an
-    /// await — which a key release has no time for.
+    /// The transcriber's last reported status, mirrored here because the
+    /// actor's own copy cannot be read without an await, and a key release has
+    /// no time for one. Both sides are the main queue — `onStatusChange` hops
+    /// there before it lands — so it needs no lock.
     private var transcriberStatus: Transcriber.Status = .idle
 
-    /// Set while the pill is showing the model download instead of the
-    /// dictation. Two jobs: a new percentage replaces the text in place rather
-    /// than putting up a second pill, and `.ready` knows the pill is owed back
-    /// to "Transcribing…".
-    private var pillShowsDownload = false
+    /// The `transcriptionRun` whose pill is showing the model download instead
+    /// of the dictation, if any.
+    ///
+    /// A run and not a flag, for the reason every other late arrival in this
+    /// file carries one. Push-to-talk does not wait, so two dictations sit on
+    /// the same download, and the older one's `.ready` would otherwise take the
+    /// pill from the newer one that has since put its own message up.
+    private var pillDownloadRun: Int?
+
+    /// The `transcriptionRun == run` test the rest of the chain makes, asked of
+    /// the pill: the run that put the download up is still the newest one.
+    private var ownsDownloadPill: Bool { pillDownloadRun == transcriptionRun }
 
     private func handleTranscriberStatus(_ status: Transcriber.Status) {
         transcriberStatus = status
@@ -4195,11 +4203,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .downloading(let what):
             setLabel("Downloading \(what)")
             transcriberLabelToken = labelToken
-            // `what` already carries the percentage, so this is the live
-            // figure. Only while the pill is this download's: a dictation that
-            // started before the model was ready is waiting on exactly this,
-            // and "Transcribing…" over a 469 MB fetch reads as a hang.
-            if pillShowsDownload { pill.working("Downloading \(what)") }
+            // `what` already carries the percentage, so replacing the text in
+            // place is what makes the number climb. Only for the dictation that
+            // put the download up: it is waiting on exactly this, and
+            // "Transcribing…" over a 470 MB fetch reads as a hang.
+            if ownsDownloadPill { pill.working("Downloading \(what)") }
             // `what` reads like "speech model 43%" — the number, if this is
             // the one download that carries one, is the only part worth a
             // second field for; the rest is already the sentence above.
@@ -4210,11 +4218,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .loading:
             setLabel("Loading speech model…")
             transcriberLabelToken = labelToken
-            if pillShowsDownload { pill.working("Loading speech model…") }
+            if ownsDownloadPill { pill.working("Loading speech model…") }
             permissions.model.speechModel = .preparing(percent: nil)
         case .failed(let message):
             setLabel("Model error: \(message)")
             transcriberLabelToken = labelToken
+            // The pill is left to the dictation. `.loading` is the same wait
+            // continuing, so it says so; a failure is the wait ending, and the
+            // run waiting on the model gets it as a thrown error whose catch
+            // already hides the pill and puts up the alert. Two endings on
+            // screen for one failure is worse than one.
             // Not surfaced as "preparing" forever: the permissions window
             // isn't the place a transcription failure gets diagnosed, and a
             // stuck "downloading" badge there would outlive the one place
@@ -4223,13 +4236,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .ready, .idle:
             if transcriberLabelToken == labelToken { setLabel(nil) }
             transcriberLabelToken = nil
-            // The dictation that was waiting on the model gets the pill back.
-            // `endProgress` clears the flag, so it is still set only while one
-            // is genuinely in flight.
-            if pillShowsDownload {
-                pillShowsDownload = false
-                pill.working("Transcribing…")
-            }
+            // The dictation that was waiting on the model gets its pill back.
+            if ownsDownloadPill { pill.working("Transcribing…") }
+            pillDownloadRun = nil
             permissions.model.speechModel = .ready
         }
     }
