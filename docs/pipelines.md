@@ -1,23 +1,36 @@
 # Pipelines
 
-Everything a finished transcript goes through, in order, per language:
+Everything a finished transcript goes through, in order:
 
 ```yaml
 transcription:
-  pipelines:
-    default: [vocabulary, numbers]
-    fr: [vocabulary, numbers]
+  pipeline:
+    - vocabulary
+    - numbers
+    - transform: dotted
+      app: /term|ghostty|iterm|warp/
 ```
 
-A language's own list wins over `default`. A key that is neither `default` nor
-one of your `languages:` is reported by `--check-config` rather than silently
-never running.
+There is one pipeline, and it runs whatever the language. A step that should
+only run in one language says so on the line it affects:
 
-Being in a pipeline is the only way a stage runs, which is why a new install is
-written with all of them spelled out: turning one off means deleting a line you
-can see, not finding a setting you cannot. Delete `pipelines:` entirely and you
-get every stage back — a missing section is silence, not a choice. Write
-`default: []` and you get none, which is a choice.
+```yaml
+    - transform: hesitation
+      when: language == "fr"
+```
+
+Being in the pipeline is the only way a stage runs, which is why a new install
+is written with all of them spelled out: turning one off means deleting a line
+you can see, not finding a setting you cannot. Delete `pipeline:` entirely and
+you get every stage back — a missing section is silence, not a choice. Write
+`pipeline: []` and you get none, which is a choice.
+
+`pipelines:`, the map keyed by language, is retired. Nothing under it is read.
+`--check-config` exits non-zero and says to write one `pipeline:` list, and the
+app says the same at launch, in the log and in the menu bar. Until you rewrite
+it none of your steps run — the built-in default does, which is `numbers` and
+nothing else. Move the lists into `pipeline:` and put
+`when: language == "fr"` on the steps that only belong to one language.
 
 It was three stages until the shapes were counted: `replacements` wrote the
 exact matches, `fuzzy` caught the near ones, `vocabulary` judged them, and the
@@ -474,15 +487,14 @@ applied by a single stage, so it cannot be two tables running in two places
 under two conditions. Named ones can:
 
 ```yaml
-pipelines:
-  default:
-    - vocabulary
-    - fuzzy
-    - numbers
-    - transform: dotted
-      app: /term|ghostty|iterm|warp/
-    - transform: prose
-      app: /^(?!.*(term|ghostty|iterm|warp))/
+pipeline:
+  - vocabulary
+  - fuzzy
+  - numbers
+  - transform: dotted
+    app: /term|ghostty|iterm|warp/
+  - transform: prose
+    app: /^(?!.*(term|ghostty|iterm|warp))/
 ```
 
 Two tables, two conditions, at most one matching. A single shared table
@@ -584,13 +596,12 @@ transforms:
     command: join.py
     returns: json
 
-pipelines:
-  default:
-    - input
-    - transform: code_identifiers
-    - stage: transform
-      transform: join
-      when: input.ok
+pipeline:
+  - input
+  - transform: code_identifiers
+  - stage: transform
+    transform: join
+    when: input.ok
 ```
 
 **The problem it solves.** The decoder writes every clip as a standalone
@@ -913,11 +924,10 @@ A stage can carry a condition, which is what makes an expensive one affordable
 — it is skipped on the transcripts that do not need it:
 
 ```yaml
-pipelines:
-  fr:
-    - vocabulary
-    - stage: numbers
-      when: /\b(vingt|cent|mille)\b/     # only if a number word is left
+pipeline:
+  - vocabulary
+  - stage: numbers
+    when: /\b(vingt|cent|mille)\b/     # only if a number word is left
 ```
 
 `when` and `unless` read the text *as it stands at that point*, after the
@@ -947,13 +957,12 @@ Every stage publishes facts about itself, under its own name, and a condition
 can read them:
 
 ```yaml
-pipelines:
-  default:
-    - vocabulary
-    - transform: code_identifiers
-    - stage: transform
-      transform: dotted
-      when: code_identifiers.count == 0     # only if nothing else took it
+pipeline:
+  - vocabulary
+  - transform: code_identifiers
+  - stage: transform
+    transform: dotted
+    when: code_identifiers.count == 0     # only if nothing else took it
 ```
 
 Four are derived for every stage, whatever it is and whether or not it knows
@@ -1029,6 +1038,10 @@ it also holds `press.run`, which says which hotkey press this transcript came
 from. Dictations overlap, so a stage that reads something captured at the press
 has to ask for its own — `input` does. It is absent off the hotkey path,
 `--pipeline` included.
+
+`language` is what a step that belongs to one language reads:
+`when: language == "fr"`. It holds one of your `languages:`, detected from the
+transcript, and it is the whole of what per-language pipelines used to do.
 
 So a stage can stand down on a recording the recogniser was not sure about:
 
@@ -1115,13 +1128,12 @@ looks up: it reads the screen behind the field you are dictating into and
 publishes it, so a later stage can know what the sentence is answering.
 
 ```yaml
-pipelines:
-  default:
-    - vocabulary
-    - context
-    - stage: transform
-      transform: reply
-      when: context.ok && context.chars > 200
+pipeline:
+  - vocabulary
+  - context
+  - stage: transform
+    transform: reply
+    when: context.ok && context.chars > 200
 ```
 
 It publishes five things, on top of the four every stage gets:
@@ -1193,11 +1205,11 @@ the log line or the pasted blob that did not wrap.
 
 ### Why it is not in the default
 
-Every other stage is on the moment it exists — delete `pipelines:` and you get
+Every other stage is on the moment it exists — delete `pipeline:` and you get
 all of them. `context` is not, and `transform` is the only other exception.
 
 It reads the screen. Turning that on for everybody who never wrote a
-`pipelines:` block would be a silent change to what the app looks at, and that
+`pipeline:` block would be a silent change to what the app looks at, and that
 is the one kind of change that has to be asked for by name. Write the line and
 you have it.
 
@@ -1229,12 +1241,11 @@ It prints what the stage would publish, in full, under `as context:`.
 what you have already typed, and where the caret sits in it.
 
 ```yaml
-pipelines:
-  default:
-    - input
-    - stage: transform
-      transform: join
-      when: input.ok && !input.appending
+pipeline:
+  - input
+  - stage: transform
+    transform: join
+    when: input.ok && !input.appending
 ```
 
 | variable | |
@@ -1333,13 +1344,12 @@ prints the three blocks delimited with `⟪⟫`, so their own spaces are visible
 terminal and nowhere near an email:
 
 ```yaml
-pipelines:
-  default:
-    - vocabulary
-    - stage: numbers
-      app: /term|ghostty|iterm|warp/
-    - prompt: prose
-      app: /^(?!.*(term|ghostty|iterm|warp))/
+pipeline:
+  - vocabulary
+  - stage: numbers
+    app: /term|ghostty|iterm|warp/
+  - prompt: prose
+    app: /^(?!.*(term|ghostty|iterm|warp))/
 ```
 
 **There is no `not_app:`.** The pattern is a regular expression like every

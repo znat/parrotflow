@@ -100,13 +100,15 @@ enum Context {
         return press
     }
 
-    /// Whether any pipeline in this config names the stage.
+    /// Whether the pipeline names the stage.
     ///
     /// The gate on the whole thing. A screen read on every hotkey press is not
     /// a cost to impose on people who never asked for context, and `context` is
     /// not in any default, so most configs answer false here and pay nothing.
+    /// Read off the config rather than off `Pipeline.resolved`: a config that
+    /// names no pipeline must not read the screen, whatever the default holds.
     static func isConfigured(in config: Config) -> Bool {
-        config.transcription.pipelines.values.contains { $0.stages.contains(.context) }
+        config.transcription.pipeline?.stages.contains(.context) ?? false
     }
 
     /// Read the screen at press. Call **after** recording has started, off the

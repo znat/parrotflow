@@ -186,9 +186,8 @@ transforms:
     replace:
       hush: [shout]
 transcription:
-  pipelines:
-    default:
-      - transform: Lists
+  pipeline:
+    - transform: Lists
 YAML
 reserved="$(PARROTFLOW_CONFIG_DIR="$RESERVED" "$BIN" --check-config 2>/dev/null)"
 
@@ -222,9 +221,8 @@ transforms:
     replace:
       hush: [shout]
 transcription:
-  pipelines:
-    default:
-      - transform: lists
+  pipeline:
+    - transform: lists
 YAML
 cased="$(PARROTFLOW_CONFIG_DIR="$CASED" "$BIN" --check-config 2>/dev/null)"
 

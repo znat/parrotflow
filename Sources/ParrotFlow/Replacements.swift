@@ -33,14 +33,13 @@ enum Replacements {
         seed: Scope = Scope(), findings: Vocabulary.Outcome? = nil,
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
-        let (pipeline, language) = Pipeline.forText(text, config: config)
-        // The verdict that picked the stages, which until now was computed here
-        // and discarded on the same line. Parakeet reports no language of its
-        // own, so this is the only one there is to write down.
+        let language = Pipeline.language(of: text, config: config)
+        // Parakeet reports no language of its own, so this is the only one
+        // there is to write down.
         Trace.current?.recordLanguage(language)
         var seed = seed
         seed.set("language", .string(language))
-        return await pipeline.run(
+        return await Pipeline.resolved(config: config).run(
             text, config: config, allowPrompts: allowPrompts, app: app,
             seed: seed, findings: findings, progress: progress
         )

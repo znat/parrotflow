@@ -172,8 +172,10 @@ enum InputBox {
         pressLock.unlock()
     }
 
+    /// Read off the config rather than off `Pipeline.resolved`: a config that
+    /// names no pipeline must not read the field, whatever the default holds.
     static func isConfigured(in config: Config) -> Bool {
-        config.transcription.pipelines.values.contains { $0.stages.contains(.input) }
+        config.transcription.pipeline?.stages.contains(.input) ?? false
     }
 
     /// Call **after** recording has started, off the main thread, and after

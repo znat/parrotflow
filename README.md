@@ -112,11 +112,10 @@ the names into "@ada.lovelace and @mark.reyes"](Resources/handles.gif)
 
 ```yaml
 transcription:
-  pipelines:
-    default:
-      - numbers                 # "one two three" -> 123, so github_refs has digits
-      - transform: github_refs
-      - transform: slack_handles
+  pipeline:
+    - numbers                 # "one two three" -> 123, so github_refs has digits
+    - transform: github_refs
+    - transform: slack_handles
 ```
 
 ![Dictating "merged P R one two three, Ada can you take a look", and the
@@ -165,10 +164,9 @@ Or you can run the grammar fix in chat and mail apps (but not in coding agents, 
 
 ```yaml
 transcription:
-  pipelines:
-    default:
-      - transform: grammar
-        app: /slack|outlook/    # Grammar only checked in Slack and Outlook
+  pipeline:
+    - transform: grammar
+      app: /slack|outlook/    # Grammar only checked in Slack and Outlook
 ```
 
 > See [examples/transforms/grammar](examples/transforms/grammar) for a more elaborate version.
@@ -215,11 +213,10 @@ deploy your apps.
 
 ```yaml
 transcription:
-  pipelines:
-    default:
-      - stage: vocabulary
-        review: gpt
-      - numbers
+  pipeline:
+    - stage: vocabulary
+      review: gpt
+    - numbers
 ```
 
 ### More examples

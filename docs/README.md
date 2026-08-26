@@ -15,7 +15,7 @@ Start from the question you have.
 | | |
 |---|---|
 | [corrections.md](corrections.md) | Teach it a name — by panel, by spelling it out, or by description. |
-| [pipelines.md](pipelines.md) | What a transcript goes through: stages, transforms, conditions, per-app and per-language gates. |
+| [pipelines.md](pipelines.md) | What a transcript goes through: stages, transforms, conditions, per-app and per-language gates on a step. |
 | [cli.md](cli.md) | Every terminal flag. Test a config change without a microphone. |
 
 ## Changing it

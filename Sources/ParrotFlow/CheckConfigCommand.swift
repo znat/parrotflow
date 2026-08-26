@@ -98,32 +98,28 @@ enum CheckConfigCommand {
                 .map { "\"\($0)\"" }.joined(separator: ", ")
             emit("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
             emit("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
-            // The pipeline, per language, because "why was this not
-            // converted" is a question about the order and not about a
-            // setting any more.
-            for language in transcription.languages {
-                let pipeline = Pipeline.resolved(config: config, language: language)
-                let source = transcription.pipelines[language] != nil ? language
-                    : (transcription.pipelines["default"] != nil
-                        ? "default" : "nothing configured, so every stage")
-                // An empty pipeline is a choice, not a blank: printing
-                // nothing there reads as a display fault rather than as the
-                // answer to "why did none of this run".
-                // Conditions are printed with the stage they gate. A pipeline
-                // that reads as three stages when one of them almost never
-                // runs is a pipeline that explains nothing.
-                let stages = pipeline.steps.isEmpty
-                    ? "nothing — the list is empty"
-                    : pipeline.steps.map { step -> String in
-                        var described = step.stage.name
-                        if let transform = step.transform { described += " \(transform)" }
-                        if let when = step.when { described += " when \(when)" }
-                        if let unless = step.unless { described += " unless \(unless)" }
-                        if let app = step.app { described += " in \(app)" }
-                        return described
-                    }.joined(separator: " → ")
-                emit("  · pipeline \(language)        \(stages)  (\(source))")
-            }
+            // The pipeline, because "why was this not converted" is a question
+            // about the order and not about a setting any more.
+            let pipeline = Pipeline.resolved(config: config)
+            // An empty pipeline is a choice, not a blank: printing nothing
+            // there reads as a display fault rather than as the answer to "why
+            // did none of this run".
+            // Conditions are printed with the stage they gate. A pipeline that
+            // reads as three stages when one of them almost never runs is a
+            // pipeline that explains nothing.
+            let stages = pipeline.steps.isEmpty
+                ? "nothing — the list is empty"
+                : pipeline.steps.map { step -> String in
+                    var described = step.stage.name
+                    if let transform = step.transform { described += " \(transform)" }
+                    if let when = step.when { described += " when \(when)" }
+                    if let unless = step.unless { described += " unless \(unless)" }
+                    if let app = step.app { described += " in \(app)" }
+                    return described
+                }.joined(separator: " → ")
+            let source = transcription.pipeline == nil
+                ? "  (nothing configured, so every stage)" : ""
+            emit("  · pipeline          \(stages)\(source)")
         }
 
         // A key that no longer does anything is worse than a key that is
@@ -140,8 +136,7 @@ enum CheckConfigCommand {
             emit("  · \(notice)")
         }
         if !transcription.retired.isEmpty {
-            emit("      pipelines:")
-            emit("        default: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
+            emit("      pipeline: [\(Pipeline.everything.stages.map(\.name).joined(separator: ", "))]")
         }
 
         // What `voice/` has piled up, per term. Printed because it is the one

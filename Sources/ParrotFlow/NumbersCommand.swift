@@ -34,16 +34,13 @@ enum NumbersCommand {
             return 0
         }
 
-        // Whether dictation actually gets this is now a question about the
-        // pipeline, and the answer differs per language — so say which.
+        // Whether dictation actually gets this is a question about the
+        // pipeline, so say what the pipeline does.
         if let config = try? ConfigStore.load() {
-            let carrying = config.transcription.languages.filter { language in
-                Pipeline.resolved(config: config, language: language).stages.contains(.numbers)
-            }
-            if carrying.isEmpty {
-                print("no pipeline runs numbers — dictation is unaffected by what follows")
+            if Pipeline.resolved(config: config).stages.contains(.numbers) {
+                print("pipeline: numbers runs")
             } else {
-                print("pipeline: numbers runs for \(carrying.joined(separator: ", "))")
+                print("the pipeline does not run numbers — dictation is unaffected by what follows")
             }
         } else {
             print("the config could not be read; what follows is the pass on its own")
