@@ -91,7 +91,7 @@ release-certificate:
 CHECKS := numbers replacements pipeline pipeline-config wake split dotted dates \
           transform-folders eval audio-recovery possessive suggest input join \
           profiles span-rule clipboard default-config vocabulary-config learn \
-          pinned-certificate no-voice
+          signing-identity no-voice
 
 test:
 	@swift build -c release
@@ -126,6 +126,11 @@ repo-settings:
 ## Rehearse the curl install against dist/. Leaves /Applications alone, but does
 ## quit a running release build — the installer will not leave two of them
 ## fighting over the hotkey.
+##
+## The export reaches scripts/release.sh through the prerequisite. Without it
+## release.sh refuses to build without a Developer ID, which is what stops a
+## mis-signed release reaching users — see the note there.
+try-install: export PARROTFLOW_REHEARSAL = 1
 try-install: release
 	@rm -rf /tmp/parrotflow-try && mkdir -p /tmp/parrotflow-try
 	@PARROTFLOW_BASE_URL="file://$(PWD)/dist" \

@@ -7,12 +7,9 @@
 # Downloads the latest release, checks it against its published SHA-256, and
 # puts ParrotFlow.app in /Applications.
 #
-# Why curl and not Homebrew: a cask would arrive carrying macOS's quarantine
-# attribute, and ParrotFlow is signed with a self-signed certificate rather than
-# a Developer ID, so Gatekeeper would refuse to open it. Homebrew removed the
-# --no-quarantine escape hatch in 5.0. Files fetched with curl are never
-# quarantined in the first place, which is why this route works and a cask does
-# not. See docs/distribution.md.
+# There is a Homebrew cask too — `brew install znat/tap/parrotflow`. This stays
+# the headline install because it needs nothing installed first. See
+# docs/distribution.md.
 #
 # Nothing here is interactive: this script is read from stdin when piped to sh,
 # so it can never prompt.
@@ -109,40 +106,47 @@ codesign --verify --deep --strict "$TMP/unpacked/$APP_NAME.app" 2>/dev/null \
 # And then: signed by whom.
 #
 # The check above proves the signature matches the bundle. It does not prove
-# whose signature it is — anyone can make a self-signed certificate, sign an
-# app with it, and pass. Without the line below, an archive swapped for
+# whose signature it is. Without the line below, an archive swapped for
 # somebody else's would install without a word, on a machine that is then asked
 # for the microphone and for permission to type into every window.
 #
-# So the leaf certificate's SHA-256 is pinned. The name is not enough: a
-# certificate can be issued to any common name, "ParrotFlow Release" included.
+# So the download is checked against a designated requirement. `anchor apple
+# generic` says the certificate chain ends at Apple's root, which nothing
+# self-signed can claim however it is named. The OU of a Developer ID leaf is
+# the Team ID. Together they say Apple issued this certificate to us.
 #
-# Pinning a value inside a script is normally how you strand yourself on a
-# rotated key. Not here: this file is read from main on every run, so the day
-# the certificate changes, the pin changes with it in the same commit. And a
-# release signed with a different certificate is one macOS would refuse the
-# user's existing Microphone and Accessibility grants to anyway — refusing it
-# here turns a silent loss of permissions into a stop with a reason.
-CERT_SHA256="1fe06cb4b110d3f60ddb0a4d54e2694528b50ca1f40e939994306c8b068d2689"
+# This is checked rather than a pinned leaf hash on purpose. A Developer ID
+# certificate expires after five years, and renewing it produces a new leaf
+# with a new hash. A pin would then be wrong in every copy of the app already
+# installed, and every user would have to re-run this script. The Team ID does
+# not change when the certificate does.
+TEAM_ID="VCCU2WY6HS"
 
 if [ -n "${PARROTFLOW_BASE_URL:-}" ]; then
     # A local rehearsal (make try-install) builds and signs with whatever
-    # identity is on that machine, which is the dev certificate for anyone who
-    # is not cutting releases. Say the check was skipped rather than let a
-    # rehearsal look like it proved more than it did.
-    say "Local install — skipping the certificate check"
+    # identity is on that machine, which is a self-signed certificate for
+    # anyone who is not cutting releases. Say the check was skipped rather than
+    # let a rehearsal look like it proved more than it did.
+    say "Local install — skipping the Developer ID and notarization checks"
 else
-    codesign -d --extract-certificates="$TMP/cert" "$TMP/unpacked/$APP_NAME.app" 2>/dev/null \
-        || die "could not read the signing certificate of the downloaded app"
-    SIGNER="$(shasum -a 256 "$TMP/cert0" | cut -d' ' -f1)"
-    [ "$SIGNER" = "$CERT_SHA256" ] || die "this app was signed by someone else — not installing it.
-       expected certificate $CERT_SHA256
-       found                $SIGNER
+    codesign --verify --deep --strict \
+        -R "=anchor apple generic and certificate leaf[subject.OU] = \"$TEAM_ID\"" \
+        "$TMP/unpacked/$APP_NAME.app" 2>/dev/null \
+        || die "this app was not signed by ParrotFlow — not installing it.
+       Expected a Developer ID certificate issued to Team ID $TEAM_ID.
 
        Nothing on this Mac has been changed. If you did not expect this,
        do not install ParrotFlow from anywhere else either — report it at
        https://github.com/$REPO/issues"
-    say "Signed by the ParrotFlow release certificate"
+
+    # And what Gatekeeper itself concludes, asked the same way it asks. This
+    # is the notarization ticket: a signature can be genuine and the build
+    # still never submitted to Apple.
+    spctl --assess --type execute "$TMP/unpacked/$APP_NAME.app" 2>/dev/null \
+        || die "this app is signed but not notarized — not installing it.
+       Report it at https://github.com/$REPO/issues"
+
+    say "Signed by ParrotFlow and notarized by Apple"
 fi
 
 # --- Install -----------------------------------------------------------------

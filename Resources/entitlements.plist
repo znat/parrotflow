@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The hardened runtime, which notarization requires, blocks the
+         microphone unless it is declared. This is the non-sandboxed key;
+         com.apple.security.device.microphone is the App Sandbox one and does
+         nothing here. Without it the app is refused the mic or killed.
+
+         Accessibility needs no entitlement. It is TCC-only. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+</dict>
+</plist>

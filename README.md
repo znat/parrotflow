@@ -35,7 +35,14 @@ ParrotFlow requires Apple silicon and macOS 14 or later.
 curl -fsSL https://raw.githubusercontent.com/znat/parrotflow/main/scripts/install.sh | sh
 ```
 
-This also downloads Parakeet, the speech model, about 1.2 GB.
+Or with Homebrew:
+
+```sh
+brew install znat/tap/parrotflow
+```
+
+Either way this also downloads Parakeet, the speech model, about 1.2 GB.
+Releases are signed with a Developer ID and notarized by Apple.
 
 Spoken commands and the vocabulary check need a language model as well, and that part is optional. Run one on your own Mac with [Ollama](https://ollama.com/download) (e.g. [Gemma4](https://ollama.com/library/gemma4:e4b-mlx)), or use a hosted one (e.g. OpenAI).
 

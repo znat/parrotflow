@@ -22,6 +22,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export VARIANT=release
 # shellcheck source=scripts/variant.sh
 . "$ROOT/scripts/variant.sh"
+# shellcheck source=scripts/codesign.sh
+. "$ROOT/scripts/codesign.sh"
 
 APP="$ROOT/.build/$APP_NAME.app"
 DIST="$ROOT/dist"
@@ -29,25 +31,37 @@ DIST="$ROOT/dist"
 VERSION="${1:-$(tr -d '[:space:]' < "$ROOT/version.txt")}"
 VERSION="${VERSION#v}"
 
-# Prefer a dedicated release identity, fall back to the dev one. Signing with a
-# stable certificate is not cosmetic: TCC keys Microphone and Accessibility
-# grants to the signing certificate, so a build signed with a different
-# identity — or ad-hoc, which pins the binary hash instead — silently loses
-# every permission the user granted to the previous version.
-if [ -z "${CODESIGN_IDENTITY:-}" ]; then
-    for candidate in "ParrotFlow Release" "ParrotFlow Dev"; do
-        if security find-identity -v -p codesigning 2>/dev/null | grep -q "$candidate"; then
-            CODESIGN_IDENTITY="$candidate"
-            break
-        fi
-    done
-fi
+# A release wants the Developer ID: it is what Gatekeeper accepts and what
+# notarization signs off, and notarization is what a Homebrew cask needs. The
+# self-signed certificates still work as a fallback for a local rehearsal, and
+# ad-hoc is the floor. See scripts/codesign.sh.
+CODESIGN_IDENTITY="$(pf_signing_identity)"
 
-if [ -z "${CODESIGN_IDENTITY:-}" ]; then
-    echo "warning: no signing identity found; signing ad-hoc." >&2
-    echo "         Users who upgrade will have to grant Microphone and" >&2
-    echo "         Accessibility again. See scripts/release-certificate.sh." >&2
-    CODESIGN_IDENTITY="-"
+# Fail closed. Everything after this point succeeds whatever the identity is:
+# the bundle is signed, the archive is written, the checksum is computed, and
+# the workflow uploads both. So a wrong SIGNING_CERT_P12 would publish a green
+# release that install.sh, the app's own updater and Gatekeeper all refuse, and
+# nothing would say so until a user tried to install it.
+#
+# PARROTFLOW_REHEARSAL=1 is the way to build without a Developer ID, for
+# `make try-install`. The release workflow does not set it and must not.
+#
+# Exactly "1", not merely set. PARROTFLOW_REHEARSAL=0 reads as "off" to anyone
+# writing it, and a test for non-empty would turn it on.
+if ! pf_is_developer_id "$CODESIGN_IDENTITY"; then
+    if [ "${PARROTFLOW_REHEARSAL:-}" != "1" ]; then
+        if [ "$CODESIGN_IDENTITY" = "-" ]; then
+            echo "error: no signing identity found — refusing to build a release." >&2
+        else
+            echo "error: '$CODESIGN_IDENTITY' is not a Developer ID — refusing to build a release." >&2
+        fi
+        echo "       A release has to be signed with the Developer ID Application" >&2
+        echo "       certificate for Team ID $(pf_team_id). See docs/distribution.md." >&2
+        echo "       To rehearse the installer without one: PARROTFLOW_REHEARSAL=1" >&2
+        exit 1
+    fi
+    echo "warning: rehearsal build, signed with '$CODESIGN_IDENTITY'." >&2
+    echo "         Not notarized. install.sh and the updater refuse it." >&2
 fi
 export CODESIGN_IDENTITY
 
@@ -59,8 +73,27 @@ CONFIGURATION=release "$ROOT/scripts/build-app.sh"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist"
 
 # Editing Info.plist invalidates the signature — re-sign after stamping, not before.
-codesign --force --sign "$CODESIGN_IDENTITY" "$APP"
+pf_sign "$APP" "$CODESIGN_IDENTITY"
 codesign --verify --deep --strict "$APP"
+
+if pf_is_developer_id "$CODESIGN_IDENTITY"; then
+    TEAM_ID="$(pf_team_id)"
+    if [ -z "$TEAM_ID" ] || [ "$TEAM_ID" = "PENDING" ]; then
+        echo "error: TEAM_ID in scripts/install.sh is still '$TEAM_ID'." >&2
+        echo "       Set it, and expectedTeamID in Updates.swift, to the Team ID" >&2
+        echo "       this certificate was issued under:" >&2
+        echo "         security find-identity -vp codesigning" >&2
+        exit 1
+    fi
+
+    # Proves the bundle satisfies the requirement install.sh and the app's own
+    # updater will check it against. A release that fails this installs
+    # nowhere, and finding that out here costs a minute rather than a release.
+    codesign --verify --deep --strict -R "=$(pf_requirement "$TEAM_ID")" "$APP" \
+        || { echo "error: signed, but not under Team ID $TEAM_ID — no install path would accept it." >&2; exit 1; }
+
+    "$ROOT/scripts/notarize.sh" "$APP"
+fi
 
 rm -rf "$DIST"
 mkdir -p "$DIST"

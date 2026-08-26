@@ -30,18 +30,30 @@ enum Updates {
     static let releaseAppName = "ParrotFlow.app"
     static let releaseBundleIdentifier = "com.parrotflow.app"
 
-    /// SHA-256 of the leaf certificate every release is signed with.
+    /// The Apple Team ID every release is signed under.
     ///
-    /// The same value `scripts/install.sh` pins, and it has to stay the same
-    /// value — scripts/check-pinned-certificate.sh fails the build if the two
-    /// drift apart, because a pin that is only correct in one of the two ways
-    /// in is worth very little.
+    /// The same value `scripts/install.sh` declares, and it has to stay the
+    /// same value — scripts/check-pinned-certificate.sh fails the build if the
+    /// two drift apart, because a check that is only correct in one of the two
+    /// ways in is worth very little.
     ///
-    /// Derived, never typed from memory:
+    /// A Team ID rather than a pinned leaf hash: a Developer ID certificate
+    /// expires after five years, and renewing it changes the leaf. A hash
+    /// compiled into every installed copy would then reject the release that
+    /// followed the renewal, for everyone at once. The Team ID outlives the
+    /// certificate.
     ///
-    ///     openssl x509 -in ~/.parrotflow-release/cert.pem -outform DER | shasum -a 256
-    static let expectedCertificateSHA256 =
-        "1fe06cb4b110d3f60ddb0a4d54e2694528b50ca1f40e939994306c8b068d2689"
+    ///     security find-identity -vp codesigning
+    static let expectedTeamID = "VCCU2WY6HS"
+
+    /// The designated requirement a downloaded release has to satisfy.
+    ///
+    /// `anchor apple generic` says the chain ends at Apple's root, which no
+    /// self-signed certificate can claim whatever name it carries. The OU of a
+    /// Developer ID leaf is the Team ID.
+    static var signingRequirement: String {
+        "anchor apple generic and certificate leaf[subject.OU] = \"\(expectedTeamID)\""
+    }
 
     /// What is published, as the API describes it.
     struct Release: Equatable {

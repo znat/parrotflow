@@ -6,7 +6,8 @@ import Foundation
 /// Every check `scripts/install.sh` performs is performed here, in the same
 /// order and for the same reasons, because this is the other way in and a door
 /// that checks less is the door that gets used. Published checksum, signature,
-/// and the pinned certificate — an update is refused unless all three agree.
+/// the signing Team ID, and Apple's notarization — an update is refused unless
+/// every one of them agrees.
 ///
 /// The last step is the awkward one: an app cannot replace the bundle it is
 /// running from. So the swap is handed to a detached shell that waits for this
@@ -20,7 +21,8 @@ enum UpdateInstaller {
         case download(String)
         case checksum(expected: String, got: String)
         case signature(String)
-        case certificate(expected: String, got: String)
+        case certificate(expected: String)
+        case notarization(String)
         case contents(String)
         case cannotInstall(String)
 
@@ -33,9 +35,11 @@ enum UpdateInstaller {
                     + "(expected \(expected.prefix(12))…, got \(got.prefix(12))…)"
             case .signature(let why):
                 return "the downloaded app failed signature verification: \(why)"
-            case .certificate(let expected, let got):
-                return "the downloaded app was signed by someone else "
-                    + "(expected \(expected.prefix(12))…, found \(got.prefix(12))…)"
+            case .certificate(let expected):
+                return "the downloaded app was not signed by ParrotFlow "
+                    + "(expected a Developer ID issued to Team ID \(expected))"
+            case .notarization(let why):
+                return "the downloaded app is signed but not notarized by Apple: \(why)"
             case .contents(let what):
                 return "the download is not what it should be: \(what)"
             case .cannotInstall(let why):
@@ -108,16 +112,28 @@ enum UpdateInstaller {
         return app
     }
 
-    /// The three checks, in the order install.sh runs them.
+    /// The checks install.sh runs, in the same order and for the same reasons.
     static func verify(_ app: URL, expecting version: String) throws {
         let verified = run("/usr/bin/codesign", ["--verify", "--deep", "--strict", app.path])
         guard verified.status == 0 else {
             throw Failure.signature(verified.error.isEmpty ? "unknown reason" : verified.error)
         }
 
-        let signer = try certificateFingerprint(of: app)
-        guard signer == Updates.expectedCertificateSHA256 else {
-            throw Failure.certificate(expected: Updates.expectedCertificateSHA256, got: signer)
+        // Signed by whom. The check above proves the signature matches the
+        // bundle and says nothing about who produced it. This one says the
+        // chain ends at Apple's root and the leaf carries our Team ID.
+        let issued = run("/usr/bin/codesign",
+                         ["--verify", "--deep", "--strict",
+                          "-R", "=\(Updates.signingRequirement)", app.path])
+        guard issued.status == 0 else {
+            throw Failure.certificate(expected: Updates.expectedTeamID)
+        }
+
+        // And notarized, asked the way Gatekeeper asks. A signature can be
+        // genuine and the build never submitted to Apple.
+        let assessed = run("/usr/sbin/spctl", ["--assess", "--type", "execute", app.path])
+        guard assessed.status == 0 else {
+            throw Failure.notarization(assessed.error.isEmpty ? "unknown reason" : assessed.error)
         }
 
         // Identity and version, because a valid archive can still be the wrong
@@ -134,21 +150,6 @@ enum UpdateInstaller {
         guard shipped == version else {
             throw Failure.contents("the archive says \(shipped), the release says \(version)")
         }
-    }
-
-    /// The SHA-256 of the leaf certificate — the same value `install.sh` pins,
-    /// derived the same way.
-    static func certificateFingerprint(of app: URL) throws -> String {
-        let out = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("pf-cert-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: URL(fileURLWithPath: out.path + "0")) }
-
-        let extracted = run("/usr/bin/codesign", ["-d", "--extract-certificates=\(out.path)", app.path])
-        guard extracted.status == 0,
-              let der = FileManager.default.contents(atPath: out.path + "0") else {
-            throw Failure.signature("could not read its signing certificate")
-        }
-        return SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined()
     }
 
     // MARK: - Swap

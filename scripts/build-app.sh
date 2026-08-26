@@ -16,6 +16,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=scripts/variant.sh
 . "$ROOT/scripts/variant.sh"
+# shellcheck source=scripts/codesign.sh
+. "$ROOT/scripts/codesign.sh"
 
 CONFIGURATION="${CONFIGURATION:-release}"
 APP="$ROOT/.build/$APP_NAME.app"
@@ -70,28 +72,10 @@ fi
 /usr/libexec/PlistBuddy -c "Add :PFBuildStamp string $STAMP" "$PLIST"
 echo "==> Build stamp: $STAMP"
 
-# Ad-hoc ("-") by default. Set CODESIGN_IDENTITY to a self-signed identity to
-# keep the microphone permission across rebuilds — see README.
-#
-# The identity has to match the variant. TCC keys a grant to the certificate,
-# not only the bundle id: signing com.parrotflow.app (release) with the Dev
-# certificate makes a locally built copy a different identity than the one
-# distributed, and permission grants stop lining up between them — this was
-# picking "ParrotFlow Dev" whenever it existed, for either variant, which is
-# exactly that bug. Prefer the matching identity, fall back to the other
-# rather than ad-hoc — see dev-certificate.sh.
-if [ -z "${CODESIGN_IDENTITY:-}" ]; then
-    PREFERRED="ParrotFlow Dev"
-    [ "$VARIANT" = "release" ] && PREFERRED="ParrotFlow Release"
-    for candidate in "$PREFERRED" "ParrotFlow Release" "ParrotFlow Dev"; do
-        if security find-identity -v -p codesigning 2>/dev/null | grep -q "$candidate"; then
-            CODESIGN_IDENTITY="$candidate"
-            break
-        fi
-    done
-fi
-IDENTITY="${CODESIGN_IDENTITY:--}"
+# How this is signed lives in scripts/codesign.sh, because release.sh has to
+# sign the same bundle again after it stamps the version in.
+IDENTITY="$(pf_signing_identity)"
 echo "==> Signing with identity: $IDENTITY"
-codesign --force --sign "$IDENTITY" "$APP"
+pf_sign "$APP" "$IDENTITY"
 
 echo "==> Done: $APP"

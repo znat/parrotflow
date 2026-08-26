@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 #
-# Creates the certificate that release builds are signed with, and prints the
+# SUPERSEDED. Releases are signed with a Developer ID Application certificate
+# now — see docs/distribution.md, "Setting up the credentials". This is kept
+# because it is what signed everything up to v0.9.0, and because a machine that
+# still holds that certificate can use it to rehearse an install locally.
+# Do not run it to cut a release: a self-signed build is refused by install.sh,
+# by the app's own updater and by Gatekeeper.
+#
+# Creates the certificate that release builds were signed with, and prints the
 # two repository secrets the release workflow needs.
 #
 # Run this ONCE, ever. The certificate is not a build detail: macOS keys the
