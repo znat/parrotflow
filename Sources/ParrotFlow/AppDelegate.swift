@@ -423,6 +423,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Permissions.microphone == .granted {
             recorder.warmUp()
         }
+        // The other half of the first press. The engine warms above; this is
+        // the pill's own window, which costs as much again.
+        pill.warm()
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }
