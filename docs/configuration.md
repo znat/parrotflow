@@ -184,6 +184,35 @@ On `toggle`, right ⌥ would start recording every time you used it to type an
 accented character. Hold-to-talk is the mode that makes sense for these; it's
 also why apps in this category gravitate to `fn` or a right-hand modifier.
 
+### Tap it to bring the offer back
+
+Hold the hotkey and you dictate. **Tap it** — shorter than
+`press_delay_seconds` — and the pill comes back with its commands on it.
+
+| What is selected | What the offer is about |
+|---|---|
+| A selection, anywhere | Those words, and the pill appears under them |
+| Nothing | The last dictation, and the pill stays where it was |
+
+The selection wins because it is what you are pointing at now, and it is the
+only target the tap can have in an app ParrotFlow has never written into:
+select a paragraph in Word, tap, and press a chip's letter.
+
+This is why the offer's six seconds are not a deadline. It is not kept on
+screen against the chance that you want it — you ask for it again.
+
+**Bare modifiers only.** A `⌃⌥Space`-style combo goes through Carbon, which
+delivers the press on the down edge and swallows the keystroke, so there is no
+short press left over to claim: a tap there is a dictation, and a brief one.
+At `press_delay_seconds: 0` there is no tap either, for the same reason.
+
+Nothing is summoned while a dictation is recording or still decoding. On
+`toggle` the key is what stops a recording, and a stop that came out short is
+still a stop.
+
+`--watch-taps` says which edge each press comes out as — see
+[cli.md](cli.md). The case worth checking by hand is that ⌘S prints nothing.
+
 ## `transcription.insert_mode`
 
 `paste` types the transcript into the app you are in and needs the

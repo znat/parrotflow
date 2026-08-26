@@ -2779,15 +2779,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // pointer may be deliberately holding.
         guard !offerIsUp else { return }
         guard config.feedback.correctOffer else { return }
+
+        // The selection wins, and it never goes stale: it is what you are
+        // pointing at now. It is also the only target this can have in an app
+        // ParrotFlow has never written a word into, which is the whole of why
+        // the tap reaches further than the last dictation.
+        if let selection = SelectionReader.snapshot(),
+           !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Log.write("summon: the offer, over the selection — \"\(selection.text.prefix(80))\"")
+            aim(at: selection)
+            raiseOffer(
+                over: Correction(
+                    original: selection.text, element: selection.element,
+                    owner: selection.owner, landing: .field, selection: selection
+                ),
+                run: pressRun, headline: "the selection", reading: Confidence.Reading()
+            )
+            return
+        }
+
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty, let landing = lastDictationLanding else {
-            Log.write("summon: nothing has been dictated yet")
+            Log.write("summon: nothing selected and nothing dictated yet")
             return
         }
         Log.write("summon: the offer, over the last dictation")
         // `pressRun` rather than a number of its own: this offer is about that
         // dictation, and saying so is what lets a newer one take the pill off
         // it through the guard in `showCorrectOffer`.
+        //
+        // Not re-aimed. The pill is already pointed where the words landed,
+        // which is what "back where it was" means — and a fresh read would
+        // answer where the caret is *now*, which is a different question.
         raiseOffer(
             over: Correction(
                 original: text, element: landing.element, owner: landing.owner,
@@ -2795,6 +2818,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ),
             run: pressRun, headline: nil, reading: Confidence.Reading()
         )
+    }
+
+    /// Put the pill under the selection instead of where the last dictation
+    /// left it.
+    ///
+    /// `CaretAnchor.read` already answers this and needed no new call: what it
+    /// asks the element for is the selected *range*, which is the caret only
+    /// when nothing is selected. A selection over several lines comes back as
+    /// one box around the whole of it, so the pill lands under its last line,
+    /// which is where it belongs.
+    ///
+    /// Left where it is when the read misses. `aim(at: nil)` means the bottom
+    /// of the screen, and a pill still near the words it is about beats one
+    /// parked away from them — Outlook answers `0+0` for a pane holding
+    /// hundreds of thousands of characters, and `trust` is what catches it.
+    private func aim(at selection: SelectionReader.Selection) {
+        guard let element = selection.element,
+              case .found(let anchor) = CaretAnchor.read(at: element) else {
+            Log.write("summon: no geometry for the selection; the pill stays where it was")
+            return
+        }
+        pill.aim(at: anchor)
     }
 
     /// Take the offer's letters and Escape for as long as the offer is up.
@@ -3293,6 +3338,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let owner: NSRunningApplication?
         /// Where the words went, so the correction can follow them.
         let landing: Landing
+        /// The selection this offer was summoned over, when it was summoned
+        /// over one rather than raised after a dictation.
+        ///
+        /// It is here for the range. `replace` otherwise finds the words by
+        /// their text and takes the last copy, which is the right answer for a
+        /// dictation — the newest thing written is the thing the offer is
+        /// about. A selection is not: the copy that matters is the one you
+        /// highlighted, and only the range says which that is. Carrying the
+        /// whole `Selection` rather than the range alone is what lets this hand
+        /// straight to `replaceSelected`, which already recovers a range that
+        /// has moved.
+        var selection: SelectionReader.Selection?
 
         /// The two places a dictation can end up.
         ///
@@ -3398,6 +3455,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             owner.activate()
             // Let it come forward before the keystroke is posted.
             Thread.sleep(forTimeInterval: 0.15)
+        }
+
+        // Summoned over a selection: the path that already knows how to write
+        // one back, range and all. The text search below would take the last
+        // copy of the words in the field, and for a selection the last copy is
+        // not the one you highlighted.
+        //
+        // A miss falls through to the clipboard rather than returning, the same
+        // as every other way of not reaching the field: the rewrite is done and
+        // it has to go somewhere.
+        if let selection = target.selection {
+            switch replaceSelected(with: corrected, in: selection, describedAs: what) {
+            case .replaced:
+                noteRewritten(original, as: corrected)
+                applied(what)
+                return true
+            case .failed, .notAttempted:
+                break
+            }
         }
 
         if config.transcription.insertMode == .paste, let aimed = target.element {
