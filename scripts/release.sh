@@ -45,8 +45,11 @@ CODESIGN_IDENTITY="$(pf_signing_identity)"
 #
 # PARROTFLOW_REHEARSAL=1 is the way to build without a Developer ID, for
 # `make try-install`. The release workflow does not set it and must not.
+#
+# Exactly "1", not merely set. PARROTFLOW_REHEARSAL=0 reads as "off" to anyone
+# writing it, and a test for non-empty would turn it on.
 if ! pf_is_developer_id "$CODESIGN_IDENTITY"; then
-    if [ -z "${PARROTFLOW_REHEARSAL:-}" ]; then
+    if [ "${PARROTFLOW_REHEARSAL:-}" != "1" ]; then
         if [ "$CODESIGN_IDENTITY" = "-" ]; then
             echo "error: no signing identity found — refusing to build a release." >&2
         else
