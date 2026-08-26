@@ -31,9 +31,11 @@ audio:
   # Skip clips with no speech, so a stray keypress does not decode room tone.
   speech_gate: true
 
-  # Decode each clip again with silence padding, keep it if it reaches
-  # further. Recovers dropped endings (~2%) for ~100ms. Needs speech_gate.
-  second_opinion: false
+  # Decode each clip again with silence padding, and keep that decode if it
+  # reaches further. About 2% of dictations silently lose words, and this is
+  # what gets them back. Every dictation pays ~100ms for it: set this to
+  # false to keep the 100ms. Needs speech_gate.
+  second_opinion: true
 
 feedback:
   sound: true     # a click when recording starts and stops
