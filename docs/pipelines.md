@@ -297,6 +297,29 @@ entry costs the others room, so a transform joins it only by asking. Put a
 chip on what you reach for without thinking. Leave it off anything you would
 only ever ask for out loud — that is what the wake phrase is for.
 
+### `say` — what to call it out loud
+
+```yaml
+  - name: slack_handles
+    description: turn names into slack handles
+    say: [slack handles, handles]
+    command: slack_handles.py
+```
+
+A name is written for a config file. Nobody says an underscore, and nobody
+calls a script `code_identifiers` when asking for it. `say:` is the words you
+would actually use, and one string is as good as a list.
+
+Only the tap-and-hold path reads them, and there it decides whether a tool is
+reachable at all. That path has no router: a name anywhere in what you said
+wins, and everything else goes to the catch-all. The catch-all is a prompt, so
+it can stand in for another prompt and for nothing else — a script or a
+`replace:` table that is never named is a tool you cannot reach. See
+[configuration.md](configuration.md#tap-it-to-bring-the-offer-back).
+
+`"hey parrot, …"` ignores `say:`. That path asks a model, and `description:`
+is the field written to be matched against.
+
 `key:` is one letter, drawn as a keycap and shown in capitals whatever you
 write. More than one character is cut to the first. A transform with `offer:
 true` and no `key:` still gets a chip, without a keycap on it — clickable, and

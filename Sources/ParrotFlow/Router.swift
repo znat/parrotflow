@@ -34,10 +34,20 @@ enum Router {
     /// Worth having twice over: it removes a round trip from the commands you
     /// use most, and it is the only path that works when Ollama is not running.
     ///
-    /// Only the opening words are considered. "bullets" and "bullets but keep
-    /// the headings" both name `bullets`; "I was thinking about bullets"
-    /// should not, and does not, because the match is anchored at the start.
-    static func local(instruction: String, catalogue: Catalogue) -> Capability? {
+    /// Anchored by default: "bullets" and "bullets but keep the headings" both
+    /// name `bullets`, while "I was thinking about bullets" does not, because
+    /// the match starts where the sentence does. That is right for a command
+    /// *heard* inside a sentence, which might not have been a command at all.
+    ///
+    /// `anywhere` lifts the anchor, for a command declared by a key. There the
+    /// whole utterance is the instruction — you held the key down to say it —
+    /// so a name in the middle of it is still a name, and "use our slack
+    /// handles" has to reach `slack_handles` or it reaches a model that cannot
+    /// run a script. The risk the anchor was guarding against does not exist on
+    /// that path: there is no sentence for a name to be buried in by accident.
+    static func local(
+        instruction: String, catalogue: Catalogue, anywhere: Bool = false
+    ) -> Capability? {
         let words = instruction.lowercased()
             .components(separatedBy: CharacterSet.alphanumerics.inverted)
             .filter { !$0.isEmpty }
@@ -45,16 +55,25 @@ enum Router {
 
         var best: (capability: Capability, score: Double)?
         for capability in catalogue.capabilities {
-            let target = capability.name.lowercased()
-            // A capability's name may be more than one word, so try the same
-            // number of leading words as the name has, and one either side.
-            let nameWords = target.components(separatedBy: CharacterSet.alphanumerics.inverted)
-                .filter { !$0.isEmpty }.count
-            for count in 1...max(1, min(nameWords + 1, words.count)) {
-                let candidate = words.prefix(count).joined(separator: " ")
-                let score = VoiceCommand.similarity(candidate, target)
-                if score >= nameThreshold, score > (best?.score ?? 0) {
-                    best = (capability, score)
+            for spoken in capability.spokenNames {
+                // Underscores are how a config spells a space. Nobody says one,
+                // so `slack_handles` is compared as "slack handles".
+                let target = spoken.lowercased()
+                    .components(separatedBy: CharacterSet.alphanumerics.inverted)
+                    .filter { !$0.isEmpty }
+                guard !target.isEmpty else { continue }
+                let name = target.joined(separator: " ")
+                // A capability's name may be more than one word, so try the same
+                // number of words as the name has, and one either side.
+                let starts = anywhere ? Array(words.indices) : [0]
+                for from in starts {
+                    for count in 1...max(1, min(target.count + 1, words.count - from)) {
+                        let candidate = words[from..<(from + count)].joined(separator: " ")
+                        let score = VoiceCommand.similarity(candidate, name)
+                        if score >= nameThreshold, score > (best?.score ?? 0) {
+                            best = (capability, score)
+                        }
+                    }
                 }
             }
         }

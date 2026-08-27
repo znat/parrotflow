@@ -254,6 +254,12 @@ $PF --learn <heard> <corrected>
 matches your words against each transform's `description`, so this is how you
 find out that a description is too vague before a user does.
 
+`--route "…" --keyed` scores the other path: tap-and-hold, where a key said
+this was an instruction and there is no router at all. A name anywhere in the
+sentence wins, `say:` aliases included; everything else is `ANY`. No model, so
+it answers instantly. `scripts/check-keyed.sh` drives it against
+`tests/keyed-cases.yaml`, which supplies its own catalogue.
+
 `--prompt` runs one named transform against text you supply, with the
 instruction that would have been spoken. `--command` runs the whole
 wake-phrase path: is this a command at all, is it a correction, which words in
