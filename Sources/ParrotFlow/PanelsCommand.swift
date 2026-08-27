@@ -112,6 +112,10 @@ enum PanelsCommand {
             model.state = state
             model.appIcon = icon
             model.level = level
+            // No hotkey is registered behind the sheet, so the selection offer
+            // is drawn against the shipped default — which is the one a reader
+            // should be checking that row against, and is not this machine's.
+            model.hotkey = "Right ⌘"
             return model
         }
 
@@ -119,8 +123,19 @@ enum PanelsCommand {
         let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution))
         let thinking = pill(.working("Thinking…"))
         let offer = pill(.offer(offerChips, nil, Confidence.Reading()))
+        // The offer over a selection: three rows, and the words themselves
+        // rather than a word for them. On the sheet because the difference from
+        // the plain one is the whole design — a pill that says which words is a
+        // different surface from one that says there are some, and a row that
+        // is only sometimes there gets looked at nowhere else.
+        let offerSelection = pill(.offer(
+            offerChips, .selection("things that turned out not to matter"),
+            Confidence.Reading()
+        ))
         // Beside the plain one: the two endings must not look the same.
-        let offerCopied = pill(.offer(offerChips, "Nowhere to type · ⌘V", Confidence.Reading()))
+        let offerCopied = pill(.offer(
+            offerChips, .landing("Nowhere to type · ⌘V"), Confidence.Reading()
+        ))
         // The warning on its own, which is what most people will ever see of
         // this: `feedback.confidence` is off by default and the thresholds are
         // not, so a shaky dictation raises one line and nothing else.
@@ -254,6 +269,8 @@ enum PanelsCommand {
             // comparison that matters: it has to not look like one.
             (AnyView(PillView().environmentObject(offer)),
              pillSize(offer), .dark, true),
+            (AnyView(PillView().environmentObject(offerSelection)),
+             pillSize(offerSelection), .dark, true),
             (AnyView(PillView().environmentObject(offerCopied)),
              pillSize(offerCopied), .dark, true),
             // The same offer with `feedback.confidence` on: two rows instead of
@@ -380,7 +397,9 @@ enum PanelsCommand {
     /// The window's size, not the capsule's — the glow needs the bleed around
     /// it or the sheet cuts the halo off square.
     private static func pillSize(_ model: PillModel) -> NSSize {
-        PillMetrics.panelSize(for: model.state, hasIcon: model.appIcon != nil)
+        PillMetrics.panelSize(
+            for: model.state, hasIcon: model.appIcon != nil, hotkey: model.hotkey
+        )
     }
 
     /// Something recognisable to sit in the pill's slot. Mail because that is
