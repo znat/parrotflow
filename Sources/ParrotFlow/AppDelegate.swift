@@ -1119,7 +1119,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Only for a press that starts a dictation: the second press of a
         // toggle belongs to the one already running, and it did not ask for
         // anything different.
-        if !recorder.isRecording { keyedAtPress = afterTap }
+        //
+        // A plain hold counts as keyed while an offer over a *selection* is up,
+        // and only then. There the pill is pointing at words and asking what to
+        // do about them, so a hold cannot mean "start a new dictation" — and
+        // the tap that summoned it already happened, so asking for another
+        // would be asking twice for the same thing. It is also what the third
+        // row of that pill promises, and a promise nothing honoured would be
+        // worse than no row.
+        //
+        // An offer over the last dictation is not that. It carries no such row,
+        // nothing on screen offers the gesture, and holding after a sentence
+        // lands is how the next one gets said. Matched against the headline
+        // rather than against `selectionAtPress` so the rule is the one the
+        // pill is drawing: the row appears exactly when this is true, and the
+        // two cannot drift apart.
+        if !recorder.isRecording {
+            keyedAtPress = afterTap || (offerIsUp && offerHeadline?.isSelection == true)
+        }
         // Read before anything this press does, so an abort later can tell the
         // transcription this press started from one that was already running.
         transcriptionRunAtPress = transcriptionRun
@@ -3424,6 +3441,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerHeld = false
         offeredCorrection = nil
         offerOnScreen = nil
+        // With the rest of what the offer was about. It decides whether a hold
+        // is an edit — see `handleHotKeyPress` — and a headline outliving its
+        // offer is one more slot that says something true about a surface that
+        // is no longer there.
+        offerHeadline = nil
         offerKeysExpiry?.cancel()
         offerKeysExpiry = nil
         offerKeys.stop()
