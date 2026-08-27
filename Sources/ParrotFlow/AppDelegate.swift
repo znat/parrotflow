@@ -168,6 +168,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// would be delivered with the terminal's answer, and the reverse puts
         /// markup in front of an app that shows the tags.
         let paste: AppProfile.Paste
+        /// Tap-then-hold: what is said is an instruction, not text.
+        ///
+        /// Decided at the press because that is where the gesture is known, and
+        /// carried here for the same reason everything else is — a second press
+        /// landing mid-transcription must not be able to change what this one
+        /// was for.
+        var isCommand = false
+        /// What was selected when this recording began.
+        ///
+        /// Frozen for the reason every other field here is. `selectionAtPress`
+        /// is one slot that the next press overwrites, and a spoken command
+        /// reads its target *after* the decoder has run — so starting a second
+        /// dictation while a command is still decoding pointed that command at
+        /// the newer press's selection. "Make it bold" then applied to whatever
+        /// happened to be highlighted by the time it finished, which on a
+        /// gesture whose pill reads "editing the selection" is the one thing it
+        /// must not do.
+        var selection: SelectionReader.Selection?
+        /// The dictation this command would fall back to, frozen with it.
+        ///
+        /// "Make it terse" with nothing selected means the sentence that was
+        /// there when you said it. `lastTranscript` is one slot like the
+        /// selection is, and a dictation finishing while the router thinks
+        /// replaces it — so the command rewrote a sentence that arrived after
+        /// the instruction for it. Freezing the selection alone left this half
+        /// of the same crossing open.
+        var transcript: String?
     }
 
     /// The words the offer on screen is about, and the field they went into.
@@ -179,6 +206,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// one dictation's words against another's field. This is the same
     /// ownership `offerPressRun` already asserts, carrying what it is about.
     private var offeredCorrection: (run: Int, target: Correction)?
+
+    /// The current press was tap-then-hold, so its words are an instruction.
+    private var commandAtPress = false
 
     /// The last dictation a tap can summon an offer over: its words, and where
     /// they went.
@@ -774,7 +804,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in self?.askForMissingKeys() }
 
         hotkeyError = nil
-        hotKeys.onPress = { [weak self] in self?.handleHotKeyPress() }
+        hotKeys.onPress = { [weak self] afterTap in self?.handleHotKeyPress(afterTap: afterTap) }
         hotKeys.onRelease = { [weak self] in self?.handleHotKeyRelease() }
         hotKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
         hotKeys.onTap = { [weak self] in self?.summonOffer() }
@@ -1067,7 +1097,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Hotkey handling
 
-    private func handleHotKeyPress() {
+    private func handleHotKeyPress(afterTap: Bool = false) {
+        // The gesture, kept for the `Press` built when the recording stops.
+        // Only for a press that starts a dictation: the second press of a
+        // toggle belongs to the one already running, and it did not ask for
+        // anything different.
+        if !recorder.isRecording { commandAtPress = afterTap }
         // Read before anything this press does, so an abort later can tell the
         // transcription this press started from one that was already running.
         transcriptionRunAtPress = transcriptionRun
@@ -1449,8 +1484,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         playFeedback("Tink")
         if config.feedback.overlay {
-            pill.aim(at: anchorAtPress)
-            pill.recording(icon: appIconAtPress)
+            // Under the selection when there is one and this is a command: the
+            // words are about those words, and the pill belongs with them.
+            if commandAtPress, let selection = selectionAtPress {
+                aim(at: selection)
+            } else {
+                pill.aim(at: anchorAtPress)
+            }
+            pill.recording(icon: appIconAtPress, label: recordingLabel)
         }
 
         let tick = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -1758,7 +1799,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             run: pressRun, element: focus?.element, owner: focus?.owner, mic: micAtPress,
             // Plain when nobody was in front, which is the answer that cannot
             // lose a sentence.
-            paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain
+            paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain,
+            isCommand: commandAtPress,
+            // Still this press's: the recording has only just stopped and no
+            // newer press can have landed. The gap this closes is the decode
+            // that follows, not this moment.
+            selection: selectionAtPress,
+            // The dictation before this one, which is what a command with
+            // nothing selected is about.
+            transcript: lastTranscript
         )
         Task { [weak self] in
             // Whatever happens below — decoded, cancelled, or thrown — nothing
@@ -1980,7 +2029,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    private func handleVoiceCommand(_ command: String) {
+    /// `confirm: false` applies a rewrite in place instead of previewing it.
+    ///
+    /// The gesture path passes it. Tap-then-hold has already named its target
+    /// on the pill and offered ⎋ for the whole time you were speaking, and
+    /// "hey parrot, undo" puts the substitution back afterwards — so a preview
+    /// is a question that was answered twice before it was asked. The wake
+    /// phrase does not pass it: that one is found in a sentence rather than
+    /// declared by a key, so being wrong about it is a real possibility.
+    private func handleVoiceCommand(
+        _ command: String, confirm: Bool = true,
+        over target: Target = .whateverIsSelected
+    ) {
         let catalogue = Catalogue(transforms: config.transforms)
 
         // Deterministic phrases first: no model needed, and they work when
@@ -1988,13 +2048,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // own, which means the panel rather than anything the router could pick.
         if let local = VoiceCommand.local(from: command) {
             // Nothing on the pill is ours: no model was asked, so no
-            // "Thinking…" went up.
-            apply(local, command: command, progress: nil)
+            // "Thinking…" went up. The target still travels: this path opens
+            // the correction panel, which reads the selection slot, and a
+            // command that was decoded while a newer press filled that slot
+            // would open over the newer selection.
+            apply(local, command: command, progress: nil, over: target)
             return
         }
         if let capability = Router.local(instruction: command, catalogue: catalogue) {
             Log.write("router: \"\(command)\" named \(capability.name) outright")
-            run(capability, instruction: command, progress: nil)
+            run(
+                capability, instruction: command,
+                progress: nil, confirm: confirm, over: target
+            )
             return
         }
 
@@ -2021,7 +2087,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     switch decision {
                     case .matched(let capability):
                         Log.write("router: \"\(command)\" → \(capability.name)")
-                        self.run(capability, instruction: command, progress: token)
+                        self.run(
+                            capability, instruction: command,
+                            progress: token, confirm: confirm, over: target
+                        )
                     case .anything:
                         // An edit with no prompt behind it. The instruction is
                         // the whole specification, so it goes through unsplit,
@@ -2029,7 +2098,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("router: \"\(command)\" → \(FreeForm.name)")
                         self.runTransform(
                             FreeForm.prompt(for: command).asTransform(model: catchAll),
-                            instruction: command, progress: token
+                            instruction: command, progress: token,
+                            confirm: confirm, over: target
                         )
                     case .none:
                         // Nothing fits. Deliberately not falling through to
@@ -2055,7 +2125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Log.write("routing failed: \(error.localizedDescription)")
                     self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
-                        self.handleVoiceCommand(command)
+                        self.handleVoiceCommand(command, confirm: confirm, over: target)
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
@@ -2068,15 +2138,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `progress` is the "Thinking…" the router put up, where a router ran, so
     /// whichever branch ends without putting its own message up takes that one
     /// down and nothing else.
-    private func run(_ capability: Capability, instruction: String, progress token: Int?) {
+    private func run(
+        _ capability: Capability, instruction: String,
+        progress token: Int?, confirm: Bool = true,
+        over target: Target = .whateverIsSelected
+    ) {
         switch capability {
         case .action(.vocabulary):
             endProgress(token: token)
-            beginCorrection()
+            beginCorrection(over: target)
         case .action(.spelling):
-            interpretSpelling(instruction, progress: token)
+            interpretSpelling(instruction, progress: token, over: target)
         case .transform(let transform):
-            runTransform(transform, instruction: instruction, progress: token)
+            runTransform(
+                transform, instruction: instruction,
+                progress: token, confirm: confirm, over: target
+            )
         }
     }
 
@@ -2141,7 +2218,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The spelling extractor, which is a second model call rather than part of
     /// routing — it reads the last transcript and returns a rule, not a name.
-    private func interpretSpelling(_ command: String, progress inherited: Int?) {
+    private func interpretSpelling(
+        _ command: String, progress inherited: Int?,
+        over target: Target = .whateverIsSelected
+    ) {
         guard config.llmEnabled else {
             endProgress(token: inherited)
             flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands", tone: .caution)
@@ -2150,7 +2230,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let token = beginProgress("Thinking…")
         let llmConfig = llmConfig()
-        let context = lastTranscript
+        // The dictation the spelling is about, frozen with the command that
+        // asked. This one reads the transcript for its whole job — "Tasmin
+        // spells T A S M E E N" finds the word in what you said before — so a
+        // newer dictation replacing it while the router thought would have sent
+        // the model looking in the wrong sentence.
+        let context: String?
+        switch target {
+        case .frozen(_, let fallback): context = fallback
+        case .whateverIsSelected: context = lastTranscript
+        }
         // From the transcript, never the command: the command is short and its
         // trigger word plus a run of loose capitals reads as English whatever
         // was actually said.
@@ -2167,7 +2256,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     command: command, lastTranscript: context,
                     language: language, config: llmConfig
                 )
-                await MainActor.run { self?.apply(result, command: command, progress: token) }
+                await MainActor.run {
+                    self?.apply(result, command: command, progress: token, over: target)
+                }
             } catch {
                 await MainActor.run {
                     guard let self else { return }
@@ -2175,8 +2266,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
                         // The message above is already down, so the retry
-                        // inherits nothing.
-                        self.interpretSpelling(command, progress: nil)
+                        // inherits nothing. The target is not nothing: a retry
+                        // happens after a key dialog, which is all the time a
+                        // newer dictation needs to land, and reading the slot
+                        // then would correct that one instead.
+                        self.interpretSpelling(command, progress: nil, over: target)
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
@@ -2186,13 +2280,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Transforms
 
+    /// Where a transform's target comes from.
+    ///
+    /// Two cases rather than an optional selection, because the answer
+    /// "nothing was selected" and the answer "nobody said" are different and an
+    /// optional cannot hold both. Flattened into one, a command that began with
+    /// nothing selected fell through to the shared slot and picked up whatever
+    /// a newer press had put there — the same crossing `Press.selection` exists
+    /// to stop, surviving in the nil case.
+    private enum Target {
+        /// Read the selection now. The menu and the offer run while the slot is
+        /// still the press's own.
+        case whateverIsSelected
+        /// What a spoken command froze when its recording began: the
+        /// selection, which may be nothing, and the dictation to fall back to,
+        /// which may also be nothing. A command reads neither slot and clears
+        /// neither: by the time a decoder has answered, a newer press can own
+        /// what is in them.
+        case frozen(selection: SelectionReader.Selection?, fallback: String?)
+    }
+
     /// Runs a prompt over the selection, or over the last dictation.
     ///
     /// The selection is taken from the snapshot made when the hotkey went down,
     /// not read now — by the time this runs, our own panel may hold focus, and
     /// reading then returns nothing or something of ours.
     private func runTransform(
-        _ transform: Config.Transform, instruction: String, progress inherited: Int?
+        _ transform: Config.Transform, instruction: String,
+        progress inherited: Int?, confirm: Bool = true,
+        over target: Target = .whateverIsSelected
     ) {
         // Never the clipboard. `read()` falls back to it for the correction
         // panel, where you see the words before anything happens and can
@@ -2202,16 +2318,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // That is exactly what happened: "convert numbers to digits" ran over
         // a comment line copied minutes earlier, while the sentence the
         // speaker meant sat in the last transcript, unused.
-        let selection = selectionAtPress ?? (
-            Permissions.accessibility == .granted
-                ? SelectionReader.read(fallbackTo: false)
-                : nil
-        )
-        selectionAtPress = nil
+        //
+        // A spoken command brings its own, frozen when its recording began —
+        // see `Press.selection` and `Target`. It neither reads the slot nor
+        // clears it: by the time a decoder has answered, a newer press can own
+        // what is in there.
+        let selection: SelectionReader.Selection?
+        let dictated: String?
+        switch target {
+        case .frozen(let held, let fallback):
+            selection = held
+            dictated = fallback
+        case .whateverIsSelected:
+            selection = selectionAtPress ?? (
+                Permissions.accessibility == .granted
+                    ? SelectionReader.read(fallbackTo: false)
+                    : nil
+            )
+            selectionAtPress = nil
+            dictated = lastTranscript
+        }
 
         // Falling back to the last dictation is what makes "hey parrot, fix the
         // grammar" work immediately after speaking, with nothing selected.
-        let target = selection?.text ?? lastTranscript ?? ""
+        let target = selection?.text ?? dictated ?? ""
         guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             endProgress(token: inherited)
             Log.write("transform: nothing selected and nothing dictated yet")
@@ -2223,7 +2353,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // wrong thing is otherwise indistinguishable in the log from one that
         // worked on the right thing badly.
         Log.write("transform: \(transform.name) over \(selection == nil ? "the last dictation" : "the selection") — \"\(target.prefix(80))\"")
-        runTransform(transform, instruction: instruction, selection: selection, on: target)
+        runTransform(
+            transform, instruction: instruction, selection: selection, on: target,
+            confirm: confirm
+        )
     }
 
     /// The run itself, over text already decided.
@@ -2237,7 +2370,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ transform: Config.Transform,
         instruction: String,
         selection: SelectionReader.Selection?,
-        on target: String
+        on target: String,
+        confirm: Bool = true
     ) {
         let token = beginProgress(transform.progressLabel)
 
@@ -2249,7 +2383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await MainActor.run {
                     self?.finishTransform(
                         transform: transform, selection: selection,
-                        before: target, after: result, progress: token
+                        before: target, after: result,
+                        progress: token, confirm: confirm
                     )
                 }
             } catch {
@@ -2260,7 +2395,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let asked = self.askForKeyThenRetry(error) {
                         self.runTransform(
                             transform, instruction: instruction,
-                            selection: selection, on: target
+                            selection: selection, on: target, confirm: confirm
                         )
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
@@ -2274,7 +2409,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         selection: SelectionReader.Selection?,
         before: String,
         after: String,
-        progress token: Int?
+        progress token: Int?,
+        confirm: Bool = true
     ) {
         endProgress(token: token)
 
@@ -2298,7 +2434,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        guard transform.confirm else {
+        // `confirm: false` overrides the transform's own setting, the way the
+        // offer's chips already do. A preview is for a command whose target you
+        // could have got wrong; tap-then-hold has already shown you the target
+        // on the pill and given you ⎋ to take it back, and the undo phrase
+        // survives the rewrite. Asking again after all that is a second answer
+        // to a question already answered.
+        guard transform.confirm, confirm else {
             applyTransform(cleaned, to: selection, replacing: before, transform: transform)
             return
         }
@@ -2616,13 +2758,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastTranscript = text
     }
 
-    private func apply(_ command: VoiceCommand, command spoken: String, progress token: Int?) {
+    private func apply(
+        _ command: VoiceCommand, command spoken: String, progress token: Int?,
+        over target: Target = .whateverIsSelected
+    ) {
         // Whatever happens next replaces it: a panel, or a flash of its own.
         endProgress(token: token)
 
         switch command {
         case .openCorrectionPanel:
-            beginCorrection()
+            beginCorrection(over: target)
         case .undo:
             performUndo()
         case .addRules(let rules):
@@ -2871,6 +3016,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ),
             run: pressRun, headline: nil, reading: Confidence.Reading()
         )
+    }
+
+    /// What the pill says the hold is for, or nil for the one that needs no
+    /// saying.
+    ///
+    /// A command hold looks exactly like a dictation from outside — same key,
+    /// same mic, same meter — and the difference is that the words are routed
+    /// instead of written down. That has to be readable *before* you speak, not
+    /// worked out afterwards from a sentence that never landed. Escape is live
+    /// the whole time, so a wrong answer here costs one keystroke.
+    private var recordingLabel: String? {
+        guard commandAtPress else { return nil }
+        return selectionAtPress == nil ? "say an edit" : "editing the selection"
     }
 
     /// Put the pill under the selection instead of where the last dictation
@@ -3656,14 +3814,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastDictated?.text = corrected
     }
 
-    private func beginCorrection() {
+    private func beginCorrection(over target: Target = .whateverIsSelected) {
         // Reading the selection needs Accessibility; the panel does not. Open
         // it either way — typing both sides still beats editing YAML by hand,
         // and a panel that silently refuses to appear reads as a broken app.
-        let selection = selectionAtPress ?? (
-            Permissions.accessibility == .granted ? SelectionReader.read() : nil
-        )
-        selectionAtPress = nil
+        //
+        // A spoken command brings its own, frozen when its recording began. It
+        // does not read the slot: "hey parrot" is decoded like any other
+        // dictation, and a newer press can have filled that slot by the time it
+        // is understood — the panel would then open over the newer selection.
+        let selection: SelectionReader.Selection?
+        switch target {
+        case .frozen(let held, _):
+            selection = held
+        case .whateverIsSelected:
+            selection = selectionAtPress ?? (
+                Permissions.accessibility == .granted ? SelectionReader.read() : nil
+            )
+            selectionAtPress = nil
+        }
 
         Log.write("correction: selection = \(selection.map { "\"\($0.text)\"" } ?? "none")")
         pendingSelection = selection
@@ -3947,12 +4116,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // and no stage has a reason to ask for one at either end.
         let delivered = text.trimmingCharacters(in: .newlines)
 
+        // The gesture already said this is an instruction, so nothing is
+        // looked for in the words. That is the whole point of it: the phrase
+        // exists to mark a command inside an ordinary dictation, and there is
+        // nothing to mark when the key said so first.
+        if press.isCommand {
+            dictationEnded(press.run)
+            guard !trimmed.isEmpty else {
+                Log.write("command: nothing was said")
+                flash("Didn't catch that", tone: .caution)
+                updateUI()
+                return
+            }
+            Log.write("command spoken: \"\(trimmed)\"")
+            handleVoiceCommand(trimmed, confirm: false, over: .frozen(selection: press.selection, fallback: press.transcript))
+            return
+        }
+
         // Heard as a command, or nothing at all: no words are going to land,
         // so there is nothing to compare a pane against.
         if let command = commandAfterWakePhrase(trimmed) {
             Log.write("command heard: \"\(command)\"")
             dictationEnded(press.run)
-            handleVoiceCommand(command)
+            handleVoiceCommand(command, over: .frozen(selection: press.selection, fallback: press.transcript))
             return
         }
 
