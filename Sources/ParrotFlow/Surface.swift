@@ -1020,31 +1020,71 @@ struct Surface {
     /// read this pressed the keys anyway and returned `true`, which on any
     /// surface that does not implement readline meant nothing was cleared and
     /// the caller pasted onto the end of the line. That is the append.
+    /// Clears the input line, and says whether it managed to.
+    ///
+    /// Two strategies, because one is not enough. Ctrl-A then Ctrl-K is the
+    /// usual pair. When two reads in a row come back identical the keys are
+    /// not landing where that pair assumes, and a third try at the same thing
+    /// is waste — so the line is killed backwards from its end instead.
+    ///
+    /// Measured on a live Claude Code session: the pair left the box unchanged
+    /// for all 12 attempts and the edit fell through to the clipboard, three
+    /// times on 2026-08-27. What the box held was not recorded, which is why
+    /// it is recorded now.
     private func clearedBox() -> Bool {
+        var previous: String?
+        var stalls = 0
+        var backwards = false
+
         for _ in 0..<12 {
-            // Spelled `.some`/`.none` rather than `true`/`false`/`nil`. Both
-            // read the same, and only this one is exhaustive to every compiler
-            // that has to build it — Swift 6.3 accepts the literals, the 6.0 on
-            // the CI runner asks for `.some(_)` and fails the build.
-            switch boxIsEmpty() {
-            case .some(true): return true
-            case .some(false): break
-            case .none:
+            guard let box = boxContent() else {
                 Log.write("surface: cannot read the input box back; refusing to clear blind")
                 return false
             }
-            SelectionReader.postControlKey(0x00)   // Ctrl-A, start of line
-            Thread.sleep(forTimeInterval: 0.06)
-            SelectionReader.postControlKey(0x28)   // Ctrl-K, kill to end of line
+            if box.isEmpty { return true }
+
+            if box == previous {
+                stalls += 1
+                if stalls >= 2 {
+                    guard !backwards else { return stuck(on: box) }
+                    backwards = true
+                    stalls = 0
+                }
+            } else {
+                stalls = 0
+            }
+            previous = box
+
+            if backwards {
+                SelectionReader.postControlKey(0x0E)   // Ctrl-E, end of line
+                Thread.sleep(forTimeInterval: 0.06)
+                SelectionReader.postControlKey(0x20)   // Ctrl-U, kill to start
+            } else {
+                SelectionReader.postControlKey(0x00)   // Ctrl-A, start of line
+                Thread.sleep(forTimeInterval: 0.06)
+                SelectionReader.postControlKey(0x28)   // Ctrl-K, kill to end
+            }
             Thread.sleep(forTimeInterval: 0.12)
         }
-        return boxIsEmpty() == true
+
+        if boxIsEmpty() == true { return true }
+        return stuck(on: boxContent() ?? "")
+    }
+
+    /// The box would not empty. Says what it holds, so the next one of these
+    /// is diagnosable from the log alone.
+    private func stuck(on box: String) -> Bool {
+        Log.write("surface: the box will not empty; it still reads \"\(box.prefix(80))\"")
+        return false
+    }
+
+    private func boxContent() -> String? {
+        guard let value = SelectionReader.visibleText(of: element) else { return nil }
+        return SelectionReader.joinedInputBox(in: value)
     }
 
     private func boxIsEmpty() -> Bool? {
-        guard let value = SelectionReader.visibleText(of: element),
-              let box = SelectionReader.joinedInputBox(in: value) else { return nil }
-        return box.isEmpty
+        boxContent().map { $0.isEmpty }
     }
 
     /// Whether the box now holds exactly the text we retyped.
