@@ -2010,7 +2010,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// declared by a key, so being wrong about it is a real possibility.
     private func handleVoiceCommand(
         _ command: String, confirm: Bool = true,
-        over frozen: SelectionReader.Selection? = nil
+        over target: Target = .whateverIsSelected
     ) {
         let catalogue = Catalogue(transforms: config.transforms)
 
@@ -2027,7 +2027,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("router: \"\(command)\" named \(capability.name) outright")
             run(
                 capability, instruction: command,
-                progress: nil, confirm: confirm, over: frozen
+                progress: nil, confirm: confirm, over: target
             )
             return
         }
@@ -2057,7 +2057,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("router: \"\(command)\" → \(capability.name)")
                         self.run(
                             capability, instruction: command,
-                            progress: token, confirm: confirm, over: frozen
+                            progress: token, confirm: confirm, over: target
                         )
                     case .anything:
                         // An edit with no prompt behind it. The instruction is
@@ -2067,7 +2067,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         self.runTransform(
                             FreeForm.prompt(for: command).asTransform(model: catchAll),
                             instruction: command, progress: token,
-                            confirm: confirm, over: frozen
+                            confirm: confirm, over: target
                         )
                     case .none:
                         // Nothing fits. Deliberately not falling through to
@@ -2093,7 +2093,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Log.write("routing failed: \(error.localizedDescription)")
                     self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
-                        self.handleVoiceCommand(command, confirm: confirm, over: frozen)
+                        self.handleVoiceCommand(command, confirm: confirm, over: target)
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
@@ -2109,7 +2109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func run(
         _ capability: Capability, instruction: String,
         progress token: Int?, confirm: Bool = true,
-        over frozen: SelectionReader.Selection? = nil
+        over target: Target = .whateverIsSelected
     ) {
         switch capability {
         case .action(.vocabulary):
@@ -2120,7 +2120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .transform(let transform):
             runTransform(
                 transform, instruction: instruction,
-                progress: token, confirm: confirm, over: frozen
+                progress: token, confirm: confirm, over: target
             )
         }
     }
@@ -2231,6 +2231,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Transforms
 
+    /// Where a transform's target comes from.
+    ///
+    /// Two cases rather than an optional selection, because the answer
+    /// "nothing was selected" and the answer "nobody said" are different and an
+    /// optional cannot hold both. Flattened into one, a command that began with
+    /// nothing selected fell through to the shared slot and picked up whatever
+    /// a newer press had put there — the same crossing `Press.selection` exists
+    /// to stop, surviving in the nil case.
+    private enum Target {
+        /// Read the selection now. The menu and the offer run while the slot is
+        /// still the press's own.
+        case whateverIsSelected
+        /// What a spoken command froze when its recording began, which may be
+        /// nothing. A command never reads the slot and never clears it: by the
+        /// time a decoder has answered, a newer press can own it.
+        case frozen(SelectionReader.Selection?)
+    }
+
     /// Runs a prompt over the selection, or over the last dictation.
     ///
     /// The selection is taken from the snapshot made when the hotkey went down,
@@ -2239,7 +2257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func runTransform(
         _ transform: Config.Transform, instruction: String,
         progress inherited: Int?, confirm: Bool = true,
-        over frozen: SelectionReader.Selection? = nil
+        over target: Target = .whateverIsSelected
     ) {
         // Never the clipboard. `read()` falls back to it for the correction
         // panel, where you see the words before anything happens and can
@@ -2251,15 +2269,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // speaker meant sat in the last transcript, unused.
         //
         // A spoken command brings its own, frozen when its recording began —
-        // see `Press.selection`. It must not read the slot here: by the time a
-        // decoder has answered, a second press can have overwritten it, and the
-        // command would edit that press's selection instead of its own.
-        let selection = frozen ?? selectionAtPress ?? (
-            Permissions.accessibility == .granted
-                ? SelectionReader.read(fallbackTo: false)
-                : nil
-        )
-        selectionAtPress = nil
+        // see `Press.selection` and `Target`. It neither reads the slot nor
+        // clears it: by the time a decoder has answered, a newer press can own
+        // what is in there.
+        let selection: SelectionReader.Selection?
+        switch target {
+        case .frozen(let held):
+            selection = held
+        case .whateverIsSelected:
+            selection = selectionAtPress ?? (
+                Permissions.accessibility == .granted
+                    ? SelectionReader.read(fallbackTo: false)
+                    : nil
+            )
+            selectionAtPress = nil
+        }
 
         // Falling back to the last dictation is what makes "hey parrot, fix the
         // grammar" work immediately after speaking, with nothing selected.
@@ -4037,7 +4061,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             Log.write("command spoken: \"\(trimmed)\"")
-            handleVoiceCommand(trimmed, confirm: false, over: press.selection)
+            handleVoiceCommand(trimmed, confirm: false, over: .frozen(press.selection))
             return
         }
 
@@ -4046,7 +4070,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let command = commandAfterWakePhrase(trimmed) {
             Log.write("command heard: \"\(command)\"")
             dictationEnded(press.run)
-            handleVoiceCommand(command, over: press.selection)
+            handleVoiceCommand(command, over: .frozen(press.selection))
             return
         }
 
