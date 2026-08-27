@@ -87,12 +87,6 @@ enum Headline: Equatable {
     /// The words this offer is about, shown as the field shows them.
     case selection(String)
 
-    var text: String {
-        switch self {
-        case .landing(let words), .selection(let words): return words
-        }
-    }
-
     /// Whether this is the three-row shape: the words, the chips, and the line
     /// about the key. Read by the metrics and by the view, so the two cannot
     /// disagree about which shape they are describing.
