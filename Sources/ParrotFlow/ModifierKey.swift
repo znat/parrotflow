@@ -338,8 +338,18 @@ final class ModifierKeyMonitor {
         guard wasTap else { return }
         tappedAt = Self.physicalEdge()
         let timer = Timer(timeInterval: Self.tapGrace, repeats: false) { [weak self] _ in
-            self?.tapTimer = nil
-            self?.onTap?()
+            guard let self else { return }
+            self.tapTimer = nil
+            // The key is down again already. The poll has not caught up with a
+            // press made inside the window — it will, and `beginHold` will
+            // classify it from the physical edges as the tap-and-hold it is.
+            // Summoning the offer here as well would answer one gesture twice:
+            // the pill would arrive and then the microphone would open over it.
+            //
+            // Asked of the flags rather than of `isDown`, which is the poll's
+            // view and is exactly what has not caught up yet.
+            guard self.key?.isPressed != true else { return }
+            self.onTap?()
         }
         RunLoop.main.add(timer, forMode: .common)
         tapTimer = timer
