@@ -154,7 +154,11 @@ Otherwise return only the text.
 # that, having read the corrective phrasing as prose and so as the subject. The
 # pair teaches both halves at once, which is what the existing three examples
 # already do for questions.
-VARIANTS["v6"] = VARIANTS["v3"].replace(
+# Trailing newline stripped, because the Swift literal has none and the
+# comparison above is exact. A byte of whitespace at the end of a system
+# message is unlikely to move a score, and "unlikely" is not a thing this file
+# is allowed to say — it exists to describe the prompt the app sends.
+VARIANTS["v6"] = VARIANTS["v3"].rstrip("\n").replace(
     "Return only the text.",
     """instruction: I meant Tuesday
 text:
@@ -236,6 +240,29 @@ def ask(model, system, user, budget, endpoint="http://localhost:11434"):
     return payload["response"]
 
 
+def shipped_content():
+    """The catch-all's prompt as `FreeForm.swift` holds it, or None.
+
+    Read rather than copied. Two copies of a prompt drift, and this file exists
+    to say what the app does — a scoreboard measuring a string the app does not
+    send is worse than no scoreboard, because it reads exactly like one that
+    does.
+    """
+    source = pathlib.Path(__file__).resolve().parent.parent / "Sources/ParrotFlow/FreeForm.swift"
+    try:
+        text = source.read_text(encoding="utf-8")
+        body = text.split('content: """', 1)[1].split('"""', 1)[0]
+    except (OSError, IndexError):
+        return None
+    # A Swift multiline literal drops the newline after the opening quotes and
+    # the one before the closing quotes, and strips the closing delimiter's
+    # indentation from every line.
+    lines = body.split("\n")[1:-1]
+    indent = len(lines[-1]) - len(lines[-1].lstrip()) if lines else 0
+    return "\n".join(line[indent:] if line[:indent].isspace() or not line.strip()
+                      else line.lstrip() for line in lines)
+
+
 def shipped_prompt_for(category):
     """The narrow prompt the app ships today for this category, if any."""
     return {"digits": "digits", "dates": "dates", "grammar": "grammar"}.get(category)
@@ -273,6 +300,26 @@ def main():
         cases = [c for c in cases if shipped_prompt_for(c["category"])]
 
     content = VARIANTS[args.variant]
+    # Say whether this is the prompt the app runs, before scoring anything.
+    #
+    # The default here is v1 and has never been what ships, so a number from
+    # this runner has always needed that checked by hand — and "by hand" found
+    # the variant but not a one-byte trailing newline, which is a different
+    # system message however little it changes the answer. The comparison is
+    # exact for that reason.
+    shipped = shipped_content()
+    if shipped is None:
+        print("  ⚠ could not read FreeForm.swift; cannot say if this is the shipped prompt")
+    elif content == shipped:
+        print(f"  {args.variant} is the prompt the app ships")
+    elif content.strip() == shipped.strip():
+        print(f"  ⚠ {args.variant} differs from the shipped prompt only in whitespace"
+              f" ({len(content.encode())} bytes against {len(shipped.encode())})"
+              " — the model is being sent a different system message")
+    else:
+        print(f"  ⚠ {args.variant} is not the prompt the app ships"
+              " — this number does not describe the app")
+
     results = []
     elapsed = 0.0
 
@@ -479,8 +526,17 @@ if __name__ == "__main__":
 # marker. It introduces an edit only when it names the replacement, and bare it
 # is a complaint.
 #
-#   gemma4:e4b-mlx v3 (shipped)   37/44   corrections 3/6
-#   gemma4:e4b-mlx v6             39/44   corrections 5/6
+#   gemma4:e4b-mlx v3 (shipped before)   36/44   corrections 2/6
+#   gemma4:e4b-mlx v6                    40/44   corrections 5/6
+#
+# Both re-run after the byte fix below, because the first pass scored a v6 one
+# trailing newline longer than the Swift literal — a different system message,
+# however little it moved the answer.
+#
+# The runs are not repeatable to the case. v3's bytes did not change between
+# the two passes and it scored 37 then 36, so a single point here is noise and
+# only the direction is a finding. Corrections went 2-or-3 of 6 to 5 of 6 in
+# both passes, which is the part worth believing.
 #
 # v6 is v3 plus two examples, one of each kind. Every other category is
 # identical between them, so the two points are the corrections and nothing

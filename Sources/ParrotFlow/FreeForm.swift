@@ -16,8 +16,9 @@ import Foundation
 /// in the list. See `Router.prompt(for:freeForm:)`.
 ///
 /// Scored by tests/generic-cases.yaml — 44 cases, 31 that ask for an edit and
-/// 13 that must come back untouched. On gemma4:e4b-mlx, 39/44, against 11/38
-/// for a control that returns the text unchanged. The full scoreboard is at the
+/// 13 that must come back untouched. On gemma4:e4b-mlx, 40/44, against 11/38
+/// for a control that returns the text unchanged. A point either way is noise:
+/// the same prompt scored 37 and then 36 across two passes. The full scoreboard is at the
 /// bottom of scripts/validate-generic.py.
 ///
 /// The last two examples are a *correction* — an instruction with the
