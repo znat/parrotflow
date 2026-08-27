@@ -497,6 +497,7 @@ final class PillHUD {
             panel.setContentSize(size)
             panel.setFrameOrigin(anchor(size))
             fadeIn(panel)
+            logFrame("raised")
         }
 
         guard let duration else { return }
@@ -633,6 +634,7 @@ final class PillHUD {
         guard let panel else { return }
         let frame = NSRect(origin: anchor(size), size: size)
         guard frame != panel.frame else { return }
+        defer { logFrame("moved") }
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.motion
@@ -654,6 +656,25 @@ final class PillHUD {
         guard panel == nil else { return }
         model.onScreen = false
         build()
+    }
+
+    /// Where the window actually ended up.
+    ///
+    /// Every other line in this file is about what was *asked for* — the
+    /// anchor, the state, the keys — and a pill nobody can see has usually been
+    /// asked for perfectly and put somewhere off the screen it belongs on. That
+    /// is what this exists to tell apart, and it is how a pill that was raised,
+    /// keyed and invisible was tracked down once already.
+    private func logFrame(_ what: String) {
+        guard let panel else { return }
+        let capsule = panel.frame.insetBy(dx: PillMetrics.bleed, dy: PillMetrics.bleed)
+        let screen = NSScreen.screens.firstIndex { $0.frame.intersects(panel.frame) }
+        Log.write(String(
+            format: "pill: %@ at %.0f,%.0f %.0fx%.0f on screen %@%@",
+            what, capsule.minX, capsule.minY, capsule.width, capsule.height,
+            screen.map(String.init) ?? "none",
+            model.onScreen ? "" : " — but the surface is unmounted"
+        ))
     }
 
     private func build() {

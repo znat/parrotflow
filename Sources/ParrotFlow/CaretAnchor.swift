@@ -145,6 +145,19 @@ enum CaretAnchor {
             ))
         }
 
+        // Chromium never gets past the line above. `AXBoundsForRange` declines
+        // inside a contenteditable — its offsets address a reconstruction rather
+        // than the render tree, the same fact `Surface` works around when it
+        // edits one — and the marker pair VoiceOver reads web content through,
+        // `AXSelectedTextMarkerRange` into `AXBoundsForTextMarkerRange`, was
+        // tried here and answered nothing on Slack's composer either. They may
+        // sit on the web area above the focused text area; reaching that is a
+        // tree walk, which this file has taken out once already.
+        //
+        // Written down because it has now been paid for twice: in web content
+        // there is no way to ask where a *span* is, only where the box holding
+        // it is, which is the line below.
+
         // The control's own rectangle, but only when it is small enough to be
         // one. A search box is 22pt tall and its box is as good as its caret; a
         // terminal's text view is 915pt tall and its box puts the pill under

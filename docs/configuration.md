@@ -248,6 +248,27 @@ select a paragraph in Word, tap, and press a chip's letter.
 This is why the offer's six seconds are not a deadline. It is not kept on
 screen against the chance that you want it — you ask for it again.
 
+**Select what it just wrote and the pill comes back on its own**, with no key
+at all. All or part of it — select three words out of a sentence you dictated
+and those three words are the target.
+
+Only for words ParrotFlow wrote, in the field it wrote them into, and only
+while they are still the last thing it wrote. Every other selection gets
+nothing, because selecting text is mostly how you copy it, delete it or type
+over it, and a surface that appeared each time would be wrong far more often
+than right. It never appears twice for the same words either: the pill returns
+when you *select* something, not while you have something selected.
+
+It costs no polling. A selection is made by a drag, a shift-arrow or ⌘A, so the
+question is asked at those three moments and never in between.
+
+**`Vocabulary` is left off the pill for words nothing here dictated.** The
+panel behind it maps what was *heard* to what it should be, and there is no
+hearing behind a paragraph somebody else typed — a rule taught from their typo
+would fire on your own future dictations, correcting a mistake the decoder
+never made. Every other chip is a rewrite and applies to any text, so they
+stay.
+
 **Bare modifiers only.** A `⌃⌥Space`-style combo goes through Carbon, which
 delivers the press on the down edge and swallows the keystroke, so there is no
 short press left over to claim: a tap there is a dictation, and a brief one.
