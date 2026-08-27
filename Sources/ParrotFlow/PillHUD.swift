@@ -1590,11 +1590,19 @@ private struct OfferContent: View {
     /// the catch-all besides. Said on the pill because this is the one surface
     /// where the two are alternatives to each other — everywhere else the
     /// gesture is something you either know or do not.
+    /// Only when a hotkey is bound. `register` unregisters before it tries, so
+    /// a reload that fails leaves nothing to hold — and a fallback glyph there
+    /// would name Option, which is not bound either. A row that is absent says
+    /// nothing; a row naming a dead key sends somebody pressing it.
+    ///
+    /// `PillMetrics.offer` and `height(for:)` ask the same question before they
+    /// budget for this row, so the surface is never sized for a line it does
+    /// not draw.
     @ViewBuilder private var hold: some View {
-        if case .selection = headline {
+        if case .selection = headline, !model.hotkey.isEmpty {
             HStack(spacing: 6) {
                 Text(PillMetrics.holdLead)
-                keycap(model.hotkey.isEmpty ? "⌥" : model.hotkey)
+                keycap(model.hotkey)
                 Text(PillMetrics.holdTail)
             }
             .font(.system(size: 12, weight: .medium, design: .rounded))
