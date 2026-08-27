@@ -62,7 +62,20 @@ clear_input() {
   return 1
 }
 
+# A locked screen answers every accessibility read as `loginwindow` with an
+# empty value. That is indistinguishable from a window refusing the edit, so
+# without this the whole set scores 0/8 and blames the app. caffeinate keeps a
+# screen awake; it cannot wake one that has already locked.
+screen_is_locked() {
+  ioreg -n Root -d1 -a 2>/dev/null | grep -q CGSSessionScreenIsLocked
+}
+
 start_fixture() {
+  if screen_is_locked; then
+    echo "the screen is locked — unlock it and run this again"
+    echo "  (every case would read an empty window and score 0/8)"
+    exit 1
+  fi
   # The display must stay awake for the whole run. This drives a real window
   # and reads it back through the accessibility API, and a locked screen
   # answers as `loginwindow` with an empty value — which reads exactly like a
