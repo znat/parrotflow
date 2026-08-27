@@ -960,8 +960,24 @@ enum PillMetrics {
     /// The ⌥ keycap between the two halves of the hold line, and the gaps
     /// either side of it.
     static let holdKeycap: CGFloat = 20 + 12
+    /// Its box, which is taller than a line of the text beside it.
+    static let holdKeycapHeight: CGFloat = 17
     /// The highlight's own padding, either side of the words.
     static let selectionFit: CGFloat = 12
+    /// The vertical padding inside the highlight, top and bottom.
+    static let selectionPadding: CGFloat = 1
+
+    /// How tall each of the two extra rows is.
+    ///
+    /// Not `sentenceLine`. The words row is that plus its highlight's padding,
+    /// and the hold row is as tall as the keycap in it — both 17 against a
+    /// 15pt line. Budgeting a bare line made the pill 4pt shorter than its own
+    /// contents, which the capsule's slack around a 26pt chip row hid: it
+    /// looked right and was wrong, and a longer selection or a different system
+    /// font would have shown it.
+    static let selectionRow: CGFloat = max(
+        sentenceLine + selectionPadding * 2, holdKeycapHeight
+    )
 
     /// Extra air above the sentence, on top of what centring the two rows
     /// already leaves. The chips sit in capsules of their own and carry their
@@ -1007,7 +1023,7 @@ enum PillMetrics {
         // about the key. Two of them are extra, and they are added whatever the
         // reading says — the two can appear together, on a dictation you
         // selected part of after being warned about it.
-        let extra = headline?.isSelection == true ? (sentenceLine + selectionGap) * 2 : 0
+        let extra = headline?.isSelection == true ? (selectionRow + selectionGap) * 2 : 0
         let rows = readingRows(reading, width: width)
         guard !rows.isEmpty else { return height + extra }
         return height + extra + sentenceTop
@@ -1527,7 +1543,7 @@ private struct OfferContent: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
+                    .padding(.vertical, PillMetrics.selectionPadding)
                     .background(
                         RoundedRectangle(cornerRadius: 3, style: .continuous)
                             .fill(Parrot.action.opacity(0.42))
@@ -1566,7 +1582,7 @@ private struct OfferContent: View {
         Text(glyph)
             .font(.system(size: 11, weight: .bold, design: .rounded))
             .foregroundStyle(Color(white: 0.72))
-            .frame(width: 20, height: 17)
+            .frame(width: 20, height: PillMetrics.holdKeycapHeight)
             .background(
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color.white.opacity(0.07))
