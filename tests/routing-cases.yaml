@@ -57,7 +57,37 @@
 # which says the description is not what decides it. The preview is what stands
 # between this and a lost selection.
 
+# --- corrections, added 2026-08-27 -----------------------------------------
+#
+# A correction is an instruction with the imperative taken out: "I meant
+# Tuesday" asks for the edit "make it Tuesday". The catch-all was taught to
+# handle them (tests/generic-cases.yaml, corrections 2/6 -> 5/6), and the keyed
+# path reaches it — but nothing here covered the *heard* path, where the router
+# decides. Greptile asked for it and was right to.
+#
+# One of the four fails, and it does not fail cheaply:
+#
+#     I meant Tuesday                            -> repetitions
+#
+# The router picks a script. "hey parrot, I meant Tuesday" runs the repetitions
+# transform over the sentence instead of reaching the catch-all, and a script
+# rewrite is not a no-op you can see coming the way a grammar pass over numbers
+# is. It is left standing here rather than argued with because the fix is a
+# description, and a description is changed against this set with a number
+# before and after — not in the pull request that found it.
+#
+# The keyed path is unaffected: it has no router, and its four correction cases
+# pass (tests/keyed-cases.yaml, 26/26).
+
 cases:
+  - instruction: I meant Tuesday
+    expect: ANY
+  - instruction: no I meant three of them
+    expect: ANY
+  - instruction: this is not what I had in mind
+    expect: NONE
+  - instruction: I meant what I said in the review
+    expect: NONE
   # --- named outright: should never reach the model -----------------------
   - instruction: bullets
     expect: bullets
