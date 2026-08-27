@@ -289,9 +289,7 @@ final class ModifierKeyMonitor {
         // pending timer is cancelled rather than delivered either way:
         // summoning the pill and then opening the microphone over it is two
         // answers to one request.
-        afterTap = tappedAt.map {
-            Self.physicalEdge().timeIntervalSince($0) < Self.tapGrace
-        } ?? false
+        afterTap = pressIsTheTapsSecondHalf()
         tappedAt = nil
         tapTimer?.invalidate()
         tapTimer = nil
@@ -340,15 +338,20 @@ final class ModifierKeyMonitor {
         let timer = Timer(timeInterval: Self.tapGrace, repeats: false) { [weak self] _ in
             guard let self else { return }
             self.tapTimer = nil
-            // The key is down again already. The poll has not caught up with a
-            // press made inside the window — it will, and `beginHold` will
-            // classify it from the physical edges as the tap-and-hold it is.
-            // Summoning the offer here as well would answer one gesture twice:
-            // the pill would arrive and then the microphone would open over it.
+            // A press the poll has not caught up with can already own this
+            // gesture. `beginHold` will classify it from the physical edges as
+            // tap-and-hold, and summoning the offer here as well would answer
+            // one gesture twice — the pill arriving and then the microphone
+            // opening over it.
             //
-            // Asked of the flags rather than of `isDown`, which is the poll's
-            // view and is exactly what has not caught up yet.
-            guard self.key?.isPressed != true else { return }
+            // Both halves of the test matter. A key that is down but whose
+            // press landed outside the window is an ordinary dictation, and the
+            // tap it followed still deserves its offer. Asked of the flags
+            // rather than of `isDown`, which is the poll's view and is exactly
+            // what has not caught up yet.
+            guard self.key?.isPressed != true || !self.pressIsTheTapsSecondHalf() else {
+                return
+            }
             self.onTap?()
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -379,6 +382,25 @@ final class ModifierKeyMonitor {
     }
 
     // MARK: Watching for everything that is not the key
+
+    /// Whether the press being looked at now is the second half of the tap
+    /// just made.
+    ///
+    /// One rule, asked in two places, because two places decide the same thing
+    /// and disagreeing is what goes wrong. `beginHold` asks it to classify the
+    /// press; the grace timer asks it to find out whether a press is already
+    /// holding the gesture, and so whether summoning the offer would answer
+    /// that gesture a second time.
+    ///
+    /// Written as its own answer rather than inlined twice: the first attempt
+    /// had the timer ask the cheaper question "is the key down at all", which
+    /// suppressed the offer for a press that landed *outside* the window and
+    /// was going to start an ordinary dictation. The tap then vanished for no
+    /// reason anybody could see.
+    private func pressIsTheTapsSecondHalf() -> Bool {
+        guard let tapped = tappedAt else { return false }
+        return Self.physicalEdge().timeIntervalSince(tapped) < Self.tapGrace
+    }
 
     /// When the modifier edge the poll has just noticed actually happened.
     ///

@@ -2031,8 +2031,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // own, which means the panel rather than anything the router could pick.
         if let local = VoiceCommand.local(from: command) {
             // Nothing on the pill is ours: no model was asked, so no
-            // "Thinking…" went up.
-            apply(local, command: command, progress: nil)
+            // "Thinking…" went up. The target still travels: this path opens
+            // the correction panel, which reads the selection slot, and a
+            // command that was decoded while a newer press filled that slot
+            // would open over the newer selection.
+            apply(local, command: command, progress: nil, over: target)
             return
         }
         if let capability = Router.local(instruction: command, catalogue: catalogue) {
@@ -2126,7 +2129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch capability {
         case .action(.vocabulary):
             endProgress(token: token)
-            beginCorrection()
+            beginCorrection(over: target)
         case .action(.spelling):
             interpretSpelling(instruction, progress: token, over: target)
         case .transform(let transform):
@@ -2236,7 +2239,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     command: command, lastTranscript: context,
                     language: language, config: llmConfig
                 )
-                await MainActor.run { self?.apply(result, command: command, progress: token) }
+                await MainActor.run {
+                    self?.apply(result, command: command, progress: token, over: target)
+                }
             } catch {
                 await MainActor.run {
                     guard let self else { return }
@@ -2244,8 +2249,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
                         // The message above is already down, so the retry
-                        // inherits nothing.
-                        self.interpretSpelling(command, progress: nil)
+                        // inherits nothing. The target is not nothing: a retry
+                        // happens after a key dialog, which is all the time a
+                        // newer dictation needs to land, and reading the slot
+                        // then would correct that one instead.
+                        self.interpretSpelling(command, progress: nil, over: target)
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
@@ -2733,13 +2741,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastTranscript = text
     }
 
-    private func apply(_ command: VoiceCommand, command spoken: String, progress token: Int?) {
+    private func apply(
+        _ command: VoiceCommand, command spoken: String, progress token: Int?,
+        over target: Target = .whateverIsSelected
+    ) {
         // Whatever happens next replaces it: a panel, or a flash of its own.
         endProgress(token: token)
 
         switch command {
         case .openCorrectionPanel:
-            beginCorrection()
+            beginCorrection(over: target)
         case .undo:
             performUndo()
         case .addRules(let rules):
@@ -3786,14 +3797,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastDictated?.text = corrected
     }
 
-    private func beginCorrection() {
+    private func beginCorrection(over target: Target = .whateverIsSelected) {
         // Reading the selection needs Accessibility; the panel does not. Open
         // it either way — typing both sides still beats editing YAML by hand,
         // and a panel that silently refuses to appear reads as a broken app.
-        let selection = selectionAtPress ?? (
-            Permissions.accessibility == .granted ? SelectionReader.read() : nil
-        )
-        selectionAtPress = nil
+        //
+        // A spoken command brings its own, frozen when its recording began. It
+        // does not read the slot: "hey parrot" is decoded like any other
+        // dictation, and a newer press can have filled that slot by the time it
+        // is understood — the panel would then open over the newer selection.
+        let selection: SelectionReader.Selection?
+        switch target {
+        case .frozen(let held, _):
+            selection = held
+        case .whateverIsSelected:
+            selection = selectionAtPress ?? (
+                Permissions.accessibility == .granted ? SelectionReader.read() : nil
+            )
+            selectionAtPress = nil
+        }
 
         Log.write("correction: selection = \(selection.map { "\"\($0.text)\"" } ?? "none")")
         pendingSelection = selection
