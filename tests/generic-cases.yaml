@@ -321,3 +321,55 @@ cases:
     category: idle
     instruction: we talked about the dates in the meeting
     input: the retro is on 2026-04-09
+
+  # --- saying what you meant, instead of what to do ------------------------
+  #
+  # A correction is an instruction with the imperative taken out. "make it
+  # Tuesday" and "I meant Tuesday" ask for the same edit, and the second is
+  # what people actually say to a machine that has just written something down
+  # for them — this is dictation, and the sentence before it was theirs.
+  #
+  # The negatives here are the whole reason the category exists. "I meant" is
+  # not a marker: it introduces an edit only when it names the replacement.
+  # Bare, it is a complaint, and there is nothing to act on in a complaint. A
+  # prompt that reads the phrase as a signal rather than reading what follows
+  # it will rewrite on a sentence that never asked for anything.
+  - name: I meant, naming the replacement
+    kind: change
+    category: correction
+    instruction: I meant Tuesday
+    input: the meeting is on Monday
+    expect: the meeting is on Tuesday
+
+  - name: I wanted to say, naming the replacement
+    kind: change
+    category: correction
+    instruction: I wanted to say Redcrawl
+    input: we shipped Redrock last week
+    expect: we shipped Redcrawl last week
+
+  - name: a correction with the apology in front
+    kind: change
+    category: correction
+    instruction: sorry I meant next Friday
+    input: let's do it this Friday
+    expect: let's do it next Friday
+
+  - name: no, I meant
+    kind: change
+    category: correction
+    instruction: no I meant three of them
+    input: we ordered two of them
+    expect: we ordered three of them
+
+  - name: a complaint with no edit in it
+    kind: keep
+    category: correction
+    instruction: this is not what I had in mind
+    input: the migration runs on friday
+
+  - name: I meant it, which is not a correction at all
+    kind: keep
+    category: correction
+    instruction: I meant what I said in the review
+    input: the config file is at ~/.config/parrotflow
