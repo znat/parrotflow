@@ -3119,6 +3119,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func offerOverReselected(_ selection: SelectionReader.Selection) {
         // Never over a recording, never over an offer already up, and never
         // while a decode this could be about is still in flight.
+        //
+        // Refusing while one is up does not cost you a second selection, and
+        // the reason is an ordering worth keeping: an outside click dismisses
+        // the offer on mouse *down* — see `watchForOfferOutsideClick` — and this
+        // looks on mouse *up*. So selecting different words takes the old offer
+        // down before the new one is asked for. Move either monitor to the other
+        // edge and reselecting while an offer is up stops answering.
         guard !recorder.isRecording, runsInFlight <= 0, !offerIsUp else { return }
         guard config.feedback.correctOffer else { return }
         aim(at: selection)
@@ -3185,7 +3192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func aim(at selection: SelectionReader.Selection) {
         guard let element = selection.element,
               case .found(let anchor) = CaretAnchor.read(at: element) else {
-            Log.write("summon: no geometry for the selection; the pill stays where it was")
+            Log.write("pill: no geometry for the selection; it stays where it was")
             return
         }
         pill.aim(at: anchor)
