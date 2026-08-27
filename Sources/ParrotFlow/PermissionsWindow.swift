@@ -435,7 +435,7 @@ private struct Instrument: View {
     /// Mid-sentence, so the meter has something to show.
     private static let hearing: PillModel = {
         let model = PillModel()
-        model.state = .recording
+        model.state = .recording(nil)
         model.level = 0.62
         return model
     }()
