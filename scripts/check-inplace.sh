@@ -63,6 +63,12 @@ clear_input() {
 }
 
 start_fixture() {
+  # The display must stay awake for the whole run. This drives a real window
+  # and reads it back through the accessibility API, and a locked screen
+  # answers as `loginwindow` with an empty value — which reads exactly like a
+  # window that would not take the edit. Two runs were lost to that before it
+  # was worth a line.
+  caffeinate -d -i -w $$ &
   "$TMUX" kill-session -t "$SESSION" 2>/dev/null
   # claude as the session command, not typed at a shell: typing it races the
   # prompt, and a swallowed keystroke leaves a shell that looks close enough
@@ -73,12 +79,60 @@ start_fixture() {
     sleep 0.5
   done
   mkdir -p "$SCRATCH"
-  printf '#!/bin/sh\nexec %s attach -t %s\n' "$TMUX" "$SESSION" > "$SCRATCH/attach.command"
-  chmod +x "$SCRATCH/attach.command"
   # A freshly opened window is frontmost without anyone having to click, which
   # is what lets this run unattended.
-  open -a "$VIEWPORT" "$SCRATCH/attach.command"
+  #
+  # How you open one is per terminal, and getting it wrong is silent: the
+  # window never appears, `open -a` falls back to focusing whatever window that
+  # app already had, and every case then reports "nothing readable is focused"
+  # while the real answer is that the fixture was never on screen. That is what
+  # PF_VIEWPORT=Ghostty did for as long as this only knew Terminal.app.
+  case "$VIEWPORT" in
+    Terminal)
+      # Terminal.app runs a `.command` file as its session.
+      printf '#!/bin/sh\nexec %s attach -t %s\n' "$TMUX" "$SESSION" > "$SCRATCH/attach.command"
+      chmod +x "$SCRATCH/attach.command"
+      open -a "$VIEWPORT" "$SCRATCH/attach.command"
+      ;;
+    *)
+      # Ghostty and friends take `-e`, and on macOS only through `open`:
+      # "launching the terminal emulator from the CLI is not supported".
+      # `-n` for a new instance, so the fixture cannot land in a window you
+      # are using.
+      before="$(pgrep -i "$VIEWPORT" | sort)"
+      # The command as separate arguments, not one quoted string. Quoted, the
+      # window opens and `-e` is silently ignored — you get a shell, tmux is
+      # never attached, and every case then reads an empty window and refuses
+      # to write. Measured: `list-clients` says 0 with the quotes and 1 without.
+      open -na "$VIEWPORT.app" --args -e "$TMUX" attach -t "$SESSION"
+      sleep 3
+      # The pid that appeared, not the newest one matching the name. Ghostty
+      # runs several processes under one name, so `pgrep -n` picks whichever
+      # started last — which is not necessarily the one holding this window,
+      # and focusing the wrong one leaves every case reading a window that is
+      # not the fixture.
+      VIEWPORT_PID="$(comm -13 <(echo "$before") <(pgrep -i "$VIEWPORT" | sort) | head -1)"
+      ;;
+  esac
   sleep 4
+  [ -n "${VIEWPORT_PID:-}" ] || VIEWPORT_PID="$(pgrep -n -i "$VIEWPORT" || true)"
+  [ -n "$VIEWPORT_PID" ] || { echo "could not find the $VIEWPORT window it opened"; exit 1; }
+  echo "  viewport: $VIEWPORT pid $VIEWPORT_PID"
+}
+
+# Bring the fixture forward, by process id. Never by name: see start_fixture.
+focus_viewport() {
+  local err
+  err="$(osascript -e "tell application \"System Events\" to set frontmost of \
+    (first process whose unix id is $VIEWPORT_PID) to true" 2>&1 >/dev/null)"
+  [ -n "$err" ] && echo "  focus failed: $err"
+  # Read the frontmost process back. `set frontmost` returns before the window
+  # actually comes forward, and without this second round trip the case that
+  # follows reads whatever was in front before — "nothing readable is focused"
+  # on all 8. The answer is discarded; making the call is the point.
+  osascript -e 'tell application "System Events" to get unix id of \
+    first process whose frontmost is true' >/dev/null 2>&1
+  return 0
 }
 
 LOG="$HOME/Library/Logs/ParrotFlow-Dev.log"
@@ -86,7 +140,15 @@ REPEATS="${PF_REPEATS:-1}"
 pass=0; total=0; refused=0; corrupted=0; skipped=0; wrongpath=0
 
 start_fixture
-trap '"$TMUX" kill-session -t "$SESSION" 2>/dev/null' EXIT
+# Close the window as well as the session. `open -na` starts a whole instance
+# per run, and without this every run leaves one behind — nine of them stacked
+# up in one sitting before it was noticed.
+cleanup() {
+  "$TMUX" kill-session -t "$SESSION" 2>/dev/null
+  [ -n "${VIEWPORT_PID:-}" ] && [ "$VIEWPORT" != Terminal ] && kill "$VIEWPORT_PID" 2>/dev/null
+  return 0
+}
+trap cleanup EXIT
 
 while IFS='|' read -r name id dictated line heard corrected expect literal want_log span; do
   [ -z "$name" ] && continue
@@ -103,7 +165,7 @@ while IFS='|' read -r name id dictated line heard corrected expect literal want_
   [ "$expect" = "unchanged" ] && want="$line" || want="$expect"
 
   mark=$(grep -c "" "$LOG" 2>/dev/null || echo 0)
-  open -a "$VIEWPORT"; sleep 2
+  focus_viewport; sleep 2
   # A span case names the range; the offsets come from the seeded line, which
   # the check above has just confirmed is what is on screen. Computed here
   # rather than written into the case file, so they cannot drift from the text.
