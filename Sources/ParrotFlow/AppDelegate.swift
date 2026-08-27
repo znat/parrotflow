@@ -175,6 +175,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// landing mid-transcription must not be able to change what this one
         /// was for.
         var isCommand = false
+        /// What was selected when this recording began.
+        ///
+        /// Frozen for the reason every other field here is. `selectionAtPress`
+        /// is one slot that the next press overwrites, and a spoken command
+        /// reads its target *after* the decoder has run — so starting a second
+        /// dictation while a command is still decoding pointed that command at
+        /// the newer press's selection. "Make it bold" then applied to whatever
+        /// happened to be highlighted by the time it finished, which on a
+        /// gesture whose pill reads "editing the selection" is the one thing it
+        /// must not do.
+        var selection: SelectionReader.Selection?
     }
 
     /// The words the offer on screen is about, and the field they went into.
@@ -1763,7 +1774,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Plain when nobody was in front, which is the answer that cannot
             // lose a sentence.
             paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain,
-            isCommand: commandAtPress
+            isCommand: commandAtPress,
+            // Still this press's: the recording has only just stopped and no
+            // newer press can have landed. The gap this closes is the decode
+            // that follows, not this moment.
+            selection: selectionAtPress
         )
         Task { [weak self] in
             // Whatever happens below — decoded, cancelled, or thrown — nothing
@@ -1993,7 +2008,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is a question that was answered twice before it was asked. The wake
     /// phrase does not pass it: that one is found in a sentence rather than
     /// declared by a key, so being wrong about it is a real possibility.
-    private func handleVoiceCommand(_ command: String, confirm: Bool = true) {
+    private func handleVoiceCommand(
+        _ command: String, confirm: Bool = true,
+        over frozen: SelectionReader.Selection? = nil
+    ) {
         let catalogue = Catalogue(transforms: config.transforms)
 
         // Deterministic phrases first: no model needed, and they work when
@@ -2007,7 +2025,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let capability = Router.local(instruction: command, catalogue: catalogue) {
             Log.write("router: \"\(command)\" named \(capability.name) outright")
-            run(capability, instruction: command, progress: nil, confirm: confirm)
+            run(
+                capability, instruction: command,
+                progress: nil, confirm: confirm, over: frozen
+            )
             return
         }
 
@@ -2036,7 +2057,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("router: \"\(command)\" → \(capability.name)")
                         self.run(
                             capability, instruction: command,
-                            progress: token, confirm: confirm
+                            progress: token, confirm: confirm, over: frozen
                         )
                     case .anything:
                         // An edit with no prompt behind it. The instruction is
@@ -2045,7 +2066,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("router: \"\(command)\" → \(FreeForm.name)")
                         self.runTransform(
                             FreeForm.prompt(for: command).asTransform(model: catchAll),
-                            instruction: command, progress: token, confirm: confirm
+                            instruction: command, progress: token,
+                            confirm: confirm, over: frozen
                         )
                     case .none:
                         // Nothing fits. Deliberately not falling through to
@@ -2071,7 +2093,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Log.write("routing failed: \(error.localizedDescription)")
                     self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
-                        self.handleVoiceCommand(command, confirm: confirm)
+                        self.handleVoiceCommand(command, confirm: confirm, over: frozen)
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
@@ -2086,7 +2108,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// down and nothing else.
     private func run(
         _ capability: Capability, instruction: String,
-        progress token: Int?, confirm: Bool = true
+        progress token: Int?, confirm: Bool = true,
+        over frozen: SelectionReader.Selection? = nil
     ) {
         switch capability {
         case .action(.vocabulary):
@@ -2096,7 +2119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             interpretSpelling(instruction, progress: token)
         case .transform(let transform):
             runTransform(
-                transform, instruction: instruction, progress: token, confirm: confirm
+                transform, instruction: instruction,
+                progress: token, confirm: confirm, over: frozen
             )
         }
     }
@@ -2214,7 +2238,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// reading then returns nothing or something of ours.
     private func runTransform(
         _ transform: Config.Transform, instruction: String,
-        progress inherited: Int?, confirm: Bool = true
+        progress inherited: Int?, confirm: Bool = true,
+        over frozen: SelectionReader.Selection? = nil
     ) {
         // Never the clipboard. `read()` falls back to it for the correction
         // panel, where you see the words before anything happens and can
@@ -2224,7 +2249,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // That is exactly what happened: "convert numbers to digits" ran over
         // a comment line copied minutes earlier, while the sentence the
         // speaker meant sat in the last transcript, unused.
-        let selection = selectionAtPress ?? (
+        //
+        // A spoken command brings its own, frozen when its recording began —
+        // see `Press.selection`. It must not read the slot here: by the time a
+        // decoder has answered, a second press can have overwritten it, and the
+        // command would edit that press's selection instead of its own.
+        let selection = frozen ?? selectionAtPress ?? (
             Permissions.accessibility == .granted
                 ? SelectionReader.read(fallbackTo: false)
                 : nil
@@ -4007,7 +4037,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             Log.write("command spoken: \"\(trimmed)\"")
-            handleVoiceCommand(trimmed, confirm: false)
+            handleVoiceCommand(trimmed, confirm: false, over: press.selection)
             return
         }
 
@@ -4016,7 +4046,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let command = commandAfterWakePhrase(trimmed) {
             Log.write("command heard: \"\(command)\"")
             dictationEnded(press.run)
-            handleVoiceCommand(command)
+            handleVoiceCommand(command, over: press.selection)
             return
         }
 

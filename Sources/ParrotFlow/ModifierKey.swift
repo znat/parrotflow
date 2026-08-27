@@ -185,6 +185,15 @@ final class ModifierKeyMonitor {
     private var armTimer: Timer?
     /// A tap waiting to find out whether a hold is coming after it.
     private var tapTimer: Timer?
+    /// When the tap was released.
+    ///
+    /// The grace window is measured from this and not from `tapTimer` being
+    /// alive. The down edge is found by a 25 ms poll, so a second press made at
+    /// 0.399 s can be *seen* at 0.415 s — after the 0.4 s timer has fired and
+    /// cleared itself. Read off the timer, that press starts a dictation; read
+    /// off the clock, it is the tap-and-hold it was. The poll's lag must not
+    /// decide which gesture somebody made.
+    private var tappedAt: Date?
     /// This hold began inside `tapGrace` of a tap, so it is tap-then-hold.
     private var afterTap = false
 
@@ -243,6 +252,7 @@ final class ModifierKeyMonitor {
         timer = nil
         tapTimer?.invalidate()
         tapTimer = nil
+        tappedAt = nil
         endHold()
         key = nil
         isDown = false
@@ -273,11 +283,14 @@ final class ModifierKeyMonitor {
     private func beginHold() {
         isSpent = false
         pressDelivered = false
-        // A tap still waiting out its grace is this gesture's first half, not a
-        // gesture of its own. Cancelled rather than delivered: summoning the
-        // pill and then opening the microphone over it is two answers to one
-        // request.
-        afterTap = tapTimer != nil
+        // A tap inside the grace window is this gesture's first half, not a
+        // gesture of its own. Timed from the release rather than from the
+        // timer, so the poll's lag cannot reclassify it — see `tappedAt`. A
+        // pending timer is cancelled rather than delivered either way:
+        // summoning the pill and then opening the microphone over it is two
+        // answers to one request.
+        afterTap = tappedAt.map { Date().timeIntervalSince($0) < Self.tapGrace } ?? false
+        tappedAt = nil
         tapTimer?.invalidate()
         tapTimer = nil
         watchForOtherInput()
@@ -321,6 +334,7 @@ final class ModifierKeyMonitor {
         endHold()
         guard !wasPressed else { onRelease?(); return }
         guard wasTap else { return }
+        tappedAt = Date()
         let timer = Timer(timeInterval: Self.tapGrace, repeats: false) { [weak self] _ in
             self?.tapTimer = nil
             self?.onTap?()
