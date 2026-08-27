@@ -185,14 +185,14 @@ final class ModifierKeyMonitor {
     private var armTimer: Timer?
     /// A tap waiting to find out whether a hold is coming after it.
     private var tapTimer: Timer?
-    /// When the tap was released.
+    /// When the tap was physically released.
     ///
-    /// The grace window is measured from this and not from `tapTimer` being
-    /// alive. The down edge is found by a 25 ms poll, so a second press made at
-    /// 0.399 s can be *seen* at 0.415 s — after the 0.4 s timer has fired and
-    /// cleared itself. Read off the timer, that press starts a dictation; read
-    /// off the clock, it is the tap-and-hold it was. The poll's lag must not
-    /// decide which gesture somebody made.
+    /// The grace window is measured between this and the next physical press,
+    /// and both are corrected for the poll — see `physicalEdge()`. Neither the
+    /// timer's liveness nor the moment the poll noticed will do. A second press
+    /// made at 0.399 s is seen up to 25 ms later, so measured off the poll it
+    /// falls outside a 0.4 s window and starts an ordinary dictation. The
+    /// poll's lag must not decide which gesture somebody made.
     private var tappedAt: Date?
     /// This hold began inside `tapGrace` of a tap, so it is tap-then-hold.
     private var afterTap = false
@@ -284,12 +284,14 @@ final class ModifierKeyMonitor {
         isSpent = false
         pressDelivered = false
         // A tap inside the grace window is this gesture's first half, not a
-        // gesture of its own. Timed from the release rather than from the
-        // timer, so the poll's lag cannot reclassify it — see `tappedAt`. A
+        // gesture of its own. Both ends are physical times, so the poll's lag
+        // cannot reclassify a press made inside the window — see `tappedAt`. A
         // pending timer is cancelled rather than delivered either way:
         // summoning the pill and then opening the microphone over it is two
         // answers to one request.
-        afterTap = tappedAt.map { Date().timeIntervalSince($0) < Self.tapGrace } ?? false
+        afterTap = tappedAt.map {
+            Self.physicalEdge().timeIntervalSince($0) < Self.tapGrace
+        } ?? false
         tappedAt = nil
         tapTimer?.invalidate()
         tapTimer = nil
@@ -334,7 +336,7 @@ final class ModifierKeyMonitor {
         endHold()
         guard !wasPressed else { onRelease?(); return }
         guard wasTap else { return }
-        tappedAt = Date()
+        tappedAt = Self.physicalEdge()
         let timer = Timer(timeInterval: Self.tapGrace, repeats: false) { [weak self] _ in
             self?.tapTimer = nil
             self?.onTap?()
@@ -367,6 +369,26 @@ final class ModifierKeyMonitor {
     }
 
     // MARK: Watching for everything that is not the key
+
+    /// When the modifier edge the poll has just noticed actually happened.
+    ///
+    /// The poll runs every 25 ms, so `Date()` here is the moment it looked and
+    /// not the moment the key moved. `secondsSinceLastEventType` gives the age
+    /// of the last `flagsChanged`, which is that edge, and subtracting it
+    /// recovers the physical time. Same API and same reasoning as
+    /// `sawInputBeforeTheMonitors` below, which exists because this poll is
+    /// late in exactly this way.
+    ///
+    /// It costs no permission: the age of an event is not the event.
+    private static func physicalEdge() -> Date {
+        let age = CGEventSource.secondsSinceLastEventType(
+            .combinedSessionState, eventType: .flagsChanged
+        )
+        // A negative or absurd answer means no such event is on record; the
+        // poll's own clock is then the best available.
+        guard age.isFinite, age >= 0, age < 1 else { return Date() }
+        return Date().addingTimeInterval(-age)
+    }
 
     /// Whether a key or a click landed between the modifier going down and the
     /// poll noticing it.
