@@ -168,13 +168,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// would be delivered with the terminal's answer, and the reverse puts
         /// markup in front of an app that shows the tags.
         let paste: AppProfile.Paste
-        /// Tap-then-hold: what is said is an instruction, not text.
+        /// Tap-then-hold: a key said this would be an instruction, not text.
         ///
         /// Decided at the press because that is where the gesture is known, and
         /// carried here for the same reason everything else is — a second press
         /// landing mid-transcription must not be able to change what this one
-        /// was for.
-        var isCommand = false
+        /// was for. See `handleVoiceCommand(_:keyed:)` for what it buys.
+        var keyed = false
         /// What was selected when this recording began.
         ///
         /// Frozen for the reason every other field here is. `selectionAtPress`
@@ -208,7 +208,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var offeredCorrection: (run: Int, target: Correction)?
 
     /// The current press was tap-then-hold, so its words are an instruction.
-    private var commandAtPress = false
+    private var keyedAtPress = false
 
     /// The last dictation a tap can summon an offer over: its words, and where
     /// they went.
@@ -1102,7 +1102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Only for a press that starts a dictation: the second press of a
         // toggle belongs to the one already running, and it did not ask for
         // anything different.
-        if !recorder.isRecording { commandAtPress = afterTap }
+        if !recorder.isRecording { keyedAtPress = afterTap }
         // Read before anything this press does, so an abort later can tell the
         // transcription this press started from one that was already running.
         transcriptionRunAtPress = transcriptionRun
@@ -1469,7 +1469,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if config.feedback.overlay {
             // Under the selection when there is one and this is a command: the
             // words are about those words, and the pill belongs with them.
-            if commandAtPress, let selection = selectionAtPress {
+            if keyedAtPress, let selection = selectionAtPress {
                 aim(at: selection)
             } else {
                 pill.aim(at: anchorAtPress)
@@ -1783,7 +1783,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Plain when nobody was in front, which is the answer that cannot
             // lose a sentence.
             paste: appAtPress.map { AppProfile.of($0).paste } ?? .plain,
-            isCommand: commandAtPress,
+            keyed: keyedAtPress,
             // Still this press's: the recording has only just stopped and no
             // newer press can have landed. The gap this closes is the decode
             // that follows, not this moment.
@@ -2012,16 +2012,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    /// `confirm: false` applies a rewrite in place instead of previewing it.
+    /// `keyed` — a keystroke said this was an instruction, before a word of it
+    /// was spoken.
     ///
-    /// The gesture path passes it. Tap-then-hold has already named its target
-    /// on the pill and offered ⎋ for the whole time you were speaking, and
-    /// "hey parrot, undo" puts the substitution back afterwards — so a preview
-    /// is a question that was answered twice before it was asked. The wake
-    /// phrase does not pass it: that one is found in a sentence rather than
-    /// declared by a key, so being wrong about it is a real possibility.
+    /// The alternative is *heard*: the phrase was found inside a sentence by a
+    /// fuzzy matcher, which fires at 0.55 a word against a 0.7 floor because
+    /// "hey parrot" arrives clipped. It can be wrong, and `tests/wake-cases.txt`
+    /// holds the sentences about parrots it must not fire on. Everything the
+    /// two paths do differently follows from that one difference.
+    ///
+    /// Keyed skips two things, and both are insurance against that doubt:
+    ///
+    /// - **The router.** It answers two questions, and the first is "was this
+    ///   an edit at all". A key has already answered it. What is left is
+    ///   "which tool", which the name match answers for free or the catch-all
+    ///   answers by taking the whole instruction as its specification.
+    /// - **The preview.** Tap-then-hold has already named its target on the
+    ///   pill and offered ⎋ for the whole time you were speaking, and "hey
+    ///   parrot, undo" puts the substitution back afterwards — so a preview is
+    ///   a question that was answered twice before it was asked. It reaches
+    ///   `finishTransform` as `confirm: !keyed`, because that leaf's job is
+    ///   previewing and it should stay honest about it.
+    ///
+    /// The saving is a model call in series. Heard costs a router round trip
+    /// and then the transform's own; keyed costs one, or none.
     private func handleVoiceCommand(
-        _ command: String, confirm: Bool = true,
+        _ command: String, keyed: Bool = false,
         over target: Target = .whateverIsSelected
     ) {
         let catalogue = Catalogue(transforms: config.transforms)
@@ -2038,11 +2054,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             apply(local, command: command, progress: nil, over: target)
             return
         }
-        if let capability = Router.local(instruction: command, catalogue: catalogue) {
+        if let capability = Router.local(
+            instruction: command, catalogue: catalogue, anywhere: keyed
+        ) {
             Log.write("router: \"\(command)\" named \(capability.name) outright")
             run(
                 capability, instruction: command,
-                progress: nil, confirm: confirm, over: target
+                progress: nil, confirm: !keyed, over: target
+            )
+            return
+        }
+
+        // Keyed and named nothing: the catch-all, with no router in between.
+        //
+        // This is the change that makes the gesture worth using. Asking a model
+        // which tool you meant, and then asking a model to do the work, is two
+        // waits where the first one usually reports what the second was going
+        // to do anyway. The name match above is what keeps the other bodies
+        // reachable — a script and a table are not prompts, and the catch-all
+        // is, so it can stand in for a prompt and for nothing else.
+        if keyed {
+            guard let catchAll = config.commands.catchAll, config.freeForm else {
+                Log.write("keyed: \"\(command)\" named nothing and the catch-all is off")
+                flash("No transform called \"\(command)\"", tone: .caution)
+                return
+            }
+            Log.write("keyed: \"\(command)\" → \(FreeForm.name), no router")
+            runTransform(
+                FreeForm.prompt(for: command).asTransform(model: catchAll),
+                instruction: command, progress: nil, confirm: false, over: target
             )
             return
         }
@@ -2072,7 +2112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("router: \"\(command)\" → \(capability.name)")
                         self.run(
                             capability, instruction: command,
-                            progress: token, confirm: confirm, over: target
+                            progress: token, over: target
                         )
                     case .anything:
                         // An edit with no prompt behind it. The instruction is
@@ -2081,8 +2121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Log.write("router: \"\(command)\" → \(FreeForm.name)")
                         self.runTransform(
                             FreeForm.prompt(for: command).asTransform(model: catchAll),
-                            instruction: command, progress: token,
-                            confirm: confirm, over: target
+                            instruction: command, progress: token, over: target
                         )
                     case .none:
                         // Nothing fits. Deliberately not falling through to
@@ -2108,7 +2147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Log.write("routing failed: \(error.localizedDescription)")
                     self.endProgress(token: token)
                     let asked = self.askForKeyThenRetry(error) {
-                        self.handleVoiceCommand(command, confirm: confirm, over: target)
+                        self.handleVoiceCommand(command, keyed: keyed, over: target)
                     }
                     if !asked { self.flash(error.localizedDescription, tone: .failure) }
                 }
@@ -2603,14 +2642,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSRange(range, in: text).location
     }
 
-    /// The toast after a substitution, and the phrase that takes it back.
+    /// The chime after a substitution, and nothing on screen.
     ///
-    /// Said every time rather than only when something looks wrong, because the
-    /// moment you can tell it went wrong is the moment you are looking at the
-    /// text and not at the menu bar. It has to already be on screen.
+    /// It used to say "<name> applied" with the undo phrase after it. Two
+    /// things retired that. The text is the confirmation — a rewrite lands
+    /// where you are already looking, and the pill sits under it — so the
+    /// notice was telling you what you had just watched happen. And the
+    /// catch-all is called `anything`, a name written for the log and for
+    /// `--check-config`, which made the message read "anything applied".
+    ///
+    /// The failures still speak. Nothing changed, the app refused the edit,
+    /// the words went to the clipboard instead: those are the cases you cannot
+    /// see, and every one of them still puts a line on the pill.
     private func applied(_ what: String) {
+        Log.write("applied: \(what)\(undoHint)")
         playFeedback("Morse")
-        flash("\(what) applied\(undoHint)", tone: .done)
     }
 
     /// `· "Hey parrot, undo"` — empty when there is no phrase to say it with.
@@ -3010,7 +3056,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// worked out afterwards from a sentence that never landed. Escape is live
     /// the whole time, so a wrong answer here costs one keystroke.
     private var recordingLabel: String? {
-        guard commandAtPress else { return nil }
+        guard keyedAtPress else { return nil }
         return selectionAtPress == nil ? "say an edit" : "editing the selection"
     }
 
@@ -4103,7 +4149,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // looked for in the words. That is the whole point of it: the phrase
         // exists to mark a command inside an ordinary dictation, and there is
         // nothing to mark when the key said so first.
-        if press.isCommand {
+        if press.keyed {
             dictationEnded(press.run)
             guard !trimmed.isEmpty else {
                 Log.write("command: nothing was said")
@@ -4111,8 +4157,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 updateUI()
                 return
             }
-            Log.write("command spoken: \"\(trimmed)\"")
-            handleVoiceCommand(trimmed, confirm: false, over: .frozen(selection: press.selection, fallback: press.transcript))
+            Log.write("command keyed: \"\(trimmed)\"")
+            handleVoiceCommand(
+                trimmed, keyed: true,
+                over: .frozen(selection: press.selection, fallback: press.transcript)
+            )
             return
         }
 

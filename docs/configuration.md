@@ -208,6 +208,27 @@ transform and the catch-all besides — with no phrase to remember, because the
 key already said it was an instruction. The pill says **editing the selection**
 or **say an edit** while you hold, and ⎋ cancels.
 
+**And no router.** A key said this was an instruction, so the question the
+router exists to answer — *was that even an edit?* — is already answered.
+What is left is which tool, and that is decided without a model:
+
+1. Does the sentence contain the name of one of your transforms, or one of the
+   words its `say:` lists? Then run it. No model call at all.
+2. Otherwise the catch-all takes the whole sentence as its specification. One
+   model call.
+
+Never two waits in a row. Often none. `"hey parrot, …"` keeps the router,
+because that one is *found* in a sentence and really does have to guess.
+
+Step 1 is not an optimisation, it is what keeps the rest of your catalogue
+reachable. The catch-all is a prompt. A `command:` script and a `replace:`
+table are not, so nothing can stand in for them — "flag this" sent to the
+catch-all does not file your text, it rewords it. `say:` is how a tool named
+`slack_handles` gets reached by someone saying "use our slack handles".
+
+`scripts/check-keyed.sh` scores this against `tests/keyed-cases.yaml`, with no
+model and in about a second.
+
 **It applies in place**, whatever the transform's `confirm:` says — the same
 rule a chip on the pill already follows. The target was named on the pill
 before you spoke, ⎋ was live the whole time you were speaking, and
@@ -833,6 +854,12 @@ running a full-screen program shows only what fits on the screen. Claude Code,
 vim and less all work this way, and the pill follows your words there. A pane
 sitting at an ordinary shell prompt keeps everything you have run in it, and the
 pill goes to the bottom of the screen.
+
+A rewrite that lands says nothing. The text is the confirmation — it changes
+where you are already looking, with the pill sitting under it — so a notice
+would be describing what you just watched happen. A chime plays and the log
+records it. Every way of *not* landing still speaks: nothing to change, the app
+refused the edit, the words went to the clipboard instead.
 
 `correct_offer` is what the pill does after a dictation. It stays where it
 is and names what can be done to the words, one chip per command:

@@ -214,14 +214,32 @@ struct Markup {
     /// The URL is kept rather than dropped. It is the fallback every paste
     /// carries, and a fallback that silently loses the address is worse than a
     /// visible one.
-    var plain: String {
+    var plain: String { flattened(keepingLinkURLs: true) }
+
+    /// The text a rich editor puts on screen for this document.
+    ///
+    /// The same as `plain` but for a labelled link, which displays as its words
+    /// alone: the address is in the anchor, not in the line. `plain` appends it
+    /// because that flavour is the fallback and a fallback that loses the
+    /// address is worse than a visible one — the opposite call, made for the
+    /// opposite reason.
+    ///
+    /// Only a read-back wants this. `Surface` verifies every write by reading
+    /// the field back, and it has to look for what will be *there*: told to
+    /// paste `[Alex](https://example.com)` into an app that takes HTML, it
+    /// would otherwise go looking for "Alex (https://example.com)" and find
+    /// "Alex". A read-back that fails runs the stray-paste repair, so that is a
+    /// correct edit one step from being undone.
+    var displayed: String { flattened(keepingLinkURLs: false) }
+
+    private func flattened(keepingLinkURLs: Bool) -> String {
         var lines: [String] = []
         var previousRoot: Int?
         var started = false
 
         for block in blocks {
             let text = block.pieces.map { piece -> String in
-                guard let link = piece.link else { return piece.text }
+                guard let link = piece.link, keepingLinkURLs else { return piece.text }
                 let url = link.absoluteString
                 return piece.text == url ? piece.text : "\(piece.text) (\(url))"
             }.joined()
