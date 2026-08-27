@@ -112,6 +112,10 @@ enum PanelsCommand {
             model.state = state
             model.appIcon = icon
             model.level = level
+            // No hotkey is registered behind the sheet, so the selection offer
+            // is drawn against the shipped default — which is the one a reader
+            // should be checking that row against, and is not this machine's.
+            model.hotkey = "Right ⌘"
             return model
         }
 

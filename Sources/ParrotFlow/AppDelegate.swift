@@ -826,11 +826,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
         hotKeys.onTap = { [weak self] in self?.summonOffer() }
         do {
-            try hotKeys.register(
+            let binding = try hotKeys.register(
                 key: config.hotkey.key,
                 modifiers: config.hotkey.modifiers,
                 pressDelay: config.hotkey.pressDelaySeconds
             )
+            // The offer's "or hold …" row names this key, so it is read from
+            // what actually registered rather than from the config: a key the
+            // config asked for and macOS refused is not the key to tell
+            // somebody to hold. Set on every reload, because the hotkey is one
+            // of the things a reload can change.
+            pill.model.hotkey = binding.displayName
         } catch {
             hotkeyError = error.localizedDescription
             Log.write("hotkey registration FAILED: \(error.localizedDescription)")

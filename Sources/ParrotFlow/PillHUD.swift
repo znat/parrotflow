@@ -131,6 +131,18 @@ final class PillModel: ObservableObject {
     /// can go. See `Destination`.
     @Published var appIcon: NSImage?
 
+    /// The hotkey as it is written on screen — "Right ⌘", "⌃⌥Space".
+    ///
+    /// The selection offer tells you to hold it, and the key is configurable,
+    /// so the glyph cannot be a literal. It was `⌥` here while the shipped
+    /// default is `right_command`, which told everyone but this machine to hold
+    /// the wrong key.
+    ///
+    /// Here rather than in the state, for the reason the icon is: it changes
+    /// when the config is read, not when the pill changes what it is saying,
+    /// and a state change crossfades the whole surface.
+    @Published var hotkey: String = ""
+
     /// Which command the pointer is on, if any.
     ///
     /// Nil when it is on none, which is how the offer arrives. This is only
@@ -1558,7 +1570,7 @@ private struct OfferContent: View {
         if case .selection = headline {
             HStack(spacing: 6) {
                 Text(PillMetrics.holdLead)
-                keycap("⌥")
+                keycap(model.hotkey.isEmpty ? "⌥" : model.hotkey)
                 Text(PillMetrics.holdTail)
             }
             .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -1572,11 +1584,18 @@ private struct OfferContent: View {
     /// dictated sentence does two rows up rather than as white on blue.
     private static let quotedText = Color(red: 0.875, green: 0.941, blue: 0.906)
 
+    /// Sized to what it holds, with a floor. The hotkey is configurable and
+    /// its name is anything from "fn" to "⌃⌥Space", so a fixed width either
+    /// clips the long ones or leaves the short ones swimming. The floor and the
+    /// padding are the same numbers `PillMetrics.holdKeycapWidth` measures, or
+    /// the capsule is sized for a cap it does not draw.
     private func keycap(_ glyph: String) -> some View {
         Text(glyph)
             .font(.system(size: 11, weight: .bold, design: .rounded))
             .foregroundStyle(Color(white: 0.72))
-            .frame(width: 20, height: PillMetrics.holdKeycapHeight)
+            .fixedSize()
+            .padding(.horizontal, 2)
+            .frame(minWidth: 20, minHeight: PillMetrics.holdKeycapHeight)
             .background(
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(Color.white.opacity(0.07))
