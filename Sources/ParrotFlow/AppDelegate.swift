@@ -186,6 +186,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// gesture whose pill reads "editing the selection" is the one thing it
         /// must not do.
         var selection: SelectionReader.Selection?
+        /// The dictation this command would fall back to, frozen with it.
+        ///
+        /// "Make it terse" with nothing selected means the sentence that was
+        /// there when you said it. `lastTranscript` is one slot like the
+        /// selection is, and a dictation finishing while the router thinks
+        /// replaces it — so the command rewrote a sentence that arrived after
+        /// the instruction for it. Freezing the selection alone left this half
+        /// of the same crossing open.
+        var transcript: String?
     }
 
     /// The words the offer on screen is about, and the field they went into.
@@ -1778,7 +1787,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Still this press's: the recording has only just stopped and no
             // newer press can have landed. The gap this closes is the decode
             // that follows, not this moment.
-            selection: selectionAtPress
+            selection: selectionAtPress,
+            // The dictation before this one, which is what a command with
+            // nothing selected is about.
+            transcript: lastTranscript
         )
         Task { [weak self] in
             // Whatever happens below — decoded, cancelled, or thrown — nothing
@@ -2116,7 +2128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             endProgress(token: token)
             beginCorrection()
         case .action(.spelling):
-            interpretSpelling(instruction, progress: token)
+            interpretSpelling(instruction, progress: token, over: target)
         case .transform(let transform):
             runTransform(
                 transform, instruction: instruction,
@@ -2186,7 +2198,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The spelling extractor, which is a second model call rather than part of
     /// routing — it reads the last transcript and returns a rule, not a name.
-    private func interpretSpelling(_ command: String, progress inherited: Int?) {
+    private func interpretSpelling(
+        _ command: String, progress inherited: Int?,
+        over target: Target = .whateverIsSelected
+    ) {
         guard config.llmEnabled else {
             endProgress(token: inherited)
             flash("Didn't understand \"\(command)\" — enable llm in config for free-form commands", tone: .caution)
@@ -2195,7 +2210,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let token = beginProgress("Thinking…")
         let llmConfig = llmConfig()
-        let context = lastTranscript
+        // The dictation the spelling is about, frozen with the command that
+        // asked. This one reads the transcript for its whole job — "Tasmin
+        // spells T A S M E E N" finds the word in what you said before — so a
+        // newer dictation replacing it while the router thought would have sent
+        // the model looking in the wrong sentence.
+        let context: String?
+        switch target {
+        case .frozen(_, let fallback): context = fallback
+        case .whateverIsSelected: context = lastTranscript
+        }
         // From the transcript, never the command: the command is short and its
         // trigger word plus a run of loose capitals reads as English whatever
         // was actually said.
@@ -2243,10 +2267,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// Read the selection now. The menu and the offer run while the slot is
         /// still the press's own.
         case whateverIsSelected
-        /// What a spoken command froze when its recording began, which may be
-        /// nothing. A command never reads the slot and never clears it: by the
-        /// time a decoder has answered, a newer press can own it.
-        case frozen(SelectionReader.Selection?)
+        /// What a spoken command froze when its recording began: the
+        /// selection, which may be nothing, and the dictation to fall back to,
+        /// which may also be nothing. A command reads neither slot and clears
+        /// neither: by the time a decoder has answered, a newer press can own
+        /// what is in them.
+        case frozen(selection: SelectionReader.Selection?, fallback: String?)
     }
 
     /// Runs a prompt over the selection, or over the last dictation.
@@ -2273,9 +2299,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // clears it: by the time a decoder has answered, a newer press can own
         // what is in there.
         let selection: SelectionReader.Selection?
+        let dictated: String?
         switch target {
-        case .frozen(let held):
+        case .frozen(let held, let fallback):
             selection = held
+            dictated = fallback
         case .whateverIsSelected:
             selection = selectionAtPress ?? (
                 Permissions.accessibility == .granted
@@ -2283,11 +2311,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     : nil
             )
             selectionAtPress = nil
+            dictated = lastTranscript
         }
 
         // Falling back to the last dictation is what makes "hey parrot, fix the
         // grammar" work immediately after speaking, with nothing selected.
-        let target = selection?.text ?? lastTranscript ?? ""
+        let target = selection?.text ?? dictated ?? ""
         guard !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             endProgress(token: inherited)
             Log.write("transform: nothing selected and nothing dictated yet")
@@ -4061,7 +4090,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             }
             Log.write("command spoken: \"\(trimmed)\"")
-            handleVoiceCommand(trimmed, confirm: false, over: .frozen(press.selection))
+            handleVoiceCommand(trimmed, confirm: false, over: .frozen(selection: press.selection, fallback: press.transcript))
             return
         }
 
@@ -4070,7 +4099,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let command = commandAfterWakePhrase(trimmed) {
             Log.write("command heard: \"\(command)\"")
             dictationEnded(press.run)
-            handleVoiceCommand(command, over: .frozen(press.selection))
+            handleVoiceCommand(command, over: .frozen(selection: press.selection, fallback: press.transcript))
             return
         }
 
