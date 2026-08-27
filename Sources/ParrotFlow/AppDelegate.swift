@@ -210,6 +210,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The current press was tap-then-hold, so its words are an instruction.
     private var keyedAtPress = false
 
+    /// Watches for the last dictation being selected again — see
+    /// `SelectionWatch`. Running from the moment there is something to select
+    /// until the next dictation replaces it.
+    private let reselect = SelectionWatch()
+
     /// The last dictation a tap can summon an offer over: its words, and where
     /// they went.
     ///
@@ -435,8 +440,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// Read fresh each time rather than stored, so a config reloaded between
     /// two dictations changes what the next offer says.
-    private var offerCommands: [OfferedCommand] {
-        [OfferedCommand(title: "Vocabulary", key: "V")]
+    /// `teaching` puts `Vocabulary` in front, and it is left out for words
+    /// nothing here dictated.
+    ///
+    /// The panel behind that chip maps what was HEARD to what it should be, and
+    /// over a selection in somebody else's email there is no hearing — nothing
+    /// listened to it. A rule taught from a typo somebody else typed would fire
+    /// on *your* future dictations, correcting a mistake the decoder never made.
+    ///
+    /// Before the hotkey could summon an offer over an arbitrary selection this
+    /// could not arise: the panel only ever opened over a dictation. Leaving the
+    /// chip off is the whole of the fix, and it is what the `add a word` panel
+    /// mode was going to be for.
+    private func offerCommands(teaching: Bool) -> [OfferedCommand] {
+        (teaching ? [OfferedCommand(title: "Vocabulary", key: "V")] : [])
             + config.transforms.filter(\.offer).map {
                 OfferedCommand(title: $0.name, key: $0.offerKey)
             }
@@ -1152,6 +1169,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if startsDictation {
             anchorAtPress = nil
             pressRun += 1
+            // The words it is watching for are about to be replaced. Stopped
+            // here rather than when the new ones land, so the gap in between
+            // cannot offer over a sentence that is already history.
+            reselect.stop()
             readTheAnchor()
         }
 
@@ -2906,6 +2927,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // one out of it once this has faded. Below the newer-run guard above,
         // and carrying the words as well as the field — see `lastDictated`.
         lastDictated = (press.run, text, press.element, press.owner, landing)
+        watchForReselection()
 
         // The decoder's words matched back onto the sentence that came out of
         // the pipeline — see `Confidence.read`. Taken rather than copied: this
@@ -2968,7 +2990,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerHeld = false
         offerPressRun = run
         offeredCorrection = (run, target)
-        let commands = offerCommands
+        // Frozen with the offer rather than asked again when a chip is pressed.
+        // `lastDictated` is one slot and push-to-talk does not wait, so the same
+        // question a few seconds later can be about a different sentence.
+        let teaching = target.dictation != nil
+        let commands = offerCommands(teaching: teaching)
         offerHeadline = headline
         offerReading = reading
         let hold = config.feedback.lowConfidence.holdReturn
@@ -2981,10 +3007,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // under the pointer, and the click would run whatever took the slot.
         pill.model.onPick = { [weak self] index in
             guard let self, self.offerIsUp, commands.indices.contains(index) else { return }
-            // Index 0 is Vocabulary, which is not a transform and cannot be
-            // one: a config free to name a transform "Vocabulary" must not be
-            // able to take that slot over.
-            self.runOfferedCommand(index == 0 ? nil : commands[index].title)
+            // Index 0 is Vocabulary *when it is there* — it is not a transform
+            // and cannot be one, so a config free to name a transform
+            // "Vocabulary" must not be able to take that slot over. Matched by
+            // position rather than by title for exactly that reason, which means
+            // an offer without it has to say so or the first transform would be
+            // run as the panel.
+            self.runOfferedCommand(teaching && index == 0 ? nil : commands[index].title)
         }
         // The highlight is the pointer's mark and does not outlive it. Leaving
         // the pill gives it up, so a chip is never lit for a command that is
@@ -3035,7 +3064,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             raiseOffer(
                 over: Correction(
                     original: selection.text, element: selection.element,
-                    owner: selection.owner, landing: .field, selection: selection
+                    owner: selection.owner, landing: .field,
+                    // Selecting part of what you just dictated and tapping is
+                    // still your dictation, so it still gets the panel — see
+                    // `dictationBehind`. Text nobody here wrote answers nil.
+                    dictation: dictationBehind(selection.text, in: selection.element),
+                    selection: selection
                 ),
                 run: pressRun, headline: "the selection", reading: Confidence.Reading()
             )
@@ -3062,6 +3096,88 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ),
             run: pressRun, headline: nil, reading: Confidence.Reading()
         )
+    }
+
+    /// Offer again when the words are selected again.
+    ///
+    /// The other half of `summonOffer`. A tap is how you ask for the offer;
+    /// this is how it arrives without being asked, and it is bounded to the one
+    /// case where appearing uninvited is right — you selected text ParrotFlow
+    /// wrote, which is a deliberate act aimed at words it already knows about.
+    ///
+    /// Re-armed after every rewrite, so a sentence corrected and then selected
+    /// again still answers with the words that are on screen rather than the
+    /// ones that were.
+    ///
+    /// The field is what the watch judges by, so no field means no watch. A
+    /// dictation that ended on the clipboard left nothing on screen to select,
+    /// and one whose element was never captured cannot be told from any other
+    /// window.
+    private func watchForReselection() {
+        guard config.feedback.correctOffer else { reselect.stop(); return }
+        guard let last = lastDictated,
+              !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              case .field = last.landing, let element = last.element else {
+            reselect.stop()
+            return
+        }
+        reselect.onSelection = { [weak self] selection in
+            self?.offerOverReselected(selection)
+        }
+        reselect.start(over: last.text, in: element)
+    }
+
+    /// The offer, over words that were dictated and have been selected again.
+    ///
+    /// The selection is the target, not the whole dictation: select three words
+    /// out of a sentence and those three words are what you meant. Everything
+    /// downstream is `summonOffer`'s, because there is no difference between an
+    /// offer you asked for and one that noticed — only in how it arrived.
+    private func offerOverReselected(_ selection: SelectionReader.Selection) {
+        // Never over a recording, never over an offer already up, and never
+        // while a decode this could be about is still in flight.
+        //
+        // Refusing while one is up does not cost you a second selection, and
+        // the reason is an ordering worth keeping: an outside click dismisses
+        // the offer on mouse *down* — see `watchForOfferOutsideClick` — and this
+        // looks on mouse *up*. So selecting different words takes the old offer
+        // down before the new one is asked for. Move either monitor to the other
+        // edge and reselecting while an offer is up stops answering.
+        guard !recorder.isRecording, runsInFlight <= 0, !offerIsUp else { return }
+        guard config.feedback.correctOffer else { return }
+        aim(at: selection)
+        raiseOffer(
+            over: Correction(
+                original: selection.text, element: selection.element,
+                owner: selection.owner, landing: .field,
+                dictation: dictationBehind(selection.text, in: selection.element),
+                selection: selection
+            ),
+            run: pressRun, headline: "the selection", reading: Confidence.Reading()
+        )
+    }
+
+    /// The dictation these words came from, or nil when nothing here wrote them.
+    ///
+    /// Asked at the moment an offer is raised and frozen onto it, never read
+    /// later: `lastDictated` is one slot and push-to-talk does not wait, so the
+    /// answer a second from now can belong to a different sentence.
+    ///
+    /// `contains` rather than equality — select three words out of something you
+    /// dictated and it is still your dictation, and the part you selected is the
+    /// part you meant. What keeps that from being true of everything is the
+    /// field, not the length, which is the same judgement `SelectionWatch`
+    /// makes. "know" is four characters and sits inside half of everything
+    /// anybody says; "know" in the box those words were written into is the word
+    /// you just dictated, and it is exactly the kind of word somebody selects
+    /// because they want it fixed.
+    private func dictationBehind(_ text: String, in element: AXUIElement?) -> Int? {
+        let target = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard target.count >= SelectionWatch.floor,
+              let last = lastDictated,
+              let element, let field = last.element, CFEqual(element, field),
+              last.text.contains(target) else { return nil }
+        return last.run
     }
 
     /// What the pill says the hold is for, or nil for the one that needs no
@@ -3093,7 +3209,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func aim(at selection: SelectionReader.Selection) {
         guard let element = selection.element,
               case .found(let anchor) = CaretAnchor.read(at: element) else {
-            Log.write("summon: no geometry for the selection; the pill stays where it was")
+            Log.write("pill: no geometry for the selection; it stays where it was")
             return
         }
         pill.aim(at: anchor)
@@ -3858,6 +3974,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // words pointing at the newer dictation's field.
         guard let dictation, dictation == lastDictated?.run else { return }
         lastDictated?.text = corrected
+        // And the watch follows them. Selecting a sentence you have just had
+        // rewritten has to offer again — the words on screen are the new ones,
+        // and the old ones are not in the field to be selected any more.
+        watchForReselection()
     }
 
     private func beginCorrection(over target: Target = .whateverIsSelected) {
