@@ -248,6 +248,25 @@ select a paragraph in Word, tap, and press a chip's letter.
 This is why the offer's six seconds are not a deadline. It is not kept on
 screen against the chance that you want it — you ask for it again.
 
+**Over a selection the pill says which words**, in the highlight they wear in
+the field, with the chips under them and one line under those:
+
+    Edit  ▏things that turned out not to matter▕
+       V Vocabulary    F Fix grammar    S Terse
+        or hold ⌥ and say what to change
+
+Shown rather than described. The doubt is never whether there is a selection —
+it is which words are about to change, and no wording is as exact as the words.
+
+**Holding while _that_ pill is up speaks the edit**, with no tap first. There a
+hold cannot mean "start a new dictation": the pill is on screen pointing at
+words and asking what to do about them, and talking over it would be answering
+a question with a different sentence.
+
+Only that pill. The offer after a plain dictation carries no such row and
+nothing on screen offers the gesture, so holding there starts the next
+sentence, exactly as it always has.
+
 **Select what it just wrote and the pill comes back on its own**, with no key
 at all. All or part of it — select three words out of a sentence you dictated
 and those three words are the target.

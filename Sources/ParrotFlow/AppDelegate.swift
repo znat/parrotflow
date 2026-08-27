@@ -388,7 +388,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var offerOnScreen: [OfferedCommand]?
     /// The headline and the reading the offer went up with, so the pill can be
     /// drawn again without rebuilding what it is about. See `holdTheReturn`.
-    private var offerHeadline: String?
+    private var offerHeadline: Headline?
     private var offerReading = Confidence.Reading()
     /// Until when this offer's Return is held. Set when the offer goes up, so
     /// an offer whose keys arrive late — a second dictation was still running —
@@ -826,14 +826,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeys.onAbort = { [weak self] in self?.cancelDictation(.notTheHotkey) }
         hotKeys.onTap = { [weak self] in self?.summonOffer() }
         do {
-            try hotKeys.register(
+            let binding = try hotKeys.register(
                 key: config.hotkey.key,
                 modifiers: config.hotkey.modifiers,
                 pressDelay: config.hotkey.pressDelaySeconds
             )
+            // The offer's "or hold …" row names this key, so it is read from
+            // what actually registered rather than from the config: a key the
+            // config asked for and macOS refused is not the key to tell
+            // somebody to hold. Set on every reload, because the hotkey is one
+            // of the things a reload can change.
+            pill.model.hotkey = binding.displayName
         } catch {
             hotkeyError = error.localizedDescription
             Log.write("hotkey registration FAILED: \(error.localizedDescription)")
+            // `register` unregisters before it tries, so a reload that fails
+            // leaves nothing bound. Cleared rather than left saying the old
+            // key: the row would be naming a key with no handler behind it,
+            // which is worse than the row being absent. Empty takes it off the
+            // pill — see `OfferContent.hold`.
+            pill.model.hotkey = ""
         }
 
         startKeepWarm()
@@ -1119,7 +1131,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Only for a press that starts a dictation: the second press of a
         // toggle belongs to the one already running, and it did not ask for
         // anything different.
-        if !recorder.isRecording { keyedAtPress = afterTap }
+        //
+        // A plain hold counts as keyed while an offer over a *selection* is up,
+        // and only then. There the pill is pointing at words and asking what to
+        // do about them, so a hold cannot mean "start a new dictation" — and
+        // the tap that summoned it already happened, so asking for another
+        // would be asking twice for the same thing. It is also what the third
+        // row of that pill promises, and a promise nothing honoured would be
+        // worse than no row.
+        //
+        // An offer over the last dictation is not that. It carries no such row,
+        // nothing on screen offers the gesture, and holding after a sentence
+        // lands is how the next one gets said. Matched against the headline
+        // rather than against `selectionAtPress` so the rule is the one the
+        // pill is drawing: the row appears exactly when this is true, and the
+        // two cannot drift apart.
+        if !recorder.isRecording {
+            keyedAtPress = afterTap || (offerIsUp && offerHeadline?.isSelection == true)
+        }
         // Read before anything this press does, so an abort later can tell the
         // transcription this press started from one that was already running.
         transcriptionRunAtPress = transcriptionRun
@@ -2887,7 +2916,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// off `self`, so an offer can never be moved by another dictation's press.
     /// `headline` is only passed for an ending nobody chose.
     private func showCorrectOffer(
-        for press: Press, landing: Correction.Landing, headline: String? = nil
+        for press: Press, landing: Correction.Landing, headline: Headline? = nil
     ) {
         // Beside the offer, not on it: its own window, so advice about the
         // microphone never costs you the chance to fix the sentence. Here
@@ -2983,7 +3012,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// nothing else does: the microphone notice, the decoder's reading, and the
     /// search for where the words landed.
     private func raiseOffer(
-        over target: Correction, run: Int, headline: String?, reading: Confidence.Reading
+        over target: Correction, run: Int, headline: Headline?, reading: Confidence.Reading
     ) {
         offerUntil = Date().addingTimeInterval(Self.offerSeconds)
         // A new offer is never born held, whatever the last one ended as.
@@ -3071,7 +3100,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     dictation: dictationBehind(selection.text, in: selection.element),
                     selection: selection
                 ),
-                run: pressRun, headline: "the selection", reading: Confidence.Reading()
+                run: pressRun, headline: .selection(selection.text),
+                reading: Confidence.Reading()
             )
             return
         }
@@ -3153,7 +3183,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 dictation: dictationBehind(selection.text, in: selection.element),
                 selection: selection
             ),
-            run: pressRun, headline: "the selection", reading: Confidence.Reading()
+            run: pressRun, headline: .selection(selection.text),
+            reading: Confidence.Reading()
         )
     }
 
@@ -3439,6 +3470,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerHeld = false
         offeredCorrection = nil
         offerOnScreen = nil
+        // With the rest of what the offer was about. It decides whether a hold
+        // is an edit — see `handleHotKeyPress` — and a headline outliving its
+        // offer is one more slot that says something true about a surface that
+        // is no longer there.
+        offerHeadline = nil
         offerKeysExpiry?.cancel()
         offerKeysExpiry = nil
         offerKeys.stop()
@@ -4748,7 +4784,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     : "focus moved since the press; copied instead of pasting")
                 setLabel("Focus moved — the transcription is on your clipboard", clearAfter: 4)
                 showCorrectOffer(
-                    for: press, landing: .clipboardNow(), headline: "Focus moved · ⌘V"
+                    for: press, landing: .clipboardNow(), headline: .landing("Focus moved · ⌘V")
                 )
                 updateUI()
                 return
@@ -4782,7 +4818,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setLabel("Nowhere to type — the transcription is on your clipboard", clearAfter: 4)
             // And on the pill: the menu bar row is inside a menu you must open.
             showCorrectOffer(
-                for: press, landing: .clipboardNow(), headline: "Nowhere to type · ⌘V"
+                for: press, landing: .clipboardNow(), headline: .landing("Nowhere to type · ⌘V")
             )
             updateUI()
             return
