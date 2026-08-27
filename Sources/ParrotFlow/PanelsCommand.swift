@@ -397,7 +397,9 @@ enum PanelsCommand {
     /// The window's size, not the capsule's — the glow needs the bleed around
     /// it or the sheet cuts the halo off square.
     private static func pillSize(_ model: PillModel) -> NSSize {
-        PillMetrics.panelSize(for: model.state, hasIcon: model.appIcon != nil)
+        PillMetrics.panelSize(
+            for: model.state, hasIcon: model.appIcon != nil, hotkey: model.hotkey
+        )
     }
 
     /// Something recognisable to sit in the pill's slot. Mail because that is

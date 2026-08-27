@@ -840,6 +840,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             hotkeyError = error.localizedDescription
             Log.write("hotkey registration FAILED: \(error.localizedDescription)")
+            // `register` unregisters before it tries, so a reload that fails
+            // leaves nothing bound. Cleared rather than left saying the old
+            // key: the row would be naming a key with no handler behind it,
+            // which is worse than the row being absent. Empty takes it off the
+            // pill — see `OfferContent.hold`.
+            pill.model.hotkey = ""
         }
 
         startKeepWarm()

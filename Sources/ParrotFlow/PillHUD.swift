@@ -212,7 +212,9 @@ final class PillHUD {
     /// window — which in the middle of a morph is a width on its way somewhere
     /// rather than a width anything chose.
     private var wantedSize: NSSize {
-        PillMetrics.panelSize(for: model.state, hasIcon: model.appIcon != nil)
+        PillMetrics.panelSize(
+            for: model.state, hasIcon: model.appIcon != nil, hotkey: model.hotkey
+        )
     }
 
     /// One number for the whole surface: the rise, the morph and the fade.
@@ -922,10 +924,12 @@ enum PillMetrics {
     /// less there is to see.
     static let bleed: CGFloat = 52
 
-    static func panelSize(for state: PillState, hasIcon: Bool) -> NSSize {
-        let width = width(for: state, hasIcon: hasIcon)
+    static func panelSize(
+        for state: PillState, hasIcon: Bool, hotkey: String = ""
+    ) -> NSSize {
+        let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey)
         return NSSize(width: width + bleed * 2,
-                      height: height(for: state, width: width) + bleed * 2)
+                      height: height(for: state, width: width, hotkey: hotkey) + bleed * 2)
     }
 
     /// The face the dictated sentence is set in — the same one the chips use.
@@ -963,9 +967,15 @@ enum PillMetrics {
     static let editLead = "Edit"
     static let holdLead = "or hold"
     static let holdTail = "and say what to change"
-    /// The ⌥ keycap between the two halves of the hold line, and the gaps
-    /// either side of it.
-    static let holdKeycap: CGFloat = 20 + 12
+    /// The keycap between the two halves of the hold line, and the gaps either
+    /// side of it.
+    ///
+    /// Measured from the name it will hold, because the hotkey is configurable
+    /// and "Right ⌘" is not the width of "⌥". A fixed box is what let the glyph
+    /// be a literal in the first place.
+    static func holdKeycapWidth(_ hotkey: String) -> CGFloat {
+        max(20, title(hotkey) + 4) + 12
+    }
     /// Its box, which is taller than a line of the text beside it.
     static let holdKeycapHeight: CGFloat = 17
     /// The highlight's own padding, either side of the words.
@@ -1023,13 +1033,19 @@ enum PillMetrics {
     ///
     /// An offer with nothing to say about the decode is the height the pill has
     /// always been, so a dictation that went fine changes nothing.
-    static func height(for state: PillState, width: CGFloat) -> CGFloat {
+    static func height(for state: PillState, width: CGFloat, hotkey: String = "") -> CGFloat {
         guard case .offer(_, let headline, let reading) = state else { return height }
         // A selection offer is three rows: the words, the chips, and the line
         // about the key. Two of them are extra, and they are added whatever the
         // reading says — the two can appear together, on a dictation you
         // selected part of after being warned about it.
-        let extra = headline?.isSelection == true ? (selectionRow + selectionGap) * 2 : 0
+        // The words row always, and the hold row only when there is a key to
+        // name — `OfferContent.hold` draws it on the same condition.
+        var extra: CGFloat = 0
+        if headline?.isSelection == true {
+            extra = selectionRow + selectionGap
+            if !hotkey.isEmpty { extra += selectionRow + selectionGap }
+        }
         let rows = readingRows(reading, width: width)
         guard !rows.isEmpty else { return height + extra }
         return height + extra + sentenceTop
@@ -1088,13 +1104,15 @@ enum PillMetrics {
     static let icon: CGFloat = 22
     static let meter: CGFloat = 66
 
-    static func width(for state: PillState, hasIcon: Bool) -> CGFloat {
+    static func width(
+        for state: PillState, hasIcon: Bool, hotkey: String = ""
+    ) -> CGFloat {
         switch state {
         case .recording(let label): return recording(hasIcon: hasIcon, label: label)
         case .working(let message): return text(message)
         case .notice(let message, _): return text(message)
         case .offer(let commands, let headline, let reading):
-            return offer(commands, headline: headline, reading: reading)
+            return offer(commands, headline: headline, reading: reading, hotkey: hotkey)
         }
     }
 
@@ -1142,7 +1160,7 @@ enum PillMetrics {
     /// paragraph and a pill as wide as one is a pill nobody can place.
     static func offer(
         _ commands: [OfferedCommand], headline: Headline? = nil,
-        reading: Confidence.Reading = Confidence.Reading()
+        reading: Confidence.Reading = Confidence.Reading(), hotkey: String = ""
     ) -> CGFloat {
         // A chip is its keycap, its words and 9pt of padding either side; then
         // 4pt between one chip and the next.
@@ -1159,10 +1177,16 @@ enum PillMetrics {
                 sentenceWidth,
                 padding * 2 + title(editLead) + gap + title(words) + selectionFit
             ))
-            widest = max(widest, min(
-                sentenceWidth,
-                padding * 2 + title(holdLead) + holdKeycap + title(holdTail)
-            ))
+            // Only when there is a key to name. `OfferContent.hold` draws the
+            // row on the same condition, so the two agree about whether it is
+            // there to be measured.
+            if !hotkey.isEmpty {
+                widest = max(widest, min(
+                    sentenceWidth,
+                    padding * 2 + title(holdLead)
+                        + holdKeycapWidth(hotkey) + title(holdTail)
+                ))
+            }
         }
         if !reading.words.isEmpty {
             widest = max(widest, min(sentenceWidth, padding * 2 + sentenceRun(reading.words)))
