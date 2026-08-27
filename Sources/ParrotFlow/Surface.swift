@@ -81,10 +81,17 @@ struct Surface {
     ///
     /// Only the paste renders. `setSelectedText` writes the string literally,
     /// so that branch still reads back the markers it put there.
+    ///
+    /// `displayed` and not `plain`. They differ on one thing — a labelled link,
+    /// which `plain` writes as `words (url)` because that flavour is the
+    /// clipboard fallback and losing the address there is worse than showing
+    /// it. On screen the address is in the anchor and the line reads "words",
+    /// so a read-back against `plain` would reject a link that pasted
+    /// correctly and the repair would undo it.
     func asShown(_ replacement: String) -> String {
         guard paste != .plain else { return replacement }
         let markup = Markup.parse(replacement)
-        return markup.isPlain ? replacement : markup.plain
+        return markup.isPlain ? replacement : markup.displayed
     }
 
     // MARK: - Reading

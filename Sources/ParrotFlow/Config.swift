@@ -757,13 +757,22 @@ struct Config: Decodable, Equatable {
             offerKey = String(try trimmed(.offerKey).prefix(1)).uppercased()
             // One string or a list, because most transforms want one alias and
             // writing `say: bullets` should not be an error.
-            let spoken: [String]
-            if let one = ((try? c.decodeIfPresent(String.self, forKey: .say)) ?? nil) {
-                spoken = [one]
-            } else {
-                spoken = ((try? c.decodeIfPresent([String].self, forKey: .say)) ?? nil) ?? []
+            //
+            // Absent and unreadable are told apart. Both used to answer with an
+            // empty list, so `say: 42` left the transform in the catalogue with
+            // no alias — and the only symptom was that the words you had put
+            // there stopped reaching it, which is a routing bug to chase rather
+            // than a config line to fix. `--check-config` names it now.
+            if c.contains(.say) {
+                if let one = try? c.decode(String.self, forKey: .say) {
+                    say = [one]
+                } else if let listed = try? c.decode([String].self, forKey: .say) {
+                    say = listed
+                } else {
+                    unreadable = "has a `say:` that is neither a word nor a list of words"
+                }
             }
-            say = spoken.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            say = say.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .filter { !$0.isEmpty }
 
             // A body written either way. The mapping is tried first and only
