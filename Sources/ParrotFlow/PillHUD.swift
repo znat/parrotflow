@@ -57,15 +57,49 @@ enum PillState: Equatable {
     /// one the pointer is on lives in the model, not here, so moving the
     /// highlight is not a state change and does not crossfade the whole pill.
     ///
-    /// The headline is where the words went. Nil when they went into the field
-    /// you were looking at, set for the endings nobody asked for.
+    /// The headline says either where the words went or which words they are —
+    /// see `Headline`. Nil for an offer that needs neither.
     ///
     /// The reading is what the decoder made of the dictation — the sentence
     /// word by word, its score for the whole utterance, and a warning when it
     /// is worth a second look. An empty one is the whole difference: it is what
     /// decides the pill's height, so nothing about this state changes shape for
     /// a dictation that went fine.
-    case offer([OfferedCommand], String?, Confidence.Reading)
+    case offer([OfferedCommand], Headline?, Confidence.Reading)
+}
+
+/// What an offer says above its chips.
+///
+/// Two things, and they are opposite enough to be worth telling apart in the
+/// type. A landing is about the *ending* — the words went somewhere you did not
+/// ask for, and you have to know that before the chips mean anything. A
+/// selection is about the *subject*, and it is drawn as the words themselves in
+/// the highlight they wear in the field, because the one question an offer over
+/// a selection has to answer is which words, and no description of them is as
+/// exact as showing them.
+///
+/// They are also measured differently — a landing widens the chip row it sits
+/// in front of, a selection is a row of its own — which is the other half of
+/// why one `String?` could not carry both.
+enum Headline: Equatable {
+    /// "Nowhere to type · ⌘V", and the rest of the endings nobody asked for.
+    case landing(String)
+    /// The words this offer is about, shown as the field shows them.
+    case selection(String)
+
+    var text: String {
+        switch self {
+        case .landing(let words), .selection(let words): return words
+        }
+    }
+
+    /// Whether this is the three-row shape: the words, the chips, and the line
+    /// about the key. Read by the metrics and by the view, so the two cannot
+    /// disagree about which shape they are describing.
+    var isSelection: Bool {
+        if case .selection = self { return true }
+        return false
+    }
 }
 
 /// A command on the offer, and the letter that runs it.
@@ -220,7 +254,7 @@ final class PillHUD {
     /// usable to the last frame. The keys and the chips work the whole way
     /// down; the fading only says how long is left.
     func offer(
-        _ commands: [OfferedCommand], headline: String? = nil,
+        _ commands: [OfferedCommand], headline: Headline? = nil,
         reading: Confidence.Reading = Confidence.Reading(), for duration: TimeInterval
     ) {
         model.selected = nil
@@ -906,6 +940,29 @@ enum PillMetrics {
     )
     static let sentenceGap: CGFloat = 4
 
+    /// Between the rows of an offer over a selection.
+    ///
+    /// Wider than `sentenceGap`, which sets the reading's lines — those are one
+    /// block of text and belong together. These three are three different
+    /// things: the words, what can be done to them, and the way out the chips
+    /// do not cover. At 4pt they read as a paragraph rather than as a list of
+    /// choices.
+    static let selectionGap: CGFloat = 8
+
+    /// What the two extra rows of a selection offer say.
+    ///
+    /// Here rather than in the view because the pill is measured before it is
+    /// drawn, and a string measured in one place and set in another is how a
+    /// chip ends up hanging over the end of a capsule. The view reads these.
+    static let editLead = "Edit"
+    static let holdLead = "or hold"
+    static let holdTail = "and say what to change"
+    /// The ⌥ keycap between the two halves of the hold line, and the gaps
+    /// either side of it.
+    static let holdKeycap: CGFloat = 20 + 12
+    /// The highlight's own padding, either side of the words.
+    static let selectionFit: CGFloat = 12
+
     /// Extra air above the sentence, on top of what centring the two rows
     /// already leaves. The chips sit in capsules of their own and carry their
     /// own margin with them; the sentence is bare text and read as crowded
@@ -945,10 +1002,16 @@ enum PillMetrics {
     /// An offer with nothing to say about the decode is the height the pill has
     /// always been, so a dictation that went fine changes nothing.
     static func height(for state: PillState, width: CGFloat) -> CGFloat {
-        guard case .offer(_, _, let reading) = state else { return height }
+        guard case .offer(_, let headline, let reading) = state else { return height }
+        // A selection offer is three rows: the words, the chips, and the line
+        // about the key. Two of them are extra, and they are added whatever the
+        // reading says — the two can appear together, on a dictation you
+        // selected part of after being warned about it.
+        let extra = headline?.isSelection == true ? (sentenceLine + selectionGap) * 2 : 0
         let rows = readingRows(reading, width: width)
-        guard !rows.isEmpty else { return height }
-        return height + sentenceTop + rows.reduce(0, +) + sentenceGap * CGFloat(rows.count)
+        guard !rows.isEmpty else { return height + extra }
+        return height + extra + sentenceTop
+            + rows.reduce(0, +) + sentenceGap * CGFloat(rows.count)
     }
 
     /// The height of each row the reading draws, top to bottom. The count is
@@ -1046,12 +1109,17 @@ enum PillMetrics {
     /// title is `.fixedSize()`, so a capsule a few points too narrow lets a
     /// chip hang over the end rather than shortening it.
     ///
-    /// A headline widens it and is meant to: then the sentence is on the
-    /// clipboard and looking like a notice is the point.
+    /// A landing headline widens it and is meant to: then the sentence is on
+    /// the clipboard and looking like a notice is the point.
     /// A sentence widens it too, up to `sentenceWidth`, and then wraps. So
     /// does a warning, which never wraps.
+    ///
+    /// A selection headline does neither. It is a row of its own, so it
+    /// competes with the chip row for the pill's width rather than adding to
+    /// it — and it is capped like the sentence, because a selection can be a
+    /// paragraph and a pill as wide as one is a pill nobody can place.
     static func offer(
-        _ commands: [OfferedCommand], headline: String? = nil,
+        _ commands: [OfferedCommand], headline: Headline? = nil,
         reading: Confidence.Reading = Confidence.Reading()
     ) -> CGFloat {
         // A chip is its keycap, its words and 9pt of padding either side; then
@@ -1059,10 +1127,21 @@ enum PillMetrics {
         let chips = commands.reduce(CGFloat(0)) { total, command in
             total + 18 + (command.key.isEmpty ? 0 : keycap) + title(command.title)
         }
-        let lead = headline.map { title($0) + gap } ?? 0
+        let lead: CGFloat
+        if case .landing(let words) = headline { lead = title(words) + gap } else { lead = 0 }
         let row = padding * 2 + lead + chips
             + CGFloat(max(commands.count - 1, 0)) * 4 + rowFit
         var widest = row
+        if case .selection(let words) = headline {
+            widest = max(widest, min(
+                sentenceWidth,
+                padding * 2 + title(editLead) + gap + title(words) + selectionFit
+            ))
+            widest = max(widest, min(
+                sentenceWidth,
+                padding * 2 + title(holdLead) + holdKeycap + title(holdTail)
+            ))
+        }
         if !reading.words.isEmpty {
             widest = max(widest, min(sentenceWidth, padding * 2 + sentenceRun(reading.words)))
         }
@@ -1327,7 +1406,7 @@ private struct MessageContent: View {
 private struct OfferContent: View {
     @EnvironmentObject private var model: PillModel
     let commands: [OfferedCommand]
-    let headline: String?
+    let headline: Headline?
     /// What the decoder made of the dictation. See `Confidence.Reading`.
     var reading = Confidence.Reading()
 
@@ -1344,13 +1423,18 @@ private struct OfferContent: View {
     private static let restingText = Color(white: 0.88)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: PillMetrics.sentenceGap) {
+        VStack(
+            alignment: .leading,
+            spacing: centred ? PillMetrics.selectionGap : PillMetrics.sentenceGap
+        ) {
             if let warning = reading.warning { self.warning(warning) }
             if !reading.words.isEmpty {
                 words
                 if let overall = reading.overall { score(overall) }
             }
+            selection
             chips
+            hold
         }
         // The whole block is centred in the pill's height, so this lands as air
         // above the sentence rather than being split between the two rows.
@@ -1415,16 +1499,99 @@ private struct OfferContent: View {
             .padding(.horizontal, PillMetrics.padding)
     }
 
+    /// The words the offer is about, wearing the highlight they wear in the
+    /// field.
+    ///
+    /// Shown rather than described. "the selection" answered a question nobody
+    /// was asking — the doubt is never *whether* there is a selection, it is
+    /// which words are about to change, and the only exact answer to that is
+    /// the words. It also asks the accessibility layer for nothing, which is
+    /// why it survives where pointing at the span did not: web content will not
+    /// say where a span is, only where the box holding it is.
+    ///
+    /// The app's own blue, not a neutral fill. Those words are sitting in that
+    /// colour two lines above, so the pill says "these ones" by matching. This
+    /// is the one place colour goes inside a surface here — `parrotSurface`
+    /// keeps it on the rim, because "a surface washed in a feather is a surface
+    /// you have to read text off" — and it earns the exception by being a
+    /// quotation mark rather than decoration.
+    @ViewBuilder private var selection: some View {
+        if case .selection(let words) = headline {
+            HStack(spacing: PillMetrics.gap - 4) {
+                Text(PillMetrics.editLead)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color(white: 0.55))
+                Text(words)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(Self.quotedText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(Parrot.action.opacity(0.42))
+                    )
+            }
+            .padding(.horizontal, PillMetrics.padding)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    /// The other way out, under the chips.
+    ///
+    /// The chips are a short list; holding the key reaches every transform and
+    /// the catch-all besides. Said on the pill because this is the one surface
+    /// where the two are alternatives to each other — everywhere else the
+    /// gesture is something you either know or do not.
+    @ViewBuilder private var hold: some View {
+        if case .selection = headline {
+            HStack(spacing: 6) {
+                Text(PillMetrics.holdLead)
+                keycap("⌥")
+                Text(PillMetrics.holdTail)
+            }
+            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .foregroundStyle(Color(white: 0.5))
+            .padding(.horizontal, PillMetrics.padding)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    /// The words on the highlight: the glass text, so they read the way the
+    /// dictated sentence does two rows up rather than as white on blue.
+    private static let quotedText = Color(red: 0.875, green: 0.941, blue: 0.906)
+
+    private func keycap(_ glyph: String) -> some View {
+        Text(glyph)
+            .font(.system(size: 11, weight: .bold, design: .rounded))
+            .foregroundStyle(Color(white: 0.72))
+            .frame(width: 20, height: 17)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.white.opacity(0.07))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                    )
+            )
+    }
+
+    /// Whether this is the three-row shape, which is centred throughout.
+    private var centred: Bool { headline?.isSelection == true }
+
     private var chips: some View {
         HStack(spacing: 4) {
-            if let headline {
-                Text(headline)
+            if case .landing(let words) = headline {
+                Text(words)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
                     .foregroundStyle(NoticeTone.caution.color)
                     .lineLimit(1)
                     .fixedSize()
                     .padding(.trailing, PillMetrics.gap - 4)
             }
+
+            if centred { Spacer(minLength: 0) }
 
             ForEach(Array(commands.enumerated()), id: \.offset) { index, command in
                 // A tap gesture rather than a `Button`. The pill is a
@@ -1444,7 +1611,10 @@ private struct OfferContent: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, PillMetrics.padding)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Centred under the words it is about, left where it is the only row.
+        // Three rows want one axis; one row is a thing you aim at, and a row of
+        // chips that moves as the pill grows is a row you have to find again.
+        .frame(maxWidth: .infinity, alignment: centred ? .center : .leading)
     }
 
     /// Lit carries the same leaf as a changed word and as the confirm button:
