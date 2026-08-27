@@ -15,13 +15,25 @@ import Foundation
 /// the wrong narrow tool. The router needs a separate answer, not another line
 /// in the list. See `Router.prompt(for:freeForm:)`.
 ///
-/// Scored by tests/generic-cases.yaml — 38 cases, 27 that ask for an edit and
-/// 11 that must come back untouched. On gemma4:e4b, 32/38 at 1.15s, against
-/// 11/38 for a control that returns the text unchanged. Five variants landed
-/// within one case of each other, so this wording is the model's ceiling on the
-/// task rather than the best of a wide field; the full scoreboard, including
-/// the three failures no variant fixed, is at the bottom of
-/// scripts/validate-generic.py.
+/// Scored by tests/generic-cases.yaml — 44 cases, 31 that ask for an edit and
+/// 13 that must come back untouched. On gemma4:e4b-mlx, 40/44, against 11/38
+/// for a control that returns the text unchanged. A point either way is noise:
+/// the same prompt scored 37 and then 36 across two passes. The full scoreboard is at the
+/// bottom of scripts/validate-generic.py.
+///
+/// The last two examples are a *correction* — an instruction with the
+/// imperative taken out. "make it Tuesday" and "I meant Tuesday" ask for the
+/// same edit, and the second is what people say to a machine that has just
+/// written their own sentence down. Without them this scored 3/6 on those, and
+/// it failed in one particular way: handed "no I meant three of them" it edited
+/// the *instruction* and returned that, having read the corrective phrasing as
+/// prose and therefore as the subject. The pair is one of each, because the
+/// phrase is not a marker — it introduces an edit only when it names the
+/// replacement, and bare it is a complaint with nothing to act on.
+///
+/// "no I meant three of them" still fails, and is left standing rather than
+/// argued with: fixing one case with a third example is tuning on the set. It
+/// wants fresh cases before anyone tries again.
 ///
 /// Two findings from that set shaped what shipped. The prompt beats the narrow
 /// prompts on their own ground — 14/16 against 12/16 on the cases `dates` and
@@ -71,6 +83,16 @@ enum FreeForm {
         the release is 2026-02-01
 
         instruction: how long is that going to take
+        text:
+        the migration runs on friday
+        the migration runs on friday
+
+        instruction: I meant Tuesday
+        text:
+        the meeting is on Monday
+        the meeting is on Tuesday
+
+        instruction: this is not what I had in mind
         text:
         the migration runs on friday
         the migration runs on friday

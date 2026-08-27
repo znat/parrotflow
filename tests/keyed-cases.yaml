@@ -94,3 +94,26 @@ cases:
   # the speaker did say the word. Recorded rather than argued with.
   - instruction: dotted
     expect: dotted
+
+  # --- a correction, which is an instruction with the imperative taken out ---
+  #
+  # "I meant Tuesday" names no transform and must reach the catch-all, where
+  # the prompt decides what to do with it — `tests/generic-cases.yaml` scores
+  # that half. What is scored here is only that the name match does not eat it
+  # first, which is a real risk and not a theoretical one: this fixture has a
+  # tool called `flag`, and a correction naming a person or a day is one word
+  # away from a tool name in any catalogue somebody actually configures.
+  #
+  # The complaint goes to the same place, and that is correct rather than a
+  # gap: routing cannot tell "I meant Tuesday" from "this is not what I had in
+  # mind" without reading the text, which is the catch-all's job. The prompt
+  # returns the complaint unchanged, and the case for that is in the generic
+  # set where it can be measured.
+  - instruction: I meant Tuesday
+    expect: ANY
+  - instruction: no I meant three of them
+    expect: ANY
+  - instruction: this is not what I had in mind
+    expect: ANY
+  - instruction: sorry I meant next Friday
+    expect: ANY
