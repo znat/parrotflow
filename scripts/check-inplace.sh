@@ -136,12 +136,13 @@ start_fixture() {
       # picked wrong or picked nothing and left the window open. There is
       # nothing to work out if the launch says so.
       #
-      # `delay` because the window is drawn before it is frontmost.
+      # The window the returned tab is in, not the front one. `front window`
+      # is global state read a moment later, so anything that comes forward in
+      # between answers instead — and cleanup would close that.
       TERMINAL_WINDOW_ID="$(osascript <<APPLESCRIPT 2>/dev/null
 tell application "Terminal"
-  do script "exec $(as_literal "$TMUX") attach -t $(as_literal "$SESSION")"
-  delay 0.3
-  set wid to id of front window
+  set theTab to do script "exec $(as_literal "$TMUX") attach -t $(as_literal "$SESSION")"
+  set wid to id of (first window whose tabs contains theTab)
 end tell
 return wid
 APPLESCRIPT
