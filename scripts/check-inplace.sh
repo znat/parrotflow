@@ -115,6 +115,12 @@ start_fixture() {
       printf '#!/bin/sh\nexec %s attach -t %s\n' "$TMUX" "$SESSION" > "$SCRATCH/attach.command"
       chmod +x "$SCRATCH/attach.command"
       open -a "$VIEWPORT" "$SCRATCH/attach.command"
+      sleep 1
+      # The window this run opened, by id — not any window whose title merely
+      # contains the session name. A freshly opened window is frontmost
+      # without anyone having to click, so the front window right now is
+      # this run's and nothing else's.
+      TERMINAL_WINDOW_ID="$(osascript -e 'tell application "Terminal" to id of front window' 2>/dev/null)"
       ;;
     *)
       # Ghostty and friends take `-e`, and on macOS only through `open`:
@@ -182,15 +188,14 @@ cleanup() {
   "$TMUX" kill-session -t "$SESSION" 2>/dev/null
   if [ "$VIEWPORT" = Terminal ]; then
     # Terminal.app is one process for every window you have open, so killing
-    # the pid would take yours with it. Close the one window instead, found by
-    # the session name in its title. Escaped for AppleScript: a quote in
-    # PF_CHECK_SESSION would otherwise break the string it sits inside, and
-    # the swallowed osascript error would leave the window open with no sign
-    # why.
-    local escaped="${SESSION//\\/\\\\}"
-    escaped="${escaped//\"/\\\"}"
-    osascript -e "tell application \"Terminal\" to close (every window whose \
-      name contains \"$escaped\")" >/dev/null 2>&1
+    # the pid would take yours with it. Close the one window instead — by id,
+    # captured when it was opened, never by matching its title: a title
+    # substring can match a window this run did not open, and PF_CHECK_SESSION
+    # is not guaranteed unique the way the default is.
+    if [[ "${TERMINAL_WINDOW_ID:-}" =~ ^[0-9]+$ ]]; then
+      osascript -e "tell application \"Terminal\" to close window id $TERMINAL_WINDOW_ID" \
+        >/dev/null 2>&1
+    fi
   elif [ -n "${VIEWPORT_PID:-}" ]; then
     # The pid can have been recycled between launch and here. Checked again
     # right before the kill, not just once at launch — killing a pid we can no
