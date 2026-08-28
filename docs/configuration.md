@@ -184,6 +184,122 @@ On `toggle`, right ⌥ would start recording every time you used it to type an
 accented character. Hold-to-talk is the mode that makes sense for these; it's
 also why apps in this category gravitate to `fn` or a right-hand modifier.
 
+### Tap it to bring the offer back
+
+One key, three lengths. The tap means "me"; what you do next says what.
+
+| Gesture | What happens |
+|---|---|
+| **Hold** | Dictate. Unchanged. |
+| **Tap** | The pill comes back, with its commands on it |
+| **Tap, then hold** | Speak an instruction — any command, not just the chips |
+
+A tap is a press shorter than `press_delay_seconds`. Tap and hold again within
+0.4s and the hold is the second half of one gesture rather than a dictation.
+
+| What is selected | What the gesture is about |
+|---|---|
+| A selection, anywhere | Those words, and the pill appears under them |
+| Nothing | The last dictation, and the pill stays where it was |
+
+**Tap-then-hold speaks the whole catalogue.** The chips are a short list; what
+you say is routed the way `"hey parrot, …"` is routed, so it reaches every
+transform and the catch-all besides — with no phrase to remember, because the
+key already said it was an instruction. The pill says **editing the selection**
+or **say an edit** while you hold, and ⎋ cancels.
+
+**And no router.** A key said this was an instruction, so the question the
+router exists to answer — *was that even an edit?* — is already answered.
+What is left is which tool, and that is decided without a model:
+
+1. Does the sentence contain the name of one of your transforms, or one of the
+   words its `say:` lists? Then run it. No model call at all.
+2. Otherwise the catch-all takes the whole sentence as its specification. One
+   model call.
+
+Never two waits in a row. Often none. `"hey parrot, …"` keeps the router,
+because that one is *found* in a sentence and really does have to guess.
+
+Step 1 is not an optimisation, it is what keeps the rest of your catalogue
+reachable. The catch-all is a prompt. A `command:` script and a `replace:`
+table are not, so nothing can stand in for them — "flag this" sent to the
+catch-all does not file your text, it rewords it. `say:` is how a tool named
+`slack_handles` gets reached by someone saying "use our slack handles".
+
+`scripts/check-keyed.sh` scores this against `tests/keyed-cases.yaml`, with no
+model and in about a second.
+
+**It applies in place**, whatever the transform's `confirm:` says — the same
+rule a chip on the pill already follows. The target was named on the pill
+before you spoke, ⎋ was live the whole time you were speaking, and
+`"hey parrot, undo"` puts the substitution back. A preview after all three is
+a question that was answered before it was asked. `"hey parrot, …"` still
+previews: that command is *found* in a sentence rather than declared by a key,
+so being wrong about it is a real possibility.
+
+A bare tap waits 0.4s before the pill appears, because that is how long it
+takes to find out whether a hold is coming. Nothing waits on a pill; the
+dictation path is untouched.
+
+The selection wins because it is what you are pointing at now, and it is the
+only target the tap can have in an app ParrotFlow has never written into:
+select a paragraph in Word, tap, and press a chip's letter.
+
+This is why the offer's six seconds are not a deadline. It is not kept on
+screen against the chance that you want it — you ask for it again.
+
+**Over a selection the pill says which words**, in the highlight they wear in
+the field, with the chips under them and one line under those:
+
+    Edit  ▏things that turned out not to matter▕
+       V Vocabulary    F Fix grammar    S Terse
+        or hold ⌥ and say what to change
+
+Shown rather than described. The doubt is never whether there is a selection —
+it is which words are about to change, and no wording is as exact as the words.
+
+**Holding while _that_ pill is up speaks the edit**, with no tap first. There a
+hold cannot mean "start a new dictation": the pill is on screen pointing at
+words and asking what to do about them, and talking over it would be answering
+a question with a different sentence.
+
+Only that pill. The offer after a plain dictation carries no such row and
+nothing on screen offers the gesture, so holding there starts the next
+sentence, exactly as it always has.
+
+**Select what it just wrote and the pill comes back on its own**, with no key
+at all. All or part of it — select three words out of a sentence you dictated
+and those three words are the target.
+
+Only for words ParrotFlow wrote, in the field it wrote them into, and only
+while they are still the last thing it wrote. Every other selection gets
+nothing, because selecting text is mostly how you copy it, delete it or type
+over it, and a surface that appeared each time would be wrong far more often
+than right. It never appears twice for the same words either: the pill returns
+when you *select* something, not while you have something selected.
+
+It costs no polling. A selection is made by a drag, a shift-arrow or ⌘A, so the
+question is asked at those three moments and never in between.
+
+**`Vocabulary` is left off the pill for words nothing here dictated.** The
+panel behind it maps what was *heard* to what it should be, and there is no
+hearing behind a paragraph somebody else typed — a rule taught from their typo
+would fire on your own future dictations, correcting a mistake the decoder
+never made. Every other chip is a rewrite and applies to any text, so they
+stay.
+
+**Bare modifiers only.** A `⌃⌥Space`-style combo goes through Carbon, which
+delivers the press on the down edge and swallows the keystroke, so there is no
+short press left over to claim: a tap there is a dictation, and a brief one.
+At `press_delay_seconds: 0` there is no tap either, for the same reason.
+
+Nothing is summoned while a dictation is recording or still decoding. On
+`toggle` the key is what stops a recording, and a stop that came out short is
+still a stop.
+
+`--watch-taps` says which edge each press comes out as — see
+[cli.md](cli.md). The case worth checking by hand is that ⌘S prints nothing.
+
 ## `transcription.insert_mode`
 
 `paste` types the transcript into the app you are in and needs the
@@ -778,6 +894,12 @@ running a full-screen program shows only what fits on the screen. Claude Code,
 vim and less all work this way, and the pill follows your words there. A pane
 sitting at an ordinary shell prompt keeps everything you have run in it, and the
 pill goes to the bottom of the screen.
+
+A rewrite that lands says nothing. The text is the confirmation — it changes
+where you are already looking, with the pill sitting under it — so a notice
+would be describing what you just watched happen. A chime plays and the log
+records it. Every way of *not* landing still speaks: nothing to change, the app
+refused the edit, the words went to the clipboard instead.
 
 `correct_offer` is what the pill does after a dictation. It stays where it
 is and names what can be done to the words, one chip per command:

@@ -6,9 +6,15 @@ import Foundation
 /// The routing decision is otherwise only observable by speaking and watching
 /// what happens, which conflates "routed wrong" with "the prompt is bad". This
 /// separates them, and it is what `scripts/check-routing.sh` drives.
+///
+/// `--keyed` scores the other path — tap-and-hold, where a key said this was
+/// an instruction. There is no model router at all: a name anywhere in the
+/// sentence wins, and everything else is the catch-all. It answers a different
+/// question from the default, so it has a set of its own —
+/// `scripts/check-keyed.sh`.
 enum RouteTestCommand {
 
-    static func run(text: String, quiet: Bool = false) -> Int32 {
+    static func run(text: String, quiet: Bool = false, keyed: Bool = false) -> Int32 {
         let config: Config
         do { config = try ConfigStore.load() } catch {
             print("✗ config: \(CheckConfigCommand.describe(error))")
@@ -28,8 +34,21 @@ enum RouteTestCommand {
             print("instruction: \"\(instruction)\"")
         }
 
-        if let match = Router.local(instruction: instruction, catalogue: catalogue) {
+        if let match = Router.local(
+            instruction: instruction, catalogue: catalogue, anywhere: keyed
+        ) {
             print(quiet ? match.name : "→ \(match.name)  (named outright, no model)")
+            return 0
+        }
+
+        // Keyed: no router, so the answer is already known. Named nothing means
+        // the catch-all, and the only way to get NONE is to have turned it off.
+        if keyed {
+            guard config.freeForm else {
+                print(quiet ? "NONE" : "→ NONE  (named nothing, and the catch-all is off)")
+                return 0
+            }
+            print(quiet ? "ANY" : "→ ANY  (named nothing, straight to the catch-all — no model)")
             return 0
         }
 

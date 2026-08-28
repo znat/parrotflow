@@ -37,7 +37,23 @@ final class MicNotice {
     /// It only ever sees the microphone a dictation was on. Switching away and
     /// back with no dictation in between is not a change this can see, and
     /// nothing is said.
-    private var lastDevice: String?
+    ///
+    /// Kept across launches. Held in memory it was forgotten every time the app
+    /// started, so the first dictation after a relaunch said it again about a
+    /// microphone nothing had changed about — which during development is every
+    /// install, and for everyone else is every login. "Said once" has to mean
+    /// once, not once per launch, or it is a notice you learn to dismiss.
+    ///
+    /// `UserDefaults`, like the update reminder: this is a thing the app has
+    /// already told you, not a setting you chose, so it does not belong in
+    /// `config.yaml` where you would have to read past it.
+    private var lastDevice: String? {
+        get { UserDefaults.standard.string(forKey: Self.lastDeviceKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.lastDeviceKey) }
+    }
+
+    private static let lastDeviceKey = "MicNotice.lastDevice"
+
 
     /// After a dictation, if it was recorded on Bluetooth and that microphone
     /// is not the one the last dictation used.

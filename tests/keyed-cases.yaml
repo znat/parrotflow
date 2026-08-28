@@ -1,0 +1,119 @@
+# The keyed path: tap-and-hold, where a key said this was an instruction.
+#
+# Run with scripts/check-keyed.sh, which supplies its own catalogue — see
+# below. Unlike tests/routing-cases.yaml this needs no model and takes no time:
+# the whole point of the path is that there is no router in it.
+#
+# Two answers only. A name anywhere in the sentence wins; everything else is
+# the catch-all. There is no NONE, because a key was held down to say this —
+# "that was not a command" is a verdict the gesture has already ruled out.
+#
+# What is being scored is one thing: does a name reach the tool that owns it.
+# It matters because most tools are not prompts. A script and a substitution
+# table cannot be stood in for by the catch-all, which is a prompt, so a name
+# that misses does not degrade — it runs the wrong kind of thing entirely.
+# "flag this" going to ANY does not file your text, it rewords it.
+#
+# The catalogue is fixed in the script rather than read from your config, for
+# the reason routing-cases.yaml gives: a set that inherits whichever transforms
+# happen to be on the machine only means something on that machine.
+#
+#   bullets      prompt   — the one the catch-all could stand in for
+#   terse        prompt
+#   slack_handles command  say: [slack handles, handles]
+#   flag         command  say: [flag this, save this for later]
+#   punctuation  command
+#   repetitions  command
+#   dotted       replace
+
+cases:
+  # --- the bare name, which worked before this and still has to ------------
+  - instruction: bullets
+    expect: bullets
+  - instruction: terse
+    expect: terse
+  - instruction: punctuation
+    expect: punctuation
+
+  # --- a name at the front, with the rest of the request behind it ---------
+  - instruction: bullets but keep the headings
+    expect: bullets
+  - instruction: punctuation on that last paragraph
+    expect: punctuation
+
+  # --- a name in the middle, which is what `anywhere` adds ----------------
+  # The anchored match was written for "hey parrot", where the words around a
+  # name might not be a command at all. Held down on a key they always are.
+  - instruction: use our slack handles
+    expect: slack_handles
+  - instruction: clean up the repetitions
+    expect: repetitions
+  - instruction: fix the punctuation
+    expect: punctuation
+  - instruction: can you make that bullets
+    expect: bullets
+
+  # --- an underscore is how a config spells a space -----------------------
+  - instruction: slack handles please
+    expect: slack_handles
+
+  # --- `say:`, for a tool whose name is not what you would call it --------
+  - instruction: handles
+    expect: slack_handles
+  - instruction: save this for later
+    expect: flag
+  - instruction: flag this
+    expect: flag
+
+  # --- misheard, because every one of these arrived through a decoder -----
+  - instruction: fix the punctuation marks
+    expect: punctuation
+  - instruction: terce
+    expect: terse
+
+  # --- the catch-all, which is the other half of the design ---------------
+  # These name nothing and must not be forced onto the nearest tool. One model
+  # call, and the instruction is the whole specification.
+  - instruction: make this three bullet points
+    expect: bullets
+  - instruction: shorten it
+    expect: ANY
+  - instruction: use the 24 hour clock
+    expect: ANY
+  - instruction: sort that list alphabetically
+    expect: ANY
+  - instruction: make sure the amounts are formatted as money
+    expect: ANY
+  - instruction: rewrite this so my manager will read it
+    expect: ANY
+
+  # --- a name that is also an ordinary word -------------------------------
+  # `dotted` is a table for spoken paths. "join the dotted line" is prose about
+  # a dotted line, and there is no tool called join in this catalogue — so the
+  # risk is `dotted` eating it. It may: a keyed instruction is a command, and
+  # the speaker did say the word. Recorded rather than argued with.
+  - instruction: dotted
+    expect: dotted
+
+  # --- a correction, which is an instruction with the imperative taken out ---
+  #
+  # "I meant Tuesday" names no transform and must reach the catch-all, where
+  # the prompt decides what to do with it — `tests/generic-cases.yaml` scores
+  # that half. What is scored here is only that the name match does not eat it
+  # first, which is a real risk and not a theoretical one: this fixture has a
+  # tool called `flag`, and a correction naming a person or a day is one word
+  # away from a tool name in any catalogue somebody actually configures.
+  #
+  # The complaint goes to the same place, and that is correct rather than a
+  # gap: routing cannot tell "I meant Tuesday" from "this is not what I had in
+  # mind" without reading the text, which is the catch-all's job. The prompt
+  # returns the complaint unchanged, and the case for that is in the generic
+  # set where it can be measured.
+  - instruction: I meant Tuesday
+    expect: ANY
+  - instruction: no I meant three of them
+    expect: ANY
+  - instruction: this is not what I had in mind
+    expect: ANY
+  - instruction: sorry I meant next Friday
+    expect: ANY

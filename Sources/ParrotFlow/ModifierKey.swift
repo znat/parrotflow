@@ -153,16 +153,57 @@ enum ModifierKey: String, CaseIterable {
 /// watch falls back to its modifier half there. Left as is: a modifier held
 /// alone is not what happens while somebody is typing a password.
 final class ModifierKeyMonitor {
-    var onPress: (() -> Void)?
+    /// The key is being held. `afterTap` is a hold that a tap led straight
+    /// into — tap, release, press again — which is a different request from a
+    /// plain hold and is delivered here rather than through a callback of its
+    /// own, so no caller can wire one and forget the other.
+    var onPress: ((_ afterTap: Bool) -> Void)?
     var onRelease: (() -> Void)?
     /// A press that was already delivered turned out to be a shortcut. Whoever
     /// started a dictation on `onPress` has to drop it, silently: the user
     /// pressed ⌘S and is owed a save, not a notice about dictation.
     var onAbort: (() -> Void)?
+    /// The key went down and came back up inside `pressDelay`, with nothing
+    /// else touched.
+    ///
+    /// This edge already existed and already did nothing: a hold shorter than
+    /// the delay never delivers a press, so `onRelease` does not fire for it
+    /// either. Naming it costs the *dictation* path nothing — that one is
+    /// untouched, because a hold is still delivered on its own timing.
+    ///
+    /// It costs the tap `tapGrace`. A tap is held back that long to see whether
+    /// a hold follows it, because tap-then-hold has to be told from a tap and
+    /// the only difference is what happens next. Nothing waits on a pill, so
+    /// this is the cheap side of the trade.
+    ///
+    /// Never fires at `pressDelay` of 0 — there the press goes out on the down
+    /// edge, so every hold has delivered one by the time it ends.
+    var onTap: (() -> Void)?
 
     private var timer: Timer?
     private var monitors: [Any] = []
     private var armTimer: Timer?
+    /// A tap waiting to find out whether a hold is coming after it.
+    private var tapTimer: Timer?
+    /// When the tap was physically released.
+    ///
+    /// The grace window is measured between this and the next physical press,
+    /// and both are corrected for the poll — see `physicalEdge()`. Neither the
+    /// timer's liveness nor the moment the poll noticed will do. A second press
+    /// made at 0.399 s is seen up to 25 ms later, so measured off the poll it
+    /// falls outside a 0.4 s window and starts an ordinary dictation. The
+    /// poll's lag must not decide which gesture somebody made.
+    private var tappedAt: Date?
+    /// This hold began inside `tapGrace` of a tap, so it is tap-then-hold.
+    private var afterTap = false
+
+    /// How long a tap waits for a hold to follow it.
+    ///
+    /// Long enough to release the key and press it again deliberately, short
+    /// enough that a tap meant on its own does not feel ignored. It buys the
+    /// two gestures a shared prefix: the tap says "me", and what happens inside
+    /// this window says what.
+    static let tapGrace: TimeInterval = 0.4
 
     private var key: ModifierKey?
     private var pressDelay: TimeInterval = 0
@@ -209,6 +250,9 @@ final class ModifierKeyMonitor {
     func stop() {
         timer?.invalidate()
         timer = nil
+        tapTimer?.invalidate()
+        tapTimer = nil
+        tappedAt = nil
         endHold()
         key = nil
         isDown = false
@@ -239,6 +283,16 @@ final class ModifierKeyMonitor {
     private func beginHold() {
         isSpent = false
         pressDelivered = false
+        // A tap inside the grace window is this gesture's first half, not a
+        // gesture of its own. Both ends are physical times, so the poll's lag
+        // cannot reclassify a press made inside the window — see `tappedAt`. A
+        // pending timer is cancelled rather than delivered either way:
+        // summoning the pill and then opening the microphone over it is two
+        // answers to one request.
+        afterTap = pressIsTheTapsSecondHalf()
+        tappedAt = nil
+        tapTimer?.invalidate()
+        tapTimer = nil
         watchForOtherInput()
 
         guard pressDelay > 0 else {
@@ -264,13 +318,44 @@ final class ModifierKeyMonitor {
     private func deliverPress() {
         guard isDown, !isSpent, !pressDelivered else { return }
         pressDelivered = true
-        onPress?()
+        onPress?(afterTap)
     }
 
     private func finishHold() {
         let wasPressed = pressDelivered
+        // `isSpent` is the whole of what keeps a shortcut out. ⌥P types π on a
+        // French layout and is over in well under the delay, but the P marks
+        // the hold, so it can never be read as a tap.
+        //
+        // A tap that followed a tap is not a second tap. Two of them in a row
+        // is somebody who meant to tap-and-hold and let go too early, and
+        // summoning twice for it would be answering a gesture nobody made.
+        let wasTap = !wasPressed && !isSpent && !afterTap
         endHold()
-        if wasPressed { onRelease?() }
+        guard !wasPressed else { onRelease?(); return }
+        guard wasTap else { return }
+        tappedAt = Self.physicalEdge()
+        let timer = Timer(timeInterval: Self.tapGrace, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            self.tapTimer = nil
+            // A press the poll has not caught up with can already own this
+            // gesture. `beginHold` will classify it from the physical edges as
+            // tap-and-hold, and summoning the offer here as well would answer
+            // one gesture twice — the pill arriving and then the microphone
+            // opening over it.
+            //
+            // Both halves of the test matter. A key that is down but whose
+            // press landed outside the window is an ordinary dictation, and the
+            // tap it followed still deserves its offer. Asked of the flags
+            // rather than of `isDown`, which is the poll's view and is exactly
+            // what has not caught up yet.
+            guard self.key?.isPressed != true || !self.pressIsTheTapsSecondHalf() else {
+                return
+            }
+            self.onTap?()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        tapTimer = timer
     }
 
     /// The one path out of a hold that was meant for something else. Delivered
@@ -290,12 +375,52 @@ final class ModifierKeyMonitor {
 
     private func endHold() {
         armTimer?.invalidate(); armTimer = nil
+        afterTap = false
         removeMonitors()
         pressDelivered = false
         isSpent = false
     }
 
     // MARK: Watching for everything that is not the key
+
+    /// Whether the press being looked at now is the second half of the tap
+    /// just made.
+    ///
+    /// One rule, asked in two places, because two places decide the same thing
+    /// and disagreeing is what goes wrong. `beginHold` asks it to classify the
+    /// press; the grace timer asks it to find out whether a press is already
+    /// holding the gesture, and so whether summoning the offer would answer
+    /// that gesture a second time.
+    ///
+    /// Written as its own answer rather than inlined twice: the first attempt
+    /// had the timer ask the cheaper question "is the key down at all", which
+    /// suppressed the offer for a press that landed *outside* the window and
+    /// was going to start an ordinary dictation. The tap then vanished for no
+    /// reason anybody could see.
+    private func pressIsTheTapsSecondHalf() -> Bool {
+        guard let tapped = tappedAt else { return false }
+        return Self.physicalEdge().timeIntervalSince(tapped) < Self.tapGrace
+    }
+
+    /// When the modifier edge the poll has just noticed actually happened.
+    ///
+    /// The poll runs every 25 ms, so `Date()` here is the moment it looked and
+    /// not the moment the key moved. `secondsSinceLastEventType` gives the age
+    /// of the last `flagsChanged`, which is that edge, and subtracting it
+    /// recovers the physical time. Same API and same reasoning as
+    /// `sawInputBeforeTheMonitors` below, which exists because this poll is
+    /// late in exactly this way.
+    ///
+    /// It costs no permission: the age of an event is not the event.
+    private static func physicalEdge() -> Date {
+        let age = CGEventSource.secondsSinceLastEventType(
+            .combinedSessionState, eventType: .flagsChanged
+        )
+        // A negative or absurd answer means no such event is on record; the
+        // poll's own clock is then the best available.
+        guard age.isFinite, age >= 0, age < 1 else { return Date() }
+        return Date().addingTimeInterval(-age)
+    }
 
     /// Whether a key or a click landed between the modifier going down and the
     /// poll noticing it.
