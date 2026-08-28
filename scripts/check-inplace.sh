@@ -124,12 +124,21 @@ start_fixture() {
         2>/dev/null | tr -d ' ' | tr ',' '\n' | sort)"
       open -a "$VIEWPORT" "$SCRATCH/attach.command"
       sleep 1
-      # The window that appeared, not whichever is frontmost a second later:
-      # "frontmost" is whatever the window server settled on, and Terminal can
-      # keep an existing window in front of a new one that opened behind it.
+      # A new window is not proof either: if a second window opens in the same
+      # second, for any reason, both are "new" and picking one is a guess
+      # again. tmux itself knows which tty its client is on, and a window's
+      # tty is not something two windows can share — that is the identity
+      # that closes it, the same way the pid's own argv closes it for Ghostty.
+      fixture_tty="$("$TMUX" list-clients -t "$SESSION" -F '#{client_tty}' 2>/dev/null | head -1)"
       after_windows="$(osascript -e 'tell application "Terminal" to id of every window' \
         2>/dev/null | tr -d ' ' | tr ',' '\n' | sort)"
-      TERMINAL_WINDOW_ID="$(comm -13 <(echo "$before_windows") <(echo "$after_windows") | head -1)"
+      if [ -n "$fixture_tty" ]; then
+        for wid in $(comm -13 <(echo "$before_windows") <(echo "$after_windows")); do
+          wtty="$(osascript -e "tell application \"Terminal\" to tty of tab 1 of window id $wid" \
+            2>/dev/null)"
+          [ "$wtty" = "$fixture_tty" ] && { TERMINAL_WINDOW_ID="$wid"; break; }
+        done
+      fi
       ;;
     *)
       # Ghostty and friends take `-e`, and on macOS only through `open`:
