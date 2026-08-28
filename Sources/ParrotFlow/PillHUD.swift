@@ -1320,12 +1320,6 @@ enum PillMetrics {
     /// words it is about.
     static let sentenceLines = 3
 
-    /// The utterance score, set under the words.
-    static let readingFont: NSFont = .monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
-    static let readingLine: CGFloat = ceil(
-        NSLayoutManager().defaultLineHeight(for: readingFont)
-    )
-
     /// The warning, above everything. One line, never wrapped: it names one
     /// word and one number, and a warning that wraps is a paragraph.
     static let warningFont: NSFont = {
@@ -1342,7 +1336,8 @@ enum PillMetrics {
     /// An offer with nothing to say about the decode is the height the pill has
     /// always been, so a dictation that went fine changes nothing.
     static func height(for state: PillState, width: CGFloat, hotkey: String = "") -> CGFloat {
-        guard case .offer(_, let headline, let reading, let open) = state else { return height }
+        guard case .offer(let commands, let headline, let reading, let open) = state
+        else { return height }
         guard open else { return tabHeight }
         // A selection offer is three rows: the words, the chips, and the line
         // about the key. Two of them are extra, and they are added whatever the
@@ -1351,10 +1346,20 @@ enum PillMetrics {
         // The words row always, and the hold row only when there is a key to
         // name — `OfferContent.hold` draws it on the same condition.
         var extra: CGFloat = 0
-        if headline?.isSelection == true {
-            extra = selectionRow + selectionGap
-            if !hotkey.isEmpty { extra += selectionRow + selectionGap }
-        }
+        if headline?.isSelection == true { extra = selectionRow + selectionGap }
+        // The way out the chips do not cover, on every panel that has a key to
+        // name. It used to be drawn only over a selection, where it was the one
+        // way to reach a transform that had no chip — but that is true of every
+        // offer, and the panel is the surface with room to say it.
+        // `OfferContent.hold` draws it on this same condition.
+        if !hotkey.isEmpty { extra += selectionRow + selectionGap }
+        // Every chip row past the first. The pill's own 42 already holds one,
+        // with the slack that centres it.
+        let lead: CGFloat
+        if case .landing(let words) = headline { lead = title(words) + gap } else { lead = 0 }
+        let wrapped = max(0, chipRows(commands, lead: lead).count - 1)
+        extra += CGFloat(wrapped) * (chipRowHeight + chipRowGap)
+
         let rows = readingRows(reading, width: width)
         guard !rows.isEmpty else { return height + extra }
         return height + extra + sentenceTop
@@ -1371,7 +1376,6 @@ enum PillMetrics {
         if reading.warning != nil { rows.append(warningLine) }
         if !reading.words.isEmpty {
             rows.append(sentenceLine * CGFloat(lines(reading.words, width: width)))
-            if reading.overall != nil { rows.append(readingLine) }
         }
         return rows
     }
@@ -1472,31 +1476,30 @@ enum PillMetrics {
         _ commands: [OfferedCommand], headline: Headline? = nil,
         reading: Confidence.Reading = Confidence.Reading(), hotkey: String = ""
     ) -> CGFloat {
-        // A chip is its keycap, its words and 9pt of padding either side; then
-        // 4pt between one chip and the next.
-        let chips = commands.reduce(CGFloat(0)) { total, command in
-            total + 18 + (command.key.isEmpty ? 0 : keycap) + title(command.title)
-        }
         let lead: CGFloat
         if case .landing(let words) = headline { lead = title(words) + gap } else { lead = 0 }
-        let row = padding * 2 + lead + chips
-            + CGFloat(max(commands.count - 1, 0)) * 4 + rowFit
-        var widest = row
+        // The widest row the chips fall into, which past `chipsWidth` is no
+        // longer all of them. See `chipRows`.
+        let rows = chipRows(commands, lead: lead)
+        var widest = rows.enumerated().map { index, row in
+            padding * 2 + (index == 0 ? lead : 0)
+                + row.reduce(CGFloat(0)) { $0 + chipWidth(commands[$1]) }
+                + CGFloat(max(row.count - 1, 0)) * 4 + rowFit
+        }.max() ?? padding * 2 + rowFit
         if case .selection(let words) = headline {
             widest = max(widest, min(
                 sentenceWidth,
                 padding * 2 + title(editLead) + gap + title(words) + selectionFit
             ))
-            // Only when there is a key to name. `OfferContent.hold` draws the
-            // row on the same condition, so the two agree about whether it is
-            // there to be measured.
-            if !hotkey.isEmpty {
-                widest = max(widest, min(
-                    sentenceWidth,
-                    padding * 2 + title(holdLead)
-                        + holdKeycapWidth(hotkey) + title(holdTail)
-                ))
-            }
+        }
+        // Only when there is a key to name. `OfferContent.hold` draws the row
+        // on the same condition, so the two agree about whether it is there to
+        // be measured.
+        if !hotkey.isEmpty {
+            widest = max(widest, min(
+                sentenceWidth,
+                padding * 2 + title(holdLead) + holdKeycapWidth(hotkey) + title(holdTail)
+            ))
         }
         if !reading.words.isEmpty {
             widest = max(widest, min(sentenceWidth, padding * 2 + sentenceRun(reading.words)))
@@ -1506,6 +1509,61 @@ enum PillMetrics {
             widest = max(widest, min(sentenceWidth, padding * 2 + dot + gap + text))
         }
         return widest
+    }
+
+    /// Past this the chip row wraps rather than the panel growing sideways.
+    ///
+    /// A floating pill was centred on the screen and had width to spare, so a
+    /// row of six transforms simply made a wider lozenge. A docked panel has
+    /// its left edge pinned to a character, so every point of width pushes it
+    /// toward the far side of the window and eventually off it. Downward it is
+    /// free. So the row stops somewhere and the rest goes on the next one.
+    ///
+    /// `sentenceWidth`, and not a smaller number of its own. It was 420 and
+    /// that was too tight: four ordinary transform names come to about 430, so
+    /// the fourth chip wrapped on a panel with most of a screen beside it —
+    /// wrapping to save width nobody needed. This file already decided how wide
+    /// a surface pinned to a line may be, for the sentence, and the answer is
+    /// the same one: past it the surface is no longer pointing at anything.
+    /// One cap for the whole panel rather than two disagreeing about it.
+    static let chipsWidth: CGFloat = sentenceWidth
+
+    /// A chip row and the gap to the one under it.
+    static let chipRowHeight: CGFloat = 26
+    static let chipRowGap: CGFloat = 4
+
+    /// One chip: its keycap, its words, and 9pt of padding either side.
+    static func chipWidth(_ command: OfferedCommand) -> CGFloat {
+        18 + (command.key.isEmpty ? 0 : keycap) + title(command.title)
+    }
+
+    /// The chips laid into rows, greedily, none wider than `chipsWidth` allows.
+    ///
+    /// Here rather than in the view, for the reason every other measurement in
+    /// this file is here: the surface is sized before it is drawn, and a row
+    /// count off by one is a chip hanging over the end of it. The view reads
+    /// this and draws exactly the rows it names, so the two cannot disagree.
+    ///
+    /// `lead` is the landing headline, which sits in front of the first chip
+    /// and only on the first row.
+    static func chipRows(_ commands: [OfferedCommand], lead: CGFloat = 0) -> [[Int]] {
+        let room = chipsWidth - padding * 2 - rowFit
+        var rows: [[Int]] = []
+        var row: [Int] = []
+        var used = lead
+        for (index, command) in commands.enumerated() {
+            let chip = chipWidth(command)
+            if !row.isEmpty, used + 4 + chip > room {
+                rows.append(row)
+                row = [index]
+                used = chip
+            } else {
+                used += row.isEmpty ? chip : 4 + chip
+                row.append(index)
+            }
+        }
+        if !row.isEmpty { rows.append(row) }
+        return rows
     }
 
     /// The keycap on a chip: one character at 11pt bold, 4pt either side, and
@@ -1881,10 +1939,7 @@ private struct OfferContent: View {
             spacing: centred ? PillMetrics.selectionGap : PillMetrics.sentenceGap
         ) {
             if let warning = reading.warning { self.warning(warning) }
-            if !reading.words.isEmpty {
-                words
-                if let overall = reading.overall { score(overall) }
-            }
+            if !reading.words.isEmpty { words }
             selection
             chips
             hold
@@ -1936,20 +1991,6 @@ private struct OfferContent: View {
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, PillMetrics.padding)
-    }
-
-    /// The one number the decoder gives for the whole utterance, raw.
-    ///
-    /// Full strength and coloured on the utterance's own bands — see
-    /// `Confidence.overallTint`. Larger than the sentence rather than smaller:
-    /// it is the one thing on this pill you read at a glance instead of word
-    /// by word.
-    private func score(_ score: Float) -> some View {
-        Text(verbatim: Confidence.overall(score))
-            .font(.system(size: 14, weight: .semibold, design: .monospaced))
-            .foregroundStyle(Confidence.overallTint(score))
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.horizontal, PillMetrics.padding)
     }
 
     /// The words the offer is about, wearing the highlight they wear in the
@@ -2006,7 +2047,7 @@ private struct OfferContent: View {
     /// budget for this row, so the surface is never sized for a line it does
     /// not draw.
     @ViewBuilder private var hold: some View {
-        if case .selection = headline, !model.hotkey.isEmpty {
+        if !model.hotkey.isEmpty {
             HStack(spacing: 6) {
                 Text(PillMetrics.holdLead)
                 keycap(model.hotkey)
@@ -2015,7 +2056,11 @@ private struct OfferContent: View {
             .font(.system(size: 12, weight: .medium, design: .rounded))
             .foregroundStyle(Color(white: 0.5))
             .padding(.horizontal, PillMetrics.padding)
-            .frame(maxWidth: .infinity, alignment: .center)
+            // Under the chips and lined up with them: on a panel pinned to a
+            // character everything reads down one left edge, and a centred
+            // footer under a left-aligned row reads as belonging to something
+            // else.
+            .frame(maxWidth: .infinity, alignment: centred ? .center : .leading)
         }
     }
 
@@ -2048,35 +2093,54 @@ private struct OfferContent: View {
     /// Whether this is the three-row shape, which is centred throughout.
     private var centred: Bool { headline?.isSelection == true }
 
+    /// The chips, in the rows `PillMetrics.chipRows` laid them into.
+    ///
+    /// Drawn from that answer rather than laid out again here, because the
+    /// surface was sized from it: a view that wrapped on its own would wrap at
+    /// a width the panel was not built for, and the last chip would hang over
+    /// the end.
     private var chips: some View {
-        HStack(spacing: 4) {
-            if case .landing(let words) = headline {
-                Text(words)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(NoticeTone.caution.color)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .padding(.trailing, PillMetrics.gap - 4)
+        let lead: CGFloat
+        if case .landing(let words) = headline {
+            lead = PillMetrics.title(words) + PillMetrics.gap
+        } else {
+            lead = 0
+        }
+        let rows = PillMetrics.chipRows(commands, lead: lead)
+        return VStack(alignment: centred ? .center : .leading, spacing: PillMetrics.chipRowGap) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { number, row in
+                HStack(spacing: 4) {
+                    if number == 0, case .landing(let words) = headline {
+                        Text(words)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(NoticeTone.caution.color)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .padding(.trailing, PillMetrics.gap - 4)
+                    }
+
+                    if centred { Spacer(minLength: 0) }
+
+                    ForEach(row, id: \.self) { index in
+                        // A tap gesture rather than a `Button`. The pill is a
+                        // `nonactivatingPanel` and is never the key window, and
+                        // SwiftUI draws controls in an inactive window at
+                        // reduced emphasis — so a lit chip came up washed out
+                        // until the pointer landed on it, which read as nothing
+                        // being lit at all. `contentShape` is what makes the
+                        // whole capsule the target and not just the glyphs.
+                        chip(commands[index], lit: model.selected == index)
+                            .contentShape(Capsule())
+                            .onTapGesture { model.onPick?(index) }
+                            // Light what the pointer is over, so the letter on
+                            // the chip and the pointer say the same thing about
+                            // the same command.
+                            .onHover { over in if over { model.selected = index } }
+                    }
+
+                    Spacer(minLength: 0)
+                }
             }
-
-            if centred { Spacer(minLength: 0) }
-
-            ForEach(Array(commands.enumerated()), id: \.offset) { index, command in
-                // A tap gesture rather than a `Button`. The pill is a
-                // `nonactivatingPanel` and is never the key window, and SwiftUI
-                // draws controls in an inactive window at reduced emphasis — so
-                // a lit chip came up washed out until the pointer landed on it,
-                // which read as nothing being lit at all. `contentShape` is what
-                // makes the whole capsule the target and not just the glyphs.
-                chip(command, lit: model.selected == index)
-                    .contentShape(Capsule())
-                    .onTapGesture { model.onPick?(index) }
-                    // Light what the pointer is over, so the letter on the chip
-                    // and the pointer say the same thing about the same command.
-                    .onHover { over in if over { model.selected = index } }
-            }
-
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, PillMetrics.padding)
         // Centred under the words it is about, left where it is the only row.

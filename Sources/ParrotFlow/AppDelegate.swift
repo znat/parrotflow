@@ -2970,7 +2970,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let low = config.feedback.lowConfidence
         let reading = Confidence.Reading(
             words: config.feedback.confidence ? words : [],
-            overall: config.feedback.confidence ? decoded?.confidence : nil,
             warning: Confidence.warning(
                 words, utterance: decoded?.confidence,
                 vocabulary: decoded?.vocabulary ?? [],

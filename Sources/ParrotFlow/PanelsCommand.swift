@@ -18,6 +18,18 @@ enum PanelsCommand {
         OfferedCommand(title: "grammar", key: "G")
     ]
 
+    /// Enough transforms to wrap, which two are not.
+    ///
+    /// The wrap is counted in `PillMetrics.chipRows` before it is drawn, and a
+    /// row count off by one hangs the last chip over the end of the panel. Two
+    /// chips can never show that; six can, and six is an ordinary config.
+    private static let offerManyChips = offerChips + [
+        OfferedCommand(title: "slack handles", key: "S"),
+        OfferedCommand(title: "punctuation", key: "P"),
+        OfferedCommand(title: "repetitions", key: "R"),
+        OfferedCommand(title: "bullets", key: "B")
+    ]
+
     /// A Bluetooth headset with a long name, because the notice puts the name
     /// in its first sentence and a short one would not say whether it fits.
     private static let sampleMicName = "Tasmin's AirPods Pro Max"
@@ -77,20 +89,14 @@ enum PanelsCommand {
         Confidence.Word(text: "yesterday", score: nil)
     ]
 
-    /// The decoder's own score for that whole utterance. Between p1 and p10 of
-    /// the archive, which is where a decode holding words this shaky lands, and
-    /// which puts the number mid-ramp: the panel is here to show the colours
-    /// being told apart, and the median would print plain white.
-    private static let sampleOverall: Float = 0.81
-
     /// The warning the same dictation raises. It names the word rather than a
     /// number: the number is for the person tuning the thresholds, and this
     /// line is for the person who has just dictated.
     private static let sampleWarning = "This may not be what you said · Vercel"
 
-    /// The three rows together, which is the tallest the pill ever gets.
+    /// The words and the warning together.
     private static let sampleReading = Confidence.Reading(
-        words: sampleSentence, overall: sampleOverall, warning: sampleWarning
+        words: sampleSentence, warning: sampleWarning
     )
 
     /// Draws every surface into one PNG, light beside dark.
@@ -171,14 +177,18 @@ enum PanelsCommand {
         ), docked: .below)
         // The same offer with `feedback.confidence` on.
         let offerHeard = pill(.offer(offerChips, nil, sampleReading, open: true), docked: .below)
+        // Six transforms, which is one row too many for a panel pinned to a
+        // character. See `PillMetrics.chipsWidth`.
+        let offerWrapped = pill(
+            .offer(offerManyChips, nil, Confidence.Reading(), open: true), docked: .below
+        )
         // And a dictation long enough to wrap. On the sheet because the wrap is
         // the one thing here that is counted before it is drawn — a line count
         // off by one clips the words rather than costing a few points of pill.
         let offerHeardLong = pill(.offer(
             offerChips, nil,
             Confidence.Reading(
-                words: sampleSentence + sampleSentence, overall: sampleOverall,
-                warning: sampleWarning
+                words: sampleSentence + sampleSentence, warning: sampleWarning
             ),
             open: true
         ), docked: .below)
@@ -308,6 +318,8 @@ enum PanelsCommand {
              pillSize(offerStopped), .dark, true),
             (AnyView(PillView().environmentObject(offerHeard)),
              pillSize(offerHeard), .dark, true),
+            (AnyView(PillView().environmentObject(offerWrapped)),
+             pillSize(offerWrapped), .dark, true),
             (AnyView(PillView().environmentObject(offerHeardLong)),
              pillSize(offerHeardLong), .dark, true),
             // Not a pill state at all, and the only surface here that is
