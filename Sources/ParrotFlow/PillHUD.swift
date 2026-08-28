@@ -108,6 +108,69 @@ struct OfferedCommand: Equatable {
     let key: String
 }
 
+/// Which way a docked surface hangs off its line of text.
+///
+/// Nil is the third answer and means it is not docked at all — floating at the
+/// bottom of the screen, or wearing the capsule it wears while you speak.
+enum Dock {
+    /// Under the line, which is where it goes when there is room.
+    case below
+    /// Over it, for the last line of a full window.
+    case above
+}
+
+/// A rounded rectangle whose top and bottom corners are different.
+///
+/// The docked offer is square where it meets the line of text and rounded where
+/// it hangs free, so it reads as hanging off that line rather than floating
+/// beside it — the corner that is not rounded is the one saying which line this
+/// is about. Flipped above the line, the two swap.
+///
+/// Its own shape rather than a `RoundedRectangle` with a mask, because it is
+/// passed to `parrotSurface`, which needs an `InsettableShape` to inset the
+/// hairline by.
+struct DockedShape: InsettableShape {
+    var top: CGFloat
+    var bottom: CGFloat
+    var amount: CGFloat = 0
+
+    func path(in rect: CGRect) -> Path {
+        let box = rect.insetBy(dx: amount, dy: amount)
+        guard box.width > 0, box.height > 0 else { return Path() }
+        let limit = min(box.width, box.height) / 2
+        let t = max(0, min(top - amount, limit))
+        let b = max(0, min(bottom - amount, limit))
+
+        var path = Path()
+        path.move(to: CGPoint(x: box.minX, y: box.minY + t))
+        path.addArc(tangent1End: CGPoint(x: box.minX, y: box.minY),
+                    tangent2End: CGPoint(x: box.minX + t, y: box.minY), radius: t)
+        path.addLine(to: CGPoint(x: box.maxX - t, y: box.minY))
+        path.addArc(tangent1End: CGPoint(x: box.maxX, y: box.minY),
+                    tangent2End: CGPoint(x: box.maxX, y: box.minY + t), radius: t)
+        path.addLine(to: CGPoint(x: box.maxX, y: box.maxY - b))
+        path.addArc(tangent1End: CGPoint(x: box.maxX, y: box.maxY),
+                    tangent2End: CGPoint(x: box.maxX - b, y: box.maxY), radius: b)
+        path.addLine(to: CGPoint(x: box.minX + b, y: box.maxY))
+        path.addArc(tangent1End: CGPoint(x: box.minX, y: box.maxY),
+                    tangent2End: CGPoint(x: box.minX, y: box.maxY - b), radius: b)
+        path.closeSubpath()
+        return path
+    }
+
+    func inset(by amount: CGFloat) -> DockedShape {
+        DockedShape(top: top, bottom: bottom, amount: self.amount + amount)
+    }
+
+    /// So the corners square up over the same 180 ms the window takes to move.
+    /// Without it the radii snap on the first frame of the morph, which reads
+    /// as the surface being swapped for a different one half way there.
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(top, bottom) }
+        set { top = newValue.first; bottom = newValue.second }
+    }
+}
+
 final class PillModel: ObservableObject {
     @Published var state: PillState = .recording(nil)
 
@@ -119,6 +182,13 @@ final class PillModel: ObservableObject {
     /// nothing on screen. The state does not stop it: nothing clears `state`
     /// on the way out, and `.offer` means a rim that turns.
     @Published var onScreen = true
+
+    /// Which way the surface on screen is hanging, when it is hanging at all.
+    ///
+    /// Published rather than worked out in the view, because only `beside` knows
+    /// it: the choice is made from how much room is left under the line, which
+    /// is a question about the screen and not about the state.
+    @Published var docked: Dock?
 
     @Published var level: Float = 0
     @Published var elapsed: TimeInterval = 0
@@ -536,8 +606,10 @@ final class PillHUD {
         if !arriving {
             morph(to: size)
         } else {
+            let placed = anchor(size)
             panel.setContentSize(size)
-            panel.setFrameOrigin(anchor(size))
+            panel.setFrameOrigin(placed.origin)
+            model.docked = placed.dock
             fadeIn(panel)
             logFrame("raised")
         }
@@ -674,7 +746,13 @@ final class PillHUD {
     /// resting on.
     private func morph(to size: NSSize) {
         guard let panel else { return }
-        let frame = NSRect(origin: anchor(size), size: size)
+        let placed = anchor(size)
+        let frame = NSRect(origin: placed.origin, size: size)
+        // Outside the early return: a state can change what the surface *is*
+        // without moving it by a point — an offer arriving at the width the
+        // notice before it happened to have — and the corners still have to
+        // square up.
+        model.docked = placed.dock
         guard frame != panel.frame else { return }
         defer { logFrame("moved") }
 
@@ -793,7 +871,7 @@ final class PillHUD {
     /// Recomputed at every state rather than once at the first show, so a pill
     /// that grows stays centred and one that arrives after you have moved to
     /// the other monitor arrives on that one.
-    private func anchor(_ size: NSSize) -> NSPoint {
+    private func anchor(_ size: NSSize) -> (origin: NSPoint, dock: Dock?) {
         // Every state of a dictation that has an anchor, not just the last one.
         // The point of aiming the pill is that it says where the words are
         // going *before* they go there, and a pill that pointed at the caret
@@ -814,13 +892,16 @@ final class PillHUD {
         // left edge into the screen that does hold the caret.
         if let near {
             guard let visible = screen(showing: near.text)?.visibleFrame
-            else { return panel?.frame.origin ?? .zero }
-            return beside(near.rect, size: size, on: visible)
+            else { return (panel?.frame.origin ?? .zero, model.docked) }
+            // The row comes from `rect`, which `CaretAnchor.across` has already
+            // put at the bottom of whatever it found. The column comes from
+            // `text`, which is the caret or the span itself.
+            return beside(near.rect, column: near.text.minX, size: size, on: visible)
         }
         guard let visible = screenUnderPointer()?.visibleFrame
-        else { return panel?.frame.origin ?? .zero }
-        return NSPoint(x: visible.midX - size.width / 2,
-                       y: visible.minY + 96 - PillMetrics.bleed)
+        else { return (panel?.frame.origin ?? .zero, nil) }
+        return (NSPoint(x: visible.midX - size.width / 2,
+                        y: visible.minY + 96 - PillMetrics.bleed), nil)
     }
 
     /// The screen the caret is on: the one it overlaps most.
@@ -867,31 +948,57 @@ final class PillHUD {
     /// — the last line of a full-height window — it goes above instead, which
     /// is the one case where covering something is better than being cut off.
     ///
-    /// The row is the caret's; the column is not. Two versions of this chased
-    /// the horizontal position — centred on the text, then aligned to where it
-    /// starts — and both moved for reasons invisible from outside: what an app
-    /// returns for a range is a line in one app and a cell in another, a
-    /// wrapped sentence starts somewhere other than where it appears to, and a
-    /// terminal's column width can only be guessed. Correct each time,
-    /// arbitrary-looking every time. The left edge of the pane is not where the
-    /// caret is and is the same place on every dictation, which is the property
-    /// that matters for something on screen for two seconds.
+    /// The column is the words', now, and it used to be the pane's.
+    ///
+    /// Two versions of this chased the horizontal position — centred on the
+    /// text, then aligned to where it starts — and both moved for reasons
+    /// invisible from outside: what an app returns for a range is a line in one
+    /// app and a cell in another, a wrapped sentence starts somewhere other than
+    /// where it appears to, and a terminal's column width can only be guessed.
+    /// The pane's left edge was the answer to that: not where the caret is, but
+    /// the same place on every dictation.
+    ///
+    /// It stopped being the right trade when the surface started hanging off the
+    /// line rather than floating near it. A dropdown pinned to a margin is about
+    /// the field; one pinned to a character is about those words, and that is
+    /// the whole claim this surface makes. The wobble the pane edge was hiding
+    /// is still there and is now the price of saying something exact.
     ///
     /// `bleed` is taken off because it is transparent: what has to line up with
-    /// the pane is the capsule, not the window the glow spills into.
-    private func beside(_ target: NSRect, size: NSSize, on visible: NSRect) -> NSPoint {
-        let gap: CGFloat = 10
+    /// the words is the surface, not the window the glow spills into.
+    private func beside(
+        _ target: NSRect, column: CGFloat, size: NSSize, on visible: NSRect
+    ) -> (origin: NSPoint, dock: Dock?) {
+        let gap = isDocked ? PillMetrics.dockGap : PillMetrics.floatGap
 
+        var dock = Dock.below
         var y = target.minY - gap - size.height + PillMetrics.bleed
         if y < visible.minY {
             y = target.maxY + gap - PillMetrics.bleed
+            dock = .above
         }
-        let x = target.minX - PillMetrics.bleed
+        let x = column - PillMetrics.bleed
 
-        return NSPoint(
+        // Clamped into the screen, which is also what folds the panel back from
+        // the right edge: a surface wider than the room left beside the words
+        // has its origin pushed left, so it grows toward the middle instead of
+        // off the display. The row is untouched by that, so it still names the
+        // line it belongs to.
+        return (NSPoint(
             x: min(max(x, visible.minX), visible.maxX - size.width),
             y: min(max(y, visible.minY), visible.maxY - size.height)
-        )
+        ), isDocked ? dock : nil)
+    }
+
+    /// Whether the state on screen hangs off a line of text or floats near it.
+    ///
+    /// Only the offer docks. While you are speaking the surface is about the
+    /// app — a microphone is open — and it wears the capsule that says so; once
+    /// the words are down it is about those words, and it attaches to them.
+    private var isDocked: Bool {
+        guard near != nil else { return false }
+        if case .offer = model.state { return true }
+        return false
     }
 }
 
@@ -899,6 +1006,19 @@ final class PillHUD {
 
 enum PillMetrics {
     static let height: CGFloat = 42
+
+    /// How far under the line each kind of surface sits.
+    ///
+    /// A floating pill needs air around it or it reads as stuck to the text by
+    /// accident. A docked one needs the opposite: at 10pt the gap is wide enough
+    /// to read as a separate object parked nearby, which is the one thing it
+    /// must not read as. 3pt clears the descenders and nothing more.
+    static let floatGap: CGFloat = 10
+    static let dockGap: CGFloat = 3
+
+    /// The corners a docked surface keeps. The other two go to zero — that
+    /// square edge is the one saying which line this is about.
+    static let dockRadius: CGFloat = 12
 
     /// Transparent margin between the capsule and the edge of the window.
     ///
@@ -1304,7 +1424,7 @@ struct PillView: View {
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
-            .clipShape(Self.shape)
+            .clipShape(shape)
         }
         // The whole surface, not each chip: moving from one chip to the next
         // must not read as leaving the pill. What leaving costs is decided by
@@ -1318,8 +1438,9 @@ struct PillView: View {
         // a deadline, and the only one you are meant to answer. Slow, and with
         // the glow behind it left still, so it does not read as the busy rim.
         .parrotSurface(
-            Self.shape, alive: isWorking, turning: isOffer, solid: true,
-            wash: warning?.wash, wheel: warning?.wheel ?? Parrot.wheel
+            shape, alive: isWorking, turning: isOffer && !isDocked, solid: true,
+            wash: warning?.wash, wheel: warning?.wheel ?? Parrot.wheel,
+            rim: !isDocked
         )
         // Under the capsule, so it is the capsule's shape and not the glow's.
         .shadow(color: .black.opacity(0.22), radius: 7, y: 2)
@@ -1327,16 +1448,24 @@ struct PillView: View {
         // back, which is where the bloom has to be — over the fill it would be
         // a coloured film on the surface rather than light coming off the edge.
         .background {
-            PlumageBloom(
-                shape: Self.shape, alive: isWorking,
-                wheel: warning?.wheel ?? Parrot.wheel
-            )
+            // No bloom on a docked surface, for the reason it has no rim: light
+            // coming off the edge is what a thing floating over your document
+            // does, and this one is sitting on the line.
+            if !isDocked {
+                PlumageBloom(
+                    shape: shape, alive: isWorking,
+                    wheel: warning?.wheel ?? Parrot.wheel
+                )
+            }
         }
         // The transparent margin the bloom spills into. See `PillMetrics.bleed`.
         .padding(PillMetrics.bleed)
         // Bound to the state alone. The meter is fed about ten times a second
         // and must not drag a crossfade along behind it.
         .animation(.easeInOut(duration: PillHUD.motion), value: model.state)
+        // And the corners to the dock, on the same clock, so squaring up and
+        // moving into place are one gesture. See `DockedShape.animatableData`.
+        .animation(.easeInOut(duration: PillHUD.motion), value: model.docked)
     }
 
     private var isWorking: Bool {
@@ -1348,6 +1477,8 @@ struct PillView: View {
         if case .offer = model.state { return true }
         return false
     }
+
+    private var isDocked: Bool { model.docked != nil }
 
     /// How loud this pill is, when it is an offer with something to warn
     /// about. Nil for every other state: a notice carries its tone in its dot,
@@ -1371,7 +1502,17 @@ struct PillView: View {
     /// behind it cannot follow: `ParrotGlass.backdrop` takes its corner radius
     /// once, when the panel is built. So the shape stops growing where the glass
     /// stops, and a tall pill is a rounded rectangle rather than a lozenge.
-    static let shape = RoundedRectangle(cornerRadius: PillMetrics.height / 2, style: .circular)
+    static let floating = PillMetrics.height / 2
+
+    /// The surface's outline right now: a lozenge while it floats, and squared
+    /// along whichever edge is touching the text once it docks.
+    private var shape: DockedShape {
+        switch model.docked {
+        case .below: return DockedShape(top: 0, bottom: PillMetrics.dockRadius)
+        case .above: return DockedShape(top: PillMetrics.dockRadius, bottom: 0)
+        case nil: return DockedShape(top: Self.floating, bottom: Self.floating)
+        }
+    }
 }
 
 private struct RecordingContent: View {

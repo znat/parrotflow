@@ -124,7 +124,7 @@ extension View {
     func parrotSurface<S: InsettableShape>(
         _ shape: S, alive: Bool = false, turning: Bool = false, glass: Bool = false,
         solid: Bool = false, scrim: Double? = nil, wash: Color? = nil,
-        wheel: [Color] = Parrot.wheel
+        wheel: [Color] = Parrot.wheel, rim: Bool = true
     ) -> some View {
         background {
             if solid {
@@ -181,8 +181,18 @@ extension View {
         }
         // The lit edge is the rim's own inner hairline, weighted to the top —
         // not a line of its own. See `PlumageRim`.
+        //
+        // `rim: false` is for a surface that is not floating. The plumage says
+        // "this is a thing of the app's, over your document"; a surface hanging
+        // off a line of your text is already placed by what it is attached to,
+        // and a turning rim on it reads as a sticker on the page. It takes a
+        // plain hairline instead — the same one the rim carries on its inside.
         .overlay {
-            PlumageRim(shape: shape, alive: alive, turning: turning, glass: glass, wheel: wheel)
+            if rim {
+                PlumageRim(shape: shape, alive: alive, turning: turning, glass: glass, wheel: wheel)
+            } else {
+                shape.strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
+            }
         }
     }
 }
