@@ -1174,6 +1174,28 @@ enum PillMetrics {
     /// square edge is the one saying which line this is about.
     static let dockRadius: CGFloat = 12
 
+    /// What a docked surface stands on, and the line round it.
+    ///
+    /// Near-black was right for a surface that floated: it appears over
+    /// documents, terminals and dark editors without knowing which, and a dark
+    /// ground stays legible over all of them. Attached to a line of text it is
+    /// not enough. Over Mail the panel is an obvious black card; over Slack's
+    /// composer, which is #1A1D21, it is black on nearly-black and the edge
+    /// disappears — and the tab, at a fifth of the height, disappears with it.
+    ///
+    /// A hairline alone was tried and does half the job. What makes the warned
+    /// panel readable is that it is *lifted off black* as well as edged, and
+    /// the lift is the half a border cannot do.
+    ///
+    /// Leaf, at a twelfth, which comes out about #131B19 over the ground —
+    /// the same move the warning makes, in the calm feather. It is close to
+    /// what the lit chip is made of and that is the risk: leaf already means
+    /// "this is the one that will happen", and a leaf ground is a ground the
+    /// lit chip has to stand out from. `OfferContent.chip` carries the fill at
+    /// 28% and the edge at 62% against this 12%, which is what keeps it.
+    static let dockedWash = Parrot.leaf.opacity(0.12)
+    static let dockedEdge = Parrot.leaf.opacity(0.34)
+
     // MARK: The tab
 
     /// What the offer is before you ask for it.
@@ -1722,8 +1744,8 @@ struct PillView: View {
         // the glow behind it left still, so it does not read as the busy rim.
         .parrotSurface(
             shape, alive: isWorking, turning: isOffer && !isDocked, solid: true,
-            wash: warning?.wash, wheel: warning?.wheel ?? Parrot.wheel,
-            rim: !isDocked
+            wash: wash, wheel: warning?.wheel ?? Parrot.wheel,
+            rim: !isDocked, edge: edge
         )
         // Under the capsule, so it is the capsule's shape and not the glow's.
         .shadow(color: .black.opacity(0.22), radius: 7, y: 2)
@@ -1784,13 +1806,28 @@ struct PillView: View {
     /// Amber for a dictation the app is unsure of, scarlet once it has taken a
     /// Return over it — the same surface one step along, because the second
     /// state is the first one being ignored.
-    private var warning: (wash: Color, wheel: [Color])? {
+    private var warning: (wash: Color, wheel: [Color], edge: Color)? {
         guard case .offer(_, _, let reading, _) = model.state, reading.warning != nil else {
             return nil
         }
         return reading.stopped
-            ? (Parrot.scarlet.opacity(0.26), Parrot.stopped)
-            : (Parrot.amber.opacity(0.24), Parrot.warned)
+            ? (Parrot.scarlet.opacity(0.26), Parrot.stopped, Parrot.scarlet.opacity(0.45))
+            : (Parrot.amber.opacity(0.24), Parrot.warned, Parrot.amber.opacity(0.40))
+    }
+
+    /// The colour laid over the ground. A warning first, and otherwise the
+    /// docked surface's own lift — see `PillMetrics.dockedWash`. Nothing at all
+    /// while it floats: a floating pill is read against its rim, and the rim is
+    /// still there.
+    private var wash: Color? {
+        if let warning { return warning.wash }
+        return isDocked ? PillMetrics.dockedWash : nil
+    }
+
+    /// The line round it, which only a docked surface draws — everything else
+    /// has the rim. Read by `parrotSurface` under `rim: false`.
+    private var edge: Color {
+        warning?.edge ?? PillMetrics.dockedEdge
     }
 
     /// A fixed radius, not a `Capsule`. At the pill's resting height the

@@ -124,7 +124,8 @@ extension View {
     func parrotSurface<S: InsettableShape>(
         _ shape: S, alive: Bool = false, turning: Bool = false, glass: Bool = false,
         solid: Bool = false, scrim: Double? = nil, wash: Color? = nil,
-        wheel: [Color] = Parrot.wheel, rim: Bool = true
+        wheel: [Color] = Parrot.wheel, rim: Bool = true,
+        edge: Color = Color.white.opacity(0.09)
     ) -> some View {
         background {
             if solid {
@@ -191,7 +192,7 @@ extension View {
             if rim {
                 PlumageRim(shape: shape, alive: alive, turning: turning, glass: glass, wheel: wheel)
             } else {
-                shape.strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
+                shape.strokeBorder(edge, lineWidth: 1)
             }
         }
     }
