@@ -689,9 +689,24 @@ struct PlumageMeter: View {
                 .interpolation(.high)
                 .aspectRatio(contentMode: .fit)
         } else {
-            // Outside the bundle, which is the panel sheet and the tests.
-            Capsule().frame(width: size * 0.4)
+            // Outside the bundle, which is the panel sheet and the tests — and
+            // also a bundle that was built without the drawing in it, which is
+            // what happened: `build-app.sh` copied `MenuBarParrot*.png` and the
+            // glob did not reach this one. Every bird on screen was this
+            // capsule and nothing said so, so it says so now. A fallback that
+            // is indistinguishable from a design decision is how a missing file
+            // survives a whole afternoon.
+            Capsule()
+                .frame(width: size * 0.4)
+                .onAppear { Self.sayTheBirdIsMissing() }
         }
+    }
+
+    private static var complained = false
+    private static func sayTheBirdIsMissing() {
+        guard !complained else { return }
+        complained = true
+        Log.write("pill: ParrotSolid is not in the bundle; the meter is drawing a capsule")
     }
 
     private var fill: LinearGradient {
