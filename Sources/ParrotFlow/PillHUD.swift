@@ -127,6 +127,13 @@ enum Dock {
     case below
     /// Over it, for the last line of a full window.
     case above
+    /// Nowhere to attach to, so nothing to point at: an offer for an app that
+    /// would not say where its caret is, sitting at the bottom of the screen.
+    ///
+    /// Still the offer's surface — tinted, rimless, the small margin — and
+    /// rounded on all four corners, because a square edge is a claim about
+    /// which line this is about and there is no line to claim.
+    case free
 }
 
 /// A rounded rectangle whose top and bottom corners are different.
@@ -232,11 +239,18 @@ final class PillModel: ObservableObject {
     /// not about to happen.
     @Published var selected: Int?
 
-    /// Clicking a command, and the pointer coming and going. Closures rather
-    /// than published state: they are messages out of the view, and nothing
-    /// about them should redraw it.
+    /// Clicking a command, clicking the tab, and the pointer coming and going.
+    /// Closures rather than published state: they are messages out of the view,
+    /// and nothing about them should redraw it.
     var onPick: ((Int) -> Void)?
     var onHover: ((Bool) -> Void)?
+    /// A click on the collapsed tab.
+    ///
+    /// Its own way in rather than leaning on the hover that precedes it. A
+    /// click is a deliberate answer and a hover is a maybe, so the click skips
+    /// the dwell — and the two say different things about whether the pointer
+    /// leaving should fold it back again.
+    var onTab: (() -> Void)?
 }
 
 /// The one floating surface a dictation ever puts on screen.
@@ -397,6 +411,7 @@ final class PillHUD {
         guard case .offer(let commands, let headline, let reading, let was) = model.state,
               was != wanted else { return }
         if wanted { openedByPointer = byPointer } else { openedByPointer = false }
+        Log.write("pill: the offer \(wanted ? "opened" : "folded")\(byPointer ? ", by the pointer" : "")")
         set(.offer(commands, headline, reading, open: wanted))
         guard let offerFor else { return }
         if pointerHolds { return }
@@ -925,6 +940,11 @@ final class PillHUD {
     }
 
     private func build() {
+        // A click on the tab opens it now rather than after the dwell, and
+        // without marking it as the pointer's — so the pointer wandering off
+        // does not fold up something you asked for.
+        model.onTab = { [weak self] in self?.open(true) }
+
         let hosting = NSHostingView(rootView: PillView().environmentObject(model))
         hosting.frame = NSRect(origin: .zero,
                                size: PillMetrics.panelSize(for: .recording(nil), hasIcon: false))
@@ -1028,9 +1048,10 @@ final class PillHUD {
             return beside(near.rect, column: near.text.minX, size: size, on: visible)
         }
         guard let visible = screenUnderPointer()?.visibleFrame
-        else { return (panel?.frame.origin ?? .zero, nil) }
+        else { return (panel?.frame.origin ?? .zero, isDocked ? .free : nil) }
         return (NSPoint(x: visible.midX - size.width / 2,
-                        y: visible.minY + 96 - PillMetrics.bleed), nil)
+                        y: visible.minY + 96 - currentBleed),
+                isDocked ? .free : nil)
     }
 
     /// The screen the caret is on: the one it overlaps most.
@@ -1144,13 +1165,22 @@ final class PillHUD {
         }
     }
 
-    /// Whether the state on screen hangs off a line of text or floats near it.
+    /// Whether this is the offer's surface rather than the pill's.
     ///
-    /// Only the offer docks. While you are speaking the surface is about the
-    /// app — a microphone is open — and it wears the capsule that says so; once
-    /// the words are down it is about those words, and it attaches to them.
+    /// The state alone, and it used to ask for an anchor as well. That was
+    /// wrong and it showed: an app that will not say where its caret is — Slack
+    /// gives none at the press and its composer repaints on insert, so the diff
+    /// finds nothing either — got the old floating lozenge with the plumage rim
+    /// on it, and a 165x131 window around a 61x27 tab. Fifty-two points of
+    /// invisible window on every side, taking the mouse, sitting exactly where
+    /// you are typing. That is where "I cannot click on buttons" came from.
+    ///
+    /// The anchor decides *where* the offer goes, not *what it is*. With one it
+    /// hangs off a line and squares the edge that touches it; without one it
+    /// sits at the bottom of the screen with all four corners rounded — see
+    /// `Dock.free`. Either way it is the offer, so it is tinted, it has no rim,
+    /// and its window is the size of the thing you can see.
     private var isDocked: Bool {
-        guard near != nil else { return false }
         if case .offer = model.state { return true }
         return false
     }
@@ -1856,6 +1886,8 @@ struct PillView: View {
         switch model.docked {
         case .below: return DockedShape(top: 0, bottom: hanging)
         case .above: return DockedShape(top: hanging, bottom: 0)
+        // Attached to nothing, so no edge gets to claim a line.
+        case .free: return DockedShape(top: hanging, bottom: hanging)
         case nil: return DockedShape(top: Self.floating, bottom: Self.floating)
         }
     }
@@ -1901,6 +1933,11 @@ private struct TabContent: View {
         }
         .padding(.horizontal, PillMetrics.tabPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // The whole tab, not the bird and the cap. `contentShape` is what makes
+        // the gaps between them part of the target — the same reason the chips
+        // carry one.
+        .contentShape(Rectangle())
+        .onTapGesture { model.onTab?() }
     }
 
     /// The symbol out of a hotkey's name, or nothing.

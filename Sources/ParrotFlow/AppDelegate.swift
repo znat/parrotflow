@@ -3097,7 +3097,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // reloaded while the offer is up would otherwise renumber the chips
         // under the pointer, and the click would run whatever took the slot.
         pill.model.onPick = { [weak self] index in
-            guard let self, self.offerIsUp, commands.indices.contains(index) else { return }
+            guard let self else { return }
+            guard self.offerIsUp, commands.indices.contains(index) else {
+                Log.write(
+                    "offer: chip \(index) picked, but "
+                        + (self.offerIsUp ? "there is no such chip" : "the offer was over")
+                )
+                return
+            }
             // Index 0 is Vocabulary *when it is there* — it is not a transform
             // and cannot be one, so a config free to name a transform
             // "Vocabulary" must not be able to take that slot over. Matched by
@@ -3393,7 +3400,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerKeys.start(
             until: until, letters: letters, holdingReturnUntil: holds
         ) { [weak self] key in
-            guard let self, self.offerIsUp else { return }
+            guard let self else { return }
+            guard self.offerIsUp else {
+                Log.write("offer keys: \(key) arrived after the offer was over")
+                return
+            }
             switch key {
             case .letter(let typed):
                 guard let index = commands.firstIndex(where: { $0.key == typed }) else { return }
@@ -3458,9 +3469,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard offerClickMonitors.isEmpty else { return }
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         let dismissIfOutside: () -> Void = { [weak self] in
-            guard let self, self.offerIsUp, let frame = self.pill.frame,
-                  !frame.contains(NSEvent.mouseLocation)
-            else { return }
+            guard let self, self.offerIsUp, let frame = self.pill.frame else { return }
+            let at = NSEvent.mouseLocation
+            guard !frame.contains(at) else { return }
+            Log.write(String(
+                format: "offer: click at %.0f,%.0f is outside %.0f,%.0f %.0fx%.0f",
+                at.x, at.y, frame.minX, frame.minY, frame.width, frame.height
+            ))
             self.dismissOffer(reason: "a click outside it")
         }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { _ in
