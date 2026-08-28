@@ -26,9 +26,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMUX="$(command -v tmux || echo /opt/homebrew/bin/tmux)"
 APP="/Applications/ParrotFlowDev.app"
 BIN="$APP/Contents/MacOS/ParrotFlow"
-SESSION="${PF_CHECK_SESSION:-pfcheck}"
+SESSION="${PF_CHECK_SESSION:-pfcheck-$$}"
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
-SCRATCH="${TMPDIR:-/tmp}/pf-check-inplace"
 # Which terminal hosts the fixture. Terminal.app by default because it is on
 # every Mac; the point of the switch is that "does in-place editing work in a
 # terminal" has a different answer per terminal, and the only way to know is to
@@ -62,7 +61,55 @@ clear_input() {
   return 1
 }
 
+# A locked screen answers every accessibility read as `loginwindow` with an
+# empty value. That is indistinguishable from a window refusing the edit, so
+# without this the whole set scores 0/8 and blames the app. caffeinate keeps a
+# screen awake; it cannot wake one that has already locked.
+screen_is_locked() {
+  ioreg -n Root -d1 -a 2>/dev/null | grep -q CGSSessionScreenIsLocked
+}
+
+# Whether pid $1 is the one this run's own launch started: $SESSION as the
+# exact argument right after "-t" in its command line. Not merely present as
+# some word anywhere in it — a process whose title or some other argument
+# happens to contain $SESSION would pass that test too, and this is what
+# cleanup trusts before killing something.
+# A value as it can be pasted inside an AppleScript double-quoted string.
+# Backslashes first, or the quotes escaped after would be escaped twice.
+as_literal() {
+  local v=${1//\\/\\\\}
+  printf '%s' "${v//\"/\\\"}"
+}
+
+owns_fixture() {
+  local args
+  read -ra args <<< "$(ps -o command= -p "$1" 2>/dev/null)"
+  # The whole launch, not just `-t <session>`. Any process can carry that pair
+  # for its own reasons, and this answer decides what gets killed — so it has
+  # to be the five arguments this script itself passed, in order.
+  local i n=${#args[@]}
+  for ((i = 0; i + 4 < n; i++)); do
+    [ "${args[$i]}" = "-e" ] \
+      && [ "${args[$((i + 1))]}" = "$TMUX" ] \
+      && [ "${args[$((i + 2))]}" = "attach" ] \
+      && [ "${args[$((i + 3))]}" = "-t" ] \
+      && [ "${args[$((i + 4))]}" = "$SESSION" ] && return 0
+  done
+  return 1
+}
+
 start_fixture() {
+  if screen_is_locked; then
+    echo "the screen is locked — unlock it and run this again"
+    echo "  (every case would read an empty window and score 0/8)"
+    exit 1
+  fi
+  # The display must stay awake for the whole run. This drives a real window
+  # and reads it back through the accessibility API, and a locked screen
+  # answers as `loginwindow` with an empty value — which reads exactly like a
+  # window that would not take the edit. Two runs were lost to that before it
+  # was worth a line.
+  caffeinate -d -i -w $$ &
   "$TMUX" kill-session -t "$SESSION" 2>/dev/null
   # claude as the session command, not typed at a shell: typing it races the
   # prompt, and a swallowed keystroke leaves a shell that looks close enough
@@ -72,21 +119,129 @@ start_fixture() {
     "$TMUX" capture-pane -pt "$SESSION" | grep -q 'auto mode\|for shortcuts' && break
     sleep 0.5
   done
-  mkdir -p "$SCRATCH"
-  printf '#!/bin/sh\nexec %s attach -t %s\n' "$TMUX" "$SESSION" > "$SCRATCH/attach.command"
-  chmod +x "$SCRATCH/attach.command"
   # A freshly opened window is frontmost without anyone having to click, which
   # is what lets this run unattended.
-  open -a "$VIEWPORT" "$SCRATCH/attach.command"
+  #
+  # How you open one is per terminal, and getting it wrong is silent: the
+  # window never appears, `open -a` falls back to focusing whatever window that
+  # app already had, and every case then reports "nothing readable is focused"
+  # while the real answer is that the fixture was never on screen. That is what
+  # PF_VIEWPORT=Ghostty did for as long as this only knew Terminal.app.
+  case "$VIEWPORT" in
+    Terminal)
+      # `do script` opens the window and hands back the tab it started, so the
+      # window's id comes from the launch itself. Everything else here has been
+      # a way of working out afterwards which window was ours — a new-window
+      # diff, then the tmux client's tty — and each one had a case where it
+      # picked wrong or picked nothing and left the window open. There is
+      # nothing to work out if the launch says so.
+      #
+      # The window the returned tab is in, not the front one. `front window`
+      # is global state read a moment later, so anything that comes forward in
+      # between answers instead — and cleanup would close that.
+      TERMINAL_WINDOW_ID="$(osascript <<APPLESCRIPT 2>/dev/null
+tell application "Terminal"
+  set theTab to do script "exec $(as_literal "$TMUX") attach -t $(as_literal "$SESSION")"
+  set wid to id of (first window whose tabs contains theTab)
+end tell
+return wid
+APPLESCRIPT
+)"
+      [[ "${TERMINAL_WINDOW_ID:-}" =~ ^[0-9]+$ ]] || {
+        echo "Terminal did not say which window it opened; not running blind"
+        exit 1
+      }
+      ;;
+    *)
+      # Ghostty and friends take `-e`, and on macOS only through `open`:
+      # "launching the terminal emulator from the CLI is not supported".
+      # `-n` for a new instance, so the fixture cannot land in a window you
+      # are using.
+      before="$(pgrep -i "$VIEWPORT" | sort)"
+      # The command as separate arguments, not one quoted string. Quoted, the
+      # window opens and `-e` is silently ignored — you get a shell, tmux is
+      # never attached, and every case then reads an empty window and refuses
+      # to write. Measured: `list-clients` says 0 with the quotes and 1 without.
+      open -na "$VIEWPORT.app" --args -e "$TMUX" attach -t "$SESSION"
+      sleep 3
+      # A pid that appeared in this window is not proof it is ours — anything
+      # else that launched the same app in the same three seconds passes that
+      # test too, and cleanup would then kill somebody's own terminal while
+      # the fixture kept running. Only the process we just started carries
+      # "attach -t $SESSION" in its own command line, so that is what is
+      # checked, not just who is new.
+      for pid in $(comm -13 <(echo "$before") <(pgrep -i "$VIEWPORT" | sort)); do
+        if owns_fixture "$pid"; then
+          VIEWPORT_PID="$pid"
+          break
+        fi
+      done
+      ;;
+  esac
   sleep 4
+  # Terminal.app is one process for every window, so the newest match is
+  # always the right one, and cleanup never kills it by pid anyway. Any other
+  # terminal has to have matched its own launch command line above: a
+  # name-wide fallback here could be someone's own window, and cleanup would
+  # kill it.
+  if [ "$VIEWPORT" = Terminal ]; then
+    [ -n "${VIEWPORT_PID:-}" ] || VIEWPORT_PID="$(pgrep -n -i "$VIEWPORT" || true)"
+  fi
+  [ -n "${VIEWPORT_PID:-}" ] || { echo "could not find the new $VIEWPORT window it opened"; exit 1; }
+  echo "  viewport: $VIEWPORT pid $VIEWPORT_PID"
+}
+
+# Bring the fixture forward, by process id. Never by name: see start_fixture.
+focus_viewport() {
+  local err
+  err="$(osascript -e "tell application \"System Events\" to set frontmost of \
+    (first process whose unix id is $VIEWPORT_PID) to true" 2>&1 >/dev/null)"
+  [ -n "$err" ] && echo "  focus failed: $err"
+  # Read the frontmost process back. `set frontmost` returns before the window
+  # actually comes forward, and without this second round trip the case that
+  # follows reads whatever was in front before — "nothing readable is focused"
+  # on all 8. The answer is discarded; making the call is the point.
+  osascript -e 'tell application "System Events" to get unix id of \
+    first process whose frontmost is true' >/dev/null 2>&1
+  return 0
 }
 
 LOG="$HOME/Library/Logs/ParrotFlow-Dev.log"
 REPEATS="${PF_REPEATS:-1}"
 pass=0; total=0; refused=0; corrupted=0; skipped=0; wrongpath=0
 
+# Closes the window as well as the session. `open -na` starts a whole instance
+# per run, and without this every run left one behind — nine of them stacked up
+# in one sitting before it was noticed.
+cleanup() {
+  "$TMUX" kill-session -t "$SESSION" 2>/dev/null
+  if [ "$VIEWPORT" = Terminal ]; then
+    # Terminal.app is one process for every window you have open, so killing
+    # the pid would take yours with it. Close the one window instead — by id,
+    # captured when it was opened, never by matching its title: a title
+    # substring can match a window this run did not open, and PF_CHECK_SESSION
+    # is not guaranteed unique the way the default is.
+    if [[ "${TERMINAL_WINDOW_ID:-}" =~ ^[0-9]+$ ]]; then
+      osascript -e "tell application \"Terminal\" to close window id $TERMINAL_WINDOW_ID" \
+        >/dev/null 2>&1
+    fi
+  elif [ -n "${VIEWPORT_PID:-}" ]; then
+    # The pid can have been recycled between launch and here. Checked again
+    # right before the kill, not just once at launch — killing a pid we can no
+    # longer attribute to this run is exactly the bug that got fixed above.
+    if owns_fixture "$VIEWPORT_PID"; then
+      kill "$VIEWPORT_PID" 2>/dev/null
+    fi
+  fi
+  return 0
+}
+trap cleanup EXIT
+
+# Armed before the fixture starts, not after. `start_fixture` can exit part
+# way through — it refuses a locked screen, and it refuses when Terminal will
+# not say which window it opened — and until this is set those exits left the
+# session and the window behind.
 start_fixture
-trap '"$TMUX" kill-session -t "$SESSION" 2>/dev/null' EXIT
 
 while IFS='|' read -r name id dictated line heard corrected expect literal want_log span; do
   [ -z "$name" ] && continue
@@ -103,7 +258,7 @@ while IFS='|' read -r name id dictated line heard corrected expect literal want_
   [ "$expect" = "unchanged" ] && want="$line" || want="$expect"
 
   mark=$(grep -c "" "$LOG" 2>/dev/null || echo 0)
-  open -a "$VIEWPORT"; sleep 2
+  focus_viewport; sleep 2
   # A span case names the range; the offsets come from the seeded line, which
   # the check above has just confirmed is what is on screen. Computed here
   # rather than written into the case file, so they cannot drift from the text.
