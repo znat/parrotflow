@@ -158,7 +158,15 @@ start_fixture
 # up in one sitting before it was noticed.
 cleanup() {
   "$TMUX" kill-session -t "$SESSION" 2>/dev/null
-  [ -n "${VIEWPORT_PID:-}" ] && [ "$VIEWPORT" != Terminal ] && kill "$VIEWPORT_PID" 2>/dev/null
+  if [ "$VIEWPORT" = Terminal ]; then
+    # Terminal.app is one process for every window you have open, so killing
+    # the pid would take yours with it. Close the one window instead, found by
+    # the session name in its title.
+    osascript -e "tell application \"Terminal\" to close (every window whose \
+      name contains \"$SESSION\")" >/dev/null 2>&1
+  elif [ -n "${VIEWPORT_PID:-}" ]; then
+    kill "$VIEWPORT_PID" 2>/dev/null
+  fi
   return 0
 }
 trap cleanup EXIT
