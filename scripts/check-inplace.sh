@@ -119,18 +119,24 @@ start_fixture() {
       # to write. Measured: `list-clients` says 0 with the quotes and 1 without.
       open -na "$VIEWPORT.app" --args -e "$TMUX" attach -t "$SESSION"
       sleep 3
-      # The pid that appeared, not the newest one matching the name. Ghostty
-      # runs several processes under one name, so `pgrep -n` picks whichever
-      # started last — which is not necessarily the one holding this window,
-      # and focusing the wrong one leaves every case reading a window that is
-      # not the fixture.
-      VIEWPORT_PID="$(comm -13 <(echo "$before") <(pgrep -i "$VIEWPORT" | sort) | head -1)"
+      # A pid that appeared in this window is not proof it is ours — anything
+      # else that launched the same app in the same three seconds passes that
+      # test too, and cleanup would then kill somebody's own terminal while
+      # the fixture kept running. Only the process we just started carries
+      # "attach -t $SESSION" in its own command line, so that is what is
+      # checked, not just who is new.
+      for pid in $(comm -13 <(echo "$before") <(pgrep -i "$VIEWPORT" | sort)); do
+        if ps -o command= -p "$pid" 2>/dev/null | grep -q -- "attach -t $SESSION"; then
+          VIEWPORT_PID="$pid"
+          break
+        fi
+      done
       ;;
   esac
   sleep 4
   # Terminal.app is one process for every window, so the newest match is
   # always the right one, and cleanup never kills it by pid anyway. Any other
-  # terminal has to have matched a pid that appeared after `open -na`: a
+  # terminal has to have matched its own launch command line above: a
   # name-wide fallback here could be someone's own window, and cleanup would
   # kill it.
   if [ "$VIEWPORT" = Terminal ]; then
@@ -172,7 +178,12 @@ cleanup() {
     osascript -e "tell application \"Terminal\" to close (every window whose \
       name contains \"$SESSION\")" >/dev/null 2>&1
   elif [ -n "${VIEWPORT_PID:-}" ]; then
-    kill "$VIEWPORT_PID" 2>/dev/null
+    # The pid can have been recycled between launch and here. Checked again
+    # right before the kill, not just once at launch — killing a pid we can no
+    # longer attribute to this run is exactly the bug that got fixed above.
+    if ps -o command= -p "$VIEWPORT_PID" 2>/dev/null | grep -q -- "attach -t $SESSION"; then
+      kill "$VIEWPORT_PID" 2>/dev/null
+    fi
   fi
   return 0
 }
