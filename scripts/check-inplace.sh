@@ -78,9 +78,16 @@ screen_is_locked() {
 owns_fixture() {
   local args
   read -ra args <<< "$(ps -o command= -p "$1" 2>/dev/null)"
-  local i
-  for i in "${!args[@]}"; do
-    [ "${args[$i]}" = "-t" ] && [ "${args[$((i + 1))]:-}" = "$SESSION" ] && return 0
+  # The whole launch, not just `-t <session>`. Any process can carry that pair
+  # for its own reasons, and this answer decides what gets killed — so it has
+  # to be the five arguments this script itself passed, in order.
+  local i n=${#args[@]}
+  for ((i = 0; i + 4 < n; i++)); do
+    [ "${args[$i]}" = "-e" ] \
+      && [ "${args[$((i + 1))]}" = "$TMUX" ] \
+      && [ "${args[$((i + 2))]}" = "attach" ] \
+      && [ "${args[$((i + 3))]}" = "-t" ] \
+      && [ "${args[$((i + 4))]}" = "$SESSION" ] && return 0
   done
   return 1
 }
@@ -129,9 +136,22 @@ start_fixture() {
       # again. tmux itself knows which tty its client is on, and a window's
       # tty is not something two windows can share — that is the identity
       # that closes it, the same way the pid's own argv closes it for Ghostty.
-      fixture_tty="$("$TMUX" list-clients -t "$SESSION" -F '#{client_tty}' 2>/dev/null | head -1)"
+      #
+      # Waited for, not read once. Attaching is asynchronous, and a single look
+      # a second after `open` can happen before the client is there. That left
+      # `fixture_tty` empty, so no window id was recorded, so cleanup closed
+      # nothing and the window stayed behind — the leak this was written to fix.
+      fixture_tty=""
+      for _ in $(seq 1 20); do
+        fixture_tty="$("$TMUX" list-clients -t "$SESSION" -F '#{client_tty}' 2>/dev/null | head -1)"
+        [ -n "$fixture_tty" ] && break
+        sleep 0.25
+      done
       after_windows="$(osascript -e 'tell application "Terminal" to id of every window' \
         2>/dev/null | tr -d ' ' | tr ',' '\n' | sort)"
+      if [ -z "$fixture_tty" ]; then
+        echo "  the $VIEWPORT fixture never attached; its window will be left open"
+      fi
       if [ -n "$fixture_tty" ]; then
         for wid in $(comm -13 <(echo "$before_windows") <(echo "$after_windows")); do
           wtty="$(osascript -e "tell application \"Terminal\" to tty of tab 1 of window id $wid" \
