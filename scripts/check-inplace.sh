@@ -26,7 +26,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMUX="$(command -v tmux || echo /opt/homebrew/bin/tmux)"
 APP="/Applications/ParrotFlowDev.app"
 BIN="$APP/Contents/MacOS/ParrotFlow"
-SESSION="${PF_CHECK_SESSION:-pfcheck}"
+SESSION="${PF_CHECK_SESSION:-pfcheck-$$}"
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
 SCRATCH="${TMPDIR:-/tmp}/pf-check-inplace"
 # Which terminal hosts the fixture. Terminal.app by default because it is on
