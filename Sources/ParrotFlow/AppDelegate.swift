@@ -2984,7 +2984,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 original: text, element: press.element, owner: press.owner,
                 landing: landing, dictation: press.run
             ),
-            run: press.run, headline: headline, reading: reading
+            run: press.run, headline: headline, reading: reading,
+            // Nobody asked for this one. It arrives as a tab unless the decode
+            // is worth a second look, which `raiseOffer` decides for itself.
+            open: false
         )
 
         // Taken at the press, and only when that press found no caret. Matched
@@ -3051,8 +3054,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// stayed behind there is everything a *dictation's* ending owes and
     /// nothing else does: the microphone notice, the decoder's reading, and the
     /// search for where the words landed.
+    /// `open` says whether this offer was asked for.
+    ///
+    /// No default, deliberately: every caller has to say, because the answer is
+    /// the difference between a surface that appears because you reached for it
+    /// and one that appears because you finished a sentence. The second kind is
+    /// what a tab is for.
     private func raiseOffer(
-        over target: Correction, run: Int, headline: Headline?, reading: Confidence.Reading
+        over target: Correction, run: Int, headline: Headline?,
+        reading: Confidence.Reading, open: Bool
     ) {
         offerUntil = Date().addingTimeInterval(Self.offerSeconds)
         // A new offer is never born held, whatever the last one ended as.
@@ -3070,7 +3080,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerHoldsReturnUntil = reading.warning != nil && hold > 0
             ? Date().addingTimeInterval(hold)
             : nil
-        pill.offer(commands, headline: headline, reading: reading, for: Self.offerSeconds)
+        // Closed, unless the decode is worth a second look.
+        //
+        // The tab is the quiet default and that is the whole point of it: after
+        // a dictation that went fine there is nothing to say, and a panel that
+        // says it anyway is clutter you learn to look past — which is how the
+        // one that did have something to say got looked past too.
+        //
+        // A warning cannot wait to be asked for. It is about words that are
+        // already in your document and may not be the words you said, and a tab
+        // is a thing you have to notice first. So that one arrives open.
+        pill.offer(
+            commands, headline: headline, reading: reading,
+            open: open || reading.warning != nil, for: Self.offerSeconds
+        )
         // The list is captured, not read again in the closure: a config
         // reloaded while the offer is up would otherwise renumber the chips
         // under the pointer, and the click would run whatever took the slot.
@@ -3116,10 +3139,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // press was simply never delivered. Summoning there would answer a key
         // meant for the microphone, and do it over the *previous* sentence.
         guard !recorder.isRecording, runsInFlight <= 0 else { return }
-        // A tap while the offer is up is a tap at nothing. Raising a second one
-        // over the first would take the letters again and restart a clock the
-        // pointer may be deliberately holding.
-        guard !offerIsUp else { return }
+        // A tap while the offer is already open is a tap at nothing. Raising a
+        // second one over the first would take the letters again and restart a
+        // clock the pointer may be deliberately holding.
+        //
+        // Closed, it is the opposite gesture rather than none: the tab is on
+        // screen so that a tap can open it, and the key it draws is this one.
+        if offerIsUp {
+            if !pill.isOpen {
+                Log.write("summon: opened the tab")
+                pill.open(true)
+            }
+            return
+        }
         guard config.feedback.correctOffer else { return }
 
         // The selection wins, and it never goes stale: it is what you are
@@ -3146,7 +3178,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     selection: selection
                 ),
                 run: pressRun, headline: .selection(selection.text),
-                reading: Confidence.Reading()
+                reading: Confidence.Reading(),
+                // You pressed a key to get here.
+                open: true
             )
             return
         }
@@ -3161,15 +3195,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // dictation, and saying so is what lets a newer one take the pill off
         // it through the guard in `showCorrectOffer`.
         //
-        // Not re-aimed. The pill is already pointed where the words landed,
-        // which is what "back where it was" means — and a fresh read would
-        // answer where the caret is *now*, which is a different question.
+        // Re-aimed, and it did not used to be. The argument for leaving it was
+        // that the pill was already pointed where the words landed, and a fresh
+        // read answers where the caret is *now*, which is a different question.
+        //
+        // That held while the pill floated. It stopped holding when it started
+        // hanging off a line of text: the anchor is dropped when the last offer
+        // faded, so an offer summoned after that had nothing to hang from and
+        // came back as the old lozenge with the plumage rim on it, in the
+        // middle of the screen. A surface with two forms cannot pick the one it
+        // wears by accident.
+        //
+        // The fresh read is the better answer here anyway. You tapped the key
+        // while looking at something; where the caret is now is where you are.
+        if let element = last.element, case .found(let anchor) = CaretAnchor.read(at: element) {
+            pill.aim(at: anchor)
+        }
         raiseOffer(
             over: Correction(
                 original: last.text, element: last.element, owner: last.owner,
                 landing: last.landing, dictation: last.run
             ),
-            run: pressRun, headline: nil, reading: Confidence.Reading()
+            run: pressRun, headline: nil, reading: Confidence.Reading(),
+            open: true
         )
     }
 
@@ -3229,7 +3277,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 selection: selection
             ),
             run: pressRun, headline: .selection(selection.text),
-            reading: Confidence.Reading()
+            reading: Confidence.Reading(),
+            // Not asked for: this one fires because you selected the words
+            // again, and you may well have selected them to do something else
+            // entirely. A tab beside them says it is here without taking the
+            // screen, which is the whole argument for the tab.
+            open: false
         )
     }
 
@@ -3377,9 +3430,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerReading.warning = Confidence.stopped
         offerReading.stopped = true
         offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        // Open: this is the warning one step further along, and the key that
+        // triggered it was pressed at a surface the user was already reading.
         pill.offer(
             offerOnScreen ?? [], headline: offerHeadline, reading: offerReading,
-            for: Self.offerSeconds
+            open: true, for: Self.offerSeconds
         )
         watchTheOfferKeys()
     }

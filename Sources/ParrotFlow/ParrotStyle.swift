@@ -417,9 +417,14 @@ enum ParrotGlass {
     /// bounds. So it is used as a backdrop with an empty content view, and the
     /// SwiftUI surface is drawn over it — the same shape, the same corner
     /// radius, and the rim on top of both.
+    /// How far outside the surface the frost is drawn. See the comment on the
+    /// fallback path below. Named because a caller that reframes the backdrop
+    /// has to put it back where `backdrop` would have.
+    static let overlap: CGFloat = 2
+
     static func backdrop(
         radius: CGFloat, in size: NSSize, inset: CGFloat = 0,
-        overlap: CGFloat = 2, tint: NSColor? = nil
+        overlap: CGFloat = ParrotGlass.overlap, tint: NSColor? = nil
     ) -> NSView {
         let edge = max(0, inset - overlap)
         let frame = NSRect(
