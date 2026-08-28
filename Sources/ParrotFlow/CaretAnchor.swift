@@ -56,6 +56,9 @@ enum CaretAnchor {
         /// The focused control's own rectangle — only taken when the control is
         /// small enough that its box and its caret mean the same thing.
         case field
+        /// The words themselves, measured once they were down. See
+        /// `utterance(of:in:)`.
+        case utterance
         /// Worked out afterwards, from what changed on screen. For the apps
         /// that have no caret to give — see `landed(after:at:)`.
         case landed
@@ -254,6 +257,75 @@ enum CaretAnchor {
               let grid = visibleGrid(of: element, before: deadline)
         else { return .missed("it will not say how the grid is laid out in time") }
         return rectangle(forRow: row, of: grid, in: pane, source: .landed)
+    }
+
+    /// Where the words that just landed actually sit, asked once they are down.
+    ///
+    /// `read` answers before the dictation, from the caret, so it names the line
+    /// the utterance *starts* on. For a dictation that fits on one line that is
+    /// the same line it ends on and there is nothing to do. For one that wraps
+    /// it is not: the surface hangs off the first line and comes to rest on top
+    /// of the second and third, which is the one thing it must never do.
+    ///
+    /// Two questions rather than one. The bounds of the whole span come back as
+    /// a box covering every line of it, and the left edge of that box is the
+    /// leftmost of all of them — for a wrapped sentence, the margin, not the
+    /// character you started at. So the column is asked of the first character
+    /// alone and the row of the last, which is exactly the rule: under where it
+    /// began, below where it ended.
+    ///
+    /// Nothing is remembered from the press to do this. The caret is sitting at
+    /// the end of what was just typed, so the span runs back from it — and a
+    /// range recorded before the insertion would be stale by the length of the
+    /// dictation, which is the thing being measured.
+    ///
+    /// `length` is in UTF-16 units, because that is what the accessibility API
+    /// counts in. A caller holding a `String` wants `utf16.count`.
+    static func utterance(of length: Int, in element: AXUIElement?) -> Outcome {
+        guard Permissions.accessibility == .granted else {
+            return .missed("accessibility is not granted")
+        }
+        guard let element, length > 0 else { return .missed("nothing to measure") }
+        guard !SelectionReader.isOurs(element) else { return .missed("our own window") }
+        AXUIElementSetMessagingTimeout(element, unhurriedTimeout)
+
+        guard let caret = selectedRange(of: element), caret.length == 0 else {
+            return .missed("no collapsed caret to measure back from")
+        }
+        let start = caret.location - length
+        guard start >= 0 else {
+            return .missed("the caret is \(caret.location) in, and the words are \(length) long")
+        }
+
+        guard let head = bounds(of: CFRange(location: start, length: 1), in: element),
+              let tail = bounds(of: CFRange(location: caret.location - 1, length: 1), in: element)
+        else { return .missed("it will not measure its own text") }
+
+        // Accessibility is y-downward, so the last character is the one with
+        // the larger `minY`. Checked rather than assumed: an app that answers
+        // both questions with the same rectangle has told us nothing, and one
+        // that answers the second above the first has answered something else.
+        guard tail.minY >= head.minY else {
+            return .missed("the end of the words came back above the start")
+        }
+        // A line of text, not a paragraph and not a repaint. The same band
+        // `read` holds the marker rung to.
+        guard (4.0...100.0).contains(tail.height) else {
+            return .missed("a row \(Int(tail.height)) tall is not a line of text")
+        }
+        // And inside the pane it was read from, which is what catches the app
+        // that answers a rectangle on another screen.
+        if let pane = frame(of: element), !pane.insetBy(dx: -4, dy: -4).intersects(tail) {
+            return .missed("the words came back outside their own pane")
+        }
+
+        // The column from the head, the row from the tail. Not `across`: the
+        // whole point is that the column is the words' and not the pane's.
+        let row = flipped(CGRect(
+            x: head.minX, y: tail.minY,
+            width: max(head.width, 1), height: tail.height
+        ))
+        return .found(Found(rect: row, text: row, source: .utterance))
     }
 
     /// The bottom strip of an app's frontmost window, for apps that answer no

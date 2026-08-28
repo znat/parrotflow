@@ -3000,8 +3000,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Nothing landed in a field on the clipboard endings, so the diff has
         // nothing to find. Whatever it did find would be something else moving
         // on screen.
-        if case .field = landing, let pane, let element = press.element {
-            findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
+        if case .field = landing, let element = press.element {
+            if let pane {
+                findWhereTheWordsLanded(comparedWith: pane, in: element, for: press.run)
+            } else {
+                // A pane is only kept for a press that found no caret, so this
+                // is the other half of the same job: the apps that *did* answer
+                // at the press, and answered about the line the dictation was
+                // about to start on rather than the one it ended on.
+                dropBelowTheWords(text.utf16.count, in: element, for: press.run)
+            }
+        }
+    }
+
+    /// Move the surface below the whole of what was just said, if it wrapped.
+    ///
+    /// The pill is already up and already in the right column — the caret it
+    /// was aimed at is the first character of the utterance. What it cannot
+    /// know at the press is how many lines the words were going to take. This
+    /// asks once they are down.
+    ///
+    /// Off the main thread and unhurried, for the reason `findWhereTheWordsLanded`
+    /// gives: measuring text means the app copying its value out, and a mail
+    /// composer's value is hundreds of thousands of characters.
+    ///
+    /// Not retried. The diff has to wait for a redraw it cannot see coming, so
+    /// it loops; this asks the app where its own text is, and an app that will
+    /// not answer that now will not answer it in 80ms either. A miss leaves the
+    /// pill where it opened, which for every dictation that fits on one line is
+    /// already the right place.
+    private func dropBelowTheWords(_ length: Int, in element: AXUIElement, for run: Int) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = CaretAnchor.utterance(of: length, in: element)
+            DispatchQueue.main.async { [weak self] in
+                // Only while this press still owns what is on screen, the same
+                // as the diff: a newer dictation's offer is not this one's to
+                // move.
+                guard let self, self.offerIsUp, self.offerPressRun == run else { return }
+                switch outcome {
+                case .found(let found): self.pill.aim(at: found)
+                case .missed(let why): Log.write("pill: the words did not measure — \(why)")
+                }
+            }
         }
     }
 
