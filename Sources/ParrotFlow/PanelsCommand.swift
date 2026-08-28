@@ -112,10 +112,6 @@ enum PanelsCommand {
             model.state = state
             model.appIcon = icon
             model.level = level
-            // No hotkey is registered behind the sheet, so the selection offer
-            // is drawn against the shipped default — which is the one a reader
-            // should be checking that row against, and is not this machine's.
-            model.hotkey = "Right ⌘"
             return model
         }
 
@@ -128,8 +124,13 @@ enum PanelsCommand {
         // the plain one is the whole design — a pill that says which words is a
         // different surface from one that says there are some, and a row that
         // is only sometimes there gets looked at nowhere else.
+        //
+        // The key is the shipped default rather than this machine's: nothing is
+        // registered behind the sheet, and the default is what a reader should
+        // be checking that row against.
         let offerSelection = pill(.offer(
-            offerChips, .selection("things that turned out not to matter"),
+            offerChips,
+            .selection("things that turned out not to matter", hotkey: "Right ⌘"),
             Confidence.Reading()
         ))
         // Beside the plain one: the two endings must not look the same.
@@ -397,9 +398,7 @@ enum PanelsCommand {
     /// The window's size, not the capsule's — the glow needs the bleed around
     /// it or the sheet cuts the halo off square.
     private static func pillSize(_ model: PillModel) -> NSSize {
-        PillMetrics.panelSize(
-            for: model.state, hasIcon: model.appIcon != nil, hotkey: model.hotkey
-        )
+        PillMetrics.panelSize(for: model.state, hasIcon: model.appIcon != nil)
     }
 
     /// Something recognisable to sit in the pill's slot. Mail because that is

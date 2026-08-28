@@ -148,3 +148,11 @@ final class SelectionWatch {
     /// `field` is what does the ruling out.
     static let floor = 2
 }
+
+extension String {
+    /// Nothing but whitespace, which every path that offers over text has to
+    /// rule out before it asks a model or raises a surface about it.
+    var isBlank: Bool {
+        trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}

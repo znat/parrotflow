@@ -84,8 +84,14 @@ enum PillState: Equatable {
 enum Headline: Equatable {
     /// "Nowhere to type · ⌘V", and the rest of the endings nobody asked for.
     case landing(String)
-    /// The words this offer is about, shown as the field shows them.
-    case selection(String)
+    /// The words this offer is about, shown as the field shows them, and the
+    /// key the third row tells you to hold. Empty when nothing is bound, which
+    /// takes that row off — see `OfferContent.hold`.
+    ///
+    /// The key travels in the state rather than beside it so that a state is
+    /// enough to measure. The pill is sized before it is drawn, and a size that
+    /// needed a second value would be a size that can disagree with the view.
+    case selection(String, hotkey: String)
 
     /// Whether this is the three-row shape: the words, the chips, and the line
     /// about the key. Read by the metrics and by the view, so the two cannot
@@ -130,18 +136,6 @@ final class PillModel: ObservableObject {
     /// words are going, and a window with no caret in it is not somewhere they
     /// can go. See `Destination`.
     @Published var appIcon: NSImage?
-
-    /// The hotkey as it is written on screen — "Right ⌘", "⌃⌥Space".
-    ///
-    /// The selection offer tells you to hold it, and the key is configurable,
-    /// so the glyph cannot be a literal. It was `⌥` here while the shipped
-    /// default is `right_command`, which told everyone but this machine to hold
-    /// the wrong key.
-    ///
-    /// Here rather than in the state, for the reason the icon is: it changes
-    /// when the config is read, not when the pill changes what it is saying,
-    /// and a state change crossfades the whole surface.
-    @Published var hotkey: String = ""
 
     /// Which command the pointer is on, if any.
     ///
@@ -212,9 +206,7 @@ final class PillHUD {
     /// window — which in the middle of a morph is a width on its way somewhere
     /// rather than a width anything chose.
     private var wantedSize: NSSize {
-        PillMetrics.panelSize(
-            for: model.state, hasIcon: model.appIcon != nil, hotkey: model.hotkey
-        )
+        PillMetrics.panelSize(for: model.state, hasIcon: model.appIcon != nil)
     }
 
     /// One number for the whole surface: the rise, the morph and the fade.
@@ -924,12 +916,10 @@ enum PillMetrics {
     /// less there is to see.
     static let bleed: CGFloat = 52
 
-    static func panelSize(
-        for state: PillState, hasIcon: Bool, hotkey: String = ""
-    ) -> NSSize {
-        let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey)
+    static func panelSize(for state: PillState, hasIcon: Bool) -> NSSize {
+        let width = width(for: state, hasIcon: hasIcon)
         return NSSize(width: width + bleed * 2,
-                      height: height(for: state, width: width, hotkey: hotkey) + bleed * 2)
+                      height: height(for: state, width: width) + bleed * 2)
     }
 
     /// The face the dictated sentence is set in — the same one the chips use.
@@ -1033,7 +1023,7 @@ enum PillMetrics {
     ///
     /// An offer with nothing to say about the decode is the height the pill has
     /// always been, so a dictation that went fine changes nothing.
-    static func height(for state: PillState, width: CGFloat, hotkey: String = "") -> CGFloat {
+    static func height(for state: PillState, width: CGFloat) -> CGFloat {
         guard case .offer(_, let headline, let reading) = state else { return height }
         // A selection offer is three rows: the words, the chips, and the line
         // about the key. Two of them are extra, and they are added whatever the
@@ -1042,7 +1032,7 @@ enum PillMetrics {
         // The words row always, and the hold row only when there is a key to
         // name — `OfferContent.hold` draws it on the same condition.
         var extra: CGFloat = 0
-        if headline?.isSelection == true {
+        if case .selection(_, let hotkey) = headline {
             extra = selectionRow + selectionGap
             if !hotkey.isEmpty { extra += selectionRow + selectionGap }
         }
@@ -1104,15 +1094,13 @@ enum PillMetrics {
     static let icon: CGFloat = 22
     static let meter: CGFloat = 66
 
-    static func width(
-        for state: PillState, hasIcon: Bool, hotkey: String = ""
-    ) -> CGFloat {
+    static func width(for state: PillState, hasIcon: Bool) -> CGFloat {
         switch state {
         case .recording(let label): return recording(hasIcon: hasIcon, label: label)
         case .working(let message): return text(message)
         case .notice(let message, _): return text(message)
         case .offer(let commands, let headline, let reading):
-            return offer(commands, headline: headline, reading: reading, hotkey: hotkey)
+            return offer(commands, headline: headline, reading: reading)
         }
     }
 
@@ -1160,7 +1148,7 @@ enum PillMetrics {
     /// paragraph and a pill as wide as one is a pill nobody can place.
     static func offer(
         _ commands: [OfferedCommand], headline: Headline? = nil,
-        reading: Confidence.Reading = Confidence.Reading(), hotkey: String = ""
+        reading: Confidence.Reading = Confidence.Reading()
     ) -> CGFloat {
         // A chip is its keycap, its words and 9pt of padding either side; then
         // 4pt between one chip and the next.
@@ -1172,7 +1160,7 @@ enum PillMetrics {
         let row = padding * 2 + lead + chips
             + CGFloat(max(commands.count - 1, 0)) * 4 + rowFit
         var widest = row
-        if case .selection(let words) = headline {
+        if case .selection(let words, let hotkey) = headline {
             widest = max(widest, min(
                 sentenceWidth,
                 padding * 2 + title(editLead) + gap + title(words) + selectionFit
@@ -1562,7 +1550,7 @@ private struct OfferContent: View {
     /// you have to read text off" — and it earns the exception by being a
     /// quotation mark rather than decoration.
     @ViewBuilder private var selection: some View {
-        if case .selection(let words) = headline {
+        if case .selection(let words, _) = headline {
             HStack(spacing: PillMetrics.gap - 4) {
                 Text(PillMetrics.editLead)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -1599,10 +1587,10 @@ private struct OfferContent: View {
     /// budget for this row, so the surface is never sized for a line it does
     /// not draw.
     @ViewBuilder private var hold: some View {
-        if case .selection = headline, !model.hotkey.isEmpty {
+        if case .selection(_, let hotkey) = headline, !hotkey.isEmpty {
             HStack(spacing: 6) {
                 Text(PillMetrics.holdLead)
-                keycap(model.hotkey)
+                keycap(hotkey)
                 Text(PillMetrics.holdTail)
             }
             .font(.system(size: 12, weight: .medium, design: .rounded))
