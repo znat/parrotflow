@@ -70,6 +70,15 @@ screen_is_locked() {
   ioreg -n Root -d1 -a 2>/dev/null | grep -q CGSSessionScreenIsLocked
 }
 
+# Whether pid $1's own command line has $SESSION as one whole argument, not
+# merely a substring. `grep -q "attach -t $SESSION"` treats $SESSION as a
+# regex and matches it as a substring of a longer token too — a session named
+# "pfcheck.1" then also matches "pfcheck-1-other", and cleanup could kill a
+# pid that only looked like ours.
+owns_fixture() {
+  ps -o command= -p "$1" 2>/dev/null | tr ' ' '\n' | grep -qxF -- "$SESSION"
+}
+
 start_fixture() {
   if screen_is_locked; then
     echo "the screen is locked — unlock it and run this again"
@@ -126,7 +135,7 @@ start_fixture() {
       # "attach -t $SESSION" in its own command line, so that is what is
       # checked, not just who is new.
       for pid in $(comm -13 <(echo "$before") <(pgrep -i "$VIEWPORT" | sort)); do
-        if ps -o command= -p "$pid" 2>/dev/null | grep -q -- "attach -t $SESSION"; then
+        if owns_fixture "$pid"; then
           VIEWPORT_PID="$pid"
           break
         fi
@@ -174,14 +183,19 @@ cleanup() {
   if [ "$VIEWPORT" = Terminal ]; then
     # Terminal.app is one process for every window you have open, so killing
     # the pid would take yours with it. Close the one window instead, found by
-    # the session name in its title.
+    # the session name in its title. Escaped for AppleScript: a quote in
+    # PF_CHECK_SESSION would otherwise break the string it sits inside, and
+    # the swallowed osascript error would leave the window open with no sign
+    # why.
+    local escaped="${SESSION//\\/\\\\}"
+    escaped="${escaped//\"/\\\"}"
     osascript -e "tell application \"Terminal\" to close (every window whose \
-      name contains \"$SESSION\")" >/dev/null 2>&1
+      name contains \"$escaped\")" >/dev/null 2>&1
   elif [ -n "${VIEWPORT_PID:-}" ]; then
     # The pid can have been recycled between launch and here. Checked again
     # right before the kill, not just once at launch — killing a pid we can no
     # longer attribute to this run is exactly the bug that got fixed above.
-    if ps -o command= -p "$VIEWPORT_PID" 2>/dev/null | grep -q -- "attach -t $SESSION"; then
+    if owns_fixture "$VIEWPORT_PID"; then
       kill "$VIEWPORT_PID" 2>/dev/null
     fi
   fi
