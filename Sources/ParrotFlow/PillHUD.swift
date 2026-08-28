@@ -1256,16 +1256,42 @@ enum PillMetrics {
     static let sentenceLine: CGFloat = ceil(
         NSLayoutManager().defaultLineHeight(for: sentenceFont)
     )
-    static let sentenceGap: CGFloat = 4
-
-    /// Between the rows of an offer over a selection.
+    /// Between one block of the panel and the next.
     ///
-    /// Wider than `sentenceGap`, which sets the reading's lines — those are one
-    /// block of text and belong together. These three are three different
-    /// things: the words, what can be done to them, and the way out the chips
-    /// do not cover. At 4pt they read as a paragraph rather than as a list of
-    /// choices.
-    static let selectionGap: CGFloat = 8
+    /// One number for all of them, and it used to be two: 4pt between the
+    /// reading's lines and 8pt between the rows of a selection offer, on the
+    /// argument that the reading is one block of text and the other three are
+    /// different things. The panel is a list of blocks either way, and 4pt read
+    /// as a paragraph rather than as a set of choices — which is what the wider
+    /// number was already saying about the same problem.
+    static let blockGap: CGFloat = 8
+    /// The old name, kept because `selectionRow` is described against it.
+    static let selectionGap: CGFloat = blockGap
+
+    /// The line between two blocks.
+    ///
+    /// A rule and not more air. The panel's blocks are a sentence, a row of
+    /// things you can do to it, and a way out — three different kinds of thing,
+    /// and spacing alone says "these are apart" where a rule says "these are
+    /// different". It is also what makes the chip row read as the middle of a
+    /// menu rather than as a caption under the words.
+    static let rule: CGFloat = 1
+    static let ruleTint = Color.white.opacity(0.07)
+
+    /// How many rules the panel draws: one over the chips when anything is
+    /// above them, one over the way out when there is a key to name.
+    ///
+    /// Here rather than counted in the view, for the reason the rest of this
+    /// enum exists: the surface is measured before it is drawn, and
+    /// `OfferContent` draws on exactly these two conditions.
+    static func rules(
+        headline: Headline?, reading: Confidence.Reading, hotkey: String
+    ) -> Int {
+        var count = 0
+        if headline?.isSelection == true || !reading.isEmpty { count += 1 }
+        if !hotkey.isEmpty { count += 1 }
+        return count
+    }
 
     /// What the two extra rows of a selection offer say.
     ///
@@ -1346,13 +1372,17 @@ enum PillMetrics {
         // The words row always, and the hold row only when there is a key to
         // name — `OfferContent.hold` draws it on the same condition.
         var extra: CGFloat = 0
-        if headline?.isSelection == true { extra = selectionRow + selectionGap }
+        // A rule costs its own point and one more gap, because the block
+        // spacing falls on both sides of it.
+        extra += CGFloat(rules(headline: headline, reading: reading, hotkey: hotkey))
+            * (rule + blockGap)
+        if headline?.isSelection == true { extra += selectionRow + blockGap }
         // The way out the chips do not cover, on every panel that has a key to
         // name. It used to be drawn only over a selection, where it was the one
         // way to reach a transform that had no chip — but that is true of every
         // offer, and the panel is the surface with room to say it.
         // `OfferContent.hold` draws it on this same condition.
-        if !hotkey.isEmpty { extra += selectionRow + selectionGap }
+        if !hotkey.isEmpty { extra += selectionRow + blockGap }
         // Every chip row past the first. The pill's own 42 already holds one,
         // with the slack that centres it.
         let lead: CGFloat
@@ -1363,11 +1393,11 @@ enum PillMetrics {
         let rows = readingRows(reading, width: width)
         guard !rows.isEmpty else { return height + extra }
         return height + extra + sentenceTop
-            + rows.reduce(0, +) + sentenceGap * CGFloat(rows.count)
+            + rows.reduce(0, +) + blockGap * CGFloat(rows.count)
     }
 
     /// The height of each row the reading draws, top to bottom. The count is
-    /// also the number of `sentenceGap`s: one between each pair, one more
+    /// also the number of `blockGap`s: one between each pair, one more
     /// between the last row and the chips.
     private static func readingRows(
         _ reading: Confidence.Reading, width: CGFloat
@@ -1934,14 +1964,16 @@ private struct OfferContent: View {
     private static let restingText = Color(white: 0.88)
 
     var body: some View {
-        VStack(
-            alignment: .leading,
-            spacing: centred ? PillMetrics.selectionGap : PillMetrics.sentenceGap
-        ) {
+        VStack(alignment: .leading, spacing: PillMetrics.blockGap) {
             if let warning = reading.warning { self.warning(warning) }
             if !reading.words.isEmpty { words }
             selection
+            // Over the chips when there is anything above them, and over the
+            // way out whenever it is drawn. `PillMetrics.rules` counts these
+            // two conditions so the surface is measured for what it draws.
+            if headline?.isSelection == true || !reading.isEmpty { rule }
             chips
+            if !model.hotkey.isEmpty { rule }
             hold
         }
         // The whole block is centred in the pill's height, so this lands as air
@@ -1991,6 +2023,17 @@ private struct OfferContent: View {
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, PillMetrics.padding)
+    }
+
+    /// Edge to edge, unlike everything else on the panel, which carries
+    /// `PillMetrics.padding` either side. A rule inset from the sides reads as
+    /// an underline belonging to the block above it; one that runs the full
+    /// width reads as a seam between two blocks, which is what it is.
+    private var rule: some View {
+        Rectangle()
+            .fill(PillMetrics.ruleTint)
+            .frame(maxWidth: .infinity)
+            .frame(height: PillMetrics.rule)
     }
 
     /// The words the offer is about, wearing the highlight they wear in the
