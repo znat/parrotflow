@@ -3088,7 +3088,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the tap reaches further than the last dictation.
         if let selection = SelectionReader.snapshot(),
            !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            Log.write("summon: the offer, over the selection — \"\(selection.text.prefix(80))\"")
+            // The length, not the words. Every other line that logs a selection
+            // is reached by saying a command; this one is reached by tapping a
+            // key once, over text nothing here dictated. A count still answers
+            // what the log is for here — whether the tap found the selection
+            // you meant, or an empty one.
+            Log.write("summon: the offer, over a selection of \(selection.text.count) characters")
             aim(at: selection)
             raiseOffer(
                 over: Correction(
