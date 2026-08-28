@@ -78,6 +78,27 @@ MENU_BAR_POINTS = 18
 MENU_BAR_SCALES = (1, 2, 3)
 BIRD_IN_MENU_BAR = 0.88
 
+# The bird again, solid, for the pill's level meter. See `PlumageMeter`.
+#
+# A true outline was built first and measured: at 96pt it is a fine drawing,
+# and at the 20pt the pill draws it at, every stroke weight from 1.4 to 2.8
+# collapses into an illegible scratch — the wing line, the legs and the beak
+# merge. The shape is too intricate to survive as a contour at that size.
+#
+# So the resting bird is this same silhouette at low opacity, and speaking
+# fills it from the tail up. One asset for both, which also means the ghost and
+# the fill can never be a fraction of a point out of register.
+#
+# White, because it is only ever used for its alpha: as a mask for the plumage,
+# and dimmed for the resting state.
+METER_VARIANTS = {
+    "ParrotSolid": '\n <g fill="#FFFFFF">\n%s\n </g>\n',
+}
+
+# Bigger than the menu bar's 18: the pill draws the bird at 20pt and a glyph
+# rasterised at 18 and drawn at 20 is a soft one.
+METER_POINTS = 24
+
 # What an .icns has to contain. macOS picks by size, and a missing rung is a
 # blurry icon in whichever view happens to ask for it.
 ICONSET = [
@@ -246,10 +267,38 @@ viewBox="{origin_x:.4f} {origin_y:.4f} {side:.4f} {side:.4f}">
             )
 
 
+def build_meter(paths: list[str], box: tuple[float, float, float, float]) -> None:
+    """The outline and the solid, for the pill's level meter.
+
+    Same square framing as the menu bar's, so the two sets are the same bird at
+    the same scale and anything drawn from one lines up with the other.
+    """
+    box_x, box_y, box_width, box_height = box
+    side = box_height / BIRD_IN_MENU_BAR
+    origin_x = box_x + box_width / 2 - side / 2
+    origin_y = box_y + box_height / 2 - side / 2
+    drawing = "\n".join(f'  <path d="{path}"/>' for path in paths)
+
+    with tempfile.TemporaryDirectory() as scratch:
+        for name, wrapper in METER_VARIANTS.items():
+            source = Path(scratch) / f"{name}.svg"
+            source.write_text(
+                f"""<svg xmlns="http://www.w3.org/2000/svg" \
+viewBox="{origin_x:.4f} {origin_y:.4f} {side:.4f} {side:.4f}">"""
+                + (wrapper % drawing)
+                + "</svg>\n"
+            )
+            render(
+                source,
+                {METER_POINTS * scale: menu_bar_path(name, scale) for scale in MENU_BAR_SCALES},
+            )
+
+
 def main() -> None:
     inner, box, paths = read_source()
     build_icns(inner, box)
     build_menu_bar(paths, box)
+    build_meter(paths, box)
     print(f"==> {ICNS.relative_to(ROOT)}")
     for name in MENU_BAR_VARIANTS:
         for scale in MENU_BAR_SCALES:

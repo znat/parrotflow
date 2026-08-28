@@ -1181,8 +1181,16 @@ final class PillHUD {
     /// `Dock.free`. Either way it is the offer, so it is tinted, it has no rim,
     /// and its window is the size of the thing you can see.
     private var isDocked: Bool {
-        if case .offer = model.state { return true }
-        return false
+        switch model.state {
+        // The offer always, with or without an anchor — see `Dock.free`.
+        case .offer: return true
+        // The dictation only when there is a line to hang from. Without one
+        // these keep the capsule they have always been: a download's progress
+        // and a microphone notice are about the app rather than about a place
+        // in somebody's document, and the bird alone cannot carry a sentence.
+        case .recording, .working: return near != nil
+        case .notice: return false
+        }
     }
 }
 
@@ -1245,11 +1253,25 @@ enum PillMetrics {
     /// the tab read as a crop of something rather than as a small whole thing.
     /// The contents did not change; the box grew round them.
     static let tabHeight: CGFloat = 31
-    static let tabWidth: CGFloat = 66
     static let tabRadius: CGFloat = 12
     static let tabPadding: CGFloat = 12
     static let tabGap: CGFloat = 7
     static let tabMark: CGFloat = 20
+
+    /// The tab, sized from what it holds.
+    ///
+    /// The key is drawn with its side on it — "Right ⌥" and not "⌥" — because
+    /// a Mac has two of most modifiers and a glyph on its own tells you to
+    /// press either. It was the bare symbol first and that is the confusion it
+    /// caused. So the width follows the name, using the same measurement the
+    /// panel's own hold row uses.
+    ///
+    /// No key while the microphone is open: you are holding it.
+    static func tabWidth(hotkey: String) -> CGFloat {
+        let mark = tabPadding * 2 + tabMark
+        guard !hotkey.isEmpty else { return mark }
+        return mark + tabGap + holdKeycapWidth(hotkey)
+    }
     /// The key on it, which grows with the rest. It is the tab's only text and
     /// a cap left at the chips' size would read as a chip that had wandered in.
     static let tabKeyWidth: CGFloat = 21
@@ -1302,10 +1324,12 @@ enum PillMetrics {
     static func panelSize(
         for state: PillState, hasIcon: Bool, hotkey: String = "", docked: Bool = false
     ) -> NSSize {
-        let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey)
+        let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey, docked: docked)
         let margin = bleed(docked: docked)
-        return NSSize(width: width + margin * 2,
-                      height: height(for: state, width: width, hotkey: hotkey) + margin * 2)
+        return NSSize(
+            width: width + margin * 2,
+            height: height(for: state, width: width, hotkey: hotkey, docked: docked) + margin * 2
+        )
     }
 
     /// The face the dictated sentence is set in — the same one the chips use.
@@ -1429,9 +1453,14 @@ enum PillMetrics {
     ///
     /// An offer with nothing to say about the decode is the height the pill has
     /// always been, so a dictation that went fine changes nothing.
-    static func height(for state: PillState, width: CGFloat, hotkey: String = "") -> CGFloat {
-        guard case .offer(let commands, let headline, let reading, let open) = state
-        else { return height }
+    static func height(
+        for state: PillState, width: CGFloat, hotkey: String = "", docked: Bool = false
+    ) -> CGFloat {
+        guard case .offer(let commands, let headline, let reading, let open) = state else {
+            // Docked, the recording and the transcribing are the same tab the
+            // offer folds into. See `RecordingContent`.
+            return docked ? tabHeight : height
+        }
         guard open else { return tabHeight }
         // A selection offer is three rows: the words, the chips, and the line
         // about the key. Two of them are extra, and they are added whatever the
@@ -1516,14 +1545,23 @@ enum PillMetrics {
     static let meter: CGFloat = 66
 
     static func width(
-        for state: PillState, hasIcon: Bool, hotkey: String = ""
+        for state: PillState, hasIcon: Bool, hotkey: String = "", docked: Bool = false
     ) -> CGFloat {
         switch state {
-        case .recording(let label): return recording(hasIcon: hasIcon, label: label)
-        case .working(let message): return text(message)
+        case .recording(let label):
+            // Docked, the whole recording state is the bird — no dot, no bars,
+            // no icon. A label still widens it, because tap-then-hold has to
+            // say what the hold is for before you speak.
+            guard docked else { return recording(hasIcon: hasIcon, label: label) }
+            guard let label else { return tabWidth(hotkey: "") }
+            return tabWidth(hotkey: "") + tabGap + title(label)
+        case .working(let message):
+            // Docked, the bird stands full while it thinks. The message is what
+            // the undocked one is for — a download has no line to hang from.
+            return docked ? tabWidth(hotkey: "") : text(message)
         case .notice(let message, _): return text(message)
         case .offer(let commands, let headline, let reading, let open):
-            guard open else { return tabWidth }
+            guard open else { return tabWidth(hotkey: hotkey) }
             return offer(commands, headline: headline, reading: reading, hotkey: hotkey)
         }
     }
@@ -1756,10 +1794,12 @@ struct PillView: View {
             ZStack {
                 switch model.state {
                 case .recording(let label):
-                    RecordingContent(level: model.level, icon: model.appIcon, label: label)
-                        .transition(.opacity)
+                    RecordingContent(
+                        level: model.level, icon: model.appIcon, label: label, docked: isDocked
+                    )
+                    .transition(.opacity)
                 case .working(let message):
-                    MessageContent(message: message, tone: .thinking)
+                    MessageContent(message: message, tone: .thinking, docked: isDocked)
                         .transition(.opacity)
                 case .notice(let message, let tone):
                     MessageContent(message: message, tone: tone)
@@ -1841,8 +1881,10 @@ struct PillView: View {
     /// and 12 on a 20pt-tall surface is most of its height, which reads as a
     /// lozenge rather than as something cut off a larger shape.
     private var hanging: CGFloat {
-        if case .offer(_, _, _, let open) = model.state, !open { return PillMetrics.tabRadius }
-        return PillMetrics.dockRadius
+        if case .offer(_, _, _, let open) = model.state, open { return PillMetrics.dockRadius }
+        // Everything else that docks is a tab: the recording, the transcribing
+        // and the folded offer are one 31pt-tall object.
+        return PillMetrics.tabRadius
     }
 
     /// How loud this pill is, when it is an offer with something to warn
@@ -1916,19 +1958,22 @@ private struct TabContent: View {
 
     var body: some View {
         HStack(spacing: PillMetrics.tabGap) {
-            PlumageMark(size: PillMetrics.tabMark)
+            PlumageMeter(level: 1, size: PillMetrics.tabMark)
             if warned {
                 Circle()
                     .fill(Parrot.amber)
                     .frame(width: 7, height: 7)
                     .shadow(color: Parrot.amber, radius: 4)
             }
-            if let glyph = Self.modifier(of: model.hotkey) {
-                Text(glyph)
-                    .font(.system(size: PillMetrics.tabKeyText, weight: .bold, design: .rounded))
+            if !model.hotkey.isEmpty {
+                Text(model.hotkey)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                     .foregroundStyle(Color(white: 0.85))
                     .fixedSize()
-                    .frame(minWidth: PillMetrics.tabKeyWidth, minHeight: PillMetrics.tabKeyHeight)
+                    .frame(
+                        minWidth: PillMetrics.holdKeycapWidth(model.hotkey) - 12,
+                        minHeight: PillMetrics.tabKeyHeight
+                    )
                     .background(
                         RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .fill(Color.white.opacity(0.12))
@@ -1944,19 +1989,6 @@ private struct TabContent: View {
         .onTapGesture { model.onTab?() }
     }
 
-    /// The symbol out of a hotkey's name, or nothing.
-    ///
-    /// Names here are "Right ⌘", "⌃⌥Space", "fn". The glyphs are the last run
-    /// of modifier symbols in them, so "Right ⌘" gives ⌘ and "⌃⌥Space" gives
-    /// ⌃⌥. A name with no symbol in it — "fn" — gives the name itself when it
-    /// is short enough to draw and nothing when it is not: a cap that has to be
-    /// truncated says less than no cap at all, and the tab is still the bird.
-    static func modifier(of hotkey: String) -> String? {
-        guard !hotkey.isEmpty else { return nil }
-        let symbols = hotkey.filter { "⌘⌥⌃⇧⇪fn".contains($0) && !$0.isLetter }
-        if !symbols.isEmpty { return String(symbols) }
-        return hotkey.count <= 3 ? hotkey : nil
-    }
 }
 
 private struct RecordingContent: View {
@@ -1964,11 +1996,41 @@ private struct RecordingContent: View {
     let icon: NSImage?
     /// What this recording is for, when it is not dictation.
     var label: String?
+    /// Hanging off the line the words are going into, which is the ordinary
+    /// case. See `body`.
+    var docked = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
     var body: some View {
+        if docked { tab } else { capsule }
+    }
+
+    /// The whole recording state, in the shape it ends in.
+    ///
+    /// A red dot, twelve bars and the target app's icon, replaced by one mark
+    /// that fills. The dot said the microphone was open and the bars said it
+    /// was hearing you; the bird says both, because an empty bird is a
+    /// microphone waiting and a filling one is a microphone hearing something.
+    /// The icon is gone and `blind` is what took its job — see `PlumageMeter`.
+    private var tab: some View {
+        HStack(spacing: PillMetrics.tabGap) {
+            PlumageMeter(
+                level: Double(level), size: PillMetrics.tabMark, blind: icon == nil
+            )
+            if let label {
+                Text(label)
+                    .font(.system(size: 12, weight: .medium, design: .rounded))
+                    .foregroundStyle(Color(white: 0.88))
+                    .fixedSize()
+            }
+        }
+        .padding(.horizontal, PillMetrics.tabPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var capsule: some View {
         HStack(spacing: 0) {
             Circle()
                 .fill(Parrot.scarlet)
@@ -2008,8 +2070,22 @@ private struct RecordingContent: View {
 private struct MessageContent: View {
     let message: String
     let tone: NoticeTone
+    /// Hanging off the line, where there is no room for a sentence and none
+    /// needed: the bird standing full says the words are in and something is
+    /// being done with them, which is the whole of what "Thinking…" said.
+    var docked = false
 
     var body: some View {
+        if docked {
+            PlumageMeter(level: 1, size: PillMetrics.tabMark)
+                .padding(.horizontal, PillMetrics.tabPadding)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        } else {
+            capsule
+        }
+    }
+
+    private var capsule: some View {
         HStack(spacing: PillMetrics.gap) {
             ToneDot(tone: tone)
 

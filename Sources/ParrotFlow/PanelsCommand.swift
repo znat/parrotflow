@@ -193,6 +193,14 @@ enum PanelsCommand {
             open: true
         ), docked: .below)
 
+        // The dictation, hanging off a line: the bird half full, then standing
+        // while it thinks. On the sheet because the whole recording state is
+        // one mark now, and whether it reads at 20pt is the question.
+        let listening = pill(.recording(nil), icon: sampleIcon(), level: 0.55, docked: .below)
+        let listeningQuiet = pill(.recording(nil), icon: sampleIcon(), level: 0.06, docked: .below)
+        let listeningBlind = pill(.recording(nil), level: 0.55, docked: .below)
+        let thinkingDocked = pill(.working("Thinking…"), docked: .below)
+
         let overlay = pill(.recording(nil), icon: sampleIcon(), level: 0.75)
 
         // The pill has two states now and the difference is the whole point of
@@ -300,6 +308,14 @@ enum PanelsCommand {
             // block is that surface opened. Next to the notices because that is
             // the comparison that matters: it has to not look like one, and at
             // 46pt it has to be findable at all.
+            (AnyView(PillView().environmentObject(listeningQuiet)),
+             pillSize(listeningQuiet), .dark, true),
+            (AnyView(PillView().environmentObject(listening)),
+             pillSize(listening), .dark, true),
+            (AnyView(PillView().environmentObject(listeningBlind)),
+             pillSize(listeningBlind), .dark, true),
+            (AnyView(PillView().environmentObject(thinkingDocked)),
+             pillSize(thinkingDocked), .dark, true),
             (AnyView(PillView().environmentObject(tab)),
              pillSize(tab), .dark, true),
             (AnyView(PillView().environmentObject(tabWarned)),

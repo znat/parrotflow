@@ -631,6 +631,79 @@ struct PlumageMark: View {
     }
 }
 
+/// The bird as the level meter: an empty shape that fills as you speak.
+///
+/// This replaces the twelve bars. The bars said "a microphone is open" by being
+/// a picture of a microphone being open; the bird says it by being the app,
+/// which is already the thing you look for. And it costs no width — the pill's
+/// recording state used to be 144pt of dot, meter and icon, and it is now the
+/// mark on its own.
+///
+/// **Silence is an empty shape, not a colour.** An earlier version slid the
+/// plumage band along the bird instead, and at rest that parked the scarlet end
+/// over a silent bird — so nothing happening looked like something wrong. Here
+/// colour only ever means sound arriving.
+///
+/// The fill runs tail to head, which is the bird's own colouring: sky at the
+/// bottom, then leaf, then amber, then scarlet at the head. So a shout is the
+/// only thing that turns it red, and it does it by filling rather than by
+/// changing hue.
+///
+/// Both layers are the same silhouette, so the ghost and the fill cannot be a
+/// fraction of a point out of register. There is no outline version: measured
+/// at 20pt, every stroke weight collapsed into a scratch — see
+/// `scripts/make-icons.py`.
+struct PlumageMeter: View {
+    /// 0 to 1. The same feed the meter's bars took.
+    var level: Double
+    var size: CGFloat = 20
+    /// The words have nowhere to land and will be copied instead. The bird
+    /// fills with no colour, which is the same shape doing the same job the
+    /// missing app icon used to do — and a good deal louder than an absence.
+    var blind: Bool = false
+
+    /// What is left of the bird when nothing is being said. Low enough to read
+    /// as an empty vessel and high enough to be findable on a dark surface.
+    private static let resting: Double = 0.18
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            bird.opacity(Self.resting)
+            Rectangle()
+                .fill(fill)
+                .mask(alignment: .bottom) {
+                    Rectangle().frame(height: size * CGFloat(min(max(level, 0), 1)))
+                }
+                .mask { bird }
+        }
+        .frame(width: size, height: size)
+        // The bars moved at this rate and it is what makes a level read as a
+        // level rather than as a flicker.
+        .animation(.linear(duration: 0.08), value: level)
+    }
+
+    @ViewBuilder private var bird: some View {
+        if let solid = NSImage(named: "ParrotSolid") {
+            Image(nsImage: solid)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            // Outside the bundle, which is the panel sheet and the tests.
+            Capsule().frame(width: size * 0.4)
+        }
+    }
+
+    private var fill: LinearGradient {
+        LinearGradient(
+            colors: blind
+                ? [Color(white: 0.62), Color(white: 0.55)]
+                : [Parrot.sky, Parrot.leaf, Parrot.amber, Parrot.scarlet],
+            startPoint: .bottom, endPoint: .top
+        )
+    }
+}
+
 /// The small capitalised line at the top of a panel: the mark, what this panel
 /// is, and what state it is in. Both dialogs open with one, in the same place.
 struct PanelHeader: View {
