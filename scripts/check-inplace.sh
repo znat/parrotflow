@@ -210,10 +210,9 @@ LOG="$HOME/Library/Logs/ParrotFlow-Dev.log"
 REPEATS="${PF_REPEATS:-1}"
 pass=0; total=0; refused=0; corrupted=0; skipped=0; wrongpath=0
 
-start_fixture
-# Close the window as well as the session. `open -na` starts a whole instance
-# per run, and without this every run leaves one behind — nine of them stacked
-# up in one sitting before it was noticed.
+# Closes the window as well as the session. `open -na` starts a whole instance
+# per run, and without this every run left one behind — nine of them stacked up
+# in one sitting before it was noticed.
 cleanup() {
   "$TMUX" kill-session -t "$SESSION" 2>/dev/null
   if [ "$VIEWPORT" = Terminal ]; then
@@ -237,6 +236,12 @@ cleanup() {
   return 0
 }
 trap cleanup EXIT
+
+# Armed before the fixture starts, not after. `start_fixture` can exit part
+# way through — it refuses a locked screen, and it refuses when Terminal will
+# not say which window it opened — and until this is set those exits left the
+# session and the window behind.
+start_fixture
 
 while IFS='|' read -r name id dictated line heard corrected expect literal want_log span; do
   [ -z "$name" ] && continue
