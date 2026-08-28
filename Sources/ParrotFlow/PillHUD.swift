@@ -1201,14 +1201,26 @@ enum PillMetrics {
     /// What the offer is before you ask for it.
     ///
     /// Small enough to sit under a line of body text without being part of it,
-    /// and no smaller: at 16pt tall the bird stops being recognisable as the
+    /// and no smaller: below this the bird stops being recognisable as the
     /// bird, and what the tab is for is being recognised.
-    static let tabHeight: CGFloat = 20
-    static let tabWidth: CGFloat = 46
-    static let tabRadius: CGFloat = 8
-    static let tabPadding: CGFloat = 7
-    static let tabGap: CGFloat = 5
-    static let tabMark: CGFloat = 15
+    ///
+    /// A third larger than it was drawn. 46x20 was sized on a design board, at
+    /// a comfortable zoom, on a ground chosen to show it off. On a real screen
+    /// beside real body text it was a smudge you had to already know about —
+    /// which is the one thing a surface that replaces a panel cannot be. Every
+    /// number here is the old one times four thirds, so the proportions are the
+    /// ones that were agreed and only the scale moved.
+    static let tabHeight: CGFloat = 27
+    static let tabWidth: CGFloat = 61
+    static let tabRadius: CGFloat = 11
+    static let tabPadding: CGFloat = 9
+    static let tabGap: CGFloat = 7
+    static let tabMark: CGFloat = 20
+    /// The key on it, which grows with the rest. It is the tab's only text and
+    /// a cap left at the chips' size would read as a chip that had wandered in.
+    static let tabKeyWidth: CGFloat = 21
+    static let tabKeyHeight: CGFloat = 19
+    static let tabKeyText: CGFloat = 14
 
     /// How long the pointer has to rest on the tab before it opens.
     ///
@@ -1872,17 +1884,17 @@ private struct TabContent: View {
             if warned {
                 Circle()
                     .fill(Parrot.amber)
-                    .frame(width: 5, height: 5)
-                    .shadow(color: Parrot.amber, radius: 3)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: Parrot.amber, radius: 4)
             }
             if let glyph = Self.modifier(of: model.hotkey) {
                 Text(glyph)
-                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .font(.system(size: PillMetrics.tabKeyText, weight: .bold, design: .rounded))
                     .foregroundStyle(Color(white: 0.85))
                     .fixedSize()
-                    .frame(minWidth: 16, minHeight: 14)
+                    .frame(minWidth: PillMetrics.tabKeyWidth, minHeight: PillMetrics.tabKeyHeight)
                     .background(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
                             .fill(Color.white.opacity(0.12))
                     )
             }
