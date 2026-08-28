@@ -28,7 +28,6 @@ APP="/Applications/ParrotFlowDev.app"
 BIN="$APP/Contents/MacOS/ParrotFlow"
 SESSION="${PF_CHECK_SESSION:-pfcheck-$$}"
 CLAUDE="$(command -v claude || echo "$HOME/.local/bin/claude")"
-SCRATCH="${TMPDIR:-/tmp}/pf-check-inplace"
 # Which terminal hosts the fixture. Terminal.app by default because it is on
 # every Mac; the point of the switch is that "does in-place editing work in a
 # terminal" has a different answer per terminal, and the only way to know is to
@@ -75,6 +74,13 @@ screen_is_locked() {
 # some word anywhere in it — a process whose title or some other argument
 # happens to contain $SESSION would pass that test too, and this is what
 # cleanup trusts before killing something.
+# A value as it can be pasted inside an AppleScript double-quoted string.
+# Backslashes first, or the quotes escaped after would be escaped twice.
+as_literal() {
+  local v=${1//\\/\\\\}
+  printf '%s' "${v//\"/\\\"}"
+}
+
 owns_fixture() {
   local args
   read -ra args <<< "$(ps -o command= -p "$1" 2>/dev/null)"
@@ -113,7 +119,6 @@ start_fixture() {
     "$TMUX" capture-pane -pt "$SESSION" | grep -q 'auto mode\|for shortcuts' && break
     sleep 0.5
   done
-  mkdir -p "$SCRATCH"
   # A freshly opened window is frontmost without anyone having to click, which
   # is what lets this run unattended.
   #
@@ -124,41 +129,27 @@ start_fixture() {
   # PF_VIEWPORT=Ghostty did for as long as this only knew Terminal.app.
   case "$VIEWPORT" in
     Terminal)
-      # Terminal.app runs a `.command` file as its session.
-      printf '#!/bin/sh\nexec %s attach -t %s\n' "$TMUX" "$SESSION" > "$SCRATCH/attach.command"
-      chmod +x "$SCRATCH/attach.command"
-      before_windows="$(osascript -e 'tell application "Terminal" to id of every window' \
-        2>/dev/null | tr -d ' ' | tr ',' '\n' | sort)"
-      open -a "$VIEWPORT" "$SCRATCH/attach.command"
-      sleep 1
-      # A new window is not proof either: if a second window opens in the same
-      # second, for any reason, both are "new" and picking one is a guess
-      # again. tmux itself knows which tty its client is on, and a window's
-      # tty is not something two windows can share — that is the identity
-      # that closes it, the same way the pid's own argv closes it for Ghostty.
+      # `do script` opens the window and hands back the tab it started, so the
+      # window's id comes from the launch itself. Everything else here has been
+      # a way of working out afterwards which window was ours — a new-window
+      # diff, then the tmux client's tty — and each one had a case where it
+      # picked wrong or picked nothing and left the window open. There is
+      # nothing to work out if the launch says so.
       #
-      # Waited for, not read once. Attaching is asynchronous, and a single look
-      # a second after `open` can happen before the client is there. That left
-      # `fixture_tty` empty, so no window id was recorded, so cleanup closed
-      # nothing and the window stayed behind — the leak this was written to fix.
-      fixture_tty=""
-      for _ in $(seq 1 20); do
-        fixture_tty="$("$TMUX" list-clients -t "$SESSION" -F '#{client_tty}' 2>/dev/null | head -1)"
-        [ -n "$fixture_tty" ] && break
-        sleep 0.25
-      done
-      after_windows="$(osascript -e 'tell application "Terminal" to id of every window' \
-        2>/dev/null | tr -d ' ' | tr ',' '\n' | sort)"
-      if [ -z "$fixture_tty" ]; then
-        echo "  the $VIEWPORT fixture never attached; its window will be left open"
-      fi
-      if [ -n "$fixture_tty" ]; then
-        for wid in $(comm -13 <(echo "$before_windows") <(echo "$after_windows")); do
-          wtty="$(osascript -e "tell application \"Terminal\" to tty of tab 1 of window id $wid" \
-            2>/dev/null)"
-          [ "$wtty" = "$fixture_tty" ] && { TERMINAL_WINDOW_ID="$wid"; break; }
-        done
-      fi
+      # `delay` because the window is drawn before it is frontmost.
+      TERMINAL_WINDOW_ID="$(osascript <<APPLESCRIPT 2>/dev/null
+tell application "Terminal"
+  do script "exec $(as_literal "$TMUX") attach -t $(as_literal "$SESSION")"
+  delay 0.3
+  set wid to id of front window
+end tell
+return wid
+APPLESCRIPT
+)"
+      [[ "${TERMINAL_WINDOW_ID:-}" =~ ^[0-9]+$ ]] || {
+        echo "Terminal did not say which window it opened; not running blind"
+        exit 1
+      }
       ;;
     *)
       # Ghostty and friends take `-e`, and on macOS only through `open`:
