@@ -128,8 +128,15 @@ start_fixture() {
       ;;
   esac
   sleep 4
-  [ -n "${VIEWPORT_PID:-}" ] || VIEWPORT_PID="$(pgrep -n -i "$VIEWPORT" || true)"
-  [ -n "$VIEWPORT_PID" ] || { echo "could not find the $VIEWPORT window it opened"; exit 1; }
+  # Terminal.app is one process for every window, so the newest match is
+  # always the right one, and cleanup never kills it by pid anyway. Any other
+  # terminal has to have matched a pid that appeared after `open -na`: a
+  # name-wide fallback here could be someone's own window, and cleanup would
+  # kill it.
+  if [ "$VIEWPORT" = Terminal ]; then
+    [ -n "${VIEWPORT_PID:-}" ] || VIEWPORT_PID="$(pgrep -n -i "$VIEWPORT" || true)"
+  fi
+  [ -n "${VIEWPORT_PID:-}" ] || { echo "could not find the new $VIEWPORT window it opened"; exit 1; }
   echo "  viewport: $VIEWPORT pid $VIEWPORT_PID"
 }
 
