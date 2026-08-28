@@ -1240,10 +1240,14 @@ enum PillMetrics {
     /// which is the one thing a surface that replaces a panel cannot be. Every
     /// number here is the old one times four thirds, so the proportions are the
     /// ones that were agreed and only the scale moved.
-    static let tabHeight: CGFloat = 27
-    static let tabWidth: CGFloat = 61
-    static let tabRadius: CGFloat = 11
-    static let tabPadding: CGFloat = 9
+    /// The margin is the second thing that was too tight. At 9pt of padding
+    /// round a 20pt bird in a 27pt box the two marks sat against the edges, so
+    /// the tab read as a crop of something rather than as a small whole thing.
+    /// The contents did not change; the box grew round them.
+    static let tabHeight: CGFloat = 31
+    static let tabWidth: CGFloat = 66
+    static let tabRadius: CGFloat = 12
+    static let tabPadding: CGFloat = 12
     static let tabGap: CGFloat = 7
     static let tabMark: CGFloat = 20
     /// The key on it, which grows with the rest. It is the tab's only text and
