@@ -70,13 +70,19 @@ screen_is_locked() {
   ioreg -n Root -d1 -a 2>/dev/null | grep -q CGSSessionScreenIsLocked
 }
 
-# Whether pid $1's own command line has $SESSION as one whole argument, not
-# merely a substring. `grep -q "attach -t $SESSION"` treats $SESSION as a
-# regex and matches it as a substring of a longer token too — a session named
-# "pfcheck.1" then also matches "pfcheck-1-other", and cleanup could kill a
-# pid that only looked like ours.
+# Whether pid $1 is the one this run's own launch started: $SESSION as the
+# exact argument right after "-t" in its command line. Not merely present as
+# some word anywhere in it — a process whose title or some other argument
+# happens to contain $SESSION would pass that test too, and this is what
+# cleanup trusts before killing something.
 owns_fixture() {
-  ps -o command= -p "$1" 2>/dev/null | tr ' ' '\n' | grep -qxF -- "$SESSION"
+  local args
+  read -ra args <<< "$(ps -o command= -p "$1" 2>/dev/null)"
+  local i
+  for i in "${!args[@]}"; do
+    [ "${args[$i]}" = "-t" ] && [ "${args[$((i + 1))]:-}" = "$SESSION" ] && return 0
+  done
+  return 1
 }
 
 start_fixture() {
@@ -114,13 +120,16 @@ start_fixture() {
       # Terminal.app runs a `.command` file as its session.
       printf '#!/bin/sh\nexec %s attach -t %s\n' "$TMUX" "$SESSION" > "$SCRATCH/attach.command"
       chmod +x "$SCRATCH/attach.command"
+      before_windows="$(osascript -e 'tell application "Terminal" to id of every window' \
+        2>/dev/null | tr -d ' ' | tr ',' '\n' | sort)"
       open -a "$VIEWPORT" "$SCRATCH/attach.command"
       sleep 1
-      # The window this run opened, by id — not any window whose title merely
-      # contains the session name. A freshly opened window is frontmost
-      # without anyone having to click, so the front window right now is
-      # this run's and nothing else's.
-      TERMINAL_WINDOW_ID="$(osascript -e 'tell application "Terminal" to id of front window' 2>/dev/null)"
+      # The window that appeared, not whichever is frontmost a second later:
+      # "frontmost" is whatever the window server settled on, and Terminal can
+      # keep an existing window in front of a new one that opened behind it.
+      after_windows="$(osascript -e 'tell application "Terminal" to id of every window' \
+        2>/dev/null | tr -d ' ' | tr ',' '\n' | sort)"
+      TERMINAL_WINDOW_ID="$(comm -13 <(echo "$before_windows") <(echo "$after_windows") | head -1)"
       ;;
     *)
       # Ghostty and friends take `-e`, and on macOS only through `open`:
