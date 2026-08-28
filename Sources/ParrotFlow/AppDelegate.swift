@@ -1189,6 +1189,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .found(let found):
             anchorAtPress = found
         case .missed(let why):
+            // Rung 2.5, terminals only. There is no caret to read — Ghostty
+            // answers `0+0` always — but the input line is on screen, and that
+            // is where the words are about to go.
+            //
+            // Before rung 3, which a terminal cannot satisfy: it repaints
+            // between dictations, so the digest never matches.
+            if appAtPress.map({ AppProfile.of($0).readsPane }) == true,
+               case .found(let box) = CaretAnchor.inputBox(at: focusAtPress?.element) {
+                anchorAtPress = box
+                Log.write(String(
+                    format: "pill: no caret, so the input line it is — %.0f,%.0f %.0fx%.0f",
+                    box.rect.minX, box.rect.minY, box.rect.width, box.rect.height
+                ))
+            }
+
             // Rung 3: open where the last dictation into this same element
             // landed. Two things have to hold, and both exist because a
             // remembered anchor looks confident while it is stale.
@@ -1207,15 +1222,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // opens at the bottom of the screen and rung 4 moves it a moment
             // later: starting nowhere in particular beats starting somewhere
             // wrong.
-            if let last = lastLanding, let now = focusAtPress?.element,
-               CFEqual(last.element, now),
-               Date().timeIntervalSince(last.at) < 60,
-               CaretAnchor.paneDigest(of: now) == last.digest {
-                anchorAtPress = CaretAnchor.Found(
-                    rect: last.found.rect, text: last.found.text, source: .remembered
-                )
-            } else {
-                Log.write("pill: no caret — \(why); will look for the words afterwards")
+            if anchorAtPress == nil {
+                if let last = lastLanding, let now = focusAtPress?.element,
+                   CFEqual(last.element, now),
+                   Date().timeIntervalSince(last.at) < 60,
+                   CaretAnchor.paneDigest(of: now) == last.digest {
+                    anchorAtPress = CaretAnchor.Found(
+                        rect: last.found.rect, text: last.found.text, source: .remembered
+                    )
+                } else {
+                    Log.write("pill: no caret — \(why); will look for the words afterwards")
+                }
             }
 
             // Rung 4: no caret to aim at, so take the pane as it is now and

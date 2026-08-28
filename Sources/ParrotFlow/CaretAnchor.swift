@@ -90,6 +90,26 @@ enum CaretAnchor {
         case missed(String)
     }
 
+    /// One budget for a whole lookup, rather than one per request.
+    ///
+    /// `AXUIElementSetMessagingTimeout` caps a single request.
+    /// `inputBox` makes seven in a row, so seven 80ms caps is 560ms — spent
+    /// before the recorder has started, on words somebody is already saying.
+    /// Armed before each request with what is left, the lookup cannot outlast
+    /// the budget.
+    private struct Deadline {
+        private let at: Date
+        init(_ seconds: Float) { at = Date().addingTimeInterval(TimeInterval(seconds)) }
+
+        /// Puts what is left on the element. False when it is spent.
+        func arm(_ element: AXUIElement) -> Bool {
+            let left = Float(at.timeIntervalSinceNow)
+            guard left > 0.005 else { return false }
+            AXUIElementSetMessagingTimeout(element, left)
+            return true
+        }
+    }
+
     /// Short, because this runs inside the key-down handler.
     ///
     /// The one thing that handler may not do is delay the recording. The
@@ -145,6 +165,28 @@ enum CaretAnchor {
             ))
         }
 
+        // Chromium and Outlook both get past the line above without answering.
+        // `AXBoundsForRange` declines inside a contenteditable, and Outlook
+        // reports its selection as `0+0`, which `trust` refuses. A composer is
+        // far taller than the 120pt below, so nothing was left and the pill
+        // opened at the bottom of the screen.
+        //
+        // The markers a screen reader reads text through do answer. Measured
+        // 2026-08-28: a Gmail composer gave 1613,631 0x15 — no width, one line
+        // tall, which is a caret — where the text leaf beside it ran
+        // 1293,631 320x15, so 1293 plus 320 lands exactly at the end of what
+        // had been typed. On that same element `AXBoundsForRange` answered
+        // 0,1329 0x0. Outlook answered 826,964 with a height of 19.
+        //
+        // Slack answers the pair too and gives a 0x0 rect a screen away, so
+        // this is checked twice: a caret has a height and that answer has none,
+        // and a rect a screen away is not inside the pane.
+        if let rect = markerCaret(of: element), (4.0...100.0).contains(rect.height),
+           let pane, pane.insetBy(dx: -4, dy: -4).intersects(rect) {
+            let text = flipped(rect)
+            return .found(Found(rect: across(text, flipped(pane)), text: text, source: .caret))
+        }
+
         // The control's own rectangle, but only when it is small enough to be
         // one. A search box is 22pt tall and its box is as good as its caret; a
         // terminal's text view is 915pt tall and its box puts the pill under
@@ -156,6 +198,62 @@ enum CaretAnchor {
             return .found(Found(rect: box, text: box, source: .field))
         }
         return .missed(pane == nil ? "no geometry" : "no caret, and the pane is too big to stand in for one")
+    }
+
+    /// The caret's rectangle, asked for the way a screen reader asks.
+    ///
+    /// Two private attributes, which is what a text area answers when the
+    /// public range ones decline. See `read` for what each app said.
+    private static func markerCaret(of element: AXUIElement) -> CGRect? {
+        var marker: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, "AXSelectedTextMarkerRange" as CFString, &marker
+        ) == .success, let marker else { return nil }
+
+        var out: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element, "AXBoundsForTextMarkerRange" as CFString, marker, &out
+        ) == .success, let out, CFGetTypeID(out) == AXValueGetTypeID() else { return nil }
+
+        var rect = CGRect.zero
+        guard AXValueGetValue(out as! AXValue, .cgRect, &rect) else { return nil }
+        return rect
+    }
+
+    /// Where the input line is, for a terminal that will not say where its
+    /// caret is.
+    ///
+    /// Ghostty answers `AXSelectedTextRange` as `0+0` always, so `read` misses,
+    /// and a terminal repaints between dictations so the remembered rung is
+    /// refused too. The pill opened at the bottom of the screen and moved only
+    /// once the words had landed, which is the placement that reads as random.
+    ///
+    /// No caret is needed to find the line: it is the row inside the rules a
+    /// TUI draws, or the shell prompt when nothing drew any.
+    static func inputBox(at element: AXUIElement?) -> Outcome {
+        guard Permissions.accessibility == .granted else {
+            return .missed("accessibility is not granted")
+        }
+        guard let element else { return .missed("nothing was focused") }
+        guard !SelectionReader.isOurs(element) else { return .missed("our own window") }
+
+        // Seven requests, one budget. See `Deadline`.
+        let deadline = Deadline(timeout)
+
+        guard let pane = frame(of: element, before: deadline).map(flipped) else {
+            return .missed("no geometry, or the budget ran out")
+        }
+        guard deadline.arm(element),
+              let screen = SelectionReader.visibleText(of: element, within: nil)
+        else { return .missed("the terminal will not say what is on screen in time") }
+
+        guard let index = SelectionReader.lastInputRowIndex(in: screen) else {
+            return .missed("nothing on screen looks like an input line")
+        }
+        guard let row = line(of: index, in: element, before: deadline),
+              let grid = visibleGrid(of: element, before: deadline)
+        else { return .missed("it will not say how the grid is laid out in time") }
+        return rectangle(forRow: row, of: grid, in: pane, source: .landed)
     }
 
     /// The bottom strip of an app's frontmost window, for apps that answer no
@@ -362,13 +460,26 @@ enum CaretAnchor {
               let grid = visibleGrid(of: element)
         else { return .missed("no bounds, and it will not say how the grid is laid out") }
 
-        // Checked, not trusted. A pitch is a line height and it has a range —
-        // 17.3pt was measured on Ghostty — and the row has to be one the pane
-        // is showing. Either failing means the grid was read wrong, and a grid
-        // read wrong is refused rather than used: the pill stays where it
-        // opened, and nowhere in particular beats somewhere wrong.
+        return rectangle(forRow: row, of: grid, in: pane, source: .landed)
+    }
+
+    /// A grid row as a rectangle on screen.
+    /// Checked, not trusted. A pitch is a line height and it has a range, and
+    /// the row has to be one the pane is showing. Either failing means the grid
+    /// was read wrong, and a grid read wrong is refused rather than used: the
+    /// pill stays where it opened, and nowhere in particular beats somewhere
+    /// wrong.
+    ///
+    /// The band is 12 to 34pt. Measured: 17.3 and 17.26 on Ghostty, both sound.
+    /// Against that, a pane carrying scrollback answered 109 rows where the
+    /// terminal was showing 54, which is 9pt, and 9pt put the anchor on the
+    /// window's bottom edge instead of the input box. A 6pt floor let that
+    /// through.
+    private static func rectangle(
+        forRow row: Int, of grid: (first: Int, rows: Int), in pane: NSRect, source: Source
+    ) -> Outcome {
         let pitch = pane.height / CGFloat(grid.rows)
-        guard (6.0...40.0).contains(pitch), (grid.first..<grid.first + grid.rows).contains(row)
+        guard (12.0...34.0).contains(pitch), (grid.first..<grid.first + grid.rows).contains(row)
         else {
             return .missed(String(
                 format: "the grid says row %d of %d at %.0fpt, which is not a line of text",
@@ -388,7 +499,7 @@ enum CaretAnchor {
             x: pane.minX, y: pane.maxY - CGFloat(row - grid.first + 1) * pitch,
             width: pane.width, height: pitch
         )
-        return .found(Found(rect: rect, text: rect, source: .landed))
+        return .found(Found(rect: rect, text: rect, source: source))
     }
 
     /// The rows the pane is showing: the first one, and how many.
@@ -425,11 +536,15 @@ enum CaretAnchor {
     /// Measured, the refusal reads "the grid says row 1364 of 1365 at 1pt",
     /// which is the plausibility check below doing its job. It stays refusing:
     /// there is no viewport in that answer to be had.
-    private static func visibleGrid(of element: AXUIElement) -> (first: Int, rows: Int)? {
-        guard let visible = range(kAXVisibleCharacterRangeAttribute, of: element),
+    private static func visibleGrid(
+        of element: AXUIElement, before deadline: Deadline? = nil
+    ) -> (first: Int, rows: Int)? {
+        guard let visible = range(
+                  kAXVisibleCharacterRangeAttribute, of: element, before: deadline),
               visible.length > 0,
-              let first = line(of: visible.location, in: element),
-              let last = line(of: visible.location + visible.length - 1, in: element),
+              let first = line(of: visible.location, in: element, before: deadline),
+              let last = line(
+                  of: visible.location + visible.length - 1, in: element, before: deadline),
               last >= first
         else { return nil }
         return (first, last - first + 1)
@@ -454,9 +569,12 @@ enum CaretAnchor {
     }
 
     /// Which row of the grid an index sits on. Nil when the app will not say.
-    private static func line(of index: Int, in element: AXUIElement) -> Int? {
+    private static func line(
+        of index: Int, in element: AXUIElement, before deadline: Deadline? = nil
+    ) -> Int? {
         var out: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(
+        guard deadline?.arm(element) != false,
+              AXUIElementCopyParameterizedAttributeValue(
             element, kAXLineForIndexParameterizedAttribute as CFString,
             NSNumber(value: index), &out
         ) == .success, let value = out as? NSNumber else { return nil }
@@ -496,11 +614,14 @@ enum CaretAnchor {
     }
 
     /// Any attribute whose value is a range.
-    private static func range(_ attribute: String, of element: AXUIElement) -> CFRange? {
+    private static func range(
+        _ attribute: String, of element: AXUIElement, before deadline: Deadline? = nil
+    ) -> CFRange? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            element, attribute as CFString, &value
-        ) == .success, let wrapped = value, CFGetTypeID(wrapped) == AXValueGetTypeID()
+        guard deadline?.arm(element) != false,
+              AXUIElementCopyAttributeValue(
+                  element, attribute as CFString, &value
+              ) == .success, let wrapped = value, CFGetTypeID(wrapped) == AXValueGetTypeID()
         else { return nil }
         var range = CFRange()
         guard AXValueGetValue(wrapped as! AXValue, .cfRange, &range) else { return nil }
@@ -527,13 +648,15 @@ enum CaretAnchor {
         return rect
     }
 
-    private static func frame(of element: AXUIElement) -> CGRect? {
+    private static func frame(of element: AXUIElement, before deadline: Deadline? = nil) -> CGRect? {
         var origin = CGPoint.zero
         var size = CGSize.zero
         var position: CFTypeRef?
         var extent: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        guard deadline?.arm(element) != false,
+              AXUIElementCopyAttributeValue(
                   element, kAXPositionAttribute as CFString, &position) == .success,
+              deadline?.arm(element) != false,
               AXUIElementCopyAttributeValue(
                   element, kAXSizeAttribute as CFString, &extent) == .success,
               let positionValue = position, CFGetTypeID(positionValue) == AXValueGetTypeID(),
