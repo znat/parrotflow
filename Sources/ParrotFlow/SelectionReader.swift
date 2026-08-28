@@ -269,10 +269,10 @@ enum SelectionReader {
     /// wrapping and all, which is why callers match against text they already
     /// hold rather than trying to identify "the current line" within it.
     ///
-    /// `timeout` is for the one caller that runs inside the key-down handler,
-    /// where 500ms of waiting is 500ms the recording has not started.
-    static func visibleText(of element: AXUIElement, within timeout: Float = 0.5) -> String? {
-        AXUIElementSetMessagingTimeout(element, timeout)
+    /// Nil `timeout` leaves the element's own alone, for a caller that has
+    /// already put a budget on it. See `CaretAnchor.inputBox`.
+    static func visibleText(of element: AXUIElement, within timeout: Float? = 0.5) -> String? {
+        if let timeout { AXUIElementSetMessagingTimeout(element, timeout) }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element, kAXValueAttribute as CFString, &value

@@ -90,6 +90,26 @@ enum CaretAnchor {
         case missed(String)
     }
 
+    /// One budget for a whole lookup, rather than one per request.
+    ///
+    /// `AXUIElementSetMessagingTimeout` caps a single request.
+    /// `inputBox` makes seven in a row, so seven 80ms caps is 560ms — spent
+    /// before the recorder has started, on words somebody is already saying.
+    /// Armed before each request with what is left, the lookup cannot outlast
+    /// the budget.
+    private struct Deadline {
+        private let at: Date
+        init(_ seconds: Float) { at = Date().addingTimeInterval(TimeInterval(seconds)) }
+
+        /// Puts what is left on the element. False when it is spent.
+        func arm(_ element: AXUIElement) -> Bool {
+            let left = Float(at.timeIntervalSinceNow)
+            guard left > 0.005 else { return false }
+            AXUIElementSetMessagingTimeout(element, left)
+            return true
+        }
+    }
+
     /// Short, because this runs inside the key-down handler.
     ///
     /// The one thing that handler may not do is delay the recording. The
@@ -216,18 +236,23 @@ enum CaretAnchor {
         }
         guard let element else { return .missed("nothing was focused") }
         guard !SelectionReader.isOurs(element) else { return .missed("our own window") }
-        AXUIElementSetMessagingTimeout(element, timeout)
 
-        guard let pane = frame(of: element).map(flipped) else { return .missed("no geometry") }
-        guard let screen = SelectionReader.visibleText(of: element, within: timeout) else {
-            return .missed("the terminal will not say what is on screen")
+        // Seven requests, one budget. See `Deadline`.
+        let deadline = Deadline(timeout)
+
+        guard let pane = frame(of: element, before: deadline).map(flipped) else {
+            return .missed("no geometry, or the budget ran out")
         }
+        guard deadline.arm(element),
+              let screen = SelectionReader.visibleText(of: element, within: nil)
+        else { return .missed("the terminal will not say what is on screen in time") }
+
         guard let index = SelectionReader.lastInputRowIndex(in: screen) else {
             return .missed("nothing on screen looks like an input line")
         }
-        guard let row = line(of: index, in: element), let grid = visibleGrid(of: element) else {
-            return .missed("it will not say how the grid is laid out")
-        }
+        guard let row = line(of: index, in: element, before: deadline),
+              let grid = visibleGrid(of: element, before: deadline)
+        else { return .missed("it will not say how the grid is laid out in time") }
         return rectangle(forRow: row, of: grid, in: pane, source: .landed)
     }
 
@@ -511,11 +536,15 @@ enum CaretAnchor {
     /// Measured, the refusal reads "the grid says row 1364 of 1365 at 1pt",
     /// which is the plausibility check below doing its job. It stays refusing:
     /// there is no viewport in that answer to be had.
-    private static func visibleGrid(of element: AXUIElement) -> (first: Int, rows: Int)? {
-        guard let visible = range(kAXVisibleCharacterRangeAttribute, of: element),
+    private static func visibleGrid(
+        of element: AXUIElement, before deadline: Deadline? = nil
+    ) -> (first: Int, rows: Int)? {
+        guard let visible = range(
+                  kAXVisibleCharacterRangeAttribute, of: element, before: deadline),
               visible.length > 0,
-              let first = line(of: visible.location, in: element),
-              let last = line(of: visible.location + visible.length - 1, in: element),
+              let first = line(of: visible.location, in: element, before: deadline),
+              let last = line(
+                  of: visible.location + visible.length - 1, in: element, before: deadline),
               last >= first
         else { return nil }
         return (first, last - first + 1)
@@ -540,9 +569,12 @@ enum CaretAnchor {
     }
 
     /// Which row of the grid an index sits on. Nil when the app will not say.
-    private static func line(of index: Int, in element: AXUIElement) -> Int? {
+    private static func line(
+        of index: Int, in element: AXUIElement, before deadline: Deadline? = nil
+    ) -> Int? {
         var out: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(
+        guard deadline?.arm(element) != false,
+              AXUIElementCopyParameterizedAttributeValue(
             element, kAXLineForIndexParameterizedAttribute as CFString,
             NSNumber(value: index), &out
         ) == .success, let value = out as? NSNumber else { return nil }
@@ -582,11 +614,14 @@ enum CaretAnchor {
     }
 
     /// Any attribute whose value is a range.
-    private static func range(_ attribute: String, of element: AXUIElement) -> CFRange? {
+    private static func range(
+        _ attribute: String, of element: AXUIElement, before deadline: Deadline? = nil
+    ) -> CFRange? {
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            element, attribute as CFString, &value
-        ) == .success, let wrapped = value, CFGetTypeID(wrapped) == AXValueGetTypeID()
+        guard deadline?.arm(element) != false,
+              AXUIElementCopyAttributeValue(
+                  element, attribute as CFString, &value
+              ) == .success, let wrapped = value, CFGetTypeID(wrapped) == AXValueGetTypeID()
         else { return nil }
         var range = CFRange()
         guard AXValueGetValue(wrapped as! AXValue, .cfRange, &range) else { return nil }
@@ -613,13 +648,15 @@ enum CaretAnchor {
         return rect
     }
 
-    private static func frame(of element: AXUIElement) -> CGRect? {
+    private static func frame(of element: AXUIElement, before deadline: Deadline? = nil) -> CGRect? {
         var origin = CGPoint.zero
         var size = CGSize.zero
         var position: CFTypeRef?
         var extent: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
+        guard deadline?.arm(element) != false,
+              AXUIElementCopyAttributeValue(
                   element, kAXPositionAttribute as CFString, &position) == .success,
+              deadline?.arm(element) != false,
               AXUIElementCopyAttributeValue(
                   element, kAXSizeAttribute as CFString, &extent) == .success,
               let positionValue = position, CFGetTypeID(positionValue) == AXValueGetTypeID(),
