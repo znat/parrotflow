@@ -201,6 +201,41 @@ enum SelectionReader {
             .joined(separator: " ")
     }
 
+    /// The UTF-16 index of the row being typed on.
+    ///
+    /// Inside the box a TUI drew, or the shell prompt when nothing drew one.
+    /// `CaretAnchor` turns it into a grid row, and a row into somewhere to open
+    /// the pill.
+    static func lastInputRowIndex(in screen: String) -> Int? {
+        let rows = screen.components(separatedBy: "\n")
+        guard let last = inputRowNumber(in: rows) else { return nil }
+        // +1 per row for the newline that separated it.
+        return rows[0..<last].reduce(0) { $0 + $1.utf16.count + 1 }
+    }
+
+    private static func inputRowNumber(in rows: [String]) -> Int? {
+        let borders = rows.indices.filter { isBorder(rows[$0]) }
+        if borders.count >= 2 {
+            let lower = borders[borders.count - 1]
+            let upper = borders[borders.count - 2]
+            if upper + 1 < lower {
+                // The last row inside the box with anything on it. A box is
+                // drawn its full height whatever is typed into it, so the
+                // bottom row is padding and anchoring there sits below the box.
+                return (upper + 1..<lower).last {
+                    !rows[$0].trimmingCharacters(in: .whitespaces).isEmpty
+                } ?? upper + 1
+            }
+        }
+        // No box, so a bare shell. By the prompt glyph rather than the last row
+        // with text on it, because a status bar sits below the shell and under
+        // tmux it is always the last thing on screen.
+        return rows.indices.reversed().first {
+            guard let first = rows[$0].drop(while: { $0 == " " }).first else { return false }
+            return "❯>$#%⏵".contains(first)
+        }
+    }
+
     /// A rule the TUI drew, rather than anything anyone typed.
     static func isBorder(_ row: String) -> Bool {
         let bare = row.trimmingCharacters(in: .whitespaces)
@@ -233,8 +268,11 @@ enum SelectionReader {
     /// An element's whole value. In a terminal this is the visible screen,
     /// wrapping and all, which is why callers match against text they already
     /// hold rather than trying to identify "the current line" within it.
-    static func visibleText(of element: AXUIElement) -> String? {
-        AXUIElementSetMessagingTimeout(element, 0.5)
+    ///
+    /// `timeout` is for the one caller that runs inside the key-down handler,
+    /// where 500ms of waiting is 500ms the recording has not started.
+    static func visibleText(of element: AXUIElement, within timeout: Float = 0.5) -> String? {
+        AXUIElementSetMessagingTimeout(element, timeout)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element, kAXValueAttribute as CFString, &value

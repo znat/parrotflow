@@ -145,6 +145,28 @@ enum CaretAnchor {
             ))
         }
 
+        // Chromium and Outlook both get past the line above without answering.
+        // `AXBoundsForRange` declines inside a contenteditable, and Outlook
+        // reports its selection as `0+0`, which `trust` refuses. A composer is
+        // far taller than the 120pt below, so nothing was left and the pill
+        // opened at the bottom of the screen.
+        //
+        // The markers a screen reader reads text through do answer. Measured
+        // 2026-08-28: a Gmail composer gave 1613,631 0x15 — no width, one line
+        // tall, which is a caret — where the text leaf beside it ran
+        // 1293,631 320x15, so 1293 plus 320 lands exactly at the end of what
+        // had been typed. On that same element `AXBoundsForRange` answered
+        // 0,1329 0x0. Outlook answered 826,964 with a height of 19.
+        //
+        // Slack answers the pair too and gives a 0x0 rect a screen away, so
+        // this is checked twice: a caret has a height and that answer has none,
+        // and a rect a screen away is not inside the pane.
+        if let rect = markerCaret(of: element), (4.0...100.0).contains(rect.height),
+           let pane, pane.insetBy(dx: -4, dy: -4).intersects(rect) {
+            let text = flipped(rect)
+            return .found(Found(rect: across(text, flipped(pane)), text: text, source: .caret))
+        }
+
         // The control's own rectangle, but only when it is small enough to be
         // one. A search box is 22pt tall and its box is as good as its caret; a
         // terminal's text view is 915pt tall and its box puts the pill under
@@ -156,6 +178,57 @@ enum CaretAnchor {
             return .found(Found(rect: box, text: box, source: .field))
         }
         return .missed(pane == nil ? "no geometry" : "no caret, and the pane is too big to stand in for one")
+    }
+
+    /// The caret's rectangle, asked for the way a screen reader asks.
+    ///
+    /// Two private attributes, which is what a text area answers when the
+    /// public range ones decline. See `read` for what each app said.
+    private static func markerCaret(of element: AXUIElement) -> CGRect? {
+        var marker: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            element, "AXSelectedTextMarkerRange" as CFString, &marker
+        ) == .success, let marker else { return nil }
+
+        var out: CFTypeRef?
+        guard AXUIElementCopyParameterizedAttributeValue(
+            element, "AXBoundsForTextMarkerRange" as CFString, marker, &out
+        ) == .success, let out, CFGetTypeID(out) == AXValueGetTypeID() else { return nil }
+
+        var rect = CGRect.zero
+        guard AXValueGetValue(out as! AXValue, .cgRect, &rect) else { return nil }
+        return rect
+    }
+
+    /// Where the input line is, for a terminal that will not say where its
+    /// caret is.
+    ///
+    /// Ghostty answers `AXSelectedTextRange` as `0+0` always, so `read` misses,
+    /// and a terminal repaints between dictations so the remembered rung is
+    /// refused too. The pill opened at the bottom of the screen and moved only
+    /// once the words had landed, which is the placement that reads as random.
+    ///
+    /// No caret is needed to find the line: it is the row inside the rules a
+    /// TUI draws, or the shell prompt when nothing drew any.
+    static func inputBox(at element: AXUIElement?) -> Outcome {
+        guard Permissions.accessibility == .granted else {
+            return .missed("accessibility is not granted")
+        }
+        guard let element else { return .missed("nothing was focused") }
+        guard !SelectionReader.isOurs(element) else { return .missed("our own window") }
+        AXUIElementSetMessagingTimeout(element, timeout)
+
+        guard let pane = frame(of: element).map(flipped) else { return .missed("no geometry") }
+        guard let screen = SelectionReader.visibleText(of: element, within: timeout) else {
+            return .missed("the terminal will not say what is on screen")
+        }
+        guard let index = SelectionReader.lastInputRowIndex(in: screen) else {
+            return .missed("nothing on screen looks like an input line")
+        }
+        guard let row = line(of: index, in: element), let grid = visibleGrid(of: element) else {
+            return .missed("it will not say how the grid is laid out")
+        }
+        return rectangle(forRow: row, of: grid, in: pane, source: .landed)
     }
 
     /// The bottom strip of an app's frontmost window, for apps that answer no
@@ -362,13 +435,26 @@ enum CaretAnchor {
               let grid = visibleGrid(of: element)
         else { return .missed("no bounds, and it will not say how the grid is laid out") }
 
-        // Checked, not trusted. A pitch is a line height and it has a range —
-        // 17.3pt was measured on Ghostty — and the row has to be one the pane
-        // is showing. Either failing means the grid was read wrong, and a grid
-        // read wrong is refused rather than used: the pill stays where it
-        // opened, and nowhere in particular beats somewhere wrong.
+        return rectangle(forRow: row, of: grid, in: pane, source: .landed)
+    }
+
+    /// A grid row as a rectangle on screen.
+    /// Checked, not trusted. A pitch is a line height and it has a range, and
+    /// the row has to be one the pane is showing. Either failing means the grid
+    /// was read wrong, and a grid read wrong is refused rather than used: the
+    /// pill stays where it opened, and nowhere in particular beats somewhere
+    /// wrong.
+    ///
+    /// The band is 12 to 34pt. Measured: 17.3 and 17.26 on Ghostty, both sound.
+    /// Against that, a pane carrying scrollback answered 109 rows where the
+    /// terminal was showing 54, which is 9pt, and 9pt put the anchor on the
+    /// window's bottom edge instead of the input box. A 6pt floor let that
+    /// through.
+    private static func rectangle(
+        forRow row: Int, of grid: (first: Int, rows: Int), in pane: NSRect, source: Source
+    ) -> Outcome {
         let pitch = pane.height / CGFloat(grid.rows)
-        guard (6.0...40.0).contains(pitch), (grid.first..<grid.first + grid.rows).contains(row)
+        guard (12.0...34.0).contains(pitch), (grid.first..<grid.first + grid.rows).contains(row)
         else {
             return .missed(String(
                 format: "the grid says row %d of %d at %.0fpt, which is not a line of text",
@@ -388,7 +474,7 @@ enum CaretAnchor {
             x: pane.minX, y: pane.maxY - CGFloat(row - grid.first + 1) * pitch,
             width: pane.width, height: pitch
         )
-        return .found(Found(rect: rect, text: rect, source: .landed))
+        return .found(Found(rect: rect, text: rect, source: source))
     }
 
     /// The rows the pane is showing: the first one, and how many.
