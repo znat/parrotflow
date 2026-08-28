@@ -1029,8 +1029,9 @@ struct Surface {
     ///
     /// Measured on a live Claude Code session: the pair left the box unchanged
     /// for all 12 attempts and the edit fell through to the clipboard, three
-    /// times on 2026-08-27. What the box held was not recorded, which is why
-    /// it is recorded now.
+    /// times on 2026-08-27. Nothing about the box was recorded, which is why
+    /// its length is recorded now — not its content, which can be a command
+    /// holding a password or a token.
     private func clearedBox() -> Bool {
         var previous: String?
         var stalls = 0
@@ -1071,10 +1072,12 @@ struct Surface {
         return stuck(on: boxContent() ?? "")
     }
 
-    /// The box would not empty. Says what it holds, so the next one of these
-    /// is diagnosable from the log alone.
+    /// The box would not empty. Says how much it still holds, so the next one
+    /// of these is diagnosable from the log alone. Not what it holds: the box
+    /// can be a command with a password or a token in it, and the log is not
+    /// a safe place for that.
     private func stuck(on box: String) -> Bool {
-        Log.write("surface: the box will not empty; it still reads \"\(box.prefix(80))\"")
+        Log.write("surface: the box will not empty; \(box.count) chars remain")
         return false
     }
 
