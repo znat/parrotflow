@@ -1132,22 +1132,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // toggle belongs to the one already running, and it did not ask for
         // anything different.
         //
-        // A plain hold counts as keyed while an offer over a *selection* is up,
-        // and only then. There the pill is pointing at words and asking what to
-        // do about them, so a hold cannot mean "start a new dictation" — and
-        // the tap that summoned it already happened, so asking for another
-        // would be asking twice for the same thing. It is also what the third
-        // row of that pill promises, and a promise nothing honoured would be
-        // worse than no row.
+        // A plain hold counts as keyed while the offer is *open*, and only
+        // then. Open, the pill is pointing at words and asking what to do about
+        // them, so a hold cannot mean "start a new dictation" — and you opened
+        // it, so asking for it again would be asking twice for the same thing.
+        // It is also what the last row of that panel promises, and a promise
+        // nothing honoured would be worse than no row.
         //
-        // An offer over the last dictation is not that. It carries no such row,
-        // nothing on screen offers the gesture, and holding after a sentence
-        // lands is how the next one gets said. Matched against the headline
-        // rather than against `selectionAtPress` so the rule is the one the
-        // pill is drawing: the row appears exactly when this is true, and the
-        // two cannot drift apart.
+        // A tab is not that. Every dictation leaves one, nothing on it offers
+        // the gesture, and holding after a sentence lands is how the next one
+        // gets said — so a tab must never turn the next hold into an edit.
+        //
+        // This used to read `offerHeadline?.isSelection`, because the row was
+        // drawn over a selection and nowhere else. The row is on every panel
+        // now, and the rule has to be the one the pill is drawing or the two
+        // drift apart — which they did: every offer promised the hold and only
+        // a selection honoured it, so holding after an ordinary dictation
+        // started another dictation instead of taking an instruction.
+        //
+        // `pill.isOpen` is that rule exactly. The row lives inside the panel,
+        // so it is visible precisely when the panel is open, and the promise
+        // and the behaviour cannot come apart again.
         if !recorder.isRecording {
-            keyedAtPress = afterTap || (offerIsUp && offerHeadline?.isSelection == true)
+            keyedAtPress = afterTap || (offerIsUp && pill.isOpen)
         }
         // Read before anything this press does, so an abort later can tell the
         // transcription this press started from one that was already running.
