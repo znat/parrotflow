@@ -256,6 +256,12 @@ final class PillModel: ObservableObject {
     /// and nothing about them should redraw it.
     var onPick: ((Int) -> Void)?
     var onHover: ((Bool) -> Void)?
+    /// The open panel folded back to the tab on its own.
+    ///
+    /// The offer is still on screen and still live afterwards, so whoever armed
+    /// it has to put the clock and the letters back the way they are for a tab.
+    var onFold: (() -> Void)?
+
     /// A click on the collapsed tab.
     ///
     /// Its own way in rather than leaning on the hover that precedes it. A
@@ -429,6 +435,11 @@ final class PillHUD {
         if wanted { openedByPointer = byPointer } else { openedByPointer = false }
         Log.write("pill: the offer \(wanted ? "opened" : "folded")\(byPointer ? ", by the pointer" : "")")
         set(.offer(commands, headline, reading, open: wanted))
+        if !wanted {
+            // The pointer's mark belonged to a chip that is no longer drawn.
+            model.selected = nil
+            model.onFold?()
+        }
         guard wanted, let offerFor, !pointerHolds else { return }
         decay(over: offerFor)
     }
@@ -517,6 +528,23 @@ final class PillHUD {
             guard let self, self.isDecaying, self.decayRun == run else { return }
             self.isDecaying = false
             self.decayIsStill = false
+
+            // An open panel folds rather than goes. What ran out is the panel,
+            // not the offer: the words are still there, the tab is still what
+            // says so, and taking the whole surface away for not having been
+            // answered inside six seconds means the only way back is to
+            // remember the key with nothing on screen naming it. The fade is
+            // still worth having — it says the panel is about to close — it
+            // just ends somewhere other than nothing.
+            if self.offerIsOpen {
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0
+                    panel.animator().alphaValue = 1
+                }
+                self.open(false)
+                return
+            }
+
             // The aim belonged to the dictation that has just ended, the same
             // as in `fadeOut`.
             self.near = nil

@@ -3141,6 +3141,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the pill gives it up, so a chip is never lit for a command that is
         // not about to happen. Cleared here rather than in the view because
         // this is where the rest of the leaving behaviour hangs.
+        // The panel's clock folds it back to the tab instead of taking the
+        // surface away, so the clock and the letters have to go back to what a
+        // tab has: no deadline, and nothing claimed from your keyboard.
+        pill.model.onFold = { [weak self] in
+            guard let self, self.offerIsUp else { return }
+            Log.write("offer: the panel folded back to the tab")
+            self.offerUntil = .distantFuture
+            self.offerHeld = false
+            self.watchTheOfferKeys()
+        }
+
         pill.model.onHover = { [weak self] inside in
             guard let self else { return }
             if !inside { self.pill.model.selected = nil }
@@ -3647,7 +3658,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and a pointer that has gone without saying so is treated as one that
     /// said so: the offer gets its `offerSeconds` back and runs out normally.
     private func offerDeadlinePassed() {
-        guard offerHeld else { endTheOffer(); return }
+        guard offerHeld else {
+            // Open, this is the panel's deadline and not the offer's: it folds
+            // and the tab stays. `pill.open(false)` calls back through `onFold`
+            // to put the clock and the letters back, and the pill's own fade
+            // usually gets here first — both are idempotent.
+            if pill.isOpen { pill.open(false) } else { endTheOffer() }
+            return
+        }
         if pill.pointerIsOver {
             armTheOfferDeadline()
             return
@@ -3694,6 +3712,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func endTheOffer() {
         offerUntil = nil
         offerHeld = false
+        // Including one on its way back after a message. Escape, a click
+        // outside or a keystroke means you have moved on, and a tab arriving
+        // three seconds later would be the surface arguing about that.
+        offerReturn?.cancel()
+        offerReturn = nil
         offeredCorrection = nil
         offerOnScreen = nil
         // With the rest of what the offer was about. It decides whether a hold
