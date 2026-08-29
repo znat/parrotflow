@@ -213,6 +213,14 @@ if let index = arguments.firstIndex(of: "--inflected") {
     exit(InflectedCommand.run(term: arguments[index + 1], heard: arguments[index + 2]))
 }
 
+if let index = arguments.firstIndex(of: "--word-gate") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --word-gate <word>")
+        exit(2)
+    }
+    exit(WordGateCommand.run(word: arguments[index + 1]))
+}
+
 if let index = arguments.firstIndex(of: "--suggest") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --suggest \"<sentence>\" [--lang fr]")

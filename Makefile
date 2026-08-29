@@ -89,7 +89,7 @@ release-certificate:
 ## check-inplace needs a real screen, the Accessibility grant and tmux. Run
 ## those by hand and put the numbers in the pull request.
 CHECKS := numbers replacements pipeline pipeline-config wake split dotted dates keyed \
-          transform-folders eval audio-recovery possessive suggest input join \
+          transform-folders eval audio-recovery possessive word-gate suggest input join \
           profiles span-rule clipboard default-config vocabulary-config learn \
           signing-identity no-voice
 

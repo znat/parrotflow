@@ -514,10 +514,18 @@ actor Vocabulary {
 
     /// Whether a proposal is safe to write without asking anything.
     ///
-    /// The rule is the spell-check gate, measured at 38/38 on declines and
-    /// 0.00s: never overwrite a real word. Used here as a router rather than a
-    /// filter — a real word is not refused, it is passed to the judge, which is
-    /// the only thing that can read the sentence.
+    /// The first rule is the spell-check gate, measured at 38/38 on declines
+    /// and 0.00s: never overwrite a real word. Used here as a router rather
+    /// than a filter — a real word is not refused, it is passed to the judge,
+    /// which is the only thing that can read the sentence.
+    ///
+    /// Two word lists have to agree, not one. `Replacements.isRealWord` is a
+    /// dictionary and has no first names in it, so `Frederick` looked like a
+    /// word nobody uses and "Um not Peter, uh Frederick." was rewritten to
+    /// `Redrock` with nothing reading the sentence. `WordPieces` covers that
+    /// blind spot and has the opposite one, and it answers `nil` when its list
+    /// is missing — so a broken resource sends the proposal to the judge
+    /// rather than writing it in.
     ///
     /// Two cases the checker gets wrong on its own, both from
     /// `scripts/validate-judge.py`. A run of capitals is accepted as an acronym,
@@ -551,8 +559,24 @@ actor Vocabulary {
         guard termScore > heardScore else { return false }
         let bare = String(letters)
         guard !bare.isEmpty else { return false }
+        return unseenWord(bare)
+    }
+
+    /// The word half of the gate: both lists have to say they have never seen
+    /// it, and a list that cannot answer counts as a no.
+    ///
+    /// Split out so `--word-gate` scores the shipped test instead of a copy of
+    /// it — the compromise `scripts/real-words.swift` had to make and this does
+    /// not. The rest of `autoApplies` is about one proposal, with scores and a
+    /// position in a sentence; this is about one word.
+    ///
+    /// The uppercase form is asked lowercased only. The spell checker waves
+    /// through any run of capitals, so `OLAMA` came back as a known word — see
+    /// `Replacements.isRealWord`.
+    static func unseenWord(_ bare: String) -> Bool {
         let forms = bare == bare.uppercased() ? [bare.lowercased()] : [bare, bare.lowercased()]
-        return !forms.contains { Replacements.isRealWord($0) }
+        guard !forms.contains(where: { Replacements.isRealWord($0) }) else { return false }
+        return WordPieces.knows(bare) == false
     }
 
     /// The transcript, with the names the audio is sure about written in and

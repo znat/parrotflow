@@ -153,6 +153,17 @@ jobs:
       - name: A possessive across a substitution
         run: scripts/check-possessive.sh
 
+      # Which words a vocabulary term may overwrite with nothing reading the
+      # sentence. Two word lists, both of which have to say they have never
+      # seen the word. Pure lookups, no audio and no model. Includes the
+      # fail-open case: with the list missing the word goes to the judge.
+      #
+      # Half of it asks NSSpellChecker, so the same hazard as Replacements
+      # above — a timeout reads as "known word". This one asks a failing case
+      # a second time in a fresh process, which is a second sample.
+      - name: The auto-apply word gate
+        run: scripts/check-word-gate.sh
+
       # Which words the correction panel proposes a row for, scored on the
       # archive. Two numbers, and neither passes on its own: recall, and rows
       # per sentence. A suggester that proposed every word would score full

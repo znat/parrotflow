@@ -292,9 +292,36 @@ flips:
 The two bottom rows are the blind controls, and they are the point: a mechanism
 that does not beat its own blind version has not been shown to work.
 
-A spell-check gate cannot do this job alone. Its rule is "never replace a real
-word", so it cannot fix `cloud` -> `Claude` or `Versailles` -> `Vercel`. Those
-need the sentence.
+A word-list gate cannot do this job alone. Its rule is "never replace a word
+somebody has already written", so it cannot fix `cloud` -> `Claude` or
+`Versailles` -> `Vercel`. Those need the sentence.
+
+**Which words the gate lets through, then.** A few substitutions never reach
+the judge — the sound already agrees, and nobody wants a question about
+`Versal` -> `Vercel`. That is decided by two word lists, and both have to say
+they have never seen the decoded word:
+
+| list | knows | misses |
+| --- | --- | --- |
+| `NSSpellChecker`, `en` then `fr` | `subtask`, `repo`, `rebase`, `Mathieu` | ordinary first names — `Sarah`, `Nathan`, `Frederick` |
+| `data/wordpiece.txt` | those first names | jargon — `subtask`, `repo`, `rebase` |
+
+Each list has the other's blind spot, which is the whole reason there are two.
+The dictionary alone rewrote "Um not Peter, uh Frederick." to "…uh Redrock."
+without asking, because no dictionary has `Frederick` in it. `data/wordpiece.txt`
+is the whole-word half of `distilbert-base-uncased`'s tokenizer vocabulary
+(Apache-2.0, 23694 entries): a tokenizer keeps a word whole when it has seen it
+often and chops the rest into fragments, so membership is a frequency fact and
+not a lexicographer's. No model runs — the test is a set lookup, and the query
+is folded so `Chloé` is looked up as `chloe`.
+
+Some words are missed by both and still auto-apply: `webhook`, `worktree`,
+`kubernetes`, and the first names `Priya` and `Siobhan`. Two lists remove most
+of that class, not all of it.
+
+If the list cannot be read the gate stops auto-applying entirely and every
+proposal goes to the judge. `--word-gate <word>` prints both verdicts and the
+decision; `scripts/check-word-gate.sh` scores them.
 
 Every exchange is written to `trace.jsonl` under the stage's variables, so a
 verdict can be replayed rather than guessed at.
