@@ -559,6 +559,21 @@ actor Vocabulary {
         guard termScore > heardScore else { return false }
         let bare = String(letters)
         guard !bare.isEmpty else { return false }
+        return unseenWord(bare)
+    }
+
+    /// The word half of the gate: both lists have to say they have never seen
+    /// it, and a list that cannot answer counts as a no.
+    ///
+    /// Split out so `--word-gate` scores the shipped test instead of a copy of
+    /// it — the compromise `scripts/real-words.swift` had to make and this does
+    /// not. The rest of `autoApplies` is about one proposal, with scores and a
+    /// position in a sentence; this is about one word.
+    ///
+    /// The uppercase form is asked lowercased only. The spell checker waves
+    /// through any run of capitals, so `OLAMA` came back as a known word — see
+    /// `Replacements.isRealWord`.
+    static func unseenWord(_ bare: String) -> Bool {
         let forms = bare == bare.uppercased() ? [bare.lowercased()] : [bare, bare.lowercased()]
         guard !forms.contains(where: { Replacements.isRealWord($0) }) else { return false }
         return WordPieces.knows(bare) == false

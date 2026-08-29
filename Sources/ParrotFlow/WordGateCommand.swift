@@ -24,18 +24,18 @@ enum WordGateCommand {
             print("usage: ParrotFlow --word-gate <word>")
             return 2
         }
+        // The decision comes from the shipped test. The two verdicts above it
+        // are read from the same lists for the report, so a set can say which
+        // half moved — they do not compute the answer.
         let forms = letters == letters.uppercased()
             ? [letters.lowercased()] : [letters, letters.lowercased()]
-        let spellKnows = forms.contains { Replacements.isRealWord($0) }
-        let listKnows = WordPieces.knows(letters)
-
-        print("spell      \(spellKnows ? "known" : "unknown")")
-        switch listKnows {
+        print("spell      \(forms.contains { Replacements.isRealWord($0) } ? "known" : "unknown")")
+        switch WordPieces.knows(letters) {
         case .some(true):  print("wordpiece  known")
         case .some(false): print("wordpiece  unknown")
         case .none:        print("wordpiece  unavailable")
         }
-        print("gate       \(!spellKnows && listKnows == false ? "auto-apply" : "judge")")
+        print("gate       \(Vocabulary.unseenWord(letters) ? "auto-apply" : "judge")")
         return 0
     }
 }
