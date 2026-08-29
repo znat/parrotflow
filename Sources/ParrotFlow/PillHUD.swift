@@ -1312,27 +1312,22 @@ enum PillMetrics {
     /// round a 20pt bird in a 27pt box the two marks sat against the edges, so
     /// the tab read as a crop of something rather than as a small whole thing.
     /// The contents did not change; the box grew round them.
-    /// Two sizes, because the tab is two different things.
+    /// One size, and it was two.
     ///
-    /// While the microphone is open and while the words are being worked on,
-    /// the bird is the whole of what the app is saying and it is the thing you
-    /// glance at to know it is listening. After the words have landed it is a
-    /// mark that stays on screen until you act, and a smaller one is a smaller
-    /// imposition — it is no longer a target either, since only the key opens
-    /// it, so it needs to be findable rather than hittable.
+    /// The dictation wore 31 and the offer wore 23, on the argument that a
+    /// microphone being open is worth more of the screen than a mark waiting to
+    /// be asked. That is true and it is not worth what it cost: the surface
+    /// changes between those two states while you are watching it, so the
+    /// object you learned to find grew and shrank under your eye, and a thing
+    /// that changes size while it is doing nothing else reads as two things.
     ///
-    /// The small set is the large one times three quarters.
-    static let liveTabHeight: CGFloat = 31
-    static let liveTabRadius: CGFloat = 12
-    static let liveTabPadding: CGFloat = 12
-    static let liveTabGap: CGFloat = 7
-    static let liveTabMark: CGFloat = 20
-
-    static let tabHeight: CGFloat = 23
-    static let tabRadius: CGFloat = 9
-    static let tabPadding: CGFloat = 9
-    static let tabGap: CGFloat = 5
-    static let tabMark: CGFloat = 15
+    /// 27 is between them. The bird is smaller than it was while you speak and
+    /// larger than it was afterwards, and it never moves.
+    static let tabHeight: CGFloat = 27
+    static let tabRadius: CGFloat = 10
+    static let tabPadding: CGFloat = 10
+    static let tabGap: CGFloat = 6
+    static let tabMark: CGFloat = 18
 
     /// The tab, sized from what it holds.
     ///
@@ -1368,12 +1363,12 @@ enum PillMetrics {
         return "\(initial) \(parts[1])"
     }
 
-    /// The larger tab: the bird, and whatever the hold is for when it is not
-    /// dictation.
-    static func liveTabWidth(label: String? = nil) -> CGFloat {
-        let mark = liveTabPadding * 2 + liveTabMark
+    /// The tab while the microphone is open: the bird, and whatever the hold is
+    /// for when it is not dictation.
+    static func tabWidth(label: String?) -> CGFloat {
+        let mark = tabPadding * 2 + tabMark
         guard let label else { return mark }
-        return mark + liveTabGap + title(label)
+        return mark + tabGap + title(label)
     }
     /// The key on it, which grows with the rest. It is the tab's only text and
     /// a cap left at the chips' size would read as a chip that had wandered in.
@@ -1564,7 +1559,7 @@ enum PillMetrics {
             // sentence needs the height it has always had whether it is hanging
             // off a line or floating at the bottom of the screen.
             if case .notice = state { return height }
-            return docked ? liveTabHeight : height
+            return docked ? tabHeight : height
         }
         guard open else { return tabHeight }
         // A selection offer is three rows: the words, the chips, and the line
@@ -1658,12 +1653,12 @@ enum PillMetrics {
             // no icon. A label still widens it, because tap-then-hold has to
             // say what the hold is for before you speak.
             guard docked else { return recording(hasIcon: hasIcon, label: label) }
-            return liveTabWidth(label: label)
+            return tabWidth(label: label)
         case .working(let message):
             // Docked, the plumage travels through the bird while it thinks. The
             // message is what the undocked one is for — a download has no line
             // to hang from.
-            return docked ? liveTabWidth() : text(message)
+            return docked ? tabWidth(label: nil) : text(message)
         case .notice(let message, _): return text(message)
         case .offer(let commands, let headline, let reading, let open):
             guard open else { return tabWidth(hotkey: hotkey) }
@@ -1989,7 +1984,7 @@ struct PillView: View {
         switch model.state {
         case .offer(_, _, _, let open):
             return open ? PillMetrics.dockRadius : PillMetrics.tabRadius
-        case .recording, .working: return PillMetrics.liveTabRadius
+        case .recording, .working: return PillMetrics.tabRadius
         case .notice: return PillMetrics.dockRadius
         }
     }
@@ -2122,9 +2117,9 @@ private struct RecordingContent: View {
     /// microphone waiting and a filling one is a microphone hearing something.
     /// The icon is gone and `blind` is what took its job — see `PlumageMeter`.
     private var tab: some View {
-        HStack(spacing: PillMetrics.liveTabGap) {
+        HStack(spacing: PillMetrics.tabGap) {
             PlumageMeter(
-                level: Double(level), size: PillMetrics.liveTabMark, blind: icon == nil
+                level: Double(level), size: PillMetrics.tabMark, blind: icon == nil
             )
             if let label {
                 Text(label)
@@ -2133,7 +2128,7 @@ private struct RecordingContent: View {
                     .fixedSize()
             }
         }
-        .padding(.horizontal, PillMetrics.liveTabPadding)
+        .padding(.horizontal, PillMetrics.tabPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
@@ -2184,8 +2179,8 @@ private struct MessageContent: View {
 
     var body: some View {
         if docked {
-            PlumageMeter(level: 1, size: PillMetrics.liveTabMark, working: true)
-                .padding(.horizontal, PillMetrics.liveTabPadding)
+            PlumageMeter(level: 1, size: PillMetrics.tabMark, working: true)
+                .padding(.horizontal, PillMetrics.tabPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         } else {
             capsule
