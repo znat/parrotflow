@@ -230,23 +230,17 @@ final class PillModel: ObservableObject {
     /// and a state change crossfades the whole surface.
     @Published var hotkey: String = ""
 
-    /// Whether the tab has stopped naming the key altogether.
-    ///
-    /// Set by `PillHUD`, `hotkeyFadesAfter` seconds after a tab appears.
-    @Published var hotkeyIsGone = false
-
-    /// The spelling on screen right now, which is never the long one.
+    /// The spelling on screen, which is never the long one and never absent.
     ///
     /// "Right ⌘" was drawn in full and collapsed to "R ⌘" after five
-    /// seconds. The full spelling was never worth the width: the initial says
-    /// which side just as well, and the two-stage version spent the tab's first
-    /// five seconds at its widest for a reading nobody needed.
+    /// seconds, and then to nothing after three. Both stages were answers to a
+    /// width problem the initial had already solved: "R" and a glyph is about
+    /// 24pt, which is not worth timing away — and a tab that shrinks while you
+    /// are looking at it is the thing that made two sizes wrong to begin with.
     ///
     /// Read by the view and by the metrics, so the tab is never sized for one
     /// spelling and drawn with another.
-    var shownHotkey: String {
-        hotkeyIsGone ? "" : PillMetrics.shortHotkey(hotkey)
-    }
+    var shownHotkey: String { PillMetrics.shortHotkey(hotkey) }
 
     /// Which command the pointer is on, if any.
     ///
@@ -456,17 +450,6 @@ final class PillHUD {
     private var openedByPointer = false
     /// Waiting out `PillMetrics.tabDwell`.
     private var pendingOpen: DispatchWorkItem?
-    /// Waiting to drop the key from the tab.
-    private var pendingShorten: DispatchWorkItem?
-
-    /// How long the tab names the key before it stops.
-    ///
-    /// The tab stays until you act, so the key would otherwise sit on your
-    /// document all afternoon repeating something you read in the first second.
-    /// Three seconds is long enough to be read without being looked for. After
-    /// that the bird alone is the tab, and the bird is the thing you have
-    /// already learned to open.
-    static let hotkeyFadesAfter: TimeInterval = 3
     /// Whether the pointer is holding the offer open.
     ///
     /// Kept rather than read off `isDecaying`, because unfolding the tab is a
@@ -756,17 +739,22 @@ final class PillHUD {
             pendingOpen?.cancel(); pendingOpen = nil
         }
 
-        shortenTheKey(for: state)
-
         let size = wantedSize
 
         if !arriving {
             morph(to: size)
         } else {
             let placed = anchor(size)
+            // Before the size, not after. The glass will not let the window go
+            // below 110 square while it is still in it, so a tab asked for
+            // 62x51 with the backdrop still there came out 110x110 — and
+            // nothing asked again afterwards, so it stayed that way until the
+            // next state morphed it. That is why it was the first pill after a
+            // launch and never the ones after. `morph` already had this order;
+            // this path did not.
+            dock(placed.dock)
             panel.setContentSize(size)
             panel.setFrameOrigin(placed.origin)
-            dock(placed.dock)
             fadeIn(panel)
             logFrame("raised")
         }
@@ -775,31 +763,6 @@ final class PillHUD {
         let work = DispatchWorkItem { [weak self] in self?.fadeOut() }
         pendingDismiss = work
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
-    }
-
-    /// Start, or cancel, the wait before the tab says the key short.
-    ///
-    /// Only a closed offer shortens: it is the only surface that stays long
-    /// enough for the wide spelling to be an imposition, and the only one
-    /// drawing the key at all.
-    private func shortenTheKey(for state: PillState) {
-        pendingShorten?.cancel(); pendingShorten = nil
-        var closedOffer = false
-        if case .offer(_, _, _, let open) = state { closedOffer = !open }
-        guard closedOffer, !model.hotkey.isEmpty else {
-            model.hotkeyIsGone = false
-            return
-        }
-        // Already gone on the tab this one replaced: leave it. Naming the key
-        // again would be the surface explaining itself twice.
-        guard !model.hotkeyIsGone else { return }
-        let work = DispatchWorkItem { [weak self] in
-            guard let self else { return }
-            self.model.hotkeyIsGone = true
-            self.morph(to: self.wantedSize)
-        }
-        pendingShorten = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hotkeyFadesAfter, execute: work)
     }
 
     /// Take the pill away — unless something is about to put it back.
@@ -861,10 +824,6 @@ final class PillHUD {
         pointerHolds = false
         openedByPointer = false
         pendingOpen?.cancel(); pendingOpen = nil
-        // The next tab says the key in full again: it is a different dictation
-        // and a different moment.
-        pendingShorten?.cancel(); pendingShorten = nil
-        model.hotkeyIsGone = false
         guard let panel, panel.isVisible, !isFading else { return }
 
         // A decision takes the offer at once rather than letting the rest of
