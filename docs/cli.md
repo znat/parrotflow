@@ -387,6 +387,49 @@ say -o /tmp/t.wav --data-format=LEI16@16000 --channels=1 "testing one two three"
 $PF --transcribe /tmp/t.wav
 ```
 
+## Is this period real
+
+```sh
+$PF --sentence-model                                       # fetch, compile and load ModernBERT
+$PF --sentence-probe "<left half>" "<right half>"          # score one boundary
+$PF --sentence-probe --encode "<text>"                     # the tokenizer alone, no model
+```
+
+A pause in the middle of a sentence makes the transcriber write a period. The
+probe asks ModernBERT what belongs where that period is:
+`score = log P(".") − log P(" <next word>")`, both read at one masked position.
+A low score means the period is false and the two halves are one sentence.
+Measured over 194 real periods and 130 synthetic cuts of dictation:
+
+| threshold | cuts repaired | false joins per 100 real periods |
+|---:|---:|---:|
+| −4 | 32% | 0.0 |
+| −2 | 55% | 1.2 |
+| 0 | 82% | 6.1 |
+
+```
+$PF --sentence-probe "we have to do it." "That works well"
+  boundary  "." 15   " ." 964   "That" 2773   " That" 2064  ✓
+  text      we have to do it [MASK] that works well
+  score        1.45
+  period      -4.12   "."
+  next        -5.57   " that"
+  top       " and"   -1.54   ","   -2.36   " something"   -2.93
+```
+
+The `boundary` line is the tokenizer checking itself against a real
+tokenization. A word after another word carries its leading space, so `" That"`
+is 2064 and `"That"` is 2773 — comparing against the second scores nothing at
+every threshold and raises no error. If that check fails the probe refuses to
+answer.
+
+`--encode` prints ids and loads no model, which is what
+`scripts/check-tokenizer.sh` compares against HuggingFace's own tokenizer.
+`scripts/check-sentence-probe.sh` goes further and compares the scores;
+it needs the model, so it is not in `make test`.
+
+Nothing in the app calls the probe yet.
+
 ## What ParrotFlow makes of an app
 
 ```sh
@@ -626,6 +669,8 @@ scripts/check-profiles.sh          # which app gets examined, named, or read for
 scripts/check-clipboard.sh         # when a rewrite may go to the clipboard, and stay there
 scripts/check-span-rule.sh         # which range a rewrite is written as, before any app sees it
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
+scripts/check-tokenizer.sh         # the hand-written BPE against HuggingFace's own
+scripts/check-sentence-probe.sh    # the boundary score against coremltools (needs the model)
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

@@ -1,0 +1,362 @@
+[
+ {
+  "set": "en_real.json",
+  "left": "if it's because the release notes are not bigger than the height",
+  "right": "Another features. If there is more than two fixes then there is",
+  "text": "if it's because the release notes are not bigger than the height [MASK] another features. If there is more than two fixes then there is",
+  "period": -8.129,
+  "next": -10.6172,
+  "score": 2.4883
+ },
+ {
+  "set": "en_real.json",
+  "left": "because it requires resolving that the negation is corrective rather than contrastive",
+  "right": "It's also where you can lose content or gain content that was",
+  "text": "because it requires resolving that the negation is corrective rather than contrastive [MASK] it's also where you can lose content or gain content that was",
+  "period": -0.6836,
+  "next": -8.9492,
+  "score": 8.2656
+ },
+ {
+  "set": "en_real.json",
+  "left": "No but that's not what I wanted",
+  "right": "I wanted to just go one by one. I don't need to",
+  "text": "No but that's not what I wanted [MASK] i wanted to just go one by one. I don't need to",
+  "period": -1.4398,
+  "next": -7.6351,
+  "score": 6.1953
+ },
+ {
+  "set": "en_real.json",
+  "left": "They look great now",
+  "right": "But I still don't see the second permission prompt. The one asking",
+  "text": "They look great now [MASK] but I still don't see the second permission prompt. The one asking",
+  "period": -6.4992,
+  "next": -10.9211,
+  "score": 4.4219
+ },
+ {
+  "set": "en_real.json",
+  "left": "Yeah, that's how that's what I want. I want a tail",
+  "right": "So I want a C L command. So it would be like",
+  "text": "Yeah, that's how that's what I want. I want a tail [MASK] so I want a C L command. So it would be like",
+  "period": -5.6667,
+  "next": -8.8972,
+  "score": 3.2305
+ },
+ {
+  "set": "en_real.json",
+  "left": "terminal and have the logs or the traces as dictations come in",
+  "right": "And would it be a separate data structure or would it come",
+  "text": "terminal and have the logs or the traces as dictations come in [MASK] and would it be a separate data structure or would it come",
+  "period": -3.9536,
+  "next": -4.5551,
+  "score": 0.6016
+ },
+ {
+  "set": "en_real.json",
+  "left": "Greptile's remaining objection has moved to overlapping completions and an inline-fallback field",
+  "right": "Not acted on, per the standing constraint. Worth noting only that it",
+  "text": "Greptile's remaining objection has moved to overlapping completions and an inline-fallback field [MASK] not acted on, per the standing constraint. Worth noting only that it",
+  "period": -6.9337,
+  "next": -7.8321,
+  "score": 0.8984
+ },
+ {
+  "set": "en_real.json",
+  "left": "So draft me a quick informal plan",
+  "right": "Make it visual and use scratchml",
+  "text": "So draft me a quick informal plan [MASK] make it visual and use scratchml",
+  "period": -5.5445,
+  "next": -10.0679,
+  "score": 4.5234
+ },
+ {
+  "set": "en_real.json",
+  "left": "The sentence is about cooking",
+  "right": "An accounting system does not go in a sauce.",
+  "text": "The sentence is about cooking [MASK] an accounting system does not go in a sauce.",
+  "period": -5.4783,
+  "next": -8.4158,
+  "score": 2.9375
+ },
+ {
+  "set": "en_real.json",
+  "left": "one transforms I would like you to create",
+  "right": "So if you say PR followed by a number or PR number",
+  "text": "one transforms I would like you to create [MASK] so if you say PR followed by a number or PR number",
+  "period": -2.834,
+  "next": -5.0762,
+  "score": 2.2422
+ },
+ {
+  "set": "en_real.json",
+  "left": "merci — on the line above",
+  "right": "If it is anything else — a question, a",
+  "text": "merci — on the line above [MASK] if it is anything else — a question, a",
+  "period": -6.0009,
+  "next": -8.6416,
+  "score": 2.6406
+ },
+ {
+  "set": "en_real.json",
+  "left": "that is already punctuated by parakeet.So punctuation need to replace existing punctuation",
+  "right": "For example, if You say to wait exclamation point. This will still",
+  "text": "that is already punctuated by parakeet.So punctuation need to replace existing punctuation [MASK] for example, if You say to wait exclamation point. This will still",
+  "period": -1.1377,
+  "next": -8.8565,
+  "score": 7.7188
+ },
+ {
+  "set": "en_real.json",
+  "left": "that we want to sing the substitute First names with Slack handles",
+  "right": "But not systematically. For example, I can write a message in Slack",
+  "text": "that we want to sing the substitute First names with Slack handles [MASK] but not systematically. For example, I can write a message in Slack",
+  "period": -6.7232,
+  "next": -8.8755,
+  "score": 2.1523
+ },
+ {
+  "set": "en_real.json",
+  "left": "a model name. And spelling and the model name.In the example config",
+  "right": "The model name would be ollma, but commented out.",
+  "text": "a model name. And spelling and the model name.In the example config [MASK] the model name would be ollma, but commented out.",
+  "period": -4.8133,
+  "next": -7.6727,
+  "score": 2.8594
+ },
+ {
+  "set": "en_real.json",
+  "left": "very marginal improvement, maybe not significant, but at least it seems fine",
+  "right": "So I'd keep it on.",
+  "text": "very marginal improvement, maybe not significant, but at least it seems fine [MASK] so I'd keep it on.",
+  "period": -5.467,
+  "next": -11.3264,
+  "score": 5.8594
+ },
+ {
+  "set": "en_real.json",
+  "left": "But there can be a replacement",
+  "right": "Why can't we count it?",
+  "text": "But there can be a replacement [MASK] why can't we count it?",
+  "period": -6.5019,
+  "next": -10.459,
+  "score": 3.957
+ },
+ {
+  "set": "en_real.json",
+  "left": "So I was prompted but declined before I dictated anything",
+  "right": "Then I dictated something, asked to fix grammar. And nothing happened.",
+  "text": "So I was prompted but declined before I dictated anything [MASK] then I dictated something, asked to fix grammar. And nothing happened.",
+  "period": -3.5358,
+  "next": -9.1686,
+  "score": 5.6328
+ },
+ {
+  "set": "en_real.json",
+  "left": "a nice lettering, that would be cool. Use the front-end design skill",
+  "right": "And we don't need more information, we don't need the models, we",
+  "text": "a nice lettering, that would be cool. Use the front-end design skill [MASK] and we don't need more information, we don't need the models, we",
+  "period": -3.6183,
+  "next": -8.6066,
+  "score": 4.9883
+ },
+ {
+  "set": "en_real.json",
+  "left": "I saw our pop up to ask the permission from the microphone",
+  "right": "I accepted but it was already done so I directly got the",
+  "text": "I saw our pop up to ask the permission from the microphone [MASK] i accepted but it was already done so I directly got the",
+  "period": -4.5669,
+  "next": -10.1138,
+  "score": 5.5469
+ },
+ {
+  "set": "en_real.json",
+  "left": "But we can verify that the input is empty",
+  "right": "Or maybe the string length.",
+  "text": "But we can verify that the input is empty [MASK] or maybe the string length.",
+  "period": -3.8985,
+  "next": -6.9845,
+  "score": 3.0859
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "alive is not working because the first usage of the LLM with.",
+  "right": "The vocabulary is slower",
+  "text": "alive is not working because the first usage of the LLM with [MASK] the vocabulary is slower",
+  "period": -10.2926,
+  "next": -5.2262,
+  "score": -5.0664
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "So okay, sure, let's rebase let's get.",
+  "right": "In your the scratch pad",
+  "text": "So okay, sure, let's rebase let's get [MASK] in your the scratch pad",
+  "period": -11.2182,
+  "next": -7.0815,
+  "score": -4.1367
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "A local, fast and programmable dictation tool shaped around.",
+  "right": "Your voice and your work",
+  "text": "A local, fast and programmable dictation tool shaped around [MASK] your voice and your work",
+  "period": -7.9156,
+  "next": -5.8297,
+  "score": -2.0859
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "I mean, can we use Olama as an.",
+  "right": "Interface for commercial models",
+  "text": "I mean, can we use Olama as an [MASK] interface for commercial models",
+  "period": -12.9462,
+  "next": -4.454,
+  "score": -8.4922
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "I want to do all this in.",
+  "right": "Another in a subsequent one",
+  "text": "I want to do all this in [MASK] another in a subsequent one",
+  "period": -8.7312,
+  "next": -3.9109,
+  "score": -4.8203
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "and btw when pressing Enter to submit the text the hud.",
+  "right": "Should also vanish immediatly and stop decaying",
+  "text": "and btw when pressing Enter to submit the text the hud [MASK] should also vanish immediatly and stop decaying",
+  "period": -9.0805,
+  "next": -8.7641,
+  "score": -0.3164
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "Context could be the dictation before or.",
+  "right": "After, or what was on the screen",
+  "text": "Context could be the dictation before or [MASK] after, or what was on the screen",
+  "period": -10.3953,
+  "next": -8.1531,
+  "score": -2.2422
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "The script has not changed, the permissions were still there, and.",
+  "right": "Parakeet was immediately available",
+  "text": "The script has not changed, the permissions were still there, and [MASK] parakeet was immediately available",
+  "period": -10.3499,
+  "next": -12.9476,
+  "score": 2.5977
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "before the judge and only let the judge decide between what was.",
+  "right": "Heard by the decoder and what the decoder found similar",
+  "text": "before the judge and only let the judge decide between what was [MASK] heard by the decoder and what the decoder found similar",
+  "period": -11.2402,
+  "next": -6.3496,
+  "score": -4.8906
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "I've done plenty I've.",
+  "right": "Done it plenty of times now",
+  "text": "I've done plenty I've [MASK] done it plenty of times now",
+  "period": -7.4716,
+  "next": -3.1278,
+  "score": -4.3438
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "Do a grammar check on the selected text.",
+  "right": "And also write a section about what's gonna be installed succinctly",
+  "text": "Do a grammar check on the selected text [MASK] and also write a section about what's gonna be installed succinctly",
+  "period": -5.3806,
+  "next": -7.7634,
+  "score": 2.3828
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "pinned row could clear a newer.",
+  "right": "Prompt after focus advances",
+  "text": "pinned row could clear a newer [MASK] prompt after focus advances",
+  "period": -9.095,
+  "next": -7.509,
+  "score": -1.5859
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "Mira and Mira were on.",
+  "right": "Vacation and have visited Versailles Castle while the app was being deployed",
+  "text": "Mira and Mira were on [MASK] vacation and have visited Versailles Castle while the app was being deployed",
+  "period": -13.1884,
+  "next": -5.5243,
+  "score": -7.6641
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "I'd like to use some sort of.",
+  "right": "Object programming, interface and implementation classes on top",
+  "text": "I'd like to use some sort of [MASK] object programming, interface and implementation classes on top",
+  "period": -9.6188,
+  "next": -7.0211,
+  "score": -2.5977
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "So how would you.",
+  "right": "Use in practice a negative example",
+  "text": "So how would you [MASK] use in practice a negative example",
+  "period": -9.0791,
+  "next": -4.9854,
+  "score": -4.0938
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "Can you give me an.",
+  "right": "Example so that I understand visually",
+  "text": "Can you give me an [MASK] example so that I understand visually",
+  "period": -12.5818,
+  "next": -2.5701,
+  "score": -10.0117
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "ordinary word, however much.",
+  "right": "It looks like one of them",
+  "text": "ordinary word, however much [MASK] it looks like one of them",
+  "period": -6.7032,
+  "next": -6.8438,
+  "score": 0.1406
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "Can you make the.",
+  "right": "Type menu more visible because it seems like it's very small compared",
+  "text": "Can you make the [MASK] type menu more visible because it seems like it's very small compared",
+  "period": -11.899,
+  "next": -5.9771,
+  "score": -5.9219
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "Okay, the same happened but there was another still window.",
+  "right": "From a maybe a previous process still open",
+  "text": "Okay, the same happened but there was another still window [MASK] from a maybe a previous process still open",
+  "period": -7.2939,
+  "next": -7.7392,
+  "score": 0.4453
+ },
+ {
+  "set": "en_cuts.json",
+  "left": "As usual, check Greptile reviews, address comments, and continue.",
+  "right": "Until Greptile is happy",
+  "text": "As usual, check Greptile reviews, address comments, and continue [MASK] until Greptile is happy",
+  "period": -8.0153,
+  "next": -8.4684,
+  "score": 0.4531
+ }
+]

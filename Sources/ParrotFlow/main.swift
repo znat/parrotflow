@@ -128,6 +128,22 @@ if arguments.contains("--sentence-model") {
     exit(SentenceModelCommand.run())
 }
 
+if let at = arguments.firstIndex(of: "--sentence-probe") {
+    guard #available(macOS 14, *) else {
+        print("✗ the sentence probe needs macOS 14 or later")
+        exit(1)
+    }
+    if let encode = arguments.firstIndex(of: "--encode"), arguments.indices.contains(encode + 1) {
+        exit(SentenceProbeCommand.encode(arguments[encode + 1]))
+    }
+    guard arguments.indices.contains(at + 2) else {
+        print("usage: ParrotFlow --sentence-probe \"<left half>\" \"<right half>\"")
+        print("       ParrotFlow --sentence-probe --encode \"<text>\"")
+        exit(2)
+    }
+    exit(SentenceProbeCommand.run(left: arguments[at + 1], right: arguments[at + 2]))
+}
+
 
 
 
