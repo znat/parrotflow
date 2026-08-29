@@ -3070,7 +3070,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         over target: Correction, run: Int, headline: Headline?,
         reading: Confidence.Reading, open: Bool
     ) {
-        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        // A tab has no deadline. It waits for you to act — a click, a
+        // keystroke, the next dictation — because 33x23 of your document costs
+        // nothing to leave there. The panel it opens into is a different
+        // matter, and gets the clock at the moment it opens.
+        offerUntil = open ? Date().addingTimeInterval(Self.offerSeconds) : .distantFuture
         // A new offer is never born held, whatever the last one ended as.
         offerHeld = false
         offerPressRun = run
@@ -3135,6 +3139,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watchForOfferOutsideClick()
     }
 
+    /// Unfold the tab, and give it everything an open panel has.
+    ///
+    /// Three things move together here for the reason `holdTheOffer` gives:
+    /// the panel, the deadline it did not have while it was a tab, and the
+    /// letters, which are only claimed while they are on screen to be pressed.
+    private func openTheOffer() {
+        Log.write("summon: opened the tab")
+        pill.open(true)
+        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        offerHeld = pill.pointerIsOver
+        watchTheOfferKeys()
+    }
+
     /// The offer asked for rather than offered: the hotkey tapped, not held.
     ///
     /// Over the last dictation, in the field it landed in. This is what stops
@@ -3159,10 +3176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Closed, it is the opposite gesture rather than none: the tab is on
         // screen so that a tap can open it, and the key it draws is this one.
         if offerIsUp {
-            if !pill.isOpen {
-                Log.write("summon: opened the tab")
-                pill.open(true)
-            }
+            if !pill.isOpen { openTheOffer() }
             return
         }
         guard config.feedback.correctOffer else { return }
@@ -3398,7 +3412,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("offer keys: a dictation is still running; the keys wait for it")
             return
         }
-        let letters = Set(commands.map(\.key).filter { !$0.isEmpty })
+        // Nothing is claimed while it is only a tab.
+        //
+        // The tab stays until you act, and a surface that stays cannot also
+        // hold four letters hostage: the first thing you type after dictating
+        // would run a transform instead of typing. So closed, the tap takes
+        // Escape and nothing else — every other key goes through untouched and
+        // ends the offer, which is the "you have moved on" signal it was
+        // already sending. The letters arm when the panel opens, which is the
+        // only time they are drawn on screen to be pressed.
+        let letters = pill.isOpen
+            ? Set(commands.map(\.key).filter { !$0.isEmpty })
+            : Set<String>()
         // The hold is armed only for a dictation that raised the warning, and
         // only until it has been spent. Re-armed from here on every call, so an
         // offer that got its keys late — a dictation was still running — is

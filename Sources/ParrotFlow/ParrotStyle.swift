@@ -661,6 +661,12 @@ struct PlumageMeter: View {
     /// fills with no colour, which is the same shape doing the same job the
     /// missing app icon used to do — and a good deal louder than an absence.
     var blind: Bool = false
+    /// Work of no predictable length: the plumage travels through the bird
+    /// instead of standing in it. See `sweep`.
+    var working: Bool = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: CGFloat = 0
 
     /// What is left of the bird when nothing is being said. Low enough to read
     /// as an empty vessel and high enough to be findable on a dark surface.
@@ -669,17 +675,58 @@ struct PlumageMeter: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             bird.opacity(Self.resting)
-            Rectangle()
-                .fill(fill)
-                .mask(alignment: .bottom) {
-                    Rectangle().frame(height: size * CGFloat(min(max(level, 0), 1)))
-                }
-                .mask { bird }
+            Group {
+                if working { sweep } else { standing }
+            }
+            .frame(width: size, height: size)
+            .clipped()
+            .mask { bird }
         }
         .frame(width: size, height: size)
         // The bars moved at this rate and it is what makes a level read as a
         // level rather than as a flicker.
         .animation(.linear(duration: 0.08), value: level)
+    }
+
+    /// The level, standing in the bird.
+    private var standing: some View {
+        Rectangle()
+            .fill(fill)
+            .frame(height: size * CGFloat(min(max(level, 0), 1)))
+            .frame(height: size, alignment: .bottom)
+    }
+
+    /// The plumage travelling through the bird, for work of no predictable
+    /// length.
+    ///
+    /// The bird stood full while it thought, and full is also what it looks
+    /// like the instant the words land — so running a transform changed nothing
+    /// on screen and the app looked like it had ignored you. A band that moves
+    /// is the difference between a surface that has finished and one that is
+    /// busy, and it is the same claim the rim's fast spin used to make on the
+    /// capsule.
+    ///
+    /// Tail to head, like the fill, so the two are the same plumage doing two
+    /// different things rather than two animations.
+    private var sweep: some View {
+        Rectangle()
+            .fill(LinearGradient(
+                colors: [.clear, Parrot.sky, Parrot.leaf, Parrot.amber, Parrot.scarlet, .clear],
+                startPoint: .bottom, endPoint: .top
+            ))
+            .frame(height: size * 1.7)
+            .offset(y: phase)
+            .onChange(of: reduceMotion, initial: true) { _, _ in travel() }
+    }
+
+    private func travel() {
+        // Reduce Motion gets the bird standing full, which is what it was
+        // before this and says "something is happening" by being there at all.
+        guard working, !reduceMotion else { phase = 0; return }
+        phase = size * 1.35
+        withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+            phase = -size * 1.35
+        }
     }
 
     @ViewBuilder private var bird: some View {

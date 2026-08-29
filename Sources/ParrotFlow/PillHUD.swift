@@ -393,7 +393,11 @@ final class PillHUD {
         offerFor = duration
         openedByPointer = false
         set(.offer(commands, headline, reading, open: open))
-        decay(over: duration)
+        // A tab does not run out. It is 33x23 of your document and it costs
+        // nothing to leave there, unlike the panel it opens into — so it waits
+        // for you to act rather than for a clock: a click, a keystroke, the
+        // next dictation. Only the open panel decays.
+        if open { decay(over: duration) }
     }
 
     /// Unfold the tab, or fold it back.
@@ -413,8 +417,7 @@ final class PillHUD {
         if wanted { openedByPointer = byPointer } else { openedByPointer = false }
         Log.write("pill: the offer \(wanted ? "opened" : "folded")\(byPointer ? ", by the pointer" : "")")
         set(.offer(commands, headline, reading, open: wanted))
-        guard let offerFor else { return }
-        if pointerHolds { return }
+        guard wanted, let offerFor, !pointerHolds else { return }
         decay(over: offerFor)
     }
 
@@ -527,21 +530,15 @@ final class PillHUD {
     func hovering(_ inside: Bool) {
         let held = pointerHolds
         pointerHolds = inside
-        // The pointer resting on the tab unfolds it, after a moment. The moment
-        // is the whole of it: the tab sits under the line you were typing on,
-        // and the pointer crosses that line all day.
-        pendingOpen?.cancel(); pendingOpen = nil
-        if isOfferState {
-            if inside, !offerIsOpen {
-                let work = DispatchWorkItem { [weak self] in self?.open(true, byPointer: true) }
-                pendingOpen = work
-                DispatchQueue.main.asyncAfter(
-                    deadline: .now() + PillMetrics.tabDwell, execute: work
-                )
-            } else if !inside, offerIsOpen, openedByPointer {
-                open(false)
-            }
-        }
+
+        // The pointer no longer opens it, and used to after a dwell. A tab that
+        // opens when the pointer crosses it cannot also stay on screen: it sits
+        // under the line you were just typing on, which is the line you reach
+        // across all day, so a tab that lives until you act would spend that
+        // life springing open at a pointer on its way somewhere else.
+        //
+        // One or the other, and staying is worth more. The key is the way in
+        // now, and the tab draws it.
 
         // `isVisible` as well as the flag: a decay that finished a moment ago
         // has taken the panel out, and nothing about the pointer should bring
@@ -1252,11 +1249,14 @@ enum PillMetrics {
     /// round a 20pt bird in a 27pt box the two marks sat against the edges, so
     /// the tab read as a crop of something rather than as a small whole thing.
     /// The contents did not change; the box grew round them.
-    static let tabHeight: CGFloat = 31
-    static let tabRadius: CGFloat = 12
-    static let tabPadding: CGFloat = 12
-    static let tabGap: CGFloat = 7
-    static let tabMark: CGFloat = 20
+    /// A quarter smaller than it was drawn. It no longer opens when the pointer
+    /// crosses it, so it does not need to be a target — only to be findable.
+    /// Every number is the old one times three quarters.
+    static let tabHeight: CGFloat = 23
+    static let tabRadius: CGFloat = 9
+    static let tabPadding: CGFloat = 9
+    static let tabGap: CGFloat = 5
+    static let tabMark: CGFloat = 15
 
     /// The tab, sized from what it holds.
     ///
@@ -1274,9 +1274,8 @@ enum PillMetrics {
     }
     /// The key on it, which grows with the rest. It is the tab's only text and
     /// a cap left at the chips' size would read as a chip that had wandered in.
-    static let tabKeyWidth: CGFloat = 21
-    static let tabKeyHeight: CGFloat = 19
-    static let tabKeyText: CGFloat = 14
+    static let tabKeyHeight: CGFloat = 14
+    static let tabKeyText: CGFloat = 10
 
     /// How long the pointer has to rest on the tab before it opens.
     ///
@@ -1967,7 +1966,7 @@ private struct TabContent: View {
             }
             if !model.hotkey.isEmpty {
                 Text(model.hotkey)
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .font(.system(size: PillMetrics.tabKeyText, weight: .bold, design: .rounded))
                     .foregroundStyle(Color(white: 0.85))
                     .fixedSize()
                     .frame(
@@ -2077,7 +2076,7 @@ private struct MessageContent: View {
 
     var body: some View {
         if docked {
-            PlumageMeter(level: 1, size: PillMetrics.tabMark)
+            PlumageMeter(level: 1, size: PillMetrics.tabMark, working: true)
                 .padding(.horizontal, PillMetrics.tabPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         } else {
