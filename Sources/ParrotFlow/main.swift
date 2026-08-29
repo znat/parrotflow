@@ -215,10 +215,14 @@ if let index = arguments.firstIndex(of: "--inflected") {
 
 if let index = arguments.firstIndex(of: "--word-gate") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --word-gate <word>")
+        print("usage: ParrotFlow --word-gate <word> [term]")
         exit(2)
     }
-    exit(WordGateCommand.run(word: arguments[index + 1]))
+    // The term is optional, and the next argument is only the term when it is
+    // not another flag.
+    let term = arguments.indices.contains(index + 2)
+        && !arguments[index + 2].hasPrefix("--") ? arguments[index + 2] : nil
+    exit(WordGateCommand.run(word: arguments[index + 1], term: term))
 }
 
 if let index = arguments.firstIndex(of: "--suggest") {

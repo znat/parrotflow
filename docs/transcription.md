@@ -319,9 +319,19 @@ Some words are missed by both and still auto-apply: `webhook`, `worktree`,
 `kubernetes`, and the first names `Priya` and `Siobhan`. Two lists remove most
 of that class, not all of it.
 
+One condition is not a list. Both lists are asked about letters, so `Mirza's`
+is looked up as `Mirzas` — a form neither has seen, where `Mirza` itself is
+known to one of them. So a `'s` the heard text carries and the term does not
+is refused before the lists are asked, and the proposal goes to the judge.
+Dropping a possessive changes what the sentence says — "Mirza's thoughts" is
+not "Mirza thoughts" — and only something that reads the sentence can decide
+it. The other direction is untouched: `Matthew at` -> `Matthieu's` is a term
+carrying a possessive the decoded span does not, and that correction is right.
+
 If the list cannot be read the gate stops auto-applying entirely and every
 proposal goes to the judge. `--word-gate <word>` prints both verdicts and the
-decision; `scripts/check-word-gate.sh` scores them.
+decision, and `--word-gate <word> <term>` prints the possessive verdict and the
+decision for that pair; `scripts/check-word-gate.sh` scores them.
 
 Every exchange is written to `trace.jsonl` under the stage's variables, so a
 verdict can be replayed rather than guessed at.

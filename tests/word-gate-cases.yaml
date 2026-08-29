@@ -1,4 +1,4 @@
-# Which words may be overwritten by a vocabulary term without anything asking.
+# What may be overwritten by a vocabulary term without anything asking.
 #
 # Two lists decide, and both have to say "unknown" — `Vocabulary.autoApplies`.
 # `spell` is `Replacements.isRealWord`: NSSpellChecker, `en` then `fr`.
@@ -7,6 +7,14 @@
 #
 #   gate: judge       something reads the sentence before the word is replaced
 #   gate: auto-apply  the word is replaced, and nothing reads the sentence
+#
+# A case with a `term` asks the whole gate about that pair, and reads
+# `possessive` instead of the two lists:
+#
+#   possessive: dropped   the heard text carries a `'s` the term does not, so
+#                         writing the term in would take a possessive out of
+#                         the sentence — `Vocabulary.dropsPossessive`
+#   possessive: kept      it would not
 #
 # The two blocks below are the two blind spots, and they are why one list is
 # not enough. A dictionary has no first names in it. A tokenizer has no rare
@@ -139,3 +147,64 @@ cases:
     wordpiece: unknown
     gate: auto-apply
     why: a first name both lists miss
+
+  # --- a possessive the term does not carry ---------------------------------
+  # The two lists are asked about letters, so `Mirza's` is looked up as
+  # `Mirzas` — a form neither list has ever seen. The apostrophe walks the
+  # proposal past both of them, including past the first names the block at
+  # the top of this file is about. Dropping a possessive changes what the
+  # sentence says, so these go to the judge, which reads it.
+
+  - word: "Mirza's"
+    term: Mirza
+    possessive: dropped
+    gate: judge
+    why: >
+      "I'm just waiting for Mirza's thoughts about whether it's worth fixing
+      the extension" — the case is in tests/judge-cases.yaml as a decline.
+      "Mirza thoughts" is not what was said.
+
+  - word: "Mirza’s"
+    term: Mirza
+    possessive: dropped
+    gate: judge
+    why: the typographic apostrophe, which is the one the recogniser writes
+
+  - word: "Frederick's"
+    term: Redrock
+    possessive: dropped
+    gate: judge
+    why: >
+      the first block of this file, defeated by one apostrophe. `Frederick`
+      goes to the judge because the tokenizer knows it; `Fredericks` is known
+      to neither list, so before this rule the possessive form auto-applied
+      and `--inflected Redrock "Frederick's"` wrote `Redrock's`.
+
+  # --- the same class the other way round ------------------------------------
+  # The term carries the possessive and the heard text does not. That
+  # correction is right and nothing here fires on it: `possessive` reads
+  # `kept`, and a rule that ran in both directions would read `dropped`.
+
+  - word: "Matthew at"
+    term: "Matthieu's"
+    possessive: kept
+    gate: judge
+    why: >
+      observed live, 2026-08-08. The judge kept "Matthew at" where the speaker
+      said "Matthieu's". `judge` here is the glued-compound branch, which
+      decides before the possessive is looked at — so `possessive` is the
+      field under test and the decision is not.
+
+  - word: Versal
+    term: "Vercel's"
+    possessive: kept
+    gate: auto-apply
+    why: >
+      the same direction where the decision does move. A rule that fired on
+      the term's possessive would send this to the judge.
+
+  - word: Versal
+    term: Vercel
+    possessive: kept
+    gate: auto-apply
+    why: a word neither list knows, with no possessive anywhere, still goes through
