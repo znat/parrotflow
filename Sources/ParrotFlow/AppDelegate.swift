@@ -377,6 +377,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// it. It is also the deadline the key tap is given, so the keys can never
     /// be held for longer than the offer is worth.
     private var offerUntil: Date?
+    /// The tab on its way back after a message. See `offerAgainAfter`.
+    private var offerReturn: DispatchWorkItem?
     /// The keyboard, for as long as the offer is up. See `OfferKeys`.
     private let offerKeys = OfferKeys()
     /// The chips the offer on screen is showing, and so the letters it claims.
@@ -3090,20 +3092,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerHoldsReturnUntil = reading.warning != nil && hold > 0
             ? Date().addingTimeInterval(hold)
             : nil
-        // Closed, unless the decode is worth a second look.
+        // Closed. The tab is the quiet default and that is the whole point of
+        // it: after a dictation that went fine there is nothing to say, and a
+        // panel that says it anyway is clutter you learn to look past — which
+        // is how the one that did have something to say got looked past too.
         //
-        // The tab is the quiet default and that is the whole point of it: after
-        // a dictation that went fine there is nothing to say, and a panel that
-        // says it anyway is clutter you learn to look past — which is how the
-        // one that did have something to say got looked past too.
-        //
-        // A warning cannot wait to be asked for. It is about words that are
-        // already in your document and may not be the words you said, and a tab
-        // is a thing you have to notice first. So that one arrives open.
-        pill.offer(
-            commands, headline: headline, reading: reading,
-            open: open || reading.warning != nil, for: Self.offerSeconds
-        )
+        // A warning still cannot wait to be asked for, and it used to open the
+        // whole panel to deliver itself — a sentence about the decode with a
+        // row of transforms under it, as if the warning were a menu. It is not.
+        // It is the same kind of thing as "Grammar applied": news about the
+        // dictation that just happened. So it is said the way those are said,
+        // and the tab is left on the words afterwards for whoever wants to act
+        // on it. See `sayTheTabAfterTheMessage`.
+        if let warning = reading.warning, !open {
+            flash(warning, tone: reading.stopped ? .failure : .caution)
+            // The surface, not the offer. Everything below this still runs —
+            // the keys, the click watcher, and above all the held Return, which
+            // exists only for a decode like this one. An early return here
+            // would have taken the warning's own feature away with it.
+            sayTheTabAfterTheMessage(commands, headline: headline, reading: reading, run: run)
+        } else {
+            pill.offer(
+                commands, headline: headline, reading: reading, open: open,
+                for: Self.offerSeconds
+            )
+        }
         // The list is captured, not read again in the closure: a config
         // reloaded while the offer is up would otherwise renumber the chips
         // under the pointer, and the click would run whatever took the slot.
@@ -3151,6 +3164,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerHeld = pill.pointerIsOver
         watchTheOfferKeys()
     }
+
+    /// Put the tab up once the warning has been read.
+    ///
+    /// The offer is already alive by the time this is called — this only moves
+    /// the pill from the message to the tab, which is why it checks that the
+    /// offer is still this one's rather than raising anything.
+    private func sayTheTabAfterTheMessage(
+        _ commands: [OfferedCommand], headline: Headline?,
+        reading: Confidence.Reading, run: Int
+    ) {
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.offerIsUp, self.offerPressRun == run else { return }
+            self.pill.offer(
+                commands, headline: headline, reading: reading, open: false,
+                for: Self.offerSeconds
+            )
+        }
+        offerReturn?.cancel()
+        offerReturn = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.noticeSeconds, execute: work)
+    }
+
+    /// Leave the tab on the words once a message has been read.
+    ///
+    /// Running a transform ended the offer, and the surface went with it — so
+    /// after "Grammar applied" there was nothing on screen saying you could run
+    /// another one, and nothing naming the key that would. You had to remember
+    /// both. The tab is what says them.
+    ///
+    /// After the message rather than instead of it: the message is about what
+    /// just happened and the tab is about what you can do next, and a tab that
+    /// replaced the message would answer a question nobody had asked yet.
+    ///
+    /// Refused if anything has taken the pill in the meantime. A newer
+    /// dictation's offer is not this one's to talk over, and one already on
+    /// screen does not want replacing with a copy of itself.
+    private func offerAgainAfter(_ delay: TimeInterval) {
+        guard config.feedback.correctOffer, let owner = lastDictated?.run else { return }
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.offerIsUp,
+                  !self.recorder.isRecording, self.runsInFlight <= 0,
+                  let last = self.lastDictated, last.run == owner,
+                  !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return }
+            Log.write("offer: the tab comes back over the words as they are now")
+            self.raiseOffer(
+                over: Correction(
+                    original: last.text, element: last.element, owner: last.owner,
+                    landing: last.landing, dictation: last.run
+                ),
+                run: owner, headline: nil, reading: Confidence.Reading(), open: false
+            )
+        }
+        offerReturn?.cancel()
+        offerReturn = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
+    /// Say something about the dictation, then leave the tab on it.
+    private func flashThenOffer(_ message: String, tone: NoticeTone = .plain) {
+        flash(message, tone: tone)
+        offerAgainAfter(Self.noticeSeconds)
+    }
+
+    /// How long a notice stands before the tab takes the surface back. The
+    /// pill's own default for a message with a duration.
+    static let noticeSeconds: TimeInterval = 3.5
 
     /// The offer asked for rather than offered: the hotkey tapped, not held.
     ///
@@ -3773,14 +3853,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let cleaned = after.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else {
             Log.write("offer: \(transform.name) returned nothing")
-            flash("\(transform.name) returned nothing", tone: .caution)
+            flashThenOffer("\(transform.name) returned nothing", tone: .caution)
             return
         }
         // Saying so beats replacing text with itself and calling it done, which
         // looks identical to the prompt having silently failed.
         guard cleaned != before else {
             Log.write("offer: \(transform.name) changed nothing")
-            flash("\(transform.name): nothing to change", tone: .plain)
+            flashThenOffer("\(transform.name): nothing to change", tone: .plain)
             return
         }
 
@@ -3791,6 +3871,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             target, with: cleaned, describedAs: transform.name,
             clipboardWhenChosen: clipboardWhenChosen
         )
+        // Over the words as they are now, not as they were: `replace` has
+        // already put the rewrite into `lastDictated`, so a second transform
+        // runs on the first one's output.
+        offerAgainAfter(Self.noticeSeconds)
     }
 
     /// This press's dictation is over, however it ended. Drops the pane it

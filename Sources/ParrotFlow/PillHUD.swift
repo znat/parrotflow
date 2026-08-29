@@ -230,16 +230,22 @@ final class PillModel: ObservableObject {
     /// and a state change crossfades the whole surface.
     @Published var hotkey: String = ""
 
-    /// Whether the tab is drawing the hotkey's short spelling.
+    /// Whether the tab has stopped naming the key altogether.
     ///
-    /// Set by `PillHUD` five seconds after a tab appears. See
-    /// `PillMetrics.shortHotkey`.
-    @Published var hotkeyIsShort = false
+    /// Set by `PillHUD`, `hotkeyFadesAfter` seconds after a tab appears.
+    @Published var hotkeyIsGone = false
 
-    /// The spelling on screen right now. Read by the view and by the metrics,
-    /// so the tab is never sized for one and drawn with the other.
+    /// The spelling on screen right now, which is never the long one.
+    ///
+    /// "Right ⌘" was drawn in full and collapsed to "R ⌘" after five
+    /// seconds. The full spelling was never worth the width: the initial says
+    /// which side just as well, and the two-stage version spent the tab's first
+    /// five seconds at its widest for a reading nobody needed.
+    ///
+    /// Read by the view and by the metrics, so the tab is never sized for one
+    /// spelling and drawn with another.
     var shownHotkey: String {
-        hotkeyIsShort ? PillMetrics.shortHotkey(hotkey) : hotkey
+        hotkeyIsGone ? "" : PillMetrics.shortHotkey(hotkey)
     }
 
     /// Which command the pointer is on, if any.
@@ -450,15 +456,17 @@ final class PillHUD {
     private var openedByPointer = false
     /// Waiting out `PillMetrics.tabDwell`.
     private var pendingOpen: DispatchWorkItem?
-    /// Waiting to collapse "Right ⌥" to "R ⌥".
+    /// Waiting to drop the key from the tab.
     private var pendingShorten: DispatchWorkItem?
 
-    /// How long the tab says the key in full before it says it short.
+    /// How long the tab names the key before it stops.
     ///
-    /// Long enough to be read without looking for it, short enough that the
-    /// wide spelling is not what sits on your document for the rest of the
-    /// afternoon.
-    static let hotkeyShortensAfter: TimeInterval = 5
+    /// The tab stays until you act, so the key would otherwise sit on your
+    /// document all afternoon repeating something you read in the first second.
+    /// Three seconds is long enough to be read without being looked for. After
+    /// that the bird alone is the tab, and the bird is the thing you have
+    /// already learned to open.
+    static let hotkeyFadesAfter: TimeInterval = 3
     /// Whether the pointer is holding the offer open.
     ///
     /// Kept rather than read off `isDecaying`, because unfolding the tab is a
@@ -778,20 +786,20 @@ final class PillHUD {
         pendingShorten?.cancel(); pendingShorten = nil
         var closedOffer = false
         if case .offer(_, _, _, let open) = state { closedOffer = !open }
-        guard closedOffer, PillMetrics.shortHotkey(model.hotkey) != model.hotkey else {
-            model.hotkeyIsShort = false
+        guard closedOffer, !model.hotkey.isEmpty else {
+            model.hotkeyIsGone = false
             return
         }
-        // Already short from the tab this one replaced: leave it. Saying it in
-        // full again would be the surface explaining itself twice.
-        guard !model.hotkeyIsShort else { return }
+        // Already gone on the tab this one replaced: leave it. Naming the key
+        // again would be the surface explaining itself twice.
+        guard !model.hotkeyIsGone else { return }
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.model.hotkeyIsShort = true
+            self.model.hotkeyIsGone = true
             self.morph(to: self.wantedSize)
         }
         pendingShorten = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hotkeyShortensAfter, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.hotkeyFadesAfter, execute: work)
     }
 
     /// Take the pill away — unless something is about to put it back.
@@ -856,7 +864,7 @@ final class PillHUD {
         // The next tab says the key in full again: it is a different dictation
         // and a different moment.
         pendingShorten?.cancel(); pendingShorten = nil
-        model.hotkeyIsShort = false
+        model.hotkeyIsGone = false
         guard let panel, panel.isVisible, !isFading else { return }
 
         // A decision takes the offer at once rather than letting the rest of
