@@ -52,6 +52,21 @@ actor SentenceModel {
         directory.appendingPathComponent("tokenizer.json")
     }
 
+    /// Beside the cache directory, not inside it, so a fetch that deletes the
+    /// cache does not delete the lock somebody is holding.
+    private static var lockURL: URL {
+        directory.deletingLastPathComponent()
+            .appendingPathComponent("modernbert-base-64.lock")
+    }
+
+    enum Failure: LocalizedError {
+        case busy
+
+        var errorDescription: String? {
+            "another ParrotFlow process is fetching the sentence model"
+        }
+    }
+
     /// What `MLModel.compileModel` writes, checked before the model is loaded.
     ///
     /// Not belt and braces. A compiled model missing `model.mil` segfaults
@@ -103,11 +118,29 @@ actor SentenceModel {
                     "sentence model: the cached copy will not load"
                         + " (\(error.localizedDescription)); fetching it again"
                 )
-                try? FileManager.default.removeItem(at: directory)
             }
         }
-        try await fetch(progress: progress)
+        try await underLock { try await fetch(progress: progress) }
         return try load()
+    }
+
+    /// One process at a time inside `fetch`.
+    ///
+    /// The app and `--sentence-model` share this cache, and the second one in
+    /// would delete the first one's staging directory mid-download. It does
+    /// not wait for the lock: this is background work, and the next English
+    /// dictation asks again.
+    private static func underLock(_ body: () async throws -> Void) async throws {
+        try FileManager.default.createDirectory(
+            at: lockURL.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        let handle = open(lockURL.path, O_CREAT | O_RDWR, 0o644)
+        guard handle >= 0 else { throw Failure.busy }
+        // Closing the descriptor releases the lock, and the kernel closes it
+        // for a process that dies holding one.
+        defer { close(handle) }
+        guard flock(handle, LOCK_EX | LOCK_NB) == 0 else { throw Failure.busy }
+        try await body()
     }
 
     private static func load() throws -> MLModel {
@@ -123,7 +156,9 @@ actor SentenceModel {
         let files = FileManager.default
         try files.createDirectory(at: directory, withIntermediateDirectories: true)
         // A process that quits mid-download leaves its staging directory and
-        // whatever it had fetched, which is up to 299 MB nothing will ever read.
+        // whatever it had fetched, which is up to 299 MB nothing will ever
+        // read. Safe to delete every one of them because `underLock` means no
+        // other process is fetching.
         let left = try? files.contentsOfDirectory(atPath: directory.path)
         for name in left ?? [] where name.hasPrefix(".staging-") {
             try? files.removeItem(at: directory.appendingPathComponent(name))

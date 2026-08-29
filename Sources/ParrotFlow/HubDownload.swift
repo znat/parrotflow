@@ -49,16 +49,16 @@ enum HubDownload {
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         let listed = try await sizes(repo: repo)
-        var sizes: [String: Int64] = [:]
+        var wanted: [String: Int64] = [:]
         for path in paths {
             guard let size = listed[path] else { throw Failure.unlisted(path: path) }
-            sizes[path] = size
+            wanted[path] = size
         }
-        let total = sizes.values.reduce(0, +)
+        let total = wanted.values.reduce(0, +)
 
         var done: Int64 = 0
         for path in paths {
-            let expected = sizes[path] ?? 0
+            let expected = wanted[path] ?? 0
             let before = done
             try await download(
                 repo: repo, path: path, expecting: expected,

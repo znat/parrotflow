@@ -113,6 +113,12 @@ actor Transcriber {
     /// the next English dictation tries again.
     private var sentenceModelFetch: Task<Void, Never>?
 
+    /// True while that fetch is running. Its progress callback reaches this
+    /// actor through an unstructured task, so a percentage can arrive after
+    /// the fetch has already put the real status back — and the menu bar then
+    /// keeps a finished download's number until something else writes to it.
+    private var sentenceModelRunning = false
+
     /// Starts the sentence model download and does not wait for it.
     ///
     /// Nothing reads the model yet, so awaiting it would park the first
@@ -121,6 +127,7 @@ actor Transcriber {
     /// in the menu bar.
     private func warmSentenceModel() {
         guard sentenceModelFetch == nil else { return }
+        sentenceModelRunning = true
         sentenceModelFetch = Task { [weak self] in
             guard let self else { return }
             var failed = false
@@ -137,12 +144,14 @@ actor Transcriber {
     }
 
     private func reportSentenceModel(_ label: String) {
+        guard sentenceModelRunning else { return }
         // Reported, not recorded. `status` says whether the transcriber can
         // transcribe, and during this fetch it can.
         onStatusChange(.downloading(label, blocking: false))
     }
 
     private func finishSentenceModel(failed: Bool) {
+        sentenceModelRunning = false
         if failed { sentenceModelFetch = nil }
         // Whatever was true before this started is true again. Usually
         // `.ready`, which is what clears the label the fetch put up.
