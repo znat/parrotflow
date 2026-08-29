@@ -17,7 +17,11 @@ actor Transcriber {
 
     enum Status: Equatable {
         case idle
-        case downloading(String)
+        /// `blocking` is false for a fetch no dictation is waiting on. The
+        /// sentence model is fetched in the background, so the pill must not
+        /// say a dictation is stuck behind it and the setup window must not
+        /// say the speech model is still coming.
+        case downloading(String, blocking: Bool)
         case loading
         case ready
         case failed(String)
@@ -67,7 +71,7 @@ actor Transcriber {
 
     private func loadModels() async throws -> AsrModels {
         if let loadingModels { return try await loadingModels.value }
-        setStatus(.downloading("speech model"))
+        setStatus(.downloading("speech model", blocking: true))
         let task = Task<AsrModels, Error> {
             try await AsrModels.downloadAndLoad(
                 progressHandler: { [weak self] progress in
@@ -83,7 +87,7 @@ actor Transcriber {
 
     private func loadVad() async throws -> VadManager? {
         if let loadingVad { return try await loadingVad.value }
-        setStatus(.downloading("voice detector"))
+        setStatus(.downloading("voice detector", blocking: true))
         let task = Task<VadManager?, Error> {
             let vad = try? await VadManager(config: .default)
             if vad == nil { Log.write("speech gate: VAD unavailable; transcribing everything") }
@@ -102,7 +106,47 @@ actor Transcriber {
         let percent = Int((progress.fractionCompleted * 100).rounded())
         guard percent != lastReportedPercent else { return }
         lastReportedPercent = percent
-        setStatus(.downloading("\(label) \(percent)%"))
+        setStatus(.downloading("\(label) \(percent)%", blocking: true))
+    }
+
+    /// The sentence model fetch, once per process. Cleared when it fails, so
+    /// the next English dictation tries again.
+    private var sentenceModelFetch: Task<Void, Never>?
+
+    /// Starts the sentence model download and does not wait for it.
+    ///
+    /// Nothing reads the model yet, so awaiting it would park the first
+    /// English dictation behind 300 MB for no gain. It reports progress but
+    /// never `.failed`: a model no stage consumes must not put "Model error"
+    /// in the menu bar.
+    private func warmSentenceModel() {
+        guard sentenceModelFetch == nil else { return }
+        sentenceModelFetch = Task { [weak self] in
+            guard let self else { return }
+            var failed = false
+            do {
+                try await SentenceModel.shared.prepare { label in
+                    Task { await self.reportSentenceModel(label) }
+                }
+            } catch {
+                Log.write("sentence model: \(error.localizedDescription); nothing reads it yet")
+                failed = true
+            }
+            await self.finishSentenceModel(failed: failed)
+        }
+    }
+
+    private func reportSentenceModel(_ label: String) {
+        // Reported, not recorded. `status` says whether the transcriber can
+        // transcribe, and during this fetch it can.
+        onStatusChange(.downloading(label, blocking: false))
+    }
+
+    private func finishSentenceModel(failed: Bool) {
+        if failed { sentenceModelFetch = nil }
+        // Whatever was true before this started is true again. Usually
+        // `.ready`, which is what clears the label the fetch put up.
+        onStatusChange(status)
     }
 
 
@@ -355,7 +399,7 @@ actor Transcriber {
         if Vocabulary.wanted(config) {
             do {
                 try await Vocabulary.shared.prepare(config: config) { [weak self] label in
-                    Task { await self?.setStatus(.downloading(label)) }
+                    Task { await self?.setStatus(.downloading(label, blocking: true)) }
                 }
                 // The gate has already read the clip, so re-reading it would
                 // be a second decode of the same file for the same array.
@@ -384,6 +428,14 @@ actor Transcriber {
                 Log.write("vocabulary: \(error.localizedDescription); left as decoded")
             }
             setStatus(.ready)
+        }
+
+        // After the vocabulary pass, not before: that pass fetches its own
+        // 98 MB on a first run and this dictation is waiting on it. Two
+        // downloads at once halve the bandwidth of the one somebody is
+        // watching.
+        if Pipeline.language(of: text, config: config) == "en" {
+            warmSentenceModel()
         }
 
         // After the vocabulary pass rather than before it, though the words

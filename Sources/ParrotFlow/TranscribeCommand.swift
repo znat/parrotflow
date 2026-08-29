@@ -36,7 +36,7 @@ enum TranscribeCommand {
 
         Task {
             let transcriber = Transcriber { status in
-                if case .downloading(let what) = status {
+                if case .downloading(let what, _) = status {
                     // \r keeps the download on one line instead of scrolling.
                     print("\r  downloading \(what)…", terminator: "")
                     fflush(stdout)

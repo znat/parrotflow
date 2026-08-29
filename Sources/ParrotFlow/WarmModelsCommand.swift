@@ -29,7 +29,7 @@ enum WarmModelsCommand {
 
         Task {
             let transcriber = Transcriber { status in
-                if case .downloading(let what) = status {
+                if case .downloading(let what, _) = status {
                     print("\r  downloading \(what)…", terminator: "")
                     fflush(stdout)
                 }

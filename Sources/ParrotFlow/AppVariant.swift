@@ -37,6 +37,20 @@ enum AppVariant {
         isDev ? "ParrotFlow-Dev.log" : "ParrotFlow.log"
     }
 
+    /// `~/Library/Application Support/ParrotFlow` or `.../ParrotFlow Dev`.
+    ///
+    /// For what the app downloads rather than for what a person edits — the
+    /// config directory holds files somebody opens in an editor, and a 300 MB
+    /// model cache does not belong next to them. Split per variant like
+    /// everything else here.
+    static var supportDirectory: URL {
+        let base = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base.appendingPathComponent(displayName, isDirectory: true)
+    }
+
     static var defaultOutputDir: String {
         isDev ? "~/Recordings/ParrotFlow Dev" : "~/Recordings/ParrotFlow"
     }
