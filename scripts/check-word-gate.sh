@@ -61,6 +61,32 @@ same() { [ -z "$1" ] || [ "$1" = "$2" ]; }
 
 pass=0; total=0; overwrote=0
 
+# Read once into a file, and stop if the read failed. Piped straight into the
+# loop, a set that could not be parsed halfway through would end the loop early
+# and the run would report a clean score over the cases it had reached.
+CASES="$CONFIG/cases"
+if ! python3 -c '
+import sys, yaml
+# A key that is absent and a key written `word:` with nothing after it both
+# come out empty, so the shape check below sees them the same way. Without
+# this, YAML reads the second as None and str() makes it the word "None".
+#
+# Anything that is not text is a broken case and not a value to coerce.
+# `word: [Frederick]` would arrive as "[\x27Frederick\x27]" and be asked about.
+KEYS = ("word", "term", "spell", "wordpiece", "possessive", "gate")
+for number, case in enumerate(yaml.safe_load(open(sys.argv[1]))["cases"], 1):
+    fields = []
+    for key in KEYS:
+        value = case.get(key)
+        if value is not None and not isinstance(value, str):
+            sys.exit("case %d: %s is %r, which is not text" % (number, key, value))
+        fields.append("" if value is None else value)
+    print("\x1f".join(fields))
+' "$ROOT/tests/word-gate-cases.yaml" > "$CASES"; then
+  echo "  ✗ tests/word-gate-cases.yaml could not be read"
+  exit 1
+fi
+
 # Unit separator, not a tab. A tab is whitespace, so bash collapses two of
 # them into one and a case with no `term` arrives with its fields shifted.
 while IFS=$'\x1f' read -r word term spell wordpiece possessive gate; do
@@ -128,16 +154,7 @@ while IFS=$'\x1f' read -r word term spell wordpiece possessive gate; do
   fi
   printf '  ✗ %-12s got   %s\n' "$word" "$got_line"
   printf '    %-12s want  %s\n' "" "$want_line"
-done < <(python3 -c '
-import sys, yaml
-# A key that is absent and a key written `word:` with nothing after it both
-# come out empty, so the shape check above sees them the same way. Without
-# this, YAML reads the second as None and str() makes it the word "None".
-for case in yaml.safe_load(open(sys.argv[1]))["cases"]:
-    fields = [case.get(key) for key in
-              ("word", "term", "spell", "wordpiece", "possessive", "gate")]
-    print("\x1f".join("" if value is None else str(value) for value in fields))
-' "$ROOT/tests/word-gate-cases.yaml")
+done < "$CASES"
 
 echo
 # A set that read no cases is not a passing run.
