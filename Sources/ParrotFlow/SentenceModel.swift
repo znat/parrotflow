@@ -147,6 +147,20 @@ actor SentenceModel {
         try MLModel(contentsOf: compiledURL)
     }
 
+    private var tokenizers: [URL: BPETokenizer] = [:]
+
+    /// Parsed once per file. Reading the 2 MB `tokenizer.json` and building its
+    /// two 50k tables costs about 90 ms, against 8 ms for the forward pass the
+    /// caller wanted, so a caller loading a probe per sentence would spend the
+    /// whole budget here. Keyed by URL because `PARROTFLOW_TOKENIZER` points
+    /// the check script at another copy.
+    func tokenizer(at url: URL) throws -> BPETokenizer {
+        if let cached = tokenizers[url] { return cached }
+        let loaded = try BPETokenizer.load(contentsOf: url)
+        tokenizers[url] = loaded
+        return loaded
+    }
+
     /// Fetches into a staging directory, compiles, then moves the result into
     /// place. Staging sits inside `directory` so the move is a rename on the
     /// same volume — across volumes `moveItem` copies, and a copy is not

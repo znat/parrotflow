@@ -56,10 +56,9 @@ pass=0; total=0
 while IFS= read -r quoted && IFS= read -r want; do
   total=$((total + 1))
   text="$(python3 -c 'import json,sys; sys.stdout.write(json.loads(sys.argv[1]))' "$quoted")"
-  got="$("$BIN" --sentence-probe --encode "$text" 2>/dev/null | awk '/^ids / { print $2 }')"
-  # `ids` with nothing after it is the empty string's answer, and awk prints
-  # nothing for it. That is a pass, not a missing line.
-  [ -z "$got" ] && got="$(printf '')"
+  # `ids` with nothing after it is the empty string's answer, and `$2` is then
+  # empty. That is a pass, not a missing line.
+  got="$("$BIN" --sentence-probe --encode "$text" 2>/dev/null | awk '/^ids/ { print $2 }')"
   if [ "$got" = "$want" ]; then
     pass=$((pass + 1))
     printf '  ✓ %s\n' "$quoted"

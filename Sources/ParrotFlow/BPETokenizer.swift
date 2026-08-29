@@ -16,7 +16,7 @@ import Foundation
 /// `firstID(of: "That")`, 2773. The period is the bare `.`, 15, not `Ġ.`, 964.
 /// `assertBoundaryIDs` checks that against a real tokenization at load, because
 /// getting it wrong returns numbers rather than an error.
-struct BPETokenizer {
+struct BPETokenizer: Sendable {
 
     enum Failure: LocalizedError {
         case unreadable(String)
@@ -181,6 +181,9 @@ struct BPETokenizer {
                 bytes.append(contentsOf: Array(String(scalar).utf8))
             }
         }
+        // Lossy on purpose. A failable initializer returns nil for the pieces
+        // that are half a character, and those still have to print.
+        // swiftlint:disable:next optional_data_string_conversion
         return String(decoding: bytes, as: UTF8.self)
     }
 
