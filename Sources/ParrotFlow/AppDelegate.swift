@@ -268,6 +268,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// timings the decoder already produced.
     private var heardAtPress: [Int: Transcriber.Decode] = [:]
 
+    /// How many UTF-16 units this dictation actually put into the field.
+    ///
+    /// Not `lastTranscript.utf16.count`, which is the same words with their
+    /// outer whitespace taken off. What is written is `delivered`, which trims
+    /// newlines and keeps spaces, and a decoder routinely returns a leading
+    /// one — so measuring the span from the trimmed string starts it a
+    /// character or two inside itself, and `CaretAnchor.span` then asks for the
+    /// bounds of the wrong first character.
+    ///
+    /// Only the length, because only the length is what `utterance` needs, and
+    /// keeping the string twice is keeping somebody's sentence twice.
+    private var wroteAtPress: [Int: Int] = [:]
+
     /// How long a pane is worth keeping, for a press that is no longer in
     /// flight. Nothing waits this long: the whole chain is a decoder and at
     /// most a prompt stage.
@@ -3019,7 +3032,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // is the other half of the same job: the apps that *did* answer
                 // at the press, and answered about the line the dictation was
                 // about to start on rather than the one it ended on.
-                dropBelowTheWords(text.utf16.count, in: element, for: press.run)
+                dropBelowTheWords(
+                    wroteAtPress[press.run] ?? text.utf16.count, in: element, for: press.run
+                )
             }
         }
     }
@@ -3937,6 +3952,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// reach anything that is somehow left.
     private func dictationEnded(_ run: Int) {
         screenAtPress.removeValue(forKey: run)
+        wroteAtPress.removeValue(forKey: run)
         heardAtPress.removeValue(forKey: run)
         InputBox.forget(run)
         pressesInFlight.remove(run)
@@ -5035,6 +5051,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func insertDictation(
         _ text: String, to destination: Destination, for press: Press
     ) {
+        // Before anything can fail: `showCorrectOffer` measures the span from
+        // this and every ending below reaches it. See `wroteAtPress`.
+        wroteAtPress[press.run] = text.utf16.count
         let element = press.element
         // However this ends, this dictation is over and nothing wants the pane
         // it started with. Every path here makes the offer now, and the offer
