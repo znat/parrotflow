@@ -56,9 +56,9 @@ struct SentenceProbe {
 
     static func load(progress: (@Sendable (String) -> Void)? = nil) async throws -> SentenceProbe {
         let model = try await SentenceModel.shared.prepare(progress: progress)
-        // `load` runs `assertBoundaryIDs`, so a tokenizer that would score the
-        // wrong ids throws here rather than answering.
-        let tokenizer = try BPETokenizer.load(contentsOf: tokenizerURL)
+        // The tokenizer runs `assertBoundaryIDs` as it parses, so one that
+        // would score the wrong ids throws here rather than answering.
+        let tokenizer = try await SentenceModel.shared.tokenizer(at: tokenizerURL)
         guard let period = tokenizer.firstID(of: ".") else {
             throw Failure.shape("\".\" does not encode")
         }
@@ -81,20 +81,18 @@ struct SentenceProbe {
     }
 
     func read(left: String, right: String) throws -> Reading {
-        let head = Array(left.split(whereSeparator: \.isWhitespace).map(String.init))
-        let tail = Array(right.split(whereSeparator: \.isWhitespace).map(String.init))
+        // The period under test is dropped before the words are counted, so a
+        // caller that kept it and one that did not get the same window.
+        let kept = String(left.reversed().drop { $0 == "." }.reversed())
+        let before = kept.split(whereSeparator: \.isWhitespace).suffix(Self.radius).map(String.init)
+        let tail = right.split(whereSeparator: \.isWhitespace).map(String.init)
         guard var next = tail.first else { throw Failure.empty }
-        // The trailing period is the one under test, and a caller may or may
-        // not have kept it.
-        var before = head.suffix(Self.radius).map { $0 }
-        if let last = before.last {
-            let stripped = String(last.reversed().drop { $0 == "." }.reversed())
-            if stripped.isEmpty { before.removeLast() } else { before[before.count - 1] = stripped }
-        }
         next = next.prefix(1).lowercased() + next.dropFirst()
         let after = ([next] + tail.dropFirst()).prefix(Self.radius).joined(separator: " ")
 
-        guard let nextID = tokenizer.firstID(of: " " + next) else { throw Failure.empty }
+        guard let nextID = tokenizer.firstID(of: " " + next) else {
+            throw Failure.shape("\((" " + next).debugDescription) does not encode")
+        }
         let slot = try at(left: before.joined(separator: " "), right: " " + after)
         let periodLogProbability = slot.logProbability(of: period)
         let nextLogProbability = slot.logProbability(of: nextID)
@@ -168,6 +166,11 @@ struct SentenceProbe {
                     Array($0[row..<(row + width)])
                 }
             case .float16:
+                // `Float16` conforms to `MLShapedArrayScalar` only from macOS 15,
+                // and this type ships to macOS 14.
+                guard #available(macOS 15, *) else {
+                    throw Failure.shape("float16 logits need macOS 15")
+                }
                 self.logits = array.withUnsafeBufferPointer(ofType: Float16.self) {
                     $0[row..<(row + width)].map { Float($0) }
                 }
