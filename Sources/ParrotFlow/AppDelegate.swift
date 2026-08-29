@@ -3437,7 +3437,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the whole time, so a wrong answer here costs one keystroke.
     private var recordingLabel: String? {
         guard keyedAtPress else { return nil }
-        return selectionAtPress == nil ? "say an edit" : "editing the selection"
+        // The words, not a word for them.
+        //
+        // It said "say an edit" and "editing the selection", which named the
+        // gesture you had just made and left out the only thing you could not
+        // already know: which text is about to change. That question has one
+        // exact answer and it is the text itself — the same argument the
+        // offer's selection headline makes, and the same highlight draws it.
+        //
+        // A selection first, because it is what you are pointing at now. Then
+        // the last dictation, which is what a tap-then-hold with nothing
+        // selected is about. The old phrase survives as the fallback for
+        // neither, where there is nothing to show and the gesture still needs
+        // saying.
+        let words = { (text: String?) -> String? in
+            let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (trimmed?.isEmpty == false) ? trimmed : nil
+        }
+        if let text = words(selectionAtPress?.text) { return text }
+        if let text = words(lastDictated?.text) { return text }
+        return "say an edit"
     }
 
     /// Put the pill under the selection instead of where the last dictation
@@ -3454,8 +3473,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// parked away from them — Outlook answers `0+0` for a pane holding
     /// hundreds of thousands of characters, and `trust` is what catches it.
     private func aim(at selection: SelectionReader.Selection) {
-        guard let element = selection.element,
-              case .found(let anchor) = CaretAnchor.read(at: element) else {
+        guard let element = selection.element else {
+            Log.write("pill: no element for the selection; it stays where it was")
+            return
+        }
+        // The range first, which puts the surface under where the selection
+        // *starts* and below where it ends — see `CaretAnchor.span`. `read`
+        // answers with one box around the whole thing, so a selection over
+        // three lines put the surface under the leftmost of them, which for an
+        // indented block is the margin and not the words.
+        if let range = selection.range, range.length > 0,
+           case .found(let anchor) = CaretAnchor.span(range, in: element) {
+            pill.aim(at: anchor)
+            return
+        }
+        guard case .found(let anchor) = CaretAnchor.read(at: element) else {
             Log.write("pill: no geometry for the selection; it stays where it was")
             return
         }

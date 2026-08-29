@@ -1369,8 +1369,13 @@ enum PillMetrics {
     static func tabWidth(label: String?) -> CGFloat {
         let mark = tabPadding * 2 + tabMark
         guard let label else { return mark }
-        return mark + tabGap + title(label)
+        return mark + tabGap + min(title(label), editWidth) + selectionFit
     }
+
+    /// Past this the words being edited are truncated rather than the tab
+    /// growing. A selection can be a paragraph, and a surface as wide as one is
+    /// a surface that covers the thing it is pointing at.
+    static let editWidth: CGFloat = 220
     /// The key on it, which grows with the rest. It is the tab's only text and
     /// a cap left at the chips' size would read as a chip that had wandered in.
     static let tabKeyHeight: CGFloat = 14
@@ -2106,6 +2111,10 @@ private struct RecordingContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
+    /// The words on the highlight: the glass text, so they read the way the
+    /// dictated sentence does on the offer rather than as white on blue.
+    private static let editedText = Color(red: 0.875, green: 0.941, blue: 0.906)
+
     var body: some View {
         if docked { tab } else { capsule }
     }
@@ -2123,10 +2132,21 @@ private struct RecordingContent: View {
                 level: Double(level), size: PillMetrics.tabMark, blind: icon == nil
             )
             if let label {
+                // In the highlight the offer uses for the same job, because it
+                // is the same claim: these words, the ones sitting in that
+                // colour in your document, are what is about to change.
                 Text(label)
                     .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .foregroundStyle(Color(white: 0.88))
-                    .fixedSize()
+                    .foregroundStyle(Self.editedText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, PillMetrics.selectionPadding)
+                    .background(
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                            .fill(Parrot.action.opacity(0.42))
+                    )
+                    .frame(maxWidth: PillMetrics.editWidth, alignment: .leading)
             }
         }
         .padding(.horizontal, PillMetrics.tabPadding)

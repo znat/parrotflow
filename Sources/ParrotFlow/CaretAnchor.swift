@@ -296,9 +296,30 @@ enum CaretAnchor {
         guard start >= 0 else {
             return .missed("the caret is \(caret.location) in, and the words are \(length) long")
         }
+        return span(CFRange(location: start, length: length), in: element)
+    }
 
-        guard let head = bounds(of: CFRange(location: start, length: 1), in: element),
-              let tail = bounds(of: CFRange(location: caret.location - 1, length: 1), in: element)
+    /// Where a run of somebody's text sits: under where it starts, below where
+    /// it ends.
+    ///
+    /// Two questions rather than one. The bounds of a whole span come back as a
+    /// box covering every line of it, and the left edge of that box is the
+    /// leftmost of all of them — for anything that wraps, the margin, and not
+    /// the character you began at. So the column is asked of the first
+    /// character alone and the row of the last.
+    ///
+    /// The same answer serves a dictation that has just landed and a selection
+    /// you are about to edit: both are a run of text the surface has to point
+    /// at without covering, and pointing at the middle of one is the way to
+    /// cover the rest of it.
+    ///
+    /// `range` is in UTF-16 units, because that is what the accessibility API
+    /// counts in. A caller holding a `String` wants `utf16.count`.
+    static func span(_ range: CFRange, in element: AXUIElement) -> Outcome {
+        guard range.length > 0 else { return .missed("an empty span") }
+        let last = range.location + range.length - 1
+        guard let head = bounds(of: CFRange(location: range.location, length: 1), in: element),
+              let tail = bounds(of: CFRange(location: last, length: 1), in: element)
         else { return .missed("it will not measure its own text") }
 
         // Accessibility is y-downward, so the last character is the one with

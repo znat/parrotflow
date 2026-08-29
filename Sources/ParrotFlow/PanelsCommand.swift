@@ -199,6 +199,14 @@ enum PanelsCommand {
         let listening = pill(.recording(nil), icon: sampleIcon(), level: 0.55, docked: .below)
         let listeningQuiet = pill(.recording(nil), icon: sampleIcon(), level: 0.06, docked: .below)
         let listeningBlind = pill(.recording(nil), level: 0.55, docked: .below)
+        // Tap-then-hold: the words about to be edited, shown rather than
+        // described. On the sheet because the highlight has to read at 12pt on
+        // a 27pt tab, and because a long selection has to truncate rather than
+        // widen the surface past the words it is pointing at.
+        let editing = pill(
+            .recording("things that turned out not to matter"),
+            icon: sampleIcon(), level: 0.4, docked: .below
+        )
         let thinkingDocked = pill(.working("Thinking…"), docked: .below)
 
         let overlay = pill(.recording(nil), icon: sampleIcon(), level: 0.75)
@@ -314,6 +322,8 @@ enum PanelsCommand {
              pillSize(listening), .dark, true),
             (AnyView(PillView().environmentObject(listeningBlind)),
              pillSize(listeningBlind), .dark, true),
+            (AnyView(PillView().environmentObject(editing)),
+             pillSize(editing), .dark, true),
             (AnyView(PillView().environmentObject(thinkingDocked)),
              pillSize(thinkingDocked), .dark, true),
             (AnyView(PillView().environmentObject(tab)),
