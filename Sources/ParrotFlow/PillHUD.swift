@@ -365,6 +365,7 @@ final class PillHUD {
     // MARK: - The states
 
     func recording(icon: NSImage?, label: String? = nil) {
+        inDictation = true
         model.elapsed = 0
         model.level = 0
         model.appIcon = icon
@@ -849,6 +850,7 @@ final class PillHUD {
     private func fadeOut() {
         pendingHide = nil
         pendingDismiss = nil
+        inDictation = false
         pointerHolds = false
         openedByPointer = false
         pendingOpen?.cancel(); pendingOpen = nil
@@ -1224,21 +1226,33 @@ final class PillHUD {
     /// sits at the bottom of the screen with all four corners rounded — see
     /// `Dock.free`. Either way it is the offer, so it is tinted, it has no rim,
     /// and its window is the size of the thing you can see.
+    /// Whether this is the docked surface rather than the floating capsule.
+    ///
+    /// Everything a dictation puts on screen, and nothing else.
+    ///
+    /// It used to ask for an anchor as well, and that was the offer's old bug
+    /// made twice: an app that will not say where its caret is got the old
+    /// capsule while it listened and the new tab when the words landed, so one
+    /// dictation was two objects again. The anchor decides *where* the surface
+    /// goes — beside the line, or at the bottom of the screen with all four
+    /// corners rounded, see `Dock.free` — never what it is.
+    ///
+    /// A recording is always a dictation: there is no other reason the
+    /// microphone is open. Transcribing and a notice are not, so they follow
+    /// the recording through `inDictation`, which is what keeps a download's
+    /// progress and an update notice in the capsule where a sentence fits.
     private var isDocked: Bool {
         switch model.state {
-        // The offer always, with or without an anchor — see `Dock.free`.
-        case .offer: return true
-        // The dictation only when there is a line to hang from. Without one
-        // these keep the capsule they have always been: a download's progress
-        // and a microphone notice are about the app rather than about a place
-        // in somebody's document, and the bird alone cannot carry a sentence.
-        // A notice is news about the dictation that just happened — grammar
-        // applied, the app would not let us edit it — so it belongs beside
-        // those words like everything else does. It keeps its own height,
-        // because it is a sentence and not a mark.
-        case .recording, .working, .notice: return near != nil
+        case .offer, .recording: return true
+        case .working, .notice: return inDictation
         }
     }
+
+    /// Whether what is on screen belongs to a dictation.
+    ///
+    /// Set when the microphone opens and cleared when the surface goes, so
+    /// every state between those two is the dictation's and wears its shape.
+    private var inDictation = false
 }
 
 // MARK: - Metrics
