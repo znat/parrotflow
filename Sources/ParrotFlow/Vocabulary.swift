@@ -484,17 +484,33 @@ actor Vocabulary {
     /// One shape can still fool it: a term shorter than a contraction's stem,
     /// where dropping a character helps the length ratio instead of hurting it.
     /// That needs a two-letter term, and there is none.
+    ///
+    /// The auto-apply path reaches this far less often since `dropsPossessive`
+    /// sends that pair to the judge. It is still what writes the reading the
+    /// judge is offered, which is where the possessive now has to survive.
     static func inflected(_ term: String, like heard: String) -> String {
-        let trimmed = heard.trimmingCharacters(in: CharacterSet.alphanumerics.inverted
+        guard let (stem, suffix) = possessive(in: heard), !stem.isEmpty,
+              gluedSimilarity(stem, term) >= gluedSimilarity(stem + suffix, term)
+        else { return term }
+        return term + suffix
+    }
+
+    /// The trailing `'s` a word carries, and the stem under it — lowercased,
+    /// with surrounding punctuation dropped and the apostrophe kept.
+    ///
+    /// Both apostrophes. The recogniser writes the typographic one and a
+    /// keyboard writes the straight one, and a decoded token can be either.
+    ///
+    /// This says nothing about whether the `'s` is a possessive. `it's` and
+    /// `let's` come back from here too; what separates them is the comparison
+    /// in `inflected` and, for the gate, the term.
+    static func possessive(in word: String) -> (stem: String, suffix: String)? {
+        let trimmed = word.trimmingCharacters(in: CharacterSet.alphanumerics.inverted
             .subtracting(CharacterSet(charactersIn: "'\u{2019}s")))
         let lower = trimmed.lowercased()
         guard let suffix = ["'s", "\u{2019}s"].first(where: { lower.hasSuffix($0) })
-        else { return term }
-        let stem = String(lower.dropLast(suffix.count))
-        guard !stem.isEmpty,
-              gluedSimilarity(stem, term) >= gluedSimilarity(lower, term)
-        else { return term }
-        return term + suffix
+        else { return nil }
+        return (String(lower.dropLast(suffix.count)), suffix)
     }
 
     /// The punctuation a replaced word carried, so the sentence keeps its end.
@@ -514,7 +530,11 @@ actor Vocabulary {
 
     /// Whether a proposal is safe to write without asking anything.
     ///
-    /// The first rule is the spell-check gate, measured at 38/38 on declines
+    /// One rule is about the sentence and comes first, because no word list
+    /// can see it: a possessive the heard text carries and the term does not
+    /// — see `dropsPossessive`.
+    ///
+    /// The rest is the spell-check gate, measured at 38/38 on declines
     /// and 0.00s: never overwrite a real word. Used here as a router rather
     /// than a filter — a real word is not refused, it is passed to the judge,
     /// which is the only thing that can read the sentence.
@@ -559,7 +579,35 @@ actor Vocabulary {
         guard termScore > heardScore else { return false }
         let bare = String(letters)
         guard !bare.isEmpty else { return false }
+        guard !dropsPossessive(heard: heard, term: term) else { return false }
         return unseenWord(bare)
+    }
+
+    /// Whether writing the term here would take away a possessive the speaker
+    /// said.
+    ///
+    /// Asked before the word test, because the word test cannot see it. `bare`
+    /// is letters only, so `Mirza's` is looked up as `Mirzas` — a form neither
+    /// list has ever seen, where `Mirza` itself is known to one of them. The
+    /// apostrophe walks the proposal straight past both lists: measured on the
+    /// shipped binary, `--word-gate Frederick` says `judge` and
+    /// `--word-gate "Frederick's"` said `auto-apply`.
+    ///
+    /// A rule and not a threshold. "Mirza's thoughts" is not "Mirza thoughts";
+    /// dropping a possessive changes what the sentence says, in every sentence,
+    /// so there is nothing here to tune and nothing to drift. What it does is
+    /// route: the proposal is not refused, it goes to the judge, which is the
+    /// only thing that reads the sentence.
+    ///
+    /// One direction only. `Matthew at` -> `Matthieu's` is the same class the
+    /// other way round — the term carries the possessive and the decoded span
+    /// does not — and that correction is right. Nothing here fires on it.
+    ///
+    /// A contraction reaches the judge too, since `it's` also ends in `'s`.
+    /// That is the safe direction and it is nearly free: a contraction is a
+    /// real word, so `unseenWord` was already sending it there.
+    static func dropsPossessive(heard: String, term: String) -> Bool {
+        possessive(in: heard) != nil && possessive(in: term) == nil
     }
 
     /// The word half of the gate: both lists have to say they have never seen

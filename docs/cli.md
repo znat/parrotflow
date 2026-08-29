@@ -101,7 +101,7 @@ $PF --numbers "two hundred forty three" [--lang fr]
 $PF --normalize "<text>"
 $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
 $PF --inflected <term> <heard>
-$PF --word-gate <word>
+$PF --word-gate <word> [term]
 $PF --verdicts <count> "<reply>"
 $PF --teaching "<sentence>" <word>
 $PF --suggest "<sentence>" [--lang fr]
@@ -120,7 +120,13 @@ to say they have never seen the word: `NSSpellChecker`, which has no first
 names in it, and the whole-word half of a tokenizer vocabulary
 (`data/wordpiece.txt`), which has no rare compounds in it. Both verdicts are
 printed, because a word reaches `judge` from either side. No model runs — it is
-a set lookup. `scripts/check-word-gate.sh` scores it against
+a set lookup.
+
+Name the term as well and the whole gate answers about that pair —
+`--word-gate "Mirza's" Mirza` prints `possessive dropped` and `judge`. One
+condition is not about a word at all: a `'s` the heard text carries and the
+term does not would be taken out of the sentence, so it goes to the judge.
+`scripts/check-word-gate.sh` scores both forms against
 `tests/word-gate-cases.yaml`.
 
 `--verdicts` asks what the name judge reads out of a model's reply —
