@@ -56,9 +56,9 @@ struct SentenceProbe {
 
     static func load(progress: (@Sendable (String) -> Void)? = nil) async throws -> SentenceProbe {
         let model = try await SentenceModel.shared.prepare(progress: progress)
-        // `load` runs `assertBoundaryIDs`, so a tokenizer that would score the
-        // wrong ids throws here rather than answering.
-        let tokenizer = try BPETokenizer.load(contentsOf: tokenizerURL)
+        // The tokenizer runs `assertBoundaryIDs` as it parses, so one that
+        // would score the wrong ids throws here rather than answering.
+        let tokenizer = try await SentenceModel.shared.tokenizer(at: tokenizerURL)
         guard let period = tokenizer.firstID(of: ".") else {
             throw Failure.shape("\".\" does not encode")
         }
@@ -166,6 +166,11 @@ struct SentenceProbe {
                     Array($0[row..<(row + width)])
                 }
             case .float16:
+                // `Float16` conforms to `MLShapedArrayScalar` only from macOS 15,
+                // and this type ships to macOS 14.
+                guard #available(macOS 15, *) else {
+                    throw Failure.shape("float16 logits need macOS 15")
+                }
                 self.logits = array.withUnsafeBufferPointer(ofType: Float16.self) {
                     $0[row..<(row + width)].map { Float($0) }
                 }

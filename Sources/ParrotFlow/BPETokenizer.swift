@@ -16,7 +16,7 @@ import Foundation
 /// `firstID(of: "That")`, 2773. The period is the bare `.`, 15, not `Ġ.`, 964.
 /// `assertBoundaryIDs` checks that against a real tokenization at load, because
 /// getting it wrong returns numbers rather than an error.
-struct BPETokenizer {
+struct BPETokenizer: Sendable {
 
     enum Failure: LocalizedError {
         case unreadable(String)
