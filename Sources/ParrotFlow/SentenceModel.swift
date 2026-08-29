@@ -3,14 +3,14 @@ import Foundation
 
 /// ModernBERT, fetched on the first English dictation and kept.
 ///
-/// Nothing reads it yet. It is here so the download happens once, early, and
-/// out of the way of the sentence that triggered it — the model is 300 MB and
-/// the first Core ML compile of it costs about 7 seconds, and neither is a
-/// thing to discover on the dictation that needs it.
+/// The download happens once, early, and out of the way of the sentence that
+/// triggered it. The model is 300 MB and the first Core ML compile of it costs
+/// about 7 seconds, and neither is a thing to discover on the dictation that
+/// needs it.
 ///
-/// What it is for: a masked word probe over a ±12-word window, which repairs a
-/// sentence a pause cut in two. Measured at about 8 ms per call at sequence
-/// length 64, which is the only length this conversion is faithful at.
+/// `SentenceProbe` reads it: a masked word probe over a ±12-word window.
+/// Measured at about 8 ms per call at sequence length 64, which is the only
+/// length this conversion is faithful at.
 ///
 /// `znaat/modernbert-coreml` and not `finnvoorhees/ModernBERT-CoreML`. That one
 /// is traced at a single token, where ModernBERT's sliding-window mask is
@@ -29,9 +29,8 @@ actor SentenceModel {
             "\(packageName)/Manifest.json",
             "\(packageName)/Data/com.apple.CoreML/model.mlmodel",
             "\(packageName)/Data/com.apple.CoreML/weights/weight.bin",
-            // Nothing reads it yet either. It belongs with the weights it was
-            // trained against, and fetching it now means the stage that needs
-            // it needs no download of its own.
+            // Beside the weights it was trained against, so `BPETokenizer`
+            // needs no download of its own.
             "tokenizer.json",
         ]
     }
@@ -83,6 +82,21 @@ actor SentenceModel {
     }
 
     private var model: MLModel?
+    private var tokenizer: BPETokenizer?
+
+    /// The tokenizer beside the weights, parsed once.
+    ///
+    /// `tokenizer.json` is 2 MB and building the two 50k tables out of it costs
+    /// 132 ms. A caller that loaded a probe per sentence would pay that per
+    /// sentence, against 8 ms for the forward pass it wanted.
+    ///
+    /// Call `prepare` first: this reads the file that download puts there.
+    func loadTokenizer() throws -> BPETokenizer {
+        if let tokenizer { return tokenizer }
+        let loaded = try BPETokenizer.load(contentsOf: Self.tokenizerURL)
+        tokenizer = loaded
+        return loaded
+    }
 
     /// The fetch in flight, if any. Same reason as `Transcriber.loadingModels`:
     /// actor isolation stops a torn read of `model`, not two callers both

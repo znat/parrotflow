@@ -46,11 +46,12 @@ struct SentenceProbe {
     let tokenizer: BPETokenizer
     private let model: MLModel
 
+    /// Downloads the model if it is not there, then loads it and the tokenizer.
+    /// Both are cached on `SentenceModel.shared`, so calling this again is cheap.
     static func load(progress: (@Sendable (String) -> Void)? = nil) async throws -> SentenceProbe {
         let model = try await SentenceModel.shared.prepare(progress: progress)
         return SentenceProbe(
-            tokenizer: try BPETokenizer.load(contentsOf: SentenceModel.tokenizerURL),
-            model: model
+            tokenizer: try await SentenceModel.shared.loadTokenizer(), model: model
         )
     }
 
@@ -76,7 +77,7 @@ struct SentenceProbe {
 
         let maskAt = 1 + head.count
         var ids = [tokenizer.cls] + head + [tokenizer.mask] + tail + [tokenizer.sep]
-        ids += Array(repeating: tokenizer.pad, count: Self.length - ids.count)
+        ids += Array(repeating: tokenizer.pad, count: max(0, Self.length - ids.count))
 
         let input = try MLMultiArray(shape: [1, NSNumber(value: Self.length)], dataType: .int32)
         for (index, id) in ids.enumerated() { input[index] = NSNumber(value: id) }
@@ -146,6 +147,10 @@ struct SentenceProbe {
                     Array($0[row..<(row + width)])
                 }
             case .float16:
+                // `Float16` conforms to `MLShapedArrayScalar` only from macOS 15.
+                guard #available(macOS 15, *) else {
+                    throw Failure.shape("float16 logits need macOS 15")
+                }
                 self.logits = array.withUnsafeBufferPointer(ofType: Float16.self) {
                     $0[row..<(row + width)].map { Float($0) }
                 }
