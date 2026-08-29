@@ -246,3 +246,9 @@ jobs:
       # recordings. This checks what git tracks.
       - name: No speaker audio in the repository
         run: scripts/check-no-voice.sh
+
+      # The BPE tokenizer is hand-written and its mistakes are silent: a wrong
+      # id scores nothing at every threshold and raises no error. This runs on
+      # tokenizer.json alone, 2 MB, never the 300 MB model.
+      - name: The tokenizer against HuggingFace's own
+        run: scripts/check-tokenizer.sh
