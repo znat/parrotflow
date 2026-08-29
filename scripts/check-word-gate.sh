@@ -130,9 +130,13 @@ while IFS=$'\x1f' read -r word term spell wordpiece possessive gate; do
   printf '    %-12s want  %s\n' "" "$want_line"
 done < <(python3 -c '
 import sys, yaml
+# A key that is absent and a key written `word:` with nothing after it both
+# come out empty, so the shape check above sees them the same way. Without
+# this, YAML reads the second as None and str() makes it the word "None".
 for case in yaml.safe_load(open(sys.argv[1]))["cases"]:
-    print("\x1f".join(str(case.get(key, "")) for key in
-                    ("word", "term", "spell", "wordpiece", "possessive", "gate")))
+    fields = [case.get(key) for key in
+              ("word", "term", "spell", "wordpiece", "possessive", "gate")]
+    print("\x1f".join("" if value is None else str(value) for value in fields))
 ' "$ROOT/tests/word-gate-cases.yaml")
 
 echo
