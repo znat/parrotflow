@@ -133,8 +133,8 @@ enum PanelsCommand {
             return model
         }
 
-        let notice = pill(.notice("Grammar applied", .done))
-        let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution))
+        let notice = pill(.notice("Grammar applied", .done), docked: .below)
+        let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution), docked: .below)
         let thinking = pill(.working("Thinking…"))
         // The offer before it is asked for: the bird and the key, and nothing
         // else. First because it is what every dictation now ends as — the ones

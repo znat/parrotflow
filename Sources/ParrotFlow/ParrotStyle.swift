@@ -125,7 +125,7 @@ extension View {
         _ shape: S, alive: Bool = false, turning: Bool = false, glass: Bool = false,
         solid: Bool = false, scrim: Double? = nil, wash: Color? = nil,
         wheel: [Color] = Parrot.wheel, rim: Bool = true,
-        edge: Color = Color.white.opacity(0.09)
+        edge: Color = Color.white.opacity(0.09), edgeShimmer: Bool = false
     ) -> some View {
         background {
             if solid {
@@ -192,8 +192,61 @@ extension View {
             if rim {
                 PlumageRim(shape: shape, alive: alive, turning: turning, glass: glass, wheel: wheel)
             } else {
-                shape.strokeBorder(edge, lineWidth: 1)
+                DockedEdge(shape: shape, colour: edge, shimmering: edgeShimmer)
             }
+        }
+    }
+}
+
+/// The line round a docked surface, and the light that runs along it while it
+/// is working.
+///
+/// The busy signal on a floating pill is the plumage rim turning fast. A docked
+/// surface has no rim to turn, and the bird inside it is already carrying the
+/// plumage — so the edge shimmers instead: one bright arc travelling over the
+/// line that is there anyway. Everything else about the surface stays still,
+/// which is what keeps the movement readable rather than busy-looking.
+private struct DockedEdge<S: InsettableShape>: View {
+    let shape: S
+    let colour: Color
+    var shimmering: Bool = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var angle: Double = -90
+
+    /// One trip round. Close to the sweep through the bird without dividing
+    /// into it, so the two never fall into step and read as one mechanism.
+    private static var turnSeconds: TimeInterval { 1.7 }
+
+    var body: some View {
+        Group {
+            if shimmering, !reduceMotion {
+                shape.strokeBorder(
+                    AngularGradient(
+                        stops: [
+                            .init(color: colour, location: 0),
+                            .init(color: .white.opacity(0.85), location: 0.07),
+                            .init(color: colour, location: 0.22),
+                            .init(color: colour, location: 1),
+                        ],
+                        center: .center, angle: .degrees(angle)
+                    ),
+                    lineWidth: 1
+                )
+            } else {
+                shape.strokeBorder(colour, lineWidth: 1)
+            }
+        }
+        .onChange(of: shimmering, initial: true) { _, _ in spin() }
+    }
+
+    private func spin() {
+        guard shimmering, !reduceMotion else {
+            withAnimation(.default) { angle = -90 }
+            return
+        }
+        withAnimation(.linear(duration: Self.turnSeconds).repeatForever(autoreverses: false)) {
+            angle = 270
         }
     }
 }
