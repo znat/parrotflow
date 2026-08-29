@@ -181,6 +181,9 @@ struct BPETokenizer {
                 bytes.append(contentsOf: Array(String(scalar).utf8))
             }
         }
+        // Lossy on purpose. A failable initializer returns nil for the pieces
+        // that are half a character, and those still have to print.
+        // swiftlint:disable:next optional_data_string_conversion
         return String(decoding: bytes, as: UTF8.self)
     }
 

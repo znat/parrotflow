@@ -81,20 +81,18 @@ struct SentenceProbe {
     }
 
     func read(left: String, right: String) throws -> Reading {
-        let head = Array(left.split(whereSeparator: \.isWhitespace).map(String.init))
-        let tail = Array(right.split(whereSeparator: \.isWhitespace).map(String.init))
+        // The period under test is dropped before the words are counted, so a
+        // caller that kept it and one that did not get the same window.
+        let kept = String(left.reversed().drop { $0 == "." }.reversed())
+        let before = kept.split(whereSeparator: \.isWhitespace).suffix(Self.radius).map(String.init)
+        let tail = right.split(whereSeparator: \.isWhitespace).map(String.init)
         guard var next = tail.first else { throw Failure.empty }
-        // The trailing period is the one under test, and a caller may or may
-        // not have kept it.
-        var before = head.suffix(Self.radius).map { $0 }
-        if let last = before.last {
-            let stripped = String(last.reversed().drop { $0 == "." }.reversed())
-            if stripped.isEmpty { before.removeLast() } else { before[before.count - 1] = stripped }
-        }
         next = next.prefix(1).lowercased() + next.dropFirst()
         let after = ([next] + tail.dropFirst()).prefix(Self.radius).joined(separator: " ")
 
-        guard let nextID = tokenizer.firstID(of: " " + next) else { throw Failure.empty }
+        guard let nextID = tokenizer.firstID(of: " " + next) else {
+            throw Failure.shape("\((" " + next).debugDescription) does not encode")
+        }
         let slot = try at(left: before.joined(separator: " "), right: " " + after)
         let periodLogProbability = slot.logProbability(of: period)
         let nextLogProbability = slot.logProbability(of: nextID)
