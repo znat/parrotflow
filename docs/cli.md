@@ -433,6 +433,38 @@ somebody.
 returns `Other` for everything without one. In a pipeline the language comes
 from the scope; here it falls back to the first configured language.
 
+## What word belongs in a slot
+
+```sh
+$PF --sentence-model
+$PF --sentence-probe "The capital of Ireland is [MASK]."
+$PF --sentence-probe "the report is due on [MASK] morning" --against " Friday"
+```
+
+`--sentence-probe` masks one slot of a sentence and prints what ModernBERT
+would put there, most likely first. `--sentence-model` is the download, 300 MB
+once; the probe does it too if it has to.
+
+That first sentence is the acceptance test for the model. Correct is `Dublin,
+Belfast, Cork, London`. A conversion that only reads one token answers `£,
+isation, organisation, ised` instead, and the published repository exists to
+warn about that.
+
+`--against` asks about one named token beside the period, which is the
+sentence-join question — did a pause end a sentence that should have run on.
+`" Friday"` scores -2.43 against the period's -7.71, so that period was
+spurious. In `"we have to do it [MASK] works well"`, `" That"` scores -8.20
+against the period's -4.35, so that one is real.
+
+**Write the leading space.** A word that follows another word carries it, so
+`" That"` is token 2064 and `"That"` is 2773. Comparing against the second
+scores zero and errors on nothing. The `boundary` line the command prints first
+is that rule checked against a real tokenization at load.
+
+Both sides are cut to the 12 words nearest the mask before the model sees them.
+Measured over 200 periods and 120 cuts: ±12 words fits in the 64-token input
+every time, and reads better than the whole sentence.
+
 ## Where the input stage cuts a field
 
 ```sh

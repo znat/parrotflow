@@ -128,8 +128,19 @@ if arguments.contains("--sentence-model") {
     exit(SentenceModelCommand.run())
 }
 
-
-
+if let index = arguments.firstIndex(of: "--sentence-probe") {
+    guard #available(macOS 14, *) else {
+        print("✗ the sentence model needs macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --sentence-probe \"… [MASK] …\" [--against \" word\"]")
+        exit(2)
+    }
+    let against = arguments.firstIndex(of: "--against")
+        .flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+    exit(SentenceProbeCommand.run(text: arguments[index + 1], against: against))
+}
 
 if arguments.contains("--boost-eval") {
     guard #available(macOS 14, *) else { exit(1) }
