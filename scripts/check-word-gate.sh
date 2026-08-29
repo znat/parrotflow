@@ -54,7 +54,9 @@ verdicts() {
 field() { printf '%s\n' "$1" | awk -v k="$2" '$1 == k { print $2 }'; }
 
 # A verdict the case does not name is not asked for. A word case names no
-# `possessive`, a pair case names neither list.
+# `possessive`, a pair case names neither list. Which verdicts a case has to
+# name is checked separately, at the top of the loop — read as "not asked",
+# an empty expectation would also let a case that names nothing pass.
 same() { [ -z "$1" ] || [ "$1" = "$2" ]; }
 
 pass=0; total=0; overwrote=0
@@ -64,6 +66,23 @@ pass=0; total=0; overwrote=0
 while IFS=$'\x1f' read -r word term spell wordpiece possessive gate; do
   [ -z "$word" ] && continue
   total=$((total + 1))
+
+  # The shape of the case, before its answer. A case that leaves out a verdict
+  # its shape needs is a broken case and not a passing one — `same` would read
+  # the gap as "not asked" and the binary printing nothing there would agree.
+  missing=""
+  [ -z "$gate" ] && missing="$missing gate"
+  if [ -n "$term" ]; then
+    [ -z "$possessive" ] && missing="$missing possessive"
+  else
+    [ -z "$spell" ] && missing="$missing spell"
+    [ -z "$wordpiece" ] && missing="$missing wordpiece"
+  fi
+  if [ -n "$missing" ]; then
+    printf '  ✗ %-12s the case names no%s\n' "$word" "$missing"
+    continue
+  fi
+
   # Asked twice when the first answer is wrong, and only then. NSSpellChecker
   # is a service that times out, a timeout is indistinguishable from "known
   # word", and `isRealWord` caches per process — so a second process is a
@@ -76,11 +95,15 @@ while IFS=$'\x1f' read -r word term spell wordpiece possessive gate; do
     got_piece="$(field "$out" wordpiece)"
     got_poss="$(field "$out" possessive)"
     got_gate="$(field "$out" gate)"
+    ok=0
     same "$spell" "$got_spell" && same "$wordpiece" "$got_piece" \
-      && same "$possessive" "$got_poss" && same "$gate" "$got_gate" && break
+      && same "$possessive" "$got_poss" && same "$gate" "$got_gate" && ok=1
+    [ "$ok" = 1 ] && break
   done
 
-  # What this case was about, for the report: the two lists, or the pair.
+  # What this case was about, for the report: the two lists, or the pair. The
+  # verdict above is what decides — a case may name a field this does not
+  # print, and it is still checked.
   if [ -n "$term" ]; then
     got_line="$(printf 'term %-12s possessive %-9s %s' "$term" "$got_poss" "$got_gate")"
     want_line="$(printf 'term %-12s possessive %-9s %s' "$term" "$possessive" "$gate")"
@@ -89,7 +112,7 @@ while IFS=$'\x1f' read -r word term spell wordpiece possessive gate; do
     want_line="$(printf 'spell %-11s wordpiece %-11s %s' "$spell" "$wordpiece" "$gate")"
   fi
 
-  if [ "$got_line" = "$want_line" ]; then
+  if [ "$ok" = 1 ]; then
     pass=$((pass + 1))
     printf '  ✓ %-12s %s\n' "$word" "$got_line"
     continue
