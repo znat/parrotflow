@@ -64,13 +64,16 @@ pass=0; total=0; overwrote=0
 # Unit separator, not a tab. A tab is whitespace, so bash collapses two of
 # them into one and a case with no `term` arrives with its fields shifted.
 while IFS=$'\x1f' read -r word term spell wordpiece possessive gate; do
-  [ -z "$word" ] && continue
   total=$((total + 1))
 
-  # The shape of the case, before its answer. A case that leaves out a verdict
+  # The shape of the case, before its answer. A case that leaves out something
   # its shape needs is a broken case and not a passing one — `same` would read
   # the gap as "not asked" and the binary printing nothing there would agree.
+  # A case with no word used to be skipped, which kept it out of the count as
+  # well as out of the run: a malformed one could be added and the set still
+  # said 25/25.
   missing=""
+  [ -z "$word" ] && missing="$missing word"
   [ -z "$gate" ] && missing="$missing gate"
   if [ -n "$term" ]; then
     [ -z "$possessive" ] && missing="$missing possessive"
@@ -79,7 +82,7 @@ while IFS=$'\x1f' read -r word term spell wordpiece possessive gate; do
     [ -z "$wordpiece" ] && missing="$missing wordpiece"
   fi
   if [ -n "$missing" ]; then
-    printf '  ✗ %-12s the case names no%s\n' "$word" "$missing"
+    printf '  ✗ %-12s the case names no%s\n' "${word:-(no word)}" "$missing"
     continue
   fi
 
