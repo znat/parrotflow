@@ -101,6 +101,7 @@ $PF --numbers "two hundred forty three" [--lang fr]
 $PF --normalize "<text>"
 $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
 $PF --inflected <term> <heard>
+$PF --word-gate <word>
 $PF --verdicts <count> "<reply>"
 $PF --teaching "<sentence>" <word>
 $PF --suggest "<sentence>" [--lang fr]
@@ -111,6 +112,16 @@ stood — `--inflected Matthieu "Mathieu's"` prints `Matthieu's`. It is
 `Vocabulary.inflected` and nothing else: no audio, no model, no config. The
 question it answers is whether a possessive survives a substitution, and
 `scripts/check-possessive.sh` scores it against `tests/possessive-cases.yaml`.
+
+`--word-gate` asks whether a vocabulary term may be written over this word with
+nothing reading the sentence — `--word-gate Frederick` prints `judge`,
+`--word-gate Versal` prints `auto-apply`. Two word lists decide and both have
+to say they have never seen the word: `NSSpellChecker`, which has no first
+names in it, and the whole-word half of a tokenizer vocabulary
+(`data/wordpiece.txt`), which has no rare compounds in it. Both verdicts are
+printed, because a word reaches `judge` from either side. No model runs — it is
+a set lookup. `scripts/check-word-gate.sh` scores it against
+`tests/word-gate-cases.yaml`.
 
 `--verdicts` asks what the name judge reads out of a model's reply —
 `--verdicts 2 "1. KEEP` newline `2. REVERT"` prints `KEEP REVERT`. It is

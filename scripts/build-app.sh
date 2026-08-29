@@ -51,6 +51,12 @@ cp -R "$ROOT/examples" "$APP/Contents/Resources/examples"
 find "$APP/Contents/Resources/examples" -name __pycache__ -type d -exec rm -rf {} +
 cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
 
+# The word list the auto-apply gate asks whether a name is a name. Named here
+# rather than copying the whole of data/: the other files in it are read by
+# scripts/calibrate.py on a checkout and have no business in the bundle. See
+# WordPieces.fileURL.
+cp "$ROOT/data/wordpiece.txt" "$APP/Contents/Resources/wordpiece.txt"
+
 # Resources/Info.plist carries the released identity; the dev bundle is that
 # file with three keys rewritten. One template rather than two files means a key
 # cannot be added to one variant and forgotten in the other.

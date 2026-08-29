@@ -1,0 +1,141 @@
+# Which words may be overwritten by a vocabulary term without anything asking.
+#
+# Two lists decide, and both have to say "unknown" — `Vocabulary.autoApplies`.
+# `spell` is `Replacements.isRealWord`: NSSpellChecker, `en` then `fr`.
+# `wordpiece` is `WordPieces.knows`: the whole-word half of
+# distilbert-base-uncased's tokenizer vocabulary, in data/wordpiece.txt.
+#
+#   gate: judge       something reads the sentence before the word is replaced
+#   gate: auto-apply  the word is replaced, and nothing reads the sentence
+#
+# The two blocks below are the two blind spots, and they are why one list is
+# not enough. A dictionary has no first names in it. A tokenizer has no rare
+# compounds in it. Measured 2026-08-29 against the shipped binary.
+#
+# Scored by `scripts/check-word-gate.sh`. Both verdicts are checked and not
+# only the decision: a word reaches `judge` from either side, and a set that
+# read the decision alone would pass while the half it meant to test was
+# broken.
+
+cases:
+
+  # --- names the dictionary has never heard of, which the tokenizer has ------
+  # These auto-applied before data/wordpiece.txt. "Um not Peter, uh Frederick."
+  # became "…uh Redrock." with nothing reading the sentence.
+
+  - word: Frederick
+    spell: unknown
+    wordpiece: known
+    gate: judge
+    why: the name the defect was found on
+
+  - word: Sarah
+    spell: unknown
+    wordpiece: known
+    gate: judge
+
+  - word: Nathan
+    spell: unknown
+    wordpiece: known
+    gate: judge
+
+  - word: Ahmed
+    spell: unknown
+    wordpiece: known
+    gate: judge
+
+  - word: Bjorn
+    spell: unknown
+    wordpiece: known
+    gate: judge
+
+  - word: Xiao
+    spell: unknown
+    wordpiece: known
+    gate: judge
+
+  - word: Chloé
+    spell: unknown
+    wordpiece: known
+    gate: judge
+    why: >
+      the accent. The tokenizer lowercases and then drops combining marks, and
+      folding the query does the same thing, so this is looked up as `chloe`.
+
+  # --- words the tokenizer splits, which the dictionary has ------------------
+  # These reached the judge before this change and still do. The list alone
+  # would have overwritten every one of them.
+
+  - word: subtask
+    spell: known
+    wordpiece: unknown
+    gate: judge
+
+  - word: repo
+    spell: known
+    wordpiece: unknown
+    gate: judge
+
+  - word: async
+    spell: known
+    wordpiece: unknown
+    gate: judge
+
+  - word: rebase
+    spell: known
+    wordpiece: unknown
+    gate: judge
+
+  - word: tokenizer
+    spell: known
+    wordpiece: unknown
+    gate: judge
+
+  - word: Mathieu
+    spell: known
+    wordpiece: unknown
+    gate: judge
+    why: known to the French dictionary, split by an English tokenizer
+
+  # --- known to both --------------------------------------------------------
+
+  - word: Peter
+    spell: known
+    wordpiece: known
+    gate: judge
+
+  # --- known to neither, which is what the gate is for ----------------------
+  # A word no dictionary and no tokenizer has seen is a mishearing, and the
+  # audio already preferred the term. Nothing here changed.
+
+  - word: Versal
+    spell: unknown
+    wordpiece: unknown
+    gate: auto-apply
+    why: the mishearing of Vercel that actually happens
+
+  - word: Redrock
+    spell: unknown
+    wordpiece: unknown
+    gate: auto-apply
+
+  - word: Praisy
+    spell: unknown
+    wordpiece: unknown
+    gate: auto-apply
+
+  # --- what the pair still does not fix -------------------------------------
+  # Recorded rather than hidden. These are names, they auto-apply, and neither
+  # list stops them. The change removes most of the class, not all of it.
+
+  - word: Priya
+    spell: unknown
+    wordpiece: unknown
+    gate: auto-apply
+    why: a first name both lists miss
+
+  - word: Siobhan
+    spell: unknown
+    wordpiece: unknown
+    gate: auto-apply
+    why: a first name both lists miss
