@@ -1836,7 +1836,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // download is about 470 MB and the pill would sit on one word for all
         // of it. Say what is actually happening, with the figure.
         var starting = "Transcribing…"
-        if case .downloading(let what) = transcriberStatus {
+        // Only a download this dictation is waiting on. A background fetch is
+        // running while the words are being decoded, and the pill would tell
+        // the user to wait for something that is not in their way.
+        if case .downloading(let what, blocking: true) = transcriberStatus {
             pillDownloadRun = run
             starting = "Downloading \(what)"
         }
@@ -5184,13 +5187,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleTranscriberStatus(_ status: Transcriber.Status) {
         transcriberStatus = status
         switch status {
-        case .downloading(let what):
+        case .downloading(let what, let blocking):
             setLabel("Downloading \(what)")
             // `what` already carries the percentage, so replacing the text in
             // place is what makes the number climb. Only for the dictation that
             // put the download up: it is waiting on exactly this, and
             // "Transcribing…" over a 470 MB fetch reads as a hang.
-            if ownsDownloadPill {
+            if blocking, ownsDownloadPill {
                 updateProgress("Downloading \(what)", token: dictationProgressToken)
             }
             // After the pill, which writes the label too: this has to hold the
@@ -5202,7 +5205,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let percent = what.split(separator: " ").last.flatMap { token -> Int? in
                 token.hasSuffix("%") ? Int(token.dropLast()) : nil
             }
-            permissions.model.speechModel = .preparing(percent: percent)
+            // Only for a download that holds dictation up. This row says
+            // whether you can speak yet, and a background fetch does not
+            // change that answer.
+            if blocking { permissions.model.speechModel = .preparing(percent: percent) }
         case .loading:
             setLabel("Loading speech model…")
             if ownsDownloadPill {

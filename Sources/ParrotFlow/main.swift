@@ -120,6 +120,14 @@ if arguments.contains("--warm-models") {
     exit(WarmModelsCommand.run())
 }
 
+if arguments.contains("--sentence-model") {
+    guard #available(macOS 14, *) else {
+        print("✗ the sentence model needs macOS 14 or later")
+        exit(1)
+    }
+    exit(SentenceModelCommand.run())
+}
+
 
 
 
