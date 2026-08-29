@@ -18,6 +18,18 @@ enum PanelsCommand {
         OfferedCommand(title: "grammar", key: "G")
     ]
 
+    /// Enough transforms to wrap, which two are not.
+    ///
+    /// The wrap is counted in `PillMetrics.chipRows` before it is drawn, and a
+    /// row count off by one hangs the last chip over the end of the panel. Two
+    /// chips can never show that; six can, and six is an ordinary config.
+    private static let offerManyChips = offerChips + [
+        OfferedCommand(title: "slack handles", key: "S"),
+        OfferedCommand(title: "punctuation", key: "P"),
+        OfferedCommand(title: "repetitions", key: "R"),
+        OfferedCommand(title: "bullets", key: "B")
+    ]
+
     /// A Bluetooth headset with a long name, because the notice puts the name
     /// in its first sentence and a short one would not say whether it fits.
     private static let sampleMicName = "Tasmin's AirPods Pro Max"
@@ -77,20 +89,14 @@ enum PanelsCommand {
         Confidence.Word(text: "yesterday", score: nil)
     ]
 
-    /// The decoder's own score for that whole utterance. Between p1 and p10 of
-    /// the archive, which is where a decode holding words this shaky lands, and
-    /// which puts the number mid-ramp: the panel is here to show the colours
-    /// being told apart, and the median would print plain white.
-    private static let sampleOverall: Float = 0.81
-
     /// The warning the same dictation raises. It names the word rather than a
     /// number: the number is for the person tuning the thresholds, and this
     /// line is for the person who has just dictated.
     private static let sampleWarning = "This may not be what you said · Vercel"
 
-    /// The three rows together, which is the tallest the pill ever gets.
+    /// The words and the warning together.
     private static let sampleReading = Confidence.Reading(
-        words: sampleSentence, overall: sampleOverall, warning: sampleWarning
+        words: sampleSentence, warning: sampleWarning
     )
 
     /// Draws every surface into one PNG, light beside dark.
@@ -107,11 +113,19 @@ enum PanelsCommand {
         // One model per state, because they are one surface now: the sheet is
         // the only place all of them are visible at once, which is where drift
         // between them shows.
-        func pill(_ state: PillState, icon: NSImage? = nil, level: Float = 0) -> PillModel {
+        func pill(
+            _ state: PillState, icon: NSImage? = nil, level: Float = 0,
+            docked: Dock? = nil
+        ) -> PillModel {
             let model = PillModel()
             model.state = state
             model.appIcon = icon
             model.level = level
+            // Every offer is drawn hanging, because that is the only way it is
+            // ever seen: square along the edge that meets the line, rounded
+            // below, no rim. A lozenge here would be a picture of a state the
+            // app does not have.
+            model.docked = docked
             // No hotkey is registered behind the sheet, so the selection offer
             // is drawn against the shipped default — which is the one a reader
             // should be checking that row against, and is not this machine's.
@@ -119,10 +133,21 @@ enum PanelsCommand {
             return model
         }
 
-        let notice = pill(.notice("Grammar applied", .done))
-        let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution))
+        let notice = pill(.notice("Grammar applied", .done), docked: .below)
+        let caution = pill(.notice("Grammar copied — this app won't let me edit it", .caution), docked: .below)
         let thinking = pill(.working("Thinking…"))
-        let offer = pill(.offer(offerChips, nil, Confidence.Reading()))
+        // The offer before it is asked for: the bird and the key, and nothing
+        // else. First because it is what every dictation now ends as — the ones
+        // below are what it becomes when you rest on it.
+        let tab = pill(.offer(offerChips, nil, Confidence.Reading(), open: false), docked: .below)
+        // And the tab with something to warn about, which never appears in the
+        // app — a doubtful decode opens by itself. On the sheet because the
+        // amber pip has to be findable at 46pt, and that is only checkable
+        // beside the plain one.
+        let tabWarned = pill(.offer(
+            offerChips, nil, Confidence.Reading(warning: sampleWarning), open: false
+        ), docked: .below)
+        let offer = pill(.offer(offerChips, nil, Confidence.Reading(), open: true), docked: .below)
         // The offer over a selection: three rows, and the words themselves
         // rather than a word for them. On the sheet because the difference from
         // the plain one is the whole design — a pill that says which words is a
@@ -130,36 +155,59 @@ enum PanelsCommand {
         // is only sometimes there gets looked at nowhere else.
         let offerSelection = pill(.offer(
             offerChips, .selection("things that turned out not to matter"),
-            Confidence.Reading()
-        ))
+            Confidence.Reading(), open: true
+        ), docked: .below)
         // Beside the plain one: the two endings must not look the same.
         let offerCopied = pill(.offer(
-            offerChips, .landing("Nowhere to type · ⌘V"), Confidence.Reading()
-        ))
+            offerChips, .landing("Nowhere to type · ⌘V"), Confidence.Reading(),
+            open: true
+        ), docked: .below)
         // The warning on its own, which is what most people will ever see of
         // this: `feedback.confidence` is off by default and the thresholds are
         // not, so a shaky dictation raises one line and nothing else.
         let offerWarned = pill(.offer(
-            offerChips, nil, Confidence.Reading(warning: sampleWarning)
-        ))
+            offerChips, nil, Confidence.Reading(warning: sampleWarning), open: true
+        ), docked: .below)
         // And the same pill after it has taken a Return: one step further
         // along the same ramp, which is the thing to check side by side —
         // amber and scarlet have to read as an escalation, not as two moods.
         let offerStopped = pill(.offer(
-            offerChips, nil, Confidence.Reading(warning: Confidence.stopped, stopped: true)
-        ))
+            offerChips, nil,
+            Confidence.Reading(warning: Confidence.stopped, stopped: true), open: true
+        ), docked: .below)
         // The same offer with `feedback.confidence` on.
-        let offerHeard = pill(.offer(offerChips, nil, sampleReading))
+        let offerHeard = pill(.offer(offerChips, nil, sampleReading, open: true), docked: .below)
+        // Six transforms, which is one row too many for a panel pinned to a
+        // character. See `PillMetrics.chipsWidth`.
+        let offerWrapped = pill(
+            .offer(offerManyChips, nil, Confidence.Reading(), open: true), docked: .below
+        )
         // And a dictation long enough to wrap. On the sheet because the wrap is
         // the one thing here that is counted before it is drawn — a line count
         // off by one clips the words rather than costing a few points of pill.
         let offerHeardLong = pill(.offer(
             offerChips, nil,
             Confidence.Reading(
-                words: sampleSentence + sampleSentence, overall: sampleOverall,
-                warning: sampleWarning
-            )
-        ))
+                words: sampleSentence + sampleSentence, warning: sampleWarning
+            ),
+            open: true
+        ), docked: .below)
+
+        // The dictation, hanging off a line: the bird half full, then standing
+        // while it thinks. On the sheet because the whole recording state is
+        // one mark now, and whether it reads at 20pt is the question.
+        let listening = pill(.recording(nil), icon: sampleIcon(), level: 0.55, docked: .below)
+        let listeningQuiet = pill(.recording(nil), icon: sampleIcon(), level: 0.06, docked: .below)
+        let listeningBlind = pill(.recording(nil), level: 0.55, docked: .below)
+        // Tap-then-hold: the words about to be edited, shown rather than
+        // described. On the sheet because the highlight has to read at 12pt on
+        // a 27pt tab, and because a long selection has to truncate rather than
+        // widen the surface past the words it is pointing at.
+        let editing = pill(
+            .recording("things that turned out not to matter"),
+            icon: sampleIcon(), level: 0.4, docked: .below
+        )
+        let thinkingDocked = pill(.working("Thinking…"), docked: .below)
 
         let overlay = pill(.recording(nil), icon: sampleIcon(), level: 0.75)
 
@@ -264,9 +312,24 @@ enum PanelsCommand {
              pillSize(thinking), .dark, true),
             (AnyView(PillView().environmentObject(caution)),
              pillSize(caution), .dark, true),
-            // The state the pill ends on, which is the only one that offers
-            // rather than reports. Next to the notices because that is the
-            // comparison that matters: it has to not look like one.
+            // What every dictation now ends as, and what the rest of this
+            // block is that surface opened. Next to the notices because that is
+            // the comparison that matters: it has to not look like one, and at
+            // 46pt it has to be findable at all.
+            (AnyView(PillView().environmentObject(listeningQuiet)),
+             pillSize(listeningQuiet), .dark, true),
+            (AnyView(PillView().environmentObject(listening)),
+             pillSize(listening), .dark, true),
+            (AnyView(PillView().environmentObject(listeningBlind)),
+             pillSize(listeningBlind), .dark, true),
+            (AnyView(PillView().environmentObject(editing)),
+             pillSize(editing), .dark, true),
+            (AnyView(PillView().environmentObject(thinkingDocked)),
+             pillSize(thinkingDocked), .dark, true),
+            (AnyView(PillView().environmentObject(tab)),
+             pillSize(tab), .dark, true),
+            (AnyView(PillView().environmentObject(tabWarned)),
+             pillSize(tabWarned), .dark, true),
             (AnyView(PillView().environmentObject(offer)),
              pillSize(offer), .dark, true),
             (AnyView(PillView().environmentObject(offerSelection)),
@@ -281,6 +344,8 @@ enum PanelsCommand {
              pillSize(offerStopped), .dark, true),
             (AnyView(PillView().environmentObject(offerHeard)),
              pillSize(offerHeard), .dark, true),
+            (AnyView(PillView().environmentObject(offerWrapped)),
+             pillSize(offerWrapped), .dark, true),
             (AnyView(PillView().environmentObject(offerHeardLong)),
              pillSize(offerHeardLong), .dark, true),
             // Not a pill state at all, and the only surface here that is
@@ -398,7 +463,8 @@ enum PanelsCommand {
     /// it or the sheet cuts the halo off square.
     private static func pillSize(_ model: PillModel) -> NSSize {
         PillMetrics.panelSize(
-            for: model.state, hasIcon: model.appIcon != nil, hotkey: model.hotkey
+            for: model.state, hasIcon: model.appIcon != nil, hotkey: model.hotkey,
+            docked: model.docked != nil
         )
     }
 

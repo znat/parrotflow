@@ -113,7 +113,9 @@ actor Transcriber {
         /// The decoder's own words with their scores, before any stage
         /// rewrote them.
         let words: [Trace.Word]
-        /// Its one score for the whole utterance. See `Confidence.overall`.
+        /// Its one score for the whole utterance. Read by
+        /// `Confidence.warning`, which needs a decode to be poor overall before
+        /// it will name a word. It is not shown: see `OfferContent`.
         let confidence: Float
         /// The terms the vocabulary pass wrote into the text.
         let vocabulary: [String]

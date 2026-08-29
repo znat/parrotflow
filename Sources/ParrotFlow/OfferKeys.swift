@@ -251,6 +251,18 @@ final class OfferKeys {
         } else {
             key = .dismiss
             take = false
+            // Why a letter the offer claimed did not match, which is three
+            // different faults with one symptom: the letter is typed into your
+            // document and the offer goes away. A modifier still down, an event
+            // that will not become an NSEvent, or a character that is not the
+            // one on the chip.
+            if let typed = NSEvent(cgEvent: event)?.charactersIgnoringModifiers,
+               letters.contains(typed.uppercased()) || letters.contains(typed) {
+                Log.write(
+                    "offer keys: \"\(typed)\" is claimed but did not match — "
+                        + "flags \(event.flags.rawValue), holding \(letters.sorted().joined())"
+                )
+            }
         }
 
         // Handed to the next turn of the main loop rather than run here. What

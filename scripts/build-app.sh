@@ -41,7 +41,13 @@ printf 'APPL????' > "$APP/Contents/PkgInfo"
 # Rebuilding them on every `make run` would put a rasteriser between you and a
 # working app for no gain.
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"
+# Two sets, and the glob for the first does not cover the second. The menu bar
+# ones are the bird flat in three colours; ParrotSolid is the silhouette the
+# pill pours the plumage through. Named separately rather than widened to
+# `*Parrot*.png`, so adding a drawing to Resources/ is a decision here and not
+# an accident.
 cp "$ROOT"/Resources/MenuBarParrot*.png "$APP/Contents/Resources/"
+cp "$ROOT"/Resources/ParrotSolid*.png "$APP/Contents/Resources/"
 
 # The shipped transforms and the default config.yaml are seeded from here —
 # copied, not baked into the binary as strings, so there is one copy of each

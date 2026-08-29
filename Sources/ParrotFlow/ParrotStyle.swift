@@ -124,7 +124,8 @@ extension View {
     func parrotSurface<S: InsettableShape>(
         _ shape: S, alive: Bool = false, turning: Bool = false, glass: Bool = false,
         solid: Bool = false, scrim: Double? = nil, wash: Color? = nil,
-        wheel: [Color] = Parrot.wheel
+        wheel: [Color] = Parrot.wheel, rim: Bool = true,
+        edge: Color = Color.white.opacity(0.09), edgeShimmer: Bool = false
     ) -> some View {
         background {
             if solid {
@@ -181,8 +182,71 @@ extension View {
         }
         // The lit edge is the rim's own inner hairline, weighted to the top —
         // not a line of its own. See `PlumageRim`.
+        //
+        // `rim: false` is for a surface that is not floating. The plumage says
+        // "this is a thing of the app's, over your document"; a surface hanging
+        // off a line of your text is already placed by what it is attached to,
+        // and a turning rim on it reads as a sticker on the page. It takes a
+        // plain hairline instead — the same one the rim carries on its inside.
         .overlay {
-            PlumageRim(shape: shape, alive: alive, turning: turning, glass: glass, wheel: wheel)
+            if rim {
+                PlumageRim(shape: shape, alive: alive, turning: turning, glass: glass, wheel: wheel)
+            } else {
+                DockedEdge(shape: shape, colour: edge, shimmering: edgeShimmer)
+            }
+        }
+    }
+}
+
+/// The line round a docked surface, and the light that runs along it while it
+/// is working.
+///
+/// The busy signal on a floating pill is the plumage rim turning fast. A docked
+/// surface has no rim to turn, and the bird inside it is already carrying the
+/// plumage — so the edge shimmers instead: one bright arc travelling over the
+/// line that is there anyway. Everything else about the surface stays still,
+/// which is what keeps the movement readable rather than busy-looking.
+private struct DockedEdge<S: InsettableShape>: View {
+    let shape: S
+    let colour: Color
+    var shimmering: Bool = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var angle: Double = -90
+
+    /// One trip round. Close to the sweep through the bird without dividing
+    /// into it, so the two never fall into step and read as one mechanism.
+    private static var turnSeconds: TimeInterval { 1.7 }
+
+    var body: some View {
+        Group {
+            if shimmering, !reduceMotion {
+                shape.strokeBorder(
+                    AngularGradient(
+                        stops: [
+                            .init(color: colour, location: 0),
+                            .init(color: .white.opacity(0.85), location: 0.07),
+                            .init(color: colour, location: 0.22),
+                            .init(color: colour, location: 1),
+                        ],
+                        center: .center, angle: .degrees(angle)
+                    ),
+                    lineWidth: 1
+                )
+            } else {
+                shape.strokeBorder(colour, lineWidth: 1)
+            }
+        }
+        .onChange(of: shimmering, initial: true) { _, _ in spin() }
+    }
+
+    private func spin() {
+        guard shimmering, !reduceMotion else {
+            withAnimation(.default) { angle = -90 }
+            return
+        }
+        withAnimation(.linear(duration: Self.turnSeconds).repeatForever(autoreverses: false)) {
+            angle = 270
         }
     }
 }
@@ -407,9 +471,14 @@ enum ParrotGlass {
     /// bounds. So it is used as a backdrop with an empty content view, and the
     /// SwiftUI surface is drawn over it — the same shape, the same corner
     /// radius, and the rim on top of both.
+    /// How far outside the surface the frost is drawn. See the comment on the
+    /// fallback path below. Named because a caller that reframes the backdrop
+    /// has to put it back where `backdrop` would have.
+    static let overlap: CGFloat = 2
+
     static func backdrop(
         radius: CGFloat, in size: NSSize, inset: CGFloat = 0,
-        overlap: CGFloat = 2, tint: NSColor? = nil
+        overlap: CGFloat = ParrotGlass.overlap, tint: NSColor? = nil
     ) -> NSView {
         let edge = max(0, inset - overlap)
         let frame = NSRect(
@@ -612,6 +681,141 @@ struct PlumageMark: View {
             }
             .frame(height: 11, alignment: .bottom)
         }
+    }
+}
+
+/// The bird as the level meter: an empty shape that fills as you speak.
+///
+/// This replaces the twelve bars. The bars said "a microphone is open" by being
+/// a picture of a microphone being open; the bird says it by being the app,
+/// which is already the thing you look for. And it costs no width — the pill's
+/// recording state used to be 144pt of dot, meter and icon, and it is now the
+/// mark on its own.
+///
+/// **Silence is an empty shape, not a colour.** An earlier version slid the
+/// plumage band along the bird instead, and at rest that parked the scarlet end
+/// over a silent bird — so nothing happening looked like something wrong. Here
+/// colour only ever means sound arriving.
+///
+/// The fill runs tail to head, which is the bird's own colouring: sky at the
+/// bottom, then leaf, then amber, then scarlet at the head. So a shout is the
+/// only thing that turns it red, and it does it by filling rather than by
+/// changing hue.
+///
+/// Both layers are the same silhouette, so the ghost and the fill cannot be a
+/// fraction of a point out of register. There is no outline version: measured
+/// at 20pt, every stroke weight collapsed into a scratch — see
+/// `scripts/make-icons.py`.
+struct PlumageMeter: View {
+    /// 0 to 1. The same feed the meter's bars took.
+    var level: Double
+    var size: CGFloat = 20
+    /// The words have nowhere to land and will be copied instead. The bird
+    /// fills with no colour, which is the same shape doing the same job the
+    /// missing app icon used to do — and a good deal louder than an absence.
+    var blind: Bool = false
+    /// Work of no predictable length: the plumage travels through the bird
+    /// instead of standing in it. See `sweep`.
+    var working: Bool = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: CGFloat = 0
+
+    /// What is left of the bird when nothing is being said. Low enough to read
+    /// as an empty vessel and high enough to be findable on a dark surface.
+    private static let resting: Double = 0.18
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            bird.opacity(Self.resting)
+            Group {
+                if working { sweep } else { standing }
+            }
+            .frame(width: size, height: size)
+            .clipped()
+            .mask { bird }
+        }
+        .frame(width: size, height: size)
+        // The bars moved at this rate and it is what makes a level read as a
+        // level rather than as a flicker.
+        .animation(.linear(duration: 0.08), value: level)
+    }
+
+    /// The level, standing in the bird.
+    private var standing: some View {
+        Rectangle()
+            .fill(fill)
+            .frame(height: size * CGFloat(min(max(level, 0), 1)))
+            .frame(height: size, alignment: .bottom)
+    }
+
+    /// The plumage travelling through the bird, for work of no predictable
+    /// length.
+    ///
+    /// The bird stood full while it thought, and full is also what it looks
+    /// like the instant the words land — so running a transform changed nothing
+    /// on screen and the app looked like it had ignored you. A band that moves
+    /// is the difference between a surface that has finished and one that is
+    /// busy, and it is the same claim the rim's fast spin used to make on the
+    /// capsule.
+    ///
+    /// Tail to head, like the fill, so the two are the same plumage doing two
+    /// different things rather than two animations.
+    private var sweep: some View {
+        Rectangle()
+            .fill(LinearGradient(
+                colors: [.clear, Parrot.sky, Parrot.leaf, Parrot.amber, Parrot.scarlet, .clear],
+                startPoint: .bottom, endPoint: .top
+            ))
+            .frame(height: size * 1.7)
+            .offset(y: phase)
+            .onChange(of: reduceMotion, initial: true) { _, _ in travel() }
+    }
+
+    private func travel() {
+        // Reduce Motion gets the bird standing full, which is what it was
+        // before this and says "something is happening" by being there at all.
+        guard working, !reduceMotion else { phase = 0; return }
+        phase = size * 1.35
+        withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+            phase = -size * 1.35
+        }
+    }
+
+    @ViewBuilder private var bird: some View {
+        if let solid = NSImage(named: "ParrotSolid") {
+            Image(nsImage: solid)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fit)
+        } else {
+            // Outside the bundle, which is the panel sheet and the tests — and
+            // also a bundle that was built without the drawing in it, which is
+            // what happened: `build-app.sh` copied `MenuBarParrot*.png` and the
+            // glob did not reach this one. Every bird on screen was this
+            // capsule and nothing said so, so it says so now. A fallback that
+            // is indistinguishable from a design decision is how a missing file
+            // survives a whole afternoon.
+            Capsule()
+                .frame(width: size * 0.4)
+                .onAppear { Self.sayTheBirdIsMissing() }
+        }
+    }
+
+    private static var complained = false
+    private static func sayTheBirdIsMissing() {
+        guard !complained else { return }
+        complained = true
+        Log.write("pill: ParrotSolid is not in the bundle; the meter is drawing a capsule")
+    }
+
+    private var fill: LinearGradient {
+        LinearGradient(
+            colors: blind
+                ? [Color(white: 0.62), Color(white: 0.55)]
+                : [Parrot.sky, Parrot.leaf, Parrot.amber, Parrot.scarlet],
+            startPoint: .bottom, endPoint: .top
+        )
     }
 }
 

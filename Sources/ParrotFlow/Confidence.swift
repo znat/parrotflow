@@ -78,39 +78,6 @@ enum Confidence {
         }
     }
 
-    // MARK: - The whole utterance
-
-    /// What the decoder scored the whole utterance, for under the words.
-    ///
-    /// This is `ASRResult.confidence`, FluidAudio's mean over the tokens. It is
-    /// not the sentence's worst word and does not follow one: over the 16,513
-    /// dictations in the archive it sits at 0.83 at p10 and 0.93 at the median,
-    /// and of the dictations holding a word below `watch` only 13% fall under
-    /// its own p10. It says how the decode went on average.
-    ///
-    /// Two decimals.
-    static func overall(_ score: Float) -> String {
-        String(format: "%.2f", score)
-    }
-
-    /// The utterance's own bands, percentiles of the same 16,513 dictations:
-    /// p25, p10, p1 of `asr.confidence` itself.
-    ///
-    /// Its own numbers rather than the word ones, because a mean over every
-    /// token in a sentence moves in a far narrower range than one word does.
-    /// Read against the word bands, 3 dictations in 4 would print white and
-    /// the colour would say nothing.
-    static let utteranceSure: Float = 0.89
-    static let utteranceWatch: Float = 0.83
-    static let utteranceDoubtful: Float = 0.73
-
-    /// The same ramp as the words, on the utterance's anchors. So white is a
-    /// decode as good as the best three quarters, and scarlet is one as bad as
-    /// the worst in a hundred — the same sentence the colour tells above.
-    static func overallTint(_ score: Float) -> Color {
-        ramp(score, sure: utteranceSure, watch: utteranceWatch, doubtful: utteranceDoubtful)
-    }
-
     // MARK: - What the offer says
 
     /// Everything the offer knows about how the decode went.
@@ -122,9 +89,6 @@ enum Confidence {
         /// The dictation word by word. Empty unless `feedback.confidence` is
         /// on, and empty is what keeps the pill its old shape.
         var words: [Word] = []
-        /// The decoder's score for the whole utterance. Drawn under the words,
-        /// so it only shows with them.
-        var overall: Float?
         /// Why this dictation is worth a second look. Nil when it is not.
         /// Drawn whether or not the words are, because it is one line and it is
         /// the half that is worth having without asking for it.
