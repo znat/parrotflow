@@ -1268,6 +1268,17 @@ struct Pipeline: Equatable, Codable {
         let reverted = zip(changes, verdicts).filter { !$0.1 }.map {
             "\($0.0.now) -> \($0.0.was)"
         }
+        // The end of every walk, so a proposal that crossed all the free rules
+        // and reached the model does not stop being traceable there. What the
+        // gate settled is named as the gate's, not the model's — the model was
+        // shown only the places still in question.
+        for (index, change) in changes.enumerated() {
+            let kept = index < verdicts.count ? verdicts[index] : true
+            let who = index < taught.count && taught[index] ? "lesson"
+                : (index < decided.count && decided[index] != nil ? "gate" : "judge")
+            Log.write("vocabulary verdict: \"\(change.was)\" -> \"\(change.now)\""
+                + " (\(change.standing)) \(who) \(kept ? "kept" : "reverted")")
+        }
         if chosen != text {
             Log.write("pipeline: vocabulary rewrote the transcript")
             Log.write("    before: \(text)")
