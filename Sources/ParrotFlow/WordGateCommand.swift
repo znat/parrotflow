@@ -127,7 +127,34 @@ enum WordGateCommand {
             return
         }
         print("slot       \(reading.tag.isEmpty ? "untagged" : reading.tag)")
+        // The ten words the tag was taken from. "Determiner" means nothing
+        // until you see `second, my, your, any, some` under it.
+        let (allWords, span) = SlotGate.sentence(around: range, in: sentence)
+        if let guesses = try? gate.tagged(allWords, at: span), !guesses.1.isEmpty {
+            print("  fills    " + guesses.1.map { "\($0.word) (\($0.tag))" }
+                .joined(separator: ", "))
+        }
+        if let weighed = try? gate.weighs(allWords, at: span, against: term ?? "") ?? nil {
+            print(String(format: "  slot says  here %.2f   there %.2f   %@",
+                         weighed.heard, weighed.term,
+                         weighed.heard > weighed.term
+                            ? "it prefers what is there" : "it prefers the term"))
+        }
         print("rank       \(reading.rank.map { "\($0) of \(reading.windows)" } ?? "not asked")")
+        // Every word with the number the rank sorted on, least expected first.
+        // The rank is a place in that queue and says nothing about the gap to
+        // the word behind it, which is the whole of what it gets wrong on a
+        // rare proper noun.
+        if reading.rank != nil {
+            if let ranked = try? gate.ranked(allWords, at: span) {
+                for (index, entry) in ranked.1.enumerated() {
+                    let mine = span.contains(allWords.firstIndex(of: entry.word) ?? -1)
+                    print(String(format: "  %@ %2d  %-18s %7.2f",
+                                 mine ? "→" : " ", index, (entry.word as NSString).utf8String!,
+                                 entry.score))
+                }
+            }
+        }
         let route = applies
             ? SlotGate.Route.apply
             : (Vocabulary.dropsPossessive(heard: heard, term: term) ? .judge : reading.route)

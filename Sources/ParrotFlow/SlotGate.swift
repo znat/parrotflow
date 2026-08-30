@@ -100,8 +100,43 @@ struct SlotGate {
     ///
     /// Ties go to the more likely filler, because the fillers arrive sorted.
     func wants(_ words: [String], at span: Range<Int>) throws -> String {
+        try tagged(words, at: span).0
+    }
+
+    /// What the slot itself makes of two readings of it.
+    ///
+    /// The masked slot is a distribution over the whole vocabulary, and the
+    /// rule reads two things off it today: the modal tag of its top ten, and
+    /// where the word present sits in a ranking of the whole sentence. It
+    /// never asks the one question the slot can answer directly — is the word
+    /// that is there more likely here than the word somebody wants to put in
+    /// its place.
+    ///
+    /// Returned for `--word-gate` to print. Nothing decides on it yet.
+    func weighs(
+        _ words: [String], at span: Range<Int>, against term: String
+    ) throws -> (heard: Double, term: Double)? {
         let (left, right) = Self.masked(words, at: span)
         let slot = try probe.at(left: left, right: right)
+        let lead = left.isEmpty ? "" : " "
+        guard let here = probe.tokenizer.firstID(of: lead + Self.bare(words[span.lowerBound])),
+              let there = probe.tokenizer.firstID(of: lead + Self.bare(term))
+        else { return nil }
+        return (slot.logProbability(of: here), slot.logProbability(of: there))
+    }
+
+    /// The same reading, with the words it was taken from.
+    ///
+    /// The rule keeps one tag out of ten guesses and throws the guesses away.
+    /// They are what makes the tag readable — "Determiner" means nothing until
+    /// you see `second, my, your, any, some` under it — so the diagnostic asks
+    /// for both. Nothing decides on the words.
+    func tagged(
+        _ words: [String], at span: Range<Int>
+    ) throws -> (String, [(word: String, tag: String)]) {
+        let (left, right) = Self.masked(words, at: span)
+        let slot = try probe.at(left: left, right: right)
+        var seen: [(word: String, tag: String)] = []
 
         var counts: [String: Int] = [:]
         var order: [String] = []
@@ -113,15 +148,36 @@ struct SlotGate {
             guard let tag = Self.tag(in: sentence, at: at, length: word.count) else { continue }
             if counts[tag] == nil { order.append(tag) }
             counts[tag, default: 0] += 1
+            let named = Self.named(in: sentence, at: at, length: word.count) ?? tag
+            seen.append((word, named == tag ? tag : "\(tag)/\(named)"))
         }
         var best = ""
         for tag in order where counts[tag, default: 0] > counts[best, default: 0] { best = tag }
-        return best
+        return (best, seen)
     }
 
     /// `.lexicalClass` and not `.nameTypeOrLexicalClass`. The question is what
     /// kind of slot this is, and a filler that happens to be a name would come
     /// back `PersonalName` rather than `Noun` and split the vote.
+    /// The same tagging, asked for a name type first.
+    ///
+    /// `lexicalClass` collapses every proper noun into `Noun`, so the rule
+    /// cannot tell "a name goes here" from "a thing goes here".
+    /// `nameTypeOrLexicalClass` answers `PersonalName`, `PlaceName` or
+    /// `OrganizationName` where it can. Printed by `--word-gate`; nothing
+    /// decides on it.
+    static func named(in sentence: String, at offset: Int, length: Int) -> String? {
+        guard let from = sentence.index(
+                sentence.startIndex, offsetBy: offset, limitedBy: sentence.endIndex),
+              let to = sentence.index(from, offsetBy: length, limitedBy: sentence.endIndex)
+        else { return nil }
+        let tagger = NLTagger(tagSchemes: [.nameTypeOrLexicalClass])
+        tagger.string = sentence
+        tagger.setLanguage(.english, range: sentence.startIndex..<sentence.endIndex)
+        _ = to
+        return tagger.tag(at: from, unit: .word, scheme: .nameTypeOrLexicalClass).0?.rawValue
+    }
+
     private static func tag(in sentence: String, at offset: Int, length: Int) -> String? {
         guard let from = sentence.index(
                 sentence.startIndex, offsetBy: offset, limitedBy: sentence.endIndex),
@@ -156,7 +212,23 @@ struct SlotGate {
     /// the 50 cases where the span was the word the speaker said. Adding the
     /// word ranking takes those three out and costs nothing else.
     func weakest(_ words: [String], at span: Range<Int>) throws -> (rank: Int, windows: Int) {
-        guard words.count >= 2 else { return (Int.max, 0) }
+        try ranked(words, at: span).0
+    }
+
+    /// The same walk, with the numbers it decided on.
+    ///
+    /// The rank is a place in a queue and says nothing about the distance to
+    /// the word behind it. Two sentences can both put a name first and mean
+    /// very different things by it — a nonsense spelling sits nats below
+    /// everything else, a rare proper noun sits a fraction below its
+    /// neighbour. Only the scores tell those apart, and the rule cannot: it
+    /// reads the place and not the gap.
+    ///
+    /// Returned for `--word-gate` to print. Nothing decides on it.
+    func ranked(
+        _ words: [String], at span: Range<Int>
+    ) throws -> ((rank: Int, windows: Int), [(word: String, score: Double)]) {
+        guard words.count >= 2 else { return ((Int.max, 0), []) }
         var scores: [Double] = []
         for index in words.indices {
             let (left, right) = Self.masked(words, at: index..<(index + 1))
@@ -173,7 +245,10 @@ struct SlotGate {
         let byWindow = windows.indices.sorted { windows[$0] < windows[$1] }
         // A window holds the span when either of its two words is in it.
         let pair = byWindow.firstIndex { span.contains($0) || span.contains($0 + 1) } ?? Int.max
-        return (max(word, pair), windows.count)
+        return (
+            (max(word, pair), windows.count),
+            byWord.map { (words[$0], scores[$0]) }
+        )
     }
 
     // MARK: - The sentence, as words
