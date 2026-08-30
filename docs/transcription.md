@@ -373,6 +373,51 @@ Keep it optional and off by default. It adds latency to every dictation and
 can rewrite text you meant literally. Filler words are not a job for it — a
 regex removes them for free.
 
+## A pause is not a full stop
+
+Stop for breath mid-sentence and the transcriber writes a period, then
+capitalises the next word. One sentence becomes two:
+
+```
+said     "you should see a parrot at the top right of your screen"
+written  "You should see a parrot. At the top right of your screen."
+```
+
+After the vocabulary pass, every `word. Capital` boundary in an English
+transcript is scored by the same masked language model the slot gate uses:
+`score = log P(".") − log P(" <next word>")` at one masked position, ±12
+words. Two thresholds decide, both under `transcription.sentences`:
+
+| score | what happens |
+|---|---|
+| below `join_below`, default −4 | the period is removed and nothing is said |
+| below `offer_below`, default −2 | the join is offered, not written |
+| above it | left alone |
+
+Measured over 194 real periods and 130 synthetic cuts of one speaker's
+dictation, −4 repaired 32% of the cuts and joined no real period; −2 repaired
+55% and joined 1.2 per 100. A silent rewrite that is wrong costs the words
+themselves, so the writing tier sits where nothing was joined by mistake.
+
+Joining removes the period and lowercases the word after it. Not every capital
+there is because of the period: "I will ask him. Nathan knows the answer" must
+not become "ask him nathan knows". So the rule asks for a reason to lowercase.
+`I` and its contractions keep the capital, so does a word in capitals
+throughout, so does a `PersonalName`, `PlaceName` or `OrganizationName` from
+`NLTagger`, and so does a word `NLTagger` gives no lemma for — the lexicon has
+never seen it, which is what a name it has not been told about looks like. A
+term in your `vocabulary.yaml` is asked first, because a name that is also an
+English word is the one case the lemma rule cannot see.
+
+English only. The model is English-only, and the same probe measured on
+`cservan/french-modernbert-large` and `-base` scores near chance. Nothing is
+waited for: with no cached model, a probe that throws or a boundary it cannot
+read, the text arrives as it was.
+
+`scripts/check-sentence-join.sh` scores the two tiers and needs the model.
+`scripts/check-sentence-case.sh` scores the lowercasing and needs none, so it
+runs in CI. See `SentenceJoin`.
+
 ## Voice corrections
 
 Saying "hey parrot, <name> spells T A S M E E N" adds a pronunciation to

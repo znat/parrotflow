@@ -252,3 +252,10 @@ jobs:
       # tokenizer.json alone, 2 MB, never the 300 MB model.
       - name: The tokenizer against HuggingFace's own
         run: scripts/check-tokenizer.sh
+
+      # Joining two sentences lowercases the word after the period. Getting
+      # that wrong writes "ask him nathan knows". NLTagger and the vocabulary
+      # answer it, so no model is needed — the scored half of the join,
+      # scripts/check-sentence-join.sh, is run by hand.
+      - name: The capital after a period the join removes
+        run: scripts/check-sentence-case.sh

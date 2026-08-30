@@ -27,6 +27,7 @@ transcription:
   activation_phrases: [hey parrot, by the way parrot]
   languages: [en]       # en and fr are the supported values
   rewrite_line: true
+  sentences: …          # or false — joining a sentence a pause cut in two
   pipeline: …           # see pipelines.md
   transforms: …         # see pipelines.md
 
@@ -467,6 +468,33 @@ never touches this. It used to be the fallback for those too, which is how a
 correction ended up appended to the end of a line instead of replacing a word in
 it: ⌃K clears nothing in a composer, and the paste that followed landed on the
 end of what was still there.
+
+## `transcription.sentences`
+
+A pause mid-sentence makes the transcriber write a period and capitalise the
+next word, so one sentence becomes two. Every `word. Capital` boundary in an
+English transcript is scored, and two thresholds decide what happens.
+
+```yaml
+transcription:
+  sentences:
+    join_below: -4.0     # remove the period and say nothing
+    offer_below: -2.0    # offer the join, do not write it
+```
+
+`sentences: false` turns the whole stage off, the way `review: false` does on a
+pipeline step.
+
+The score is `log P(".") − log P(" <next word>")`, read from a masked language
+model at the position of the period. It is negative when the model would rather
+see the next word there than a full stop. Measured over 194 real periods and
+130 synthetic cuts of one speaker's dictation, −4 repaired 32% of the cuts and
+joined no real period; −2 repaired 55% and joined 1.2 per 100. So −4 writes and
+−2 asks. Nothing shows the offer yet.
+
+English only, and only where the sentence model is already on disk. Nothing is
+downloaded for this and nothing waits: with no model the transcript arrives as
+it was. See [transcription.md](transcription.md).
 
 ## `transcription.replacements` is retired
 

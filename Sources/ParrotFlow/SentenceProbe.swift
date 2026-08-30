@@ -16,7 +16,7 @@ import Foundation
 ///     -2    55%                     1.2
 ///      0    82%                     6.1
 ///
-/// Nothing in the app calls this yet.
+/// `SentenceJoin` is the consumer: -4 writes, -2 offers.
 @available(macOS 14, *)
 struct SentenceProbe {
 

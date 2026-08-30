@@ -1546,13 +1546,63 @@ struct Config: Decodable, Equatable {
         /// at all.
         var languages: [String] = ["en"]
 
+        /// When a period the transcriber wrote is taken out again — see
+        /// `SentenceJoin`.
+        ///
+        ///     sentences: false        never look at a boundary
+        ///     sentences:
+        ///       join_below: -4.0      remove the period, say nothing
+        ///       offer_below: -2.0     offer the join, do not write it
+        ///
+        /// Two spellings, like `review:` on a pipeline step: a bare `false`
+        /// turns the stage off, anything else says what it runs with.
+        ///
+        /// The defaults are where the score was measured, over 194 real
+        /// periods and 130 synthetic cuts of this speaker's own dictation. -4
+        /// repaired 32% of the cuts and joined no real period; -2 repaired 55%
+        /// and joined 1.2 per 100. So -4 writes and -2 asks.
+        var sentences: Sentences = Sentences()
+
+        struct Sentences: Decodable, Equatable {
+            var enabled = true
+            var joinBelow: Double = -4
+            var offerBelow: Double = -2
+
+            enum CodingKeys: String, CodingKey {
+                case joinBelow = "join_below"
+                case offerBelow = "offer_below"
+            }
+
+            init() {}
+
+            init(from decoder: Decoder) throws {
+                if let on = try? decoder.singleValueContainer().decode(Bool.self) {
+                    enabled = on
+                    return
+                }
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                joinBelow = try c.decodeIfPresent(Double.self, forKey: .joinBelow) ?? joinBelow
+                offerBelow = try c.decodeIfPresent(Double.self, forKey: .offerBelow) ?? offerBelow
+                // Read in this order, so the two swapped make every offer a
+                // silent join instead of refusing the file.
+                guard joinBelow < offerBelow else {
+                    throw ConfigError.invalidValue(
+                        key: "transcription.sentences.join_below",
+                        value: "\(joinBelow), against offer_below \(offerBelow)",
+                        expected: "a number below offer_below — joining is the surer tier,"
+                            + " so its threshold is the lower one"
+                    )
+                }
+            }
+        }
+
         enum InsertMode: String, Codable, Equatable {
             case paste
             case clipboard
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, replacements, pipeline, languages
+            case enabled, replacements, pipeline, languages, sentences
             case insertMode = "insert_mode"
             case activationPhrases = "activation_phrases"
             case activationPhrase = "activation_phrase"
@@ -1843,6 +1893,22 @@ struct Config: Decodable, Equatable {
                 // than no language at all, so a typo degrades instead of
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
+            }
+            // Not `try?`. Swallowing the error leaves joining on with stock
+            // thresholds, and a stage that rewrites the transcript must not be
+            // reached by a line the file got wrong.
+            do {
+                if let v = try c.decodeIfPresent(Sentences.self, forKey: .sentences) {
+                    sentences = v
+                }
+            } catch let bad as ConfigError {
+                throw bad
+            } catch {
+                throw ConfigError.invalidValue(
+                    key: "transcription.sentences",
+                    value: "not a sentence setting",
+                    expected: "`false`, or `join_below:` and `offer_below:` as numbers"
+                )
             }
             // Wrapped, as `replacements:` is below and for the same reason.
             // Anything thrown here leaves `ConfigStore.load()` entirely, and at

@@ -440,7 +440,33 @@ answer.
 `scripts/check-sentence-probe.sh` goes further and compares the scores;
 it needs the model, so it is not in `make test`.
 
-Nothing in the app calls the probe yet.
+## Which periods a pause put there
+
+```sh
+$PF --sentence-join "<text>"            # score every boundary, and join what is below
+$PF --sentence-join --case "<text>"     # the lowercasing alone, no model
+```
+
+`--sentence-join` is the pass the app runs, on the text you give it. One block
+per `word. Capital` boundary, then the text it hands on.
+
+```
+$PF --sentence-join "…the first usage of the LLM with. The vocabulary is slower"
+  language   en
+  boundary   with. The -> with the
+  score      -5.0664
+  tier       join
+  text       …the first usage of the LLM with the vocabulary is slower
+```
+
+`tier` is `join` below `join_below`, `offer` below `offer_below`, and `leave`
+above it. Both thresholds are `transcription.sentences` in `config.yaml`.
+`scripts/check-sentence-join.sh` scores the two tiers against
+tests/sentence-boundary-cases.json; it needs the model, so it is run by hand.
+
+`--case` answers only what the capitalised word becomes once the period is
+gone. `NLTagger` and your vocabulary decide that, so no model is loaded and
+`scripts/check-sentence-case.sh` runs in CI. See `SentenceJoin`.
 
 ## What ParrotFlow makes of an app
 
@@ -684,6 +710,8 @@ scripts/check-bug-report.sh        # what a bug report carries, and that it carr
 scripts/check-tokenizer.sh         # the hand-written BPE against HuggingFace's own
 scripts/check-sentence-probe.sh    # the boundary score against coremltools (needs the model)
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
+scripts/check-sentence-case.sh     # the capital after a period the join removes
+scripts/check-sentence-join.sh     # the two tiers of the sentence join (needs the model)
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back
