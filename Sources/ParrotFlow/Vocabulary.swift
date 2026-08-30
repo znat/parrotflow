@@ -513,6 +513,38 @@ actor Vocabulary {
         return (String(lower.dropLast(suffix.count)), suffix)
     }
 
+    /// Whether the heard word carries an apostrophe the term does not.
+    ///
+    /// `bare` is letters only, so `wouldn't` is looked up as `wouldnt` — a form
+    /// neither list has ever seen, where `wouldn't` itself is an ordinary
+    /// English word. The apostrophe walks a contraction straight past both
+    /// lists, exactly as it did a possessive. Measured on the shipped binary:
+    /// 9 of 14 common contractions read `auto-apply`, and the 5 that do not
+    /// survive by accident, because their stripped form is a word of its own —
+    /// `cant`, `wont`, `dont`, `its`, `lets`.
+    ///
+    /// Asked here and not in `SlotGate`, because the slot is never consulted
+    /// on a word the free tier has already decided: `I wouldn't do that` reads
+    /// slot `Verb`, which the gate blocks, and the word was written anyway.
+    ///
+    /// A rule, not a threshold, and the same rule `dropsPossessive` is. Writing
+    /// a name over `wouldn't` changes what the sentence says, in every
+    /// sentence. It routes rather than refuses: the judge reads the sentence.
+    static func dropsApostrophe(heard: String, term: String) -> Bool {
+        inner(in: heard) && !inner(in: term)
+    }
+
+    /// An apostrophe with a letter on each side. A quoted word carries one at
+    /// an end, and that says nothing about the word itself.
+    private static func inner(in word: String) -> Bool {
+        let marks: Set<Character> = ["'", "\u{2019}"]
+        let letters = Array(word)
+        return letters.indices.contains { i in
+            marks.contains(letters[i]) && i > 0 && i < letters.count - 1
+                && letters[i - 1].isLetter && letters[i + 1].isLetter
+        }
+    }
+
     /// The punctuation a replaced word carried, so the sentence keeps its end.
     ///
     /// The rescorer replaces the word and not what followed it, so "on Olama?"
@@ -580,6 +612,7 @@ actor Vocabulary {
         let bare = String(letters)
         guard !bare.isEmpty else { return false }
         guard !dropsPossessive(heard: heard, term: term) else { return false }
+        guard !dropsApostrophe(heard: heard, term: term) else { return false }
         return unseenWord(bare)
     }
 

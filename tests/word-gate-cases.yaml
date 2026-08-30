@@ -208,3 +208,41 @@ cases:
     possessive: kept
     gate: auto-apply
     why: a word neither list knows, with no possessive anywhere, still goes through
+
+  # --- a contraction, which is the same apostrophe wearing another hat -------
+  # `wouldn't` is looked up as `wouldnt`, and neither list has seen that
+  # either. Measured on the shipped binary before the fix: 9 of 14 common
+  # contractions read `auto-apply`. The 5 that did not survived by accident —
+  # `cant`, `wont`, `dont`, `its` and `lets` are words in their own right.
+  #
+  # The slot gate cannot catch these. "I wouldn't do that" reads slot `Verb`,
+  # which it blocks, but the free tier had already decided and the slot is
+  # never asked.
+
+  - word: "wouldn't"
+    term: Redcrawl
+    possessive: kept
+    gate: judge
+    why: >
+      "I wouldn't do that today" — the letters-only form walks past both lists
+      the way a possessive does. Writing a name here deletes the negation.
+
+  - word: "they're"
+    term: Praisy
+    possessive: kept
+    gate: judge
+    why: not a possessive, and the apostrophe is doing the same damage
+
+  - word: "I've"
+    term: Arexvy
+    possessive: kept
+    gate: judge
+    why: two letters and an apostrophe, unknown to both lists as `Ive`
+
+  - word: "don't"
+    term: Redrock
+    possessive: kept
+    gate: judge
+    why: >
+      one of the five that already reached the judge, because `dont` is a
+      word — kept so the fix is not the only thing holding this case
