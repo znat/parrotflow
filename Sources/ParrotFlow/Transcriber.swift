@@ -425,6 +425,9 @@ actor Transcriber {
                     vocabularyCount = outcome.count
                     vocabularyChanges = outcome.changes
                     findings = outcome
+                    // Handed over as a value, like `Decode` below and for the
+                    // same reason: nothing here reads the collector back.
+                    Trace.current?.recordVocabulary(outcome.decisions)
                 } else {
                     // The pass is configured and did nothing, which used to
                     // look exactly like the pass finding no names. Say which.
@@ -455,6 +458,11 @@ actor Transcriber {
                 text = joins.text
                 joinedSentences = joins.count(.join)
                 offeredSentences = joins.count(.offer)
+                Trace.current?.recordSentences(
+                    joins.readings,
+                    joinBelow: config.transcription.sentences.joinBelow,
+                    offerBelow: config.transcription.sentences.offerBelow
+                )
             }
         }
 

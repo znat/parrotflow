@@ -763,6 +763,28 @@ sweep over the archive does not read as a day of dictation.
 The decoder computed all of it either way. It used to be dropped one line after
 it arrived.
 
+Two of the transformations run **before** the pipeline, so they are not
+`stages` and get fields of their own.
+
+- **`vocabulary`** — one entry per decision the vocabulary pass took, including
+  the ones it removed from the menu. `by` names what produced the outcome:
+  `lexical`, `slot` and `audio` settle a proposal on their own, `rescorer`,
+  `span` and `spotter` only offer one. `outcome` is `applied`, `offered` or
+  `declined`. `heard_score`, `term_score` and `bonus` are the CTC numbers,
+  `margin` is the drop threshold on the drop it decided, and `slot` is what the
+  slot gate read — the part of speech the sentence wanted, the rank, and how
+  many windows it was ranked against. `at` is a character offset into
+  `asr.text`.
+- **`sentences`** — `join_below`, `offer_below`, and every `word. Capital`
+  boundary the pass scored. `change` reads `parrot. At -> parrot at`,
+  `outcome` is `join`, `offer` or `leave`, and `at` is the offset of the period
+  in the text the pass was handed, which is `asr.text` with the vocabulary
+  pass's applied substitutions in it. The thresholds are written down beside
+  the scores because they move; a join that reads wrong next month has to be
+  readable against the numbers that allowed it.
+
+Both are absent when the pass did nothing.
+
 `kind` says which sort of line you are holding.
 
 - **`dictation`** — the shape above.
@@ -773,7 +795,7 @@ it arrived.
   system, and nothing else on disk can reconstruct them.
 
 `v` is the schema version — records written before it existed have no `v` and
-should be read as 1.
+should be read as 1. `v: 3` added `vocabulary` and `sentences`.
 
 A note on what is **not** here. `lang` is ParrotFlow's own verdict, the one a
 `when: language == "fr"` step reads; Parakeet reports no language of its own,
@@ -830,6 +852,21 @@ jq -r '.stages[]? | select(.skip_reason) | .skip_reason' trace.jsonl |
 
 # Every rule you have ever taught, and from where.
 jq -r 'select(.kind == "correction") | [.via, .heard, .corrected] | @tsv' trace.jsonl
+
+# Every name written in without asking, and what decided it.
+jq -r '.vocabulary[]? | select(.outcome == "applied") |
+       [.by, .heard, .term, (.slot.tag // "-"), (.slot.rank // "-")] | @tsv' trace.jsonl
+
+# Every period a pause put in and this app took out. The most expensive error
+# this app can make is joining two sentences you really separated, so this is
+# the query that catches it.
+jq -r '.sentences.boundaries[]? | select(.outcome == "join") |
+       [.change, .score] | @tsv' trace.jsonl
+
+# A name the audio argued against and the pass dropped. Nobody was asked, and
+# nothing else on disk says it happened.
+jq -r '.vocabulary[]? | select(.outcome == "declined") |
+       [.by, .heard, .term] | @tsv' trace.jsonl
 ```
 
 ### Watching it live
