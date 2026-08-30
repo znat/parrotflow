@@ -471,7 +471,12 @@ actor Transcriber {
         var offeredSentences = 0
         if Pipeline.language(of: text, config: config) == "en" {
             warmSentenceModel()
-            if !config.vocabularyTerms.isEmpty { warmSoundModel() }
+            // The set the sound pass actually reads, not the shorter one the
+            // audio search needed. `vocabularyTerms` drops anything under five
+            // letters or with a space in it, so a vocabulary of `Claude Code`
+            // and `crawl file` alone would never fetch the model that is the
+            // only thing able to match them.
+            if !config.vocabularySounds.isEmpty { warmSoundModel() }
             if #available(macOS 14, *) {
                 let joins = await SentenceJoin.shared.apply(to: text, config: config)
                 text = joins.text
