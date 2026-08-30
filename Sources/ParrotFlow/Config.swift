@@ -1583,6 +1583,16 @@ struct Config: Decodable, Equatable {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 joinBelow = try c.decodeIfPresent(Double.self, forKey: .joinBelow) ?? joinBelow
                 offerBelow = try c.decodeIfPresent(Double.self, forKey: .offerBelow) ?? offerBelow
+                // Read in this order, so the two swapped make every offer a
+                // silent join instead of refusing the file.
+                guard joinBelow < offerBelow else {
+                    throw ConfigError.invalidValue(
+                        key: "transcription.sentences.join_below",
+                        value: "\(joinBelow), against offer_below \(offerBelow)",
+                        expected: "a number below offer_below — joining is the surer tier,"
+                            + " so its threshold is the lower one"
+                    )
+                }
             }
         }
 
@@ -1884,7 +1894,22 @@ struct Config: Decodable, Equatable {
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
             }
-            if let v = try? c.decodeIfPresent(Sentences.self, forKey: .sentences) { sentences = v }
+            // Not `try?`. Swallowing the error leaves joining on with stock
+            // thresholds, and a stage that rewrites the transcript must not be
+            // reached by a line the file got wrong.
+            do {
+                if let v = try c.decodeIfPresent(Sentences.self, forKey: .sentences) {
+                    sentences = v
+                }
+            } catch let bad as ConfigError {
+                throw bad
+            } catch {
+                throw ConfigError.invalidValue(
+                    key: "transcription.sentences",
+                    value: "not a sentence setting",
+                    expected: "`false`, or `join_below:` and `offer_below:` as numbers"
+                )
+            }
             // Wrapped, as `replacements:` is below and for the same reason.
             // Anything thrown here leaves `ConfigStore.load()` entirely, and at
             // launch `loadConfig(announceErrors: false)` swallows it — so one

@@ -164,15 +164,24 @@ actor SentenceJoin {
     /// on disk. `Transcriber.warmSentenceModel` fetches it in the background
     /// after the first English dictation; nothing here waits for that.
     private var loaded: SentenceProbe?
-    private var failed = false
+
+    /// When a failed load may be tried again. A held `flock` on the model cache
+    /// is the failure this exists for: another process is fetching, and the
+    /// next dictation would otherwise never look again. Not a latch — but not
+    /// every dictation either, because a damaged cache makes `load` re-fetch
+    /// 300 MB.
+    private var retryAfter: Date?
+    private static let backoff: TimeInterval = 300
 
     private func probe() async -> SentenceProbe? {
         if let loaded { return loaded }
-        guard !failed, SentenceModel.isCached else { return nil }
+        if let retryAfter, Date() < retryAfter { return nil }
+        guard SentenceModel.isCached else { return nil }
         do {
             loaded = try await SentenceProbe.load()
+            retryAfter = nil
         } catch {
-            failed = true
+            retryAfter = Date().addingTimeInterval(Self.backoff)
             Log.write("sentences: no probe (\(error.localizedDescription)); left as decoded")
         }
         return loaded
