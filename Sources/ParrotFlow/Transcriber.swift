@@ -181,6 +181,17 @@ actor Transcriber {
     private func finishSoundModel(failed: Bool) {
         soundModelRunning = false
         if failed { soundModelFetch = nil }
+        restoreStatusIfIdle()
+    }
+
+    /// Puts the ordinary status back, but only when no fetch is still running.
+    ///
+    /// Two downloads can be in flight at once, and each used to restore the
+    /// status on its own. The first to finish then wiped the other's
+    /// percentage out of the menu bar, and the one somebody was watching
+    /// appeared to stall.
+    private func restoreStatusIfIdle() {
+        guard !sentenceModelRunning, !soundModelRunning else { return }
         onStatusChange(status)
     }
 
@@ -195,8 +206,9 @@ actor Transcriber {
         sentenceModelRunning = false
         if failed { sentenceModelFetch = nil }
         // Whatever was true before this started is true again. Usually
-        // `.ready`, which is what clears the label the fetch put up.
-        onStatusChange(status)
+        // `.ready`, which is what clears the label the fetch put up — unless
+        // the other fetch is still going, and then its label stays.
+        restoreStatusIfIdle()
     }
 
 
