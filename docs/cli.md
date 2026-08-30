@@ -138,8 +138,8 @@ in a `Noun`, `Adjective` or `Pronoun` slot and never in a `Verb`, `Adverb` or
 `Preposition` one — see `SlotGate`. Nothing is downloaded: with no cached
 sentence model the slot reads `unavailable` and the route is `judge`.
 `scripts/check-slot-gate.sh` scores the whole route against
-`tests/judge-cases.yaml`. It needs the 300 MB model, so it is not in
-`make test`.
+`tests/judge-cases.yaml`. It needs the 300 MB model, which `make test` and CI
+fetch first.
 
 `--verdicts` asks what the name judge reads out of a model's reply —
 `--verdicts 2 "1. KEEP` newline `2. REVERT"` prints `KEEP REVERT`. It is
@@ -462,7 +462,8 @@ $PF --sentence-join "…the first usage of the LLM with. The vocabulary is slowe
 `tier` is `join` below `join_below`, `offer` below `offer_below`, and `leave`
 above it. Both thresholds are `transcription.sentences` in `config.yaml`.
 `scripts/check-sentence-join.sh` scores the two tiers against
-tests/sentence-boundary-cases.json; it needs the model, so it is run by hand.
+tests/sentence-boundary-cases.json; it needs the model, which `make test` and
+CI fetch first.
 
 `--case` answers only what the capitalised word becomes once the period is
 gone. `NLTagger` and your vocabulary decide that, so no model is loaded and
@@ -709,9 +710,9 @@ scripts/check-span-rule.sh         # which range a rewrite is written as, before
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
 scripts/check-tokenizer.sh         # the hand-written BPE against HuggingFace's own
 scripts/check-sentence-probe.sh    # the boundary score against coremltools (needs the model)
-scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
+scripts/check-slot-gate.sh         # where a name proposal is routed (fetches the model)
 scripts/check-sentence-case.sh     # the capital after a period the join removes
-scripts/check-sentence-join.sh     # the two tiers of the sentence join (needs the model)
+scripts/check-sentence-join.sh     # the two tiers of the sentence join (fetches the model)
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

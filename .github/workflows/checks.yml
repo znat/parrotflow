@@ -1,14 +1,19 @@
-# Every validation set that can run without a model, a microphone or a screen,
+# Every validation set that can run without an LLM, a microphone or a screen,
 # on every push to a pull request.
 #
+# The 300 MB sentence model is fetched here, so the two sets that need it run
+# too. It is a masked language model, not an LLM: 8 ms a call, cached between
+# runs, and it is the only defence of the claim that the app does not rewrite
+# text without asking. See the fetch step below.
+#
 # What the split costs, stated up front so nobody reads a green tick as more
-# than it is. Four of the nine `scripts/check-*.sh` cannot run here:
+# than it is. These `scripts/check-*.sh` cannot run here:
 #
 #   check-grammar, check-routing, check-spelling   need Ollama and gemma4:e4b,
 #     which is a 9.6 GB pull and CPU inference on a hosted runner — minutes per
 #     case, for sets that take two minutes locally against a warm model.
-#   check-inplace                                  needs a real screen, an
-#     installed app, the Accessibility grant and tmux. It exists precisely
+#   check-inplace, check-span                      need a real screen, an
+#     installed app, the Accessibility grant and tmux. They exist precisely
 #     because that path cannot be checked in a pipe.
 #
 # So this catches a broken build, a broken deterministic pass and a config the
@@ -66,8 +71,34 @@ jobs:
           key: build-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
           restore-keys: build-${{ runner.os }}-
 
+      # 300 MB, and the Core ML compile of it costs another 7s. Keyed on
+      # SentenceModel.swift, which is where the repository, the file list and
+      # the package name are: change any of them and the cached copy is the
+      # wrong one. The download is pinned to the HuggingFace repository's
+      # `main` rather than to a revision, so there is no upstream sha to key
+      # on — the restore-keys fallback takes the last build's copy, and the
+      # fetch below is what notices if it is stale.
+      #
+      # `ParrotFlow` and not `ParrotFlow Dev`: the directory is named after
+      # AppVariant.displayName, which reads the bundle identifier, and a bare
+      # SwiftPM binary has none.
+      - name: Cache the sentence model
+        uses: actions/cache@v4
+        with:
+          # One glob per line, so the spaces in the path need no escaping —
+          # quoted only so nobody reads it as two paths.
+          path: "~/Library/Application Support/ParrotFlow/models"
+          key: sentence-model-${{ runner.os }}-${{ hashFiles('Sources/ParrotFlow/SentenceModel.swift') }}
+          restore-keys: sentence-model-${{ runner.os }}-
+
       - name: Build
         run: swift build -c release
+
+      # The same call the first English dictation makes. About 40s cold plus
+      # the compile; a few seconds warm, which is the load and not a download.
+      # It has to run after the build because it is the built binary.
+      - name: Fetch the sentence model
+        run: .build/release/ParrotFlow --sentence-model
 
       # The runners for the YAML the case files are written in.
       - name: Install pyyaml
@@ -255,7 +286,17 @@ jobs:
 
       # Joining two sentences lowercases the word after the period. Getting
       # that wrong writes "ask him nathan knows". NLTagger and the vocabulary
-      # answer it, so no model is needed — the scored half of the join,
-      # scripts/check-sentence-join.sh, is run by hand.
+      # answer it, so this half needs no model. The scored half is below.
       - name: The capital after a period the join removes
         run: scripts/check-sentence-case.sh
+
+      # The two sets that read the sentence model fetched above. They are the
+      # only defence of the claim that the app does not rewrite text when
+      # nothing asked it to: which name proposals are written unasked, and
+      # which periods are removed unasked. Both fail if the model did not
+      # load, so a missed fetch goes red here rather than green.
+      - name: Where a name proposal is routed
+        run: scripts/check-slot-gate.sh
+
+      - name: The two tiers of the sentence join
+        run: scripts/check-sentence-join.sh

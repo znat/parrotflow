@@ -80,9 +80,14 @@ release:
 release-certificate:
 	@scripts/release-certificate.sh
 
-## Every check that runs without a model, a microphone or a screen — the same
+## Every check that runs without an LLM, a microphone or a screen — the same
 ## scripts CI runs, in the same order. Keep this list and
 ## .github/workflows/checks.yml in step.
+##
+## slot-gate and sentence-join read the 300 MB sentence model, so `test`
+## fetches it below. On a machine that has never run it that is a one-off 40s
+## download; after that it is cached in
+## ~/Library/Application Support/ParrotFlow/models.
 ##
 ## Not here, and not skippable if you touched a prompt: check-grammar,
 ## check-routing and check-spelling need Ollama and gemma4:e4b, and
@@ -91,10 +96,11 @@ release-certificate:
 CHECKS := numbers replacements pipeline pipeline-config wake split dotted dates keyed \
           transform-folders eval audio-recovery possessive word-gate suggest input join \
           profiles span-rule clipboard default-config vocabulary-config learn \
-          signing-identity no-voice tokenizer sentence-case
+          signing-identity no-voice tokenizer sentence-case slot-gate sentence-join
 
 test:
 	@swift build -c release
+	@.build/release/ParrotFlow --sentence-model
 	@if command -v swiftlint >/dev/null; then \
 	  swiftlint lint --quiet; \
 	else \

@@ -15,10 +15,11 @@
 # a boundary the same way the measurement did; without it the tier counts
 # describe some other pipeline.
 #
-# Not in `make test` and not in CI: it needs the 300 MB sentence model, which
-# CI has no business downloading. Run it by hand after touching `SentenceJoin`
-# or the thresholds. Nothing is downloaded here either — with no cached model
-# every case comes back untouched and the run says so.
+# Needs the 300 MB sentence model. `make test` and CI both fetch it first with
+# `--sentence-model`; nothing is downloaded here. With no cached model
+# `--sentence-join` prints no boundary block at all, so the first case fails
+# on "the measured boundary was not found". No separate guard for that: the
+# stored per-case score is one, and a model that never ran cannot match it.
 #
 # Runs against a scratch PARROTFLOW_CONFIG_DIR, so the thresholds are the
 # shipped defaults rather than whatever this machine is tuned to.

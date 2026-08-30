@@ -414,9 +414,9 @@ English only. The model is English-only, and the same probe measured on
 waited for: with no cached model, a probe that throws or a boundary it cannot
 read, the text arrives as it was.
 
-`scripts/check-sentence-join.sh` scores the two tiers and needs the model.
-`scripts/check-sentence-case.sh` scores the lowercasing and needs none, so it
-runs in CI. See `SentenceJoin`.
+`scripts/check-sentence-join.sh` scores the two tiers and needs the model,
+which `make test` and CI fetch first. `scripts/check-sentence-case.sh` scores
+the lowercasing and needs none. Both run in CI. See `SentenceJoin`.
 
 ## Voice corrections
 

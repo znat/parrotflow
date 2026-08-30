@@ -11,10 +11,10 @@
 # gate does not settle goes to it today. `SlotGate` settles some of them with a
 # masked language model — see that file for the rules and their order.
 #
-# Not in `make test` and not in CI: it needs the 300 MB sentence model, which
-# CI has no business downloading. Run it by hand after touching `SlotGate`,
-# `Vocabulary.autoApplies` or the tag sets. Nothing is downloaded here either —
-# with no cached model every case routes to `judge` and the run says so.
+# Needs the 300 MB sentence model. `make test` and CI both fetch it first with
+# `--sentence-model`; nothing is downloaded here. With no cached model every
+# case routes to `judge`, which the run says and then fails on — see the last
+# check at the bottom.
 #
 # Nine of the 59 cases are not scored, and both exclusions are made by shipped
 # code rather than by a list here:
@@ -102,6 +102,16 @@ fi
 printf '  %d scored, %d not (tests/judge-cases.yaml)\n' "$total" "$skipped"
 printf '  applied %d   declined %d   judge %d\n' "$applied" "$declined" "$asked"
 printf '  wrong applies %d   wrong declines %d\n' "$wrong_apply" "$wrong_decline"
+
+# A gate that settled nothing scores zero wrong applies and zero wrong
+# declines, so the two checks below pass without the model ever running. That
+# is what a failed fetch or an empty cache looks like, and in CI it would be a
+# green tick over nothing.
+if [ "$((applied + declined))" -eq 0 ]; then
+  echo "  ✗ the gate settled nothing — is the sentence model cached?"
+  echo "    fetch it with: .build/release/ParrotFlow --sentence-model"
+  exit 1
+fi
 
 # A wrong apply writes a word nobody said with no menu behind it. A wrong
 # decline loses a name the speaker did say. Neither may be traded for fewer
