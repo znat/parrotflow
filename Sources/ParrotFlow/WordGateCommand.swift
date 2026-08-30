@@ -55,9 +55,13 @@ enum WordGateCommand {
             return 0
         }
 
+        // The slot tiers are about a proposal, so `--in` without a term is a
+        // question this cannot answer. Refused rather than ignored: a set that
+        // dropped the term would otherwise report the word lists and look like
+        // it had scored the route.
         let letters = String(word.filter { $0.isLetter })
-        guard !letters.isEmpty else {
-            print("usage: ParrotFlow --word-gate <word> [term]")
+        guard !letters.isEmpty, sentence == nil else {
+            print("usage: ParrotFlow --word-gate <word> [term] [--in \"<sentence>\"]")
             return 2
         }
         // The decision comes from the shipped test. The two verdicts above it

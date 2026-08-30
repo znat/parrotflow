@@ -129,7 +129,7 @@ term does not would be taken out of the sentence, so it goes to the judge.
 `scripts/check-word-gate.sh` scores both forms against
 `tests/word-gate-cases.yaml`.
 
-Name the sentence too and the model tiers answer as well —
+Name the sentence too — with the term, which the model tiers are about —
 `--word-gate merge Vercel --in "Go back to main and merge."` prints
 `slot Verb` and `route decline`. `slot` is what the masked slot wants, from
 ten fillers put back and tagged; `rank` is how far the word is from being the

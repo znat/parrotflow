@@ -876,10 +876,13 @@ actor Vocabulary {
             // for a longer reading to sit on. No scores: nothing scored these
             // acoustically, and inventing a number for the judge to weigh
             // would be worse than telling it there is none (F6).
+            //
+            // A declined span still counts as untouched. The slot gate refused
+            // a name over those words; a wider span is a different reading over
+            // different words, and refusing it too would lose a name on a
+            // question nothing asked.
             let untouched = Set(
-                zip(found, decided).compactMap {
-                    ($0.1.applied || $0.1.dropped || $0.1.declined) ? nil : $0.0.range
-                }
+                zip(found, decided).compactMap { ($0.1.applied || $0.1.dropped) ? nil : $0.0.range }
             ).union(heardSpans.map { $0.range })
             for span in wider where untouched.contains(where: { $0.overlaps(span.range) }) {
                 guard let placed = moved(span.range, holding: span.heard) else { continue }

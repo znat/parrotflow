@@ -10,12 +10,11 @@ import NaturalLanguage
 /// the slot wants, and one per word only when that pass says a name could go
 /// there. A pass is about 8 ms at sequence length 64.
 ///
-/// Three rules, and they run in this order:
+/// The rules, in the order they run:
 ///
-///     slot POS accepts a name    apply    with the rank rule below
-///     rank 0                     apply    ANDed with the rule above
-///     slot POS refuses a name    decline
-///     else                       judge
+///     the slot accepts a name, and the word is rank 0    apply
+///     the slot refuses a name                            decline
+///     anything else                                      judge
 ///
 /// **Slot POS.** Mask the heard word, take the ten most likely fillers, put
 /// each back in the sentence and tag it. The modal tag is what the slot wants.
@@ -27,14 +26,17 @@ import NaturalLanguage
 ///
 /// **Rank 0.** The heard word is the weakest place in its sentence: no word
 /// surprises the model more, and no two-word window more than the one it sits
-/// on. One forward pass per word — see `weakest`.
+/// on. One forward pass per word, each word read by its first BPE piece — see
+/// `weakest`.
 ///
 /// **ANDed, cheapest first.** An AND already fails once the POS refuses, and
 /// the POS is one pass against the rank's one per word, so the rank is not
 /// computed then.
 ///
-/// **Rule 6 runs after the apply rules, never before.** Put in front of the
-/// lexical gate it declines four cases that gate is right to write.
+/// **The decline runs last, after the lexical gate.** `Vocabulary.slotRoute`
+/// is only asked about a proposal that gate left open. The gate decides on
+/// evidence the slot cannot see — the sound, and a spelling neither word list
+/// knows — and a slot must not overrule it.
 ///
 /// **`Determiner` is not blocked.** A determiner slot is a modifier position
 /// and names do sit there — `cloud code`, `bedrock principles`. Blocking it
@@ -140,6 +142,14 @@ struct SlotGate {
     /// adjacent pairs summed — and the rank returned is the worse of the two.
     /// Rank 0 therefore means both: no word surprises the model more than the
     /// span, and no pair more than the pair the span sits on.
+    ///
+    /// A word is scored by its **first BPE piece**, not by all of them. One
+    /// masked position holds one token, so the rest of a multi-piece word would
+    /// need a pass each with the pieces before it revealed — a different and
+    /// far more expensive question. `SentenceProbe.read` reads the word after a
+    /// boundary the same way. It costs little here: the rare piece of a
+    /// misheard name is the first one, and this is a ranking, so every word in
+    /// the sentence is measured on the same footing.
     ///
     /// The window alone is not enough. On a sentence of ordinary words the
     /// weakest pair is decided by noise, and it landed on the span in three of
