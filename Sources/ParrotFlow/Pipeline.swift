@@ -1098,13 +1098,74 @@ struct Pipeline: Equatable, Codable {
         let changes = VocabularyJudge.changes(in: text, from: slots)
         let taught = VocabularyJudge.teaching(in: text, changes: changes)
 
+        // The gate in front of the judge. A sound proposal gets all four
+        // rules; a rule substitution gets the two word lists only, and only in
+        // the direction that keeps what the rule already wrote — see `settle`.
+        //
+        // `taught` wins over the gate, because a spelling lesson is settled by
+        // a rule that is 4/4 where the models are 0/4.
+        let settled = (step.gate ?? true)
+            ? VocabularyJudge.settle(
+                changes, in: text, by: [.sound: .full, .rule: .lists],
+                gate: await Vocabulary.shared.slotGate(),
+                rank: config.vocabulary.gateRank)
+            : [Bool?](repeating: nil, count: changes.count)
+        var decided: [Bool?] = changes.indices.map { index in
+            index < taught.count && taught[index] ? false : settled[index]
+        }
+        let gated = decided.enumerated().filter { $0.element != nil && !taught[$0.offset] }.count
+        if gated > 0 {
+            Log.write("vocabulary gate: \(gated) of \(changes.count) settled without asking")
+        }
+        // Every place settled, so there is nothing to ask. This is the saving
+        // the gate exists for: not a shorter question, no question at all, and
+        // the ~0.9s the model costs.
+        if decided.allSatisfy({ $0 != nil }) {
+            let chosen = VocabularyJudge.settling(decided, in: text, changes: changes)
+            if chosen != text {
+                Log.write("pipeline: vocabulary rewrote the transcript")
+                Log.write("    before: \(text)")
+                Log.write("    after:  \(chosen)")
+            }
+            return result(chosen, [
+                "asked": .int(0), "slots": .int(slots.count),
+                "judged": .string(chosen),
+            ])
+        }
+
+        // Only the places still in question count against the cap. The cap
+        // bounds one model call — "a list nobody can read decides nothing" —
+        // and a place the gate settled is not on that list. Counting it there
+        // let a settled proposal push a rule substitution past the cap and out
+        // of review, which is not what either of them is for.
+        var asking = changes.indices.filter { decided[$0] == nil }
+
+        // Still over. A sound proposal has written nothing into the text, so
+        // dropping one costs the sentence nothing at all — where letting it
+        // stand would ship an exact substitution nobody read. Rule
+        // substitutions are never dropped here: they are already in the text,
+        // and the whole point of the cap's fallback is that what arrived
+        // ships.
+        if asking.count > caps.slots {
+            let spare = asking.filter { changes[$0].standing == .sound }
+            for index in spare where asking.count > caps.slots {
+                decided[index] = false
+                asking.removeAll { $0 == index }
+            }
+            if !spare.isEmpty {
+                Log.write("vocabulary judge: \(spare.count) sound proposal(s) dropped"
+                    + " to keep \(asking.count) place(s) under the cap of \(caps.slots)")
+            }
+        }
+
         // Too many places to judge at once. Keeping what arrived is the safe
         // answer, and it is logged rather than silent — except a spelling
-        // lesson, which was never going to a model anyway.
-        guard slots.count <= caps.slots else {
-            return declined("\(slots.count) slots > \(caps.slots); kept as they are",
+        // lesson, which was never going to a model anyway, and a place the
+        // gate settled, which keeps its answer.
+        guard asking.count <= caps.slots else {
+            return declined("\(asking.count) slots > \(caps.slots); kept as they are",
                             ["asked": .int(0), "slots": .int(slots.count)],
-                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
+                            fallback: VocabularyJudge.settling(decided, in: text, changes: changes))
         }
 
         guard !changes.isEmpty else {
@@ -1126,40 +1187,6 @@ struct Pipeline: Equatable, Codable {
             return result(chosen, [
                 "asked": .int(0), "slots": .int(slots.count),
                 "reverted": .string(lessons.joined(separator: "; ")),
-                "judged": .string(chosen),
-            ])
-        }
-        // The gate in front of the judge. A sound proposal gets all four
-        // rules; a rule substitution gets the two word lists only, and only in
-        // the direction that keeps what the rule already wrote — see `settle`.
-        //
-        // `taught` wins over the gate, because a spelling lesson is settled by
-        // a rule that is 4/4 where the models are 0/4.
-        let settled = (step.gate ?? true)
-            ? VocabularyJudge.settle(
-                changes, in: text, by: [.sound: .full, .rule: .lists],
-                gate: await Vocabulary.shared.slotGate(),
-                rank: config.vocabulary.gateRank)
-            : [Bool?](repeating: nil, count: changes.count)
-        let decided: [Bool?] = changes.indices.map { index in
-            index < taught.count && taught[index] ? false : settled[index]
-        }
-        let gated = decided.enumerated().filter { $0.element != nil && !taught[$0.offset] }.count
-        if gated > 0 {
-            Log.write("vocabulary gate: \(gated) of \(changes.count) settled without asking")
-        }
-        // Every place settled, so there is nothing to ask. This is the saving
-        // the gate exists for: not a shorter question, no question at all, and
-        // the ~0.9s the model costs.
-        if decided.allSatisfy({ $0 != nil }) {
-            let chosen = VocabularyJudge.settling(decided, in: text, changes: changes)
-            if chosen != text {
-                Log.write("pipeline: vocabulary rewrote the transcript")
-                Log.write("    before: \(text)")
-                Log.write("    after:  \(chosen)")
-            }
-            return result(chosen, [
-                "asked": .int(0), "slots": .int(slots.count),
                 "judged": .string(chosen),
             ])
         }
