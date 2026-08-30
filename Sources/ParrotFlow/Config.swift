@@ -1798,6 +1798,7 @@ struct Config: Decodable, Equatable {
             var caps: VocabularyJudge.Caps?
             var nearMisses: Bool?
             var bySound: Bool?
+            var gate: Bool?
             var review: String?
             var reviewEnabled: Bool?
             var when: String?
@@ -1810,6 +1811,7 @@ struct Config: Decodable, Equatable {
                 case stage, transform, prompt, vocabulary, when, unless, app
                 case nearMisses = "near_misses"
                 case bySound = "by_sound"
+                case gate
                 case review
                 case maxSlots = "max_slots"
                 case maxReadings = "max_readings"
@@ -1863,6 +1865,7 @@ struct Config: Decodable, Equatable {
                     self.caps = caps
                     nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
                     bySound = try c.decodeIfPresent(Bool.self, forKey: .bySound)
+                    gate = try c.decodeIfPresent(Bool.self, forKey: .gate)
                     // Two spellings, like `catch_all:`: the key says whether
                     // the review runs and what it runs on. `false` is the only
                     // one that turns it off.
@@ -2025,7 +2028,7 @@ struct Config: Decodable, Equatable {
                             stage: stage, transform: entry.transform,
                             prompt: entry.prompt, caps: entry.caps,
                             nearMisses: entry.nearMisses, bySound: entry.bySound,
-                            review: entry.review,
+                            gate: entry.gate, review: entry.review,
                             reviewEnabled: entry.reviewEnabled,
                             when: entry.when, unless: entry.unless, app: entry.app
                         )

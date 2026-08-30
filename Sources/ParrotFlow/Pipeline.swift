@@ -158,6 +158,12 @@ struct Pipeline: Equatable, Codable {
         /// Optional for the reason `nearMisses` is: "not written" and "written
         /// false" have to stay tellable apart.
         var bySound: Bool?
+        /// Written `gate:`. Whether the free rules in front of the judge may
+        /// settle a proposal without asking — see `VocabularyJudge.settle`.
+        ///
+        /// `gate: false` sends every proposal to the model, which is what the
+        /// gate was measured against and the only way to measure it again.
+        var gate: Bool?
         /// The model that keeps or reverts each match, for a `vocabulary`
         /// stage. Absent means the default; `false` means no review at all,
         /// and every match ships as the rules wrote it.
@@ -1129,11 +1135,12 @@ struct Pipeline: Equatable, Codable {
         //
         // `taught` wins over the gate, because a spelling lesson is settled by
         // a rule that is 4/4 where the models are 0/4.
-        let settled = VocabularyJudge.settle(
-            changes, in: text, by: [.sound: .full, .rule: .lists],
-            gate: await Vocabulary.shared.slotGate(),
-            rank: config.vocabulary.gateRank
-        )
+        let settled = (step.gate ?? true)
+            ? VocabularyJudge.settle(
+                changes, in: text, by: [.sound: .full, .rule: .lists],
+                gate: await Vocabulary.shared.slotGate(),
+                rank: config.vocabulary.gateRank)
+            : [Bool?](repeating: nil, count: changes.count)
         let decided: [Bool?] = changes.indices.map { index in
             index < taught.count && taught[index] ? false : settled[index]
         }
