@@ -443,8 +443,19 @@ actor Transcriber {
         // 98 MB on a first run and this dictation is waiting on it. Two
         // downloads at once halve the bandwidth of the one somebody is
         // watching.
+        //
+        // English only, and the sentence pass below shares that gate: the
+        // masked model is English-only and scores near chance on French.
+        var joinedSentences = 0
+        var offeredSentences = 0
         if Pipeline.language(of: text, config: config) == "en" {
             warmSentenceModel()
+            if #available(macOS 14, *) {
+                let joins = await SentenceJoin.shared.apply(to: text, config: config)
+                text = joins.text
+                joinedSentences = joins.count(.join)
+                offeredSentences = joins.count(.offer)
+            }
         }
 
         // After the vocabulary pass rather than before it, though the words
@@ -480,6 +491,11 @@ actor Transcriber {
                 // pipeline can read rather than an error about a missing path.
                 "vocabulary.count": .int(vocabularyCount),
                 "vocabulary.changes": .string(vocabularyChanges),
+                // The periods a pause put in and this run took out, and the
+                // ones it would only offer to take out. Nothing shows the
+                // offer yet — see `SentenceJoin.Outcome`.
+                "sentences.joined": .int(joinedSentences),
+                "sentences.offered": .int(offeredSentences),
         ])
         // Only when there is one. Absent says "no press", which is the honest
         // answer off the hotkey path and the one `input` declines on.

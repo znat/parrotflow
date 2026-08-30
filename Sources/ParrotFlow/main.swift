@@ -144,6 +144,20 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
     exit(SentenceProbeCommand.run(left: arguments[at + 1], right: arguments[at + 2]))
 }
 
+if let at = arguments.firstIndex(of: "--sentence-join") {
+    guard #available(macOS 14, *) else {
+        print("✗ the sentence probe needs macOS 14 or later")
+        exit(1)
+    }
+    let caseOnly = arguments.contains("--case")
+    let text = arguments[(at + 1)...].first { !$0.hasPrefix("--") }
+    guard let text else {
+        print("usage: ParrotFlow --sentence-join [--case] \"<text>\"")
+        exit(2)
+    }
+    exit(SentenceJoinCommand.run(text, caseOnly: caseOnly))
+}
+
 
 
 
