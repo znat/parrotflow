@@ -24,12 +24,36 @@ import Foundation
 /// heard text carries and the term does not is a question about the sentence,
 /// so it needs both halves of the proposal — see `Vocabulary.dropsPossessive`.
 ///
-/// No audio and no model either way. The pair form fixes the scores so the
-/// term wins, because the acoustic half is not what it is asking; a proposal
-/// whose term loses on sound never reaches these conditions.
+/// Name the sentence too and the model tiers answer as well:
+///
+///     ParrotFlow --word-gate merge Vercel --in "Go back to main and merge."
+///     possessive kept
+///     gate       judge
+///     slot       Verb
+///     rank       not asked
+///     route      decline
+///
+/// `slot` is what the masked slot wants, `rank` is where the span's two-word
+/// window sits among the sentence's, and `route` is where the proposal goes —
+/// see `SlotGate`. Nothing is downloaded: with no cached model the slot reads
+/// `unavailable` and the route is `judge`.
+///
+/// No audio. The pair form fixes the scores so the term wins, because the
+/// acoustic half is not what it is asking; a proposal whose term loses on
+/// sound never reaches these conditions.
 enum WordGateCommand {
-    static func run(word: String, term: String? = nil) -> Int32 {
-        if let term, !term.isEmpty { return pair(heard: word, term: term) }
+    static func run(word: String, term: String? = nil, sentence: String? = nil) -> Int32 {
+        if let term, !term.isEmpty {
+            let applies = pair(heard: word, term: term)
+            guard let sentence, !sentence.isEmpty else { return 0 }
+            guard #available(macOS 14, *) else {
+                print("slot       unavailable")
+                print("route      judge")
+                return 0
+            }
+            printSlot(heard: word, term: term, in: sentence, applies: applies)
+            return 0
+        }
 
         let letters = String(word.filter { $0.isLetter })
         guard !letters.isEmpty else {
@@ -56,13 +80,67 @@ enum WordGateCommand {
     /// The two lists are not printed here. They are not consulted at all on a
     /// span the gate matches glued — `"Matthew at"` — so printing them would
     /// report a lookup that decided nothing.
-    private static func pair(heard: String, term: String) -> Int32 {
+    private static func pair(heard: String, term: String) -> Bool {
         let drops = Vocabulary.dropsPossessive(heard: heard, term: term)
         print("possessive \(drops ? "dropped" : "kept")")
         let applies = Vocabulary.autoApplies(
             heard: heard, term: term, heardScore: -1, termScore: 0
         )
         print("gate       \(applies ? "auto-apply" : "judge")")
-        return 0
+        return applies
+    }
+
+    /// The model tiers, on the proposal the lexical gate did not settle.
+    ///
+    /// Nothing is downloaded. With no cached model the slot is `unavailable`
+    /// and the route is `judge`, which is what the app does — see
+    /// `Vocabulary.slotRoute`.
+    @available(macOS 14, *)
+    private static func printSlot(
+        heard: String, term: String, in sentence: String, applies: Bool
+    ) {
+        let config = (try? ConfigStore.load()) ?? Config()
+        let language = Pipeline.language(of: sentence, config: config)
+        print("language   \(language)")
+        guard language == "en" else {
+            print("slot       not english")
+            print("route      judge")
+            return
+        }
+        guard let range = Vocabulary.spans(of: heard, in: sentence).first else {
+            print("slot       not found in the sentence")
+            print("route      judge")
+            return
+        }
+        guard let gate = load() else {
+            print("slot       unavailable")
+            print("route      judge")
+            return
+        }
+        guard let reading = try? gate.read(in: sentence, at: range) else {
+            print("slot       unreadable")
+            print("route      judge")
+            return
+        }
+        print("slot       \(reading.tag.isEmpty ? "untagged" : reading.tag)")
+        print("rank       \(reading.rank.map { "\($0) of \(reading.windows)" } ?? "not asked")")
+        let route = applies
+            ? SlotGate.Route.apply
+            : (Vocabulary.dropsPossessive(heard: heard, term: term) ? .judge : reading.route)
+        print("route      \(route.rawValue)")
+    }
+
+    /// The probe, or nil when the model has never been fetched.
+    @available(macOS 14, *)
+    static func load() -> SlotGate? {
+        guard SentenceModel.isCached else { return nil }
+        var gate: SlotGate?
+        let done = DispatchSemaphore(value: 0)
+        Task {
+            gate = (try? await SentenceProbe.load()).map(SlotGate.init(probe:))
+            done.signal()
+        }
+        done.wait()
+        return gate
     }
 }

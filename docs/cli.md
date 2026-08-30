@@ -101,7 +101,7 @@ $PF --numbers "two hundred forty three" [--lang fr]
 $PF --normalize "<text>"
 $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
 $PF --inflected <term> <heard>
-$PF --word-gate <word> [term]
+$PF --word-gate <word> [term] [--in "<sentence>"]
 $PF --verdicts <count> "<reply>"
 $PF --teaching "<sentence>" <word>
 $PF --suggest "<sentence>" [--lang fr]
@@ -128,6 +128,18 @@ condition is not about a word at all: a `'s` the heard text carries and the
 term does not would be taken out of the sentence, so it goes to the judge.
 `scripts/check-word-gate.sh` scores both forms against
 `tests/word-gate-cases.yaml`.
+
+Name the sentence too and the model tiers answer as well —
+`--word-gate merge Vercel --in "Go back to main and merge."` prints
+`slot Verb` and `route decline`. `slot` is what the masked slot wants, from
+ten fillers put back and tagged; `rank` is how far the word is from being the
+weakest place in its sentence; `route` is where the proposal goes. A name goes
+in a `Noun`, `Adjective` or `Pronoun` slot and never in a `Verb`, `Adverb` or
+`Preposition` one — see `SlotGate`. Nothing is downloaded: with no cached
+sentence model the slot reads `unavailable` and the route is `judge`.
+`scripts/check-slot-gate.sh` scores the whole route against
+`tests/judge-cases.yaml`. It needs the 300 MB model, so it is not in
+`make test`.
 
 `--verdicts` asks what the name judge reads out of a model's reply —
 `--verdicts 2 "1. KEEP` newline `2. REVERT"` prints `KEEP REVERT`. It is
@@ -671,6 +683,7 @@ scripts/check-span-rule.sh         # which range a rewrite is written as, before
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
 scripts/check-tokenizer.sh         # the hand-written BPE against HuggingFace's own
 scripts/check-sentence-probe.sh    # the boundary score against coremltools (needs the model)
+scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

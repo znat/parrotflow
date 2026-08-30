@@ -246,7 +246,10 @@ if let index = arguments.firstIndex(of: "--word-gate") {
     // not another flag.
     let term = arguments.indices.contains(index + 2)
         && !arguments[index + 2].hasPrefix("--") ? arguments[index + 2] : nil
-    exit(WordGateCommand.run(word: arguments[index + 1], term: term))
+    let sentence = arguments.firstIndex(of: "--in").flatMap {
+        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+    }
+    exit(WordGateCommand.run(word: arguments[index + 1], term: term, sentence: sentence))
 }
 
 if let index = arguments.firstIndex(of: "--suggest") {
