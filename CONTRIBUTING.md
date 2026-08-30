@@ -23,15 +23,17 @@ git clone https://github.com/znat/parrotflow && cd parrotflow
 make dev-certificate    # once, so permissions survive rebuilds
 make hooks              # once, so commit subjects can cut releases
 make install            # builds and installs ParrotFlow Dev, a separate app
-make test               # every check that needs no model, mic or screen
+make test               # every check that needs no LLM, mic or screen
 ```
 
 Needs Apple silicon, macOS 14 or later, and the Xcode command line tools.
 
-`make test` runs the same scripts CI runs. It does not run the sets that need
-Ollama (`check-grammar`, `check-routing`, `check-spelling`) or a real screen
-(`check-inplace`). If you touched a prompt, run those too — on a machine with
-the model — and put the numbers in the pull request.
+`make test` runs the same scripts CI runs. The first run downloads the 300 MB
+sentence model, which two of the sets read; after that it is cached. It does
+not run the sets that need Ollama (`check-grammar`, `check-routing`,
+`check-spelling`) or a real screen (`check-inplace`). If you touched a prompt,
+run those too — on a machine with the model — and put the numbers in the pull
+request.
 
 **Never change a prompt or a pattern without scoring it.** Every rewrite has a
 case set and a runner. Get the number before, change one thing, get it after.
