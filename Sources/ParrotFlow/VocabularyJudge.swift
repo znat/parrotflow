@@ -1217,8 +1217,11 @@ enum VocabularyJudge {
     ) -> [Bool?] {
         changes.map { change -> Bool? in
             guard let allowed = policy[change.standing] else { return nil }
-            let term = change.terms.first ?? change.now
-            if Vocabulary.autoApplies(heard: change.was, term: term) {
+            // The reading that is actually going in, not the canonical term.
+            // `Precy's -> Praisy's` keeps its possessive; asking about
+            // `Praisy` made `dropsPossessive` read it as one being thrown
+            // away, and the name was sent to a model that reverted it.
+            if Vocabulary.autoApplies(heard: change.was, term: change.now) {
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
                     + " is in neither word list — written, not asked")
                 return true
