@@ -143,6 +143,58 @@ actor Transcriber {
         }
     }
 
+    /// The sound model fetch, once per process. Same shape and same reasons
+    /// as the sentence model above.
+    private var soundModelFetch: Task<Void, Never>?
+    private var soundModelRunning = false
+
+    /// Starts the grapheme-to-phoneme download and does not wait for it.
+    ///
+    /// 81 MB, and the vocabulary's sound pass is the only thing that reads it.
+    /// Parking a dictation behind it would cost the dictation and buy nothing:
+    /// the pass simply proposes nothing until the model is there, which is
+    /// what it already does on a machine with neither ear.
+    private func warmSoundModel() {
+        guard soundModelFetch == nil else { return }
+        soundModelRunning = true
+        soundModelFetch = Task { [weak self] in
+            guard let self else { return }
+            var failed = false
+            do {
+                try await NeuralPhonemes.download { label in
+                    Task { await self.reportSoundModel(label) }
+                }
+            } catch {
+                Log.write("sound model: \(error.localizedDescription);"
+                    + " names are matched by spelling until it arrives")
+                failed = true
+            }
+            await self.finishSoundModel(failed: failed)
+        }
+    }
+
+    private func reportSoundModel(_ label: String) {
+        guard soundModelRunning else { return }
+        onStatusChange(.downloading(label, blocking: false))
+    }
+
+    private func finishSoundModel(failed: Bool) {
+        soundModelRunning = false
+        if failed { soundModelFetch = nil }
+        restoreStatusIfIdle()
+    }
+
+    /// Puts the ordinary status back, but only when no fetch is still running.
+    ///
+    /// Two downloads can be in flight at once, and each used to restore the
+    /// status on its own. The first to finish then wiped the other's
+    /// percentage out of the menu bar, and the one somebody was watching
+    /// appeared to stall.
+    private func restoreStatusIfIdle() {
+        guard !sentenceModelRunning, !soundModelRunning else { return }
+        onStatusChange(status)
+    }
+
     private func reportSentenceModel(_ label: String) {
         guard sentenceModelRunning else { return }
         // Reported, not recorded. `status` says whether the transcriber can
@@ -154,8 +206,9 @@ actor Transcriber {
         sentenceModelRunning = false
         if failed { sentenceModelFetch = nil }
         // Whatever was true before this started is true again. Usually
-        // `.ready`, which is what clears the label the fetch put up.
-        onStatusChange(status)
+        // `.ready`, which is what clears the label the fetch put up — unless
+        // the other fetch is still going, and then its label stays.
+        restoreStatusIfIdle()
     }
 
 
@@ -450,6 +503,7 @@ actor Transcriber {
         var offeredSentences = 0
         if Pipeline.language(of: text, config: config) == "en" {
             warmSentenceModel()
+            if !config.vocabularyTerms.isEmpty { warmSoundModel() }
             if #available(macOS 14, *) {
                 let joins = await SentenceJoin.shared.apply(to: text, config: config)
                 text = joins.text

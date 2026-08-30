@@ -148,13 +148,50 @@ because it is a homophone — that is not a floor's to settle, and the sentence
 settles it instead. Nothing is written by sound alone; every match is one more
 reading the model votes on.
 
-**It needs espeak-ng**, which is not bundled. Without it the sound path does
-nothing and everything else works as before:
+#### Two ears, and one is optional
+
+Two converters turn a word into sounds, and they are not a replacement for each
+other. Measured on 20891 real dictations at `sound_below: 0.85`, scoring every
+1- and 2-word window:
+
+| converter | windows found | right | wrong |
+| --- | ---: | ---: | ---: |
+| espeak-ng | 41 | 36 | 5 |
+| the sound model | 46 | 39 | 7 |
+| both | 62 | 54 | 8 |
+
+Three false windows more over the whole archive, eighteen true ones. They fail
+differently too, which is the strongest sign they belong together: the model
+invents `praising → Praisy`, espeak invents `and re → Andrey`, and neither
+makes the other's mistake.
+
+What each finds alone says why. The model reads the whole string at once, so it
+hears through a word boundary the recogniser invented — `Priss y` (259 times),
+`O lama`, `au lama`, `press a`, `versol`. espeak applies letter-to-sound rules,
+so it is better on a spelling nobody has ever written — `geler` (45 times),
+`Prazi`, `Ghost E`, `Jemma`, `cloth code`.
+
+**The model is the default.** 81 MB, fetched on the first English dictation
+with a vocabulary in it, like every other model. Nine languages, French
+included. Nothing has to be installed by hand.
+
+**espeak-ng is the improvement.** It is a separate GPL-3 program, so it can
+never ship inside the app, and it is not bundled:
 
     brew install espeak-ng
 
-espeak-ng is GPL-3 and runs as a separate program over a pipe. Nothing links
-it.
+With the model in place its absence costs coverage rather than the whole
+feature. Every proposal names both ears in the log, so which one earned it
+stays countable:
+
+    vocabulary sound: "geler" -> Gelar 1.00 by espeak
+                      espeak /dʒɛlɚ/ 1.00 Gelar  model /ɡiɫɝ/ 0.75 Gelar
+
+A window's reading is only ever compared with a form's reading **from the same
+ear**. The two inventories differ — `ɫ` against `l`, `ɝ` against `ɚ` — so the
+better of the two scores wins, and the average of two incomparable numbers
+would mean nothing. A pronunciation written by hand under `phonemes:` is
+compared against both.
 
 #### A pronunciation can carry its sound
 

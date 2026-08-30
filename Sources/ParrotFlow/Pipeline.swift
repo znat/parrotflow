@@ -1062,9 +1062,9 @@ struct Pipeline: Equatable, Codable {
         // measured over 20891 dictations — see `phonemeParts` for what fires
         // and what it costs.
         if step.bySound ?? true, Pipeline.language(of: text, config: config) == "en" {
-            let heard = VocabularyJudge.phonemeParts(
+            let heard = await VocabularyJudge.phonemeParts(
                 in: text, sounds: config.vocabularySounds, voice: "en-us",
-                floor: config.vocabulary.soundBelow, claimed: parts
+                language: "en", floor: config.vocabulary.soundBelow, claimed: parts
             )
             bySound = heard.count
             parts += heard
