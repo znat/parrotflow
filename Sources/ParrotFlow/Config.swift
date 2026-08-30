@@ -211,6 +211,20 @@ struct Config: Decodable, Equatable {
         /// `and me` reaching `Andrey`.
         var soundBelow: Float = 0.85
 
+        /// Whether the gate in front of the judge may write a name because its
+        /// span is the worst-reading spot in its sentence.
+        ///
+        /// The other three rules of that gate ask absolute questions — is this
+        /// a word anybody has written, can a name stand in this spot. This one
+        /// is relative to the rest of the sentence, and it answers "unexpected"
+        /// where the question is "wrong". A rare proper noun is both: on
+        /// "visiting the Versailles Castle" it ranks `Versailles` first of
+        /// fifteen and would write `Vercel Castle` without asking.
+        ///
+        /// On because it was measured at no errors over 50 cases, switchable
+        /// because that sentence is not one of them.
+        var gateRank: Bool = true
+
         /// One way this speaker's mouth turns a term into something else, and
         /// what is known about that.
         ///
@@ -494,6 +508,7 @@ struct Config: Decodable, Equatable {
             case offerBelow = "offer_below"
             case decideAbove = "decide_above"
             case soundBelow = "sound_below"
+            case gateRank = "gate_rank"
         }
 
         init() {}
@@ -543,6 +558,9 @@ struct Config: Decodable, Equatable {
                         + " it is a similarity, where 1.0 is the term said exactly."
                         + " Running at \(soundBelow)")
                 }
+            }
+            if let on = try c.decodeIfPresent(Bool.self, forKey: .gateRank) {
+                gateRank = on
             }
             // Nats, and the audio arguing against a reading by a negative
             // amount is the audio agreeing with it. At or below 0 every

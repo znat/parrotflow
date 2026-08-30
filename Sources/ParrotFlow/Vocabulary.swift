@@ -607,8 +607,30 @@ actor Vocabulary {
             let glued = letters.replacingOccurrences(of: " ", with: "").lowercased()
             return glued == term.lowercased()
         }
-
         guard termScore > heardScore else { return false }
+        return autoApplies(heard: heard, term: term)
+    }
+
+    /// The same gate with the one line that reads the audio taken out.
+    ///
+    /// Every rule above is about spelling: a span that glues to the term, a
+    /// possessive the term would drop, an apostrophe, and the two word lists.
+    /// One line is not — `termScore > heardScore`, the CTC scores — and a
+    /// proposal that reaches this stage from a spelling or from a sound has
+    /// neither number.
+    ///
+    /// **That line has never been measured.** `scripts/check-slot-gate.sh`
+    /// scores this gate on the 50 cases of `tests/judge-cases.yaml` by passing
+    /// `heardScore: -1, termScore: 0` — two constants chosen so the guard is
+    /// always true. So the 47/50 and the zero errors behind this whole tier
+    /// were measured on exactly this function, with no audio in them at all.
+    /// Leaving the line out here loses no evidence, because there is none.
+    static func autoApplies(heard: String, term: String) -> Bool {
+        let letters = heard.filter { $0.isLetter || $0.isWhitespace }
+        if letters.contains(" ") {
+            let glued = letters.replacingOccurrences(of: " ", with: "").lowercased()
+            return glued == term.lowercased()
+        }
         let bare = String(letters)
         guard !bare.isEmpty else { return false }
         guard !dropsPossessive(heard: heard, term: term) else { return false }
@@ -666,7 +688,7 @@ actor Vocabulary {
     private var loadedSlotGate: SlotGate?
     private var slotGateFailed = false
 
-    private func slotGate() async -> SlotGate? {
+    func slotGate() async -> SlotGate? {
         if let loadedSlotGate { return loadedSlotGate }
         guard !slotGateFailed, SentenceModel.isCached else { return nil }
         do {

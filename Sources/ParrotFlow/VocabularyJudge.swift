@@ -999,6 +999,9 @@ enum VocabularyJudge {
         let now: String
         /// The vocabulary terms this place is about, for `{terms}`.
         let terms: [String]
+        /// Where the reading came from, carried through from the slot. Read by
+        /// `settle`, which gates one source and not the others.
+        let standing: Standing
     }
 
     /// The substitutions to put to the model, left to right.
@@ -1030,7 +1033,8 @@ enum VocabularyJudge {
                 continue
             }
             built.append(Change(range: slot.range, was: slot.options[0],
-                                now: slot.options[1], terms: slot.terms))
+                                now: slot.options[1], terms: slot.terms,
+                                standing: slot.standing))
         }
         return built
     }
@@ -1105,6 +1109,31 @@ enum VocabularyJudge {
         return out + text[cursor...]
     }
 
+    /// Text with each span written the way it was settled, and every span
+    /// nothing settled left exactly as `text` already has it.
+    ///
+    /// Three outcomes where `applying` has two, and the third is the one that
+    /// matters when no model ran: `nil` writes neither reading, it copies what
+    /// is there. A rule substitution is already in the text, so copying keeps
+    /// it; a sound proposal is not, so copying leaves the decoder's word. Both
+    /// are "what arrived ships", which is this stage's contract on every path
+    /// where something went wrong.
+    ///
+    /// `reverting(taught:)` is this with `true` unreachable.
+    static func settling(_ decided: [Bool?], in text: String, changes: [Change]) -> String {
+        var out = "", cursor = text.startIndex
+        for (index, change) in changes.enumerated() {
+            out += text[cursor..<change.range.lowerBound]
+            switch index < decided.count ? decided[index] : nil {
+            case .some(true):  out += change.now
+            case .some(false): out += change.was
+            case .none:        out += String(text[change.range])
+            }
+            cursor = change.range.upperBound
+        }
+        return out + text[cursor...]
+    }
+
     /// Text with every taught span put back to what the decoder wrote, and
     /// every other span left exactly as `text` already has it.
     ///
@@ -1121,6 +1150,76 @@ enum VocabularyJudge {
             cursor = change.range.upperBound
         }
         return out + text[cursor...]
+    }
+
+    /// The verdicts the gates settle, so no model is asked about them.
+    ///
+    /// One entry per change. `true` writes the term, `false` writes back what
+    /// the decoder wrote, `nil` is a question for the model. Exactly the shape
+    /// `applying` already takes, and exactly what `taught` already does for a
+    /// spelling lesson — this is the same idea with four more rules in it.
+    ///
+    /// The rules, in the order they are asked, which is the order they were
+    /// measured in:
+    ///
+    /// 1. **The two word lists.** A word neither `NSSpellChecker` nor the
+    ///    tokenizer's vocabulary has ever seen is not a word the speaker meant.
+    ///    Write the term. Free, no model, and the only rule here that is
+    ///    absolute rather than relative to the sentence.
+    /// 2. **Can a name stand in that spot?** Mask the span, take the ten words
+    ///    the model would put there, tag them. A spot that wants a verb, an
+    ///    adverb or a preposition cannot hold a name, so the reading is
+    ///    impossible and there is nothing to ask. Refuse it.
+    /// 3. **Is that the spot the sentence reads worst?** The span must be both
+    ///    the least expected word and inside the least expected pair. Write the
+    ///    term. Anything else goes to the model.
+    ///
+    /// Measured at 47/50 with 21 model calls instead of 50 and no error either
+    /// way — on `tests/judge-cases.yaml`, with no audio in it. See
+    /// `Vocabulary.autoApplies(heard:term:)` for why that matters.
+    ///
+    /// **Only the source named by `gating`.** A rule substitution is already
+    /// written and refusing one leaves the speaker with a rewrite they were
+    /// never offered a way back from; the sound path writes nothing until
+    /// somebody says so, which is what makes it safe to settle here first.
+    ///
+    /// Rule 3 is the weak one and it is on by `rank`. It asks whether a word is
+    /// *unexpected*, not whether it is *wrong*, and a rare proper noun is both
+    /// unexpected and correct: on "visiting the Versailles Castle" it ranks
+    /// `Versailles` first of fifteen and would write `Vercel Castle`. Rules 1
+    /// and 2 have no such confound.
+    static func settle(
+        _ changes: [Change], in text: String, gating: Standing,
+        gate: SlotGate?, rank: Bool
+    ) -> [Bool?] {
+        changes.map { change -> Bool? in
+            guard change.standing == gating else { return nil }
+            let term = change.terms.first ?? change.now
+            if Vocabulary.autoApplies(heard: change.was, term: term) {
+                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                    + " is in neither word list — written, not asked")
+                return true
+            }
+            guard let gate else { return nil }
+            guard let reading = try? gate.read(in: text, at: change.range) else { return nil }
+            switch reading.route {
+            case .decline:
+                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                    + " — the spot wants \(reading.tag), which cannot hold a name; refused")
+                return false
+            case .apply:
+                // The rank is the half that can be wrong in silence, so it is
+                // the half with a switch.
+                guard rank else { return nil }
+                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                    + " is the worst-reading spot of its sentence"
+                    + (reading.rank.map { " (rank \($0) of \(reading.windows))" } ?? "")
+                    + " — written, not asked")
+                return true
+            case .judge:
+                return nil
+            }
+        }
     }
 
     /// One verdict per change, read off the reply. `true` is KEEP.

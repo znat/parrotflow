@@ -19,7 +19,7 @@ enum TeachingCommand {
             return 2
         }
         let change = VocabularyJudge.Change(
-            range: range, was: word, now: word, terms: []
+            range: range, was: word, now: word, terms: [], standing: .rule
         )
         let taught = VocabularyJudge.teaching(in: text, changes: [change])
         print(taught[0] ? "REVERT" : "ASK")

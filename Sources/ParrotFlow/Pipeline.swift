@@ -1123,6 +1123,40 @@ struct Pipeline: Equatable, Codable {
                 "judged": .string(chosen),
             ])
         }
+        // The gate in front of the judge — the four rules of `settle`, on the
+        // proposals the sound path made. Nothing else is gated: a rule
+        // substitution is already written into the text, and refusing one
+        // would leave the speaker with a rewrite and no way back.
+        //
+        // `taught` wins over the gate, because a spelling lesson is settled by
+        // a rule that is 4/4 where the models are 0/4.
+        let settled = VocabularyJudge.settle(
+            changes, in: text, gating: .sound,
+            gate: await Vocabulary.shared.slotGate(),
+            rank: config.vocabulary.gateRank
+        )
+        let decided: [Bool?] = changes.indices.map { index in
+            index < taught.count && taught[index] ? false : settled[index]
+        }
+        let gated = decided.enumerated().filter { $0.element != nil && !taught[$0.offset] }.count
+        if gated > 0 {
+            Log.write("vocabulary gate: \(gated) of \(changes.count) settled without asking")
+        }
+        // Every place settled, so there is nothing to ask. This is the saving
+        // the gate exists for: not a shorter question, no question at all, and
+        // the ~0.9s the model costs.
+        if decided.allSatisfy({ $0 != nil }) {
+            let chosen = VocabularyJudge.settling(decided, in: text, changes: changes)
+            if chosen != text {
+                Log.write("pipeline: vocabulary rewrote the transcript")
+                Log.write("    before: \(text)")
+                Log.write("    after:  \(chosen)")
+            }
+            return result(chosen, [
+                "asked": .int(0), "slots": .int(slots.count),
+                "judged": .string(chosen),
+            ])
+        }
         // Checked here rather than at the top so that a pipeline with no model
         // still publishes what the stage found. `vocabulary.slots` is the one
         // thing about this stage a fixture can assert — the verdict comes from
@@ -1137,7 +1171,8 @@ struct Pipeline: Equatable, Codable {
         guard config.llmEnabled else {
             return declined("`models:` defines no model",
                             ["asked": .int(0), "slots": .int(slots.count)],
-                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
+                            fallback: VocabularyJudge.settling(
+                                decided, in: text, changes: changes))
         }
 
         let built = VocabularyJudge.sentences(in: text, from: changes)
@@ -1166,7 +1201,8 @@ struct Pipeline: Equatable, Codable {
         } catch {
             return declined("\(error.localizedDescription); kept as they are",
                             ["asked": .int(changes.count), "slots": .int(slots.count)],
-                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
+                            fallback: VocabularyJudge.settling(
+                                decided, in: text, changes: changes))
         }
 
         // A lesson mixed in with real questions is still shown to the model,
@@ -1174,8 +1210,9 @@ struct Pipeline: Equatable, Codable {
         // list. Its answer about that change is then discarded: the rule
         // decides it, and the rule is 4/4 where the models are 0/4.
         let verdicts = VocabularyJudge.verdicts(reply, count: changes.count)
-            .enumerated().map { index, keep in
-                index < taught.count && taught[index] ? false : keep
+            .enumerated().map { index, keep -> Bool in
+                if index < decided.count, let settled = decided[index] { return settled }
+                return keep
             }
         let chosen = VocabularyJudge.applying(verdicts, to: text, changes: changes)
         // What the judge undid, in the words it put back. Named `reverted`
