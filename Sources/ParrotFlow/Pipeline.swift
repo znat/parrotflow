@@ -1006,14 +1006,6 @@ struct Pipeline: Equatable, Codable {
             return StageResult(text: text, vars: wrote.merging(vars) { _, new in new })
         }
 
-        // `review: false`. The exact matches ship as the rules wrote them, and
-        // the near-miss pass is skipped with the review rather than left to
-        // run: nothing it proposes is ever written without a model reading the
-        // sentence first.
-        guard step.reviewEnabled ?? true else {
-            return result(text, ["asked": .int(0), "slots": .int(0)])
-        }
-
         let caps = step.caps ?? VocabularyJudge.Caps.standard
         // Both sources. The acoustic pass proposes with positions; a
         // `replacements` rule publishes none, so its substitutions are found by
@@ -1190,6 +1182,32 @@ struct Pipeline: Equatable, Codable {
                 "judged": .string(chosen),
             ])
         }
+        // `review: false` — no model, and nothing else.
+        //
+        // It used to return above all of this, so it also turned off the
+        // near-miss pass, the sound pass and the free rules in front of the
+        // judge. The reason given was that nothing those propose is ever
+        // written without a model reading the sentence first, and that was
+        // true until the gate existed. It is not true now: the two word lists
+        // write a name with no model at all, measured at no errors over this
+        // speaker's archive, and refusing to run them because the model is off
+        // throws away the half of the stage that needs no model.
+        //
+        // So what is settled is written and what is not keeps what is already
+        // there — the same three-way answer every other no-model path in this
+        // stage gives.
+        guard step.reviewEnabled ?? true else {
+            let chosen = VocabularyJudge.settling(decided, in: text, changes: changes)
+            if chosen != text {
+                Log.write("pipeline: vocabulary rewrote the transcript (no review)")
+                Log.write("    before: \(text)")
+                Log.write("    after:  \(chosen)")
+            }
+            return result(chosen, [
+                "asked": .int(0), "slots": .int(slots.count), "judged": .string(chosen),
+            ])
+        }
+
         // Checked here rather than at the top so that a pipeline with no model
         // still publishes what the stage found. `vocabulary.slots` is the one
         // thing about this stage a fixture can assert — the verdict comes from
