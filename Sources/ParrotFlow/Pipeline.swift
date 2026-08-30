@@ -1208,16 +1208,24 @@ struct Pipeline: Equatable, Codable {
                                 decided, in: text, changes: changes))
         }
 
-        let built = VocabularyJudge.sentences(in: text, from: changes)
+        // Only the places still in question, renumbered from one.
+        //
+        // Not the whole list with the settled ones left in it. `verdicts` reads
+        // a change the reply never names as KEEP, so a longer list is a larger
+        // chance that a substitution ships because the model skipped a line —
+        // which is the failure the cap exists to prevent, arriving by the other
+        // door. The list the model reads is now the list the cap bounds.
+        let asked = asking.map { changes[$0] }
+        let built = VocabularyJudge.sentences(in: text, from: asked)
         // `.word` means "not a name" and is not shown — see `WordKind` — and a
         // term nobody has corrected yet has no `kind:` at all.
-        let terms = Array(Set(changes.flatMap(\.terms))).sorted().map { name -> String in
+        let terms = Array(Set(asked.flatMap(\.terms))).sorted().map { name -> String in
             guard let kind = config.vocabulary.terms[name]?.kind, kind != .word else { return name }
             return "\(name) (\(kind.rawValue))"
         }.joined(separator: ", ")
         let system = VocabularyJudge.prompt.replacingOccurrences(of: "{terms}", with: terms)
         let user = VocabularyJudge.question(
-            heard: built.heard, after: built.after, changes: changes
+            heard: built.heard, after: built.after, changes: asked
         )
         VocabularyJudge.dump(system: system, user: user)
 
@@ -1228,12 +1236,12 @@ struct Pipeline: Equatable, Codable {
                 // A line per change and whatever the model wraps them in.
                 // Anything longer is a model explaining itself, which this
                 // shape does not read.
-                maxTokens: 8 * changes.count + 8,
+                maxTokens: 8 * asked.count + 8,
                 config: judgeModel
             )
         } catch {
             return declined("\(error.localizedDescription); kept as they are",
-                            ["asked": .int(changes.count), "slots": .int(slots.count)],
+                            ["asked": .int(asked.count), "slots": .int(slots.count)],
                             fallback: VocabularyJudge.settling(
                                 decided, in: text, changes: changes))
         }
@@ -1242,11 +1250,16 @@ struct Pipeline: Equatable, Codable {
         // so the numbering `question` writes and `verdicts` reads stays one
         // list. Its answer about that change is then discarded: the rule
         // decides it, and the rule is 4/4 where the models are 0/4.
-        let verdicts = VocabularyJudge.verdicts(reply, count: changes.count)
-            .enumerated().map { index, keep -> Bool in
-                if index < decided.count, let settled = decided[index] { return settled }
-                return keep
-            }
+        // Read against the asked list, then put back where each answer belongs.
+        let answers = VocabularyJudge.verdicts(reply, count: asked.count)
+        var replies: [Int: Bool] = [:]
+        for (position, index) in asking.enumerated() where position < answers.count {
+            replies[index] = answers[position]
+        }
+        let verdicts = changes.indices.map { index -> Bool in
+            if let settled = decided[index] { return settled }
+            return replies[index] ?? true
+        }
         let chosen = VocabularyJudge.applying(verdicts, to: text, changes: changes)
         // What the judge undid, in the words it put back. Named `reverted`
         // rather than `kept_as_decoded`: on a menu a place that kept its
@@ -1261,7 +1274,7 @@ struct Pipeline: Equatable, Codable {
             Log.write("    after:  \(chosen)")
         }
         return result(chosen, [
-            "asked": .int(changes.count),
+            "asked": .int(asked.count),
             "slots": .int(slots.count),
             "reverted": .string(reverted.joined(separator: "; ")),
             "judged": .string(chosen),
