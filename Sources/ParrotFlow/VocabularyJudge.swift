@@ -245,14 +245,10 @@ enum VocabularyJudge {
         /// from the same place — a rendering somebody wrote down — and below
         /// it because a spelling one edit away is the narrower claim.
         case sound = 2
-        /// The rescorer proposed it and both spellings were scored.
-        case scored = 3
-        /// A wider span built around one of the above. Nothing scored it.
-        case wide = 4
-        /// The spotter heard the term over these frames. Nothing scored the
-        /// word the decoder wrote there, so there is no comparison — this is
-        /// the source that fires on "went to the" and "deployed on".
-        case spotted = 5
+        /// A `replacements` rule that fired on a spelling nobody wrote down,
+        /// which is the weakest claim of the three because nothing has acted
+        /// on it and no sound agreed with it.
+        case wide = 3
 
         static func < (a: Standing, b: Standing) -> Bool { a.rawValue < b.rawValue }
     }
@@ -296,101 +292,6 @@ enum VocabularyJudge {
     }
 
     // MARK: - Gathering
-
-    /// The proposals the pass left undecided, as places to ask about.
-    ///
-    /// A proposal carries a range in the text the pass returned. When an
-    /// earlier stage has edited that text the range is stale, so each one is
-    /// checked against the words it claims to cover and re-anchored when it
-    /// moved. A proposal whose words are gone is dropped rather than guessed
-    /// at — the reading that rewrites the wrong noun is worse than no reading
-    /// (F3).
-    static func acousticParts(
-        _ proposals: [Vocabulary.Proposal], in text: String, measuredOn pass: String
-    ) -> [Part] {
-        var parts: [Part] = []
-        // Occurrences already handed to some other span of the same spelling.
-        // Two readings *of one span* — `Praisy` and `Praisy's` over "praise" —
-        // are the case this stage exists for and must land on top of each
-        // other, so the claim is per span, not per proposal.
-        var taken: [String: [Range<String.Index>]] = [:]
-        var resolved: [String: Range<String.Index>] = [:]
-        // Sorted by where they were, so the re-anchoring below assigns spans
-        // left to right and two proposals sharing a spelling keep their order.
-        let wanted = proposals
-            .filter { !$0.applied && !$0.heard.isEmpty && $0.heard != $0.term }
-            .sorted { $0.range.lowerBound < $1.range.lowerBound }
-        // Which of the three acoustic sources made a proposal, read off its
-        // scores rather than carried as a flag. `Vocabulary.apply` already
-        // says the same thing there: the rescorer scores both spellings, a
-        // wider span is scored by neither, and a spotter hit scores only the
-        // term (F6 — absent means absent, so absence is readable).
-        func standing(_ proposal: Vocabulary.Proposal) -> Standing {
-            if proposal.heardScore != nil, proposal.termScore != nil { return .scored }
-            return proposal.termScore == nil ? .wide : .spotted
-        }
-        for proposal in wanted {
-            // Offsets rather than the index itself. A `String.Index` belongs to
-            // the string it was made from, and `text` is a different string
-            // once any stage above has touched it (F13).
-            let was = pass.distance(from: pass.startIndex, to: proposal.range.lowerBound)
-            let span = "\(was)\u{0}\(proposal.heard)"
-            if let already = resolved[span] {
-                parts.append(Part(
-                    range: already, decoded: proposal.heard,
-                    other: proposal.term, term: proposal.canonicalTerm,
-                    standing: standing(proposal)
-                ))
-                continue
-            }
-            var range = Self.at(offset: was, holding: proposal.heard, in: text)
-            if range == nil {
-                // The text moved under the proposal. Re-anchored to the nearest
-                // occurrence of the same words rather than to the *n*th one: a
-                // counter labelled the second `Versailles` in one sentence as
-                // the first, so the judge rewrote the castle and left the
-                // deployment alone (F3).
-                let claimed = taken[proposal.heard] ?? []
-                range = Vocabulary.spans(of: proposal.heard, in: text)
-                    .filter { hit in !claimed.contains { $0 == hit } }
-                    .min { left, right in
-                        let a = abs(text.distance(from: text.startIndex, to: left.lowerBound) - was)
-                        let b = abs(text.distance(from: text.startIndex, to: right.lowerBound) - was)
-                        return a < b
-                    }
-                if range != nil {
-                    Log.write("vocabulary judge: \"\(proposal.heard)\" moved since the pass"
-                        + " read it; re-anchored to the nearest occurrence")
-                }
-            }
-            guard let found = range else {
-                Log.write("vocabulary judge: \"\(proposal.heard)\" is no longer in the"
-                    + " transcript; that reading is not offered")
-                continue
-            }
-            taken[proposal.heard, default: []].append(found)
-            resolved[span] = found
-            parts.append(Part(
-                range: found, decoded: proposal.heard,
-                other: proposal.term, term: proposal.canonicalTerm,
-                standing: standing(proposal)
-            ))
-        }
-        return parts
-    }
-
-    /// The span at `offset` when it still holds `phrase`, and nil when it does
-    /// not — which is how "nothing above me edited the text" is checked.
-    private static func at(
-        offset: Int, holding phrase: String, in text: String
-    ) -> Range<String.Index>? {
-        guard offset >= 0,
-              let from = text.index(text.startIndex, offsetBy: offset, limitedBy: text.endIndex),
-              let to = text.index(from, offsetBy: phrase.count, limitedBy: text.endIndex),
-              text[from..<to] == phrase
-        else { return nil }
-        return from..<to
-    }
 
     /// The same, for substitutions a `replacements` rule already made.
     ///
@@ -689,7 +590,7 @@ enum VocabularyJudge {
             built.append(Slot(
                 range: span, options: kept,
                 terms: Array(Set(group.parts.map(\.term))).sorted(),
-                standing: group.parts.map(\.standing).min() ?? .spotted
+                standing: group.parts.map(\.standing).min() ?? .wide
             ))
         }
         return capped(built, in: text, to: caps.perTerm)

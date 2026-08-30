@@ -656,12 +656,12 @@ struct Pipeline: Equatable, Codable {
     ///   the way to a transcript would say less than one that never moved.
     func run(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(), findings: Vocabulary.Outcome? = nil,
+        seed: Scope = Scope(),
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await runCollectingScope(
             text, config: config, allowPrompts: allowPrompts, app: app,
-            seed: seed, findings: findings, progress: progress
+            seed: seed, progress: progress
         ).text
     }
 
@@ -672,15 +672,9 @@ struct Pipeline: Equatable, Codable {
     /// have to say `.text` to get it. `--pipeline` and the case sets want both,
     /// and they are the reason the scope is reachable at all: a variable nothing
     /// can print is a variable nobody can debug.
-    /// - Parameter findings: What the acoustic pass proposed, and the exact
-    ///   text it measured those proposals against. Only the `vocabulary` stage
-    ///   reads it, and it is handed over rather than published as a variable
-    ///   because a `Range<String.Index>` cannot survive being turned into a
-    ///   string and back — which is where four of the prototype's bugs lived
-    ///   (F5, F9).
     func runCollectingScope(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(), findings: Vocabulary.Outcome? = nil,
+        seed: Scope = Scope(),
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> (text: String, scope: Scope) {
         var output = text
@@ -752,7 +746,7 @@ struct Pipeline: Equatable, Codable {
             let before = output
             let started = CFAbsoluteTimeGetCurrent()
             let result = await apply(
-                step, to: output, config: config, app: app, scope: scope, findings: findings
+                step, to: output, config: config, app: app, scope: scope
             )
             let seconds = CFAbsoluteTimeGetCurrent() - started
             output = result.text
@@ -799,7 +793,7 @@ struct Pipeline: Equatable, Codable {
 
     private func apply(
         _ step: Step, to text: String, config: Config, app: App?, scope: Scope,
-        findings: Vocabulary.Outcome? = nil
+
     ) async -> StageResult {
         switch step.stage {
         case .numbers:
@@ -811,7 +805,7 @@ struct Pipeline: Equatable, Codable {
             return readInputBox(on: text, scope: scope)
         case .vocabulary:
             return await judgeVocabulary(step, on: text, config: config, scope: scope,
-                                         findings: findings)
+                                        )
         case .transform:
             return await runTransform(step, on: text, config: config, scope: scope)
         }
@@ -960,7 +954,6 @@ struct Pipeline: Equatable, Codable {
     /// back.
     private func judgeVocabulary(
         _ step: Step, on text: String, config: Config, scope: Scope,
-        findings: Vocabulary.Outcome?
     ) async -> StageResult {
         func declined(
             _ why: String, _ vars: [String: Scope.Value] = [:], fallback: String? = nil
@@ -1020,19 +1013,12 @@ struct Pipeline: Equatable, Codable {
         // searching for the term and told apart from the terms the decoder
         // already had by comparing against the text that stage was handed.
         //
-        // From `replacements` and not from the acoustic pass, because the pass
-        // may not have run. `Vocabulary.wanted` gates it on
-        // `vocabulary.acoustic`, so with that off `findings` is nil and a term
-        // standing twice could not be attributed at all. The two texts are the
-        // same string whenever both exist — no stage that edits text may sit
-        // above `vocabulary` except `replacements` itself — so this changes
-        // nothing on the path where the pass does run. `findings?.text` stays
-        // as the fallback for a pipeline with no `replacements` step in it.
+        // From `replacements`, which is the only stage that may edit text
+        // above `vocabulary`, so the text a rule was measured against is the
+        // text this stage was handed.
         let rules = exact.changes
         let beforeRules: String? = handed
-        var parts = VocabularyJudge.acousticParts(
-            findings?.proposals ?? [], in: text, measuredOn: findings?.text ?? text
-        ) + VocabularyJudge.ruleParts(rules, in: text, before: beforeRules ?? findings?.text)
+        var parts = VocabularyJudge.ruleParts(rules, in: text, before: beforeRules)
 
         // The near misses an exact rule cannot reach. On by default: with the
         // acoustic path off, an exact rule is the only route to a term, and
