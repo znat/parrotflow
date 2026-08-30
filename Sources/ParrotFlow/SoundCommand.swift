@@ -77,14 +77,26 @@ enum SoundCommand {
         ("a word boundary the decoder invented",
          "I use parrot flow every day.", ["parrot flow -> ParrotFlow"]),
 
+        // Only the model hears this one. espeak reads `Priss y` as
+        // /pɹɪswaɪ/ — it sounds out the stranded letter — where the model
+        // reads the pair as /pɹɪsi/ and lands on the term. 259 fires in this
+        // speaker's archive, and espeak finds none of them.
+        ("a word the recogniser split, heard only by the model",
+         "I think Priss y wrote that.", ["Priss y -> Praisy"]),
+
         ("nothing to offer",
          "The meeting is at four.", []),
     ]
 
-    static func run() -> Int32 {
-        guard Phonemes.binary != nil else {
-            print("espeak-ng is not installed; the sound path is off and this check is skipped")
+    static func run() async -> Int32 {
+        let ears = await NeuralPhonemes.isReady()
+        guard Phonemes.binary != nil || ears else {
+            print("neither ear is available — no espeak-ng and no sound model;"
+                + " the sound path is off and this check is skipped")
             return 0
+        }
+        if !ears {
+            print("note: the sound model is not fetched, so only espeak is scored")
         }
         var failures = 0
 
@@ -106,8 +118,9 @@ enum SoundCommand {
         }
 
         for one in cases {
-            let parts = VocabularyJudge.phonemeParts(
-                in: one.text, sounds: sounds, voice: "en-us", floor: 0.85, claimed: []
+            let parts = await VocabularyJudge.phonemeParts(
+                in: one.text, sounds: sounds, voice: "en-us", language: "en",
+                floor: 0.85, claimed: []
             )
             let got = parts.map { "\($0.decoded) -> \($0.other)" }.sorted()
             let ok = got == one.want.sorted()

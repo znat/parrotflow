@@ -887,9 +887,11 @@ enum VocabularyJudge {
     static func phonemeParts(
         in text: String,
         sounds: [(term: String, form: String, phonemes: String?)],
-        voice: String, floor: Float, claimed: [Part]
-    ) -> [Part] {
-        guard !sounds.isEmpty, Phonemes.binary != nil else { return [] }
+        voice: String, language: String, floor: Float, claimed: [Part]
+    ) async -> [Part] {
+        guard !sounds.isEmpty else { return [] }
+        let neural = NeuralPhonemes.language(language)
+        guard Phonemes.binary != nil || neural != nil else { return [] }
         // Two words at least, whatever the vocabulary is spelled like. A sound
         // has no spaces in it — `parrot flow` and `ParrotFlow` are both
         // /pæɹətfloʊ/, and so are `cloud card` and `Cloudcard` — so a window
@@ -914,19 +916,31 @@ enum VocabularyJudge {
         // question.
         let spelled = Set(sounds.flatMap { [$0.term.lowercased(), $0.form.lowercased()] })
 
-        var said = Phonemes.of(
-            windows.map(\.text) + sounds.filter { $0.phonemes == nil }.map(\.form),
-            voice: voice
-        )
+        // Two ears, asked the same question, and never mixed. espeak's
+        // inventory is not the model's — `ɫ` against `l`, `ɝ` against `ɚ` —
+        // so a window's reading may only be compared with a form's reading
+        // from the same ear. The best of the two scores wins; the average of
+        // two incomparable numbers would not mean anything.
+        let asking = windows.map(\.text) + sounds.map(\.form)
+        let rules = Phonemes.of(asking, voice: voice)
+        let model = neural == nil ? [:] : await NeuralPhonemes.of(asking, language: neural!)
+        // A pronunciation somebody wrote down is compared with whatever each
+        // ear heard. It is one person's IPA, not either inventory, and taking
+        // the better of the two comparisons is the same rule as everywhere
+        // else here.
+        var written: [String: String] = [:]
         for entry in sounds where entry.phonemes != nil {
-            said[entry.form] = entry.phonemes
+            written[entry.form] = entry.phonemes
         }
         // Widest first, so `parrot flow` claims its span before `flow` can.
         // The overlap check below is what stops the narrower one afterwards.
         var found: [Part] = []
         for window in windows.sorted(by: { $0.width > $1.width || ($0.width == $1.width && $0.span.lowerBound < $1.span.lowerBound) }) {
-            guard !spelled.contains(window.text.lowercased()),
-                  let heard = said[window.text], !heard.isEmpty else { continue }
+            guard !spelled.contains(window.text.lowercased()) else { continue }
+            let ears = [("espeak", rules[window.text]), ("model", model[window.text])]
+                .compactMap { name, ipa in ipa.map { (name, $0) } }
+                .filter { !$0.1.isEmpty }
+            guard !ears.isEmpty else { continue }
             if taken.contains(where: {
                 $0.lowerBound < window.span.upperBound && window.span.lowerBound < $0.upperBound
             }) { continue }
@@ -936,17 +950,33 @@ enum VocabularyJudge {
             // spellings and a space is a letter's worth of difference. Here it
             // is not: the space is where the decoder guessed a word boundary,
             // and guessing it wrong is the mistake being caught.
-            var best: (score: Float, term: String)?
+            // The best each ear can do, kept apart. The winner is the better
+            // of the two, and both numbers are logged: they are what says
+            // whether the second ear is still earning its place.
+            var perEar: [String: (score: Float, term: String)] = [:]
+            var best: (score: Float, term: String, ear: String, heard: String)?
             for entry in sounds {
-                guard let form = said[entry.form], !form.isEmpty else { continue }
-                // The length ratio caps the score on its own, so a pair that
-                // cannot reach the floor even aligned perfectly is skipped
-                // before the distance is computed.
-                let ratio = Float(min(heard.count, form.count)) / Float(max(heard.count, form.count))
-                guard sqrt(ratio) >= floor else { continue }
-                let score = Phonemes.similarity(heard, form)
-                guard score >= floor, score > (best?.score ?? 0) else { continue }
-                best = (score, entry.term)
+                for (ear, heard) in ears {
+                    // The form as this ear reads it, and the one a person
+                    // wrote down if they did.
+                    let forms = [ear == "espeak" ? rules[entry.form] : model[entry.form],
+                                 written[entry.form]].compactMap { $0 }.filter { !$0.isEmpty }
+                    for form in forms {
+                        // The length ratio caps the score on its own, so a
+                        // pair that cannot reach the floor even aligned
+                        // perfectly is skipped before the distance is
+                        // computed.
+                        let ratio = Float(min(heard.count, form.count))
+                            / Float(max(heard.count, form.count))
+                        guard sqrt(ratio) >= floor else { continue }
+                        let score = Phonemes.similarity(heard, form)
+                        if score > (perEar[ear]?.score ?? 0) {
+                            perEar[ear] = (score, entry.term)
+                        }
+                        guard score >= floor, score > (best?.score ?? 0) else { continue }
+                        best = (score, entry.term, ear, heard)
+                    }
+                }
             }
             guard let best else { continue }
             found.append(Part(
@@ -955,10 +985,15 @@ enum VocabularyJudge {
                 term: best.term, standing: .sound
             ))
             taken.append(window.span)
-            if ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
-                Log.write(String(format: "  sound \"%@\" /%@/ -> %@ %.2f",
-                                 window.text, heard, best.term, best.score))
-            }
+            // What each ear said, always, not only under a switch. The two
+            // are kept because they find different names, and which one
+            // earned a proposal is the only way to keep measuring that.
+            let heardBy = ears.map { ear, ipa -> String in
+                guard let mine = perEar[ear] else { return "\(ear) /\(ipa)/ —" }
+                return String(format: "%@ /%@/ %.2f %@", ear, ipa, mine.score, mine.term)
+            }.joined(separator: "  ")
+            Log.write("vocabulary sound: \"\(window.text)\" -> \(best.term)"
+                + String(format: " %.2f by %@ — ", best.score, best.ear) + heardBy)
         }
         return found.sorted { $0.range.lowerBound < $1.range.lowerBound }
     }

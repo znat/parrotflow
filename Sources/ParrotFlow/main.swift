@@ -573,7 +573,19 @@ if arguments.contains("--span-rule") {
 }
 
 if arguments.contains("--sound") {
-    exit(SoundCommand.run())
+    let code = await SoundCommand.run()
+    exit(code)
+}
+
+if let index = arguments.firstIndex(of: "--phonemes") {
+    let words = Array(arguments[(index + 1)...]).filter { !$0.hasPrefix("--") }
+    guard !words.isEmpty else {
+        print("usage: ParrotFlow --phonemes <word> [word …] [--lang fr]")
+        exit(2)
+    }
+    let language = languageList(arguments)?.first ?? "en"
+    let code = await SoundBenchCommand.run(words, language: language)
+    exit(code)
 }
 
 if let index = arguments.firstIndex(of: "--panel-sheet") {
