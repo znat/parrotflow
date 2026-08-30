@@ -627,6 +627,57 @@ actor Vocabulary {
         return WordPieces.knows(bare) == false
     }
 
+    /// The masked language model, once per process, and only if it is already
+    /// on disk. `SentenceModel` fetches it in the background after the first
+    /// English dictation; nothing here waits for that.
+    private var loadedSlotGate: SlotGate?
+    private var slotGateFailed = false
+
+    private func slotGate() async -> SlotGate? {
+        if let loadedSlotGate { return loadedSlotGate }
+        guard !slotGateFailed, SentenceModel.isCached else { return nil }
+        do {
+            loadedSlotGate = SlotGate(probe: try await SentenceProbe.load())
+        } catch {
+            slotGateFailed = true
+            Log.write("vocabulary: no slot gate (\(error.localizedDescription)); the judge decides")
+        }
+        return loadedSlotGate
+    }
+
+    /// Where the model tier sends a proposal the lexical gate did not settle.
+    ///
+    /// `judge` on everything it cannot answer — no cached model, a probe that
+    /// threw, a possessive the term would drop. Never apply and never decline
+    /// without the model, which is the shape `WordPieces.knows` already has and
+    /// is there for this reason.
+    ///
+    /// The possessive is asked here and not inside `SlotGate`. It is a rule
+    /// about the pair, it already routes to the judge in `autoApplies`, and the
+    /// slot would otherwise be free to overrule it.
+    private func slotRoute(
+        heard: String, term: String, in text: String, at range: Range<String.Index>
+    ) async -> SlotGate.Route {
+        guard !Self.dropsPossessive(heard: heard, term: term),
+              let gate = await slotGate() else { return .judge }
+        do {
+            let reading = try gate.read(in: text, at: range)
+            Log.write(
+                "vocabulary: \"\(heard)\" -> \"\(term)\" slot wants"
+                    + " \(reading.tag.isEmpty ? "nothing nameable" : reading.tag)"
+                    + (reading.rank.map { ", rank \($0) of \(reading.windows)" } ?? "")
+                    + " — \(reading.route.rawValue)"
+            )
+            return reading.route
+        } catch {
+            Log.write(
+                "vocabulary: the slot gate could not read \"\(heard)\""
+                    + " (\(error.localizedDescription)); the judge decides"
+            )
+            return .judge
+        }
+    }
+
     /// The transcript, with the names the audio is sure about written in and
     /// the rest published for a judge to decide.
     ///
@@ -707,8 +758,11 @@ actor Vocabulary {
             // one from `text` against a copy being mutated is undefined — it
             // silently dropped every replacement before this was written that
             // way.
-            var decided: [(raw: Float, bonus: Float, applied: Bool, dropped: Bool)] = []
+            var decided: [
+                (raw: Float, bonus: Float, applied: Bool, dropped: Bool, declined: Bool)
+            ] = []
             let margin = Self.proposalMargin(config)
+            let english = Pipeline.language(of: text, config: config) == "en"
             var rebuilt = ""
             var cursor = text.startIndex
             // Where a position in `text` lands in `rebuilt`, as a running
@@ -721,10 +775,18 @@ actor Vocabulary {
                     baseCbw: cbw, tokenCount: tokenCounts[term] ?? 0
                 )
                 let raw = (change.replacementScore ?? 0) - bonus
-                let applies = Self.autoApplies(
+                let lexical = Self.autoApplies(
                     heard: change.originalWord, term: term,
                     heardScore: change.originalScore, termScore: raw
                 )
+                // Dropped when the audio argues hard against it — neither
+                // applied nor offered.
+                let dropped = !lexical && change.originalScore - raw > margin
+                // The model tier, on what the free tier did not settle.
+                let route = lexical || dropped || !english
+                    ? SlotGate.Route.judge
+                    : await slotRoute(heard: change.originalWord, term: term, in: text, at: range)
+                let applies = lexical || route == .apply
                 rebuilt += text[cursor..<range.lowerBound]
                 let was = String(text[range])
                 let now = applies
@@ -738,11 +800,8 @@ actor Vocabulary {
                     ))
                 }
                 cursor = range.upperBound
-                // Dropped when the audio argues hard against it — neither
-                // applied nor offered. Kept in the list so the index still
-                // lines up with `found`.
-                let dropped = !applies && change.originalScore - raw > margin
-                decided.append((raw, bonus, applies, dropped))
+                // Kept in the list so the index still lines up with `found`.
+                decided.append((raw, bonus, applies, dropped, route == .decline))
             }
             rebuilt += text[cursor...]
             let written = rebuilt
@@ -778,6 +837,14 @@ actor Vocabulary {
                         change.originalScore - verdict.raw))
                     continue
                 }
+                if verdict.declined {
+                    Log.write(
+                        "vocabulary: \"\(change.originalWord)\" -> "
+                            + "\"\(change.replacementWord ?? "")\" declined,"
+                            + " no name fits that slot"
+                    )
+                    continue
+                }
                 let term = change.replacementWord ?? ""
                 Log.write(String(
                     format: "vocabulary: \"%@\" -> \"%@\" %@ (raw %.2f vs %.2f, bonus %.2f) (%@)",
@@ -809,6 +876,11 @@ actor Vocabulary {
             // for a longer reading to sit on. No scores: nothing scored these
             // acoustically, and inventing a number for the judge to weigh
             // would be worse than telling it there is none (F6).
+            //
+            // A declined span still counts as untouched. The slot gate refused
+            // a name over those words; a wider span is a different reading over
+            // different words, and refusing it too would lose a name on a
+            // question nothing asked.
             let untouched = Set(
                 zip(found, decided).compactMap { ($0.1.applied || $0.1.dropped) ? nil : $0.0.range }
             ).union(heardSpans.map { $0.range })
