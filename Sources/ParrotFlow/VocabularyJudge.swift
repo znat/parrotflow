@@ -1284,13 +1284,20 @@ enum VocabularyJudge {
             // `Precy's -> Praisy's` keeps its possessive; asking about
             // `Praisy` made `dropsPossessive` read it as one being thrown
             // away, and the name was sent to a model that reverted it.
-            let word = change.was.filter { $0.isLetter || $0.isWhitespace }
+            // The pair the gate itself looks up, not one this line works out
+            // again. `autoApplies` takes a shared possessive off both sides
+            // before it asks the lists anything, so a trace that reported the
+            // answer for `Precys` while the gate had asked about `precy` would
+            // name a branch nobody took.
+            let asked = Vocabulary.looksUp(heard: change.was, term: change.now)
+            let word = asked.heard.filter { $0.isLetter || $0.isWhitespace }
             let bare = String(word.filter { !$0.isWhitespace })
             let forms = bare == bare.uppercased() ? [bare.lowercased()] : [bare, bare.lowercased()]
             let spelled = forms.contains { Replacements.isRealWord($0) }
             let piece = WordPieces.knows(bare)
+            let stripped = asked.heard != change.was ? " (\(change.was) without its possessive)" : ""
             let lists = "spell \(spelled ? "knows it" : "unknown"), wordpiece "
-                + (piece.map { $0 ? "knows it" : "unknown" } ?? "unavailable")
+                + (piece.map { $0 ? "knows it" : "unknown" } ?? "unavailable") + stripped
             if Vocabulary.autoApplies(heard: change.was, term: change.now) {
                 step("lists", lists, "apply")
                 return done(true, "in neither word list")
@@ -1299,8 +1306,10 @@ enum VocabularyJudge {
             // look identical from outside and mean different things.
             if word.contains(" ") {
                 // A span of several words never reaches the lists at all: it
-                // is glued and compared with the term, and nothing else.
-                step("lists", "\(bare.lowercased()) is not \(change.now.lowercased())", "on")
+                // is glued and compared with the term, and nothing else. So
+                // this line names the comparison the gate made and does not
+                // report a list answer nobody asked for.
+                step("glued", "\(bare.lowercased()) is not \(asked.term.lowercased())", "on")
             } else if Vocabulary.dropsPossessive(heard: change.was, term: change.now) {
                 step("lists", "the reading drops a possessive", "on")
             } else if Vocabulary.dropsApostrophe(heard: change.was, term: change.now) {
