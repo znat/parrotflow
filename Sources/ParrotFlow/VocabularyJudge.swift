@@ -1152,34 +1152,112 @@ enum VocabularyJudge {
         gate: SlotGate?, rank: Bool
     ) -> [Bool?] {
         changes.map { change -> Bool? in
-            guard let allowed = policy[change.standing] else { return nil }
+            var trace: [String] = []
+            // `padding(toLength:)` truncates when the text is longer than the
+            // width, which quietly ate the end of every long sentence here.
+            func pad(_ text: String, _ width: Int) -> String {
+                text.count >= width ? text + "  "
+                    : text + String(repeating: " ", count: width - text.count)
+            }
+            func step(_ name: String, _ saw: String, _ went: String) {
+                trace.append("    " + pad(name, 8) + pad(saw, 40) + went)
+            }
+            /// Writes the whole walk down and hands the verdict back.
+            ///
+            /// One line per rule the proposal actually reached, not one line
+            /// for the rule that settled it. A proposal that crossed every
+            /// rule and came out the far side used to leave no trace of having
+            /// been anywhere, so nothing downstream could count what the free
+            /// rules failed to settle — which is the number that says whether
+            /// the model in front of them earns its 0.9 seconds.
+            func done(_ verdict: Bool?, _ why: String) -> Bool? {
+                step("result", why, verdict == nil ? "to the judge"
+                    : (verdict! ? "written, not asked" : "refused, not asked"))
+                Log.write("vocabulary step: \"\(change.was)\" -> \"\(change.now)\""
+                    + " by \(change.standing)\n" + trace.joined(separator: "\n"))
+                return verdict
+            }
+
+            guard let allowed = policy[change.standing] else {
+                return done(nil, "this source is not gated")
+            }
             // The reading that is actually going in, not the canonical term.
             // `Precy's -> Praisy's` keeps its possessive; asking about
             // `Praisy` made `dropsPossessive` read it as one being thrown
             // away, and the name was sent to a model that reverted it.
+            // The pair the gate itself looks up, not one this line works out
+            // again. `autoApplies` takes a shared possessive off both sides
+            // before it asks the lists anything, so a trace that reported the
+            // answer for `Precys` while the gate had asked about `precy` would
+            // name a branch nobody took.
+            let asked = Vocabulary.looksUp(heard: change.was, term: change.now)
+            let word = asked.heard.filter { $0.isLetter || $0.isWhitespace }
+            let bare = String(word.filter { !$0.isWhitespace })
+            let forms = bare == bare.uppercased() ? [bare.lowercased()] : [bare, bare.lowercased()]
+            let spelled = forms.contains { Replacements.isRealWord($0) }
+            let piece = WordPieces.knows(bare)
+            let stripped = asked.heard != change.was ? " (\(change.was) without its possessive)" : ""
+            let lists = "spell \(spelled ? "knows it" : "unknown"), wordpiece "
+                + (piece.map { $0 ? "knows it" : "unknown" } ?? "unavailable") + stripped
             if Vocabulary.autoApplies(heard: change.was, term: change.now) {
-                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                    + " is in neither word list — written, not asked")
-                return true
+                // Two rules can say yes here and they are not the same rule. A
+                // span of several words is accepted because it glues to the
+                // term and the lists are never asked; anything else is
+                // accepted because neither list has seen it. Reporting the
+                // second for the first names a lookup nobody made.
+                if word.contains(" ") {
+                    step("glued", "\(bare.lowercased()) is \(asked.term.lowercased())", "apply")
+                    return done(true, "the same word, split in two")
+                }
+                step("lists", lists, "apply")
+                return done(true, "in neither word list")
             }
-            guard allowed == .full, let gate else { return nil }
-            guard let reading = try? gate.read(in: text, at: change.range) else { return nil }
+            // Named rather than inferred: the three ways this rule declines
+            // look identical from outside and mean different things.
+            if word.contains(" ") {
+                // A span of several words never reaches the lists at all: it
+                // is glued and compared with the term, and nothing else. So
+                // this line names the comparison the gate made and does not
+                // report a list answer nobody asked for.
+                step("glued", "\(bare.lowercased()) is not \(asked.term.lowercased())", "on")
+            } else if Vocabulary.dropsPossessive(heard: change.was, term: change.now) {
+                step("lists", "the reading drops a possessive", "on")
+            } else if Vocabulary.dropsApostrophe(heard: change.was, term: change.now) {
+                step("lists", "the reading drops an apostrophe", "on")
+            } else {
+                step("lists", lists, "on")
+            }
+
+            guard allowed == .full else {
+                return done(nil, "a rule keeps what it wrote; no further rule applies")
+            }
+            guard let gate else { return done(nil, "no sentence model") }
+            guard let reading = try? gate.read(in: text, at: change.range) else {
+                return done(nil, "the sentence could not be read")
+            }
             switch reading.route {
             case .decline:
-                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                    + " — the spot wants \(reading.tag), which cannot hold a name; refused")
-                return false
+                step("slot", "wants \(reading.tag)", "refuse")
+                return done(false, "no name stands where \(reading.tag.lowercased()) goes")
             case .apply:
-                // The rank is the half that can be wrong in silence, so it is
-                // the half with a switch.
-                guard rank else { return nil }
-                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                    + " is the worst-reading spot of its sentence"
-                    + (reading.rank.map { " (rank \($0) of \(reading.windows))" } ?? "")
-                    + " — written, not asked")
-                return true
+                step("slot", "wants \(reading.tag), a name fits", "on")
+                let placed = reading.rank.map { "rank \($0) of \(reading.windows)" } ?? "unranked"
+                guard rank else {
+                    step("rank", placed, "off by `gate_rank`")
+                    return done(nil, "the rank rule is off")
+                }
+                step("rank", placed, "apply")
+                return done(true, "the worst-reading spot of its sentence")
             case .judge:
-                return nil
+                let tagged = reading.tag.isEmpty ? "nothing nameable" : reading.tag
+                if SlotGate.hosts.contains(reading.tag) {
+                    step("slot", "wants \(tagged), a name fits", "on")
+                    step("rank", reading.rank.map { "rank \($0) of \(reading.windows)" }
+                        ?? "unranked", "on")
+                } else {
+                    step("slot", "wants \(tagged)", "on")
+                }
+                return done(nil, "no free rule settles it")
             }
         }
     }

@@ -363,6 +363,21 @@ actor Vocabulary {
     /// always true. So the 47/50 and the zero errors behind this whole tier
     /// were measured on exactly this function, with no audio in them at all.
     /// Leaving the line out here loses no evidence, because there is none.
+    /// The pair the word lists are actually asked about.
+    ///
+    /// A possessive both sides carry is taken off both. Exposed rather than
+    /// kept inside `autoApplies` because anything that *reports* what the
+    /// lists said has to look up the same thing the gate looked up — a
+    /// diagnostic that answers for `Precys` while the gate asked about
+    /// `precy` says the opposite of what happened, on the one line somebody
+    /// reads to find out what happened.
+    static func looksUp(heard: String, term: String) -> (heard: String, term: String) {
+        guard let left = possessive(in: heard), let right = possessive(in: term),
+              !left.stem.isEmpty, !right.stem.isEmpty
+        else { return (heard, term) }
+        return (left.stem, right.stem)
+    }
+
     static func autoApplies(heard: String, term: String) -> Bool {
         // A possessive both sides carry is taken off both before anything is
         // looked up.
@@ -377,12 +392,7 @@ actor Vocabulary {
         // Only when both carry one. A reading that takes a possessive away is
         // a different proposal, and `dropsPossessive` below still has to see
         // it.
-        var heard = heard, term = term
-        if let left = possessive(in: heard), let right = possessive(in: term),
-           !left.stem.isEmpty, !right.stem.isEmpty {
-            heard = left.stem
-            term = right.stem
-        }
+        let (heard, term) = looksUp(heard: heard, term: term)
         let letters = heard.filter { $0.isLetter || $0.isWhitespace }
         if letters.contains(" ") {
             let glued = letters.replacingOccurrences(of: " ", with: "").lowercased()

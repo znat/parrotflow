@@ -1090,6 +1090,27 @@ struct Pipeline: Equatable, Codable {
         //
         // `taught` wins over the gate, because a spelling lesson is settled by
         // a rule that is 4/4 where the models are 0/4.
+        /// One line per place, wherever the stage stops.
+        ///
+        /// Every walk ends somewhere and only one of the endings used to say
+        /// so: the model's. A sentence the free rules settled outright, or one
+        /// the cap declined, or one with no model to ask, wrote its steps and
+        /// then vanished — so the counts a reader takes off these lines missed
+        /// exactly the dictations where no model ran, which is most of them.
+        ///
+        /// `nil` is a place nothing decided, which is a real outcome and not a
+        /// missing one: what is already in the text ships.
+        func report(_ said: [Bool?], _ decided: [Bool?], _ taught: [Bool]) {
+            for (index, change) in changes.enumerated() {
+                let who = index < taught.count && taught[index] ? "lesson"
+                    : (index < decided.count && decided[index] != nil ? "gate" : "judge")
+                let verdict = index < said.count ? said[index] : nil
+                Log.write("vocabulary verdict: \"\(change.was)\" -> \"\(change.now)\""
+                    + " (\(change.standing)) \(who) "
+                    + (verdict.map { $0 ? "kept" : "reverted" } ?? "left as it stands"))
+            }
+        }
+
         let settled = (step.gate ?? true)
             ? VocabularyJudge.settle(
                 changes, in: text, by: [.sound: .full, .rule: .lists],
@@ -1108,6 +1129,7 @@ struct Pipeline: Equatable, Codable {
         // the ~0.9s the model costs.
         if decided.allSatisfy({ $0 != nil }) {
             let chosen = VocabularyJudge.settling(decided, in: text, changes: changes)
+            report(decided, decided, taught)
             if chosen != text {
                 Log.write("pipeline: vocabulary rewrote the transcript")
                 Log.write("    before: \(text)")
@@ -1149,6 +1171,7 @@ struct Pipeline: Equatable, Codable {
         // lesson, which was never going to a model anyway, and a place the
         // gate settled, which keeps its answer.
         guard asking.count <= caps.slots else {
+            report(decided, decided, taught)
             return declined("\(asking.count) slots > \(caps.slots); kept as they are",
                             ["asked": .int(0), "slots": .int(slots.count)],
                             fallback: VocabularyJudge.settling(decided, in: text, changes: changes))
@@ -1188,6 +1211,7 @@ struct Pipeline: Equatable, Codable {
         // ordinary change is left exactly as it arrived, same as every other
         // decline in this stage.
         guard config.llmEnabled else {
+            report(decided, decided, taught)
             return declined("`models:` defines no model",
                             ["asked": .int(0), "slots": .int(slots.count)],
                             fallback: VocabularyJudge.settling(
@@ -1226,6 +1250,7 @@ struct Pipeline: Equatable, Codable {
                 config: judgeModel
             )
         } catch {
+            report(decided, decided, taught)
             return declined("\(error.localizedDescription); kept as they are",
                             ["asked": .int(asked.count), "slots": .int(slots.count)],
                             fallback: VocabularyJudge.settling(
@@ -1254,11 +1279,11 @@ struct Pipeline: Equatable, Codable {
         let reverted = zip(changes, verdicts).filter { !$0.1 }.map {
             "\($0.0.now) -> \($0.0.was)"
         }
-        if chosen != text {
-            Log.write("pipeline: vocabulary rewrote the transcript")
-            Log.write("    before: \(text)")
-            Log.write("    after:  \(chosen)")
-        }
+        // The end of every walk, so a proposal that crossed all the free rules
+        // and reached the model does not stop being traceable there. What the
+        // gate settled is named as the gate's, not the model's — the model was
+        // shown only the places still in question.
+        report(verdicts.map { $0 }, decided, taught)
         return result(chosen, [
             "asked": .int(asked.count),
             "slots": .int(slots.count),
