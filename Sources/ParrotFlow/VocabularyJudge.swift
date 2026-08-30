@@ -241,14 +241,18 @@ enum VocabularyJudge {
         /// acoustic sources because a spelling one edit from a rendering
         /// somebody wrote down is narrower evidence than a sound.
         case fuzzy = 1
+        /// A rendering the words sound like. Beside `fuzzy` because it comes
+        /// from the same place — a rendering somebody wrote down — and below
+        /// it because a spelling one edit away is the narrower claim.
+        case sound = 2
         /// The rescorer proposed it and both spellings were scored.
-        case scored = 2
+        case scored = 3
         /// A wider span built around one of the above. Nothing scored it.
-        case wide = 3
+        case wide = 4
         /// The spotter heard the term over these frames. Nothing scored the
         /// word the decoder wrote there, so there is no comparison — this is
         /// the source that fires on "went to the" and "deployed on".
-        case spotted = 4
+        case spotted = 5
 
         static func < (a: Standing, b: Standing) -> Bool { a.rawValue < b.rawValue }
     }
@@ -837,6 +841,126 @@ enum VocabularyJudge {
             }
         }
         return found
+    }
+
+    /// Windows of the transcript that *sound* like a term, whatever they are
+    /// spelled like.
+    ///
+    /// The one thing letters cannot do. `geler` is 0.60 from `Gelar` by
+    /// spelling and identical to it by sound; so are `Ghost E`/`Ghostty`,
+    /// `Jemma`/`Gemma`, `eye brands`/`Ibrance`, `Prazi`/`Praisy`. Every one of
+    /// those is a name this speaker lost, and no edit distance reaches them.
+    ///
+    /// **The floor is 0.85 and it was measured, not chosen.** Over 20891 real
+    /// dictations, scoring every 1- and 2-word window against every term and
+    /// every rendering:
+    ///
+    ///     floor   fires   per clip   distinct windows
+    ///     0.70    11659     0.56
+    ///     0.75     8262     0.40
+    ///     0.80      826     0.04
+    ///     0.85      147     0.007            41
+    ///
+    /// The cliff between 0.80 and 0.85 is two-word windows of ordinary words —
+    /// `and me` and `and see` reach `Andrey` at 0.80, 312 times between them.
+    /// Above it, 41 windows in the whole archive and 33 of them are a name
+    /// this speaker actually lost. Below it the list is 6011 copies of
+    /// `praise`, which sounds like `Praisy` because it is a homophone; that
+    /// one is not a floor's to settle and never was.
+    ///
+    /// **No dictionary gate, unlike `fuzzyParts`.** That gate refuses any
+    /// window a spell checker knows, which is right where a match may be
+    /// written in and wrong here: the words this fires on are `pressed`,
+    /// `phrases`, `geler`, `pretty` — ordinary words, every one, and the
+    /// ordinary ones are the whole point. Nothing is written. Each match is
+    /// one more reading for the model to vote on, and the floor is what pays
+    /// for that.
+    ///
+    /// English only, by the caller. espeak's `en-us` letter-to-sound over a
+    /// French transcript answers, and the answer is noise.
+    ///
+    /// - Parameter sounds: `Config.vocabularySounds` — every term and every
+    ///   rendering, with the IPA the file writes down for it. A rendering with
+    ///   no `phonemes:` is sounded out from its spelling, which is right
+    ///   whenever the spelling is a word: espeak reads `Preci` as /pɹɛsaɪ/ and
+    ///   that entry needs its sound written down or it reaches nothing.
+    static func phonemeParts(
+        in text: String,
+        sounds: [(term: String, form: String, phonemes: String?)],
+        voice: String, floor: Float, claimed: [Part]
+    ) -> [Part] {
+        guard !sounds.isEmpty, Phonemes.binary != nil else { return [] }
+        // Two words at least, whatever the vocabulary is spelled like. A sound
+        // has no spaces in it — `parrot flow` and `ParrotFlow` are both
+        // /pæɹətfloʊ/, and so are `cloud card` and `Cloudcard` — so a window
+        // has to be able to be wider than any single term is written.
+        let widest = max(2, sounds.map { $0.form.split(separator: " ").count }.max() ?? 1)
+
+        // Every span worth asking about, gathered before espeak is called
+        // once. Starting the process costs more than running it, so the
+        // dictation asks in one go or the stage is not worth having.
+        let words = Replacements.wordRanges(in: text)
+        var taken = claimed.map(\.range)
+        var windows: [(span: Range<String.Index>, text: String, width: Int)] = []
+        for start in words.indices {
+            for count in stride(from: widest, through: 1, by: -1)
+            where start + count <= words.count {
+                let span = words[start].lowerBound..<words[start + count - 1].upperBound
+                windows.append((span, String(text[span]), count))
+            }
+        }
+        // What the terms are already spelled as. A window that *is* the term,
+        // or is a rendering an exact rule has already fired on, is not a
+        // question.
+        let spelled = Set(sounds.flatMap { [$0.term.lowercased(), $0.form.lowercased()] })
+
+        var said = Phonemes.of(
+            windows.map(\.text) + sounds.filter { $0.phonemes == nil }.map(\.form),
+            voice: voice
+        )
+        for entry in sounds where entry.phonemes != nil {
+            said[entry.form] = entry.phonemes
+        }
+        // Widest first, so `parrot flow` claims its span before `flow` can.
+        // The overlap check below is what stops the narrower one afterwards.
+        var found: [Part] = []
+        for window in windows.sorted(by: { $0.width > $1.width || ($0.width == $1.width && $0.span.lowerBound < $1.span.lowerBound) }) {
+            guard !spelled.contains(window.text.lowercased()),
+                  let heard = said[window.text], !heard.isEmpty else { continue }
+            if taken.contains(where: {
+                $0.lowerBound < window.span.upperBound && window.span.lowerBound < $0.upperBound
+            }) { continue }
+
+            // Every form, whatever its width. `fuzzyParts` compares a window
+            // only with renderings of the same word count, because it compares
+            // spellings and a space is a letter's worth of difference. Here it
+            // is not: the space is where the decoder guessed a word boundary,
+            // and guessing it wrong is the mistake being caught.
+            var best: (score: Float, term: String)?
+            for entry in sounds {
+                guard let form = said[entry.form], !form.isEmpty else { continue }
+                // The length ratio caps the score on its own, so a pair that
+                // cannot reach the floor even aligned perfectly is skipped
+                // before the distance is computed.
+                let ratio = Float(min(heard.count, form.count)) / Float(max(heard.count, form.count))
+                guard sqrt(ratio) >= floor else { continue }
+                let score = Phonemes.similarity(heard, form)
+                guard score >= floor, score > (best?.score ?? 0) else { continue }
+                best = (score, entry.term)
+            }
+            guard let best else { continue }
+            found.append(Part(
+                range: window.span, decoded: window.text,
+                other: Vocabulary.inflected(best.term, like: window.text),
+                term: best.term, standing: .sound
+            ))
+            taken.append(window.span)
+            if ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
+                Log.write(String(format: "  sound \"%@\" /%@/ -> %@ %.2f",
+                                 window.text, heard, best.term, best.score))
+            }
+        }
+        return found.sorted { $0.range.lowerBound < $1.range.lowerBound }
     }
 
     /// Whether two strings are `cap` edits apart or fewer, case ignored.

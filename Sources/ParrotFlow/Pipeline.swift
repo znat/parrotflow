@@ -145,6 +145,19 @@ struct Pipeline: Equatable, Codable {
         /// matches the text against rule replacements after the exact pass,
         /// and never sees a vocabulary rendering at all.
         var nearMisses: Bool?
+        /// Written `by_sound:`. Whether words that *sound* like a term are put
+        /// to the judge as well as words spelled like one — see
+        /// `VocabularyJudge.phonemeParts`.
+        ///
+        /// Its own switch rather than part of `near_misses:`. The two reach
+        /// different words (`pressed` by sound, `Praise's` by spelling), they
+        /// have separate floors, and this one needs espeak-ng on the machine
+        /// while the other needs nothing. Turning one off to measure the other
+        /// is the first thing anybody will want.
+        ///
+        /// Optional for the reason `nearMisses` is: "not written" and "written
+        /// false" have to stay tellable apart.
+        var bySound: Bool?
         /// The model that keeps or reverts each match, for a `vocabulary`
         /// stage. Absent means the default; `false` means no review at all,
         /// and every match ships as the rules wrote it.
@@ -976,9 +989,10 @@ struct Pipeline: Equatable, Codable {
         // off a dictation with no name in it, so a term that arrives only by a
         // near miss has to raise this or that stage never runs.
         var nearMisses = 0
+        var bySound = 0
         func result(_ text: String, _ vars: [String: Scope.Value]) -> StageResult {
             let wrote: [String: Scope.Value] = [
-                "count": .int(exact.count + nearMisses),
+                "count": .int(exact.count + nearMisses + bySound),
                 "changes": .string(exact.changes),
                 "before": .string(handed),
                 "protected": .string(exact.protected),
@@ -1032,6 +1046,24 @@ struct Pipeline: Equatable, Codable {
             parts += reached
         }
 
+        // The words no spelling reaches. `geler` is 0.60 from `Gelar` by
+        // letters and identical to it by sound, and so are `Ghost E`,
+        // `cloth code` and `eye brands`. Off for a French dictation: espeak's
+        // English letter-to-sound answers for French words, and the answer is
+        // noise.
+        //
+        // Nothing is written here either. The floor is 0.85 and it was
+        // measured over 20891 dictations — see `phonemeParts` for what fires
+        // and what it costs.
+        if step.bySound ?? true, Pipeline.language(of: text, config: config) == "en" {
+            let heard = VocabularyJudge.phonemeParts(
+                in: text, sounds: config.vocabularySounds, voice: "en-us",
+                floor: config.vocabulary.soundBelow, claimed: parts
+            )
+            bySound = heard.count
+            parts += heard
+        }
+
         let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
         // Two numbers on every run, not only when the count is fatal.
         // `max_slots` is the cliff this stage falls off — one place over and
@@ -1045,6 +1077,7 @@ struct Pipeline: Equatable, Codable {
         // it outlives the dictation, so a diagnostic that is on for everybody
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary judge: \(slots.count) slot(s) from \(parts.count) proposal(s)"
+        if bySound > 0 { census += " (\(bySound) by sound)" }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
             census += " — " + slots.map {
                 "\"\(text[$0.range])\" (\($0.terms.joined(separator: "/")))"

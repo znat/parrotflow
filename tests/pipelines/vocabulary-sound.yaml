@@ -1,0 +1,25 @@
+# A term reached by how it sounds, not by how it is spelled.
+#
+# `Ghost E` is what this recogniser writes for `Ghostty`. No rule reaches it —
+# nobody wrote that rendering down — and no edit distance does either: it is
+# two words, and both are ordinary words a dictionary knows. It is the same
+# sound, /ɡoʊsti/, and that is the only thing left to match on.
+#
+# `by_sound` is absent here, because absent means on.
+#
+# Nothing is written by a match. It opens a place, and the model decides.
+# `praise` is in the case set beside this one for the other half: it sounds
+# like `Praisy` at 0.76, under the 0.85 floor, because it is a homophone and
+# no floor settles a homophone.
+#
+# **Needs espeak-ng.** Without it the stage does nothing and every case here
+# reads as a term that was not found — which is why these cases are run by
+# scripts/check-sound.sh, which says so, and not by check-pipeline.sh.
+#
+languages: [en]
+vocabulary:
+  terms:
+    Ghostty:
+    Praisy:
+pipeline:
+  - vocabulary
