@@ -1299,6 +1299,15 @@ enum VocabularyJudge {
             let lists = "spell \(spelled ? "knows it" : "unknown"), wordpiece "
                 + (piece.map { $0 ? "knows it" : "unknown" } ?? "unavailable") + stripped
             if Vocabulary.autoApplies(heard: change.was, term: change.now) {
+                // Two rules can say yes here and they are not the same rule. A
+                // span of several words is accepted because it glues to the
+                // term and the lists are never asked; anything else is
+                // accepted because neither list has seen it. Reporting the
+                // second for the first names a lookup nobody made.
+                if word.contains(" ") {
+                    step("glued", "\(bare.lowercased()) is \(asked.term.lowercased())", "apply")
+                    return done(true, "the same word, split in two")
+                }
                 step("lists", lists, "apply")
                 return done(true, "in neither word list")
             }
