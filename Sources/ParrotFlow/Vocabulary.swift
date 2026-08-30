@@ -224,6 +224,35 @@ actor Vocabulary {
         let applied: Bool
     }
 
+    /// One decision, for the trace. Built whether or not anyone is collecting.
+    ///
+    /// Not a `Proposal`. A proposal is a line on a judge's menu, and the two
+    /// decisions worth recording most — a name written in without asking, and
+    /// a name refused — never reach one.
+    struct Decision: Sendable {
+        /// What produced the outcome. `lexical`, `slot` and `audio` settle a
+        /// proposal on their own. `rescorer`, `span` and `spotter` only offer
+        /// one. A `rescorer` entry still carries `slot` when the gate looked
+        /// and did not settle it.
+        let by: String
+        /// `applied`, `offered` or `declined`.
+        let outcome: String
+        let heard: String
+        let term: String
+        /// Where `heard` starts in the text this pass was handed.
+        let at: Int
+        let heardScore: Float?
+        let termScore: Float?
+        let bonus: Float?
+        /// The drop threshold, on the drop it decided.
+        let margin: Float?
+        /// The wider span's similarity to its term.
+        let similarity: Float?
+        /// What the spotter scored the term at in the audio.
+        let spotter: Float?
+        let slot: SlotGate.Reading?
+    }
+
     /// What one pass did, for the pipeline to read.
     ///
     /// `changes` stays `heard -> written @ a/b`, joined by `; `, because that
@@ -239,9 +268,11 @@ actor Vocabulary {
         let count: Int
         let changes: String
         let proposals: [Proposal]
+        /// Every decision this pass took, for the trace. See `Decision`.
+        let decisions: [Decision]
 
         static func unchanged(_ text: String) -> Outcome {
-            Outcome(text: text, count: 0, changes: "", proposals: [])
+            Outcome(text: text, count: 0, changes: "", proposals: [], decisions: [])
         }
     }
 
@@ -655,11 +686,15 @@ actor Vocabulary {
     /// The possessive is asked here and not inside `SlotGate`. It is a rule
     /// about the pair, it already routes to the judge in `autoApplies`, and the
     /// slot would otherwise be free to overrule it.
+    ///
+    /// Nil is "not asked", which the caller reads as `judge`. The whole reading
+    /// comes back rather than the route alone, so the trace can say what the
+    /// slot wanted.
     private func slotRoute(
         heard: String, term: String, in text: String, at range: Range<String.Index>
-    ) async -> SlotGate.Route {
+    ) async -> SlotGate.Reading? {
         guard !Self.dropsPossessive(heard: heard, term: term),
-              let gate = await slotGate() else { return .judge }
+              let gate = await slotGate() else { return nil }
         do {
             let reading = try gate.read(in: text, at: range)
             Log.write(
@@ -668,13 +703,13 @@ actor Vocabulary {
                     + (reading.rank.map { ", rank \($0) of \(reading.windows)" } ?? "")
                     + " — \(reading.route.rawValue)"
             )
-            return reading.route
+            return reading
         } catch {
             Log.write(
                 "vocabulary: the slot gate could not read \"\(heard)\""
                     + " (\(error.localizedDescription)); the judge decides"
             )
-            return .judge
+            return nil
         }
     }
 
@@ -759,7 +794,10 @@ actor Vocabulary {
             // silently dropped every replacement before this was written that
             // way.
             var decided: [
-                (raw: Float, bonus: Float, applied: Bool, dropped: Bool, declined: Bool)
+                (
+                    raw: Float, bonus: Float, applied: Bool, dropped: Bool, declined: Bool,
+                    slot: SlotGate.Reading?
+                )
             ] = []
             let margin = Self.proposalMargin(config)
             let english = Pipeline.language(of: text, config: config) == "en"
@@ -783,9 +821,10 @@ actor Vocabulary {
                 // applied nor offered.
                 let dropped = !lexical && change.originalScore - raw > margin
                 // The model tier, on what the free tier did not settle.
-                let route = lexical || dropped || !english
-                    ? SlotGate.Route.judge
+                let slot = lexical || dropped || !english
+                    ? nil
                     : await slotRoute(heard: change.originalWord, term: term, in: text, at: range)
+                let route = slot?.route ?? .judge
                 let applies = lexical || route == .apply
                 rebuilt += text[cursor..<range.lowerBound]
                 let was = String(text[range])
@@ -801,7 +840,7 @@ actor Vocabulary {
                 }
                 cursor = range.upperBound
                 // Kept in the list so the index still lines up with `found`.
-                decided.append((raw, bonus, applies, dropped, route == .decline))
+                decided.append((raw, bonus, applies, dropped, route == .decline, slot))
             }
             rebuilt += text[cursor...]
             let written = rebuilt
@@ -829,12 +868,31 @@ actor Vocabulary {
             // and the log is where that gets settled.
             var made: [String] = []
             var proposals: [Proposal] = []
+            var decisions: [Decision] = []
+            /// Called beside each log line, so the two always say the same.
+            func wrote(
+                _ by: String, _ outcome: String, heard: String, term: String,
+                at range: Range<String.Index>, heardScore: Float? = nil,
+                termScore: Float? = nil, bonus: Float? = nil, margin: Float? = nil,
+                similarity: Float? = nil, spotter: Float? = nil, slot: SlotGate.Reading? = nil
+            ) {
+                decisions.append(Decision(
+                    by: by, outcome: outcome, heard: heard, term: term,
+                    at: text.distance(from: text.startIndex, to: range.lowerBound),
+                    heardScore: heardScore, termScore: termScore, bonus: bonus,
+                    margin: margin, similarity: similarity, spotter: spotter, slot: slot
+                ))
+            }
             for ((range, change), verdict) in zip(found, decided) {
                 if verdict.dropped {
                     Log.write(String(
                         format: "vocabulary: \"%@\" -> \"%@\" dropped, audio prefers what was written by %.2f",
                         change.originalWord, change.replacementWord ?? "",
                         change.originalScore - verdict.raw))
+                    wrote("audio", "declined", heard: change.originalWord,
+                          term: change.replacementWord ?? "", at: range,
+                          heardScore: change.originalScore, termScore: verdict.raw,
+                          bonus: verdict.bonus, margin: margin)
                     continue
                 }
                 if verdict.declined {
@@ -843,6 +901,10 @@ actor Vocabulary {
                             + "\"\(change.replacementWord ?? "")\" declined,"
                             + " no name fits that slot"
                     )
+                    wrote("slot", "declined", heard: change.originalWord,
+                          term: change.replacementWord ?? "", at: range,
+                          heardScore: change.originalScore, termScore: verdict.raw,
+                          bonus: verdict.bonus, slot: verdict.slot)
                     continue
                 }
                 let term = change.replacementWord ?? ""
@@ -851,6 +913,13 @@ actor Vocabulary {
                     change.originalWord, term, verdict.applied ? "applied" : "proposed",
                     verdict.raw, change.originalScore, verdict.bonus, change.reason
                 ))
+                wrote(
+                    verdict.applied ? (verdict.slot == nil ? "lexical" : "slot") : "rescorer",
+                    verdict.applied ? "applied" : "offered",
+                    heard: change.originalWord, term: term, at: range,
+                    heardScore: change.originalScore, termScore: verdict.raw,
+                    bonus: verdict.bonus, slot: verdict.slot
+                )
                 made.append(String(
                     format: "%@ -> %@ @ %.2f/%.2f",
                     change.originalWord, term, change.originalScore, verdict.raw
@@ -886,10 +955,13 @@ actor Vocabulary {
             ).union(heardSpans.map { $0.range })
             for span in wider where untouched.contains(where: { $0.overlaps(span.range) }) {
                 guard let placed = moved(span.range, holding: span.heard) else { continue }
+                let similarity = Self.gluedSimilarity(span.heard, span.term)
                 Log.write(
                     "vocabulary: \"\(span.heard)\" -> \"\(span.term)\" also offered"
-                        + String(format: " (span %.2f)", Self.gluedSimilarity(span.heard, span.term))
+                        + String(format: " (span %.2f)", similarity)
                 )
+                wrote("span", "offered", heard: span.heard, term: span.term,
+                      at: span.range, similarity: similarity)
                 proposals.append(Proposal(
                     heard: span.heard,
                     term: span.term + Self.trailingMarks(of: span.heard), canonicalTerm: span.canonical,
@@ -910,6 +982,8 @@ actor Vocabulary {
                     format: "vocabulary: \"%@\" -> \"%@\" heard in the audio (spotter %.2f)",
                     phrase, span.term, span.score
                 ))
+                wrote("spotter", "offered", heard: phrase, term: span.term,
+                      at: span.range, spotter: span.score)
                 proposals.append(Proposal(
                     heard: phrase, term: span.term, canonicalTerm: span.term, range: placed,
                     heardScore: nil, termScore: span.score, bonus: nil, applied: false
@@ -922,7 +996,8 @@ actor Vocabulary {
                 // judge, and `when: vocabulary.count > 0` is how it does that.
                 count: proposals.count,
                 changes: made.joined(separator: "; "),
-                proposals: proposals
+                proposals: proposals,
+                decisions: decisions
             )
         } catch {
             Log.write("vocabulary: \(error.localizedDescription); left as decoded")

@@ -52,6 +52,10 @@ actor SentenceJoin {
     /// One boundary, scored. `change` reads `parrot. At -> parrot at`.
     struct Reading: Sendable {
         let change: String
+        /// Where the period is in the text this pass was handed. Two boundaries
+        /// can read the same, so the trace needs the position to tell them
+        /// apart.
+        let at: Int
         let score: Double
         let tier: Tier
     }
@@ -216,7 +220,11 @@ actor SentenceJoin {
             let tier = Tier(of: score, by: settings)
             let change = "\(before). \(word) -> \(before) \(now)"
             Log.write(String(format: "sentences: %@ %.2f %@", change, score, tier.rawValue))
-            readings.append(Reading(change: change, score: score, tier: tier))
+            readings.append(Reading(
+                change: change,
+                at: text.distance(from: text.startIndex, to: boundary.period),
+                score: score, tier: tier
+            ))
 
             if tier == .join {
                 rebuilt += text[cursor..<boundary.period]

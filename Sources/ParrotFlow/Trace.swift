@@ -26,11 +26,13 @@ enum Trace {
 
     /// The shape of a line. Records written before this existed have no `v` at
     /// all, which reads as 1 — two of them, from the afternoon this was built.
+    /// 3 added `vocabulary` and `sentences`: the transformations that run before
+    /// the pipeline and so were never a `stage`.
     ///
     /// One field, and the only moment it is free is before there is anything to
     /// migrate. A reader three months from now needs to know which shape it is
     /// holding without inferring it from which keys happen to be present.
-    static let version = 2
+    static let version = 3
 
     /// The dictation being traced right now, if any. Nil on every path that
     /// did not ask for a trace — nothing here runs unless a collector is bound.
@@ -91,6 +93,8 @@ enum Trace {
         private var stages: [Stage] = []
         private var final: String?
         private var lang: String?
+        private var vocabulary: [Substitution] = []
+        private var sentences: Sentences?
 
         init(wav: String, source: Source) {
             self.wav = wav
@@ -151,6 +155,53 @@ enum Trace {
             )
         }
 
+        /// What the vocabulary pass did, decision by decision.
+        ///
+        /// Not a `Stage`. The pass runs before the pipeline, on the text the
+        /// decoder wrote, so `recordStage` never sees it. `at` indexes
+        /// `asr.text`, which is in this same record.
+        @available(macOS 14, *)
+        func recordVocabulary(_ decisions: [Vocabulary.Decision]) {
+            guard !decisions.isEmpty else { return }
+            let written = decisions.map {
+                Substitution(
+                    by: $0.by, outcome: $0.outcome, heard: $0.heard, term: $0.term, at: $0.at,
+                    heardScore: $0.heardScore, termScore: $0.termScore, bonus: $0.bonus,
+                    margin: $0.margin, similarity: $0.similarity, spotter: $0.spotter,
+                    slot: $0.slot.map {
+                        Slot(tag: $0.tag, rank: $0.rank, windows: $0.windows)
+                    }
+                )
+            }
+            lock.lock(); defer { lock.unlock() }
+            vocabulary += written
+        }
+
+        /// Every `word. Capital` boundary the sentence pass scored, and the
+        /// two thresholds that sorted them.
+        ///
+        /// The thresholds travel with the scores because they move. A join
+        /// that reads wrong next month has to be readable against the numbers
+        /// that allowed it, not against the ones in `config.yaml` today.
+        ///
+        /// `at` indexes the text the pass was handed: `asr.text` with the
+        /// vocabulary pass's applied substitutions in it.
+        @available(macOS 14, *)
+        func recordSentences(
+            _ readings: [SentenceJoin.Reading], joinBelow: Double, offerBelow: Double
+        ) {
+            guard !readings.isEmpty else { return }
+            let written = Sentences(
+                joinBelow: joinBelow, offerBelow: offerBelow,
+                boundaries: readings.map {
+                    Boundary(change: $0.change, at: $0.at, score: $0.score,
+                             outcome: $0.tier.rawValue)
+                }
+            )
+            lock.lock(); defer { lock.unlock() }
+            sentences = written
+        }
+
         /// What was actually delivered. Left nil by a dictation that threw on
         /// the way there, which is worth being able to see.
         func recordFinal(_ text: String) {
@@ -170,7 +221,9 @@ enum Trace {
         func snapshot() -> Snapshot {
             lock.lock(); defer { lock.unlock() }
             return Snapshot(wav: wav, source: source.rawValue, lang: lang,
-                            asr: asr, vad: vad, stages: stages)
+                            asr: asr, vad: vad, stages: stages,
+                            vocabulary: vocabulary.isEmpty ? nil : vocabulary,
+                            sentences: sentences)
         }
 
         fileprivate func record(at: String, app: App?) -> Record {
@@ -178,7 +231,9 @@ enum Trace {
             return Record(
                 v: Trace.version, kind: Kind.dictation.rawValue,
                 at: at, wav: wav, source: source.rawValue, app: app, lang: lang,
-                asr: asr, vad: vad, stages: stages, final: final
+                asr: asr, vad: vad, stages: stages,
+                vocabulary: vocabulary.isEmpty ? nil : vocabulary,
+                sentences: sentences, final: final
             )
         }
     }
@@ -358,6 +413,8 @@ enum Trace {
         fileprivate let vad: VAD?
         /// What ran before the stage reading this. Not the whole pipeline.
         fileprivate let stages: [Stage]
+        fileprivate let vocabulary: [Substitution]?
+        fileprivate let sentences: Sentences?
 
         /// What the decoder wrote, for a caller checking whether the text it
         /// holds is still that. Nil outside a dictation.
@@ -375,6 +432,8 @@ enum Trace {
         let asr: ASR?
         let vad: VAD?
         let stages: [Stage]
+        let vocabulary: [Substitution]?
+        let sentences: Sentences?
         let final: String?
     }
 
@@ -397,6 +456,61 @@ enum Trace {
         let heard: String
         let corrected: String
         let via: String
+    }
+
+    /// One decision the vocabulary pass took — see `Vocabulary.Decision`.
+    ///
+    /// Every score optional, and absent means absent. A spotter hit has no
+    /// score for the word the decoder wrote, because nothing measured one, and
+    /// zero is a legal CTC score rather than a sentinel.
+    fileprivate struct Substitution: Encodable {
+        let by: String
+        let outcome: String
+        let heard: String
+        let term: String
+        let at: Int
+        let heardScore: Float?
+        let termScore: Float?
+        let bonus: Float?
+        let margin: Float?
+        let similarity: Float?
+        let spotter: Float?
+        let slot: Slot?
+
+        enum CodingKeys: String, CodingKey {
+            case by, outcome, heard, term, at, bonus, margin, similarity, spotter, slot
+            case heardScore = "heard_score"
+            case termScore = "term_score"
+        }
+    }
+
+    /// What the slot gate read. `rank` is absent when the part of speech
+    /// refused and the rank was never computed.
+    fileprivate struct Slot: Encodable {
+        let tag: String
+        let rank: Int?
+        let windows: Int
+    }
+
+    /// The sentence pass: its two thresholds, and every boundary it scored.
+    fileprivate struct Sentences: Encodable {
+        let joinBelow: Double
+        let offerBelow: Double
+        let boundaries: [Boundary]
+
+        enum CodingKeys: String, CodingKey {
+            case boundaries
+            case joinBelow = "join_below"
+            case offerBelow = "offer_below"
+        }
+    }
+
+    /// One `word. Capital` boundary. `change` reads `parrot. At -> parrot at`.
+    fileprivate struct Boundary: Encodable {
+        let change: String
+        let at: Int
+        let score: Double
+        let outcome: String
     }
 
     fileprivate struct ASR: Encodable {
