@@ -12,8 +12,11 @@
 # word, and is also one edit from `Praises` — the gate is the only thing
 # between this option and writing a name over it 111 times in one archive.
 #
-# `fuzzy: false` puts matching back to exact and whole-word, which is what it
-# was before this option existed. Every sentence that opens a place in
+# `near_misses: false` puts matching back to exact and whole-word, which is
+# what it was before this option existed. `by_sound: false` turns off the third
+# way in, which is neither spelling nor rule: `Praise's` and `Praisy` sound
+# alike, so leaving it on would open here the places this fixture exists to
+# prove closed. Every sentence that opens a place in
 # tests/pipelines/vocabulary-fuzzy.yaml opens none here.
 #
 languages: [en]
@@ -26,3 +29,4 @@ vocabulary:
 pipeline:
   - stage: vocabulary
     near_misses: false
+    by_sound: false

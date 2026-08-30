@@ -200,6 +200,31 @@ struct Config: Decodable, Equatable {
         /// untuned.
         var decideAbove: Float = 3.0
 
+        /// How close a run of words must *sound* to a term before it is worth
+        /// a line on the judge's menu.
+        ///
+        /// The sound twin of `offerBelow`, on the same metric, and a much
+        /// tighter number because it buys much more. Measured over 20891 real
+        /// dictations — see `VocabularyJudge.phonemeParts` for the table.
+        /// 0.85 fires 147 times in that whole archive, 33 of them a name this
+        /// speaker lost; 0.80 fires 826 times and most of the extra is
+        /// `and me` reaching `Andrey`.
+        var soundBelow: Float = 0.85
+
+        /// Whether the gate in front of the judge may write a name because its
+        /// span is the worst-reading spot in its sentence.
+        ///
+        /// The other three rules of that gate ask absolute questions — is this
+        /// a word anybody has written, can a name stand in this spot. This one
+        /// is relative to the rest of the sentence, and it answers "unexpected"
+        /// where the question is "wrong". A rare proper noun is both: on
+        /// "visiting the Versailles Castle" it ranks `Versailles` first of
+        /// fifteen and would write `Vercel Castle` without asking.
+        ///
+        /// On because it was measured at no errors over 50 cases, switchable
+        /// because that sentence is not one of them.
+        var gateRank: Bool = true
+
         /// One way this speaker's mouth turns a term into something else, and
         /// what is known about that.
         ///
@@ -229,6 +254,20 @@ struct Config: Decodable, Equatable {
 
             /// The spelling the decoder produced where the term was said.
             var heard: String
+            /// How that rendering sounds, as IPA. Optional: when it is absent
+            /// the sound is worked out from `heard` at load, and the entry
+            /// behaves the same.
+            ///
+            /// Written down, a rendering stops being one spelling and becomes
+            /// a class of sounds. `Silverstein` as a string reaches only
+            /// `Silverstein`; as /sɪlvɚstaɪn/ it also reaches `Silberstein`,
+            /// which the decoder writes and nobody wrote down. That is the
+            /// only reason this field exists — see
+            /// `VocabularyJudge.phonemeParts`.
+            ///
+            /// Write it when the spelling misleads: espeak reads `Preci` as
+            /// /pɹɛsaɪ/, "pre-sigh", and no floor rescues that.
+            var phonemes: String?
             /// How many times it has been seen. Zero means never counted,
             /// which is every entry written before this key existed.
             var seen: Int = 0
@@ -242,22 +281,25 @@ struct Config: Decodable, Equatable {
             var unreadableFrom: String?
 
             init(
-                heard: String, seen: Int = 0, from: Source = .legacy,
+                heard: String, phonemes: String? = nil, seen: Int = 0,
+                from: Source = .legacy,
                 note: String? = nil, unreadableFrom: String? = nil
             ) {
                 self.heard = heard
+                self.phonemes = phonemes
                 self.seen = seen
                 self.from = from
                 self.note = note
                 self.unreadableFrom = unreadableFrom
             }
 
-            enum CodingKeys: String, CodingKey { case heard, seen, from, note }
+            enum CodingKeys: String, CodingKey { case heard, phonemes, seen, from, note }
 
             /// Two shapes. The mapping is what the app writes; the bare string
             /// is what a person types when they have nothing else to say:
             ///
             ///     - heard: Versailles
+            ///       phonemes: vɚsaɪ
             ///       seen: 3
             ///       from: mined
             ///     - Versal
@@ -278,6 +320,7 @@ struct Config: Decodable, Equatable {
                 let read = source.flatMap(Source.init(rawValue:))
                 self.init(
                     heard: word,
+                    phonemes: try c.decodeIfPresent(String.self, forKey: .phonemes),
                     seen: (try? c.decodeIfPresent(Int.self, forKey: .seen)).flatMap { $0 } ?? 0,
                     from: read ?? .legacy,
                     note: try c.decodeIfPresent(String.self, forKey: .note),
@@ -464,6 +507,8 @@ struct Config: Decodable, Equatable {
             case minSimilarity = "min_similarity"
             case offerBelow = "offer_below"
             case decideAbove = "decide_above"
+            case soundBelow = "sound_below"
+            case gateRank = "gate_rank"
         }
 
         init() {}
@@ -501,6 +546,21 @@ struct Config: Decodable, Equatable {
                         + " it is a similarity, where 1.0 is the term spelled exactly."
                         + " Running at \(offerBelow)")
                 }
+            }
+            // Same range as `offer_below`, same reason, and refused the same
+            // way: a sound floor outside 0 to 1 silences the whole sound path
+            // on every dictation and looks like the feature not working.
+            if let sounded = try c.decodeIfPresent(Float.self, forKey: .soundBelow) {
+                if Self.similarities.contains(sounded) {
+                    soundBelow = sounded
+                } else {
+                    refused.append("`sound_below: \(sounded)` is outside 0 to 1 —"
+                        + " it is a similarity, where 1.0 is the term said exactly."
+                        + " Running at \(soundBelow)")
+                }
+            }
+            if let on = try c.decodeIfPresent(Bool.self, forKey: .gateRank) {
+                gateRank = on
             }
             // Nats, and the audio arguing against a reading by a negative
             // amount is the audio agreeing with it. At or below 0 every
@@ -643,6 +703,30 @@ struct Config: Decodable, Equatable {
             .filter { searched.contains($0.key) }
             .flatMap { name, entry in entry.pronunciations.map { (term: name, heard: $0.heard) } }
             .sorted { ($0.term, $0.heard) < ($1.term, $1.heard) }
+    }
+
+    /// Every spelling that stands for a term by ear, with its sound where the
+    /// file writes one down.
+    ///
+    /// The term itself first, then each of its renderings. A rendering is a
+    /// sound the speaker's mouth actually produces, so it reaches words the
+    /// term's own spelling cannot: `Silberstein` is 0.90 from the rendering
+    /// `Silverstein` and 0.56 from `Zylbersztejn`.
+    ///
+    /// **`floor: off` is honoured and every other filter is not.**
+    /// `vocabularyTerms` also drops short terms and terms with a space in
+    /// them, because the spotter needs CTC tokens for each and reports a term
+    /// nothing downstream can price otherwise. Nothing here goes near the
+    /// spotter, and the terms those rules drop are exactly the ones this
+    /// catches: `Claude Code` from "cloth code", `red rock` from "bedrock".
+    var vocabularySounds: [(term: String, form: String, phonemes: String?)] {
+        vocabulary.terms
+            .filter { !$0.value.never }
+            .flatMap { name, entry -> [(term: String, form: String, phonemes: String?)] in
+                [(name, name, nil)]
+                    + entry.pronunciations.map { (name, $0.heard, $0.phonemes) }
+            }
+            .sorted { ($0.term, $0.form) < ($1.term, $1.form) }
     }
 
     /// One entry of `transforms:` as it is written, before it is known to be
@@ -1704,6 +1788,7 @@ struct Config: Decodable, Equatable {
         ///     - stage: vocabulary
         ///       when: vocabulary.count > 0
         ///       near_misses: false
+        ///       by_sound: false
         ///       review: gpt
         ///       max_slots: 4
         struct PipelineEntry: Decodable {
@@ -1712,6 +1797,8 @@ struct Config: Decodable, Equatable {
             var prompt: String?
             var caps: VocabularyJudge.Caps?
             var nearMisses: Bool?
+            var bySound: Bool?
+            var gate: Bool?
             var review: String?
             var reviewEnabled: Bool?
             var when: String?
@@ -1723,6 +1810,8 @@ struct Config: Decodable, Equatable {
             private enum CodingKeys: String, CodingKey {
                 case stage, transform, prompt, vocabulary, when, unless, app
                 case nearMisses = "near_misses"
+                case bySound = "by_sound"
+                case gate
                 case review
                 case maxSlots = "max_slots"
                 case maxReadings = "max_readings"
@@ -1775,6 +1864,8 @@ struct Config: Decodable, Equatable {
                     caps.readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings)
                     self.caps = caps
                     nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
+                    bySound = try c.decodeIfPresent(Bool.self, forKey: .bySound)
+                    gate = try c.decodeIfPresent(Bool.self, forKey: .gate)
                     // Two spellings, like `catch_all:`: the key says whether
                     // the review runs and what it runs on. `false` is the only
                     // one that turns it off.
@@ -1936,7 +2027,8 @@ struct Config: Decodable, Equatable {
                         return Pipeline.Step(
                             stage: stage, transform: entry.transform,
                             prompt: entry.prompt, caps: entry.caps,
-                            nearMisses: entry.nearMisses, review: entry.review,
+                            nearMisses: entry.nearMisses, bySound: entry.bySound,
+                            gate: entry.gate, review: entry.review,
                             reviewEnabled: entry.reviewEnabled,
                             when: entry.when, unless: entry.unless, app: entry.app
                         )

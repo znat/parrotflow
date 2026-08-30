@@ -42,9 +42,14 @@ enum PipelineCommand {
         /// nothing without them, and a guard that silently stops guarding is
         /// the failure a fixture exists to catch.
         var lists: [String: [String]] = [:]
+        /// Its own `models:`. Without one `config.llmEnabled` is false and
+        /// every stage that asks a model declines — which is right for a
+        /// fixture asserting on what a stage *found*, and is why the verdicts
+        /// of the vocabulary judge were untestable from here at all.
+        var models: [String: ModelSpec] = [:]
 
         enum CodingKeys: String, CodingKey {
-            case languages, replacements, pipeline, transforms, vocabulary, lists
+            case languages, replacements, pipeline, transforms, vocabulary, lists, models
         }
 
         init(from decoder: Decoder) throws {
@@ -66,6 +71,9 @@ enum PipelineCommand {
                 lists = v
             }
             vocabulary = try c.decodeIfPresent(Config.Vocabulary.self, forKey: .vocabulary)
+            if let v = try c.decodeIfPresent([String: ModelSpec].self, forKey: .models) {
+                models = v
+            }
         }
     }
 
@@ -117,6 +125,7 @@ enum PipelineCommand {
             return Pipeline.Step(
                 stage: stage, transform: entry.transform, prompt: entry.prompt,
                 caps: entry.caps, nearMisses: entry.nearMisses,
+                bySound: entry.bySound, gate: entry.gate,
                 review: entry.review, reviewEnabled: entry.reviewEnabled,
                 when: entry.when,
                 unless: entry.unless, app: entry.app
@@ -135,6 +144,7 @@ enum PipelineCommand {
         config.transforms = fixture.transforms
         config.lists = fixture.lists
         if let vocabulary = fixture.vocabulary { config.vocabulary = vocabulary }
+        config.models = fixture.models
 
         // The fixture's own table is checked too, not just its stage list — a
         // template naming a group the pattern never captures is refused here

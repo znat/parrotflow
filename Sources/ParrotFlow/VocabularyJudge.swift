@@ -241,14 +241,18 @@ enum VocabularyJudge {
         /// acoustic sources because a spelling one edit from a rendering
         /// somebody wrote down is narrower evidence than a sound.
         case fuzzy = 1
+        /// A rendering the words sound like. Beside `fuzzy` because it comes
+        /// from the same place — a rendering somebody wrote down — and below
+        /// it because a spelling one edit away is the narrower claim.
+        case sound = 2
         /// The rescorer proposed it and both spellings were scored.
-        case scored = 2
+        case scored = 3
         /// A wider span built around one of the above. Nothing scored it.
-        case wide = 3
+        case wide = 4
         /// The spotter heard the term over these frames. Nothing scored the
         /// word the decoder wrote there, so there is no comparison — this is
         /// the source that fires on "went to the" and "deployed on".
-        case spotted = 4
+        case spotted = 5
 
         static func < (a: Standing, b: Standing) -> Bool { a.rawValue < b.rawValue }
     }
@@ -839,6 +843,126 @@ enum VocabularyJudge {
         return found
     }
 
+    /// Windows of the transcript that *sound* like a term, whatever they are
+    /// spelled like.
+    ///
+    /// The one thing letters cannot do. `geler` is 0.60 from `Gelar` by
+    /// spelling and identical to it by sound; so are `Ghost E`/`Ghostty`,
+    /// `Jemma`/`Gemma`, `eye brands`/`Ibrance`, `Prazi`/`Praisy`. Every one of
+    /// those is a name this speaker lost, and no edit distance reaches them.
+    ///
+    /// **The floor is 0.85 and it was measured, not chosen.** Over 20891 real
+    /// dictations, scoring every 1- and 2-word window against every term and
+    /// every rendering:
+    ///
+    ///     floor   fires   per clip   distinct windows
+    ///     0.70    11659     0.56
+    ///     0.75     8262     0.40
+    ///     0.80      826     0.04
+    ///     0.85      147     0.007            41
+    ///
+    /// The cliff between 0.80 and 0.85 is two-word windows of ordinary words —
+    /// `and me` and `and see` reach `Andrey` at 0.80, 312 times between them.
+    /// Above it, 41 windows in the whole archive and 33 of them are a name
+    /// this speaker actually lost. Below it the list is 6011 copies of
+    /// `praise`, which sounds like `Praisy` because it is a homophone; that
+    /// one is not a floor's to settle and never was.
+    ///
+    /// **No dictionary gate, unlike `fuzzyParts`.** That gate refuses any
+    /// window a spell checker knows, which is right where a match may be
+    /// written in and wrong here: the words this fires on are `pressed`,
+    /// `phrases`, `geler`, `pretty` — ordinary words, every one, and the
+    /// ordinary ones are the whole point. Nothing is written. Each match is
+    /// one more reading for the model to vote on, and the floor is what pays
+    /// for that.
+    ///
+    /// English only, by the caller. espeak's `en-us` letter-to-sound over a
+    /// French transcript answers, and the answer is noise.
+    ///
+    /// - Parameter sounds: `Config.vocabularySounds` — every term and every
+    ///   rendering, with the IPA the file writes down for it. A rendering with
+    ///   no `phonemes:` is sounded out from its spelling, which is right
+    ///   whenever the spelling is a word: espeak reads `Preci` as /pɹɛsaɪ/ and
+    ///   that entry needs its sound written down or it reaches nothing.
+    static func phonemeParts(
+        in text: String,
+        sounds: [(term: String, form: String, phonemes: String?)],
+        voice: String, floor: Float, claimed: [Part]
+    ) -> [Part] {
+        guard !sounds.isEmpty, Phonemes.binary != nil else { return [] }
+        // Two words at least, whatever the vocabulary is spelled like. A sound
+        // has no spaces in it — `parrot flow` and `ParrotFlow` are both
+        // /pæɹətfloʊ/, and so are `cloud card` and `Cloudcard` — so a window
+        // has to be able to be wider than any single term is written.
+        let widest = max(2, sounds.map { $0.form.split(separator: " ").count }.max() ?? 1)
+
+        // Every span worth asking about, gathered before espeak is called
+        // once. Starting the process costs more than running it, so the
+        // dictation asks in one go or the stage is not worth having.
+        let words = Replacements.wordRanges(in: text)
+        var taken = claimed.map(\.range)
+        var windows: [(span: Range<String.Index>, text: String, width: Int)] = []
+        for start in words.indices {
+            for count in stride(from: widest, through: 1, by: -1)
+            where start + count <= words.count {
+                let span = words[start].lowerBound..<words[start + count - 1].upperBound
+                windows.append((span, String(text[span]), count))
+            }
+        }
+        // What the terms are already spelled as. A window that *is* the term,
+        // or is a rendering an exact rule has already fired on, is not a
+        // question.
+        let spelled = Set(sounds.flatMap { [$0.term.lowercased(), $0.form.lowercased()] })
+
+        var said = Phonemes.of(
+            windows.map(\.text) + sounds.filter { $0.phonemes == nil }.map(\.form),
+            voice: voice
+        )
+        for entry in sounds where entry.phonemes != nil {
+            said[entry.form] = entry.phonemes
+        }
+        // Widest first, so `parrot flow` claims its span before `flow` can.
+        // The overlap check below is what stops the narrower one afterwards.
+        var found: [Part] = []
+        for window in windows.sorted(by: { $0.width > $1.width || ($0.width == $1.width && $0.span.lowerBound < $1.span.lowerBound) }) {
+            guard !spelled.contains(window.text.lowercased()),
+                  let heard = said[window.text], !heard.isEmpty else { continue }
+            if taken.contains(where: {
+                $0.lowerBound < window.span.upperBound && window.span.lowerBound < $0.upperBound
+            }) { continue }
+
+            // Every form, whatever its width. `fuzzyParts` compares a window
+            // only with renderings of the same word count, because it compares
+            // spellings and a space is a letter's worth of difference. Here it
+            // is not: the space is where the decoder guessed a word boundary,
+            // and guessing it wrong is the mistake being caught.
+            var best: (score: Float, term: String)?
+            for entry in sounds {
+                guard let form = said[entry.form], !form.isEmpty else { continue }
+                // The length ratio caps the score on its own, so a pair that
+                // cannot reach the floor even aligned perfectly is skipped
+                // before the distance is computed.
+                let ratio = Float(min(heard.count, form.count)) / Float(max(heard.count, form.count))
+                guard sqrt(ratio) >= floor else { continue }
+                let score = Phonemes.similarity(heard, form)
+                guard score >= floor, score > (best?.score ?? 0) else { continue }
+                best = (score, entry.term)
+            }
+            guard let best else { continue }
+            found.append(Part(
+                range: window.span, decoded: window.text,
+                other: Vocabulary.inflected(best.term, like: window.text),
+                term: best.term, standing: .sound
+            ))
+            taken.append(window.span)
+            if ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
+                Log.write(String(format: "  sound \"%@\" /%@/ -> %@ %.2f",
+                                 window.text, heard, best.term, best.score))
+            }
+        }
+        return found.sorted { $0.range.lowerBound < $1.range.lowerBound }
+    }
+
     /// Whether two strings are `cap` edits apart or fewer, case ignored.
     ///
     /// Plain Levenshtein, given up as soon as it passes the cap — which is
@@ -875,6 +999,9 @@ enum VocabularyJudge {
         let now: String
         /// The vocabulary terms this place is about, for `{terms}`.
         let terms: [String]
+        /// Where the reading came from, carried through from the slot. Read by
+        /// `settle`, which gates one source and not the others.
+        let standing: Standing
     }
 
     /// The substitutions to put to the model, left to right.
@@ -906,7 +1033,8 @@ enum VocabularyJudge {
                 continue
             }
             built.append(Change(range: slot.range, was: slot.options[0],
-                                now: slot.options[1], terms: slot.terms))
+                                now: slot.options[1], terms: slot.terms,
+                                standing: slot.standing))
         }
         return built
     }
@@ -981,6 +1109,31 @@ enum VocabularyJudge {
         return out + text[cursor...]
     }
 
+    /// Text with each span written the way it was settled, and every span
+    /// nothing settled left exactly as `text` already has it.
+    ///
+    /// Three outcomes where `applying` has two, and the third is the one that
+    /// matters when no model ran: `nil` writes neither reading, it copies what
+    /// is there. A rule substitution is already in the text, so copying keeps
+    /// it; a sound proposal is not, so copying leaves the decoder's word. Both
+    /// are "what arrived ships", which is this stage's contract on every path
+    /// where something went wrong.
+    ///
+    /// `reverting(taught:)` is this with `true` unreachable.
+    static func settling(_ decided: [Bool?], in text: String, changes: [Change]) -> String {
+        var out = "", cursor = text.startIndex
+        for (index, change) in changes.enumerated() {
+            out += text[cursor..<change.range.lowerBound]
+            switch index < decided.count ? decided[index] : nil {
+            case .some(true):  out += change.now
+            case .some(false): out += change.was
+            case .none:        out += String(text[change.range])
+            }
+            cursor = change.range.upperBound
+        }
+        return out + text[cursor...]
+    }
+
     /// Text with every taught span put back to what the decoder wrote, and
     /// every other span left exactly as `text` already has it.
     ///
@@ -997,6 +1150,102 @@ enum VocabularyJudge {
             cursor = change.range.upperBound
         }
         return out + text[cursor...]
+    }
+
+    /// How far a source may be settled without a model.
+    enum Gating {
+        /// The two word lists, and nothing else. They can only say "keep what
+        /// is written there", so a source gated this way is never refused and
+        /// never has a name written over it that was not already there.
+        case lists
+        /// The lists, then the two questions `SlotGate` asks. This one can
+        /// write a name the text did not have, and can refuse a reading
+        /// outright.
+        case full
+    }
+
+    /// The verdicts the gates settle, so no model is asked about them.
+    ///
+    /// One entry per change. `true` writes the term, `false` writes back what
+    /// the decoder wrote, `nil` is a question for the model. Exactly the shape
+    /// `applying` already takes, and exactly what `taught` already does for a
+    /// spelling lesson — this is the same idea with four more rules in it.
+    ///
+    /// The rules, in the order they are asked, which is the order they were
+    /// measured in:
+    ///
+    /// 1. **The two word lists.** A word neither `NSSpellChecker` nor the
+    ///    tokenizer's vocabulary has ever seen is not a word the speaker meant.
+    ///    Write the term. Free, no model, and the only rule here that is
+    ///    absolute rather than relative to the sentence.
+    /// 2. **Can a name stand in that spot?** Mask the span, take the ten words
+    ///    the model would put there, tag them. A spot that wants a verb, an
+    ///    adverb or a preposition cannot hold a name, so the reading is
+    ///    impossible and there is nothing to ask. Refuse it.
+    /// 3. **Is that the spot the sentence reads worst?** The span must be both
+    ///    the least expected word and inside the least expected pair. Write the
+    ///    term. Anything else goes to the model.
+    ///
+    /// Measured at 47/50 with 21 model calls instead of 50 and no error either
+    /// way — on `tests/judge-cases.yaml`, with no audio in it. See
+    /// `Vocabulary.autoApplies(heard:term:)` for why that matters.
+    ///
+    /// **What each source may be settled by is not the same.** A rule
+    /// substitution is already written into the text, so keeping one costs
+    /// nothing and refusing one leaves the speaker with a rewrite they were
+    /// never offered a way back from. Rules therefore get `.lists` — the two
+    /// word lists, and only in the direction that keeps what is already there.
+    /// The sound path writes nothing until somebody says so, so it gets
+    /// `.full`.
+    ///
+    /// This is what settles `Versal -> Vercel` without a model. `Versal` is in
+    /// neither list, so the rule that wrote it is right and there is nothing to
+    /// ask. `Versailles -> Vercel` fires the same rule in the same sentence and
+    /// is *not* settled: the spell checker knows the word, the lists say
+    /// nothing, and it goes to the judge — which is where it belongs, and where
+    /// the judge got it right. Under `.full` the rank would have ranked
+    /// `Versailles` first of fifteen and written `Vercel Castle`.
+    ///
+    /// Rule 3 is the weak one and it is on by `rank`. It asks whether a word is
+    /// *unexpected*, not whether it is *wrong*, and a rare proper noun is both
+    /// unexpected and correct: on "visiting the Versailles Castle" it ranks
+    /// `Versailles` first of fifteen and would write `Vercel Castle`. Rules 1
+    /// and 2 have no such confound.
+    static func settle(
+        _ changes: [Change], in text: String, by policy: [Standing: Gating],
+        gate: SlotGate?, rank: Bool
+    ) -> [Bool?] {
+        changes.map { change -> Bool? in
+            guard let allowed = policy[change.standing] else { return nil }
+            // The reading that is actually going in, not the canonical term.
+            // `Precy's -> Praisy's` keeps its possessive; asking about
+            // `Praisy` made `dropsPossessive` read it as one being thrown
+            // away, and the name was sent to a model that reverted it.
+            if Vocabulary.autoApplies(heard: change.was, term: change.now) {
+                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                    + " is in neither word list — written, not asked")
+                return true
+            }
+            guard allowed == .full, let gate else { return nil }
+            guard let reading = try? gate.read(in: text, at: change.range) else { return nil }
+            switch reading.route {
+            case .decline:
+                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                    + " — the spot wants \(reading.tag), which cannot hold a name; refused")
+                return false
+            case .apply:
+                // The rank is the half that can be wrong in silence, so it is
+                // the half with a switch.
+                guard rank else { return nil }
+                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                    + " is the worst-reading spot of its sentence"
+                    + (reading.rank.map { " (rank \($0) of \(reading.windows))" } ?? "")
+                    + " — written, not asked")
+                return true
+            case .judge:
+                return nil
+            }
+        }
     }
 
     /// One verdict per change, read off the reply. `true` is KEEP.

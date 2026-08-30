@@ -145,6 +145,25 @@ struct Pipeline: Equatable, Codable {
         /// matches the text against rule replacements after the exact pass,
         /// and never sees a vocabulary rendering at all.
         var nearMisses: Bool?
+        /// Written `by_sound:`. Whether words that *sound* like a term are put
+        /// to the judge as well as words spelled like one — see
+        /// `VocabularyJudge.phonemeParts`.
+        ///
+        /// Its own switch rather than part of `near_misses:`. The two reach
+        /// different words (`pressed` by sound, `Praise's` by spelling), they
+        /// have separate floors, and this one needs espeak-ng on the machine
+        /// while the other needs nothing. Turning one off to measure the other
+        /// is the first thing anybody will want.
+        ///
+        /// Optional for the reason `nearMisses` is: "not written" and "written
+        /// false" have to stay tellable apart.
+        var bySound: Bool?
+        /// Written `gate:`. Whether the free rules in front of the judge may
+        /// settle a proposal without asking — see `VocabularyJudge.settle`.
+        ///
+        /// `gate: false` sends every proposal to the model, which is what the
+        /// gate was measured against and the only way to measure it again.
+        var gate: Bool?
         /// The model that keeps or reverts each match, for a `vocabulary`
         /// stage. Absent means the default; `false` means no review at all,
         /// and every match ships as the rules wrote it.
@@ -976,9 +995,10 @@ struct Pipeline: Equatable, Codable {
         // off a dictation with no name in it, so a term that arrives only by a
         // near miss has to raise this or that stage never runs.
         var nearMisses = 0
+        var bySound = 0
         func result(_ text: String, _ vars: [String: Scope.Value]) -> StageResult {
             let wrote: [String: Scope.Value] = [
-                "count": .int(exact.count + nearMisses),
+                "count": .int(exact.count + nearMisses + bySound),
                 "changes": .string(exact.changes),
                 "before": .string(handed),
                 "protected": .string(exact.protected),
@@ -1032,6 +1052,24 @@ struct Pipeline: Equatable, Codable {
             parts += reached
         }
 
+        // The words no spelling reaches. `geler` is 0.60 from `Gelar` by
+        // letters and identical to it by sound, and so are `Ghost E`,
+        // `cloth code` and `eye brands`. Off for a French dictation: espeak's
+        // English letter-to-sound answers for French words, and the answer is
+        // noise.
+        //
+        // Nothing is written here either. The floor is 0.85 and it was
+        // measured over 20891 dictations — see `phonemeParts` for what fires
+        // and what it costs.
+        if step.bySound ?? true, Pipeline.language(of: text, config: config) == "en" {
+            let heard = VocabularyJudge.phonemeParts(
+                in: text, sounds: config.vocabularySounds, voice: "en-us",
+                floor: config.vocabulary.soundBelow, claimed: parts
+            )
+            bySound = heard.count
+            parts += heard
+        }
+
         let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
         // Two numbers on every run, not only when the count is fatal.
         // `max_slots` is the cliff this stage falls off — one place over and
@@ -1045,6 +1083,7 @@ struct Pipeline: Equatable, Codable {
         // it outlives the dictation, so a diagnostic that is on for everybody
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary judge: \(slots.count) slot(s) from \(parts.count) proposal(s)"
+        if bySound > 0 { census += " (\(bySound) by sound)" }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
             census += " — " + slots.map {
                 "\"\(text[$0.range])\" (\($0.terms.joined(separator: "/")))"
@@ -1059,13 +1098,74 @@ struct Pipeline: Equatable, Codable {
         let changes = VocabularyJudge.changes(in: text, from: slots)
         let taught = VocabularyJudge.teaching(in: text, changes: changes)
 
+        // The gate in front of the judge. A sound proposal gets all four
+        // rules; a rule substitution gets the two word lists only, and only in
+        // the direction that keeps what the rule already wrote — see `settle`.
+        //
+        // `taught` wins over the gate, because a spelling lesson is settled by
+        // a rule that is 4/4 where the models are 0/4.
+        let settled = (step.gate ?? true)
+            ? VocabularyJudge.settle(
+                changes, in: text, by: [.sound: .full, .rule: .lists],
+                gate: await Vocabulary.shared.slotGate(),
+                rank: config.vocabulary.gateRank)
+            : [Bool?](repeating: nil, count: changes.count)
+        var decided: [Bool?] = changes.indices.map { index in
+            index < taught.count && taught[index] ? false : settled[index]
+        }
+        let gated = decided.enumerated().filter { $0.element != nil && !taught[$0.offset] }.count
+        if gated > 0 {
+            Log.write("vocabulary gate: \(gated) of \(changes.count) settled without asking")
+        }
+        // Every place settled, so there is nothing to ask. This is the saving
+        // the gate exists for: not a shorter question, no question at all, and
+        // the ~0.9s the model costs.
+        if decided.allSatisfy({ $0 != nil }) {
+            let chosen = VocabularyJudge.settling(decided, in: text, changes: changes)
+            if chosen != text {
+                Log.write("pipeline: vocabulary rewrote the transcript")
+                Log.write("    before: \(text)")
+                Log.write("    after:  \(chosen)")
+            }
+            return result(chosen, [
+                "asked": .int(0), "slots": .int(slots.count),
+                "judged": .string(chosen),
+            ])
+        }
+
+        // Only the places still in question count against the cap. The cap
+        // bounds one model call — "a list nobody can read decides nothing" —
+        // and a place the gate settled is not on that list. Counting it there
+        // let a settled proposal push a rule substitution past the cap and out
+        // of review, which is not what either of them is for.
+        var asking = changes.indices.filter { decided[$0] == nil }
+
+        // Still over. A sound proposal has written nothing into the text, so
+        // dropping one costs the sentence nothing at all — where letting it
+        // stand would ship an exact substitution nobody read. Rule
+        // substitutions are never dropped here: they are already in the text,
+        // and the whole point of the cap's fallback is that what arrived
+        // ships.
+        if asking.count > caps.slots {
+            let spare = asking.filter { changes[$0].standing == .sound }
+            for index in spare where asking.count > caps.slots {
+                decided[index] = false
+                asking.removeAll { $0 == index }
+            }
+            if !spare.isEmpty {
+                Log.write("vocabulary judge: \(spare.count) sound proposal(s) dropped"
+                    + " to keep \(asking.count) place(s) under the cap of \(caps.slots)")
+            }
+        }
+
         // Too many places to judge at once. Keeping what arrived is the safe
         // answer, and it is logged rather than silent — except a spelling
-        // lesson, which was never going to a model anyway.
-        guard slots.count <= caps.slots else {
-            return declined("\(slots.count) slots > \(caps.slots); kept as they are",
+        // lesson, which was never going to a model anyway, and a place the
+        // gate settled, which keeps its answer.
+        guard asking.count <= caps.slots else {
+            return declined("\(asking.count) slots > \(caps.slots); kept as they are",
                             ["asked": .int(0), "slots": .int(slots.count)],
-                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
+                            fallback: VocabularyJudge.settling(decided, in: text, changes: changes))
         }
 
         guard !changes.isEmpty else {
@@ -1104,19 +1204,28 @@ struct Pipeline: Equatable, Codable {
         guard config.llmEnabled else {
             return declined("`models:` defines no model",
                             ["asked": .int(0), "slots": .int(slots.count)],
-                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
+                            fallback: VocabularyJudge.settling(
+                                decided, in: text, changes: changes))
         }
 
-        let built = VocabularyJudge.sentences(in: text, from: changes)
+        // Only the places still in question, renumbered from one.
+        //
+        // Not the whole list with the settled ones left in it. `verdicts` reads
+        // a change the reply never names as KEEP, so a longer list is a larger
+        // chance that a substitution ships because the model skipped a line —
+        // which is the failure the cap exists to prevent, arriving by the other
+        // door. The list the model reads is now the list the cap bounds.
+        let asked = asking.map { changes[$0] }
+        let built = VocabularyJudge.sentences(in: text, from: asked)
         // `.word` means "not a name" and is not shown — see `WordKind` — and a
         // term nobody has corrected yet has no `kind:` at all.
-        let terms = Array(Set(changes.flatMap(\.terms))).sorted().map { name -> String in
+        let terms = Array(Set(asked.flatMap(\.terms))).sorted().map { name -> String in
             guard let kind = config.vocabulary.terms[name]?.kind, kind != .word else { return name }
             return "\(name) (\(kind.rawValue))"
         }.joined(separator: ", ")
         let system = VocabularyJudge.prompt.replacingOccurrences(of: "{terms}", with: terms)
         let user = VocabularyJudge.question(
-            heard: built.heard, after: built.after, changes: changes
+            heard: built.heard, after: built.after, changes: asked
         )
         VocabularyJudge.dump(system: system, user: user)
 
@@ -1127,23 +1236,30 @@ struct Pipeline: Equatable, Codable {
                 // A line per change and whatever the model wraps them in.
                 // Anything longer is a model explaining itself, which this
                 // shape does not read.
-                maxTokens: 8 * changes.count + 8,
+                maxTokens: 8 * asked.count + 8,
                 config: judgeModel
             )
         } catch {
             return declined("\(error.localizedDescription); kept as they are",
-                            ["asked": .int(changes.count), "slots": .int(slots.count)],
-                            fallback: VocabularyJudge.reverting(taught, in: text, changes: changes))
+                            ["asked": .int(asked.count), "slots": .int(slots.count)],
+                            fallback: VocabularyJudge.settling(
+                                decided, in: text, changes: changes))
         }
 
         // A lesson mixed in with real questions is still shown to the model,
         // so the numbering `question` writes and `verdicts` reads stays one
         // list. Its answer about that change is then discarded: the rule
         // decides it, and the rule is 4/4 where the models are 0/4.
-        let verdicts = VocabularyJudge.verdicts(reply, count: changes.count)
-            .enumerated().map { index, keep in
-                index < taught.count && taught[index] ? false : keep
-            }
+        // Read against the asked list, then put back where each answer belongs.
+        let answers = VocabularyJudge.verdicts(reply, count: asked.count)
+        var replies: [Int: Bool] = [:]
+        for (position, index) in asking.enumerated() where position < answers.count {
+            replies[index] = answers[position]
+        }
+        let verdicts = changes.indices.map { index -> Bool in
+            if let settled = decided[index] { return settled }
+            return replies[index] ?? true
+        }
         let chosen = VocabularyJudge.applying(verdicts, to: text, changes: changes)
         // What the judge undid, in the words it put back. Named `reverted`
         // rather than `kept_as_decoded`: on a menu a place that kept its
@@ -1158,7 +1274,7 @@ struct Pipeline: Equatable, Codable {
             Log.write("    after:  \(chosen)")
         }
         return result(chosen, [
-            "asked": .int(changes.count),
+            "asked": .int(asked.count),
             "slots": .int(slots.count),
             "reverted": .string(reverted.joined(separator: "; ")),
             "judged": .string(chosen),

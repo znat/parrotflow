@@ -246,3 +246,46 @@ cases:
     why: >
       one of the five that already reached the judge, because `dont` is a
       word — kept so the fix is not the only thing holding this case
+
+  # --- a possessive both sides carry ----------------------------------------
+  #
+  # The reading keeps the `'s`, so nothing is taken out of the sentence and
+  # `dropsPossessive` has nothing to say. What decides is the word test, and it
+  # is on letters only — `Sarah's` reaches it as `Sarahs`, a form no dictionary
+  # can contain. Both lists then answer "unknown" to a question neither was
+  # asked. Measured against the shipped binary: `sarahs`, `mirzas` and `precys`
+  # are unknown to both lists; `sarah` is known to the tokenizer, `mirza` to
+  # both, and only `precy` is genuinely new.
+  #
+  # So a possessive on both sides is taken off both before the lookup.
+
+  - word: "Sarah's"
+    term: "Praisy's"
+    possessive: kept
+    gate: judge
+    why: >
+      the tokenizer knows `sarah` and nothing knows `sarahs` — an ordinary
+      name was being overwritten by the glued form walking past both lists
+
+  - word: "Mirza's"
+    term: "Praisy's"
+    possessive: kept
+    gate: judge
+    why: both lists know `mirza`, neither knows `mirzas`
+
+  - word: "Precy's"
+    term: "Praisy's"
+    possessive: kept
+    gate: auto-apply
+    why: >
+      `precy` is unknown to both lists on its own merits, so the reading is
+      written — this is the case the stems exist for, and it was going to a
+      model that reverted it
+
+  - word: "Mirza's"
+    term: Mirza
+    possessive: dropped
+    gate: judge
+    why: >
+      only one side carries it, so nothing is stripped and the possessive rule
+      still refuses — "Mirza's thoughts" is not "Mirza thoughts"

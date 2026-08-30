@@ -80,6 +80,7 @@ corrections, from `--learn`, from the calibrate skill.
 acoustic: false            # the default
 offer_below: 0.50
 decide_above: 3.0
+sound_below: 0.85
 
 terms:
   Tasmeen:                     # nothing close in this speaker's speech
@@ -88,9 +89,9 @@ terms:
       - heard: Prissy
         seen: 6
         from: mined
-      - heard: Pressy
-        seen: 4
-        from: mined
+      - heard: Preci
+        phonemes: pɹɛsi        # espeak reads the spelling "pre-sigh"
+        from: correction
   Claude:
     floor: off
     kind: person
@@ -118,6 +119,54 @@ its sound lost badly — `Redcrawl` beat "general" by 0.57 boosted and lost by
 
 Both ship untuned at the values above. They are the mechanism, not a
 measurement.
+
+#### The third number, for sound
+
+**`sound_below`** is how close a run of words must *sound* to a term before it
+is put to the judge. Same scale as `offer_below`, and a much tighter number
+because it buys much more.
+
+It is the one thing spelling cannot do. `geler` is 0.60 from `Gelar` by letters
+and identical to it by sound. So are `Ghost E` and `Ghostty`, `cloth code` and
+`Claude Code`, `eye brands` and `Ibrance`, `parrot flow` and `ParrotFlow`. A
+sound has no spaces in it, so a word boundary the recogniser invented costs
+nothing here.
+
+Unlike the two above, this one **was** measured — on 20891 real dictations,
+every 1- and 2-word window against every term and every rendering:
+
+| `sound_below` | proposals | per dictation |
+| --- | --- | --- |
+| 0.70 | 11659 | 0.56 |
+| 0.75 | 8262 | 0.40 |
+| 0.80 | 826 | 0.04 |
+| 0.85 | 147 | 0.007 |
+
+At 0.85 the whole archive holds 41 distinct windows and most are a name that
+was lost. Below it the list fills with `praise`, which sounds like `Praisy`
+because it is a homophone — that is not a floor's to settle, and the sentence
+settles it instead. Nothing is written by sound alone; every match is one more
+reading the model votes on.
+
+**It needs espeak-ng**, which is not bundled. Without it the sound path does
+nothing and everything else works as before:
+
+    brew install espeak-ng
+
+espeak-ng is GPL-3 and runs as a separate program over a pipe. Nothing links
+it.
+
+#### A pronunciation can carry its sound
+
+`phonemes:` on a rendering is IPA, and it makes the entry a class of sounds
+rather than one spelling. `Silverstein` as a string reaches only
+`Silverstein`; as a sound it also reaches `Silberstein`, which this recogniser
+writes and nobody wrote down.
+
+Write it when the spelling misleads. espeak sounds out `Preci` as
+/pɹɛsaɪ/ — "pre-sigh" — so that entry reaches nothing until the sound is
+written down. Left out, the sound is worked out from the spelling, which is
+right whenever the spelling is a word.
 
 #### Per term
 
