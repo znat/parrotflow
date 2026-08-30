@@ -158,69 +158,6 @@ if let at = arguments.firstIndex(of: "--sentence-join") {
     exit(SentenceJoinCommand.run(text, caseOnly: caseOnly))
 }
 
-
-
-
-if arguments.contains("--boost-eval") {
-    guard #available(macOS 14, *) else { exit(1) }
-    let limit = arguments.firstIndex(of: "--limit")
-        .flatMap { arguments.indices.contains($0 + 1) ? Int(arguments[$0 + 1]) : nil } ?? 60
-    let terms = arguments.firstIndex(of: "--terms").flatMap { at -> [String]? in
-        guard arguments.indices.contains(at + 1) else { return nil }
-        let listed = arguments[at + 1]
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-        return listed.isEmpty ? nil : listed
-    }
-    let casesPath = arguments.firstIndex(of: "--cases").flatMap {
-        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
-    }
-    exit(BoostEvalCommand.run(
-        terms: terms, limit: limit, verbose: arguments.contains("--verbose"),
-        casesPath: casesPath
-    ))
-}
-
-if arguments.contains("--spot-eval") {
-    guard #available(macOS 14, *) else { exit(1) }
-    func value(_ flag: String, _ fallback: Double) -> Double {
-        arguments.firstIndex(of: flag).flatMap {
-            arguments.indices.contains($0 + 1) ? Double(arguments[$0 + 1]) : nil
-        } ?? fallback
-    }
-    let slotCases = arguments.firstIndex(of: "--cases").flatMap {
-        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
-    }
-    exit(SpotEvalCommand.run(
-        limit: Int(value("--limit", 150)), gate: Float(value("--gate", 0.35)),
-        perToken: value("--per-token", 0.5), speech: Float(value("--speech", -6)),
-        casesPath: slotCases
-    ))
-}
-
-if let index = arguments.firstIndex(of: "--spot") {
-    guard #available(macOS 14, *), arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --spot <file.wav> [--terms \"a,b\"] [--from 0.5] [--to 1.5]")
-        exit(2)
-    }
-    func number(_ flag: String) -> Double? {
-        arguments.firstIndex(of: flag).flatMap {
-            arguments.indices.contains($0 + 1) ? Double(arguments[$0 + 1]) : nil
-        }
-    }
-    let spotTerms = arguments.firstIndex(of: "--terms").flatMap { at -> [String]? in
-        guard arguments.indices.contains(at + 1) else { return nil }
-        let listed = arguments[at + 1].split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
-        return listed.isEmpty ? nil : listed
-    }
-    exit(SpotCommand.run(
-        path: arguments[index + 1], terms: spotTerms,
-        from: number("--from"), to: number("--to")
-    ))
-}
-
 if let index = arguments.firstIndex(of: "--replace") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --replace \"<text>\" [--app <name>]")

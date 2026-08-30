@@ -457,41 +457,9 @@ actor Transcriber {
         // those positions against. Handed to the pipeline as a value rather
         // than published as a variable: a range is not a string, and the
         // prototype's JSON hand-off is where four of its bugs lived (F5, F9).
-        var findings: Vocabulary.Outcome?
-        if Vocabulary.wanted(config) {
-            do {
-                try await Vocabulary.shared.prepare(config: config) { [weak self] label in
-                    Task { await self?.setStatus(.downloading(label, blocking: true)) }
-                }
-                // The gate has already read the clip, so re-reading it would
-                // be a second decode of the same file for the same array.
-                let gateSamples = gated?.decodable == true ? gated?.samples : nil
-                if let samples = gateSamples ?? Self.samples(at: url) {
-                    Self.logVocabularySamples(
-                        samples, from: gateSamples == nil ? .file : .gate
-                    )
-                    let outcome = await Vocabulary.shared.apply(
-                        to: text, samples: samples,
-                        tokenTimings: result.tokenTimings ?? [], config: config
-                    )
-                    text = outcome.text
-                    vocabularyCount = outcome.count
-                    vocabularyChanges = outcome.changes
-                    findings = outcome
-                } else {
-                    // The pass is configured and did nothing, which used to
-                    // look exactly like the pass finding no names. Say which.
-                    Log.write(
-                        "vocabulary samples: none — no 16 kHz mono samples for"
-                            + " \(url.lastPathComponent); left as decoded"
-                    )
-                }
-            } catch {
-                Log.write("vocabulary: \(error.localizedDescription); left as decoded")
-            }
-            setStatus(.ready)
-        }
-
+        // The acoustic pass is gone — see the commit that removed it. What is
+        // left of the vocabulary runs in the pipeline, on text, and needs no
+        // audio and no model of its own.
         // After the vocabulary pass, not before: that pass fetches its own
         // 98 MB on a first run and this dictation is waiting on it. Two
         // downloads at once halve the bandwidth of the one somebody is
@@ -522,7 +490,7 @@ actor Transcriber {
             heard(Decode(
                 words: Trace.words(from: result.tokenTimings ?? []),
                 confidence: result.confidence,
-                vocabulary: findings?.proposals.filter(\.applied).map(\.term) ?? []
+                vocabulary: []
             ))
         }
 
@@ -556,7 +524,6 @@ actor Transcriber {
         if let press { seed.set("press.run", .int(press)) }
         return await Self.applyReplacements(
             to: text, config: config, app: app, seed: seed,
-            findings: findings,
             progress: progress
         )
     }
@@ -1050,12 +1017,11 @@ actor Transcriber {
     /// How names get fixed — see `Replacements`.
     nonisolated static func applyReplacements(
         to text: String, config: Config, app: Pipeline.App? = nil,
-        seed: Scope = Scope(), findings: Vocabulary.Outcome? = nil,
+        seed: Scope = Scope(),
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await Replacements.apply(
-            to: text, config: config, app: app, seed: seed,
-            findings: findings, progress: progress
+            to: text, config: config, app: app, seed: seed, progress: progress
         )
     }
 }

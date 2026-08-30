@@ -84,10 +84,10 @@ terms:
   Mirza:
     floor: 0.85
   Tasmeen:')"
-wants "a legacy floor still sets what that term offers" "$got" "Mirza 0.85"
-wants "the other term is on the file default"          "$got" "similarity 0.5 and up"
-wants "and the key is called legacy"                   "$got" "is legacy"
-wants "with what to write instead"                     "$got" '`offer_below:` at the top of the file'
+wants "a legacy floor is named and does nothing"        "$got" '`floor:` number on Mirza is read and does'
+wants "one floor for the file"                         "$got" "matched by sound at similarity 0.85 and up"
+wants "and the key is named"                           "$got" "is read and does nothing now"
+wants "with what to write instead"                     "$got" '`sound_below:` at the top of the file'
 
 # --- 2. `floor: off` still means never matched by sound --------------------
 got="$(say 'acoustic: true
@@ -104,7 +104,7 @@ rejects "off is not reported as a legacy floor" "$got" "per-term \`floor:\` numb
 # A rendering on a term that is never searched for by sound cannot be searched
 # for either: it is registered under its term's name, and that name has no
 # entry for the spotter to report.
-wants "its rendering is a rule and nothing else" "$got" "1 matched exactly only"
+wants "its rendering is a rule and nothing else" "$got" "2 terms in vocabulary.yaml, 1 matched by sound, 1 by rule"
 
 # --- 3. `floor: no` is the same switch -------------------------------------
 #
@@ -122,8 +122,8 @@ wants "and nothing can reach that term"  "$got" "Matthieu — \`floor: off\` and
 got="$(say 'acoustic: true
 terms:
   Tasmeen:')"
-wants "the default offer floor"    "$got" "offered at similarity 0.5 and up"
-wants "the default decide margin"  "$got" "by more than 3.0 nats"
+wants "the default sound floor"    "$got" "matched by sound at similarity 0.85 and up"
+wants "no margin is printed"       "$got" "matched by sound at similarity"
 rejects "and nothing is legacy"    "$got" "is legacy"
 
 # --- 5. the old file-level key ---------------------------------------------
@@ -131,8 +131,8 @@ got="$(say 'acoustic: true
 min_similarity: 0.75
 terms:
   Tasmeen:')"
-wants "min_similarity is read as offer_below" "$got" "offered at similarity 0.75 and up"
-wants "and named as the old spelling"         "$got" '`min_similarity: 0.75` is the old name for `offer_below:`'
+wants "min_similarity is read and retired"    "$got" "read and do nothing now"
+wants "and named as the old spelling"         "$got" '`min_similarity: 0.75` is the old name for'
 
 # --- 6. both file-level keys: the new one is the intent --------------------
 got="$(say 'acoustic: true
@@ -141,8 +141,8 @@ offer_below: 0.40
 decide_above: 5.5
 terms:
   Tasmeen:')"
-wants "offer_below wins over min_similarity" "$got" "offered at similarity 0.4 and up"
-wants "decide_above is read"                 "$got" "by more than 5.5 nats"
+wants "both are read and retired"            "$got" "read and do nothing now"
+wants "decide_above is named and retired"    "$got" '`decide_above:` weighed a reading against the audio'
 
 # --- 7. a number in the wrong units is refused, not just reported ----------
 #
@@ -165,10 +165,9 @@ wants "a margin at 0 nats is refused"          "$got" '`decide_above: 0.0` would
 wants "a per-term floor outside 0 to 1 too"    "$got" '`floor:` on Mirza is outside 0 to 1'
 
 got="$(say "$body")"
-wants "and the defaults are what actually run" "$got" \
-  "offered at similarity 0.5 and up, dropped when the audio argues against it by more than 3.0 nats"
+wants "and the sound floor is what actually runs" "$got" \
+  "matched by sound at similarity 0.85 and up"
 rejects "the refused per-term number is gone" "$got" "Mirza 12"
-rejects "and it is not called legacy either"  "$got" "is legacy"
 
 
 # --- 8. `pronunciations:` is the schema, `heard:` is the old spelling --------
@@ -189,7 +188,7 @@ terms:
         seen: 3
         from: mined')"
 wants "pronunciations count as rules"      "$got" "1 terms in vocabulary.yaml, 1 matched by sound, 2 by rule"
-wants "and they are searched for by sound" "$got" "2 pronunciation(s) searched for by sound"
+wants "and every term is matched by sound" "$got" "1 terms in vocabulary.yaml, 1 matched by sound, 2 by rule"
 rejects "the new key is not legacy"        "$got" "is legacy"
 
 got="$(say 'acoustic: true
@@ -197,7 +196,7 @@ terms:
   Vercel:
     heard: [Versailles, Versal]')"
 wants "the old key loads the same list"    "$got" "1 terms in vocabulary.yaml, 1 matched by sound, 2 by rule"
-wants "and is searched for the same way"   "$got" "2 pronunciation(s) searched for by sound"
+wants "and reads the same way"             "$got" "1 terms in vocabulary.yaml, 1 matched by sound, 2 by rule"
 wants "the old key is named"               "$got" 'renderings on Vercel are written the old way'
 wants "with what to write instead"         "$got" 'The setting is `pronunciations:`'
 
@@ -213,7 +212,7 @@ terms:
         seen: 4
         from: correction')"
 wants "the bare-list shorthand still loads" "$got" "2 terms in vocabulary.yaml, 2 matched by sound, 3 by rule"
-wants "both keys on one term are kept"      "$got" "3 pronunciation(s) searched for by sound"
+wants "both keys on one term are kept"      "$got" "2 terms in vocabulary.yaml, 2 matched by sound, 3 by rule"
 
 # --- 9. a `from:` nobody can read is a note, not a refusal ------------------
 #
@@ -227,7 +226,7 @@ terms:
       - heard: Versailles
         from: guesswork'
 got="$(say "$body")"
-wants "the rendering still loads"   "$got" "1 pronunciation(s) searched for by sound"
+wants "the rendering still loads"   "$got" "1 matched by sound, 1 by rule"
 wants "and the label is named"      "$got" 'Vercel/Versailles: `from: guesswork`'
 wants "with what it was read as"    "$got" "so it is read as legacy"
 got="$(complains "$body")"

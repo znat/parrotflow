@@ -77,9 +77,6 @@ different owners: you write the config, the app writes the vocabulary — from
 corrections, from `--learn`, from the calibrate skill.
 
 ```yaml
-acoustic: false            # the default
-offer_below: 0.50
-decide_above: 3.0
 sound_below: 0.85
 
 terms:
@@ -100,31 +97,18 @@ terms:
         from: correction
 ```
 
-#### The two numbers
-
-What a spelling makes worth looking at, and what the audio can veto, are two
-different questions. Each has its own number.
-
-**`offer_below`** is how far a decoded word's spelling may sit from a term and
-still be put to the judge, from 0 to 1, where 1.0 is the term written out
-exactly. It decides what is looked at, not what is written. Being offered costs
-one more change the model answers about; being missed cannot be recovered
-downstream at any price, so it is set low.
-
-**`decide_above`** is how hard the audio has to argue against a reading, in
-nats, before the reading is dropped rather than offered. Raw scores: the
-rescorer's own margin carries the vocabulary bonus, and a term can win a span
-its sound lost badly — `Redcrawl` beat "general" by 0.57 boosted and lost by
-5.28 raw.
-
-Both ship untuned at the values above. They are the mechanism, not a
-measurement.
-
-#### The third number, for sound
+#### The number
 
 **`sound_below`** is how close a run of words must *sound* to a term before it
-is put to the judge. Same scale as `offer_below`, and a much tighter number
-because it buys much more.
+is put to the judge, from 0 to 1, where 1.0 is the term said exactly. It is the
+only threshold the vocabulary has.
+
+`acoustic:`, `offer_below:`, `min_similarity:`, `decide_above:` and a per-term
+`floor:` *number* are read and do nothing. They belonged to a search of the
+audio itself, on a second 98 MB model, that never worked well enough to switch
+on and is gone. They still load so that a file nobody edits by hand does not
+stop working, and `--check-config` names each one it finds. `floor: off` is
+unaffected: it still means never matched by sound.
 
 It is the one thing spelling cannot do. `geler` is 0.60 from `Gelar` by letters
 and identical to it by sound. So are `Ghost E` and `Ghostty`, `cloth code` and

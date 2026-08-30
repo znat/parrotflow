@@ -168,8 +168,16 @@ struct Config: Decodable, Equatable {
     /// land in the same file, and one of them eventually loses.
     struct Vocabulary: Decodable, Equatable {
 
-        /// Whether names are matched by sound at all. Off costs nothing; on
-        /// pulls a ~98 MB model on first use.
+        /// Read and ignored.
+        ///
+        /// It used to turn on a search of the audio itself — a CTC keyword
+        /// spotter and a rescorer, on a ~98 MB model. That pass is gone: it
+        /// never worked well enough to switch on, and everything it was meant
+        /// to do is now done on the text, by sound, with no audio at all.
+        ///
+        /// Kept because it is written in files nobody edits by hand, and a
+        /// vocabulary that stops loading over a retired key is a vocabulary
+        /// that stops working. `notices()` names it once.
         var acoustic: Bool = false
 
         /// How far a decoded word's spelling may sit from a term and still be
@@ -190,10 +198,9 @@ struct Config: Decodable, Equatable {
         /// How far the audio may argue against a proposal, in nats of raw CTC
         /// score, before the proposal is dropped instead of offered.
         ///
-        /// The other of the two numbers. Raw on purpose: the rescorer's own
-        /// margin carries the vocabulary bonus, and deciding on the boosted
-        /// number is how "praise" became `Praisy` (F4). Read by
-        /// `Vocabulary.proposalMargin`.
+        /// Read and ignored, with `acoustic:`. It was a margin in nats against
+        /// the audio, and there is no audio to weigh a reading against any
+        /// more.
         ///
         /// Generous. `versal` -> `Vercel` is 0.82 against and correct, so the
         /// gate has to sit well clear of an ordinary near-tie. Also shipped
@@ -518,6 +525,12 @@ struct Config: Decodable, Equatable {
             self.init()
             if let on = try c.decodeIfPresent(Bool.self, forKey: .acoustic) {
                 acoustic = on
+                if on {
+                    legacy.append("`acoustic: true` searched the audio for a term"
+                        + " with a second model. That pass is gone — names are"
+                        + " matched by how they sound, on the text, with no audio."
+                        + " The key is read and does nothing")
+                }
             }
             // `min_similarity` was the file-level floor that did both jobs. It
             // now does one, so it is read as `offer_below` — the number is
@@ -526,8 +539,8 @@ struct Config: Decodable, Equatable {
             if let old = try c.decodeIfPresent(Float.self, forKey: .minSimilarity) {
                 asked = ("min_similarity", old)
                 legacy.append("`min_similarity: \(old)` is the old name for"
-                    + " `offer_below:` — same number, and it now only decides"
-                    + " what reaches the menu")
+                    + " `offer_below:`, and both are read and do nothing now."
+                    + " `sound_below:` is the floor a reading has to clear")
             }
             // Written explicitly it wins, whatever the old key said. A file
             // carrying both is mid-migration and the new key is the intent.
@@ -567,6 +580,9 @@ struct Config: Decodable, Equatable {
             // proposal the decoder does not already prefer is dropped before
             // anyone sees it.
             if let decided = try c.decodeIfPresent(Float.self, forKey: .decideAbove) {
+                legacy.append("`decide_above:` weighed a reading against the audio,"
+                    + " and there is no audio to weigh it against any more."
+                    + " The key is read and does nothing")
                 if decided > 0 {
                     decideAbove = decided
                 } else {
@@ -594,11 +610,10 @@ struct Config: Decodable, Equatable {
             let floored = terms.filter { $0.value.offerBelow != nil }.keys.sorted()
             if !floored.isEmpty {
                 legacy.append("a per-term `floor:` number on"
-                    + " \(floored.joined(separator: ", ")) is legacy — it still"
-                    + " sets what is offered for that term, but the setting is"
-                    + " `offer_below:` at the top of the file."
-                    + " `floor: off` is unaffected and still means never"
-                    + " matched by sound")
+                    + " \(floored.joined(separator: ", ")) is read and does"
+                    + " nothing now — `sound_below:` at the top of the file is"
+                    + " the one floor. `floor: off` is unaffected and still"
+                    + " means never matched by sound")
             }
 
             // `heard:` is the old key for the same list, and so is a bare list
@@ -2649,42 +2664,22 @@ struct Config: Decodable, Equatable {
         // the configuration nobody remembers the contents of. Printed in full.
         let rules = vocabularyRules.count
         if !vocabulary.terms.isEmpty {
-            let byEar = vocabularyTerms
+            // Every term that is not `floor: off`, and not the shorter list
+            // the audio search could be built for. Nothing tokenises a term
+            // any more, so `Claude Code` and `crawl file` are matched by sound
+            // like the rest.
+            let byEar = Set(vocabularySounds.map(\.term)).sorted()
             said.append("vocabulary: \(vocabulary.terms.count) terms in"
                 + " \(ConfigStore.vocabularyURL.lastPathComponent),"
                 + " \(byEar.count) matched by sound, \(rules) by rule")
-            // Spelled out rather than printed as `offer_below 0.5`. The key
-            // names the job; only a sentence says which way the number points.
-            if vocabulary.acoustic, !byEar.isEmpty {
-                said.append("vocabulary: offered at similarity"
-                    + " \(vocabulary.offerBelow) and up, dropped when the audio"
-                    + " argues against it by more than \(vocabulary.decideAbove)"
-                    + " nats — "
-                    + byEar.map { $0.offerBelow == vocabulary.offerBelow
-                        ? $0.text : "\($0.text) \($0.offerBelow)" }
-                        .joined(separator: ", "))
-            }
-            if !vocabulary.acoustic, !byEar.isEmpty {
-                said.append("vocabulary: `acoustic: false`, so \(byEar.count) names"
-                    + " are only matched by their pronunciation rules")
-            }
-            // How many renderings reach the spotter, and how many are rules
-            // only. The second number is the one nobody expects: a rendering
-            // travels into the audio search under its term's name, so a term
-            // the pass does not search for has nothing to report it as.
-            let heard = vocabularyPronunciations
-            let mute = rules - heard.count
-            if vocabulary.acoustic, rules > 0 {
-                var both: [String] = []
-                if !heard.isEmpty {
-                    both.append("\(heard.count) pronunciation(s) searched for by sound"
-                        + " as well as matched exactly")
-                }
-                if mute > 0 {
-                    both.append("\(mute) matched exactly only — their term is not"
-                        + " searched for by sound, so nothing could report them")
-                }
-                said.append("vocabulary: " + both.joined(separator: ", "))
+            // What the sound path can reach, which is every term rather than
+            // the ones an audio search could be built for. `offer_below` and
+            // `decide_above` are not printed: nothing reads them since the
+            // acoustic pass was removed, and `notices()` says so instead.
+            if !byEar.isEmpty {
+                said.append("vocabulary: matched by sound at similarity"
+                    + " \(vocabulary.soundBelow) and up, then settled by the"
+                    + " free rules or put to the judge")
             }
             let silent = vocabulary.terms
                 .filter { $0.value.never && $0.value.pronunciations.isEmpty }
