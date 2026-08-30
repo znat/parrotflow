@@ -1152,6 +1152,18 @@ enum VocabularyJudge {
         return out + text[cursor...]
     }
 
+    /// How far a source may be settled without a model.
+    enum Gating {
+        /// The two word lists, and nothing else. They can only say "keep what
+        /// is written there", so a source gated this way is never refused and
+        /// never has a name written over it that was not already there.
+        case lists
+        /// The lists, then the two questions `SlotGate` asks. This one can
+        /// write a name the text did not have, and can refuse a reading
+        /// outright.
+        case full
+    }
+
     /// The verdicts the gates settle, so no model is asked about them.
     ///
     /// One entry per change. `true` writes the term, `false` writes back what
@@ -1178,10 +1190,21 @@ enum VocabularyJudge {
     /// way — on `tests/judge-cases.yaml`, with no audio in it. See
     /// `Vocabulary.autoApplies(heard:term:)` for why that matters.
     ///
-    /// **Only the source named by `gating`.** A rule substitution is already
-    /// written and refusing one leaves the speaker with a rewrite they were
-    /// never offered a way back from; the sound path writes nothing until
-    /// somebody says so, which is what makes it safe to settle here first.
+    /// **What each source may be settled by is not the same.** A rule
+    /// substitution is already written into the text, so keeping one costs
+    /// nothing and refusing one leaves the speaker with a rewrite they were
+    /// never offered a way back from. Rules therefore get `.lists` — the two
+    /// word lists, and only in the direction that keeps what is already there.
+    /// The sound path writes nothing until somebody says so, so it gets
+    /// `.full`.
+    ///
+    /// This is what settles `Versal -> Vercel` without a model. `Versal` is in
+    /// neither list, so the rule that wrote it is right and there is nothing to
+    /// ask. `Versailles -> Vercel` fires the same rule in the same sentence and
+    /// is *not* settled: the spell checker knows the word, the lists say
+    /// nothing, and it goes to the judge — which is where it belongs, and where
+    /// the judge got it right. Under `.full` the rank would have ranked
+    /// `Versailles` first of fifteen and written `Vercel Castle`.
     ///
     /// Rule 3 is the weak one and it is on by `rank`. It asks whether a word is
     /// *unexpected*, not whether it is *wrong*, and a rare proper noun is both
@@ -1189,18 +1212,18 @@ enum VocabularyJudge {
     /// `Versailles` first of fifteen and would write `Vercel Castle`. Rules 1
     /// and 2 have no such confound.
     static func settle(
-        _ changes: [Change], in text: String, gating: Standing,
+        _ changes: [Change], in text: String, by policy: [Standing: Gating],
         gate: SlotGate?, rank: Bool
     ) -> [Bool?] {
         changes.map { change -> Bool? in
-            guard change.standing == gating else { return nil }
+            guard let allowed = policy[change.standing] else { return nil }
             let term = change.terms.first ?? change.now
             if Vocabulary.autoApplies(heard: change.was, term: term) {
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
                     + " is in neither word list — written, not asked")
                 return true
             }
-            guard let gate else { return nil }
+            guard allowed == .full, let gate else { return nil }
             guard let reading = try? gate.read(in: text, at: change.range) else { return nil }
             switch reading.route {
             case .decline:

@@ -1123,15 +1123,14 @@ struct Pipeline: Equatable, Codable {
                 "judged": .string(chosen),
             ])
         }
-        // The gate in front of the judge — the four rules of `settle`, on the
-        // proposals the sound path made. Nothing else is gated: a rule
-        // substitution is already written into the text, and refusing one
-        // would leave the speaker with a rewrite and no way back.
+        // The gate in front of the judge. A sound proposal gets all four
+        // rules; a rule substitution gets the two word lists only, and only in
+        // the direction that keeps what the rule already wrote — see `settle`.
         //
         // `taught` wins over the gate, because a spelling lesson is settled by
         // a rule that is 4/4 where the models are 0/4.
         let settled = VocabularyJudge.settle(
-            changes, in: text, gating: .sound,
+            changes, in: text, by: [.sound: .full, .rule: .lists],
             gate: await Vocabulary.shared.slotGate(),
             rank: config.vocabulary.gateRank
         )
