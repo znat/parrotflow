@@ -1,0 +1,61 @@
+# One word of a dictation changed by hand, or something that is not that.
+#
+# expect: "<was> -> <now>"   the one span that changed
+# expect: none               a rewrite, two edits, or nothing worth learning
+#
+# The strict half matters more than the generous one. A rewrite read as a
+# correction teaches a term a sentence nobody meant, and a portrait built on
+# that is worse than no portrait.
+
+cases:
+  - written: the Vercel Castle is closed today
+    now:     the Versailles Castle is closed today
+    expect:  "Vercel -> Versailles"
+
+  - written: I use Ghost D as a terminal app
+    now:     I use Ghostty as a terminal app
+    expect:  "Ghost D -> Ghostty"
+
+  - written: Praise has done great work
+    now:     Praisy has done great work
+    expect:  "Praise -> Praisy"
+
+  - written: The corridor felt Ghostty in the fog
+    now:     The corridor felt ghostly in the fog
+    expect:  "Ghostty -> ghostly"
+
+  # The word is at the very end, where there is no suffix to anchor on.
+  - written: I forwarded the contract to Soundman
+    now:     I forwarded the contract to Salman
+    expect:  "Soundman -> Salman"
+
+  # And at the very start.
+  - written: Prezi joined the team in March
+    now:     Praisy joined the team in March
+    expect:  "Prezi -> Praisy"
+
+  # Nothing changed.
+  - written: the mic is plugged in
+    now:     the mic is plugged in
+    expect:  none
+
+  # A different sentence altogether.
+  - written: hello there
+    now:     goodbye everyone and thanks for the fish
+    expect:  none
+
+  # Two edits far apart: the span between them is the whole middle.
+  - written: Prezi told Ghostty to restart the crawler tonight
+    now:     Praisy told Ghostty to restart the indexer tonight
+    expect:  none
+
+  # A word deleted rather than replaced. It says where a term does not belong
+  # without saying what belongs there, so there is nothing to learn from it.
+  - written: I use Ghostty as a terminal app
+    now:     I use as a terminal app
+    expect:  none
+
+  # Typing after the dictation is not a correction of it.
+  - written: We deploy on Vercel
+    now:     We deploy on Vercel every Friday
+    expect:  none

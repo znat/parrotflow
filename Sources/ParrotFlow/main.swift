@@ -390,6 +390,14 @@ if let index = arguments.firstIndex(of: "--context-test") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--edit-diff") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --edit-diff \"<before>\" \"<now>\"")
+        exit(2)
+    }
+    exit(EditDiffCommand.run(before: arguments[index + 1], now: arguments[index + 2]))
+}
+
 if let index = arguments.firstIndex(of: "--portrait") {
     guard #available(macOS 14, *) else {
         print("✗ portraits need macOS 14 or later")
