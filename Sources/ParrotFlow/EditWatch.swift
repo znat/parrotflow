@@ -303,13 +303,18 @@ final class EditWatch {
         guard let wanted, !wanted.isEmpty else { return nil }
         var best: String?
         var bestShared = 0
-        // Reversed for the same reason, and `>=` so a tie goes to the lower
-        // line: the one being edited is the last one written.
+        // Bottom up, and `>` so a tie stays with the lower line — the one being
+        // edited is the last one written. `>=` said the same in its comment and
+        // did the opposite, handing every tie to whatever was higher up the
+        // screen, which here was this app's own log.
         for line in field.components(separatedBy: .newlines).reversed() {
             let shared = Self.shared(wanted, line)
-            if shared >= bestShared { bestShared = shared; best = line }
+            if shared > bestShared { bestShared = shared; best = line }
         }
-        return bestShared * 2 > wanted.count ? best : nil
+        // Two thirds, not half. A screen carrying this app's output has lines
+        // that quote the sentence and share a great deal of it without being
+        // it, and one changed word leaves far more than two thirds intact.
+        return bestShared * 3 > wanted.count * 2 ? best : nil
     }
 
     /// How many characters two strings share at their two ends.
