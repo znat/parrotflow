@@ -102,7 +102,17 @@ final class CorrectionModel: ObservableObject {
             .reduce(into: [String: WordKind]()) { out, entry in
                 if let kind = entry.value.kind { out[entry.key.lowercased()] = kind }
             }
-        rows = proposed.map { rule in
+        rows = proposed.map { proposal in
+            // The possessive belongs to the sentence, not to the name. Saved as
+            // it stands, `Precey's -> Praizy's` teaches a term called `Praizy's`
+            // beside the one called `Praizy`, and a vocabulary that holds both
+            // is worse than one that holds neither.
+            var rule = proposal
+            if let mine = Vocabulary.possessive(in: rule.corrected),
+               let theirs = Vocabulary.possessive(in: rule.heard) {
+                rule.corrected = String(rule.corrected.dropLast(mine.suffix.count))
+                rule.heard = String(rule.heard.dropLast(theirs.suffix.count))
+            }
             let word = rule.corrected.trimmingCharacters(in: .punctuationCharacters)
             if let already = known[word.lowercased()] {
                 return CorrectionRow(heard: rule.heard, corrected: rule.corrected, kind: already)
