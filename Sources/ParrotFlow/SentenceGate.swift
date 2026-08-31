@@ -34,6 +34,19 @@ enum SentenceGate {
     static func settle(
         _ changes: [VocabularyJudge.Change], in text: String, given settled: [Bool?]
     ) async -> [Bool?] {
+        // Never on the dictation's time. The word vectors are 400 MB and the
+        // first MLX call warms Metal; waiting for that with the pill on screen
+        // reads as the app having hung, which is what it did.
+        guard await WordVectors.shared.isLoaded else {
+            await WordVectors.shared.warm()
+            Log.write("sentence gate: the word vectors are not loaded yet; skipped")
+            return settled
+        }
+        guard SentenceModel.isCached else {
+            Log.write("sentence gate: the sentence model is not cached yet; skipped")
+            return settled
+        }
+
         var out = settled
         for (index, change) in changes.enumerated() {
             guard index < out.count, out[index] == nil else { continue }

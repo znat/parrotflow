@@ -83,6 +83,23 @@ actor WordVectors {
     /// `loaded`, not two callers both finding it nil across the same `await`.
     private var loading: Task<ModelContext, Error>?
 
+    /// True once the weights are in memory.
+    ///
+    /// The gate asks before it runs. A dictation must never wait on a 400 MB
+    /// download and an MLX warm-up: the first one cost about twenty seconds
+    /// with the pill on screen, which reads as the app having hung.
+    var isLoaded: Bool { loaded != nil }
+
+    /// Starts the load if nothing is doing it, and returns at once.
+    func warm() {
+        guard loaded == nil, loading == nil else { return }
+        Task { [weak self] in
+            do { try await self?.prepare() } catch {
+                Log.write("word vectors: \(error.localizedDescription); nothing reads them yet")
+            }
+        }
+    }
+
     /// Downloads and loads, or does nothing if it is already loaded.
     ///
     /// `progress` gets a label shaped like "word vectors 43%", already

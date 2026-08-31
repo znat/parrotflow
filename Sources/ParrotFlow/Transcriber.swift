@@ -471,6 +471,12 @@ actor Transcriber {
         var offeredSentences = 0
         if Pipeline.language(of: text, config: config) == "en" {
             warmSentenceModel()
+            // Only when something will read them. They are 400 MB, and the gate
+            // that needs them stands aside until they are in memory rather than
+            // making a dictation wait.
+            if config.vocabulary.gateSentence, #available(macOS 14, *) {
+                Task { await WordVectors.shared.warm() }
+            }
             // The set the sound pass actually reads, not the shorter one the
             // audio search needed. `vocabularyTerms` drops anything under five
             // letters or with a space in it, so a vocabulary of `Claude Code`
