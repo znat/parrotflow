@@ -224,7 +224,10 @@ final class EditWatch {
         }
         // The line again, found by what it still shares with the one that was
         // written. Anything else on the screen is somebody else's.
-        guard let now = Self.nearest(to: before, in: whole) else {
+        // The same way it was found: a prompt line is the prompt line whatever
+        // it now says, and looking for it by resemblance would lose it exactly
+        // when it has changed most.
+        guard let now = Self.promptLine(in: whole) ?? Self.nearest(to: before, in: whole) else {
             if reported.insert("lost").inserted {
                 Log.write("edit watch: the line the words went on is no longer on screen")
             }
@@ -333,15 +336,34 @@ final class EditWatch {
 
     /// The line the words went on.
     ///
-    /// By resemblance and not by containment. Asking which line *holds* the
-    /// dictation fails the moment somebody starts correcting it — the words are
-    /// no longer there — and that is exactly when this is looking: a sentence
-    /// typed into a terminal takes a second to arrive, and the correction often
-    /// starts before the search gives up. Two of three corrections were lost
-    /// that way, with the watch reporting that the words never reached the
-    /// field while they sat on the screen half-fixed.
+    /// The prompt first. A terminal draws one at the head of the line you are
+    /// typing into, so that line can be picked out **before the words arrive**
+    /// — and the wait for them to arrive is what lost the longest sentence of
+    /// every test: eighty-four characters typed one at a time outran every
+    /// budget it was given.
+    ///
+    /// Resemblance is the fallback, for a real text field where the whole value
+    /// is the text and there is no prompt to look for.
     static func line(holding text: String, in field: String) -> String? {
-        nearest(to: text.trimmingCharacters(in: .whitespacesAndNewlines), in: field)
+        if let prompt = promptLine(in: field) { return prompt }
+        return nearest(to: text.trimmingCharacters(in: .whitespacesAndNewlines), in: field)
+    }
+
+    /// The last line that starts with a prompt.
+    ///
+    /// From the bottom, because a terminal shows its history and a prompt
+    /// character can sit anywhere in what has already been printed. The one
+    /// being typed into is the last.
+    static func promptLine(in field: String) -> String? {
+        for line in field.components(separatedBy: .newlines).reversed() {
+            let trimmed = line.drop(while: { $0.isWhitespace })
+            guard let first = trimmed.first, prompts.contains(first) else { continue }
+            // A prompt with nothing after it is a shell waiting, not a line
+            // somebody is editing.
+            guard trimmed.dropFirst().contains(where: { !$0.isWhitespace }) else { continue }
+            return line
+        }
+        return nil
     }
 
     /// The line of `field` that is most nearly `wanted`.
