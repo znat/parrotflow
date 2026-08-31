@@ -1062,6 +1062,7 @@ struct Pipeline: Equatable, Codable {
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary judge: \(slots.count) slot(s) from \(parts.count) proposal(s)"
         if bySound > 0 { census += " (\(bySound) by sound)" }
+        if config.vocabulary.gateSentence { census += ", sentence gate on" }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
             census += " — " + slots.map {
                 "\"\(text[$0.range])\" (\($0.terms.joined(separator: "/")))"

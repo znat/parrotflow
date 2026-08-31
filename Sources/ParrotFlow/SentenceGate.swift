@@ -49,6 +49,7 @@ enum SentenceGate {
         }
 
         var out = settled
+        var looked = 0
         for (index, change) in changes.enumerated() {
             guard index < out.count, out[index] != false else { continue }
             guard let term = change.terms.first else { continue }
@@ -66,11 +67,16 @@ enum SentenceGate {
                 let portrait = await TermPortrait.shared.reads(
                     change.was, in: text, as: term
                 )
+                looked += 1
                 if portrait == .refuses {
                     out[index] = nil
                     Log.write(
                         "sentence gate: \"\(change.was)\" -> \(term) handed back"
                             + " — \(term) does not live in this sentence")
+                } else {
+                    Log.write(
+                        "sentence gate: \"\(change.was)\" -> \(term) already written,"
+                            + " and \(term)'s own sentences do not object")
                 }
                 continue
             }
@@ -104,6 +110,10 @@ enum SentenceGate {
             case (false, .nothing):
                 break
             }
+            looked += 1
+        }
+        if looked == 0 {
+            Log.write("sentence gate: nothing left to read in \(changes.count) place(s)")
         }
         return out
     }
