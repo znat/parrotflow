@@ -77,3 +77,9 @@ cases:
   - written: "❯ Prizzy isn't the team. She's an expert in versatile deployments."
     now:     "❯ Praizy isn't the team. She's an expert in Vercel deployments."
     expect:  "Prizzy -> Praizy | versatile -> Vercel"
+
+  # Claude Code's input box, with the line wrapped onto a second row. The prompt
+  # is only on the first, so looking for it lost every correction below.
+  - written: "──────────────────────────────\n❯ Prizzy isn t the team and versatile\n  is the platform\n──────────────────────────────"
+    now:     "──────────────────────────────\n❯ Praizy isn t the team and Vercel\n  is the platform\n──────────────────────────────"
+    expect:  "Prizzy -> Praizy | versatile -> Vercel"

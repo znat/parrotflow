@@ -227,7 +227,10 @@ final class EditWatch {
         // The same way it was found: a prompt line is the prompt line whatever
         // it now says, and looking for it by resemblance would lose it exactly
         // when it has changed most.
-        guard let now = Self.promptLine(in: whole) ?? Self.nearest(to: before, in: whole) else {
+        guard let now = Self.boxedInput(in: whole)
+            ?? Self.promptLine(in: whole)
+            ?? Self.nearest(to: before, in: whole)
+        else {
             if reported.insert("lost").inserted {
                 Log.write("edit watch: the line the words went on is no longer on screen")
             }
@@ -328,7 +331,9 @@ final class EditWatch {
         if let first = text.first, Self.prompts.contains(first) {
             text = text.dropFirst().drop(while: { $0.isWhitespace })
         }
-        return text.split(separator: " ").map(String.init)
+        // Every kind of whitespace, not just spaces. A row that wrapped keeps
+        // its newline, and `versatile\n` is not the word anybody corrected.
+        return text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
     }
 
     /// What terminals and shells put in front of the line being typed.
@@ -345,6 +350,7 @@ final class EditWatch {
     /// Resemblance is the fallback, for a real text field where the whole value
     /// is the text and there is no prompt to look for.
     static func line(holding text: String, in field: String) -> String? {
+        if let boxed = boxedInput(in: field) { return boxed }
         if let prompt = promptLine(in: field) { return prompt }
         return nearest(to: text.trimmingCharacters(in: .whitespacesAndNewlines), in: field)
     }
@@ -406,4 +412,36 @@ final class EditWatch {
         }
         return count
     }
+
+    /// What sits between the last two rules drawn across the screen.
+    ///
+    /// Claude Code puts its input box there, and that is the terminal this is
+    /// for. Better than looking for the prompt on two counts: it says which
+    /// program is in front rather than merely that something is, and a line long
+    /// enough to wrap is still one box — the prompt is only on its first row, so
+    /// looking for it lost every correction made further down.
+    ///
+    /// The rows are joined with a space. They are one sentence that ran out of
+    /// width, not several.
+    static func boxedInput(in field: String) -> String? {
+        let lines = field.components(separatedBy: .newlines)
+        guard let close = lines.lastIndex(where: isRule),
+              let open = lines[..<close].lastIndex(where: isRule),
+              close > open + 1
+        else { return nil }
+        let inside = lines[(open + 1) ..< close]
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return inside.isEmpty ? nil : inside
+    }
+
+    /// A line drawn all the way across, which is what a box is made of.
+    private static func isRule(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 20 else { return false }
+        return trimmed.allSatisfy { rules.contains($0) }
+    }
+
+    private static let rules: Set<Character> = ["─", "-", "—", "═", "_"]
 }
