@@ -381,6 +381,20 @@ if let index = arguments.firstIndex(of: "--context-test") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--portrait") {
+    guard #available(macOS 14, *) else {
+        print("✗ portraits need macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --portrait <term> [\"<sentence>\" <span>]")
+        exit(2)
+    }
+    let sentence = arguments.indices.contains(index + 2) ? arguments[index + 2] : nil
+    let span = arguments.indices.contains(index + 3) ? arguments[index + 3] : nil
+    exit(TermPortraitCommand.run(term: arguments[index + 1], sentence: sentence, span: span))
+}
+
 if let index = arguments.firstIndex(of: "--slot-gap") {
     guard #available(macOS 14, *) else {
         print("✗ the slot reference needs macOS 14 or later")
