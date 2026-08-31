@@ -328,13 +328,16 @@ if let index = arguments.firstIndex(of: "--dates") {
 
 if let index = arguments.firstIndex(of: "--learn") {
     guard arguments.indices.contains(index + 2) else {
-        print("usage: ParrotFlow --learn <heard> <corrected> [person|place|organization|word]")
+        print("usage: ParrotFlow --learn <heard> <corrected> [kind] [--in \"<sentence>\"]")
         exit(2)
     }
     let kind = arguments.indices.contains(index + 3)
         ? WordKind(rawValue: arguments[index + 3]) : nil
+    let sentence = arguments.firstIndex(of: "--in").flatMap {
+        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+    }
     exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2],
-                          kind: kind))
+                          kind: kind, sentence: sentence))
 }
 
 if let index = arguments.firstIndex(of: "--forget") {
