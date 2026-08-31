@@ -50,6 +50,9 @@ final class EditWatch {
     /// The read waiting for you to stop typing. Cancelled and replaced by every
     /// key, so it only ever runs once the field has been still.
     private var settling: DispatchWorkItem?
+    /// Keys seen since the watch started, so "nobody typed" can be told from
+    /// "the read never ran".
+    private var keysSeen = 0
 
     /// How long the field has to be still before it is read.
     ///
@@ -70,6 +73,7 @@ final class EditWatch {
         before = snapshot
         field = element
         reported = []
+        keysSeen = 0
         guard monitors.isEmpty else { return }
         guard Permissions.accessibility == .granted else {
             Log.write("edit watch: accessibility is not granted; corrections cannot be seen")
@@ -89,6 +93,7 @@ final class EditWatch {
         }) {
             monitors.append(local)
         }
+        Log.write("edit watch: \(monitors.count) key monitor(s) installed")
     }
 
     func stop() {
@@ -105,6 +110,8 @@ final class EditWatch {
 
     /// A key went by. Read once the typing stops, not now.
     private func look() {
+        if keysSeen == 0 { Log.write("edit watch: first key seen") }
+        keysSeen += 1
         settling?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.read() }
         settling = work
