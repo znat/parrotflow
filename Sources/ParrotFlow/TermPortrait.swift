@@ -103,9 +103,19 @@ actor TermPortrait {
             guard let summary = try await summary(for: term),
                   let score = try await score(of: span, in: sentence, for: term)
             else { return .nothing }
-            if score > summary.floor { return .authorises }
-            if score < summary.floor - Self.refusal { return .refuses }
-            return .nothing
+            let verdict: Verdict
+            if score > summary.floor {
+                verdict = .authorises
+            } else if score < summary.floor - Self.refusal {
+                verdict = .refuses
+            } else {
+                verdict = .nothing
+            }
+            Log.write(String(
+                format: "portrait: %@ at \"%@\" scores %.3f against a floor of %.3f — %@",
+                term, span, score, summary.floor, "\(verdict)"
+            ))
+            return verdict
         } catch {
             Log.write("portrait: \(term) could not be scored (\(error.localizedDescription))")
             return .nothing

@@ -37,7 +37,8 @@ out="$(run --portrait Praisy | tail -1)"
 check "two uses are still too few" "no portrait" "$out"
 
 run --learn Prizy Praisy --in "Praisy wrote the onboarding guide." >/dev/null
-out="$(run --portrait Praisy | tail -1)"
+# head, not tail: the command lists the sentences under the numbers.
+out="$(run --portrait Praisy | head -1)"
 check "three uses build one" "^uses 3   tightness 0\..*   floor 0\." "$out"
 
 # The hardest pair measured. The portrait alone is wrong on both.
@@ -46,8 +47,13 @@ check "the portrait authorises an ordinary word here" "authorises" "$keep"
 slot="$(run --slot-gap "The review was full of praise." praise Praisy | tail -1)"
 check "and the slot refuses it, so the two disagree" "refuse" "$slot"
 
+# It used to have no opinion here. `refusal = 0.04` turned that into a refusal:
+# 0.716 against a floor of 0.821. This is the one correct write of thirteen that
+# the refusal band was measured to cost, and it is this one. The slot says
+# nothing, so the gate keeps `Prezi` and the name is not written.
 write="$(run --portrait Praisy "Prezi joined the team in March." Prezi | tail -1)"
-check "the portrait has no opinion on a real one" "no opinion" "$write"
+check "the portrait refuses a real one, which is what the band costs" \
+  "refuses" "$write"
 slot="$(run --slot-gap "Prezi joined the team in March." Prezi Praisy | tail -1)"
 check "and neither does the slot, so it falls through" "no opinion" "$slot"
 

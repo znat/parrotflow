@@ -53,7 +53,12 @@ enum SentenceGate {
         for (index, change) in changes.enumerated() {
             guard index < out.count, out[index] != false else { continue }
             guard let term = change.terms.first else { continue }
-            guard text.contains(change.was) else { continue }
+            guard change.range.upperBound <= text.endIndex else { continue }
+            // What actually stands there, which is not always what was heard.
+            // A rule writes its term into the text before this runs, so looking
+            // for the heard word found nothing and every rule substitution fell
+            // through in silence — the whole reason this stage never spoke.
+            let standing = String(text[change.range])
 
             // A place an earlier rule already decided to write. The two word
             // lists write a name whenever the heard word is in neither of them,
@@ -65,7 +70,7 @@ enum SentenceGate {
             // refusal on its own.
             if out[index] == true {
                 let portrait = await TermPortrait.shared.reads(
-                    change.was, in: text, as: term
+                    standing, in: text, as: term
                 )
                 looked += 1
                 if portrait == .refuses {
@@ -94,7 +99,7 @@ enum SentenceGate {
                 continue
             }
             let portrait = await TermPortrait.shared.reads(
-                change.was, in: text, as: term
+                standing, in: text, as: term
             )
 
             switch (refuses, portrait) {
