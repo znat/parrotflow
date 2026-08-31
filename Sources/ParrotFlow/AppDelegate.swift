@@ -1204,6 +1204,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Read before anything this press does, so an abort later can tell the
         // transcription this press started from one that was already running.
         transcriptionRunAtPress = transcriptionRun
+
+        // Only for a press that is going to start a dictation. A press that
+        // ends one — the second press of a toggle, a stutter inside the release
+        // tail — is not aiming a new pill, and taking a fresh snapshot there
+        // would throw away the one the running dictation is going to need.
+        let startsDictation = !recorder.isRecording
+        if startsDictation {
+            anchorAtPress = nil
+            pressRun += 1
+            // The words it is watching for are about to be replaced. Stopped
+            // here rather than when the new ones land, so the gap in between
+            // cannot offer over a sentence that is already history.
+            reselect.stop()
+        }
+
+        // The microphone before the reads, not after them. Everything from here
+        // to `presentRecording` is Accessibility, and the device takes about
+        // 175 ms to start delivering however fast this thread is — so the reads
+        // now happen inside that wait instead of in front of it. `pressRun` is
+        // bumped above because the failure path retires this press by it.
+        let microphone = startsDictation ? openMicrophone() : .open
+
         // Grab the selection now: by the time a transcript exists, a terminal
         // will very likely have dropped it. Timed out hard inside snapshot(),
         // because this is the main thread and recording must start regardless.
@@ -1246,14 +1268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ends one — the second press of a toggle, a stutter inside the release
         // tail — is not aiming a new pill, and taking a fresh snapshot there
         // would throw away the one the running dictation is going to need.
-        let startsDictation = !recorder.isRecording
         if startsDictation {
-            anchorAtPress = nil
-            pressRun += 1
-            // The words it is watching for are about to be replaced. Stopped
-            // here rather than when the new ones land, so the gap in between
-            // cannot offer over a sentence that is already history.
-            reselect.stop()
             readTheAnchor()
         }
 
@@ -1307,9 +1322,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ends, so it is one of the ways the keys go back.
         endTheOffer()
 
+        // The microphone is already open by here for a press that starts one;
+        // what is left is the pill, which needed the reads above.
         switch config.hotkey.mode {
         case .toggle:
-            toggleRecording()
+            if startsDictation {
+                if microphone == .open { presentRecording() }
+            } else {
+                stopRecording()
+            }
         case .pushToTalk:
             // Pressed again inside the tail: one dictation with a stutter in the
             // key, not two. Keep the recording that is already running — and put
@@ -1319,8 +1340,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 startPushToTalkPoll()
                 return
             }
-            guard !recorder.isRecording else { return }
-            startRecording()
+            guard startsDictation else { return }
+            // Nothing is recording and nothing is coming: the notice is already
+            // up, or the dialog is, and its callback starts the poll itself.
+            guard microphone == .open else { return }
+            presentRecording()
             startPushToTalkPoll()
         }
     }
@@ -1529,16 +1553,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Recording
 
-    private func toggleRecording() {
-        guard recorder.isRecording else {
-            startRecording()
-            return
-        }
-        stopRecording()
+    /// Puts the modifier poll back for a dictation that started late, behind
+    /// the microphone dialog. Push-to-talk only: nothing else polls.
+    private func startPushToTalkPollIfHeld() {
+        guard config.hotkey.mode == .pushToTalk, recorder.isRecording else { return }
+        startPushToTalkPoll()
+    }
+
+    /// What `openMicrophone` managed to do, so the caller knows who finishes.
+    private enum MicrophoneStart {
+        case open
+        /// The dialog is up. Its callback owns the rest of this dictation.
+        case awaitingPermission
+        /// Said out loud already, and the press retired.
+        case failed
     }
 
     private func startRecording() {
-        guard !recorder.isRecording else { return }
+        guard openMicrophone() == .open else { return }
+        presentRecording()
+    }
+
+    /// Opens the capture, and nothing else.
+    ///
+    /// Split from `presentRecording` so a press can reach the device before it
+    /// does its Accessibility reads. Measured with `--record`: 70-86 ms in
+    /// `engine.prepare()` and `start()`, and ~100 ms more before the first
+    /// buffer. The reads in front of it are capped a rung at a time, and one
+    /// selection snapshot has been logged at 0.71s. All of it used to run while
+    /// the microphone was not yet listening.
+    @discardableResult
+    private func openMicrophone() -> MicrophoneStart {
+        guard !recorder.isRecording else { return .open }
 
         guard Permissions.microphone == .granted else {
             Permissions.requestMicrophone { [weak self] granted in
@@ -1550,6 +1596,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // into a measurement of the microphone.
                     self.pressedAt = Date()
                     self.startRecording()
+                    self.startPushToTalkPollIfHeld()
                 } else {
                     // Not `.installing`: the app has been running for a while
                     // by the time someone presses the hotkey, and a refusal
@@ -1559,7 +1606,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.permissions.show(.revisiting)
                 }
             }
-            return
+            return .awaitingPermission
         }
 
         do {
@@ -1590,9 +1637,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // notice that fades in four seconds is gone by the time they look.
             captureProblem(error.localizedDescription)
             dictationCancelled(pressRun)
-            return
+            return .failed
         }
+        return .open
+    }
 
+    /// Everything a running dictation puts on screen. Runs after the press has
+    /// worked out where the words are going, because that is what the pill says.
+    private func presentRecording() {
         watchForEscape()
 
         // No cue here. `recorder.onFirstBuffer` plays it, once the microphone
