@@ -1786,6 +1786,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// is not interruptible, so this cannot make it stop sooner — it only makes
     /// sure nothing is written when it does.
     private func cancelDictation(_ reason: CancelReason = .escape) {
+        // Before the guard below, because a press waiting on the microphone
+        // dialog is neither recording nor transcribing and would fall straight
+        // through it. Approving the dialog afterwards would then start the
+        // dictation this call just said no to.
+        pressAwaitingMicrophone = nil
+
         let recording = recorder.isRecording
         // A run is in flight when one has been started and nothing has retired
         // it yet. `transcriptionRun` is bumped per dictation and already carries
