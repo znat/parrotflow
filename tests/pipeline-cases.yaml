@@ -788,17 +788,24 @@ cases:
     expect: Supabase is up
     expect_vars:
       vocabulary.count: 1
-      vocabulary.slots: 0
+      vocabulary.slots: 1
 
   # And the other half: with nobody to read the sentence, a near miss is left
   # where it stands rather than written on the strength of the edit alone.
+  #
+  # `slots: 1` and not 0. The stage used to return before it had counted
+  # anything, so `review: false` reported an empty sentence whatever was in it.
+  # It now gathers the proposals, settles the ones the free rules are sure of,
+  # and stops there — so the count says one place was found, and `expect:
+  # unchanged` says nothing was written in it. Those are two different facts
+  # and only one of them used to be visible.
   - name: review off leaves the near misses alone
     pipeline: review-off
     input: our app is deployed on Versel
     expect: unchanged
     expect_vars:
-      vocabulary.count: 0
-      vocabulary.slots: 0
+      vocabulary.count: 1
+      vocabulary.slots: 1
 
   # --- named word lists ------------------------------------------------------
   #
