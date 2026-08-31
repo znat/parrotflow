@@ -1369,21 +1369,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Whether the hotkey is still physically down, as far as this process can
     /// tell without a permission it does not have.
     ///
-    /// A bare modifier answers exactly: `CGEventSource.flagsState` is a plain
-    /// read of the current state. A chord answers for its modifiers only —
-    /// Carbon edge-detects the character key and leaves no state to read — which
-    /// is the same limit `startPushToTalkPoll` already works within, and it
-    /// treats the modifiers going up as the release.
+    /// Both halves are a plain read of the current state, and neither needs a
+    /// permission: `CGEventSource.flagsState` for the modifiers,
+    /// `CGEventSource.keyState` for the character key.
+    ///
+    /// The character key is asked directly rather than waited for.
+    /// `startPushToTalkPoll` watches the modifiers alone because Carbon only
+    /// edge-detects the character key and the poll has no event to catch — but
+    /// "is it down right now" is a different question from "did it come up",
+    /// and CoreGraphics answers the first one without an event at all. Let go
+    /// of the character key while still holding the modifiers and this says so.
     private func hotkeyStillHeld() -> Bool {
         switch hotKeys.binding {
         case .modifier(let key):
             return key.isPressed
-        case .combo:
+        case .combo(let key, _):
             let required = KeyCodes.cocoaModifiers(config.hotkey.modifiers)
-            guard !required.isEmpty else { return true }
-            return NSEvent.modifierFlags
+            let modifiersHeld = required.isEmpty || NSEvent.modifierFlags
                 .intersection(.deviceIndependentFlagsMask)
                 .isSuperset(of: required)
+            guard modifiersHeld else { return false }
+            guard let code = KeyCodes.code(for: key) else { return true }
+            return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(code))
         case nil:
             return true
         }
