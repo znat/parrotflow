@@ -1096,6 +1096,7 @@ struct Pipeline: Equatable, Codable {
         if config.vocabulary.gateSentence, #available(macOS 14, *) {
             decided = await SentenceGate.settle(changes, in: text, given: decided)
         }
+
         let gated = decided.enumerated().filter { $0.element != nil && !taught[$0.offset] }.count
         if gated > 0 {
             Log.write("vocabulary gate: \(gated) of \(changes.count) settled without asking")
