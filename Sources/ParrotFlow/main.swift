@@ -390,6 +390,16 @@ if let index = arguments.firstIndex(of: "--context-test") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--field-dump") {
+    guard #available(macOS 14, *) else {
+        print("✗ reading a field needs macOS 14 or later")
+        exit(1)
+    }
+    let seconds = arguments.indices.contains(index + 1)
+        ? Double(arguments[index + 1]) ?? 0 : 0
+    exit(FieldDumpCommand.run(after: seconds))
+}
+
 if let index = arguments.firstIndex(of: "--edit-diff") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --edit-diff \"<before>\" \"<now>\"")

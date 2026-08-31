@@ -122,6 +122,20 @@ final class EditWatch {
     /// once found nothing and gave up; the words arrived a moment later.
     private func findLine(attempt: Int) {
         guard let field, let dictated, before == nil else { return }
+        if let snapshot = CaretAnchor.snapshot(of: field) {
+            // The whole field, once, while this is being built. Every failure
+            // this watch has had came from a wrong idea of what a field holds,
+            // and guessing at it cost more than printing it will.
+            if attempt == 0 {
+                let lines = snapshot.components(separatedBy: .newlines)
+                Log.write("edit watch: field has \(snapshot.count) chars,"
+                    + " \(lines.count) line(s)")
+                for (number, line) in lines.enumerated() where !line.isEmpty {
+                    Log.write(String(format: "    %3d | %@", number + 1,
+                                     String(line.prefix(110))))
+                }
+            }
+        }
         if let snapshot = CaretAnchor.snapshot(of: field),
            let line = Self.line(holding: dictated, in: snapshot) {
             before = line
