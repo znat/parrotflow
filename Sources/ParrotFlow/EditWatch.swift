@@ -42,6 +42,12 @@ final class EditWatch {
     /// The whole field as it stood when the dictation landed. Both sides of the
     /// comparison are field snapshots, so neither has to be located in the
     /// other.
+    /// The one line of the field the dictation landed on, as it stood then.
+    ///
+    /// Not the whole field. In a terminal the field is the buffer, and the
+    /// buffer changes for reasons that have nothing to do with anybody typing:
+    /// the first real read compared a status line against a keyboard hint and
+    /// refused them both, while the correction two lines away went unseen.
     private var before: String?
     private var field: AXUIElement?
     private var monitors: [Any] = []
@@ -69,8 +75,8 @@ final class EditWatch {
     /// `snapshot` is the whole field as it stands now, not the dictation alone.
     /// Called again for every dictation: an older snapshot is not something
     /// anybody is still editing.
-    func start(field snapshot: String, in element: AXUIElement?) {
-        before = snapshot
+    func start(field snapshot: String, dictated: String, in element: AXUIElement?) {
+        before = Self.line(holding: dictated, in: snapshot)
         field = element
         reported = []
         keysSeen = 0
@@ -139,8 +145,16 @@ final class EditWatch {
         guard Date().timeIntervalSince(lastLook) > 0.15 else { return }
         lastLook = Date()
 
-        guard let now = CaretAnchor.snapshot(of: field) else {
+        guard let whole = CaretAnchor.snapshot(of: field) else {
             Log.write("edit watch: the field would not give up its text this time")
+            return
+        }
+        // The line again, found by what it still shares with the one that was
+        // written. Anything else on the screen is somebody else's.
+        guard let now = Self.nearest(to: before, in: whole) else {
+            if reported.insert("lost").inserted {
+                Log.write("edit watch: the line the words went on is no longer on screen")
+            }
             return
         }
         if now == before {
@@ -225,20 +239,46 @@ final class EditWatch {
         guard was.split(separator: " ").count <= 2 else { return nil }
         guard became.split(separator: " ").count <= 2 else { return nil }
 
-        return Change(was: was, now: became, sentence: lineAround(front, in: new))
+        return Change(was: was, now: became, sentence: now)
     }
 
-    /// The line the change sits on.
+    /// The line `text` sits on, or the whole thing if it is not there.
+    static func line(holding text: String, in field: String) -> String {
+        let wanted = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !wanted.isEmpty else { return field }
+        for line in field.components(separatedBy: .newlines) where line.contains(wanted) {
+            return line
+        }
+        // Written but already reflowed, or typed somewhere this cannot see. The
+        // whole field is worse than one line and better than nothing.
+        return field
+    }
+
+    /// The line of `field` that is most nearly `wanted`.
     ///
-    /// The field is not always one sentence. In a terminal it is the whole
-    /// buffer — 2443 characters on the first real correction, most of it
-    /// somebody else's output — and a portrait built out of that would describe
-    /// the screen rather than the term.
-    private static func lineAround(_ index: Int, in text: [Character]) -> String {
-        var start = min(index, text.count)
-        while start > 0, !text[start - 1].isNewline { start -= 1 }
-        var end = min(index, text.count)
-        while end < text.count, !text[end].isNewline { end += 1 }
-        return String(text[start ..< end]).trimmingCharacters(in: .whitespaces)
+    /// Nearness is what they share at the ends, which is the same measure the
+    /// comparison itself uses. A line has to share more than half of `wanted`
+    /// to be it: a terminal is full of short lines, and any of them shares a
+    /// space or two with any other.
+    static func nearest(to wanted: String?, in field: String) -> String? {
+        guard let wanted, !wanted.isEmpty else { return nil }
+        var best: String?
+        var bestShared = 0
+        for line in field.components(separatedBy: .newlines) {
+            let shared = Self.shared(wanted, line)
+            if shared > bestShared { bestShared = shared; best = line }
+        }
+        return bestShared * 2 > wanted.count ? best : nil
+    }
+
+    /// How many characters two strings share at their two ends.
+    private static func shared(_ a: String, _ b: String) -> Int {
+        let x = Array(a), y = Array(b)
+        var front = 0
+        while front < x.count, front < y.count, x[front] == y[front] { front += 1 }
+        var back = 0
+        while back < x.count - front, back < y.count - front,
+              x[x.count - 1 - back] == y[y.count - 1 - back] { back += 1 }
+        return front + back
     }
 }
