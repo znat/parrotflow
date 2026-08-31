@@ -49,6 +49,9 @@ final class EditWatch {
     /// the first real read compared a status line against a keyboard hint and
     /// refused them both, while the correction two lines away went unseen.
     private var before: String?
+    /// What was dictated, so the line it went on can be found again while the
+    /// field is still catching up.
+    private var dictated: String?
     private var field: AXUIElement?
     private var monitors: [Any] = []
     private var reported: Set<String> = []
@@ -75,14 +78,9 @@ final class EditWatch {
     /// `snapshot` is the whole field as it stands now, not the dictation alone.
     /// Called again for every dictation: an older snapshot is not something
     /// anybody is still editing.
-    func start(field snapshot: String, dictated: String, in element: AXUIElement?) {
-        guard let line = Self.line(holding: dictated, in: snapshot) else {
-            Log.write("edit watch: the words are not in the field yet; not watching")
-            stop()
-            return
-        }
-        Log.write("edit watch: watching \"\(line.prefix(60))\"")
-        before = line
+    func start(dictated words: String, in element: AXUIElement?) {
+        before = nil
+        dictated = words
         field = element
         reported = []
         keysSeen = 0
@@ -106,6 +104,30 @@ final class EditWatch {
             monitors.append(local)
         }
         Log.write("edit watch: \(monitors.count) key monitor(s) installed")
+        findLine(attempt: 0)
+    }
+
+    /// The line the words landed on, once they are actually there.
+    ///
+    /// In a terminal ParrotFlow types rather than writes, so the field is a
+    /// keystroke or two behind when the dictation is declared finished. Looking
+    /// once found nothing and gave up; the words arrived a moment later.
+    private func findLine(attempt: Int) {
+        guard let field, let dictated, before == nil else { return }
+        if let snapshot = CaretAnchor.snapshot(of: field),
+           let line = Self.line(holding: dictated, in: snapshot) {
+            before = line
+            Log.write("edit watch: watching \"\(line.prefix(60))\"")
+            return
+        }
+        guard attempt < 6 else {
+            Log.write("edit watch: the words never reached the field; not watching")
+            stop()
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.findLine(attempt: attempt + 1)
+        }
     }
 
     func stop() {
@@ -121,6 +143,7 @@ final class EditWatch {
         for monitor in monitors { NSEvent.removeMonitor(monitor) }
         monitors = []
         before = nil
+        dictated = nil
         field = nil
         reported = []
     }
@@ -147,6 +170,7 @@ final class EditWatch {
     }
 
     private func read() {
+        // Nothing to compare against until the line has been found.
         guard let before, let field else { return }
         guard Date().timeIntervalSince(lastLook) > 0.15 else { return }
         lastLook = Date()

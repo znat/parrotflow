@@ -3450,16 +3450,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// anybody touched it.
     private func watchForEdits(in element: AXUIElement) {
         guard let last = lastDictated else { edits.stop(); return }
-        guard let snapshot = CaretAnchor.snapshot(of: element) else {
-            Log.write("edit watch: not watching — the field would not give up its text")
-            edits.stop()
-            return
-        }
         edits.onChange = { change in
             Log.write("correction: \"\(change.was)\" -> \"\(change.now)\"")
             Log.write("    in: \(change.sentence)")
         }
-        edits.start(field: snapshot, dictated: last.text, in: element)
+        edits.start(dictated: last.text, in: element)
     }
 
     /// The offer, over words that were dictated and have been selected again.
