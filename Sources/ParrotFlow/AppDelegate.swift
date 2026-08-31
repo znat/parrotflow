@@ -3457,11 +3457,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// anybody touched it.
     private func watchForEdits(in element: AXUIElement) {
         guard let last = lastDictated else { edits.stop(); return }
-        edits.onChange = { change in
-            Log.write("correction: \"\(change.was)\" -> \"\(change.now)\"")
-            Log.write("    in: \(change.sentence)")
+        edits.onCorrections = { [weak self] changes in
+            self?.offerToLearn(changes)
         }
         edits.start(dictated: last.text, in: element)
+    }
+
+    /// Put what was corrected by hand in front of you, as rules to keep or not.
+    ///
+    /// The panel rather than a notice, because a correction read off a screen is
+    /// a guess about what somebody meant: the words are right, what they are a
+    /// rule *for* is not always. Reviewing it is a second, and a rule saved
+    /// wrongly decides other sentences for as long as it stands.
+    ///
+    /// Only names. A correction into a word both word lists know — `remain` to
+    /// `remaining` — is English being fixed, not a term being taught, and a
+    /// panel about it would be noise on every dictation.
+    private func offerToLearn(_ changes: [EditWatch.Change]) {
+        let known = Set(config.vocabulary.terms.keys.map { $0.lowercased() })
+        let worth = changes.filter { change in
+            let word = change.now.trimmingCharacters(in: .punctuationCharacters)
+            guard !word.isEmpty else { return false }
+            return known.contains(word.lowercased()) || Vocabulary.unseenWord(word)
+        }
+        guard !worth.isEmpty else {
+            if !changes.isEmpty {
+                Log.write("correction: \(changes.count) change(s), none of them a name")
+            }
+            return
+        }
+        Log.write("correction: offering \(worth.count) rule(s) to keep")
+        let sentence = worth.first?.sentence ?? ""
+        correctionPanel.onSave = { [weak self] rules, _ in
+            // The field is already right — the person fixed it themselves. Only
+            // the rules are new, so `learn` and nothing after it.
+            _ = self?.learn(rules, in: sentence)
+        }
+        correctionPanel.onCancel = { Log.write("correction: the rules were declined") }
+        correctionPanel.show(
+            rules: worth.map { (heard: $0.was, corrected: $0.now) }, over: sentence
+        )
     }
 
     /// The offer, over words that were dictated and have been selected again.

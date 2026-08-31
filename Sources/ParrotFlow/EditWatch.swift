@@ -41,7 +41,11 @@ final class EditWatch {
         let at: Int
     }
 
-    var onChange: ((Change) -> Void)?
+    /// Every correction of one settling, handed over at once.
+    ///
+    /// At once because they are reviewed at once: several words fixed in one
+    /// pass are one act, and one panel listing them is what that act deserves.
+    var onCorrections: (([Change]) -> Void)?
 
     /// The whole field as it stood when the dictation landed. Both sides of the
     /// comparison are field snapshots, so neither has to be located in the
@@ -230,8 +234,8 @@ final class EditWatch {
         seen = [:]
         for change in changes {
             Log.write("edit watch: \"\(change.was)\" became \"\(change.now)\"")
-            onChange?(change)
         }
+        onCorrections?(changes)
     }
 
     private func read() {
