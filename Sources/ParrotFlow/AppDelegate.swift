@@ -215,6 +215,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// until the next dictation replaces it.
     private let reselect = SelectionWatch()
 
+    /// Watches for one word of the last dictation being changed by hand — see
+    /// `EditWatch`. A correction is the only thing that says what the right
+    /// answer was in a particular sentence, and it is thrown away today.
+    private let edits = EditWatch()
+
     /// The last dictation a tap can summon an offer over: its words, and where
     /// they went.
     ///
@@ -1225,6 +1230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // here rather than when the new ones land, so the gap in between
             // cannot offer over a sentence that is already history.
             reselect.stop()
+            edits.stop()
             readTheAnchor()
         }
 
@@ -3419,6 +3425,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.offerOverReselected(selection)
         }
         reselect.start(over: last.text, in: element)
+        watchForEdits(in: element)
+    }
+
+    /// Watch the field the dictation landed in for one word being changed.
+    ///
+    /// The snapshot is the whole field and not the dictation, because both
+    /// sides of the comparison have to be the same thing — see
+    /// `EditWatch.change`. Reading it costs one accessibility call, here rather
+    /// than at the first keystroke so that what is captured is the field before
+    /// anybody touched it.
+    private func watchForEdits(in element: AXUIElement) {
+        guard let snapshot = CaretAnchor.snapshot(of: element) else {
+            edits.stop()
+            return
+        }
+        edits.onChange = { change in
+            Log.write("correction: \"\(change.was)\" -> \"\(change.now)\"")
+            Log.write("    in: \(change.sentence)")
+        }
+        edits.start(field: snapshot, in: element)
     }
 
     /// The offer, over words that were dictated and have been selected again.
