@@ -14,6 +14,11 @@ final class Recorder {
         /// heard, which the duration cannot: a lost take and a good one are the
         /// same length. See `silenceFloor`.
         let rms: Float
+        /// When the first buffer reached the file. The recording starts here,
+        /// not at `startedAt`: `engine.start()` returns before the device
+        /// delivers anything, and whatever was said in between is not in the
+        /// clip. Nil when nothing was captured.
+        let firstSampleAt: Date?
     }
 
     /// What the engine is bound to: which input device, and the format that
@@ -285,6 +290,9 @@ final class Recorder {
     /// than how many buffers.
     private var capturedFrames: Int64 = 0
     private var capturedEnergy: Double = 0
+    /// When the first buffer was written, under `writeLock` with the counter
+    /// that decides it is the first.
+    private var firstBufferAt: Date?
     private var droppedFrames: Int64 = 0
     private var refusedBuffers: Int = 0
     private var failedWrites: Int = 0
@@ -478,6 +486,7 @@ final class Recorder {
         writeLock.lock()
         capturedFrames = 0
         capturedEnergy = 0
+        firstBufferAt = nil
         droppedFrames = 0
         refusedBuffers = 0
         failedWrites = 0
@@ -513,6 +522,7 @@ final class Recorder {
         engine.inputNode.removeTap(onBus: 0)
 
         let duration = startedAt.map { Date().timeIntervalSince($0) } ?? 0
+        let opened = startedAt
         let url = currentURL
 
         writeLock.lock()
@@ -521,6 +531,9 @@ final class Recorder {
         let refused = refusedBuffers
         let failed = failedWrites
         let dropped = droppedFrames
+        // Read here rather than at the caller: `teardown` is a line away and
+        // the counters are only readable until it runs.
+        let firstSample = firstBufferAt
         writeLock.unlock()
 
         teardown()
@@ -557,6 +570,17 @@ final class Recorder {
             report("Recorded nothing — the microphone was not ready. Press again.")
             rebuildEngine(because: "the last recording captured nothing")
             return nil
+        }
+
+        // What the clip cost before it existed. `engine.start()` returns as
+        // soon as the graph is running, which is not when the device starts
+        // sending — so this is speech that was said and not recorded, and it
+        // is a number rather than an anecdote only because it is logged.
+        if let firstSample, let opened {
+            Log.write(String(
+                format: "first sample %.0f ms after the engine started",
+                firstSample.timeIntervalSince(opened) * 1000
+            ))
         }
 
         // Audio that was spoken and is not in the file. Two ways to lose it and
@@ -612,7 +636,7 @@ final class Recorder {
             report(nil)
         }
 
-        return Recording(url: url, duration: duration, rms: rms)
+        return Recording(url: url, duration: duration, rms: rms, firstSampleAt: firstSample)
     }
 
     private func teardown() {
@@ -704,6 +728,10 @@ final class Recorder {
         if let audioFile {
             do {
                 try audioFile.write(from: outBuffer)
+                // The clip's real beginning. Taken from the same branch that
+                // counts the frame, so it cannot mark a buffer the file
+                // refused — a moment nothing was recorded at.
+                if capturedFrames == 0 { firstBufferAt = Date() }
                 capturedFrames += Int64(outBuffer.frameLength)
                 capturedEnergy += Double(rms) * Double(rms) * Double(outBuffer.frameLength)
             } catch {

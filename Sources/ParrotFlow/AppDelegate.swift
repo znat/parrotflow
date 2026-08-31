@@ -123,6 +123,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// enough: only one recording runs at a time, and it is taken the moment
     /// that recording stops.
     private var micAtPress: Recorder.InputDevice?
+
+    /// When the hotkey last went down. Read once by `startRecording`, which
+    /// freezes it onto the recording — the press that *stops* a toggle moves
+    /// this one and must not be allowed to move that one.
+    private var pressedAt: Date?
+
+    /// The press the running recording started from, and how long that press
+    /// waited for an engine. `Recording.firstSampleAt` is the other end: the
+    /// gap between them is speech said into a microphone that was running and
+    /// not yet delivering. One slot, for `micAtPress`'s reason.
+    private var capturePress: (at: Date, engineAfter: TimeInterval)?
+
     /// That same app's icon, for the pill. Held apart from `appAtPress` because
     /// `Pipeline.App` is what the pipeline matches on and has no business
     /// carrying an image around.
@@ -1142,6 +1154,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Hotkey handling
 
     private func handleHotKeyPress(afterTap: Bool = false) {
+        // First, before the selection snapshot and the caret read below. Those
+        // run between the key going down and the microphone opening, and this
+        // is the only measurement that can say what they cost the speaker.
+        pressedAt = Date()
+
         // The gesture, kept for the `Press` built when the recording stops.
         // Only for a press that starts a dictation: the second press of a
         // toggle belongs to the one already running, and it did not ask for
@@ -1515,6 +1532,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.permissions.model.refresh()
                 if granted {
+                    // The press that reaches here waited on a dialog. Timing it
+                    // from the original key-down would put a minute of reading
+                    // into a measurement of the microphone.
+                    self.pressedAt = Date()
                     self.startRecording()
                 } else {
                     // Not `.installing`: the app has been running for a while
@@ -1536,6 +1557,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // is about the microphone these words went through. See
             // `Recorder.boundDevice`.
             micAtPress = recorder.boundDevice
+            // Frozen here rather than read at the end: by then `pressedAt` may
+            // belong to a later press.
+            if let pressedAt {
+                capturePress = (at: pressedAt, engineAfter: Date().timeIntervalSince(pressedAt))
+            } else {
+                capturePress = nil
+            }
         } catch {
             // A notice, not an alert. `runModal` holds the main run loop, and
             // the hotkey is delivered on it: one failed press behind a modal
@@ -1850,6 +1878,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Taken at the press, not here: a transcript arrives seconds later and
         // the window you dictated into may not be the one in front by then.
         let app = appAtPress
+        // What the clip cost before it existed, both halves measured from the
+        // key going down. Read off the recording rather than the recorder:
+        // `stop` has already torn the recorder's own copy down.
+        let capture = capturePress.map { press in
+            (
+                engine: press.engineAfter,
+                firstSample: recording.firstSampleAt.map { $0.timeIntervalSince(press.at) }
+            )
+        }
         // Carried down the chain from here for the same reason, plus one of its
         // own. Push-to-talk does not wait for the previous transcript — hold the
         // key again while a prompt stage is still running and two are in flight,
@@ -1913,6 +1950,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     app: app.map { Trace.App(name: $0.name, bundleID: $0.bundleID) },
                     beside: recording.url.deletingLastPathComponent()
                 ) {
+                    Trace.current?.recordCapture(
+                        engine: capture?.engine, firstSample: capture?.firstSample
+                    )
                     let text = try await self?.transcriber.transcribe(
                         url: recording.url, config: config, app: app, press: press.run,
                         progress: { label in
