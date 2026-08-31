@@ -76,7 +76,13 @@ final class EditWatch {
     /// Called again for every dictation: an older snapshot is not something
     /// anybody is still editing.
     func start(field snapshot: String, dictated: String, in element: AXUIElement?) {
-        before = Self.line(holding: dictated, in: snapshot)
+        guard let line = Self.line(holding: dictated, in: snapshot) else {
+            Log.write("edit watch: the words are not in the field yet; not watching")
+            stop()
+            return
+        }
+        Log.write("edit watch: watching \"\(line.prefix(60))\"")
+        before = line
         field = element
         reported = []
         keysSeen = 0
@@ -243,15 +249,18 @@ final class EditWatch {
     }
 
     /// The line `text` sits on, or the whole thing if it is not there.
-    static func line(holding text: String, in field: String) -> String {
+    static func line(holding text: String, in field: String) -> String? {
         let wanted = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !wanted.isEmpty else { return field }
+        guard !wanted.isEmpty else { return nil }
         for line in field.components(separatedBy: .newlines) where line.contains(wanted) {
             return line
         }
-        // Written but already reflowed, or typed somewhere this cannot see. The
-        // whole field is worse than one line and better than nothing.
-        return field
+        // No line holds the words. In a terminal they are typed rather than
+        // written, so the field can still be a keystroke behind. Falling back to
+        // the whole field looked harmless and was not: nothing afterwards can
+        // match a screen against a line, so every read reported the line as
+        // gone.
+        return nil
     }
 
     /// The line of `field` that is most nearly `wanted`.

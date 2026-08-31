@@ -3455,7 +3455,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             edits.stop()
             return
         }
-        Log.write("edit watch: watching \(snapshot.count) chars")
         edits.onChange = { change in
             Log.write("correction: \"\(change.was)\" -> \"\(change.now)\"")
             Log.write("    in: \(change.sentence)")
