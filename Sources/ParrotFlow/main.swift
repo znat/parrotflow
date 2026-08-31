@@ -387,8 +387,7 @@ if let index = arguments.firstIndex(of: "--portrait") {
         exit(1)
     }
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --portrait <term> [\"<sentence>\" <span>]")
-        exit(2)
+        exit(TermPortraitCommand.all())
     }
     let sentence = arguments.indices.contains(index + 2) ? arguments[index + 2] : nil
     let span = arguments.indices.contains(index + 3) ? arguments[index + 3] : nil

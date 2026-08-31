@@ -26,7 +26,12 @@ enum LearnCommand {
         // the correction was lost when it was not.
         if let sentence, !sentence.isEmpty {
             do {
-                try TermUses.record(term: corrected, said: sentence, span: corrected)
+                // From the terminal, so it was typed and not lived. A portrait
+                // built out of sentences somebody invented behaves differently
+                // from one built out of real dictation.
+                try TermUses.record(
+                    term: corrected, said: sentence, span: corrected, from: .seeded
+                )
             } catch {
                 print("! the sentence was not recorded in"
                     + " \(TermUses.url.lastPathComponent): \(error.localizedDescription)")

@@ -39,6 +39,20 @@ actor TermPortrait {
     /// Where the floor is read off the leave-one-out scores.
     static let quantile = 0.10
 
+    /// How far below the floor a sentence has to fall before the term is held
+    /// back rather than merely not written.
+    ///
+    /// The portrait was built to authorise only. It is the one test that tells
+    /// `We host our databases on superbase` from `The rocket landed on the moon
+    /// on its superbase` — 0.944 against 0.665 — and the one that tells
+    /// `I deploy my app on Versal` from `I love visiting the Versailles Castle`
+    /// — 1.001 against 0.690. Neither pair moves the slot test at all.
+    ///
+    /// 0.04 on the fourth dictation: 6 of 11 overwrites refused, 1 of 13
+    /// correct writes lost. Chosen on that set, which was the last one held
+    /// out, so it is a number to re-measure and not one to trust.
+    static let refusal = 0.04
+
     struct Summary: Codable, Equatable {
         let centre: [Float]
         let tightness: Double
@@ -74,16 +88,27 @@ actor TermPortrait {
         return WordVectors.cosine(vector, summary.centre) / summary.tightness
     }
 
-    /// True to authorise the rewrite, false to say nothing. Never refuses.
-    func authorises(_ span: String, in sentence: String, as term: String) async -> Bool {
+    /// What the term's own sentences say about this one.
+    enum Verdict {
+        /// This is where the term lives.
+        case authorises
+        /// This is somewhere else entirely.
+        case refuses
+        /// Not far enough either way, or the term has no portrait.
+        case nothing
+    }
+
+    func reads(_ span: String, in sentence: String, as term: String) async -> Verdict {
         do {
             guard let summary = try await summary(for: term),
                   let score = try await score(of: span, in: sentence, for: term)
-            else { return false }
-            return score > summary.floor
+            else { return .nothing }
+            if score > summary.floor { return .authorises }
+            if score < summary.floor - Self.refusal { return .refuses }
+            return .nothing
         } catch {
             Log.write("portrait: \(term) could not be scored (\(error.localizedDescription))")
-            return false
+            return .nothing
         }
     }
 

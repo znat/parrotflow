@@ -25,6 +25,20 @@ enum TermUses {
         /// The term inside `said`. Kept because a sentence can hold the word
         /// twice, and the portrait needs to know which one to leave out.
         let span: String
+        /// Who put it here. A portrait built from sentences somebody typed by
+        /// hand behaves differently from one built out of real dictation, and
+        /// telling them apart afterwards is the only way to know which you are
+        /// looking at.
+        var from: Source = .correction
+
+        enum Source: String, Codable {
+            /// The correction panel, the spoken command, or `--learn`.
+            case correction
+            /// Written by hand with `--learn --in`, to fill a portrait early.
+            case seeded
+        }
+
+        static func == (a: Use, b: Use) -> Bool { a.said == b.said && a.span == b.span }
     }
 
     static var url: URL {
@@ -77,7 +91,8 @@ enum TermUses {
                       let span = row["span"] as? String,
                       said.contains(span)
                 else { return nil }
-                return Use(said: said, span: span)
+                let from = (row["from"] as? String).flatMap(Use.Source.init(rawValue:))
+                return Use(said: said, span: span, from: from ?? .correction)
             }
             if !uses.isEmpty { out[term] = uses }
         }
@@ -88,13 +103,15 @@ enum TermUses {
     ///
     /// The oldest goes when the list is full, so a term that moves on stops
     /// being described by what it used to mean.
-    static func record(term: String, said: String, span: String) throws {
+    static func record(
+        term: String, said: String, span: String, from: Use.Source = .correction
+    ) throws {
         let sentence = said.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sentence.isEmpty, !span.isEmpty, sentence.contains(span) else { return }
 
         var all = try read()
         var uses = all[term] ?? []
-        let use = Use(said: sentence, span: span)
+        let use = Use(said: sentence, span: span, from: from)
         guard !uses.contains(use) else { return }
         uses.append(use)
         if uses.count > keep { uses.removeFirst(uses.count - keep) }
@@ -135,6 +152,7 @@ enum TermUses {
             for use in uses {
                 lines.append("    - said: \(quoted(use.said))")
                 lines.append("      span: \(quoted(use.span))")
+                lines.append("      from: \(use.from.rawValue)")
             }
         }
         lines.append("")

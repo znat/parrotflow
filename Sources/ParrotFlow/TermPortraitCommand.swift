@@ -14,6 +14,32 @@ import Foundation
 @available(macOS 14, *)
 enum TermPortraitCommand {
 
+    /// Every term that has uses, with what each has decided about itself.
+    static func all() -> Int32 {
+        let stored = TermUses.load()
+        guard !stored.isEmpty else {
+            print("no confirmed uses yet — correct a name, or seed one with --learn --in")
+            return 0
+        }
+        print("  term            uses  seeded  floor   last sentence")
+        for term in stored.keys.sorted() {
+            guard let uses = stored[term] else { continue }
+            let seeded = uses.filter { $0.from == .seeded }.count
+            let floor = Blocking.run { () async -> Double? in
+                (try? await TermPortrait.shared.summary(for: term))??.floor
+            }
+            let shown = floor.map { String(format: "%.3f", $0) } ?? "   —"
+            let last = uses.last?.said ?? ""
+            print("  \(pad(term, 15)) \(pad(String(uses.count), 5)) \(pad(String(seeded), 7))"
+                + " \(shown)   \(last.prefix(44))")
+        }
+        return 0
+    }
+
+    private static func pad(_ text: String, _ width: Int) -> String {
+        text.count >= width ? text : text + String(repeating: " ", count: width - text.count)
+    }
+
     static func run(term: String, sentence: String?, span: String?) -> Int32 {
         let outcome = Blocking.run { () async -> Result<(TermPortrait.Summary?, Double?), Error> in
             do {
@@ -43,8 +69,20 @@ enum TermPortraitCommand {
                 "uses \(summary.uses)   tightness \(String(format: "%.3f", summary.tightness))"
                     + "   floor \(String(format: "%.3f", summary.floor))"
             )
+            if sentence == nil {
+                for use in TermUses.load()[term] ?? [] {
+                    print("  \(use.from == .seeded ? "seeded " : "learned") \(use.said)")
+                }
+            }
             if let score {
-                let verdict = score > summary.floor ? "authorises" : "no opinion"
+                let verdict: String
+                if score > summary.floor {
+                    verdict = "authorises"
+                } else if score < summary.floor - TermPortrait.refusal {
+                    verdict = "refuses"
+                } else {
+                    verdict = "no opinion"
+                }
                 print("score \(String(format: "%.3f", score))   \(verdict)")
             }
             return 0

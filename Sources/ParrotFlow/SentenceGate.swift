@@ -6,8 +6,9 @@ import Foundation
 /// whether the term belongs where the word was heard, and a term is unknown to
 /// the tokenizer by construction, so its vector sits further from any centre
 /// than a real word's and the comparison cannot be made to write.
-/// `TermPortrait` only authorises: it asks whether this sentence looks like the
-/// ones the term was confirmed in, and says nothing about the alternative.
+/// `TermPortrait` answers about the term alone: whether this sentence looks like
+/// the ones it was confirmed in. It authorises when it does, refuses when the
+/// sentence is well outside, and says nothing between.
 ///
 /// So there are four outcomes and only one of them is a disagreement:
 ///
@@ -49,9 +50,30 @@ enum SentenceGate {
 
         var out = settled
         for (index, change) in changes.enumerated() {
-            guard index < out.count, out[index] == nil else { continue }
+            guard index < out.count, out[index] != false else { continue }
             guard let term = change.terms.first else { continue }
             guard text.contains(change.was) else { continue }
+
+            // A place an earlier rule already decided to write. The two word
+            // lists write a name whenever the heard word is in neither of them,
+            // which is right almost always and wrong when the word is simply
+            // rare: `on the moon on its superbase` became `its Supabase`. The
+            // portrait is the only test that separates that from `we host our
+            // databases on superbase` — 0.665 against 0.944 — so it may hand
+            // such a place back, and only back: it never turns a write into a
+            // refusal on its own.
+            if out[index] == true {
+                let portrait = await TermPortrait.shared.reads(
+                    change.was, in: text, as: term
+                )
+                if portrait == .refuses {
+                    out[index] = nil
+                    Log.write(
+                        "sentence gate: \"\(change.was)\" -> \(term) handed back"
+                            + " — \(term) does not live in this sentence")
+                }
+                continue
+            }
 
             let refuses: Bool
             do {
@@ -65,20 +87,21 @@ enum SentenceGate {
                 Log.write("sentence gate: \(change.was) — \(error.localizedDescription)")
                 continue
             }
-            let authorises = await TermPortrait.shared.authorises(
+            let portrait = await TermPortrait.shared.reads(
                 change.was, in: text, as: term
             )
 
-            switch (refuses, authorises) {
-            case (true, true):
+            switch (refuses, portrait) {
+            case (true, .authorises):
                 Log.write("sentence gate: \"\(change.was)\" -> \(term) — the two disagree")
-            case (true, false):
+            case (true, _), (false, .refuses):
                 out[index] = false
-                Log.write("sentence gate: \"\(change.was)\" kept — it belongs here")
-            case (false, true):
+                let why = refuses ? "it belongs here" : "\(term) does not live in this sentence"
+                Log.write("sentence gate: \"\(change.was)\" kept — \(why)")
+            case (false, .authorises):
                 out[index] = true
                 Log.write("sentence gate: \"\(change.was)\" -> \(term) — this is where it lives")
-            case (false, false):
+            case (false, .nothing):
                 break
             }
         }
