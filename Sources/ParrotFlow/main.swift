@@ -378,6 +378,24 @@ if let index = arguments.firstIndex(of: "--context-test") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--word-vector") {
+    guard #available(macOS 14, *) else {
+        print("✗ word vectors need macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --word-vector \"<sentence>\" <word> [--around]")
+        exit(2)
+    }
+    exit(
+        WordVectorCommand.run(
+            sentence: arguments[index + 1],
+            word: arguments[index + 2],
+            around: arguments.contains("--around")
+        )
+    )
+}
+
 if let index = arguments.firstIndex(of: "--tag") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --tag \"<text>\" [--lang fr]")
