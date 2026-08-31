@@ -116,7 +116,17 @@ final class EditWatch {
         guard Date().timeIntervalSince(lastLook) > 0.15 else { return }
         lastLook = Date()
 
-        guard let now = CaretAnchor.snapshot(of: field) else { return }
+        guard let now = CaretAnchor.snapshot(of: field) else {
+            Log.write("edit watch: the field would not give up its text this time")
+            return
+        }
+        if now == before {
+            // Once per watch, so a field nobody touched does not fill the log.
+            if reported.insert("still").inserted {
+                Log.write("edit watch: read \(now.count) chars, unchanged")
+            }
+            return
+        }
         guard let change = Self.change(from: before, to: now) else {
             // Said out loud while this is new. A field that changed and was not
             // read as a correction is either a rewrite — right to refuse — or a
