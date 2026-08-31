@@ -55,9 +55,9 @@ final class EditWatch {
     private var field: AXUIElement?
     private var monitors: [Any] = []
     private var reported: Set<String> = []
-    /// What each replaced word has become so far, so a correction typed in
-    /// stages is told once and not once per pause.
-    private var seen: [String: String] = [:]
+    /// What each replaced word has become so far. Only the last state of each
+    /// is a correction, so they are held here until the watch ends.
+    private var seen: [String: Change] = [:]
     private var lastLook = Date.distantPast
     /// The read waiting for you to stop typing. Cancelled and replaced by every
     /// key, so it only ever runs once the field has been still.
@@ -128,11 +128,14 @@ final class EditWatch {
             Log.write("edit watch: watching \"\(line.prefix(60))\"")
             return
         }
-        guard attempt < 6 else {
+        guard attempt < 15 else {
             Log.write("edit watch: the words never reached the field; not watching")
             stop()
             return
         }
+        // Three seconds in all. A long sentence is typed into a terminal one
+        // character at a time, and `Superbase` was still arriving when six
+        // attempts over a second gave up on it.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.findLine(attempt: attempt + 1)
         }
@@ -148,6 +151,7 @@ final class EditWatch {
             settling = nil
             read()
         }
+        tell()
         for monitor in monitors { NSEvent.removeMonitor(monitor) }
         monitors = []
         before = nil
@@ -171,6 +175,7 @@ final class EditWatch {
             guard event.type == .keyDown else { return }
             settling = nil
             read()
+            tell()
             return
         }
         // Everything else is read once you stop, and only on the way up, so a
@@ -179,6 +184,17 @@ final class EditWatch {
         let work = DispatchWorkItem { [weak self] in self?.read() }
         settling = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiet, execute: work)
+    }
+
+    /// Hand over what was found, once, in the order it was found.
+    private func tell() {
+        guard !seen.isEmpty else { return }
+        let changes = seen.values.sorted { $0.was < $1.was }
+        seen = [:]
+        for change in changes {
+            Log.write("edit watch: \"\(change.was)\" became \"\(change.now)\"")
+            onChange?(change)
+        }
     }
 
     private func read() {
@@ -212,16 +228,11 @@ final class EditWatch {
             }
             return
         }
-        for change in found {
-            // Typed in stages: correcting `length chain` to `Langchain` settled
-            // three times on the way and was reported three times. Keyed on what
-            // was replaced, so a later stage of the same correction takes the
-            // place of the earlier one instead of joining it.
-            if let earlier = seen[change.was], earlier == change.now { continue }
-            seen[change.was] = change.now
-            Log.write("edit watch: \"\(change.was)\" became \"\(change.now)\"")
-            onChange?(change)
-        }
+        // Kept, not told. A correction typed in stages passes through states
+        // nobody meant — deleting `Prezi` back to `P` before typing `Praisy`
+        // reported `Prezi -> P` as a correction — and only the last state is
+        // one. Told when the watch ends, which is when you move on.
+        for change in found { seen[change.was] = change }
     }
 
     // MARK: - the comparison
@@ -348,8 +359,9 @@ final class EditWatch {
         var pool: [String: Int] = [:]
         for word in words(of: a) { pool[word, default: 0] += 1 }
         var count = 0
-        for word in words(of: b) where (pool[word] ?? 0) > 0 {
-            pool[word]! -= 1
+        for word in words(of: b) {
+            guard let left = pool[word], left > 0 else { continue }
+            pool[word] = left - 1
             count += 1
         }
         return count
