@@ -906,6 +906,13 @@ thing that costs you the words.
 that shows the mic is hot. Both on by default; the pill is the only thing on
 screen that says recording is happening, so turning it off is a real choice.
 
+**The start chime means the microphone is sending**, not that the key was
+registered. It used to play as soon as the audio graph was running, which is
+before the device delivers anything — 330 ms before it, measured cold on one
+machine — so it invited you to speak into a gap that never reached the clip.
+Wait for the chime and the first word is recorded. A press that captures
+nothing plays nothing, and the menu bar says so instead.
+
 `sound_volume` is how loud the chimes are, from 0 to 1, on top of system
 volume. Default 0.3. The macOS system sounds are mixed to be heard once, as an
 alert; dictation plays them several times a sentence, and at 1.0 that is a lot

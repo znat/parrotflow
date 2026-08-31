@@ -524,6 +524,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }
+        // The start cue, here rather than in `startRecording`, because this is
+        // the first moment the app can hear anything. Played when `start`
+        // returned, it told you to speak into a microphone that was still
+        // coming up — 330 ms of it, measured cold on this machine — and the
+        // words said into that gap are not in the clip.
+        //
+        // Guarded, because this arrives on the main queue from the audio
+        // thread and Escape may have landed in between. A sound that cannot be
+        // told from success is no sound.
+        recorder.onFirstBuffer = { [weak self] in
+            guard let self, self.recorder.isRecording else { return }
+            self.playFeedback("Tink")
+        }
         recorder.onUnexpectedStop = { [weak self] _ in
             self?.stopRecording(reason: "The microphone changed — that take stopped early.")
         }
@@ -1582,7 +1595,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         watchForEscape()
 
-        playFeedback("Tink")
+        // No cue here. `recorder.onFirstBuffer` plays it, once the microphone
+        // is actually sending. The pill still opens now: it says where the
+        // words are going, which is settled at the press, and one that arrived
+        // late would jump.
         if config.feedback.overlay {
             // Under the selection when there is one and this is a command: the
             // words are about those words, and the pill belongs with them.

@@ -215,6 +215,13 @@ final class Recorder {
 
     /// 0...1, already smoothed — drive a meter with it. Called on the main queue.
     var onLevel: ((Float) -> Void)?
+    /// The microphone has started sending. Called once per recording, on the
+    /// main queue, and not at all for a recording that captured nothing.
+    ///
+    /// This is the moment a cue can honestly claim the app is listening.
+    /// `start` returning cannot: it means the graph is running, which is a
+    /// state the device has not reached yet.
+    var onFirstBuffer: (() -> Void)?
     /// Fired when recording stops on its own (e.g. the audio device changed).
     var onUnexpectedStop: ((Error?) -> Void)?
     /// What was wrong with the last recording, or nil if nothing was.
@@ -718,6 +725,7 @@ final class Recorder {
 
         let rms = Self.rootMeanSquare(of: outBuffer)
 
+        var isFirst = false
         writeLock.lock()
         // Counted only once it is on disk. Counting a buffer the file refused
         // would let `stop` report a healthy RMS over a clip that is empty or
@@ -731,7 +739,10 @@ final class Recorder {
                 // The clip's real beginning. Taken from the same branch that
                 // counts the frame, so it cannot mark a buffer the file
                 // refused — a moment nothing was recorded at.
-                if capturedFrames == 0 { firstBufferAt = Date() }
+                if capturedFrames == 0 {
+                    firstBufferAt = Date()
+                    isFirst = true
+                }
                 capturedFrames += Int64(outBuffer.frameLength)
                 capturedEnergy += Double(rms) * Double(rms) * Double(outBuffer.frameLength)
             } catch {
@@ -741,6 +752,9 @@ final class Recorder {
         }
         writeLock.unlock()
 
+        if isFirst {
+            DispatchQueue.main.async { [weak self] in self?.onFirstBuffer?() }
+        }
         publishLevel(rms)
     }
 
