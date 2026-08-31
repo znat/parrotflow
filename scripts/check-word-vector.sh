@@ -17,9 +17,14 @@
 # downloading. Run it by hand after touching WordVectors.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BIN="$ROOT/.build/release/ParrotFlow"
-[ -x "$BIN" ] || BIN="$ROOT/.build/debug/ParrotFlow"
-[ -x "$BIN" ] || { echo "build first: swift build"; exit 1; }
+# The newer of the two, not release first. A stale release binary does not know
+# the flag, and a flag it does not know used to start the app instead of failing.
+BIN=""
+for candidate in "$ROOT/.build/release/ParrotFlow" "$ROOT/.build/debug/ParrotFlow"; do
+  [ -x "$candidate" ] || continue
+  if [ -z "$BIN" ] || [ "$candidate" -nt "$BIN" ]; then BIN="$candidate"; fi
+done
+[ -n "$BIN" ] || { echo "build first: swift build"; exit 1; }
 
 TOLERANCE="${1:-0.01}"
 seen=0

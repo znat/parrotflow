@@ -609,6 +609,19 @@ if let index = arguments.firstIndex(of: "--watch-taps") {
     ))
 }
 
+// A flag nobody claimed is a mistake, not a request to start the app. Falling
+// through launched a second copy of ParrotFlow every time a check script ran an
+// older binary that did not know the flag yet — four of them, one afternoon.
+// What `AppDelegate` reads for itself once the app is up.
+let appFlags: Set<String> = ["--preview-panel", "--preview-transform", "--empty"]
+if let unknown = arguments.dropFirst().first(where: {
+    $0.hasPrefix("--") && !appFlags.contains($0)
+}) {
+    print("✗ unknown option \(unknown)")
+    print("run ParrotFlow with no arguments to start the app")
+    exit(2)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
