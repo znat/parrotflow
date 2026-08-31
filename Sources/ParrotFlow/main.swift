@@ -378,6 +378,24 @@ if let index = arguments.firstIndex(of: "--context-test") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--slot-gap") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot reference needs macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 3) else {
+        print("usage: ParrotFlow --slot-gap \"<sentence>\" <heard> <term>")
+        exit(2)
+    }
+    exit(
+        SlotGapCommand.run(
+            sentence: arguments[index + 1],
+            heard: arguments[index + 2],
+            term: arguments[index + 3]
+        )
+    )
+}
+
 if let index = arguments.firstIndex(of: "--word-vector") {
     guard #available(macOS 14, *) else {
         print("✗ word vectors need macOS 14 or later")
