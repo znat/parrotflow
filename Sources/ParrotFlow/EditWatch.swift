@@ -252,7 +252,13 @@ final class EditWatch {
     static func line(holding text: String, in field: String) -> String? {
         let wanted = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !wanted.isEmpty else { return nil }
-        for line in field.components(separatedBy: .newlines) where line.contains(wanted) {
+        // The last one, not the first. A terminal shows its history, so the
+        // words can appear higher up in something already printed — the first
+        // real read latched onto this app's own log line quoting the sentence,
+        // watched it, and reported it unchanged for ever. What was just typed
+        // is at the bottom.
+        for line in field.components(separatedBy: .newlines).reversed()
+        where line.contains(wanted) {
             return line
         }
         // No line holds the words. In a terminal they are typed rather than
@@ -273,9 +279,11 @@ final class EditWatch {
         guard let wanted, !wanted.isEmpty else { return nil }
         var best: String?
         var bestShared = 0
-        for line in field.components(separatedBy: .newlines) {
+        // Reversed for the same reason, and `>=` so a tie goes to the lower
+        // line: the one being edited is the last one written.
+        for line in field.components(separatedBy: .newlines).reversed() {
             let shared = Self.shared(wanted, line)
-            if shared > bestShared { bestShared = shared; best = line }
+            if shared >= bestShared { bestShared = shared; best = line }
         }
         return bestShared * 2 > wanted.count ? best : nil
     }
