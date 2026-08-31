@@ -11,12 +11,13 @@ import Foundation
 /// accessibility and no timing behind it, so it has a set.
 enum EditDiffCommand {
     static func run(before: String, now: String) -> Int32 {
-        guard let change = EditWatch.change(from: before, to: now) else {
+        let changes = EditWatch.changes(from: before, to: now)
+        guard !changes.isEmpty else {
             print("no single change")
             return 0
         }
-        print("\(change.was) -> \(change.now)")
-        print("  in: \(change.sentence)")
+        for change in changes { print("\(change.was) -> \(change.now)") }
+        print("  in: \(changes[0].sentence)")
         return 0
     }
 }

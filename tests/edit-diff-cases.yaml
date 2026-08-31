@@ -44,9 +44,21 @@ cases:
     now:     goodbye everyone and thanks for the fish
     expect:  none
 
-  # Two edits far apart: the span between them is the whole middle.
+  # Two words corrected in one edit, which is how anybody corrects a sentence
+  # they have already finished reading.
   - written: Prezi told Ghostty to restart the crawler tonight
     now:     Praisy told Ghostty to restart the indexer tonight
+    expect:  "Prezi -> Praisy | crawler -> indexer"
+
+  # Two names in one line, the case that sent this whole comparison back to be
+  # rewritten: the ends measure said the line had left the screen.
+  - written: So we have Prezi in our team. She is an expert about the versal platform.
+    now:     So we have Praisy in our team. She is an expert about the Vercel platform.
+    expect:  "Prezi -> Praisy | versal -> Vercel"
+
+  # A phrase replaced by another. There is no telling which part was meant.
+  - written: I use Ghostty as a terminal app
+    now:     I use the other one as a terminal app
     expect:  none
 
   # A word deleted rather than replaced. It says where a term does not belong

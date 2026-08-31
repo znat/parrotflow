@@ -55,6 +55,9 @@ final class EditWatch {
     private var field: AXUIElement?
     private var monitors: [Any] = []
     private var reported: Set<String> = []
+    /// What each replaced word has become so far, so a correction typed in
+    /// stages is told once and not once per pause.
+    private var seen: [String: String] = [:]
     private var lastLook = Date.distantPast
     /// The read waiting for you to stop typing. Cancelled and replaced by every
     /// key, so it only ever runs once the field has been still.
@@ -83,6 +86,7 @@ final class EditWatch {
         dictated = words
         field = element
         reported = []
+        seen = [:]
         keysSeen = 0
         guard monitors.isEmpty else { return }
         guard Permissions.accessibility == .granted else {
@@ -92,7 +96,11 @@ final class EditWatch {
 
         // Key up, so the character is in the field by the time it is read. A
         // paste arrives as ⌘V, which is a key event too.
-        let mask: NSEvent.EventTypeMask = [.keyUp]
+        // Key down for the line-ending keys and key up for the rest. Return is
+        // read at once and has to be read before the app it went to acts on it:
+        // in a terminal the line leaves the field on the press, and reading
+        // after found a screen that no longer held what was corrected.
+        let mask: NSEvent.EventTypeMask = [.keyUp, .keyDown]
         let look: (NSEvent) -> Void = { [weak self] event in self?.look(event) }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: look) {
             monitors.append(global)
@@ -160,10 +168,14 @@ final class EditWatch {
         // waiting out the quiet period would read a field that no longer holds
         // what was corrected.
         if let event, event.keyCode == 36 || event.keyCode == 76 {
+            guard event.type == .keyDown else { return }
             settling = nil
             read()
             return
         }
+        // Everything else is read once you stop, and only on the way up, so a
+        // held key is not one read per repeat.
+        guard event == nil || event?.type == .keyUp else { return }
         let work = DispatchWorkItem { [weak self] in self?.read() }
         settling = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiet, execute: work)
@@ -188,88 +200,98 @@ final class EditWatch {
             return
         }
         if now == before {
-            // Once per watch, so a field nobody touched does not fill the log.
             if reported.insert("still").inserted {
                 Log.write("edit watch: read \(now.count) chars, unchanged")
             }
             return
         }
-        guard let change = Self.change(from: before, to: now) else {
-            // Said out loud while this is new. A field that changed and was not
-            // read as a correction is either a rewrite — right to refuse — or a
-            // correction the rule is too strict for, and the two are told apart
-            // by looking at them.
-            if let raw = Self.span(from: before, to: now), raw.was.count + raw.now.count < 120,
-               reported.insert("skip\u{1}" + raw.was + "\u{1}" + raw.now).inserted {
-                Log.write("edit watch: refused \"\(raw.was)\" -> \"\(raw.now)\"")
+        let found = Self.changes(from: before, to: now)
+        guard !found.isEmpty else {
+            if reported.insert("skip\u{1}" + now).inserted {
+                Log.write("edit watch: nothing in \"\(now.prefix(60))\" reads as a correction")
             }
             return
         }
-        guard reported.insert(change.was + "\u{1}" + change.now).inserted else { return }
-        Log.write("edit watch: \"\(change.was)\" became \"\(change.now)\"")
-        onChange?(change)
+        for change in found {
+            // Typed in stages: correcting `length chain` to `Langchain` settled
+            // three times on the way and was reported three times. Keyed on what
+            // was replaced, so a later stage of the same correction takes the
+            // place of the earlier one instead of joining it.
+            if let earlier = seen[change.was], earlier == change.now { continue }
+            seen[change.was] = change.now
+            Log.write("edit watch: \"\(change.was)\" became \"\(change.now)\"")
+            onChange?(change)
+        }
     }
 
     // MARK: - the comparison
 
-    /// The changed span with no rule applied, for saying what was refused.
-    static func span(from before: String, to now: String) -> (was: String, now: String)? {
-        guard before != now, !before.isEmpty, !now.isEmpty else { return nil }
-        let old = Array(before), new = Array(now)
-        var front = 0
-        while front < old.count, front < new.count, old[front] == new[front] { front += 1 }
-        var back = 0
-        while back < old.count - front, back < new.count - front,
-              old[old.count - 1 - back] == new[new.count - 1 - back] { back += 1 }
-        while front > 0, !old[front - 1].isWhitespace { front -= 1 }
-        while back > 0, back < old.count - front, back < new.count - front,
-              !old[old.count - back].isWhitespace { back -= 1 }
-        return (String(old[front ..< (old.count - back)]), String(new[front ..< (new.count - back)]))
+    /// Every word that was replaced by another, in order.
+    ///
+    /// Word by word, not by the two ends. Comparing what two lines share at
+    /// their front and back works for one change and collapses for two: the
+    /// prefix stops at the first and the suffix at the last, so the whole
+    /// middle counts as different. On "So we have Prezi in our team. She's an
+    /// expert about the versal platform" with both names corrected, that measure
+    /// found 33% in common and decided the line had left the screen.
+    ///
+    /// A run where one word became one word is a correction. A run of two words
+    /// against three is a rewrite of a phrase, and there is no telling which
+    /// part of it was meant, so it is left alone.
+    static func changes(from before: String, to now: String) -> [Change] {
+        guard before != now else { return [] }
+        let old = words(of: before), new = words(of: now)
+        guard !old.isEmpty, !new.isEmpty else { return [] }
+
+        // Longest common subsequence, then walk it: the gaps between what the
+        // two lines share are the edits.
+        var table = [[Int]](repeating: [Int](repeating: 0, count: new.count + 1),
+                            count: old.count + 1)
+        for i in stride(from: old.count - 1, through: 0, by: -1) {
+            for j in stride(from: new.count - 1, through: 0, by: -1) {
+                table[i][j] = old[i] == new[j]
+                    ? table[i + 1][j + 1] + 1
+                    : max(table[i + 1][j], table[i][j + 1])
+            }
+        }
+
+        var found: [Change] = []
+        var i = 0, j = 0
+        // `||`, not `&&`. A change at the very last word leaves one side spent
+        // while the other still has the word that replaced it, and stopping
+        // there lost every correction of a sentence's final word.
+        while i < old.count || j < new.count {
+            if i < old.count, j < new.count, old[i] == new[j] { i += 1; j += 1; continue }
+            let fromI = i, fromJ = j
+            while i < old.count || j < new.count {
+                if i < old.count, j < new.count, old[i] == new[j] { break }
+                if i < old.count, j >= new.count || table[i + 1][j] >= table[i][j + 1] {
+                    i += 1
+                } else {
+                    j += 1
+                }
+            }
+            let left = i - fromI, right = j - fromJ
+            // One word for one, and one word for two either way: the recogniser
+            // splits a name as often as it mangles it, and `Ghost D` becoming
+            // `Ghostty` is the same correction as `Prezi` becoming `Praisy`.
+            // Two words for two is a phrase, and there is no telling which part
+            // of it was meant.
+            guard left >= 1, right >= 1, left <= 2, right <= 2, left + right <= 3
+            else { continue }
+            found.append(Change(
+                was: old[fromI ..< i].joined(separator: " "),
+                now: new[fromJ ..< j].joined(separator: " "),
+                sentence: now
+            ))
+        }
+        return found
     }
 
-    /// The one span that differs, or nil if it is not one span.
-    ///
-    /// Both sides are the whole field: what it held when the dictation landed,
-    /// and what it holds now. Comparing the dictation against the field instead
-    /// meant hunting for where the words sat, and every anchor for that hunt is
-    /// a word the edit may have been. Two snapshots of the same field need no
-    /// anchor at all — what they share at the front and at the back is
-    /// untouched, and what is left in the middle is the edit.
-    static func change(from before: String, to now: String) -> Change? {
-        guard before != now, !before.isEmpty, !now.isEmpty else { return nil }
-
-        let old = Array(before)
-        let new = Array(now)
-        var front = 0
-        while front < old.count, front < new.count, old[front] == new[front] { front += 1 }
-        var back = 0
-        while back < old.count - front, back < new.count - front,
-              old[old.count - 1 - back] == new[new.count - 1 - back] { back += 1 }
-
-        // Snap to whole words. "the Vercel Castle" against "the Versailles
-        // Castle" shares "the Ver" at the front and "el Castle" at the back, so
-        // the raw span is "cel" becoming "sailles" — true, and useless. A
-        // correction is a word for a word.
-        while front > 0, !old[front - 1].isWhitespace { front -= 1 }
-        while back > 0, back < old.count - front, back < new.count - front,
-              !old[old.count - back].isWhitespace { back -= 1 }
-
-        let was = String(old[front ..< (old.count - back)])
-        let became = String(new[front ..< (new.count - back)])
-
-        // Both sides, or it is not a correction. An empty left side is text
-        // typed after the dictation; an empty right side is a word deleted, and
-        // a deletion says where a term does not belong without saying what
-        // belongs there instead — nothing a portrait can be built from.
-        guard !was.isEmpty, !became.isEmpty else { return nil }
-
-        // One word each side, give or take. A longer span is a rewrite, and a
-        // rewrite is not a correction of a name.
-        guard was.count <= 24, became.count <= 24 else { return nil }
-        guard was.split(separator: " ").count <= 2 else { return nil }
-        guard became.split(separator: " ").count <= 2 else { return nil }
-
-        return Change(was: was, now: became, sentence: now)
+    /// The words of a line, punctuation kept: `Vercel.` and `Vercel` are not the
+    /// same correction, and the one with the stop is what was on the screen.
+    private static func words(of line: String) -> [String] {
+        line.split(separator: " ").map(String.init)
     }
 
     /// The line `text` sits on, or the whole thing if it is not there.
@@ -314,17 +336,22 @@ final class EditWatch {
         // Two thirds, not half. A screen carrying this app's output has lines
         // that quote the sentence and share a great deal of it without being
         // it, and one changed word leaves far more than two thirds intact.
-        return bestShared * 3 > wanted.count * 2 ? best : nil
+        return bestShared * 3 > words(of: wanted).count * 2 ? best : nil
     }
 
-    /// How many characters two strings share at their two ends.
+    /// How many words two lines have in common, counting repeats once each.
+    ///
+    /// Not what they share at the ends. Two corrections in one line leave the
+    /// ends agreeing on almost nothing while every other word is untouched, and
+    /// the ends measure said the line had gone.
     private static func shared(_ a: String, _ b: String) -> Int {
-        let x = Array(a), y = Array(b)
-        var front = 0
-        while front < x.count, front < y.count, x[front] == y[front] { front += 1 }
-        var back = 0
-        while back < x.count - front, back < y.count - front,
-              x[x.count - 1 - back] == y[y.count - 1 - back] { back += 1 }
-        return front + back
+        var pool: [String: Int] = [:]
+        for word in words(of: a) { pool[word, default: 0] += 1 }
+        var count = 0
+        for word in words(of: b) where (pool[word] ?? 0) > 0 {
+            pool[word]! -= 1
+            count += 1
+        }
+        return count
     }
 }
