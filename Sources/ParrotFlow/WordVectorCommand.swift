@@ -19,8 +19,11 @@ enum WordVectorCommand {
     static func run(sentence: String, word: String, around: Bool) -> Int32 {
         let side: WordVectors.Side = around ? .around : .word
         let result = Blocking.run { () async -> Result<[Float], Error> in
-            do { return .success(try await WordVectors.shared.vector(side, of: word, in: sentence)) }
-            catch { return .failure(error) }
+            do {
+                return .success(try await WordVectors.shared.vector(side, of: word, in: sentence))
+            } catch {
+                return .failure(error)
+            }
         }
         switch result {
         case .failure(let error):
@@ -47,7 +50,12 @@ enum Blocking {
         let done = DispatchSemaphore(value: 0)
         Task { box.value = await body(); done.signal() }
         done.wait()
-        return box.value!
+        guard let value = box.value else {
+            // `done` is only signalled after `value` is set, so this cannot
+            // happen; a crash here would be better than a wrong answer.
+            fatalError("the async call signalled without a result")
+        }
+        return value
     }
 
     private final class Box<T>: @unchecked Sendable {
