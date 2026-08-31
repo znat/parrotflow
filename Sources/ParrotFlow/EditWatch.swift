@@ -97,13 +97,38 @@ final class EditWatch {
         lastLook = Date()
 
         guard let now = CaretAnchor.snapshot(of: field) else { return }
-        guard let change = Self.change(from: before, to: now) else { return }
+        guard let change = Self.change(from: before, to: now) else {
+            // Said out loud while this is new. A field that changed and was not
+            // read as a correction is either a rewrite — right to refuse — or a
+            // correction the rule is too strict for, and the two are told apart
+            // by looking at them.
+            if let raw = Self.span(from: before, to: now), raw.was.count + raw.now.count < 120,
+               reported.insert("skip\u{1}" + raw.was + "\u{1}" + raw.now).inserted {
+                Log.write("edit watch: refused \"\(raw.was)\" -> \"\(raw.now)\"")
+            }
+            return
+        }
         guard reported.insert(change.was + "\u{1}" + change.now).inserted else { return }
         Log.write("edit watch: \"\(change.was)\" became \"\(change.now)\"")
         onChange?(change)
     }
 
     // MARK: - the comparison
+
+    /// The changed span with no rule applied, for saying what was refused.
+    static func span(from before: String, to now: String) -> (was: String, now: String)? {
+        guard before != now, !before.isEmpty, !now.isEmpty else { return nil }
+        let old = Array(before), new = Array(now)
+        var front = 0
+        while front < old.count, front < new.count, old[front] == new[front] { front += 1 }
+        var back = 0
+        while back < old.count - front, back < new.count - front,
+              old[old.count - 1 - back] == new[new.count - 1 - back] { back += 1 }
+        while front > 0, !old[front - 1].isWhitespace { front -= 1 }
+        while back > 0, back < old.count - front, back < new.count - front,
+              !old[old.count - back].isWhitespace { back -= 1 }
+        return (String(old[front ..< (old.count - back)]), String(new[front ..< (new.count - back)]))
+    }
 
     /// The one span that differs, or nil if it is not one span.
     ///
