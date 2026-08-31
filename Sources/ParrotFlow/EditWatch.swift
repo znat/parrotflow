@@ -305,25 +305,17 @@ final class EditWatch {
         line.split(separator: " ").map(String.init)
     }
 
-    /// The line `text` sits on, or the whole thing if it is not there.
+    /// The line the words went on.
+    ///
+    /// By resemblance and not by containment. Asking which line *holds* the
+    /// dictation fails the moment somebody starts correcting it — the words are
+    /// no longer there — and that is exactly when this is looking: a sentence
+    /// typed into a terminal takes a second to arrive, and the correction often
+    /// starts before the search gives up. Two of three corrections were lost
+    /// that way, with the watch reporting that the words never reached the
+    /// field while they sat on the screen half-fixed.
     static func line(holding text: String, in field: String) -> String? {
-        let wanted = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !wanted.isEmpty else { return nil }
-        // The last one, not the first. A terminal shows its history, so the
-        // words can appear higher up in something already printed — the first
-        // real read latched onto this app's own log line quoting the sentence,
-        // watched it, and reported it unchanged for ever. What was just typed
-        // is at the bottom.
-        for line in field.components(separatedBy: .newlines).reversed()
-        where line.contains(wanted) {
-            return line
-        }
-        // No line holds the words. In a terminal they are typed rather than
-        // written, so the field can still be a keystroke behind. Falling back to
-        // the whole field looked harmless and was not: nothing afterwards can
-        // match a screen against a line, so every read reported the line as
-        // gone.
-        return nil
+        nearest(to: text.trimmingCharacters(in: .whitespacesAndNewlines), in: field)
     }
 
     /// The line of `field` that is most nearly `wanted`.
