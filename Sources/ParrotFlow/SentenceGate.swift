@@ -78,7 +78,7 @@ enum SentenceGate {
             let refuses: Bool
             do {
                 let gap = try await SlotReference.gap(
-                    term: change.now, heard: change.was, in: text
+                    term: change.now, heard: change.was, at: change.range, in: text
                 )
                 refuses = gap < -SlotReference.floor
             } catch {
