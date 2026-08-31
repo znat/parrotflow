@@ -83,7 +83,7 @@ final class EditWatch {
         // Key up, so the character is in the field by the time it is read. A
         // paste arrives as ⌘V, which is a key event too.
         let mask: NSEvent.EventTypeMask = [.keyUp]
-        let look: (NSEvent) -> Void = { [weak self] _ in self?.look() }
+        let look: (NSEvent) -> Void = { [weak self] event in self?.look(event) }
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: look) {
             monitors.append(global)
         }
@@ -97,8 +97,15 @@ final class EditWatch {
     }
 
     func stop() {
-        settling?.cancel()
-        settling = nil
+        // The read that was waiting for you to stop typing, run before the
+        // watch goes. Correcting a word and reaching straight for the hotkey is
+        // the ordinary way to use this app, and cancelling here threw away
+        // every correction made that way — which was all of them.
+        if settling != nil {
+            settling?.cancel()
+            settling = nil
+            read()
+        }
         for monitor in monitors { NSEvent.removeMonitor(monitor) }
         monitors = []
         before = nil
@@ -108,11 +115,20 @@ final class EditWatch {
 
     deinit { stop() }
 
-    /// A key went by. Read once the typing stops, not now.
-    private func look() {
+    /// A key went by. Read once the typing stops, not now — unless the key was
+    /// the one that ends the line, which says the typing is over.
+    private func look(_ event: NSEvent?) {
         if keysSeen == 0 { Log.write("edit watch: first key seen") }
         keysSeen += 1
         settling?.cancel()
+        // Return and Enter. In a terminal the line is gone a moment later, so
+        // waiting out the quiet period would read a field that no longer holds
+        // what was corrected.
+        if let event, event.keyCode == 36 || event.keyCode == 76 {
+            settling = nil
+            read()
+            return
+        }
         let work = DispatchWorkItem { [weak self] in self?.read() }
         settling = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiet, execute: work)
