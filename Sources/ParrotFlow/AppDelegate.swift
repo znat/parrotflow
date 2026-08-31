@@ -3478,7 +3478,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let worth = changes.filter { change in
             let word = change.now.trimmingCharacters(in: .punctuationCharacters)
             guard !word.isEmpty else { return false }
-            return known.contains(word.lowercased()) || Vocabulary.unseenWord(word)
+            let isTerm = known.contains(word.lowercased())
+            let unseen = Vocabulary.unseenWord(word)
+            Log.write("correction: \"\(word)\" — term \(isTerm), unseen \(unseen)")
+            return isTerm || unseen
         }
         guard !worth.isEmpty else {
             if !changes.isEmpty {
