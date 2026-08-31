@@ -71,3 +71,9 @@ cases:
   - written: We deploy on Vercel
     now:     We deploy on Vercel every Friday
     expect:  none
+
+  # A terminal draws a prompt at the head of the line being typed. It is not a
+  # word, and taking it for one corrected `❯ Prizzy` to `❯ Praizy`.
+  - written: "❯ Prizzy isn't the team. She's an expert in versatile deployments."
+    now:     "❯ Praizy isn't the team. She's an expert in Vercel deployments."
+    expect:  "Prizzy -> Praizy | versatile -> Vercel"

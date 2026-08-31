@@ -142,14 +142,15 @@ final class EditWatch {
             Log.write("edit watch: watching \"\(line.prefix(60))\"")
             return
         }
-        guard attempt < 15 else {
+        guard attempt < 40 else {
             Log.write("edit watch: the words never reached the field; not watching")
             stop()
             return
         }
-        // Three seconds in all. A long sentence is typed into a terminal one
-        // character at a time, and `Superbase` was still arriving when six
-        // attempts over a second gave up on it.
+        // Eight seconds in all. A long sentence is typed into a terminal one
+        // character at a time, and an 84-character one was still arriving when
+        // three seconds gave up on it. Nothing is read until the line is found,
+        // so waiting costs only the wait.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.findLine(attempt: attempt + 1)
         }
@@ -315,9 +316,20 @@ final class EditWatch {
 
     /// The words of a line, punctuation kept: `Vercel.` and `Vercel` are not the
     /// same correction, and the one with the stop is what was on the screen.
+    ///
+    /// The prompt is not a word. A terminal draws one at the head of the line
+    /// you are typing into, and it corrected `❯ Prizzy` to `❯ Praizy` — true,
+    /// and not a correction of anything.
     private static func words(of line: String) -> [String] {
-        line.split(separator: " ").map(String.init)
+        var text = Substring(line).drop(while: { $0.isWhitespace })
+        if let first = text.first, Self.prompts.contains(first) {
+            text = text.dropFirst().drop(while: { $0.isWhitespace })
+        }
+        return text.split(separator: " ").map(String.init)
     }
+
+    /// What terminals and shells put in front of the line being typed.
+    private static let prompts: Set<Character> = ["❯", ">", "$", "%", "#", "›", "→"]
 
     /// The line the words went on.
     ///
