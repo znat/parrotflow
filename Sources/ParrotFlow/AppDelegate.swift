@@ -3414,11 +3414,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and one whose element was never captured cannot be told from any other
     /// window.
     private func watchForReselection() {
-        guard config.feedback.correctOffer else { reselect.stop(); return }
+        guard config.feedback.correctOffer else { reselect.stop(); edits.stop(); return }
         guard let last = lastDictated,
               !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               case .field = last.landing, let element = last.element else {
+            // Said out loud, because the two watches below are the only way the
+            // app ever learns what a name should have been, and a dictation
+            // that lands anywhere else silently teaches nothing.
+            let why: String
+            if lastDictated == nil {
+                why = "nothing was dictated"
+            } else if lastDictated?.element == nil {
+                why = "the field it went into was never captured"
+            } else {
+                why = "it landed as \(String(describing: lastDictated?.landing))"
+            }
+            Log.write("edit watch: not watching — \(why)")
             reselect.stop()
+            edits.stop()
             return
         }
         reselect.onSelection = { [weak self] selection in
@@ -3437,9 +3450,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// anybody touched it.
     private func watchForEdits(in element: AXUIElement) {
         guard let snapshot = CaretAnchor.snapshot(of: element) else {
+            Log.write("edit watch: not watching — the field would not give up its text")
             edits.stop()
             return
         }
+        Log.write("edit watch: watching \(snapshot.count) chars")
         edits.onChange = { change in
             Log.write("correction: \"\(change.was)\" -> \"\(change.now)\"")
             Log.write("    in: \(change.sentence)")
