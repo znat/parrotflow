@@ -1263,6 +1263,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write(String(format: "selection snapshot was slow: %.2fs", elapsed))
         }
 
+        if abandonIfReleased(startsDictation, microphone) { return }
+
         // Where the words are about to go, so the pill can open there and say
         // so before a single one of them has been said.
         //
@@ -1284,6 +1286,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if startsDictation {
             readTheAnchor()
         }
+
+        if abandonIfReleased(startsDictation, microphone) { return }
 
         // The screen as it was when you started talking — which is the screen
         // the sentence is about. Taken here rather than in the pipeline because
@@ -1360,6 +1364,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             presentRecording()
             startPushToTalkPoll()
         }
+    }
+
+    /// Whether the hotkey is still physically down, as far as this process can
+    /// tell without a permission it does not have.
+    ///
+    /// A bare modifier answers exactly: `CGEventSource.flagsState` is a plain
+    /// read of the current state. A chord answers for its modifiers only —
+    /// Carbon edge-detects the character key and leaves no state to read — which
+    /// is the same limit `startPushToTalkPoll` already works within, and it
+    /// treats the modifiers going up as the release.
+    private func hotkeyStillHeld() -> Bool {
+        switch hotKeys.binding {
+        case .modifier(let key):
+            return key.isPressed
+        case .combo:
+            let required = KeyCodes.cocoaModifiers(config.hotkey.modifiers)
+            guard !required.isEmpty else { return true }
+            return NSEvent.modifierFlags
+                .intersection(.deviceIndependentFlagsMask)
+                .isSuperset(of: required)
+        case nil:
+            return true
+        }
+    }
+
+    /// Ends a press whose key came up while it was still reading the screen,
+    /// and says whether it did.
+    ///
+    /// The microphone opens at the top of the press now, and the reads that
+    /// follow run on the main thread — which is also where the release is
+    /// delivered. So a key released during them is a release waiting behind
+    /// them, with the microphone recording the room in the meantime. Checked
+    /// between the rungs rather than only after the last one, so that stretch
+    /// is as short as the reads allow.
+    ///
+    /// Push-to-talk only. In toggle the key is up for the whole dictation by
+    /// design, and this would end every one of them at the first rung.
+    private func abandonIfReleased(
+        _ startsDictation: Bool, _ microphone: MicrophoneStart
+    ) -> Bool {
+        guard startsDictation, microphone == .open,
+              config.hotkey.mode == .pushToTalk, !hotkeyStillHeld()
+        else { return false }
+        cancelDictation(.releasedWhileStarting)
+        return true
     }
 
     /// Climb the ladder in `CaretAnchor`, at the press. Called only from
@@ -1706,6 +1755,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         /// The hotkey was the front half of a shortcut, and the dictation
         /// started on its down edge has to go — see `ModifierKeyMonitor`.
         case notTheHotkey
+        /// The key came up while the press was still reading the screen. See
+        /// `abandonIfReleased`.
+        case releasedWhileStarting
     }
 
     /// Stop a dictation that is already under way.
@@ -1786,6 +1838,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // save. A notice about a dictation they never started would be an
             // apology for something they are not supposed to have seen.
             Log.write("hotkey: dropped — the modifier was part of a shortcut")
+        case .releasedWhileStarting:
+            // Silent too. A press this short is a tap, and a tap has never
+            // typed anything: the clip it used to leave was under
+            // `min_duration_seconds` and thrown away one step later. This drops
+            // it a moment earlier, and the moment is the point — it is the
+            // stretch where the microphone was open and the key was not down.
+            Log.write("hotkey: dropped — the key came up while the press was still reading")
         }
         updateUI()
     }
