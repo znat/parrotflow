@@ -3474,21 +3474,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `remaining` — is English being fixed, not a term being taught, and a
     /// panel about it would be noise on every dictation.
     private func offerToLearn(_ changes: [EditWatch.Change]) {
-        let known = Set(config.vocabulary.terms.keys.map { $0.lowercased() })
-        let worth = changes.filter { change in
-            let word = change.now.trimmingCharacters(in: .punctuationCharacters)
-            guard !word.isEmpty else { return false }
-            let isTerm = known.contains(word.lowercased())
-            let unseen = Vocabulary.unseenWord(word)
-            Log.write("correction: \"\(word)\" — term \(isTerm), unseen \(unseen)")
-            return isTerm || unseen
-        }
-        guard !worth.isEmpty else {
-            if !changes.isEmpty {
-                Log.write("correction: \(changes.count) change(s), none of them a name")
-            }
-            return
-        }
+        // No filter, for now. Deciding what a term is from the two word lists
+        // is a bet on what dictionaries do not know yet, and it ages badly: the
+        // day `Vercel` enters them, every correction toward it stops being
+        // offered — and the shipped auto-apply rule stops firing too, since it
+        // asks the same question. The panel is a better filter than any guess
+        // while this is being tried out: the rows are removed there.
+        let worth = changes
+        guard !worth.isEmpty else { return }
         Log.write("correction: offering \(worth.count) rule(s) to keep")
         let sentence = worth.first?.sentence ?? ""
         correctionPanel.onSave = { [weak self] rules, _ in
