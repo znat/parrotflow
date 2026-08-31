@@ -221,6 +221,12 @@ final class Recorder {
     /// This is the moment a cue can honestly claim the app is listening.
     /// `start` returning cannot: it means the graph is running, which is a
     /// state the device has not reached yet.
+    ///
+    /// Never called for a recording that has already ended. The block is
+    /// queued from the audio thread and carries the take it was queued for, so
+    /// one that arrives late is dropped rather than delivered against whatever
+    /// is recording by then — a cue for a take that is over, played over the
+    /// start of the next one.
     var onFirstBuffer: (() -> Void)?
     /// Fired when recording stops on its own (e.g. the audio device changed).
     var onUnexpectedStop: ((Error?) -> Void)?
@@ -300,6 +306,10 @@ final class Recorder {
     /// When the first buffer was written, under `writeLock` with the counter
     /// that decides it is the first.
     private var firstBufferAt: Date?
+    /// How many recordings this recorder has opened. A block queued for one of
+    /// them carries the number, so it cannot be delivered against a later one —
+    /// the guard `pressRun` gives a dictation, for a take.
+    private var takes: Int64 = 0
     private var droppedFrames: Int64 = 0
     private var refusedBuffers: Int = 0
     private var failedWrites: Int = 0
@@ -491,6 +501,7 @@ final class Recorder {
         currentURL = url
 
         writeLock.lock()
+        takes += 1
         capturedFrames = 0
         capturedEnergy = 0
         firstBufferAt = nil
@@ -725,7 +736,7 @@ final class Recorder {
 
         let rms = Self.rootMeanSquare(of: outBuffer)
 
-        var isFirst = false
+        var firstOfTake: Int64?
         writeLock.lock()
         // Counted only once it is on disk. Counting a buffer the file refused
         // would let `stop` report a healthy RMS over a clip that is empty or
@@ -741,7 +752,7 @@ final class Recorder {
                 // refused — a moment nothing was recorded at.
                 if capturedFrames == 0 {
                     firstBufferAt = Date()
-                    isFirst = true
+                    firstOfTake = takes
                 }
                 capturedFrames += Int64(outBuffer.frameLength)
                 capturedEnergy += Double(rms) * Double(rms) * Double(outBuffer.frameLength)
@@ -752,10 +763,21 @@ final class Recorder {
         }
         writeLock.unlock()
 
-        if isFirst {
-            DispatchQueue.main.async { [weak self] in self?.onFirstBuffer?() }
+        if let firstOfTake {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.take == firstOfTake else { return }
+                self.onFirstBuffer?()
+            }
         }
         publishLevel(rms)
+    }
+
+    /// Which recording is open now. Compared against the take a queued block
+    /// was made for; `openCapture` moves it.
+    private var take: Int64 {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        return takes
     }
 
     private static func rootMeanSquare(of buffer: AVAudioPCMBuffer) -> Float {
