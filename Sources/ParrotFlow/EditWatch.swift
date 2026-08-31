@@ -137,7 +137,8 @@ final class EditWatch {
             }
         }
         if let snapshot = CaretAnchor.snapshot(of: field),
-           let line = Self.line(holding: dictated, in: snapshot) {
+           let line = Self.line(holding: dictated, in: snapshot),
+           Self.holds(dictated, line) || attempt >= 40 {
             before = line
             Log.write("edit watch: watching \"\(line.prefix(60))\"")
             return
@@ -444,4 +445,19 @@ final class EditWatch {
     }
 
     private static let rules: Set<Character> = ["─", "-", "—", "═", "_"]
+
+    /// Whether the line has most of the words in it yet.
+    ///
+    /// The box says where to look and this says when. Finding the box at once
+    /// was the point of looking for it, and it took the baseline from an empty
+    /// one: `watching "❯"`, before a character had been typed, against which
+    /// the finished sentence read as no correction at all.
+    ///
+    /// Two thirds, and never more than that: by the time the last word lands
+    /// the first may already have been corrected.
+    static func holds(_ dictated: String, _ line: String) -> Bool {
+        let wanted = words(of: dictated)
+        guard !wanted.isEmpty else { return true }
+        return shared(dictated, line) * 3 >= wanted.count * 2
+    }
 }
