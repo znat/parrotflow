@@ -124,6 +124,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// that recording stops.
     private var micAtPress: Recorder.InputDevice?
 
+    /// The press waiting on the microphone dialog, if one is.
+    ///
+    /// A grant can arrive a minute later, long after the key came up. In
+    /// push-to-talk the key being down *is* the dictation, so starting one then
+    /// starts a recording nobody is holding and nothing will stop: the release
+    /// has already been and gone, and a modifier-only binding has no poll to
+    /// notice either. It runs until the next press-and-release, and delivers
+    /// the room. Cleared by the release, so the grant finds nothing to start.
+    ///
+    /// Toggle does not clear it. There the press was the whole gesture, and
+    /// starting when the answer arrives is what was asked for.
+    private var pressAwaitingMicrophone: Int?
+
     /// When the hotkey last went down. Read once by `startRecording`, which
     /// freezes it onto the recording — the press that *stops* a toggle moves
     /// this one and must not be allowed to move that one.
@@ -1481,6 +1494,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleHotKeyRelease() {
         guard config.hotkey.mode == .pushToTalk else { return }
+        // A press still waiting on the microphone dialog ends here, like any
+        // other. See `pressAwaitingMicrophone`.
+        pressAwaitingMicrophone = nil
         // The character key is actually up now, so there is nothing left for
         // the modifier poll to catch — unlike the poll's own call below, where
         // the character key is still down and a flicked-back modifier means
@@ -1587,9 +1603,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !recorder.isRecording else { return .open }
 
         guard Permissions.microphone == .granted else {
+            let run = pressRun
+            pressAwaitingMicrophone = run
             Permissions.requestMicrophone { [weak self] granted in
                 guard let self else { return }
                 self.permissions.model.refresh()
+                // The key came up while the dialog was open, or a later press
+                // has taken over. Either way this press is over and starting
+                // now would start a dictation nobody is holding.
+                guard self.pressAwaitingMicrophone == run else {
+                    self.dictationCancelled(run)
+                    return
+                }
+                self.pressAwaitingMicrophone = nil
                 if granted {
                     // The press that reaches here waited on a dialog. Timing it
                     // from the original key-down would put a minute of reading
@@ -1602,7 +1628,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // by the time someone presses the hotkey, and a refusal
                     // here should not offer to cancel an install that finished
                     // days ago.
-                    self.dictationCancelled(self.pressRun)
+                    self.dictationCancelled(run)
                     self.permissions.show(.revisiting)
                 }
             }
