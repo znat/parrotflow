@@ -47,6 +47,17 @@ final class EditWatch {
     private var monitors: [Any] = []
     private var reported: Set<String> = []
     private var lastLook = Date.distantPast
+    /// The read waiting for you to stop typing. Cancelled and replaced by every
+    /// key, so it only ever runs once the field has been still.
+    private var settling: DispatchWorkItem?
+
+    /// How long the field has to be still before it is read.
+    ///
+    /// Reading on every key catches the edit half-typed: correcting `Versailles`
+    /// to `Vercel` reported `Verce` first, which is not a word anybody meant.
+    /// Long enough to type a name through, short enough to land before the next
+    /// sentence is dictated.
+    private static let quiet: TimeInterval = 1.2
 
     var isRunning: Bool { !monitors.isEmpty }
 
@@ -81,6 +92,8 @@ final class EditWatch {
     }
 
     func stop() {
+        settling?.cancel()
+        settling = nil
         for monitor in monitors { NSEvent.removeMonitor(monitor) }
         monitors = []
         before = nil
@@ -90,9 +103,16 @@ final class EditWatch {
 
     deinit { stop() }
 
+    /// A key went by. Read once the typing stops, not now.
     private func look() {
+        settling?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.read() }
+        settling = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.quiet, execute: work)
+    }
+
+    private func read() {
         guard let before, let field else { return }
-        // Under the fastest key repeat, over one small accessibility read.
         guard Date().timeIntervalSince(lastLook) > 0.15 else { return }
         lastLook = Date()
 
@@ -172,6 +192,20 @@ final class EditWatch {
         guard was.split(separator: " ").count <= 2 else { return nil }
         guard became.split(separator: " ").count <= 2 else { return nil }
 
-        return Change(was: was, now: became, sentence: now)
+        return Change(was: was, now: became, sentence: lineAround(front, in: new))
+    }
+
+    /// The line the change sits on.
+    ///
+    /// The field is not always one sentence. In a terminal it is the whole
+    /// buffer — 2443 characters on the first real correction, most of it
+    /// somebody else's output — and a portrait built out of that would describe
+    /// the screen rather than the term.
+    private static func lineAround(_ index: Int, in text: [Character]) -> String {
+        var start = min(index, text.count)
+        while start > 0, !text[start - 1].isNewline { start -= 1 }
+        var end = min(index, text.count)
+        while end < text.count, !text[end].isNewline { end += 1 }
+        return String(text[start ..< end]).trimmingCharacters(in: .whitespaces)
     }
 }

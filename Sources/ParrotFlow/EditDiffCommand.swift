@@ -15,8 +15,8 @@ enum EditDiffCommand {
             print("no single change")
             return 0
         }
-        print("\(change.was.isEmpty ? "(nothing)" : change.was)"
-            + " -> \(change.now.isEmpty ? "(nothing)" : change.now)")
+        print("\(change.was) -> \(change.now)")
+        print("  in: \(change.sentence)")
         return 0
     }
 }
