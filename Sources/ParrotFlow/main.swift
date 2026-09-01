@@ -328,13 +328,16 @@ if let index = arguments.firstIndex(of: "--dates") {
 
 if let index = arguments.firstIndex(of: "--learn") {
     guard arguments.indices.contains(index + 2) else {
-        print("usage: ParrotFlow --learn <heard> <corrected> [person|place|organization|word]")
+        print("usage: ParrotFlow --learn <heard> <corrected> [kind] [--in \"<sentence>\"]")
         exit(2)
     }
     let kind = arguments.indices.contains(index + 3)
         ? WordKind(rawValue: arguments[index + 3]) : nil
+    let sentence = arguments.firstIndex(of: "--in").flatMap {
+        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+    }
     exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2],
-                          kind: kind))
+                          kind: kind, sentence: sentence))
 }
 
 if let index = arguments.firstIndex(of: "--forget") {
@@ -376,6 +379,20 @@ if let index = arguments.firstIndex(of: "--context-test") {
     exit(ContextTestCommand.run(
         screen: arguments[index + 1], limit: limit ?? Context.maxChars
     ))
+}
+
+if let index = arguments.firstIndex(of: "--portrait") {
+    guard #available(macOS 14, *) else {
+        print("✗ portraits need macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --portrait <term> [\"<sentence>\" <span>]")
+        exit(2)
+    }
+    let sentence = arguments.indices.contains(index + 2) ? arguments[index + 2] : nil
+    let span = arguments.indices.contains(index + 3) ? arguments[index + 3] : nil
+    exit(TermPortraitCommand.run(term: arguments[index + 1], sentence: sentence, span: span))
 }
 
 if let index = arguments.firstIndex(of: "--slot-gap") {

@@ -4356,12 +4356,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// False means one could not be written and the user has already been shown
     /// why. Nothing after it should run: a correction that half-saved and then
     /// went on to rewrite the field would leave the two disagreeing.
-    private func learn(_ rules: [TaughtRule]) -> Bool {
+    private func learn(_ rules: [TaughtRule], in corrected: String) -> Bool {
         for rule in rules {
             do {
                 try ConfigWriter.addVocabularyPronunciation(
                     term: rule.corrected, heard: rule.heard, kind: rule.kind
                 )
+                // The sentence too, not only the mapping. It is what a term's
+                // portrait is built from, and this is the only moment the app
+                // knows a sentence is right.
+                do {
+                    try TermUses.record(
+                        term: rule.corrected, said: corrected, span: rule.corrected
+                    )
+                } catch {
+                    // A portrait that missed one sentence is worth less than a
+                    // correction that refused to save over it.
+                    Log.write("could not record the use: \(error.localizedDescription)")
+                }
                 Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                 Trace.correction(heard: rule.heard, corrected: rule.corrected, via: "command")
             } catch {
@@ -4391,7 +4403,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         into target: Correction,
         clipboardWhenChosen: Int
     ) {
-        guard learn(rules) else { return }
+        guard learn(rules, in: correctedText) else { return }
         // On the clipboard, or not written at all, and `replace` has said which.
         // A rule notice on top of that would bury the one thing you need to act
         // on.
@@ -4412,7 +4424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ rules: [TaughtRule],
         correctedText: String
     ) {
-        guard learn(rules) else {
+        guard learn(rules, in: correctedText) else {
             pendingSelection = nil
             return
         }
