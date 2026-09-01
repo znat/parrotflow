@@ -52,19 +52,23 @@ enum ForgetCommand {
             // behind, the sentences would go on describing a term whose
             // renderings have all been thrown away.
             var uses = 0
+            var stayed: Error?
             do {
                 uses = try TermUses.forget(name)
             } catch {
-                // vocabulary.yaml is already edited by here, so refusing now
-                // would report a correction that did happen as a failure.
-                print("! the confirmed sentences were left alone:"
-                    + " \(error.localizedDescription)")
+                stayed = error
             }
-            if renderings == 0, gone.observations == 0, gone.samples == 0, uses == 0 {
+            if renderings == 0, gone.observations == 0, gone.samples == 0, uses == 0,
+               stayed == nil {
                 print("· nothing recorded for \(name)")
                 return 0
             }
-            print("✓ forgot \(name)")
+            // The rest is already deleted, so the tally still prints. What it
+            // must not say is that the term was forgotten when its sentences
+            // can still rebuild the portrait.
+            print(stayed == nil
+                ? "✓ forgot \(name)"
+                : "✗ \(name) was only partly forgotten")
             print("  \(renderings) pronunciation(s) from"
                 + " \(ConfigStore.vocabularyURL.lastPathComponent)")
             print("  \(gone.observations) observation(s) from voice/observations.jsonl")
@@ -74,6 +78,15 @@ enum ForgetCommand {
             let from = gone.folders.isEmpty
                 ? "voice/samples/" : gone.folders.map { "voice/samples/\($0)/" }.joined(separator: ", ")
             print("  \(gone.samples) sample(s) from \(from)")
+            if let stayed {
+                print("  the confirmed sentences in"
+                    + " \(TermUses.url.lastPathComponent) stayed:"
+                    + " \(stayed.localizedDescription)")
+                Log.write("forget: \(name) — \(renderings) pronunciation(s),"
+                    + " \(gone.observations) observation(s), \(gone.samples) sample(s);"
+                    + " the uses stayed (\(stayed.localizedDescription))")
+                return 1
+            }
             print("  \(uses) confirmed sentence(s) from \(TermUses.url.lastPathComponent)")
             Log.write("forget: \(name) — \(renderings) pronunciation(s),"
                 + " \(gone.observations) observation(s), \(gone.samples) sample(s),"
