@@ -102,7 +102,6 @@ $PF --normalize "<text>"
 $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
 $PF --inflected <term> <heard>
 $PF --word-gate <word> [term] [--in "<sentence>"]
-$PF --verdicts <count> "<reply>"
 $PF --teaching "<sentence>" <word>
 $PF --suggest "<sentence>" [--lang fr]
 ```

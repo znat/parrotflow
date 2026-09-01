@@ -198,11 +198,10 @@ EOF
 #
 # Ollama is reported, never installed. `models:` in config.yaml names a model
 # per job, and an entry there may be an OpenAI- or Anthropic-shaped endpoint as
-# well as a local one — so running the vocabulary judge and spoken commands no
-# longer means running a model on this Mac. What is still true is that they
-# need *a* model: without one, a rule match ships with nothing reviewing it.
-# So this prints both ways and installs neither. PARROTFLOW_SETUP_VOICE=1 does
-# the local one here, for a machine that wants it all in one command.
+# well as a local one — so running spoken commands no longer means running a
+# model on this Mac. The vocabulary stage needs no model at all. So this prints
+# both ways and installs neither. PARROTFLOW_SETUP_VOICE=1 does the local one
+# here, for a machine that wants it all in one command.
 #
 # Every check below asks the filesystem or another program, never the app we
 # just installed. That is the rule, and the reason is the URLs: this script is
@@ -236,12 +235,10 @@ SETUP_VOICE="${PARROTFLOW_SETUP_VOICE:-0}"
 # this even run", not as "already done".
 NEEDED_SETUP=""
 
-# What a model backs: not only spoken commands, but also the check that a
-# vocabulary term applied in the right context. Dictation and the deterministic
-# match still work without one; that match then ships unchecked instead of
-# reviewed, so a name can land in the wrong place with nothing to catch it.
-# Ollama is the way to run that model on this Mac, and `models:` in config.yaml
-# is the way to run it somewhere else.
+# What a model backs: spoken commands, and the transforms that are prompts.
+# Dictation works without one, and so does the vocabulary stage — it reads the
+# sentence itself and calls nothing. Ollama is the way to run a model on this
+# Mac, and `models:` in config.yaml is the way to run it somewhere else.
 #
 # Three checks in sequence, not mutually exclusive branches: installing Ollama
 # still leaves the model to pull, and starting a stopped Ollama still leaves
@@ -251,13 +248,13 @@ NEEDED_SETUP=""
 if ! command -v ollama >/dev/null 2>&1; then
     NEEDED_SETUP=1
     printf '    Ollama is not on this Mac, and it is optional. A language model\n'
-    printf '    backs two things: spoken commands, and the check that a vocabulary\n'
-    printf '    match fits its sentence before it is kept. Without any model,\n'
-    printf '    dictation still works, and vocabulary still matches — the match\n'
-    printf '    just ships unreviewed.\n\n'
+    printf '    backs spoken commands — "hey parrot, make that a bullet list" —\n'
+    printf '    and the transforms that are prompts. Dictation works without one,\n'
+    printf '    and so does your vocabulary: that stage reads the sentence itself\n'
+    printf '    and calls no model.\n\n'
     if [ "$SETUP_VOICE" = "1" ]; then
         printf '    ParrotFlow is already running and dictation already works — this\n'
-        printf '    download only unlocks spoken commands and the vocabulary check.\n\n'
+        printf '    download only unlocks spoken commands and prompt transforms.\n\n'
         say "Installing Ollama"
         brew install ollama && brew services start ollama \
             || die "could not install or start Ollama"
@@ -303,8 +300,8 @@ if command -v ollama >/dev/null 2>&1 \
     && INSTALLED="$(ollama list 2>/dev/null)" \
     && ! printf '%s\n' "$INSTALLED" | grep -qF "$MODEL"; then
     NEEDED_SETUP=1
-    printf '    The %s model is not downloaded yet. Spoken commands and the\n' "$MODEL"
-    printf '    vocabulary context check need it:\n\n'
+    printf '    The %s model is not downloaded yet. Spoken commands and\n' "$MODEL"
+    printf '    prompt transforms need it:\n\n'
     # Only the default's size is known here. A model named in someone's own
     # config could be any size, and a wrong number is worse than none.
     if [ "$MODEL" = "gemma4:e4b-mlx" ]; then
@@ -312,7 +309,7 @@ if command -v ollama >/dev/null 2>&1 \
     fi
     if [ "$SETUP_VOICE" = "1" ]; then
         printf '    ParrotFlow is already running and dictation already works — this\n'
-        printf '    download only unlocks spoken commands and the vocabulary check.\n\n'
+        printf '    download only unlocks spoken commands and prompt transforms.\n\n'
         say "Downloading $MODEL — this runs in the background, and dictation"
         printf '    keeps working the whole time.\n\n'
         ollama pull "$MODEL" || die "could not pull $MODEL"
@@ -324,7 +321,7 @@ fi
 
 if [ -z "$NEEDED_SETUP" ]; then
     printf '    Ollama and the %s model are already set up — spoken\n' "$MODEL"
-    printf '    commands and the vocabulary check are ready now.\n\n'
+    printf '    commands and prompt transforms are ready now.\n\n'
 fi
 
 cat <<'EOF'
