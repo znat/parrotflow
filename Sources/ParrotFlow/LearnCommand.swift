@@ -42,6 +42,39 @@ enum LearnCommand {
         return 0
     }
 
+    /// `--tidy-uses` — cuts every stored use down to its own sentence.
+    ///
+    /// The migration for `TermUses.narrowed`. Rows written before it exist hold
+    /// the whole prompt line, and two of Ghostty's three uses were teaching it
+    /// that "The night was very ghostly" is where it lives.
+    static func tidy() -> Int32 {
+        let all = TermUses.load()
+        var out: [String: [TermUses.Use]] = [:]
+        var cut = 0
+        for (term, uses) in all {
+            var kept: [TermUses.Use] = []
+            for use in uses {
+                let said = TermUses.narrowed(use.said, to: use.span)
+                if said != use.said { cut += 1 }
+                let now = TermUses.Use(said: said, span: use.span, from: use.from)
+                // The custom `==` is on the sentence and the span, so two rows
+                // that narrow to the same sentence collapse into one.
+                if !kept.contains(now) { kept.append(now) }
+            }
+            if !kept.isEmpty { out[term] = kept }
+        }
+        do {
+            try TermUses.write(out)
+            let was = all.values.map(\.count).reduce(0, +)
+            let now = out.values.map(\.count).reduce(0, +)
+            print("✓ \(cut) use(s) cut to their own sentence, \(was - now) duplicate(s) dropped")
+            return 0
+        } catch {
+            print("✗ \(error.localizedDescription)")
+            return 1
+        }
+    }
+
     /// `--for <term> "<sentence>" [word]` — a sentence the term *does* belong
     /// in, recorded without touching the pronunciations.
     ///

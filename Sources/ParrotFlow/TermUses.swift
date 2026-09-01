@@ -106,7 +106,7 @@ enum TermUses {
     static func record(
         term: String, said: String, span: String, from: Use.Source = .correction
     ) throws {
-        let sentence = said.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sentence = narrowed(said, to: span)
         guard !sentence.isEmpty, !span.isEmpty, sentence.contains(span) else { return }
 
         var all = try read()
@@ -133,6 +133,53 @@ enum TermUses {
         try write(all)
         return gone
     }
+
+    /// The one sentence `span` stands in, without the shell prompt in front.
+    ///
+    /// What is captured is the whole field, and in a terminal that is the whole
+    /// prompt line — every dictation glued together since the last Return.
+    /// Recorded whole, it taught `Ghostty` that "The night was very ghostly" is
+    /// where it lives, in two of its three uses. `RedCrawl`, `Sentry` and
+    /// `Tasmeen` each arrived with a single use that was somebody else's text.
+    ///
+    /// A full stop only ends a sentence when what follows is a space, an
+    /// upper-case letter, or nothing. Dictation arrives glued — "terminal.I'm
+    /// using" has to come apart — while `Node.js` and `3.5` must not.
+    static func narrowed(_ said: String, to span: String) -> String {
+        let text = said.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let at = text.range(of: span) else { return text }
+
+        func ends(_ i: String.Index) -> Bool {
+            guard ".!?".contains(text[i]) else { return false }
+            let after = text.index(after: i)
+            guard after < text.endIndex else { return true }
+            let next = text[after]
+            return next.isWhitespace || next.isUppercase
+        }
+
+        var from = text.startIndex
+        var i = text.startIndex
+        while i < at.lowerBound {
+            if ends(i) { from = text.index(after: i) }
+            i = text.index(after: i)
+        }
+        var to = text.endIndex
+        i = at.upperBound
+        while i < text.endIndex {
+            if ends(i) { to = text.index(after: i); break }
+            i = text.index(after: i)
+        }
+
+        var cut = String(text[from ..< to]).trimmingCharacters(in: .whitespaces)
+        // The prompt the terminal draws, which is not something anybody said.
+        while let first = cut.first, prompts.contains(first) {
+            cut = String(cut.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+        return cut.contains(span) ? cut : text
+    }
+
+    /// What terminals and shells draw in front of the line being typed.
+    static let prompts: Set<Character> = ["❯", ">", "$", "%", "#", "›", "→"]
 
     /// Rendered by hand rather than by `Yams.dump`, for the same reason
     /// `ConfigWriter` splices `vocabulary.yaml`: this file is meant to be read,

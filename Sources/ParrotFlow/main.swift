@@ -340,6 +340,10 @@ if let index = arguments.firstIndex(of: "--learn") {
                           kind: kind, sentence: sentence))
 }
 
+if arguments.contains("--tidy-uses") {
+    exit(LearnCommand.tidy())
+}
+
 if let index = arguments.firstIndex(of: "--for") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --for <term> \"<sentence>\" [word]")
