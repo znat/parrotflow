@@ -144,5 +144,18 @@ PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Prizy Praisy \
 check "a control character does not make the file unreadable" 3 \
   "$(grep -c '^    - said:' "$ODD/vocabulary-uses.yaml")"
 
+# `--tidy-uses` rewrites the whole file, so it has to read it the strict way.
+# Reading a broken file as "no uses" and writing that back is how every stored
+# sentence goes at once.
+sum_before="$(shasum "$BROKE/vocabulary-uses.yaml" | cut -d' ' -f1)"
+PARROTFLOW_CONFIG_DIR="$BROKE" "$BIN" --tidy-uses >/dev/null 2>&1
+check "--tidy-uses fails on a file it cannot parse" 1 "$?"
+check "and leaves it exactly as it was" "$sum_before" \
+  "$(shasum "$BROKE/vocabulary-uses.yaml" | cut -d' ' -f1)"
+
+PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --tidy-uses >/dev/null 2>&1
+check "--tidy-uses keeps the sentences of a file it can parse" 3 \
+  "$(grep -c '^    - said:' "$ODD/vocabulary-uses.yaml")"
+
 [ "$failed" -eq 0 ] && echo "Every check passed." || echo "Failed: term-uses"
 exit "$failed"

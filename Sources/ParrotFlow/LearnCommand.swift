@@ -48,7 +48,13 @@ enum LearnCommand {
     /// the whole prompt line, and two of Ghostty's three uses were teaching it
     /// that "The night was very ghostly" is where it lives.
     static func tidy() -> Int32 {
-        let all = TermUses.load()
+        // `read`, not `load`. A file that does not parse reads as no uses, and
+        // this writes what it read back over it.
+        let all: [String: [TermUses.Use]]
+        do { all = try TermUses.read() } catch {
+            print("✗ \(error.localizedDescription)")
+            return 1
+        }
         var out: [String: [TermUses.Use]] = [:]
         var cut = 0
         for (term, uses) in all {
