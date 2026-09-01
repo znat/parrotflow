@@ -120,5 +120,29 @@ check "a forget that cannot reach the sentences fails" 1 "$?"
 check "and says the term was only partly forgotten" 1 \
   "$(printf '%s' "$out" | grep -c 'only partly forgotten')"
 
+# A newline written as itself is folded back into a space, and a raw control
+# character makes the whole file unparseable. Both change or lose what a
+# portrait is built from, so both are escaped.
+ODD="$WORK/odd"
+mkdir -p "$ODD"
+two="$(printf 'We shipped it.\nPraisy wrote the guide.')"
+PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Precy Praisy --in "$two" >/dev/null 2>&1
+back="$(python3 -c '
+import sys, yaml
+print(yaml.safe_load(open(sys.argv[1]))["terms"]["Praisy"][0]["said"])
+' "$ODD/vocabulary-uses.yaml" 2>/dev/null)"
+check "a sentence holding a newline reads back unchanged" "$two" "$back"
+
+PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Prezi Praisy --in "$two" >/dev/null 2>&1
+check "and is still recognised as the same sentence" 1 \
+  "$(grep -c '^    - said:' "$ODD/vocabulary-uses.yaml")"
+
+bell="$(printf 'Praisy fixed \athe crawler.')"
+PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Praise Praisy --in "$bell" >/dev/null 2>&1
+PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Prizy Praisy \
+  --in "Praisy joined in March." >/dev/null 2>&1
+check "a control character does not make the file unreadable" 3 \
+  "$(grep -c '^    - said:' "$ODD/vocabulary-uses.yaml")"
+
 [ "$failed" -eq 0 ] && echo "Every check passed." || echo "Failed: term-uses"
 exit "$failed"
