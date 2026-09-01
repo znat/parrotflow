@@ -14,10 +14,18 @@
 # and secrets are untouched.
 
 repository:
-  # The live description, kept word for word — it is the README's one-liner
-  # trimmed, and the owner wrote it. Two places say what this app is, so change
-  # them together.
-  description: Local, fast and programmable dictation app
+  # Written for search, not only for a reader. GitHub matches the description,
+  # so the words people type have to be in it: "dictation app", "mac"/"macOS",
+  # "voice to text", "Wispr Flow alternative". Measured 2026-09-01: the query
+  # `dictation app mac` returns 112 repositories and this one is not among
+  # them, because the old description never said Mac.
+  #
+  # 350 characters is the GitHub limit. Keep every claim true — local-first,
+  # learns your vocabulary, programmable — and do not add one to win a word.
+  #
+  # The README's one-liner is shorter and no longer the same sentence. That is
+  # the owner's call, not this file's.
+  description: Local-first dictation app for macOS. A Wispr Flow alternative that keeps voice to text on your Mac, learns the names and jargon you actually say, and lets you program what happens to the text before it lands.
 
   # Deliberately empty. There is no site yet. The owner sets this in
   # Settings → General when there is one; do not invent a URL here.
@@ -105,6 +113,20 @@ topics:
   - voice-typing
   - local-first
   - ollama
+  # Added 2026-09-01, picked on how many repositories already hold the topic.
+  # A small pool is worth more: this repository is visible in it. The number
+  # after each one is that count, measured on the day.
+  #
+  # superwhisper-alternative is the cheapest of all of them at 14.
+  - superwhisper-alternative # 14
+  - dictation-app # 18
+  - voice-input # 460
+  - voice-to-text # 587
+  - apple-silicon # 3969
+  # The app does not link MLX. It is here because the model
+  # config.example.yaml ships with is an MLX build, `gemma4:e4b-mlx` on line
+  # 128. That is the whole claim; drop the topic if the default changes.
+  - mlx # 2152
 
 # SECURITY.md sends people to the advisory form. That form only exists when
 # this is on, so the link in SECURITY.md is dead without it.
