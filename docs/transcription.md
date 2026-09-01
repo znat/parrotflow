@@ -409,16 +409,15 @@ masked language model `SentenceModel` already fetches. Mask the word, take the
 ten most likely fillers, put each one back and tag it: the modal tag is what
 the slot wants. A name goes in a `Noun`, `Adjective` or `Pronoun` slot and
 never in a `Verb`, `Adverb` or `Preposition` one, so `merge` -> `Vercel` and
-`ready` -> `Arexvy` are refused with nothing asked. A term is written unasked
-only when the slot accepts a name **and** the word is the weakest place in its
-sentence — no word surprises the model more, and no two-word window more than
-the one it sits on. Everything else still goes to the judge, `Determiner`
-slots included: those are modifier positions and names do sit in them
-(`cloud code`, `bedrock principles`).
+`ready` -> `Arexvy` are refused with nothing asked. This tier only refuses. It
+never writes a term, and everything it does not refuse goes to the judge,
+`Determiner` slots included: those are modifier positions and names do sit in
+them (`cloud code`, `bedrock principles`).
 
-Measured over the 50 English cases of `tests/judge-cases.yaml`: 15 written
-unasked, 14 refused unasked, 21 left for the judge, and no error either way.
-`scripts/check-slot-gate.sh` is the run. See `SlotGate`.
+Measured over the 50 English cases of `tests/judge-cases.yaml`: 13 written
+unasked by the word lists, 14 refused unasked by the slot, 23 left for the
+judge, and no error either way. `scripts/check-slot-gate.sh` is the run. See
+`SlotGate`.
 
 The model is never waited for. Until it is on disk — and on a language it was
 not trained for — every proposal goes to the judge, which is the behaviour

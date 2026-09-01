@@ -41,8 +41,8 @@ import NaturalLanguage
 /// costs a wrong decline.
 ///
 /// Measured over the 50 English cases of `tests/judge-cases.yaml` by
-/// `scripts/check-slot-gate.sh`: 15 auto-applied, 14 declined, 21 left for the
-/// judge, and no error of either kind.
+/// `scripts/check-slot-gate.sh`: 13 applied by the lexical gate, 14 declined
+/// here, 23 left for the judge, and no error of either kind.
 @available(macOS 14, *)
 struct SlotGate {
 

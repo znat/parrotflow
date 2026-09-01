@@ -132,10 +132,10 @@ term does not would be taken out of the sentence, so it goes to the judge.
 Name the sentence too — with the term, which the model tiers are about —
 `--word-gate merge Vercel --in "Go back to main and merge."` prints
 `slot Verb` and `route decline`. `slot` is what the masked slot wants, from
-ten fillers put back and tagged; `rank` is how far the word is from being the
-weakest place in its sentence; `route` is where the proposal goes. A name goes
-in a `Noun`, `Adjective` or `Pronoun` slot and never in a `Verb`, `Adverb` or
-`Preposition` one — see `SlotGate`. Nothing is downloaded: with no cached
+ten fillers put back and tagged; `route` is where the proposal goes. The slot
+only ever declines: a name goes in a `Noun`, `Adjective` or `Pronoun` slot and
+never in a `Verb`, `Adverb` or `Preposition` one, and every other proposal
+reads `judge` — see `SlotGate`. Nothing is downloaded: with no cached
 sentence model the slot reads `unavailable` and the route is `judge`.
 `scripts/check-slot-gate.sh` scores the whole route against
 `tests/judge-cases.yaml`. It needs the 300 MB model, so it is not in
