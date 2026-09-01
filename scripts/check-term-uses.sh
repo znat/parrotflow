@@ -94,5 +94,31 @@ check "three terms hold five sentences between them" 5 "$(count)"
 PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --forget praisy >/dev/null 2>&1
 check "--forget takes one term's three, whatever the case" 2 "$(count)"
 
+# Bytes that are not UTF-8 are the same problem as a syntax error: the file is
+# there, it cannot be read, and it is not a file to write over.
+BYTES="$WORK/bytes"
+mkdir -p "$BYTES"
+printf 'terms:\n  "Praisy":\n    - said: "Praisy joined the team."\n      span: "Praisy"\n' \
+  > "$BYTES/vocabulary-uses.yaml"
+printf '\xff\xfe\xc3\x28\n' >> "$BYTES/vocabulary-uses.yaml"
+sum_before="$(shasum "$BYTES/vocabulary-uses.yaml" | cut -d' ' -f1)"
+PARROTFLOW_CONFIG_DIR="$BYTES" "$BIN" --learn Prezi Praisy \
+  --in "Praisy wrote the guide." >/dev/null 2>&1
+check "a file that is not UTF-8 is left alone" "$sum_before" \
+  "$(shasum "$BYTES/vocabulary-uses.yaml" | cut -d' ' -f1)"
+
+# A forget that could not reach the sentences has to say so. The renderings are
+# already gone by then, so silence would leave a term half forgotten.
+HALF="$WORK/half"
+mkdir -p "$HALF"
+PARROTFLOW_CONFIG_DIR="$HALF" "$BIN" --learn Precy Praisy \
+  --in "Praisy fixed the crawler." >/dev/null 2>&1
+sed -i '' 's|    - said: "Praisy fixed the crawler."|    - said: "Praisy fixed the crawler.|' \
+  "$HALF/vocabulary-uses.yaml"
+out="$(PARROTFLOW_CONFIG_DIR="$HALF" "$BIN" --forget Praisy 2>/dev/null)"
+check "a forget that cannot reach the sentences fails" 1 "$?"
+check "and says the term was only partly forgotten" 1 \
+  "$(printf '%s' "$out" | grep -c 'only partly forgotten')"
+
 [ "$failed" -eq 0 ] && echo "Every check passed." || echo "Failed: term-uses"
 exit "$failed"
