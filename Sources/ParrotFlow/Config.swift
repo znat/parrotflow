@@ -218,7 +218,6 @@ struct Config: Decodable, Equatable {
         /// `and me` reaching `Andrey`.
         var soundBelow: Float = 0.85
 
-
         /// One way this speaker's mouth turns a term into something else, and
         /// what is known about that.
         ///

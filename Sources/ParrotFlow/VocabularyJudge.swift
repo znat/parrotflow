@@ -1136,7 +1136,6 @@ enum VocabularyJudge {
     /// is *not* settled: the spell checker knows the word, the lists say
     /// nothing, and it goes to the judge — which is where it belongs, and where
     /// the judge got it right.
-    ///
     static func settle(
         _ changes: [Change], in text: String, by policy: [Standing: Gating],
         gate: SlotGate?
