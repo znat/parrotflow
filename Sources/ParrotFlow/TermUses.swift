@@ -107,7 +107,9 @@ enum TermUses {
         term: String, said: String, span: String, from: Use.Source = .correction
     ) throws {
         let sentence = narrowed(said, to: span)
-        guard !sentence.isEmpty, !span.isEmpty, sentence.contains(span) else { return }
+        // A word, not a substring. `contains` alone let `Vercelli` in.
+        guard !sentence.isEmpty, !span.isEmpty,
+              occurrence(of: span, in: sentence) != nil else { return }
 
         var all = try read()
         var uses = all[term] ?? []
@@ -183,9 +185,12 @@ enum TermUses {
     ///
     /// `range(of:)` matches inside a longer word, so `Vercel` found itself in
     /// `Vercelli` and the sentence about an Italian town was stored as a use of
-    /// the hosting platform. A term that occurs twice as a word still takes the
-    /// first: both are genuine uses, and nothing that records one carries the
-    /// position of the occurrence that was corrected.
+    /// the hosting platform. Nil means the term does not stand in this text at
+    /// all, whatever `contains` says, and nothing should be recorded.
+    ///
+    /// A term that occurs twice as a word still takes the first: both are
+    /// genuine uses, and nothing that records one carries the position of the
+    /// occurrence that was corrected.
     static func occurrence(of span: String, in text: String) -> Range<String.Index>? {
         func word(_ c: Character) -> Bool { c.isLetter || c.isNumber }
         var from = text.startIndex
@@ -197,9 +202,9 @@ enum TermUses {
             guard found.lowerBound < text.endIndex else { break }
             from = text.index(after: found.lowerBound)
         }
-        // No boundary anywhere: the caller's guard still decides, on the text
-        // it was given.
-        return text.range(of: span)
+        // Nowhere. `Vercel` in `I visited Vercelli last year.` is not a use of
+        // the term, and a caller that only asked `contains` stored it as one.
+        return nil
     }
 
     /// What terminals and shells draw in front of the line being typed.

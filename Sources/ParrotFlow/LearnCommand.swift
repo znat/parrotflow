@@ -57,10 +57,17 @@ enum LearnCommand {
         }
         var out: [String: [TermUses.Use]] = [:]
         var cut = 0
+        var notAWord = 0
         for (term, uses) in all {
             var kept: [TermUses.Use] = []
             for use in uses {
                 let said = TermUses.narrowed(use.said, to: use.span)
+                // The term only inside a longer word. `Vercelli` was stored as
+                // a use of `Vercel` before `record` asked for a word.
+                guard TermUses.occurrence(of: use.span, in: said) != nil else {
+                    notAWord += 1
+                    continue
+                }
                 if said != use.said { cut += 1 }
                 let now = TermUses.Use(said: said, span: use.span, from: use.from)
                 // The custom `==` is on the sentence and the span, so two rows
@@ -73,7 +80,9 @@ enum LearnCommand {
             try TermUses.write(out)
             let was = all.values.map(\.count).reduce(0, +)
             let now = out.values.map(\.count).reduce(0, +)
-            print("✓ \(cut) use(s) cut to their own sentence, \(was - now) duplicate(s) dropped")
+            print("✓ \(cut) use(s) cut to their own sentence,"
+                + " \(was - now - notAWord) duplicate(s) dropped,"
+                + " \(notAWord) where the term is not a word")
             return 0
         } catch {
             print("✗ \(error.localizedDescription)")
@@ -94,8 +103,8 @@ enum LearnCommand {
     /// it — `Praisy's` — and defaults to the term itself.
     static func supporting(term: String, sentence: String, span: String? = nil) -> Int32 {
         let written = span ?? term
-        guard sentence.contains(written) else {
-            print("✗ \"\(written)\" is not in that sentence")
+        guard TermUses.occurrence(of: written, in: sentence) != nil else {
+            print("✗ \"\(written)\" does not stand as a word in that sentence")
             return 1
         }
         do {

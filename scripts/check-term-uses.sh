@@ -159,6 +159,24 @@ PARROTFLOW_CONFIG_DIR="$INSIDE" "$BIN" --for Vercel \
 check "the term is found as a word, not inside a longer one" \
   "We deploy on Vercel." "$(said_of "$INSIDE")"
 
+PREFIX="$WORK/prefix"; mkdir -p "$PREFIX"
+out="$(PARROTFLOW_CONFIG_DIR="$PREFIX" "$BIN" --for Vercel \
+  "I visited Vercelli last year." 2>&1)"
+check "the term only inside a longer word is not a use" 1 \
+  "$(printf '%s' "$out" | grep -c 'does not stand as a word')"
+check "and nothing is written" 0 \
+  "$(grep -c '^    - said:' "$PREFIX/vocabulary-uses.yaml" 2>/dev/null || echo 0)"
+
+# A correction still saves its pronunciation. Losing the mapping because the
+# sentence was unusable would say the correction failed, and it did not.
+PRE2="$WORK/prefix-learn"; mkdir -p "$PRE2"
+PARROTFLOW_CONFIG_DIR="$PRE2" "$BIN" --learn Verceli Vercel \
+  --in "I visited Vercelli last year." >/dev/null 2>&1
+check "a correction over a prefix-only sentence still writes the rule" 1 \
+  "$(grep -c 'heard: Verceli' "$PRE2/vocabulary.yaml" 2>/dev/null | head -1)"
+check "and records no use from it" 0 \
+  "$(grep -c '^    - said:' "$PRE2/vocabulary-uses.yaml" 2>/dev/null || echo 0)"
+
 TWICE="$WORK/twice"; mkdir -p "$TWICE"
 PARROTFLOW_CONFIG_DIR="$TWICE" "$BIN" --for Vercel \
   "Vercel is where we deploy. Vercel also hosts the docs." >/dev/null 2>&1
