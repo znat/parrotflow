@@ -95,7 +95,8 @@ actor WordVectors {
         guard loaded == nil, loading == nil else { return }
         Task { [weak self] in
             do { try await self?.prepare() } catch {
-                Log.write("word vectors: \(error.localizedDescription); nothing reads them yet")
+                Log.write("word vectors: \(error.localizedDescription);"
+                    + " the sentence gate stands aside until they load")
             }
         }
     }
