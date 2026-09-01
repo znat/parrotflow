@@ -124,8 +124,8 @@ topics:
   - voice-to-text # 587
   - apple-silicon # 3969
   # The app does not link MLX. It is here because the model
-  # config.example.yaml ships with is an MLX build, `gemma4:e4b-mlx` on line
-  # 128. That is the whole claim; drop the topic if the default changes.
+  # config.example.yaml ships with is an MLX build: `models: gemma: model:` is
+  # `gemma4:e4b-mlx`. That is the whole claim; drop the topic if it changes.
   - mlx # 2152
 
 # SECURITY.md sends people to the advisory form. That form only exists when
