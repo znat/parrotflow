@@ -1,16 +1,13 @@
 # The same stage, with one literal rendering and one pattern beside it.
 #
-# A pattern names no spelling to offer back, so the judge skips its pair — but
+# A pattern names no spelling to offer back, so the stage skips its pair — but
 # the pattern still wrote a `Vercel`. The literal rule cannot account for that
-# occurrence, grouped or not, and the stage has to decline rather than hand the
-# literal's spelling to a place some other rule wrote. See the cases.
+# occurrence, grouped or not, and the stage has to offer nothing rather than
+# hand the literal's spelling to a place some other rule wrote. See the cases.
 #
-# places and publishes `vocabulary.slots`, then declines rather than asking —
-# so the run is the same with Ollama up or down. Every case here scores the
-# places the stage found, never what was decided at them.
+# The stage gathers the places and publishes `vocabulary.slots`. Every case
+# here scores the places it found, not what was decided at them.
 #
-# It was `max_readings: 1` while the judge answered with a letter from a menu.
-# There is no menu now, that key is ignored, and this is the replacement.
 languages: [en]
 vocabulary:
   terms:

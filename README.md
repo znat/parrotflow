@@ -218,15 +218,15 @@ with Versailles twice: one becomes Vercel, the castle is left
 alone](Resources/vocabulary.gif)
 
 
-Enabling `review` allows an LLM to intelligently decide when a vocabulary
-term should be applied: there is no Vercel Castle, and Versailles won't
-deploy your apps.
+The stage reads the sentence before it writes a name: there is no Vercel
+Castle, and Versailles won't deploy your apps. It does that without a model —
+two word lists, the part of speech the slot wants, and two tests that compare
+the sentence with the ones the term was confirmed in.
 
 ```yaml
 transcription:
   pipeline:
-    - stage: vocabulary
-      review: gpt
+    - vocabulary
     - numbers
 ```
 

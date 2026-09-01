@@ -212,14 +212,6 @@ if let index = arguments.firstIndex(of: "--suggest") {
                             language: languageList(arguments)?.first))
 }
 
-if let index = arguments.firstIndex(of: "--verdicts") {
-    guard arguments.indices.contains(index + 2), let count = Int(arguments[index + 1]) else {
-        print("usage: ParrotFlow --verdicts <count> <reply>")
-        exit(2)
-    }
-    exit(VerdictsCommand.run(count: count, reply: arguments[index + 2]))
-}
-
 if let index = arguments.firstIndex(of: "--teaching") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --teaching \"<sentence>\" <word>")

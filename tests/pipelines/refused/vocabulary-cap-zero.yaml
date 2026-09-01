@@ -1,13 +1,13 @@
 # A cap set to zero.
 #
-# Every one of the caps silences the stage when it is below 1, and each does it
-# in a way that reads as the judge being broken rather than as a number being
+# Both caps silence the stage when they are below 1, and each does it in a way
+# that reads as the vocabulary being broken rather than as a number being
 # wrong: `max_per_term: 0` means no place in any sentence is ever about a
-# vocabulary term, so nothing is ever put to the model and nothing says why.
+# vocabulary term, so nothing is ever offered and nothing says why.
 #
 # Refused at load instead, by name, so the person who typed it learns which
 # number they typed. `max_per_term` is the one here because it is the newest;
-# the same check covers `max_slots` and `max_per_slot`.
+# the same check covers `max_per_slot`.
 
 languages: [en]
 pipeline:

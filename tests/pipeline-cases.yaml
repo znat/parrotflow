@@ -777,12 +777,12 @@ cases:
       vocabulary.changes: Versal -> Vercel
       vocabulary.slots: 1
 
-  # --- a stage with no reviewer ----------------------------------------------
+  # --- a stage still carrying `review:` --------------------------------------
   #
-  # `review: false` is a documented value and used to be a config that would not
-  # load at all — the key decoded as a name and nothing else, so a boolean threw
-  # before the app ever saw the pipeline.
-  - name: review off still writes what the rules matched exactly
+  # The key is retired. It ran the model that kept or reverted each
+  # substitution, and there is no model here now. What these two assert is that
+  # a config carrying it still loads and still behaves like one without it.
+  - name: a retired review key still writes what the rules matched exactly
     pipeline: review-off
     input: super base is up
     expect: Supabase is up
@@ -790,16 +790,16 @@ cases:
       vocabulary.count: 1
       vocabulary.slots: 1
 
-  # And the other half: with nobody to read the sentence, a near miss is left
-  # where it stands rather than written on the strength of the edit alone.
+  # And the other half: a near miss is left where it stands rather than written
+  # on the strength of the edit alone.
   #
   # `slots: 1` and not 0. The stage used to return before it had counted
   # anything, so `review: false` reported an empty sentence whatever was in it.
-  # It now gathers the proposals, settles the ones the free rules are sure of,
-  # and stops there — so the count says one place was found, and `expect:
-  # unchanged` says nothing was written in it. Those are two different facts
-  # and only one of them used to be visible.
-  - name: review off leaves the near misses alone
+  # It gathers the proposals, settles the ones the free rules are sure of, and
+  # what none of them settles keeps what arrived — so the count says one place
+  # was found, and `expect: unchanged` says nothing was written in it. Those
+  # are two different facts and only one of them used to be visible.
+  - name: a retired review key leaves the near misses alone
     pipeline: review-off
     input: our app is deployed on Versel
     expect: unchanged
@@ -913,6 +913,12 @@ refused:
   - name: a cap on the retired menu is refused
     pipeline: vocabulary-max-readings
     expect_problem: max_readings is 16
+
+  # And the third: `max_slots` bounded one model call, and this stage makes
+  # none.
+  - name: a cap on the retired model call is refused
+    pipeline: vocabulary-max-slots
+    expect_problem: max_slots is 4
 
   # A pattern naming a list nothing defines. The name is left literal at
   # runtime, so the rule matches nothing and looks exactly like a rule that is

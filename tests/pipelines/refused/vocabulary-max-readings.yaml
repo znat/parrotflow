@@ -1,7 +1,7 @@
 # A cap on a menu that no longer exists.
 #
-# `max_readings` trimmed the lettered list of whole sentences. The judge
-# answers one change at a time, so the number reads nothing.
+# `max_readings` trimmed the lettered list of whole sentences. A place is one
+# span with one alternative, so the number reads nothing.
 #
 # Refused for the same reason as the prompt file beside it: a key that loads
 # and does nothing is worse than one that fails, because nothing ever tells the

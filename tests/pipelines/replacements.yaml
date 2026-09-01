@@ -2,17 +2,16 @@
 # that hold it now.
 #
 # It used to be one `replacements:` table doing both jobs. A name the recogniser
-# mangles goes in vocabulary.yaml, where the stage reviews it in context; a
-# mechanical rule — a deletion, a template — goes in a transform, which needs no
-# review. Nothing was left in between, which is why the table went.
+# mangles goes in vocabulary.yaml, where the stage weighs it against the
+# sentence; a mechanical rule — a deletion, a template — goes in a transform,
+# which needs no sentence read at all. Nothing was left in between, which is
+# why the table went.
 #
 # `Mik` and `Matthieu` are the two that make the near-miss guard visible: "Mick"
 # must be corrected because it is a name, and "Matthew" must not, because the
 # spell checker knows it.
 #
-# No model is defined, so the review declines and the exact and near-miss passes
-# are what the cases score. That is the whole point: those two are deterministic
-# and a verdict is not.
+# The exact and near-miss passes are what the cases score.
 languages: [en, fr]
 vocabulary:
   terms:
@@ -32,8 +31,8 @@ transforms:
     replace:
       "": ['/[,]?\s*\b(?:mm[-‑]?hmm|uh[-‑]?huh|mhm|u+m+|u+h+|erm+|hmm+|mm+)\b[,]?/']
   # A template, not a word: the source is a pattern, so `$1` and `$2` are what
-  # it captured. A transform is where this belongs — there is no name here for
-  # a model to have an opinion about.
+  # it captured. A transform is where this belongs — there is no name here to
+  # weigh against the sentence.
   - name: dotted
     description: spoken dot as a dotted path
     replace:

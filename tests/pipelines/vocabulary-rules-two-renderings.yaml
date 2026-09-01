@@ -3,12 +3,9 @@
 # Separate from `vocabulary-rules.yaml` because the table is what differs: two
 # rules write `Vercel` here, and each is counted on its own. See the cases.
 #
-# places and publishes `vocabulary.slots`, then declines rather than asking —
-# so the run is the same with Ollama up or down. Every case here scores the
-# places the stage found, never what was decided at them.
+# The stage gathers the places and publishes `vocabulary.slots`. Every case
+# here scores the places it found, not what was decided at them.
 #
-# It was `max_readings: 1` while the judge answered with a letter from a menu.
-# There is no menu now, that key is ignored, and this is the replacement.
 languages: [en]
 vocabulary:
   terms:
