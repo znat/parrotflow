@@ -1085,8 +1085,7 @@ struct Pipeline: Equatable, Codable {
         let settled = (step.gate ?? true)
             ? VocabularyJudge.settle(
                 changes, in: text, by: [.sound: .full, .rule: .lists],
-                gate: await Vocabulary.shared.slotGate(),
-                rank: config.vocabulary.gateRank)
+                gate: await Vocabulary.shared.slotGate())
             : [Bool?](repeating: nil, count: changes.count)
         var decided: [Bool?] = changes.indices.map { index in
             index < taught.count && taught[index] ? false : settled[index]
