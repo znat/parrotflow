@@ -17,15 +17,23 @@ enum LearnCommand {
             try ConfigWriter.addVocabularyPronunciation(
                 term: corrected, heard: heard, kind: kind
             )
-            if let sentence, !sentence.isEmpty {
-                try TermUses.record(term: corrected, said: sentence, span: corrected)
-            }
-            Trace.correction(heard: heard, corrected: corrected, via: "learn")
-            print("✓ \(heard) → \(corrected)")
-            return 0
         } catch {
             print("✗ \(error.localizedDescription)")
             return 1
         }
+        // The mapping is already saved by here, so a sentence that could not be
+        // written is a warning and not a failure. Reporting it as one would say
+        // the correction was lost when it was not.
+        if let sentence, !sentence.isEmpty {
+            do {
+                try TermUses.record(term: corrected, said: sentence, span: corrected)
+            } catch {
+                print("! the sentence was not recorded in"
+                    + " \(TermUses.url.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
+        Trace.correction(heard: heard, corrected: corrected, via: "learn")
+        print("✓ \(heard) → \(corrected)")
+        return 0
     }
 }
