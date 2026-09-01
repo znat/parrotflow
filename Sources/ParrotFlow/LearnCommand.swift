@@ -41,4 +41,31 @@ enum LearnCommand {
         print("✓ \(heard) → \(corrected)")
         return 0
     }
+
+    /// `--for <term> "<sentence>" [word]` — a sentence the term *does* belong
+    /// in, recorded without touching the pronunciations.
+    ///
+    /// `--learn` also seeds a use, but only alongside a `heard:` rendering, so
+    /// there was no way to record a genuine use on its own. Passing the term as
+    /// its own rendering is not a workaround: `VocabularyJudge.ruleParts` finds
+    /// a rule substitution by searching for the term, so a self-mapping makes
+    /// every correctly spelled occurrence look like something a rule wrote.
+    ///
+    /// `word` is what stands where the term goes, for a sentence that inflects
+    /// it — `Praisy's` — and defaults to the term itself.
+    static func supporting(term: String, sentence: String, span: String? = nil) -> Int32 {
+        let written = span ?? term
+        guard sentence.contains(written) else {
+            print("✗ \"\(written)\" is not in that sentence")
+            return 1
+        }
+        do {
+            try TermUses.record(term: term, said: sentence, span: written, from: .seeded)
+            print("✓ \(term) belongs at \"\(written)\"")
+            return 0
+        } catch {
+            print("✗ \(error.localizedDescription)")
+            return 1
+        }
+    }
 }

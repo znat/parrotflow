@@ -340,6 +340,18 @@ if let index = arguments.firstIndex(of: "--learn") {
                           kind: kind, sentence: sentence))
 }
 
+if let index = arguments.firstIndex(of: "--for") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --for <term> \"<sentence>\" [word]")
+        exit(2)
+    }
+    let span = arguments.indices.contains(index + 3)
+        && !arguments[index + 3].hasPrefix("--") ? arguments[index + 3] : nil
+    exit(LearnCommand.supporting(
+        term: arguments[index + 1], sentence: arguments[index + 2], span: span
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--forget") {
     guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
         print("usage: ParrotFlow --forget <term>")
