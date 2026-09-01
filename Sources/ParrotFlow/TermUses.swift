@@ -147,7 +147,7 @@ enum TermUses {
     /// using" has to come apart — while `Node.js` and `3.5` must not.
     static func narrowed(_ said: String, to span: String) -> String {
         let text = said.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let at = text.range(of: span) else { return text }
+        guard let at = occurrence(of: span, in: text) else { return text }
 
         func ends(_ i: String.Index) -> Bool {
             guard ".!?".contains(text[i]) else { return false }
@@ -176,6 +176,30 @@ enum TermUses {
             cut = String(cut.dropFirst()).trimmingCharacters(in: .whitespaces)
         }
         return cut.contains(span) ? cut : text
+    }
+
+    /// Where `span` stands as a word, rather than wherever its letters first
+    /// appear.
+    ///
+    /// `range(of:)` matches inside a longer word, so `Vercel` found itself in
+    /// `Vercelli` and the sentence about an Italian town was stored as a use of
+    /// the hosting platform. A term that occurs twice as a word still takes the
+    /// first: both are genuine uses, and nothing that records one carries the
+    /// position of the occurrence that was corrected.
+    static func occurrence(of span: String, in text: String) -> Range<String.Index>? {
+        func word(_ c: Character) -> Bool { c.isLetter || c.isNumber }
+        var from = text.startIndex
+        while let found = text.range(of: span, range: from ..< text.endIndex) {
+            let before = found.lowerBound == text.startIndex
+                || !word(text[text.index(before: found.lowerBound)])
+            let after = found.upperBound == text.endIndex || !word(text[found.upperBound])
+            if before && after { return found }
+            guard found.lowerBound < text.endIndex else { break }
+            from = text.index(after: found.lowerBound)
+        }
+        // No boundary anywhere: the caller's guard still decides, on the text
+        // it was given.
+        return text.range(of: span)
     }
 
     /// What terminals and shells draw in front of the line being typed.

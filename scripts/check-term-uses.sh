@@ -144,6 +144,29 @@ PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Prizy Praisy \
 check "a control character does not make the file unreadable" 3 \
   "$(grep -c '^    - said:' "$ODD/vocabulary-uses.yaml")"
 
+# Which occurrence the sentence is cut around. `range(of:)` matches inside a
+# longer word, so `Vercel` found itself in `Vercelli` and an Italian town was
+# stored as a use of the hosting platform.
+said_of() { PARROTFLOW_CONFIG_DIR="$1" python3 -c '
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))["terms"]
+print(next(iter(d.values()))[0]["said"])
+' "$1/vocabulary-uses.yaml" 2>/dev/null; }
+
+INSIDE="$WORK/inside"; mkdir -p "$INSIDE"
+PARROTFLOW_CONFIG_DIR="$INSIDE" "$BIN" --for Vercel \
+  "I visited Vercelli last year. We deploy on Vercel." >/dev/null 2>&1
+check "the term is found as a word, not inside a longer one" \
+  "We deploy on Vercel." "$(said_of "$INSIDE")"
+
+TWICE="$WORK/twice"; mkdir -p "$TWICE"
+PARROTFLOW_CONFIG_DIR="$TWICE" "$BIN" --for Vercel \
+  "Vercel is where we deploy. Vercel also hosts the docs." >/dev/null 2>&1
+# Twice as a word takes the first. Both are genuine uses, and nothing that
+# records one carries the position of the occurrence that was corrected.
+check "a term twice as a word takes the first" \
+  "Vercel is where we deploy." "$(said_of "$TWICE")"
+
 # `--tidy-uses` rewrites the whole file, so it has to read it the strict way.
 # Reading a broken file as "no uses" and writing that back is how every stored
 # sentence goes at once.
