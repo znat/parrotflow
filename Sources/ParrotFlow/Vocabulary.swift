@@ -408,8 +408,8 @@ actor Vocabulary {
     /// A rule and not a threshold. "Mirza's thoughts" is not "Mirza thoughts";
     /// dropping a possessive changes what the sentence says, in every sentence,
     /// so there is nothing here to tune and nothing to drift. What it does is
-    /// route: the proposal is not refused, it goes to the judge, which is the
-    /// only thing that reads the sentence.
+    /// route: the proposal is not refused, it is left to the tests that read
+    /// the sentence.
     ///
     /// One direction only. `Matthew at` -> `Matthieu's` is the same class the
     /// other way round — the term carries the possessive and the decoded span
@@ -452,7 +452,8 @@ actor Vocabulary {
             loadedSlotGate = SlotGate(probe: try await SentenceProbe.load())
         } catch {
             slotGateFailed = true
-            Log.write("vocabulary: no slot gate (\(error.localizedDescription)); the judge decides")
+            Log.write("vocabulary: no slot gate (\(error.localizedDescription));"
+                + " the sentence decides, or nothing does")
         }
         return loadedSlotGate
     }

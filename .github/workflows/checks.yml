@@ -156,7 +156,7 @@ jobs:
       # Which words a vocabulary term may overwrite with nothing reading the
       # sentence. Two word lists, both of which have to say they have never
       # seen the word. Pure lookups, no audio and no model. Includes the
-      # fail-open case: with the list missing the word goes to the judge.
+      # fail-open case: with the list missing, the word is left open.
       #
       # Half of it asks NSSpellChecker, so the same hazard as Replacements
       # above — a timeout reads as "known word". This one asks a failing case

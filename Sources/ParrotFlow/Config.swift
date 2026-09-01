@@ -2698,8 +2698,6 @@ struct Config: Decodable, Equatable {
                     + " `floor: off` and no pronunciations, so nothing can match them")
             }
         }
-        // Said whether or not there are terms: a file can carry the old
-        // file-level key and nothing else.
         for written in Set(transcription.retiredReview).sorted() {
             let did = ["true", "false"].contains(written)
                 ? "switched the model that kept or reverted each substitution"
@@ -2710,6 +2708,8 @@ struct Config: Decodable, Equatable {
                 + " place none of them settles keeps what arrived. The key is read and"
                 + " does nothing")
         }
+        // Said whether or not there are terms: a file can carry the old
+        // file-level key and nothing else.
         said += vocabulary.legacy.map { "vocabulary: \($0)" }
         return said
     }

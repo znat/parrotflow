@@ -121,11 +121,10 @@ struct Pipeline: Equatable, Codable {
         var transform: String?
         /// The prompt file a `vocabulary` stage used to ask with.
         ///
-        /// Read only so `validate` can refuse it by name. The prompt is
-        /// compiled in — see `VocabularyJudge.prompt` for why nobody should
-        /// own it — and nothing else looks at this.
+        /// Read only so `validate` can refuse it by name. There is no prompt
+        /// and no model in that stage, and nothing else looks at this.
         var prompt: String?
-        /// How many places may be judged at once — see `VocabularyJudge.Caps`.
+        /// How many places one sentence may offer — see `VocabularyJudge.Caps`.
         /// Absent on every other stage.
         var caps: VocabularyJudge.Caps?
         /// Whether a `heard:` rendering also matches one edit away. Absent
@@ -794,7 +793,7 @@ struct Pipeline: Equatable, Codable {
         case .input:
             return readInputBox(on: text, scope: scope)
         case .vocabulary:
-            return await judgeVocabulary(step, on: text, config: config, scope: scope,
+            return await settleVocabulary(step, on: text, config: config, scope: scope,
                                         )
         case .transform:
             return await runTransform(step, on: text, config: config, scope: scope)
@@ -947,7 +946,7 @@ struct Pipeline: Equatable, Codable {
     /// The mechanics are in `VocabularyJudge`. This is the wiring: which
     /// substitutions are gathered, which gates run, and which variables come
     /// back.
-    private func judgeVocabulary(
+    private func settleVocabulary(
         _ step: Step, on text: String, config: Config, scope: Scope,
     ) async -> StageResult {
         // The exact pass, first and inside this stage. It was a `replacements`
