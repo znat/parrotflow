@@ -2700,12 +2700,15 @@ struct Config: Decodable, Equatable {
         }
         // Said whether or not there are terms: a file can carry the old
         // file-level key and nothing else.
-        for named in Set(transcription.retiredReview).sorted() {
-            said.append("pipeline: `review: \(named)` on the `vocabulary` stage named the"
-                + " model that kept or reverted each substitution. That model is gone —"
-                + " the two word lists, the slot's part of speech and the two tests that"
-                + " read the sentence decide now, and a place none of them settles keeps"
-                + " what arrived. The key is read and does nothing")
+        for written in Set(transcription.retiredReview).sorted() {
+            let did = ["true", "false"].contains(written)
+                ? "switched the model that kept or reverted each substitution"
+                : "named the model that kept or reverted each substitution"
+            said.append("pipeline: `review: \(written)` on the `vocabulary` stage \(did)."
+                + " There is no model in that stage now — the two word lists, the slot's"
+                + " part of speech and the two tests that read the sentence decide, and a"
+                + " place none of them settles keeps what arrived. The key is read and"
+                + " does nothing")
         }
         said += vocabulary.legacy.map { "vocabulary: \($0)" }
         return said
