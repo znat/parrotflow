@@ -141,11 +141,35 @@ enum TermUses {
         try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
     }
 
-    /// Double quotes with the two escapes YAML needs inside them.
+    /// Double quotes, with everything a double-quoted YAML scalar cannot carry
+    /// as itself written as an escape.
+    ///
+    /// A raw newline is folded back into a space by the parser, which changes
+    /// the sentence the portrait is built from. A raw control character —
+    /// `\u{7}`, say — makes the whole file unparseable, and then nothing is
+    /// ever recorded again.
     private static func quoted(_ text: String) -> String {
-        let escaped = text
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        return "\"\(escaped)\""
+        var out = "\""
+        for scalar in text.unicodeScalars {
+            switch scalar {
+            case "\\": out += "\\\\"
+            case "\"": out += "\\\""
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            case "\u{2028}": out += "\\L"
+            case "\u{2029}": out += "\\P"
+            default:
+                // C0, DEL, and C1 — the last because YAML reads \u{85} as a
+                // line break.
+                let code = scalar.value
+                if code < 0x20 || code == 0x7F || (code >= 0x80 && code <= 0x9F) {
+                    out += String(format: "\\x%02X", code)
+                } else {
+                    out.unicodeScalars.append(scalar)
+                }
+            }
+        }
+        return out + "\""
     }
 }
