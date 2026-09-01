@@ -31,6 +31,10 @@ final class CorrectionPanel {
         present()
     }
 
+    /// The application that was in front when the panel opened, so the focus
+    /// can go back to it. Nil while no panel is up.
+    private var cameFrom: NSRunningApplication?
+
     private func present() {
         model.onSubmit = { [weak self] in self?.commit() }
         model.onCancel = { [weak self] in self?.dismiss(cancelled: true) }
@@ -39,6 +43,12 @@ final class CorrectionPanel {
         resize()
         reposition()
         watchForTab()
+        // Whoever was in front, recorded before we take the focus off them.
+        // Read now and not on the way out: by then it is this app.
+        let front = NSWorkspace.shared.frontmostApplication
+        if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            cameFrom = front
+        }
         NSApp.activate(ignoringOtherApps: true)
         panel?.riseIntoView(makeKey: true)
 
@@ -74,6 +84,16 @@ final class CorrectionPanel {
         guard panel?.isVisible == true else { return }
         stopWatchingForTab()
         panel?.orderOut(nil)
+        // Back to what you were typing in. The panel took the focus to draw a
+        // caret in its own field, and `orderOut` alone leaves this app frontmost
+        // — so saving a rule mid-sentence left you typing into nothing.
+        //
+        // The application, not the field. Steering focus back to one element
+        // means setting `kAXFocused` and trusting the app to honour it; every
+        // other place here that returns focus activates the application and
+        // lets it restore its own.
+        if let owner = cameFrom, !owner.isActive { owner.activate() }
+        cameFrom = nil
         if cancelled { onCancel?() }
     }
 
