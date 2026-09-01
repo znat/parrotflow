@@ -54,11 +54,6 @@ enum SentenceGate {
             guard index < out.count, out[index] != false else { continue }
             guard let term = change.terms.first else { continue }
             guard change.range.upperBound <= text.endIndex else { continue }
-            // What actually stands there, which is not always what was heard.
-            // A rule writes its term into the text before this runs, so looking
-            // for the heard word found nothing and every rule substitution fell
-            // through in silence — the whole reason this stage never spoke.
-            let standing = String(text[change.range])
 
             // A place an earlier rule already decided to write. The two word
             // lists write a name whenever the heard word is in neither of them,
@@ -68,9 +63,19 @@ enum SentenceGate {
             // databases on superbase` — 0.665 against 0.944 — so it may hand
             // such a place back, and only back: it never turns a write into a
             // refusal on its own.
+            // What actually stands there, which is not always what was heard.
+            // A rule writes its term into the text before this runs, so looking
+            // for the heard word found nothing and every rule substitution fell
+            // through in silence — the whole reason this stage never spoke.
+            let standing = String(text[change.range])
+
+            // The words around the span, not the whole transcript — see
+            // `TermPortrait.radius`.
+            let near = TermPortrait.window(around: change.range, in: text)
+
             if out[index] == true {
                 let portrait = await TermPortrait.shared.reads(
-                    standing, in: text, as: term
+                    standing, in: near, as: term
                 )
                 looked += 1
                 if portrait == .refuses {
@@ -99,7 +104,7 @@ enum SentenceGate {
                 continue
             }
             let portrait = await TermPortrait.shared.reads(
-                standing, in: text, as: term
+                standing, in: near, as: term
             )
 
             switch (refuses, portrait) {

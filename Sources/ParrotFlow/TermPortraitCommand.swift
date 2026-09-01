@@ -47,8 +47,13 @@ enum TermPortraitCommand {
                 guard summary != nil, let sentence, let span else {
                     return .success((summary, nil))
                 }
+                // Windowed the way the gate windows, so this scores the
+                // shipped path and not a wider version of it.
+                let near = (sentence.range(of: span)).map {
+                    TermPortrait.window(around: $0, in: sentence)
+                } ?? sentence
                 let score = try await TermPortrait.shared.score(
-                    of: span, in: sentence, for: term
+                    of: span, in: near, for: term
                 )
                 return .success((summary, score))
             } catch {
