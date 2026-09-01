@@ -2017,13 +2017,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Starts the Parakeet (and VAD) download at launch, so it's already
-    /// running — ideally already done — by the time the first dictation
-    /// needs it, instead of the first dictation triggering and waiting on it.
-    ///
-    /// `transcriber.prepare` is safe to call again from `transcribe(...)`
-    /// once this is in flight: overlapping callers converge on the same
-    /// download rather than racing two.
     /// Every model the app will use, fetched at launch rather than on the
     /// dictation that first wants one. About 1.16 GB on a default install:
     /// Parakeet 461 MB, ModernBERT 288 MB, the word vectors 335 MB, the sound
@@ -2058,6 +2051,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Starts the Parakeet (and VAD) download at launch, so it's already
+    /// running — ideally already done — by the time the first dictation
+    /// needs it, instead of the first dictation triggering and waiting on it.
+    ///
+    /// `transcriber.prepare` is safe to call again from `transcribe(...)`
+    /// once this is in flight: overlapping callers converge on the same
+    /// download rather than racing two.
     private func warmUpTranscriber() {
         guard config.transcription.enabled else { return }
 
