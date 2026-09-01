@@ -10,11 +10,10 @@ import NaturalLanguage
 /// the slot wants, and one per word only when that pass says a name could go
 /// there. A pass is about 8 ms at sequence length 64.
 ///
-/// The rules, in the order they run:
+/// One rule:
 ///
-///     the slot accepts a name, and the word is rank 0    apply
-///     the slot refuses a name                            decline
-///     anything else                                      judge
+///     the slot refuses a name    decline
+///     anything else              judge
 ///
 /// **Slot POS.** Mask the heard word, take the ten most likely fillers, put
 /// each back in the sentence and tag it. The modal tag is what the slot wants.
@@ -24,14 +23,13 @@ import NaturalLanguage
 /// `second, my, your, any, some, more, the, first`, and a bare name does not
 /// go in a determiner slot.
 ///
-/// **Rank 0.** The heard word is the weakest place in its sentence: no word
-/// surprises the model more, and no two-word window more than the one it sits
-/// on. One forward pass per word, each word read by its first BPE piece — see
-/// `weakest`.
-///
-/// **ANDed, cheapest first.** An AND already fails once the POS refuses, and
-/// the POS is one pass against the rank's one per word, so the rank is not
-/// computed then.
+/// **There was a second rule and it is gone.** It wrote a name when the span
+/// was the weakest-reading place in its sentence. It asked whether a word was
+/// *unexpected* where the question is whether it is *wrong*, and a rare proper
+/// noun is both. Measured over the 150 real decisions of the vocabulary bench
+/// it wrote 27 names and 17 were wrong — `ghostly` to `Ghostty` four times,
+/// `bedrock` to `Redrock` twice, `verbatim` to `Mirza`, `gamma` to `Gemma`.
+/// Its recorded 47/50 was real and came from a set holding none of those.
 ///
 /// **The decline runs last, after the lexical gate.** `Vocabulary.slotRoute`
 /// is only asked about a proposal that gate left open. The gate decides on
@@ -49,13 +47,10 @@ import NaturalLanguage
 struct SlotGate {
 
     enum Route: String {
-        case apply, decline, judge
+        case decline, judge
     }
 
-    /// Tags a name can stand in. Rule 4.
-    static let hosts: Set<String> = ["Noun", "Adjective", "Pronoun"]
-
-    /// Tags a name cannot stand in. Rule 6.
+    /// Tags a name cannot stand in.
     static let blocks: Set<String> = ["Verb", "Adverb", "Preposition"]
 
     /// How many fillers vote on what the slot wants.
@@ -66,10 +61,6 @@ struct SlotGate {
     struct Reading {
         /// The modal tag of the fillers, or "" when nothing tagged.
         let tag: String
-        /// How far the span is from being the weakest place in the sentence —
-        /// see `weakest`. Absent when the POS refused and the rank was skipped.
-        let rank: Int?
-        let windows: Int
         let route: Route
     }
 
@@ -77,21 +68,10 @@ struct SlotGate {
     func read(in text: String, at range: Range<String.Index>) throws -> Reading {
         let (words, span) = Self.sentence(around: range, in: text)
         guard !span.isEmpty, span.upperBound <= words.count else {
-            return Reading(tag: "", rank: nil, windows: 0, route: .judge)
+            return Reading(tag: "", route: .judge)
         }
-
         let tag = try wants(words, at: span)
-        guard Self.hosts.contains(tag) else {
-            return Reading(
-                tag: tag, rank: nil, windows: 0,
-                route: Self.blocks.contains(tag) ? .decline : .judge
-            )
-        }
-        let (rank, windows) = try weakest(words, at: span)
-        return Reading(
-            tag: tag, rank: rank, windows: windows,
-            route: rank == 0 ? .apply : .judge
-        )
+        return Reading(tag: tag, route: Self.blocks.contains(tag) ? .decline : .judge)
     }
 
     // MARK: - Rule 4 and rule 6, the slot's part of speech
@@ -133,57 +113,14 @@ struct SlotGate {
         return tagger.tag(at: from, unit: .word, scheme: .lexicalClass).0?.rawValue
     }
 
-    // MARK: - Rule 5, the weakest window
-
-    /// How far the span is from being the weakest place in its sentence.
-    ///
-    /// One forward pass per word: mask it, read the log-probability of the word
-    /// that is there. Two rankings come off that one array — the words, and the
-    /// adjacent pairs summed — and the rank returned is the worse of the two.
-    /// Rank 0 therefore means both: no word surprises the model more than the
-    /// span, and no pair more than the pair the span sits on.
-    ///
-    /// A word is scored by its **first BPE piece**, not by all of them. One
-    /// masked position holds one token, so the rest of a multi-piece word would
-    /// need a pass each with the pieces before it revealed — a different and
-    /// far more expensive question. `SentenceProbe.read` reads the word after a
-    /// boundary the same way. It costs little here: the rare piece of a
-    /// misheard name is the first one, and this is a ranking, so every word in
-    /// the sentence is measured on the same footing.
-    ///
-    /// The window alone is not enough. On a sentence of ordinary words the
-    /// weakest pair is decided by noise, and it landed on the span in three of
-    /// the 50 cases where the span was the word the speaker said. Adding the
-    /// word ranking takes those three out and costs nothing else.
-    func weakest(_ words: [String], at span: Range<Int>) throws -> (rank: Int, windows: Int) {
-        guard words.count >= 2 else { return (Int.max, 0) }
-        var scores: [Double] = []
-        for index in words.indices {
-            let (left, right) = Self.masked(words, at: index..<(index + 1))
-            let slot = try probe.at(left: left, right: right)
-            let bare = Self.bare(words[index])
-            let id = probe.tokenizer.firstID(of: (index == 0 ? "" : " ") + bare)
-            scores.append(id.map { slot.logProbability(of: $0) } ?? -.infinity)
-        }
-
-        let byWord = scores.indices.sorted { scores[$0] < scores[$1] }
-        let word = byWord.firstIndex { span.contains($0) } ?? Int.max
-
-        let windows = (0..<(words.count - 1)).map { scores[$0] + scores[$0 + 1] }
-        let byWindow = windows.indices.sorted { windows[$0] < windows[$1] }
-        // A window holds the span when either of its two words is in it.
-        let pair = byWindow.firstIndex { span.contains($0) || span.contains($0 + 1) } ?? Int.max
-        return (max(word, pair), windows.count)
-    }
-
     // MARK: - The sentence, as words
 
     /// The sentence `range` sits in, split into words, and which of them the
     /// range covers.
     ///
-    /// The sentence and not the whole transcript: "its sentence" is what the
-    /// rank is measured against, and a second sentence only adds windows the
-    /// span can never win.
+    /// The sentence and not the whole transcript: what the slot wants is
+    /// decided by the words around the span, and a second sentence only puts
+    /// words in the window that were never near it.
     static func sentence(
         around range: Range<String.Index>, in text: String
     ) -> (words: [String], span: Range<Int>) {

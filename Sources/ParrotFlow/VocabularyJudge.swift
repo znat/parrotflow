@@ -1118,13 +1118,9 @@ enum VocabularyJudge {
     ///    the model would put there, tag them. A spot that wants a verb, an
     ///    adverb or a preposition cannot hold a name, so the reading is
     ///    impossible and there is nothing to ask. Refuse it.
-    /// 3. **Is that the spot the sentence reads worst?** The span must be both
-    ///    the least expected word and inside the least expected pair. Write the
-    ///    term. Anything else goes to the model.
     ///
-    /// Measured at 47/50 with 21 model calls instead of 50 and no error either
-    /// way — on `tests/judge-cases.yaml`, with no audio in it. See
-    /// `Vocabulary.autoApplies(heard:term:)` for why that matters.
+    /// There was a third — write the term when its span reads worst in the
+    /// sentence — and it is gone. See `SlotGate` for what it cost.
     ///
     /// **What each source may be settled by is not the same.** A rule
     /// substitution is already written into the text, so keeping one costs
@@ -1139,17 +1135,11 @@ enum VocabularyJudge {
     /// ask. `Versailles -> Vercel` fires the same rule in the same sentence and
     /// is *not* settled: the spell checker knows the word, the lists say
     /// nothing, and it goes to the judge — which is where it belongs, and where
-    /// the judge got it right. Under `.full` the rank would have ranked
-    /// `Versailles` first of fifteen and written `Vercel Castle`.
+    /// the judge got it right.
     ///
-    /// Rule 3 is the weak one and it is on by `rank`. It asks whether a word is
-    /// *unexpected*, not whether it is *wrong*, and a rare proper noun is both
-    /// unexpected and correct: on "visiting the Versailles Castle" it ranks
-    /// `Versailles` first of fifteen and would write `Vercel Castle`. Rules 1
-    /// and 2 have no such confound.
     static func settle(
         _ changes: [Change], in text: String, by policy: [Standing: Gating],
-        gate: SlotGate?, rank: Bool
+        gate: SlotGate?
     ) -> [Bool?] {
         changes.map { change -> Bool? in
             guard let allowed = policy[change.standing] else { return nil }
@@ -1169,15 +1159,6 @@ enum VocabularyJudge {
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
                     + " — the spot wants \(reading.tag), which cannot hold a name; refused")
                 return false
-            case .apply:
-                // The rank is the half that can be wrong in silence, so it is
-                // the half with a switch.
-                guard rank else { return nil }
-                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                    + " is the worst-reading spot of its sentence"
-                    + (reading.rank.map { " (rank \($0) of \(reading.windows))" } ?? "")
-                    + " — written, not asked")
-                return true
             case .judge:
                 return nil
             }
