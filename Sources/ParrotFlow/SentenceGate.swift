@@ -63,19 +63,29 @@ enum SentenceGate {
             // databases on superbase` — 0.665 against 0.944 — so it may hand
             // such a place back, and only back: it never turns a write into a
             // refusal on its own.
-            // What actually stands there, which is not always what was heard.
-            // A rule writes its term into the text before this runs, so looking
-            // for the heard word found nothing and every rule substitution fell
-            // through in silence — the whole reason this stage never spoke.
-            let standing = String(text[change.range])
-
-            // The words around the span, not the whole transcript — see
+            // The words around the span, and the span as it was *heard* — see
             // `TermPortrait.radius`.
-            let near = TermPortrait.window(around: change.range, in: text)
+            //
+            // A rule writes its term into the text before this runs, and the
+            // vectors are contextual: the term standing in the span colours
+            // every word around it, so the sentence reads like one of the
+            // term's own and the gate grades the rule's own homework. Measured
+            // on the seeded Vercel portrait, floor 0.898:
+            //
+            //     "Vercel and its king."      0.941  authorises
+            //     "Versailles and its king."  0.712  refuses
+            //
+            // and the same flip on three more. A sound proposal has written
+            // nothing, so for those this is the text it already was.
+            let start = text.distance(from: text.startIndex, to: change.range.lowerBound)
+            let heard = text.replacingCharacters(in: change.range, with: change.was)
+            let from = heard.index(heard.startIndex, offsetBy: start)
+            let upto = heard.index(from, offsetBy: change.was.count)
+            let near = TermPortrait.window(around: from ..< upto, in: heard)
 
             if out[index] == true {
                 let portrait = await TermPortrait.shared.reads(
-                    standing, in: near, as: term
+                    change.was, in: near, as: term
                 )
                 looked += 1
                 if portrait == .refuses {
@@ -104,7 +114,7 @@ enum SentenceGate {
                 continue
             }
             let portrait = await TermPortrait.shared.reads(
-                standing, in: near, as: term
+                change.was, in: near, as: term
             )
 
             switch (refuses, portrait) {
