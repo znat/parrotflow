@@ -6,7 +6,7 @@
 # The floor is read off the term's own uses and never chosen, so the only way
 # to see it is to build one and print it. The pair of cases below is the hardest
 # term measured: on its own, the portrait gets both of them wrong. Together with
-# the slot test they come out right — one as an offer, one handed back.
+# the slot test they come out right — one left open, one kept as it was heard.
 #
 # Not in `make test`: it needs the 400 MB word-vector model and the 300 MB
 # sentence model. Run it by hand after touching TermPortrait or WordVectors.

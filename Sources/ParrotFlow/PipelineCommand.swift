@@ -100,7 +100,7 @@ enum PipelineCommand {
     /// means what it has always meant.
     static func run(
         path: String, text: String?, quiet: Bool = false, app: String? = nil,
-        allowPrompts: Bool = true, showVars: Bool = false
+        allowPrompts: Bool = true, showVars: Bool = false, warm: Bool = false
     ) -> Int32 {
         let named = (app ?? "").trimmingCharacters(in: .whitespaces)
         let front = named.isEmpty ? nil : Pipeline.App(name: named, bundleID: "")
@@ -176,6 +176,18 @@ enum PipelineCommand {
         // so the answer is the one a dictation would have got.
         var seed = Scope()
         seed.set("language", .string(Pipeline.language(of: text, config: config)))
+
+        // `--warm`. The sentence gate never makes a dictation wait, so in a
+        // one-shot run nothing has loaded the 400 MB word vectors and the two
+        // tests that read the sentence are skipped every time. This is the
+        // only way to see them from the command line. Off by default: it is a
+        // download, and `make test` must not need one.
+        if warm, #available(macOS 14, *) {
+            Blocking.run { () async -> Void in
+                try? await WordVectors.shared.prepare()
+                _ = try? await SentenceModel.shared.prepare()
+            }
+        }
 
         let done = DispatchSemaphore(value: 0)
         if quiet {

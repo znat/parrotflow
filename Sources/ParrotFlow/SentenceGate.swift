@@ -12,13 +12,13 @@ import Foundation
 ///
 /// So there are four outcomes and only one of them is a disagreement:
 ///
-///     refuses, authorises   ->  neither wins, the reading is offered
+///     refuses, authorises   ->  neither wins, the place is left open
 ///     refuses               ->  keep what was heard
 ///     authorises            ->  write the term
-///     neither               ->  the stage decides as it did before
+///     neither               ->  the place is left open
 ///
-/// The last line is what makes this safe to turn on: a place neither test
-/// settles behaves exactly as it does today.
+/// A place neither test settles keeps whatever is already in the text: the
+/// term where a rule wrote one, the word that was heard where nothing did.
 ///
 /// Measured on 24 sentences dictated for the purpose, none of them in any
 /// portrait: no correct rewrite refused, one ordinary word overwritten, 10 of
@@ -60,9 +60,17 @@ enum SentenceGate {
             // which is right almost always and wrong when the word is simply
             // rare: `on the moon on its superbase` became `its Supabase`. The
             // portrait is the only test that separates that from `we host our
-            // databases on superbase` — 0.665 against 0.944 — so it may hand
-            // such a place back, and only back: it never turns a write into a
-            // refusal on its own.
+            // databases on superbase` — 0.665 against 0.944 — so it may take
+            // such a write back out.
+            //
+            // It used to hand the place back instead, for a model to arbitrate.
+            // There is no model, and handing a place back with nobody to hand
+            // it to is a keep: `a much better stack than PHP` shipped as
+            // `a much BetterStack than PHP` with the portrait at 0.650 against
+            // a floor of 0.795, having said no. So a refusal here reverts.
+            //
+            // How wide the portrait's licence to overrule a rule should be is a
+            // separate question, and not answered here.
             // The words around the span, and the span as it was *heard* — see
             // `TermPortrait.radius`.
             //
@@ -89,9 +97,9 @@ enum SentenceGate {
                 )
                 looked += 1
                 if portrait == .refuses {
-                    out[index] = nil
+                    out[index] = false
                     Log.write(
-                        "sentence gate: \"\(change.was)\" -> \(term) handed back"
+                        "sentence gate: \"\(change.was)\" -> \(term) taken back out"
                             + " — \(term) does not live in this sentence")
                 } else {
                     Log.write(

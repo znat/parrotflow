@@ -181,6 +181,11 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   result. It is how a stage whose only contribution is a fact gets scored at
   all, and the first thing to reach for when a condition is not deciding what
   you expected. See [pipelines.md](pipelines.md#variables).
+- `--warm` waits for the word vectors and the sentence model before the run.
+  The sentence gate never makes a dictation wait, so in a one-shot run nothing
+  has loaded them and the two tests that read the sentence are skipped every
+  time — this is the only way to see them from the command line. Off by
+  default: it is a 700 MB download, and `make test` must not need one.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 
