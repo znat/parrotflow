@@ -3474,16 +3474,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `remaining` — is English being fixed, not a term being taught, and a
     /// panel about it would be noise on every dictation.
     private func offerToLearn(_ changes: [EditWatch.Change]) {
-        // No filter, for now. Deciding what a term is from the two word lists
-        // is a bet on what dictionaries do not know yet, and it ages badly: the
-        // day `Vercel` enters them, every correction toward it stops being
-        // offered — and the shipped auto-apply rule stops firing too, since it
-        // asks the same question. The panel is a better filter than any guess
-        // while this is being tried out: the rows are removed there.
-        let worth = changes
+        let sentence = changes.first?.sentence ?? ""
+        let worth = changes.filter { teaches($0) }
         guard !worth.isEmpty else { return }
-        Log.write("correction: offering \(worth.count) rule(s) to keep")
-        let sentence = worth.first?.sentence ?? ""
+        // The pairs, not just the count. What the panel was offering could not
+        // be read back off the log, so the noise it was showing could not be
+        // described — only that there was some.
+        Log.write("correction: offering \(worth.count) rule(s) to keep — "
+            + worth.map { "\"\($0.was)\" -> \"\($0.now)\"" }.joined(separator: ", "))
         correctionPanel.onSave = { [weak self] rules, _ in
             // The field is already right — the person fixed it themselves. Only
             // the rules are new, so `learn` and nothing after it.
@@ -3493,6 +3491,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         correctionPanel.show(
             rules: worth.map { (heard: $0.was, corrected: $0.now) }, over: sentence
         )
+    }
+
+    /// Is this correction about a name, or about English?
+    ///
+    /// The panel used to show every one-word change, which is every typo and
+    /// every reword. Distance does not separate them — measured on this
+    /// speaker's own `heard:` lists against ordinary edits, `its -> it\'s`
+    /// scores 1.000 and `Prezi -> Praisy` scores 0.304, so any floor drawn
+    /// through spelling keeps the noise and drops the names.
+    ///
+    /// What separates them is the word the correction lands *on*. Measured on
+    /// the same two sets: the two word lists call 8 of 9 real corrections
+    /// unknown and all 10 of the ordinary ones known. `Sentry` is the miss, and
+    /// it is capitalised, so the second half catches it.
+    ///
+    /// An `or`, which is also the answer to why this was left out before: the
+    /// day `Vercel` enters a dictionary, the capital still offers it.
+    private func teaches(_ change: EditWatch.Change) -> Bool {
+        let letters = { (s: String) in String(s.filter { $0.isLetter || $0.isNumber }) }
+        // Punctuation or case alone is not a pronunciation. Spacing is: gluing
+        // two words into one is most of this vocabulary — `Red Rock` to
+        // `Redrock`, `Better Stack` to `BetterStack`, `Ghost T` to `Ghostty` —
+        // so the test that ignores punctuation must not ignore the space, or it
+        // throws away the commonest correction there is.
+        let spaced = { (s: String) in
+            String(s.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }).lowercased()
+        }
+        guard spaced(change.was) != spaced(change.now) else {
+            Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is punctuation,"
+                + " not a name; not offered")
+            return false
+        }
+        if Vocabulary.unseenWord(letters(change.now)) { return true }
+        // A capital that is not the one every sentence starts with.
+        let line = change.sentence.trimmingCharacters(in: .whitespaces)
+        let opens = line.hasPrefix(change.now) || line.dropFirst().hasPrefix(change.now)
+        if change.now.first?.isUppercase == true, !opens { return true }
+        Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is ordinary English;"
+            + " not offered")
+        return false
     }
 
     /// The offer, over words that were dictated and have been selected again.
