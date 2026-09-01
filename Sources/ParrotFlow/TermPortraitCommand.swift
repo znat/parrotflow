@@ -48,8 +48,10 @@ enum TermPortraitCommand {
                     return .success((summary, nil))
                 }
                 // Windowed the way the gate windows, so this scores the
-                // shipped path and not a wider version of it.
-                let near = (sentence.range(of: span)).map {
+                // shipped path and not a wider version of it. The gate is
+                // handed a range; here the span has to be found, and it is
+                // found as a word for the same reason `TermUses` does.
+                let near = TermUses.occurrence(of: span, in: sentence).map {
                     TermPortrait.window(around: $0, in: sentence)
                 } ?? sentence
                 let score = try await TermPortrait.shared.score(
