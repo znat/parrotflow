@@ -61,5 +61,38 @@ check "the mapping still lands in vocabulary.yaml" 1 \
   "$(grep -c 'heard: Prezzy' "$WORK/vocabulary.yaml" 2>/dev/null | head -1)"
 check "and the sentence beside it" 5 "$(count)"
 
+# A file the app cannot parse is not a file to write over. One unbalanced
+# quote read as "no uses" would drop every sentence the term had.
+BROKE="$WORK/broken"
+mkdir -p "$BROKE"
+printf 'terms:\n  "Praisy":\n    - said: "Praisy joined the team.\n      span: "Praisy"\n' \
+  > "$BROKE/vocabulary-uses.yaml"
+sum_before="$(shasum "$BROKE/vocabulary-uses.yaml" | cut -d' ' -f1)"
+out="$(PARROTFLOW_CONFIG_DIR="$BROKE" "$BIN" --learn Prezi Praisy \
+  --in "Praisy wrote the guide." 2>/dev/null)"
+code=$?
+sum_after="$(shasum "$BROKE/vocabulary-uses.yaml" | cut -d' ' -f1)"
+check "a file that does not parse is left alone" "$sum_before" "$sum_after"
+check "and the correction still succeeds" 0 "$code"
+check "and says the sentence was not recorded" 1 \
+  "$(printf '%s' "$out" | grep -c 'was not recorded')"
+check "and the mapping went in anyway" 1 \
+  "$(grep -c 'heard: Prezi' "$BROKE/vocabulary.yaml" 2>/dev/null | head -1)"
+
+# The mapping is written first, so a sentence that cannot be stored is a
+# warning. Reporting it as a failure would say the correction was lost.
+BLOCKED="$WORK/blocked"
+mkdir -p "$BLOCKED/vocabulary-uses.yaml"
+out="$(PARROTFLOW_CONFIG_DIR="$BLOCKED" "$BIN" --learn Precy Praisy \
+  --in "Praisy fixed the crawler." 2>/dev/null)"
+check "an unwritable uses file does not fail the correction" 0 "$?"
+check "and the mapping is still there" 1 \
+  "$(grep -c 'heard: Precy' "$BLOCKED/vocabulary.yaml" 2>/dev/null | head -1)"
+
+# --forget takes the sentences too, or a forgotten term keeps describing itself.
+check "three terms hold five sentences between them" 5 "$(count)"
+PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --forget praisy >/dev/null 2>&1
+check "--forget takes one term's three, whatever the case" 2 "$(count)"
+
 [ "$failed" -eq 0 ] && echo "Every check passed." || echo "Failed: term-uses"
 exit "$failed"
