@@ -125,7 +125,7 @@ actor Transcriber {
     /// English dictation behind 300 MB for no gain. It reports progress but
     /// never `.failed`: a model no stage consumes must not put "Model error"
     /// in the menu bar.
-    private func warmSentenceModel() {
+    func warmSentenceModel() {
         guard sentenceModelFetch == nil else { return }
         sentenceModelRunning = true
         sentenceModelFetch = Task { [weak self] in
@@ -470,10 +470,10 @@ actor Transcriber {
         var joinedSentences = 0
         var offeredSentences = 0
         if Pipeline.language(of: text, config: config) == "en" {
+            // Both are fetched at launch now. These are the retry: a fetch
+            // that failed clears itself, and the next English dictation is the
+            // next chance to try again.
             warmSentenceModel()
-            // Only when something will read them. They are 400 MB, and the gate
-            // that needs them stands aside until they are in memory rather than
-            // making a dictation wait.
             if config.vocabulary.gateSentence, #available(macOS 14, *) {
                 Task { await WordVectors.shared.warm() }
             }

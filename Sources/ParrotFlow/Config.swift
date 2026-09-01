@@ -226,9 +226,12 @@ struct Config: Decodable, Equatable {
         /// term was confirmed in, and can only authorise. When they disagree
         /// neither wins and the reading is offered.
         ///
-        /// Off by default. It needs a 400 MB model, and it has been measured on
-        /// four dictations of one speaker and nothing else.
-        var gateSentence: Bool = false
+        /// On. It needs a 400 MB model, which is fetched at launch along with
+        /// the others rather than on the dictation that first wants it — see
+        /// `AppDelegate.warmModels`. A gate that is switched on and silently
+        /// doing nothing while its model loads is worse than one that is off:
+        /// it shipped `Versailles` as `Vercel` inside that window.
+        var gateSentence: Bool = true
 
         /// One way this speaker's mouth turns a term into something else, and
         /// what is known about that.
