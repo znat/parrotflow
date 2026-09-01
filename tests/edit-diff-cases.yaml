@@ -84,6 +84,33 @@ cases:
     now:     "❯ Praizy isn't the team. She's an expert in Vercel deployments."
     expect:  "Prizzy -> Praizy | versatile -> Vercel"
 
+  # Two dictations that ran together have no space between them, so the whole
+  # glued run is one "word" and the whole run was offered as the rule. Only the
+  # letters that changed belong in it.
+  - written: "I like it.Ghost T is my terminal"
+    now:     "I like it.Ghostty is my terminal"
+    expect:  "Ghost T -> Ghostty"
+
+  # The same at the other end.
+  - written: "the ghostly, terminal"
+    now:     "the Ghostty, terminal"
+    expect:  "ghostly -> Ghostty"
+
+  - written: "I use Ghost E."
+    now:     "I use Ghostty."
+    expect:  "Ghost E -> Ghostty"
+
+  # Only punctuation comes off, never letters. `Prizzy` and `Praizy` share "Pr"
+  # and "zy"; cutting those would offer "iz -> aiz", which nobody said.
+  - written: "hello Prizzy there"
+    now:     "hello Praizy there"
+    expect:  "Prizzy -> Praizy"
+
+  # A stop inside a word is not a sentence end.
+  - written: "we run Node.js and Gwen"
+    now:     "we run Node.js and Qwen"
+    expect:  "Gwen -> Qwen"
+
 
 # Not here: the input box between two rules, and a line wrapped onto a second
 # row. Both are several lines of screen, and this set carries one case per line.
