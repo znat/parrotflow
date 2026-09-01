@@ -57,7 +57,12 @@ enum TermUses {
     /// at the next correction. A row that is gone or malformed is still
     /// forgiven — deleting a row is how the header says to forget a use.
     static func read() throws -> [String: [Use]] {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
+        guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
+        // Present and unreadable is not the same as absent. Bytes that are not
+        // UTF-8 have to refuse the write like a syntax error does.
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+            throw Unreadable()
+        }
         guard let root = try Yams.load(yaml: text) else { return [:] }
         guard let mapping = root as? [String: Any] else { throw Unreadable() }
         let held = mapping["terms"]
