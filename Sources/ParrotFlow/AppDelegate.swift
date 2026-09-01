@@ -2025,7 +2025,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// once this is in flight: overlapping callers converge on the same
     /// download rather than racing two.
     /// Every model the app will use, fetched at launch rather than on the
-    /// dictation that first wants one.
+    /// dictation that first wants one. About 1.16 GB on a default install:
+    /// Parakeet 461 MB, ModernBERT 288 MB, the word vectors 335 MB, the sound
+    /// model 81 MB.
     ///
     /// Each of these used to arrive on first use, and each of them therefore
     /// had a window where the thing it powers was switched on and silently
@@ -2040,6 +2042,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard config.transcription.enabled else { return }
         let transcriber = transcriber
         Task.detached(priority: .background) { await transcriber.warmSentenceModel() }
+        // 81 MB, and the sound pass is on by default, so it is one of the three
+        // rather than something a first dictation waits for.
+        Task.detached(priority: .background) {
+            guard await !NeuralPhonemes.isReady() else { return }
+            do { try await NeuralPhonemes.download() } catch {
+                Log.write("sound model: \(error.localizedDescription); the next"
+                    + " dictation that needs it tries again")
+            }
+        }
         // 335 MB, and only the sentence gate reads them. Someone who turns the
         // gate off should not pay for it.
         if #available(macOS 14, *), config.vocabulary.gateSentence {

@@ -125,7 +125,7 @@ check "and says the term was only partly forgotten" 1 \
 # portrait is built from, so both are escaped.
 ODD="$WORK/odd"
 mkdir -p "$ODD"
-two="$(printf 'We shipped it.\nPraisy wrote the guide.')"
+two="$(printf 'Praisy wrote\nthe guide.')"
 PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Precy Praisy --in "$two" >/dev/null 2>&1
 back="$(python3 -c '
 import sys, yaml
