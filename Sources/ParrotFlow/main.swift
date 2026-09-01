@@ -378,6 +378,42 @@ if let index = arguments.firstIndex(of: "--context-test") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--slot-gap") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot reference needs macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 3) else {
+        print("usage: ParrotFlow --slot-gap \"<sentence>\" <heard> <term>")
+        exit(2)
+    }
+    exit(
+        SlotGapCommand.run(
+            sentence: arguments[index + 1],
+            heard: arguments[index + 2],
+            term: arguments[index + 3]
+        )
+    )
+}
+
+if let index = arguments.firstIndex(of: "--word-vector") {
+    guard #available(macOS 14, *) else {
+        print("✗ word vectors need macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --word-vector \"<sentence>\" <word> [--around]")
+        exit(2)
+    }
+    exit(
+        WordVectorCommand.run(
+            sentence: arguments[index + 1],
+            word: arguments[index + 2],
+            around: arguments.contains("--around")
+        )
+    )
+}
+
 if let index = arguments.firstIndex(of: "--tag") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --tag \"<text>\" [--lang fr]")
@@ -571,6 +607,19 @@ if let index = arguments.firstIndex(of: "--watch-taps") {
     exit(WatchModifiersCommand.taps(
         key: key, seconds: seconds ?? 10, pressDelay: loaded.hotkey.pressDelaySeconds
     ))
+}
+
+// A flag nobody claimed is a mistake, not a request to start the app. Falling
+// through launched a second copy of ParrotFlow every time a check script ran an
+// older binary that did not know the flag yet — four of them, one afternoon.
+// What `AppDelegate` reads for itself once the app is up.
+let appFlags: Set<String> = ["--preview-panel", "--preview-transform", "--empty"]
+if let unknown = arguments.dropFirst().first(where: {
+    $0.hasPrefix("--") && !appFlags.contains($0)
+}) {
+    print("✗ unknown option \(unknown)")
+    print("run ParrotFlow with no arguments to start the app")
+    exit(2)
 }
 
 let app = NSApplication.shared
