@@ -2,9 +2,10 @@ import Foundation
 
 /// `--forget <term>` — everything learnt about how one name sounds, gone.
 ///
-/// Three places hold it, and until now none of them had a way out:
+/// Four places hold it, and until now none of them had a way out:
 /// `vocabulary.yaml` holds the renderings, `voice/observations.jsonl` holds
-/// every time one was seen, and `voice/samples/<Term>/` holds the audio. Data
+/// every time one was seen, `voice/samples/<Term>/` holds the audio, and
+/// `vocabulary-uses.yaml` holds the sentences it was confirmed in. Data
 /// that only accumulates is data nobody can correct — a rendering learnt from
 /// one bad clip goes on shaping the search forever, and the only remedy was to
 /// edit a file the header tells you not to edit.
@@ -47,7 +48,19 @@ enum ForgetCommand {
                 return 1
             }
             let gone = try VoiceStore.forget(name)
-            if renderings == 0, gone.observations == 0, gone.samples == 0 {
+            // A fourth place, and the same rule: what was learnt goes. Left
+            // behind, the sentences would go on describing a term whose
+            // renderings have all been thrown away.
+            var uses = 0
+            do {
+                uses = try TermUses.forget(name)
+            } catch {
+                // vocabulary.yaml is already edited by here, so refusing now
+                // would report a correction that did happen as a failure.
+                print("! the confirmed sentences were left alone:"
+                    + " \(error.localizedDescription)")
+            }
+            if renderings == 0, gone.observations == 0, gone.samples == 0, uses == 0 {
                 print("· nothing recorded for \(name)")
                 return 0
             }
@@ -61,8 +74,10 @@ enum ForgetCommand {
             let from = gone.folders.isEmpty
                 ? "voice/samples/" : gone.folders.map { "voice/samples/\($0)/" }.joined(separator: ", ")
             print("  \(gone.samples) sample(s) from \(from)")
+            print("  \(uses) confirmed sentence(s) from \(TermUses.url.lastPathComponent)")
             Log.write("forget: \(name) — \(renderings) pronunciation(s),"
-                + " \(gone.observations) observation(s), \(gone.samples) sample(s)")
+                + " \(gone.observations) observation(s), \(gone.samples) sample(s),"
+                + " \(uses) confirmed sentence(s)")
             return 0
         } catch {
             print("✗ \(error.localizedDescription)")
