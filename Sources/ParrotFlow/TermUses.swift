@@ -38,11 +38,31 @@ enum TermUses {
     /// recomputing a portrait, which is one forward pass per use.
     static let keep = 40
 
+    /// The file is there and cannot be parsed as a whole.
+    struct Unreadable: LocalizedError {
+        var errorDescription: String? {
+            "vocabulary-uses.yaml could not be read, so nothing was written over it"
+        }
+    }
+
+    /// What a reader gets: a file it cannot parse is no uses.
     static func load() -> [String: [Use]] {
-        guard let text = try? String(contentsOf: url, encoding: .utf8),
-              let root = try? Yams.load(yaml: text) as? [String: Any],
-              let terms = root["terms"] as? [String: Any]
-        else { return [:] }
+        (try? read()) ?? [:]
+    }
+
+    /// The same, but a file that is there and does not parse throws.
+    ///
+    /// A writer has to know the difference. The file is hand-edited, and one
+    /// unbalanced quote read as "no uses" would drop every sentence a term had
+    /// at the next correction. A row that is gone or malformed is still
+    /// forgiven — deleting a row is how the header says to forget a use.
+    static func read() throws -> [String: [Use]] {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
+        guard let root = try Yams.load(yaml: text) else { return [:] }
+        guard let mapping = root as? [String: Any] else { throw Unreadable() }
+        let held = mapping["terms"]
+        if held == nil || held is NSNull { return [:] }
+        guard let terms = held as? [String: Any] else { throw Unreadable() }
 
         var out: [String: [Use]] = [:]
         for (term, value) in terms {
@@ -67,7 +87,7 @@ enum TermUses {
         let sentence = said.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sentence.isEmpty, !span.isEmpty, sentence.contains(span) else { return }
 
-        var all = load()
+        var all = try read()
         var uses = all[term] ?? []
         let use = Use(said: sentence, span: span)
         guard !uses.contains(use) else { return }
@@ -75,6 +95,21 @@ enum TermUses {
         if uses.count > keep { uses.removeFirst(uses.count - keep) }
         all[term] = uses
         try write(all)
+    }
+
+    /// Drops every use of one term, and says how many went.
+    ///
+    /// Case-insensitive, like `--forget` itself: somebody typing `praisy` means
+    /// the term.
+    @discardableResult
+    static func forget(_ term: String) throws -> Int {
+        var all = try read()
+        let keys = all.keys.filter { $0.caseInsensitiveCompare(term) == .orderedSame }
+        let gone = keys.reduce(0) { $0 + (all[$1]?.count ?? 0) }
+        guard gone > 0 else { return 0 }
+        for key in keys { all[key] = nil }
+        try write(all)
+        return gone
     }
 
     /// Rendered by hand rather than by `Yams.dump`, for the same reason
