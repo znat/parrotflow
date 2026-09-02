@@ -111,6 +111,30 @@ cases:
     now:     "we run Node.js and Qwen"
     expect:  "Gwen -> Qwen"
 
+  # Typing a name after a word is not a correction of that word. `morning`
+  # became `morning Tasmeen` and it was offered as a vocabulary rule.
+  - written: "I said it this morning."
+    now:     "I said it this morning Tasmeen."
+    expect:  none
+
+  - written: "said morning, and left"
+    now:     "said morning Tasmeen, and left"
+    expect:  none
+
+  # Nor is pasting into the line. This one glues to the word before it, so it
+  # is one word becoming one word and looks like a correction.
+  - written: "a word in the dictation."
+    now:     "a word in the dictation.[Image #17]"
+    expect:  none
+
+  # But a word that grows is still a correction, and so is one that splits.
+  - written: "it is Ghost here"
+    now:     "it is Ghostty here"
+    expect:  "Ghost -> Ghostty"
+
+  - written: "ask Praisy today"
+    now:     "ask Praisy's today"
+    expect:  "Praisy -> Praisy's"
 
 # Not here: the input box between two rules, and a line wrapped onto a second
 # row. Both are several lines of screen, and this set carries one case per line.

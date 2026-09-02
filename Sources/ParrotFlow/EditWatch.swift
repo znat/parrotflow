@@ -343,13 +343,40 @@ final class EditWatch {
             // of it was meant.
             guard left >= 1, right >= 1, left <= 2, right <= 2, left + right <= 3
             else { continue }
-            let pair = Self.trimmed(
+            let candidate = Self.trimmed(
                 was: old[fromI ..< i].joined(separator: " "),
                 now: new[fromJ ..< j].joined(separator: " ")
             )
+            // Words added beside a word are not a correction of it.
+            guard !Self.added(was: candidate.was, now: candidate.now) else { continue }
+            let pair = candidate
             found.append(Change(was: pair.was, now: pair.now, sentence: now, at: fromI, nowAt: fromJ))
         }
         return found
+    }
+
+    /// Whether one reading is the other with more words added beside it.
+    ///
+    /// Typing a name after a word, or pasting into the line, is not a
+    /// correction of anything. `morning` became `morning Tasmeen` and
+    /// `dictation.` became `dictation.[Image #17]`, and both were offered as
+    /// vocabulary rules.
+    ///
+    /// The test is a whole word, not a prefix. `Ghost` to `Ghostty` extends the
+    /// word itself and is a real correction; `Praisy` to `Praisy's` likewise.
+    /// What is refused is one reading standing whole at the start or end of the
+    /// other with a separate word beside it — which is why the longer side has
+    /// to hold a space for this to fire at all.
+    static func added(was: String, now: String) -> Bool {
+        let (short, long) = was.count < now.count ? (was, now) : (now, was)
+        guard short != long, long.contains(where: \.isWhitespace) else { return false }
+        guard long.hasPrefix(short) || long.hasSuffix(short) else { return false }
+        // The rest has to begin or end on a boundary, or `Ghost D` would read
+        // as `Ghost` with a word added.
+        let rest = long.hasPrefix(short)
+            ? long.dropFirst(short.count) : long.dropLast(short.count)
+        return rest.first?.isWhitespace == true || rest.last?.isWhitespace == true
+            || rest.contains(where: \.isWhitespace)
     }
 
     /// The two readings with the punctuation they share taken off both.
