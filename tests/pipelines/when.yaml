@@ -3,7 +3,8 @@
 # having.
 #
 # The stage above is a transform, because deleting a filler is what a transform
-# does now: a rule that needs no review does not belong in vocabulary.yaml.
+# does now: a rule that needs no sentence read does not belong in
+# vocabulary.yaml.
 languages: [en, fr]
 transforms:
   - name: fillers

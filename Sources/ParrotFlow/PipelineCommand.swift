@@ -100,7 +100,7 @@ enum PipelineCommand {
     /// means what it has always meant.
     static func run(
         path: String, text: String?, quiet: Bool = false, app: String? = nil,
-        allowPrompts: Bool = true, showVars: Bool = false
+        allowPrompts: Bool = true, showVars: Bool = false, warm: Bool = false
     ) -> Int32 {
         let named = (app ?? "").trimmingCharacters(in: .whitespaces)
         let front = named.isEmpty ? nil : Pipeline.App(name: named, bundleID: "")
@@ -125,9 +125,7 @@ enum PipelineCommand {
             return Pipeline.Step(
                 stage: stage, transform: entry.transform, prompt: entry.prompt,
                 caps: entry.caps, nearMisses: entry.nearMisses,
-                bySound: entry.bySound, gate: entry.gate,
-                review: entry.review, reviewEnabled: entry.reviewEnabled,
-                when: entry.when,
+                bySound: entry.bySound, gate: entry.gate, when: entry.when,
                 unless: entry.unless, app: entry.app
             )
         }
@@ -178,6 +176,34 @@ enum PipelineCommand {
         // so the answer is the one a dictation would have got.
         var seed = Scope()
         seed.set("language", .string(Pipeline.language(of: text, config: config)))
+
+        // `--warm`. The sentence gate never makes a dictation wait, so in a
+        // one-shot run nothing has loaded the 400 MB word vectors and the two
+        // tests that read the sentence are skipped every time. This is the
+        // only way to see them from the command line. Off by default: it is a
+        // download, and `make test` must not need one.
+        //
+        // A failure here refuses the run rather than falling back. The gate
+        // skips itself in silence when a model is missing — that is right in
+        // the app and wrong here, where a skipped gate and a gate that decided
+        // nothing print the same sentence.
+        if warm, #available(macOS 14, *) {
+            let failures = Blocking.run { () async -> [String] in
+                var found: [String] = []
+                do { try await WordVectors.shared.prepare() } catch {
+                    found.append("word vectors — \(error.localizedDescription)")
+                }
+                do { _ = try await SentenceModel.shared.prepare() } catch {
+                    found.append("sentence model — \(error.localizedDescription)")
+                }
+                return found
+            }
+            for failure in failures { print("✗ --warm: \(failure)") }
+            if !failures.isEmpty {
+                print("  the sentence gate would be skipped, and the run would not say so")
+                return 1
+            }
+        }
 
         let done = DispatchSemaphore(value: 0)
         if quiet {

@@ -6,7 +6,7 @@
 # wrong `Versailles` (finding F10). Nothing at run time can tell a moved span
 # from a span that was always wrong, so it is refused at load.
 #
-# There used to be one exception, `replacements`, because the review offers a
+# There used to be one exception, `replacements`, because the stage offers a
 # rule's substitution back and the rules had to have fired first. That pass is
 # inside this stage now, so there is no exception left to state.
 languages: [en]

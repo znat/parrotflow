@@ -1,16 +1,18 @@
-# `review: false` on the vocabulary stage.
+# `review: false` on the vocabulary stage, which is a retired key.
 #
-# The exact matches still ship — they are what the rules wrote, and a rule that
-# fired needs nobody's opinion. Nothing is put to a model.
+# It named the model that kept or reverted each substitution. There is no model
+# in this stage now, so the key is read, reported by `--check-config`, and does
+# nothing. The fixture is kept because that is the thing worth asserting: a
+# config still carrying the key runs exactly like one without it.
 #
-# The near-miss pass goes with the review rather than running without it. A near
-# miss is only ever a proposal: it is never written until a model has read the
-# sentence, so with no reviewer there is nothing that could ever write one. That
-# is why `Versel` opens no place here even though `near_misses` is left on.
+# The exact matches ship — they are what the rules wrote. The near miss does
+# not: `Versel` opens a place, nothing settles it, and a place nothing settles
+# keeps the word that was heard.
 #
 # The same two terms as tests/pipelines/vocabulary-exact.yaml, so the two
 # fixtures can be read against each other: that one closes the near-miss pass
-# with `near_misses: false`, this one closes it by having no reviewer.
+# with `near_misses: false`, this one leaves it open and shows what an
+# unsettled place ships.
 languages: [en]
 vocabulary:
   terms:

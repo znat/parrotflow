@@ -212,14 +212,6 @@ if let index = arguments.firstIndex(of: "--suggest") {
                             language: languageList(arguments)?.first))
 }
 
-if let index = arguments.firstIndex(of: "--verdicts") {
-    guard arguments.indices.contains(index + 2), let count = Int(arguments[index + 1]) else {
-        print("usage: ParrotFlow --verdicts <count> <reply>")
-        exit(2)
-    }
-    exit(VerdictsCommand.run(count: count, reply: arguments[index + 2]))
-}
-
 if let index = arguments.firstIndex(of: "--teaching") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --teaching \"<sentence>\" <word>")
@@ -297,7 +289,7 @@ if let index = arguments.firstIndex(of: "--eval") {
 if let index = arguments.firstIndex(of: "--pipeline") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"]"
-            + " [--app <name>] [--no-prompts] [--quiet]")
+            + " [--app <name>] [--no-prompts] [--warm] [--quiet]")
         exit(2)
     }
     let text = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
@@ -306,7 +298,8 @@ if let index = arguments.firstIndex(of: "--pipeline") {
         path: arguments[index + 1], text: text,
         quiet: arguments.contains("--quiet"), app: appArgument,
         allowPrompts: !arguments.contains("--no-prompts"),
-        showVars: arguments.contains("--vars")
+        showVars: arguments.contains("--vars"),
+        warm: arguments.contains("--warm")
     ))
 }
 

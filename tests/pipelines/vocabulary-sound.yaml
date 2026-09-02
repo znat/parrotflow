@@ -7,7 +7,8 @@
 #
 # `by_sound` is absent here, because absent means on.
 #
-# Nothing is written by a match. It opens a place, and the model decides.
+# Nothing is written by a match. It opens a place, and the gates decide —
+# a place none of them settles keeps the word that was heard.
 # `praise` is in the case set beside this one for the other half: it sounds
 # like `Praisy` at 0.76, under the 0.85 floor, because it is a homophone and
 # no floor settles a homophone.

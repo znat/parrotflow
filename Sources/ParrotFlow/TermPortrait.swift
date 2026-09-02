@@ -118,8 +118,8 @@ actor TermPortrait {
         return String(text[lo ..< hi])
     }
 
-    /// How far below the floor a sentence has to fall before the term is held
-    /// back rather than merely not written.
+    /// How far below the floor a sentence has to fall before the term is taken
+    /// out rather than merely not written.
     ///
     /// The portrait was built to authorise only. It is the one test that tells
     /// `We host our databases on superbase` from `The rocket landed on the moon

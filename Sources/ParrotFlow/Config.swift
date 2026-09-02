@@ -1392,7 +1392,8 @@ struct Config: Decodable, Equatable {
         var defaultModel: String = ""
         /// The model behind "hey parrot, …". Empty means `default`.
         var router: String = ""
-        /// The model behind the vocabulary judge. Empty means `default`.
+        /// The model behind the vocabulary stage. That stage calls no model
+        /// now — read, like the rest of `llm:`, only so `problems` can say so.
         var vocabulary: String = ""
 
         enum CodingKeys: String, CodingKey {
@@ -1425,9 +1426,6 @@ struct Config: Decodable, Equatable {
         case general
         /// "hey parrot, …", said before anything else and waited on.
         case router
-        /// The KEEP/REVERT judge. Bound on the pipeline stage that runs it,
-        /// not here — see `Pipeline.Step.review`.
-        case vocabulary
         /// Reading a rule out of a spoken spelling.
         case spelling
     }
@@ -1523,8 +1521,6 @@ struct Config: Decodable, Equatable {
         case .router: return written(commands.router).isEmpty ? fallback : written(commands.router)
         case .spelling:
             return written(commands.spelling).isEmpty ? fallback : written(commands.spelling)
-        case .vocabulary:
-            return fallback
         }
     }
 
@@ -1771,6 +1767,13 @@ struct Config: Decodable, Equatable {
         /// "grammar is not a stage" is not what went wrong.
         var contradictoryEntries: [String] = []
 
+        /// `review:` on a `vocabulary` step, which named the model that read
+        /// each substitution. There is no model in that stage now, so the key
+        /// is read and does nothing — announced through `notices()` the way
+        /// `acoustic:` and `gate_rank:` are, not refused, because a config
+        /// that still carries it is not broken.
+        var retiredReview: [String] = []
+
         /// One rule per mishearing, flattened for the substitution pass.
         var rules: [Rule] { Self.rules(from: replacements) }
 
@@ -1825,8 +1828,9 @@ struct Config: Decodable, Equatable {
             var nearMisses: Bool?
             var bySound: Bool?
             var gate: Bool?
+            /// What `review:` said, for `Transcription.retiredReview`. Read so
+            /// it can be reported, never used.
             var review: String?
-            var reviewEnabled: Bool?
             var when: String?
             var unless: String?
             var app: String?
@@ -1877,26 +1881,24 @@ struct Config: Decodable, Equatable {
                     var caps = VocabularyJudge.Caps.standard
                     // Each optional and each on its own: a person raising one
                     // ceiling should not have to restate the rest.
-                    if let slots = try c.decodeIfPresent(Int.self, forKey: .maxSlots) {
-                        caps.slots = slots
-                    }
                     if let perSlot = try c.decodeIfPresent(Int.self, forKey: .maxPerSlot) {
                         caps.perSlot = perSlot
                     }
                     if let perTerm = try c.decodeIfPresent(Int.self, forKey: .maxPerTerm) {
                         caps.perTerm = perTerm
                     }
-                    // Read only so `Caps.problems` can refuse it by name.
+                    // Read only so `Caps.problems` can refuse them by name.
                     caps.readings = try c.decodeIfPresent(Int.self, forKey: .maxReadings)
+                    caps.slots = try c.decodeIfPresent(Int.self, forKey: .maxSlots)
                     self.caps = caps
                     nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
                     bySound = try c.decodeIfPresent(Bool.self, forKey: .bySound)
                     gate = try c.decodeIfPresent(Bool.self, forKey: .gate)
-                    // Two spellings, like `catch_all:`: the key says whether
-                    // the review runs and what it runs on. `false` is the only
-                    // one that turns it off.
+                    // Two spellings, `review: false` and `review: <model>`,
+                    // and neither reaches anything now. Read in both shapes so
+                    // the message names what was written.
                     if let on = ((try? c.decodeIfPresent(Bool.self, forKey: .review)) ?? nil) {
-                        reviewEnabled = on
+                        review = on ? "true" : "false"
                     } else {
                         review = try c.decodeIfPresent(String.self, forKey: .review)
                     }
@@ -2050,12 +2052,15 @@ struct Config: Decodable, Equatable {
                             )
                             return nil
                         }
+                        if let named = entry.review?
+                            .trimmingCharacters(in: .whitespacesAndNewlines), !named.isEmpty {
+                            retiredReview.append(named)
+                        }
                         return Pipeline.Step(
                             stage: stage, transform: entry.transform,
                             prompt: entry.prompt, caps: entry.caps,
                             nearMisses: entry.nearMisses, bySound: entry.bySound,
-                            gate: entry.gate, review: entry.review,
-                            reviewEnabled: entry.reviewEnabled,
+                            gate: entry.gate,
                             when: entry.when, unless: entry.unless, app: entry.app
                         )
                     }
@@ -2521,8 +2526,9 @@ struct Config: Decodable, Equatable {
     private static let movedKeys = [
         "llm": "`llm.default` is now `default: true` on one entry in `models:`;"
             + " `llm.router` and `llm.spelling` are now `commands.router` and"
-            + " `commands.spelling`; `llm.vocabulary` is now `review:` on the"
-            + " `vocabulary` stage; `llm.enabled` is gone — a config with no"
+            + " `commands.spelling`; `llm.vocabulary` named the model behind the"
+            + " `vocabulary` stage and that stage calls no model at all now;"
+            + " `llm.enabled` is gone — a config with no"
             + " `models:` calls no model; the four keys that described a model"
             + " are an entry in `models:`",
         "free_form": "now `commands.catch_all`, which also takes the model it"
@@ -2607,14 +2613,6 @@ struct Config: Decodable, Equatable {
                         : " — have: \(transforms.map(\.name).joined(separator: ", "))"))
             }
         }
-        // `review:` names a model the same way `commands.router` does, and an
-        // unresolved one falls back to the default rather than failing.
-        for step in pipeline.steps where step.stage == .vocabulary {
-            let named = (step.review ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !named.isEmpty, modelsByName[named] == nil else { continue }
-            found.append("pipeline: `review: \(named)` names no model — have: "
-                + modelsByName.keys.sorted().joined(separator: ", "))
-        }
         return found
     }
 
@@ -2689,8 +2687,8 @@ struct Config: Decodable, Equatable {
             // acoustic pass was removed, and `notices()` says so instead.
             if !byEar.isEmpty {
                 said.append("vocabulary: matched by sound at similarity"
-                    + " \(vocabulary.soundBelow) and up, then settled by the"
-                    + " free rules or put to the judge")
+                    + " \(vocabulary.soundBelow) and up, then settled by the word lists,"
+                    + " the slot and the sentence — or left as it was heard")
             }
             let silent = vocabulary.terms
                 .filter { $0.value.never && $0.value.pronunciations.isEmpty }
@@ -2699,6 +2697,16 @@ struct Config: Decodable, Equatable {
                 said.append("vocabulary: \(silent.joined(separator: ", ")) —"
                     + " `floor: off` and no pronunciations, so nothing can match them")
             }
+        }
+        for written in Set(transcription.retiredReview).sorted() {
+            let did = ["true", "false"].contains(written)
+                ? "switched the model that kept or reverted each substitution"
+                : "named the model that kept or reverted each substitution"
+            said.append("pipeline: `review: \(written)` on the `vocabulary` stage \(did)."
+                + " There is no model in that stage now — the two word lists, the slot's"
+                + " part of speech and the two tests that read the sentence decide, and a"
+                + " place none of them settles keeps what arrived. The key is read and"
+                + " does nothing")
         }
         // Said whether or not there are terms: a file can carry the old
         // file-level key and nothing else.

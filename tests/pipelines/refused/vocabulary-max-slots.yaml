@@ -1,0 +1,14 @@
+# A cap on a model call that is not made.
+#
+# `max_slots` bounded one KEEP/REVERT call: past that many open places the
+# stage declined the sentence rather than send a list nobody could read. There
+# is no call, so the number reads nothing.
+#
+# Refused for the same reason as `max_readings` beside it: a key that loads and
+# does nothing is worse than one that fails, because nothing ever tells the
+# person who typed it.
+languages: [en]
+pipeline:
+  - vocabulary
+  - stage: vocabulary
+    max_slots: 4
