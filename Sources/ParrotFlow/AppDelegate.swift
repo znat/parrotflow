@@ -866,6 +866,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyConfig() {
+        // A press waiting on the microphone dialog belongs to the gesture that
+        // started it, and a reload can change what that gesture means: a hold
+        // becomes a toggle, or the other way round. Neither answer is right
+        // once that has happened — starting on the grant gives a hold nobody
+        // is holding, and dropping it silently loses a toggle somebody asked
+        // for — so the press is retired here, while it is still nothing but a
+        // pending request. Rare, and cheap to be exact about.
+        if pressAwaitingMicrophone != nil {
+            Log.write("config reloaded while the microphone dialog was open; that press is dropped")
+            pressAwaitingMicrophone = nil
+        }
+
         // Said out loud on the app's own path, not only by --check-config,
         // which the app never runs. A mistyped stage name used to vanish at
         // decode time with no trace anywhere: replacements simply stopped
