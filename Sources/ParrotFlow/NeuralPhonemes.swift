@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import FluidAudio
 
@@ -82,68 +83,77 @@ enum NeuralPhonemes {
     private static var cache: [String: [String: String]] = [:]
     private static var loadedFromDisk = false
     private static var savePending = false
-    /// The languages `verifyCache` has already settled this launch.
-    private static var verified: Set<String> = []
+    /// Worked out once per launch. The files do not move under a running app.
+    private static var weights: String?
     private static let cacheLock = NSLock()
     private static let saveQueue = DispatchQueue(label: "com.parrotflow.phonemes")
 
-    /// Named for the model, which is as far as a name gets here. FluidAudio
-    /// publishes no version for these weights and `ModelNames.MultilingualG2P`
-    /// carries no revision, so an updated model arrives under the same two file
-    /// names. `verifyCache` is what actually decides the table is still valid.
+    /// Named for the model. The name says which model wrote the table and
+    /// nothing about which weights, which is what `weightsFingerprint` is for.
     private static var cacheURL: URL {
         AppVariant.supportDirectory
             .appendingPathComponent("phonemes-multilingual-g2p.json")
     }
 
-    /// Asks the model to confirm a few entries it wrote, and drops the whole
-    /// table if it will not.
+    /// What the weights on disk look like: every file inside the two G2P model
+    /// bundles, by path, size and modification date, hashed.
     ///
-    /// A name cannot answer this. New weights land under the same file names,
-    /// and the table under them is then from the model before. The damage is a
-    /// mixed table rather than an old one: a window read by the new model is
-    /// scored against a term read by the old one, over a 0.85 floor, and
-    /// neither reading is wrong on its own.
+    /// The table has to be thrown away when the model changes, and there is
+    /// nothing to hang that on. FluidAudio publishes no version for these
+    /// models and `ModelNames.MultilingualG2P` is two file names and no
+    /// revision, so the file name cannot carry it. The files themselves are the
+    /// identity: new weights are a new download, and a download rewrites them.
     ///
-    /// So three entries per language are asked again, on the first dictation of
-    /// each launch. Three calls, against a table that saves about seven a
-    /// dictation. A disagreement drops everything rather than trying to work
-    /// out which entries are stale, because there is no way to tell: a word the
-    /// two models agree on looks exactly like a word only the new one has seen.
+    /// Sizes and dates rather than contents. The weights are 81 MB and this
+    /// answers a question that is almost always "unchanged". What that allows
+    /// is a re-download of the same weights invalidating a table that was fine,
+    /// which costs one session of warm-up. What it cannot allow is the other
+    /// way round: weights the model reads differently, with the files the same.
     ///
-    /// A call that throws decides nothing, same as in `of`. It is a busy model,
-    /// not a different one, and it must not cost a table that is fine.
-    private static func verifyCache(language: MultilingualG2PLanguage) async {
-        let table = language.rawValue
+    /// The walk is the whole FluidAudio cache, which is 28 files here, and it
+    /// stops descending as soon as it has a bundle.
+    ///
+    /// Nil when both bundles are not there to look at, and then nothing is
+    /// written: a table that cannot be keyed cannot be trusted next launch.
+    private static func weightsFingerprint() -> String? {
         cacheLock.lock()
-        let checked = verified.contains(table)
-        let canaries = checked ? [] : (cache[table] ?? [:])
-            .filter { !$0.value.isEmpty }
-            .sorted { $0.key < $1.key }
-            .prefix(3)
-            .map { ($0.key, $0.value) }
-        if !checked { verified.insert(table) }
+        let known = weights
         cacheLock.unlock()
-        guard !canaries.isEmpty else { return }
+        if let known { return known }
 
-        for (word, was) in canaries {
-            let now: String
-            do {
-                now = try await MultilingualG2PModel.shared
-                    .phonemize(word: word, language: language)?
-                    .joined() ?? ""
-            } catch {
-                return
+        guard let root = try? TtsCacheDirectory.ensure() else { return nil }
+        let wanted = ModelNames.MultilingualG2P.requiredModels
+        let manager = FileManager.default
+        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
+        guard let walk = manager.enumerator(
+            at: root, includingPropertiesForKeys: Array(keys)
+        ) else { return nil }
+
+        var seen: Set<String> = []
+        var lines: [String] = []
+        for case let url as URL in walk where wanted.contains(url.lastPathComponent) {
+            walk.skipDescendants()
+            seen.insert(url.lastPathComponent)
+            guard let inside = manager.enumerator(
+                at: url, includingPropertiesForKeys: Array(keys)
+            ) else { return nil }
+            for case let file as URL in inside {
+                let values = try? file.resourceValues(forKeys: keys)
+                let stamp = values?.contentModificationDate?.timeIntervalSince1970 ?? -1
+                // The path from the cache root, not the file name: both bundles
+                // hold a `model.mil` and a `weights/weight.bin`.
+                lines.append("\(file.path.dropFirst(root.path.count))\u{1}"
+                    + "\(values?.fileSize ?? -1)\u{1}\(Int(stamp))")
             }
-            guard Phonemes.clip(now) != was else { continue }
-            Log.write("phonemes: the model no longer reads \(word) the same way;"
-                + " the saved pronunciations are from other weights and are dropped")
-            cacheLock.lock()
-            cache = [:]
-            cacheLock.unlock()
-            scheduleSave()
-            return
         }
+        guard seen == wanted, !lines.isEmpty else { return nil }
+
+        let digest = SHA256.hash(data: Data(lines.sorted().joined(separator: "\u{2}").utf8))
+        let mark = digest.compactMap { String(format: "%02x", $0) }.joined().prefix(16)
+        cacheLock.lock()
+        weights = String(mark)
+        cacheLock.unlock()
+        return String(mark)
     }
 
     /// Reads the table now, so the first dictation of the session does not.
@@ -202,19 +212,33 @@ enum NeuralPhonemes {
         saveQueue.sync {}
     }
 
+    /// The file: the weights that wrote the table, and the table.
+    private struct Stored: Codable {
+        let weights: String
+        let words: [String: [String: String]]
+    }
+
     private static func readCache() -> [String: [String: String]] {
-        guard let data = try? Data(contentsOf: cacheURL),
-              let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
+        guard let here = weightsFingerprint(),
+              let data = try? Data(contentsOf: cacheURL),
+              let stored = try? JSONDecoder().decode(Stored.self, from: data)
         else { return [:] }
-        return decoded
+        guard stored.weights == here else {
+            Log.write("phonemes: the sound model has changed since these"
+                + " pronunciations were saved; starting again")
+            return [:]
+        }
+        return stored.words
     }
 
     private static func writeCache(_ table: [String: [String: String]]) {
+        guard let here = weightsFingerprint() else { return }
         do {
             try FileManager.default.createDirectory(
                 at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true
             )
-            try JSONEncoder().encode(table).write(to: cacheURL, options: .atomic)
+            try JSONEncoder().encode(Stored(weights: here, words: table))
+                .write(to: cacheURL, options: .atomic)
         } catch {
             // The table is still in memory for this run and the next run asks
             // the model again. Not worth failing a dictation over.
@@ -234,7 +258,6 @@ enum NeuralPhonemes {
     ) async -> [String: String] {
         guard await isReady() else { return [:] }
         warmCache()
-        await verifyCache(language: language)
         let table = language.rawValue
         var answer: [String: String] = [:]
         var added = false
