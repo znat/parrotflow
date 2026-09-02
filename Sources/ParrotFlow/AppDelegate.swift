@@ -272,6 +272,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         owner: NSRunningApplication?, landing: Correction.Landing
     )?
 
+    /// Where each run's clip went, so a hand edit is filed beside the
+    /// dictation it is about. `output_dir` can change between the two — see
+    /// `Trace.record` — and the global would file them apart.
+    private var clipDirectories: [Int: URL] = [:]
+
     /// The focused element's text as it was at the press, for an app that gave
     /// no caret. What changed in it afterwards is where the words went.
     ///
@@ -2145,6 +2150,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // The trace is opened around the whole chain, not just the
                 // decoder: the stages that follow write into the same record,
                 // and the line is appended even if one of them throws.
+                self?.clipDirectories[press.run] = recording.url.deletingLastPathComponent()
+                self?.clipDirectories = self?.clipDirectories.filter { $0.key > press.run - 8 } ?? [:]
                 let text = try await Trace.record(
                     wav: recording.url.lastPathComponent, source: .live,
                     app: app.map { Trace.App(name: $0.name, bundleID: $0.bundleID) },
@@ -3727,7 +3734,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     transcript: heard.text, allowed: config.transcription.languages
                 ),
                 app: lastDictated?.owner?.localizedName,
-                after: Date().timeIntervalSince(edits.startedAt)
+                after: Date().timeIntervalSince(edits.startedAt),
+                beside: lastDictated.flatMap { clipDirectories[$0.run] }
             )
         }
         // The counters first. A change that runs the other way is not a rule

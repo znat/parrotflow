@@ -251,9 +251,11 @@ enum Trace {
     }
 
     /// Writes down a word changed by hand. See `Edit`.
+    /// - Parameter beside: the directory holding the dictation's clip, so the
+    ///   edit and the dictation it is about are in one file. See `record`.
     static func edit(
         heard: String, corrected: String, text: String, range: Range<Int>,
-        lang: String, app: String?, after: TimeInterval
+        lang: String, app: String?, after: TimeInterval, beside: URL? = nil
     ) {
         append(
             Edit(
@@ -262,7 +264,7 @@ enum Trace {
                 range: [range.lowerBound, range.upperBound], lang: lang, app: app,
                 after: (after * 10).rounded() / 10
             ),
-            to: directory
+            to: beside ?? directory
         )
     }
 
