@@ -218,6 +218,21 @@ struct Config: Decodable, Equatable {
         /// `and me` reaching `Andrey`.
         var soundBelow: Float = 0.85
 
+        /// Whether the two tests that read the sentence run at all.
+        ///
+        /// One asks whether the term belongs in this position, measured
+        /// against the ten words a masked model expects there, and can only
+        /// refuse. The other asks whether the sentence looks like the ones the
+        /// term was confirmed in, and can only authorise. When they disagree
+        /// neither wins and the reading is offered.
+        ///
+        /// On. It needs a 400 MB model, which is fetched at launch along with
+        /// the others rather than on the dictation that first wants it — see
+        /// `AppDelegate.warmModels`. A gate that is switched on and silently
+        /// doing nothing while its model loads is worse than one that is off:
+        /// it shipped `Versailles` as `Vercel` inside that window.
+        var gateSentence: Bool = true
+
         /// One way this speaker's mouth turns a term into something else, and
         /// what is known about that.
         ///
@@ -502,6 +517,7 @@ struct Config: Decodable, Equatable {
             case decideAbove = "decide_above"
             case soundBelow = "sound_below"
             case gateRank = "gate_rank"
+            case gateSentence = "gate_sentence"
         }
 
         init() {}
@@ -557,6 +573,9 @@ struct Config: Decodable, Equatable {
                         + " it is a similarity, where 1.0 is the term said exactly."
                         + " Running at \(soundBelow)")
                 }
+            }
+            if let on = try c.decodeIfPresent(Bool.self, forKey: .gateSentence) {
+                gateSentence = on
             }
             // `gate_rank` switched a rule that wrote a name when its span read
             // worst in the sentence. The rule is gone — see `SlotGate` — so the

@@ -78,6 +78,19 @@ enum SlotReference {
     /// says how far apart the two readings are, not how sure the answer is.
     static func gap(term: String, heard: String, in sentence: String) async throws -> Double {
         guard let found = sentence.range(of: heard) else { throw Failure.noSlot(heard) }
+        return try await gap(term: term, heard: heard, at: found, in: sentence)
+    }
+
+    /// The same, about one position rather than the first one that matches.
+    ///
+    /// A sentence can hold the word twice — "deploying apps on Versailles while
+    /// visiting the Versailles castle" — and the whole point of reading the
+    /// sentence is that the two get different answers. Searching for the word
+    /// scored both at the first one, so the second was decided by a slot it was
+    /// not in.
+    static func gap(
+        term: String, heard: String, at found: Range<String.Index>, in sentence: String
+    ) async throws -> Double {
         let left = String(sentence[sentence.startIndex ..< found.lowerBound])
             .trimmingCharacters(in: .whitespaces)
         let right = String(sentence[found.upperBound...])

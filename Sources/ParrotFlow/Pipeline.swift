@@ -1062,6 +1062,7 @@ struct Pipeline: Equatable, Codable {
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary judge: \(slots.count) slot(s) from \(parts.count) proposal(s)"
         if bySound > 0 { census += " (\(bySound) by sound)" }
+        if config.vocabulary.gateSentence { census += ", sentence gate on" }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
             census += " — " + slots.map {
                 "\"\(text[$0.range])\" (\($0.terms.joined(separator: "/")))"
@@ -1090,6 +1091,13 @@ struct Pipeline: Equatable, Codable {
         var decided: [Bool?] = changes.indices.map { index in
             index < taught.count && taught[index] ? false : settled[index]
         }
+        // The two tests that read the sentence, on whatever is still open. A
+        // place they do not settle is left exactly as it was, which is why this
+        // can be turned on without any case getting worse.
+        if config.vocabulary.gateSentence, #available(macOS 14, *) {
+            decided = await SentenceGate.settle(changes, in: text, given: decided)
+        }
+
         let gated = decided.enumerated().filter { $0.element != nil && !taught[$0.offset] }.count
         if gated > 0 {
             Log.write("vocabulary gate: \(gated) of \(changes.count) settled without asking")

@@ -509,6 +509,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The other half of the first press. The engine warms above; this is
         // the pill's own window, which costs as much again.
         pill.warm()
+        warmModels()
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }
@@ -2013,6 +2014,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // `startKeepWarm`'s first 15s tick instead of waiting for it.
             let warmed = await LocalLLM.keepWarm(system: system, config: llm)
             Log.write(warmed ? "llm: warmed with one generate call" : "llm: warm-up generate ping failed")
+        }
+    }
+
+    /// Every model the app will use, fetched at launch rather than on the
+    /// dictation that first wants one. About 1.16 GB on a default install:
+    /// Parakeet 461 MB, ModernBERT 288 MB, the word vectors 335 MB, the sound
+    /// model 81 MB.
+    ///
+    /// Each of these used to arrive on first use, and each of them therefore
+    /// had a window where the thing it powers was switched on and silently
+    /// doing nothing. `SentenceGate` will not make a dictation wait on a load,
+    /// so it skipped; `SentenceJoin` did the same. "Versailles is a fantastic
+    /// castle" shipped as "Vercel is a fantastic castle" inside one of those
+    /// windows, and nothing on screen said why.
+    ///
+    /// The dictation path still calls both. A fetch that fails clears itself,
+    /// and the next English dictation is the next chance.
+    private func warmModels() {
+        guard config.transcription.enabled else { return }
+        let transcriber = transcriber
+        Task.detached(priority: .background) { await transcriber.warmSentenceModel() }
+        // 81 MB, and the sound pass is on by default, so it is one of the three
+        // rather than something a first dictation waits for.
+        Task.detached(priority: .background) {
+            guard await !NeuralPhonemes.isReady() else { return }
+            do { try await NeuralPhonemes.download() } catch {
+                Log.write("sound model: \(error.localizedDescription); the next"
+                    + " dictation that needs it tries again")
+            }
+        }
+        // 335 MB, and only the sentence gate reads them. Someone who turns the
+        // gate off should not pay for it.
+        if #available(macOS 14, *), config.vocabulary.gateSentence {
+            Task.detached(priority: .background) { await WordVectors.shared.warm() }
         }
     }
 

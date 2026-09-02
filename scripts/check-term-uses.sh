@@ -125,7 +125,7 @@ check "and says the term was only partly forgotten" 1 \
 # portrait is built from, so both are escaped.
 ODD="$WORK/odd"
 mkdir -p "$ODD"
-two="$(printf 'We shipped it.\nPraisy wrote the guide.')"
+two="$(printf 'Praisy wrote\nthe guide.')"
 PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Precy Praisy --in "$two" >/dev/null 2>&1
 back="$(python3 -c '
 import sys, yaml
@@ -142,6 +142,60 @@ PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Praise Praisy --in "$bell" >/dev/nul
 PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --learn Prizy Praisy \
   --in "Praisy joined in March." >/dev/null 2>&1
 check "a control character does not make the file unreadable" 3 \
+  "$(grep -c '^    - said:' "$ODD/vocabulary-uses.yaml")"
+
+# Which occurrence the sentence is cut around. `range(of:)` matches inside a
+# longer word, so `Vercel` found itself in `Vercelli` and an Italian town was
+# stored as a use of the hosting platform.
+said_of() { PARROTFLOW_CONFIG_DIR="$1" python3 -c '
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))["terms"]
+print(next(iter(d.values()))[0]["said"])
+' "$1/vocabulary-uses.yaml" 2>/dev/null; }
+
+INSIDE="$WORK/inside"; mkdir -p "$INSIDE"
+PARROTFLOW_CONFIG_DIR="$INSIDE" "$BIN" --for Vercel \
+  "I visited Vercelli last year. We deploy on Vercel." >/dev/null 2>&1
+check "the term is found as a word, not inside a longer one" \
+  "We deploy on Vercel." "$(said_of "$INSIDE")"
+
+PREFIX="$WORK/prefix"; mkdir -p "$PREFIX"
+out="$(PARROTFLOW_CONFIG_DIR="$PREFIX" "$BIN" --for Vercel \
+  "I visited Vercelli last year." 2>&1)"
+check "the term only inside a longer word is not a use" 1 \
+  "$(printf '%s' "$out" | grep -c 'does not stand as a word')"
+check "and nothing is written" 0 \
+  "$(grep -c '^    - said:' "$PREFIX/vocabulary-uses.yaml" 2>/dev/null || echo 0)"
+
+# A correction still saves its pronunciation. Losing the mapping because the
+# sentence was unusable would say the correction failed, and it did not.
+PRE2="$WORK/prefix-learn"; mkdir -p "$PRE2"
+PARROTFLOW_CONFIG_DIR="$PRE2" "$BIN" --learn Verceli Vercel \
+  --in "I visited Vercelli last year." >/dev/null 2>&1
+check "a correction over a prefix-only sentence still writes the rule" 1 \
+  "$(grep -c 'heard: Verceli' "$PRE2/vocabulary.yaml" 2>/dev/null | head -1)"
+check "and records no use from it" 0 \
+  "$(grep -c '^    - said:' "$PRE2/vocabulary-uses.yaml" 2>/dev/null || echo 0)"
+
+TWICE="$WORK/twice"; mkdir -p "$TWICE"
+PARROTFLOW_CONFIG_DIR="$TWICE" "$BIN" --for Vercel \
+  "Vercel is where we deploy. Vercel also hosts the docs." >/dev/null 2>&1
+# Twice as a word takes the first. Both are genuine uses, and nothing that
+# records one carries the position of the occurrence that was corrected.
+check "a term twice as a word takes the first" \
+  "Vercel is where we deploy." "$(said_of "$TWICE")"
+
+# `--tidy-uses` rewrites the whole file, so it has to read it the strict way.
+# Reading a broken file as "no uses" and writing that back is how every stored
+# sentence goes at once.
+sum_before="$(shasum "$BROKE/vocabulary-uses.yaml" | cut -d' ' -f1)"
+PARROTFLOW_CONFIG_DIR="$BROKE" "$BIN" --tidy-uses >/dev/null 2>&1
+check "--tidy-uses fails on a file it cannot parse" 1 "$?"
+check "and leaves it exactly as it was" "$sum_before" \
+  "$(shasum "$BROKE/vocabulary-uses.yaml" | cut -d' ' -f1)"
+
+PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --tidy-uses >/dev/null 2>&1
+check "--tidy-uses keeps the sentences of a file it can parse" 3 \
   "$(grep -c '^    - said:' "$ODD/vocabulary-uses.yaml")"
 
 [ "$failed" -eq 0 ] && echo "Every check passed." || echo "Failed: term-uses"

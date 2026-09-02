@@ -25,6 +25,20 @@ enum TermUses {
         /// The term inside `said`. Kept because a sentence can hold the word
         /// twice, and the portrait needs to know which one to leave out.
         let span: String
+        /// Who put it here. A portrait built from sentences somebody typed by
+        /// hand behaves differently from one built out of real dictation, and
+        /// telling them apart afterwards is the only way to know which you are
+        /// looking at.
+        var from: Source = .correction
+
+        enum Source: String, Codable {
+            /// The correction panel, the spoken command, or `--learn`.
+            case correction
+            /// Written by hand with `--learn --in`, to fill a portrait early.
+            case seeded
+        }
+
+        static func == (a: Use, b: Use) -> Bool { a.said == b.said && a.span == b.span }
     }
 
     static var url: URL {
@@ -77,7 +91,8 @@ enum TermUses {
                       let span = row["span"] as? String,
                       said.contains(span)
                 else { return nil }
-                return Use(said: said, span: span)
+                let from = (row["from"] as? String).flatMap(Use.Source.init(rawValue:))
+                return Use(said: said, span: span, from: from ?? .correction)
             }
             if !uses.isEmpty { out[term] = uses }
         }
@@ -88,13 +103,17 @@ enum TermUses {
     ///
     /// The oldest goes when the list is full, so a term that moves on stops
     /// being described by what it used to mean.
-    static func record(term: String, said: String, span: String) throws {
-        let sentence = said.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !sentence.isEmpty, !span.isEmpty, sentence.contains(span) else { return }
+    static func record(
+        term: String, said: String, span: String, from: Use.Source = .correction
+    ) throws {
+        let sentence = narrowed(said, to: span)
+        // A word, not a substring. `contains` alone let `Vercelli` in.
+        guard !sentence.isEmpty, !span.isEmpty,
+              occurrence(of: span, in: sentence) != nil else { return }
 
         var all = try read()
         var uses = all[term] ?? []
-        let use = Use(said: sentence, span: span)
+        let use = Use(said: sentence, span: span, from: from)
         guard !uses.contains(use) else { return }
         uses.append(use)
         if uses.count > keep { uses.removeFirst(uses.count - keep) }
@@ -117,6 +136,80 @@ enum TermUses {
         return gone
     }
 
+    /// The one sentence `span` stands in, without the shell prompt in front.
+    ///
+    /// What is captured is the whole field, and in a terminal that is the whole
+    /// prompt line — every dictation glued together since the last Return.
+    /// Recorded whole, it taught `Ghostty` that "The night was very ghostly" is
+    /// where it lives, in two of its three uses. `RedCrawl`, `Sentry` and
+    /// `Tasmeen` each arrived with a single use that was somebody else's text.
+    ///
+    /// A full stop only ends a sentence when what follows is a space, an
+    /// upper-case letter, or nothing. Dictation arrives glued — "terminal.I'm
+    /// using" has to come apart — while `Node.js` and `3.5` must not.
+    static func narrowed(_ said: String, to span: String) -> String {
+        let text = said.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let at = occurrence(of: span, in: text) else { return text }
+
+        func ends(_ i: String.Index) -> Bool {
+            guard ".!?".contains(text[i]) else { return false }
+            let after = text.index(after: i)
+            guard after < text.endIndex else { return true }
+            let next = text[after]
+            return next.isWhitespace || next.isUppercase
+        }
+
+        var from = text.startIndex
+        var i = text.startIndex
+        while i < at.lowerBound {
+            if ends(i) { from = text.index(after: i) }
+            i = text.index(after: i)
+        }
+        var to = text.endIndex
+        i = at.upperBound
+        while i < text.endIndex {
+            if ends(i) { to = text.index(after: i); break }
+            i = text.index(after: i)
+        }
+
+        var cut = String(text[from ..< to]).trimmingCharacters(in: .whitespaces)
+        // The prompt the terminal draws, which is not something anybody said.
+        while let first = cut.first, prompts.contains(first) {
+            cut = String(cut.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+        return cut.contains(span) ? cut : text
+    }
+
+    /// Where `span` stands as a word, rather than wherever its letters first
+    /// appear.
+    ///
+    /// `range(of:)` matches inside a longer word, so `Vercel` found itself in
+    /// `Vercelli` and the sentence about an Italian town was stored as a use of
+    /// the hosting platform. Nil means the term does not stand in this text at
+    /// all, whatever `contains` says, and nothing should be recorded.
+    ///
+    /// A term that occurs twice as a word still takes the first: both are
+    /// genuine uses, and nothing that records one carries the position of the
+    /// occurrence that was corrected.
+    static func occurrence(of span: String, in text: String) -> Range<String.Index>? {
+        func word(_ c: Character) -> Bool { c.isLetter || c.isNumber }
+        var from = text.startIndex
+        while let found = text.range(of: span, range: from ..< text.endIndex) {
+            let before = found.lowerBound == text.startIndex
+                || !word(text[text.index(before: found.lowerBound)])
+            let after = found.upperBound == text.endIndex || !word(text[found.upperBound])
+            if before && after { return found }
+            guard found.lowerBound < text.endIndex else { break }
+            from = text.index(after: found.lowerBound)
+        }
+        // Nowhere. `Vercel` in `I visited Vercelli last year.` is not a use of
+        // the term, and a caller that only asked `contains` stored it as one.
+        return nil
+    }
+
+    /// What terminals and shells draw in front of the line being typed.
+    static let prompts: Set<Character> = ["❯", ">", "$", "%", "#", "›", "→"]
+
     /// Rendered by hand rather than by `Yams.dump`, for the same reason
     /// `ConfigWriter` splices `vocabulary.yaml`: this file is meant to be read,
     /// and a dumper reorders and requotes everything it touches.
@@ -135,6 +228,7 @@ enum TermUses {
             for use in uses {
                 lines.append("    - said: \(quoted(use.said))")
                 lines.append("      span: \(quoted(use.span))")
+                lines.append("      from: \(use.from.rawValue)")
             }
         }
         lines.append("")
