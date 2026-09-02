@@ -1,0 +1,236 @@
+# A snapshot of one speaker's `vocabulary-uses.yaml`, taken 2026-09-02.
+#
+# It is what `scripts/check-counter-portrait.sh` builds its portraits from, so
+# the counter comparison is scored on real dictation and not on sentences
+# written to make it pass. Four terms, the ones that reach the three-use
+# minimum: Vercel, Praisy, Qwen and BetterStack.
+#
+# These are the speaker's own sentences and colleagues' names, the way
+# tests/judge-cases.yaml already is.
+#
+# Sentences where a vocabulary term was confirmed, written by the app.
+#
+# Each one teaches what kind of sentence its term appears in. Delete a line
+# that was recorded by mistake; the term forgets it at the next correction.
+#
+# `counter: true` is the opposite: a sentence where the term does not belong,
+# recorded when you put an ordinary word back over it. Its `span` is that word.
+
+terms:
+  "BetterStack":
+    - said: "So BetterStack is our monitoring platform."
+      span: "BetterStack"
+      from: correction
+    - said: "BetterStack paged me at three in the morning."
+      span: "BetterStack"
+      from: seeded
+    - said: "We route all our uptime alerts through BetterStack."
+      span: "BetterStack"
+      from: seeded
+    - said: "The BetterStack dashboard shows the latency spike clearly."
+      span: "BetterStack"
+      from: seeded
+    - said: "I need to add the new endpoint to BetterStack."
+      span: "BetterStack"
+      from: seeded
+    - said: "We should have picked a better stack for this service."
+      span: "better stack"
+      from: seeded
+      counter: true
+    - said: "There is no better stack for this than what we have."
+      span: "better stack"
+      from: seeded
+      counter: true
+    - said: "I think Node.js and MongoDB is a much better stack than PHP and MySQL."
+      span: "better stack"
+      from: correction
+      counter: true
+    - said: "So tell me exactly how this is a better stack for us."
+      span: "better stack"
+      from: correction
+      counter: true
+  "Praisy":
+    - said: "So here is Praisy our backend developer in the team."
+      span: "Praisy"
+      from: correction
+    - said: "I made a mistake, I recorded Praisy with two different spellings."
+      span: "Praisy"
+      from: correction
+    - said: "Praizy is an amazing team member."
+      span: "Praizy"
+      from: correction
+    - said: "Praisy is on call this week so send it to her."
+      span: "Praisy"
+      from: seeded
+    - said: "I asked Praisy to review the pull request."
+      span: "Praisy"
+      from: seeded
+    - said: "Praisy walked us through the new onboarding flow at standup."
+      span: "Praisy"
+      from: seeded
+    - said: "Can you loop Praisy in on the incident channel?"
+      span: "Praisy"
+      from: seeded
+    - said: "Praisy wrote the migration script for the user table."
+      span: "Praisy"
+      from: seeded
+    - said: "That was Praisy's suggestion in the design review."
+      span: "Praisy's"
+      from: seeded
+    - said: "Her manager gave her a lot of praise in the review."
+      span: "praise"
+      from: seeded
+      counter: true
+    - said: "The team deserves praise for shipping that so fast."
+      span: "praise"
+      from: seeded
+      counter: true
+    - said: "Traffic was crazy on the way in this morning."
+      span: "crazy"
+      from: seeded
+      counter: true
+    - said: "That deadline is crazy and we should push back."
+      span: "crazy"
+      from: seeded
+      counter: true
+    - said: "They still build all their decks in Prezi."
+      span: "Prezi"
+      from: seeded
+      counter: true
+    - said: "So Tasmin and Praisy are on the team."
+      span: "Praisy"
+      from: correction
+  "Qwen":
+    - said: "I suspect something funny in the substitution.were both terms substituted or decided at once with the Qwen call?"
+      span: "Qwen"
+      from: correction
+    - said: "We run Qwen locally for the embeddings."
+      span: "Qwen"
+      from: seeded
+    - said: "Qwen is faster than the model we had before."
+      span: "Qwen"
+      from: seeded
+    - said: "I swapped the reranker over to Qwen yesterday."
+      span: "Qwen"
+      from: seeded
+    - said: "The Qwen weights are about six hundred megabytes."
+      span: "Qwen"
+      from: seeded
+    - said: "Gwen from the design team is joining the call."
+      span: "Gwen"
+      from: seeded
+      counter: true
+    - said: "I asked Gwen to review the copy before Friday."
+      span: "Gwen"
+      from: seeded
+      counter: true
+    - said: "I think Node.js and Qwen are a good pair."
+      span: "Qwen"
+      from: seeded
+  "Vercel":
+    - said: "She will take care of Vercel deployments."
+      span: "Vercel"
+      from: correction
+    - said: "I love visiting the Versailles Castle while my apps are being deployed in Vercel."
+      span: "Vercel"
+      from: correction
+    - said: "I deploy my apps on Vercel but I love visiting the Versailles castle."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "Have you checked the Vercel preview?"
+      span: "Vercel"
+      from: correction
+    - said: "I love the gardens of the Versailles Castle"
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "Have you visited the Versailles Castle?"
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "I say a sentence, for example I visit the Versailles Castle."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "If you hear Vercel/Versailles status is down."
+      span: "Vercel/Versailles"
+      from: correction
+      counter: true
+    - said: "So when the vocabulary is empty I say \"let's deploy our app on Versailles\"."
+      span: "Versailles\"."
+      from: correction
+      counter: true
+    - said: "So when the vocabulary is empty I get \"let's deploy our app on Versailles\"."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "Next, I say I want to visit the Versailles Castle."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "And reliably expect a place for the Versailles Castle."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "So you're saying that according to Qwen the Github castle is not further from the Versailles castle than the Vercel castle is."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "The preview deployment on Vercel finished in forty seconds."
+      span: "Vercel"
+      from: seeded
+    - said: "Vercel is showing a build error on the main branch."
+      span: "Vercel"
+      from: seeded
+    - said: "We moved the marketing site to Vercel last quarter."
+      span: "Vercel"
+      from: seeded
+    - said: "Check the environment variables in the Vercel dashboard."
+      span: "Vercel"
+      from: seeded
+    - said: "Our Vercel bill went up after we added the image optimisation."
+      span: "Vercel"
+      from: seeded
+    - said: "Vercel was down for about ten minutes this afternoon."
+      span: "Vercel"
+      from: seeded
+    - said: "We spent the whole afternoon in the gardens at Versailles."
+      span: "Versailles"
+      from: seeded
+      counter: true
+    - said: "The train from Paris to Versailles takes forty minutes."
+      span: "Versailles"
+      from: seeded
+      counter: true
+    - said: "The new adapter is versatile enough for both rigs."
+      span: "versatile"
+      from: seeded
+      counter: true
+    - said: "She is the most versatile engineer on the team."
+      span: "versatile"
+      from: seeded
+      counter: true
+    - said: "The treaty was signed at Versailles in 1919."
+      span: "Versailles"
+      from: seeded
+      counter: true
+    - said: "Versailles is a fantastic castle."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "De Versailles Castle."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "Versailles is such a magnificent castle."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "The Versailles Castle."
+      span: "Versailles"
+      from: correction
+      counter: true
+    - said: "We deploy our apps on Vercel."
+      span: "Vercel"
+      from: correction
