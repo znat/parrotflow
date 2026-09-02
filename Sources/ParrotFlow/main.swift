@@ -212,14 +212,6 @@ if let index = arguments.firstIndex(of: "--suggest") {
                             language: languageList(arguments)?.first))
 }
 
-if let index = arguments.firstIndex(of: "--verdicts") {
-    guard arguments.indices.contains(index + 2), let count = Int(arguments[index + 1]) else {
-        print("usage: ParrotFlow --verdicts <count> <reply>")
-        exit(2)
-    }
-    exit(VerdictsCommand.run(count: count, reply: arguments[index + 2]))
-}
-
 if let index = arguments.firstIndex(of: "--teaching") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --teaching \"<sentence>\" <word>")
@@ -297,7 +289,7 @@ if let index = arguments.firstIndex(of: "--eval") {
 if let index = arguments.firstIndex(of: "--pipeline") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --pipeline <file.yaml> [\"<text>\"]"
-            + " [--app <name>] [--no-prompts] [--quiet]")
+            + " [--app <name>] [--no-prompts] [--warm] [--quiet]")
         exit(2)
     }
     let text = arguments.indices.contains(index + 2) && !arguments[index + 2].hasPrefix("--")
@@ -306,7 +298,8 @@ if let index = arguments.firstIndex(of: "--pipeline") {
         path: arguments[index + 1], text: text,
         quiet: arguments.contains("--quiet"), app: appArgument,
         allowPrompts: !arguments.contains("--no-prompts"),
-        showVars: arguments.contains("--vars")
+        showVars: arguments.contains("--vars"),
+        warm: arguments.contains("--warm")
     ))
 }
 
@@ -328,13 +321,32 @@ if let index = arguments.firstIndex(of: "--dates") {
 
 if let index = arguments.firstIndex(of: "--learn") {
     guard arguments.indices.contains(index + 2) else {
-        print("usage: ParrotFlow --learn <heard> <corrected> [person|place|organization|word]")
+        print("usage: ParrotFlow --learn <heard> <corrected> [kind] [--in \"<sentence>\"]")
         exit(2)
     }
     let kind = arguments.indices.contains(index + 3)
         ? WordKind(rawValue: arguments[index + 3]) : nil
+    let sentence = arguments.firstIndex(of: "--in").flatMap {
+        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+    }
     exit(LearnCommand.run(heard: arguments[index + 1], corrected: arguments[index + 2],
-                          kind: kind))
+                          kind: kind, sentence: sentence))
+}
+
+if arguments.contains("--tidy-uses") {
+    exit(LearnCommand.tidy())
+}
+
+if let index = arguments.firstIndex(of: "--for") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --for <term> \"<sentence>\" [word]")
+        exit(2)
+    }
+    let span = arguments.indices.contains(index + 3)
+        && !arguments[index + 3].hasPrefix("--") ? arguments[index + 3] : nil
+    exit(LearnCommand.supporting(
+        term: arguments[index + 1], sentence: arguments[index + 2], span: span
+    ))
 }
 
 if let index = arguments.firstIndex(of: "--forget") {
@@ -376,6 +388,73 @@ if let index = arguments.firstIndex(of: "--context-test") {
     exit(ContextTestCommand.run(
         screen: arguments[index + 1], limit: limit ?? Context.maxChars
     ))
+}
+
+if let index = arguments.firstIndex(of: "--field-dump") {
+    guard #available(macOS 14, *) else {
+        print("✗ reading a field needs macOS 14 or later")
+        exit(1)
+    }
+    let seconds = arguments.indices.contains(index + 1)
+        ? Double(arguments[index + 1]) ?? 0 : 0
+    exit(FieldDumpCommand.run(after: seconds))
+}
+
+if let index = arguments.firstIndex(of: "--edit-diff") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --edit-diff \"<before>\" \"<now>\"")
+        exit(2)
+    }
+    exit(EditDiffCommand.run(before: arguments[index + 1], now: arguments[index + 2]))
+}
+
+if let index = arguments.firstIndex(of: "--portrait") {
+    guard #available(macOS 14, *) else {
+        print("✗ portraits need macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 1) else {
+        exit(TermPortraitCommand.all())
+    }
+    let sentence = arguments.indices.contains(index + 2) ? arguments[index + 2] : nil
+    let span = arguments.indices.contains(index + 3) ? arguments[index + 3] : nil
+    exit(TermPortraitCommand.run(term: arguments[index + 1], sentence: sentence, span: span))
+}
+
+if let index = arguments.firstIndex(of: "--slot-gap") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot reference needs macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 3) else {
+        print("usage: ParrotFlow --slot-gap \"<sentence>\" <heard> <term>")
+        exit(2)
+    }
+    exit(
+        SlotGapCommand.run(
+            sentence: arguments[index + 1],
+            heard: arguments[index + 2],
+            term: arguments[index + 3]
+        )
+    )
+}
+
+if let index = arguments.firstIndex(of: "--word-vector") {
+    guard #available(macOS 14, *) else {
+        print("✗ word vectors need macOS 14 or later")
+        exit(1)
+    }
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --word-vector \"<sentence>\" <word> [--around]")
+        exit(2)
+    }
+    exit(
+        WordVectorCommand.run(
+            sentence: arguments[index + 1],
+            word: arguments[index + 2],
+            around: arguments.contains("--around")
+        )
+    )
 }
 
 if let index = arguments.firstIndex(of: "--tag") {
@@ -571,6 +650,19 @@ if let index = arguments.firstIndex(of: "--watch-taps") {
     exit(WatchModifiersCommand.taps(
         key: key, seconds: seconds ?? 10, pressDelay: loaded.hotkey.pressDelaySeconds
     ))
+}
+
+// A flag nobody claimed is a mistake, not a request to start the app. Falling
+// through launched a second copy of ParrotFlow every time a check script ran an
+// older binary that did not know the flag yet — four of them, one afternoon.
+// What `AppDelegate` reads for itself once the app is up.
+let appFlags: Set<String> = ["--preview-panel", "--preview-transform", "--empty"]
+if let unknown = arguments.dropFirst().first(where: {
+    $0.hasPrefix("--") && !appFlags.contains($0)
+}) {
+    print("✗ unknown option \(unknown)")
+    print("run ParrotFlow with no arguments to start the app")
+    exit(2)
 }
 
 let app = NSApplication.shared

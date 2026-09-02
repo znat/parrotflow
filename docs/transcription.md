@@ -99,9 +99,9 @@ terms:
 
 #### The number
 
-**`sound_below`** is how close a run of words must *sound* to a term before it
-is put to the judge, from 0 to 1, where 1.0 is the term said exactly. It is the
-only threshold the vocabulary has.
+**`sound_below`** is how close a run of words must *sound* to a term before the
+place is offered at all, from 0 to 1, where 1.0 is the term said exactly. It is
+the only threshold the vocabulary has.
 
 `acoustic:`, `offer_below:`, `min_similarity:`, `decide_above:` and a per-term
 `floor:` *number* are read and do nothing. They belonged to a search of the
@@ -279,8 +279,8 @@ a term can be confused with:
 Pass only the languages you dictate in. "Praisy" is 0.83 from the English
 "praise" and 0.67 from the French "vrais", so the neighbourhood differs by 0.16
 depending on who is speaking. Under `offer_below` a close neighbour is no
-longer a word that gets overwritten — it is one more change the judge answers
-about, and the sentence decides.
+longer a word that gets overwritten — it is one more place the gates settle,
+and the sentence decides.
 
 Two things to check that a word list does not tell you. `NSSpellChecker`
 accepts any all-caps run as a word, so `XQZPT` looks known — ask about the
@@ -338,19 +338,12 @@ resemble a term: "blocking merge" became "blocking Vercel".
 
 So the pass no longer substitutes what it is unsure about. It proposes, and the
 `vocabulary:` stage decides — see [The name
-judge](pipelines.md#the-name-judge). The stage shows the local model the
-sentence the recogniser wrote, the same sentence after the pass, and what
-changed, and takes one KEEP or REVERT per change; the model never writes the
-transcript. It runs only when something was found —
+stage](pipelines.md#the-name-stage). It runs only when something was found —
 `when: vocabulary.count > 0`.
 
-**How often is not four percent.** Counting the first trace entry per clip, of
-the 190 live dictations whose pipeline had a `vocabulary` stage at all, the
-judge was asked on 77 — 41%. The 4% figure that was here divided by every live
-clip, and most of those predate the stage.
-
-Scored on 74 substitutions from one speaker's own dictation, `--runs 3`, zero
-flips:
+**There used to be a model here.** Every place the free rules left open went to
+a local model, one KEEP or REVERT each. It worked. Scored on 74 substitutions
+from one speaker's own dictation, `--runs 3`, zero flips:
 
 | | all | name was said | name was not |
 | --- | --- | --- | --- |
@@ -360,16 +353,24 @@ flips:
 | the vocabulary rules switched off | 52/74 | 0/22 | 52/52 |
 
 The two bottom rows are the blind controls, and they are the point: a mechanism
-that does not beat its own blind version has not been shown to work.
+that does not beat its own blind version has not been shown to work. On
+`tests/judge-cases.yaml` it scored 46 of 50, where reverting every substitution
+scores 33 of 50.
+
+It is gone. It cost about 900 ms a dictation and an Ollama on the machine, and
+what is left below covers what it covered: two word lists, the slot's part of
+speech, and the two tests that read the sentence. **Everything they leave open
+keeps what arrived** — a rule substitution keeps the term the rule wrote, a
+near miss or a sound match keeps the word that was heard.
 
 A word-list gate cannot do this job alone. Its rule is "never replace a word
 somebody has already written", so it cannot fix `cloud` -> `Claude` or
 `Versailles` -> `Vercel`. Those need the sentence.
 
-**Which words the gate lets through, then.** A few substitutions never reach
-the judge — the sound already agrees, and nobody wants a question about
-`Versal` -> `Vercel`. That is decided by two word lists, and both have to say
-they have never seen the decoded word:
+**What the word lists settle.** Some substitutions need nothing else — the
+sound already agrees, and nobody wants a question about `Versal` -> `Vercel`.
+Two word lists decide that, and both have to say they have never seen the
+decoded word:
 
 | list | knows | misses |
 | --- | --- | --- |
@@ -392,14 +393,14 @@ of that class, not all of it.
 One condition is not a list. Both lists are asked about letters, so `Mirza's`
 is looked up as `Mirzas` — a form neither has seen, where `Mirza` itself is
 known to one of them. So a `'s` the heard text carries and the term does not
-is refused before the lists are asked, and the proposal goes to the judge.
+is refused before the lists are asked, and the place is left open.
 Dropping a possessive changes what the sentence says — "Mirza's thoughts" is
 not "Mirza thoughts" — and only something that reads the sentence can decide
 it. The other direction is untouched: `Matthew at` -> `Matthieu's` is a term
 carrying a possessive the decoded span does not, and that correction is right.
 
-If the list cannot be read the gate stops auto-applying entirely and every
-proposal goes to the judge. `--word-gate <word>` prints both verdicts and the
+If the list cannot be read the gate stops auto-applying entirely and leaves
+every place open. `--word-gate <word>` prints both verdicts and the
 decision, and `--word-gate <word> <term>` prints the possessive verdict and the
 decision for that pair; `scripts/check-word-gate.sh` scores them.
 
@@ -409,23 +410,22 @@ masked language model `SentenceModel` already fetches. Mask the word, take the
 ten most likely fillers, put each one back and tag it: the modal tag is what
 the slot wants. A name goes in a `Noun`, `Adjective` or `Pronoun` slot and
 never in a `Verb`, `Adverb` or `Preposition` one, so `merge` -> `Vercel` and
-`ready` -> `Arexvy` are refused with nothing asked. A term is written unasked
-only when the slot accepts a name **and** the word is the weakest place in its
-sentence — no word surprises the model more, and no two-word window more than
-the one it sits on. Everything else still goes to the judge, `Determiner`
-slots included: those are modifier positions and names do sit in them
-(`cloud code`, `bedrock principles`).
+`ready` -> `Arexvy` are refused. This tier only refuses. It never writes a
+term, and everything it does not refuse it leaves open, `Determiner` slots
+included: those are modifier positions and names do sit in them (`cloud code`,
+`bedrock principles`).
 
-Measured over the 50 English cases of `tests/judge-cases.yaml`: 15 written
-unasked, 14 refused unasked, 21 left for the judge, and no error either way.
-`scripts/check-slot-gate.sh` is the run. See `SlotGate`.
+Measured over the 50 English cases of `tests/judge-cases.yaml`: 13 written by
+the word lists, 14 refused by the slot, 23 left open, and no error either way.
+`scripts/check-slot-gate.sh` is the run. See `SlotGate`. The route label for
+"left open" is still `judge`, from when a model answered those.
 
 The model is never waited for. Until it is on disk — and on a language it was
-not trained for — every proposal goes to the judge, which is the behaviour
-before this tier.
+not trained for — every place this tier would judge is simply left open, which
+is the behaviour before this tier.
 
-Every exchange is written to `trace.jsonl` under the stage's variables, so a
-verdict can be replayed rather than guessed at.
+What the stage decided is written to `trace.jsonl` under its variables, so a
+decision can be replayed rather than guessed at.
 
 A literal substitution cannot generalise to a mishearing you have not seen, so
 that half of the map grows one entry at a time. It also cannot corrupt a transcript that was already

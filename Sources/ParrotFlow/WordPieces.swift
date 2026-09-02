@@ -52,7 +52,7 @@ enum WordPieces {
     static let words: Set<String>? = {
         guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else {
             Log.write("wordpiece.txt could not be read at \(fileURL.path);"
-                + " every name will be put to the judge")
+                + " no name will be written on the word lists alone")
             return nil
         }
         let entries = text.split(separator: "\n").map(String.init)

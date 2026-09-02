@@ -42,7 +42,7 @@ can get wrong.
 
 | Stage | What it does |
 |---|---|
-| `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then puts each match to a model to keep or revert — see [The name stage](#the-name-stage). |
+| `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
 | `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
@@ -51,7 +51,7 @@ can get wrong.
 `numbers` rewrites transcripts that were already correct, so run `--numbers` on
 a line to see exactly what it would do before leaving it in.
 
-## The name judge
+## The name stage
 
 `vocabulary:` decides which of the substitutions the app made are really names.
 It is a stage rather than a transform because the evidence it needs — where
@@ -69,42 +69,55 @@ name or a mapping, and it cannot be both:
 - stage: vocabulary
   when: vocabulary.count > 0
   near_misses: true   # optional; default. false matches renderings exactly
-  review: gemma       # optional; who keeps or reverts. false ships them unread
-  max_slots: 4        # optional; past this many, keep what the pass wrote
+  by_sound: true      # optional; default. false matches spelling only
+  gate: true          # optional; default. false leaves every place open
   max_per_slot: 2     # optional; readings per place, the decoder's included
   max_per_term: 2     # optional; places in one sentence about the same name
 ```
 
-`max_per_slot` cannot go above 2. A verdict has two sides, so a place offers
-what the decoder wrote and one alternative; a third reading would be built and
+`max_per_slot` cannot go above 2. A place is one span with one alternative —
+what the decoder wrote and the term — so a third reading would be built and
 never shown. Refused rather than rounded down, because a number that says one
 thing and does another teaches nobody anything.
 
+**It calls no model.** It used to: every substitution went to a local model,
+one KEEP or REVERT each, at about 900 ms a dictation and an Ollama on the
+machine. What decides now is free and local to the app:
+
+1. **The two word lists.** A word neither `NSSpellChecker` nor the sentence
+   tokenizer has ever seen is not a word you meant. Write the term.
+2. **The slot's part of speech.** Mask the span, take the ten words the
+   sentence model would put there, tag them. A spot that wants a verb or a
+   preposition cannot hold a name. Refuse it.
+3. **The two tests that read the sentence** — whether the term belongs where
+   the word was heard, and whether this sentence looks like the ones the term
+   was confirmed in. See `gate_sentence:` in
+   [docs/configuration.md](configuration.md).
+
+**Everything they leave open keeps what arrived.** A `replacements` rule has
+already written its term, so an open place ships the term. A near miss or a
+sound match has written nothing, so an open place ships the word that was
+heard. That is the same direction every failure in this stage falls: what
+arrived is what you get.
+
+`review:` named the model. It is read and does nothing, and `--check-config`
+says so; delete the line. `max_slots:` capped one model call and is refused by
+name, as `max_readings:` is.
+
 **There is no prompt file, and naming one is an error.** It used to name one
-and you owned it. Nobody should own this one: a wording is right or wrong
-against a measurement, not a matter of taste, and five wordings of one sentence
-in the old prompt scored 38, 39, 40, 41 and 42 on the same cases.
+and you owned it. If your pipeline says `- vocabulary: verify_names.md`, delete
+the filename. The config will not load until you do. It is refused rather than
+ignored because a filename that loads and does nothing is worse: you would edit
+that file, see the stage behave exactly as before, and have nothing to tell you
+why.
 
-If your pipeline says `- vocabulary: verify_names.md`, delete the filename. The
-config will not load until you do. It is refused rather than ignored because a
-filename that loads and does nothing is worse: you would edit that file, see
-the judge behave exactly as before, and have nothing to tell you why.
-`max_readings:` is refused for the same reason — it capped the lettered menu,
-which is gone.
+**A place the pass only proposed is a place too.** The near-miss and sound
+passes hand over spans they have not written, and the text still holds the
+decoder's word there. The question is the same either way — does this name
+belong here.
 
-It shows the model the sentence the recogniser wrote, the same sentence after
-the pass, and a numbered list of what changed. It takes one KEEP or REVERT per
-change and puts the reverted words back itself. The model never writes the
-transcript, so it cannot tidy the grammar on the way past.
-
-**A place the pass only proposed is shown as a change too.** With
-`vocabulary.acoustic: true` the sound-matching pass hands over spans it has not
-written, and the text still holds the decoder's word there. The question is the
-same either way — does this name belong here — so `after` is the sentence with
-every change taken, whether the pass took it or not, and KEEP is what writes it.
-
-A rule from `vocabulary.yaml` is reviewed too, so a name a rule wrote for a word you
-meant literally can be undone. The app works out which occurrences the rule
+A rule from `vocabulary.yaml` is weighed too, so a name a rule wrote for a word
+you meant literally can be undone. The app works out which occurrences the rule
 wrote by comparing the transcript before and after it. When two rules write the
 same term into one sentence that comparison cannot say which is which, and then
 neither is offered — the log says so.
@@ -119,46 +132,31 @@ things, and they are separate mechanisms:
   `Versel` opens a place; "praise" does not, even though it is one edit from
   `Praises`.
 
-Neither writes anything. Each opens one more place for the model to decide, so
-the risk of the looser match is bounded by the judge rather than by the
-threshold. `near_misses: false` puts matching back to exact and whole-word.
+Neither writes anything. Each opens one more place for the gates to settle, and
+a place none of them settles keeps the word that was heard — so the looser
+match costs a gate call, not a sentence. `near_misses: false` puts matching
+back to exact and whole-word.
 
-Nothing is written by that pass. A near miss becomes one more question for the
-review, which is what makes it safe to be this loose — and it means a machine
-with no model gets the exact matches and leaves the near ones alone.
-
-**`max_per_term` is the one to move if nothing is being judged.** One name
+**`max_per_term` is the one to move if a name is being missed.** One name
 reaches the list from five directions — a rule that already rewrote the text,
 a fuzzy rendering, the sound-matching pass, the wider spans it builds around a
 split name, and the keyword spotter hearing the name somewhere else in the
-clip. Nothing else caps the total, so a noisy name can spend every place on its
-own and push the count past `max_slots`, at which point the whole sentence is
-declined. The cap keeps the two best-evidenced places and says in the log which
-it dropped. Raise it when a name really does appear three times in one
-sentence.
+clip. The cap keeps the two best-evidenced places and says in the log which it
+dropped. Raise it when a name really does appear three times in one sentence.
 
-The stage decides for itself whether to call a model: nothing matched means
-nothing to ask about, and it returns before the call. A `when:` of your own is
-for the cases the stage cannot know about — an app you never want it in.
+**Order matters, and the app refuses the wrong one.** The stage is given spans
+measured on the text the decoder produced. Put it above everything that edits
+text. `--check-config` refuses a pipeline that puts `numbers` or a transform
+above it, because a span that has moved cannot be told from a span that was
+always wrong.
 
-**Order matters, and the app refuses the wrong one.** The review is given spans
-measured on the text the decoder produced. Put the stage above everything that
-edits text. `--check-config` refuses a pipeline that puts `numbers` or a
-transform above it, because a span that has moved cannot be told from a span
-that was always wrong.
-
-There used to be one exception, `replacements`, because the review offers a
+There used to be one exception, `replacements`, because the stage offers a
 rule's substitution back and the rules had to have fired first. That pass is
 inside this stage now, so there is no exception left to state.
 
-When anything goes wrong — the model unreachable, a reply naming no change,
-more places than `max_slots` — the transcript ships exactly as it arrived and
-the reason is in the log. Every failure lands the same way: what the pass wrote
-is what you get.
-
-It publishes `vocabulary.asked` (how many changes were put to the model),
-`vocabulary.slots`, `vocabulary.reverted` (the substitutions it undid, as
-`term -> word`) and `vocabulary.judged` (the sentence it settled on).
+It publishes `vocabulary.slots` (how many places the sentence offered),
+`vocabulary.reverted` (the substitutions it undid, as `term -> word`) and
+`vocabulary.judged` (the sentence it settled on).
 
 ## Transforms
 
@@ -1005,7 +1003,7 @@ Stages add their own on top. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
 ones, and the sentence the stage was handed — `numbers.language`, which grammar
 actually read the numbers and is not the same answer as the pipeline's
-language, and, for a prompt stage, `model`. The name judge reads all three of
+language, and, for a prompt stage, `model`. The name stage reads all three of
 the `vocabulary` ones: `changes` says which rules fired and `before` says
 *where*, because the rules leave no positions behind. A `command:` transform
 publishes whatever it likes; see

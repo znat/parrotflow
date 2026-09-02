@@ -240,6 +240,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// until the next dictation replaces it.
     private let reselect = SelectionWatch()
 
+    /// Watches for one word of the last dictation being changed by hand — see
+    /// `EditWatch`. A correction is the only thing that says what the right
+    /// answer was in a particular sentence, and it is thrown away today.
+    private let edits = EditWatch()
+
     /// The last dictation a tap can summon an offer over: its words, and where
     /// they went.
     ///
@@ -584,9 +589,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        // After the preview flags return. Those launches draw a panel and
+        // quit; nothing there transcribes, and fetching 1.16 GB for them
+        // is what `warmUpTranscriber` avoided by sitting below this point.
+        warmModels()
+
 
         warmUpLLM()
-        warmUpTranscriber()
 
         // Anything still missing opens the walk, and nothing is asked for yet.
         // The prompt used to fire here, the moment the window appeared — a
@@ -1226,10 +1235,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if startsDictation {
             anchorAtPress = nil
             pressRun += 1
-            // The words it is watching for are about to be replaced. Stopped
+            // The words they are watching for are about to be replaced. Stopped
             // here rather than when the new ones land, so the gap in between
             // cannot offer over a sentence that is already history.
             reselect.stop()
+            edits.stop()
         }
 
         // The microphone before the reads, not after them. Everything from here
@@ -2222,19 +2232,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Starts the Parakeet (and VAD) download at launch, so it's already
-    /// running — ideally already done — by the time the first dictation
-    /// needs it, instead of the first dictation triggering and waiting on it.
+    /// Every model the app will use, fetched at launch rather than on the
+    /// dictation that first wants one. About 1.16 GB on a default install:
+    /// Parakeet 461 MB, ModernBERT 288 MB, the word vectors 335 MB, the sound
+    /// model 81 MB.
     ///
-    /// `transcriber.prepare` is safe to call again from `transcribe(...)`
-    /// once this is in flight: overlapping callers converge on the same
-    /// download rather than racing two.
-    private func warmUpTranscriber() {
+    /// Each of these used to arrive on first use, and each of them therefore
+    /// had a window where the thing it powers was switched on and silently
+    /// doing nothing. `SentenceGate` will not make a dictation wait on a load,
+    /// so it skipped; `SentenceJoin` did the same. "Versailles is a fantastic
+    /// castle" shipped as "Vercel is a fantastic castle" inside one of those
+    /// windows, and nothing on screen said why.
+    ///
+    /// The dictation path still calls both. A fetch that fails clears itself,
+    /// and the next English dictation is the next chance.
+    private func warmModels() {
         guard config.transcription.enabled else { return }
-
         let transcriber = transcriber
         let config = config
         Task.detached(priority: .background) {
+            // Speech first, on its own. Nothing can be transcribed until it
+            // lands, and it is the only one somebody is waiting for. Started
+            // together, four fetches share the connection and the one that
+            // gates the app finishes last.
+            //
+            // `transcriber.prepare` is safe to call again from `transcribe(...)`
+            // once this is in flight: overlapping callers converge on the same
+            // download rather than racing two.
             let started = Date()
             do {
                 try await transcriber.prepare(config: config)
@@ -2242,7 +2266,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     format: "transcriber: warmed up in %.1fs", Date().timeIntervalSince(started)
                 ))
             } catch {
-                Log.write("transcriber: warm-up failed — \(error.localizedDescription)")
+                // Nothing else is worth fetching. Without speech the app
+                // cannot transcribe at all, so 700 MB more buys nothing, and
+                // whatever stopped this will most likely stop those too. Each
+                // has its own retry on the dictation that first needs it.
+                Log.write("transcriber: warm-up failed — \(error.localizedDescription);"
+                    + " the other models are left for first use")
+                return
+            }
+
+            // The rest together, once speech is in. None of them blocks a
+            // dictation: the stages that read them stand aside until they are
+            // in memory.
+            await transcriber.warmSentenceModel()
+            // 81 MB, and the sound pass is on by default.
+            Task.detached(priority: .background) {
+                guard await !NeuralPhonemes.isReady() else { return }
+                do { try await NeuralPhonemes.download() } catch {
+                    Log.write("sound model: \(error.localizedDescription); the next"
+                        + " dictation that needs it tries again")
+                }
+            }
+            // 335 MB, and only the sentence gate reads them. Someone who turns
+            // the gate off should not pay for it.
+            if #available(macOS 14, *), config.vocabulary.gateSentence {
+                Task.detached(priority: .background) { await WordVectors.shared.warm() }
             }
         }
     }
@@ -3579,17 +3627,126 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and one whose element was never captured cannot be told from any other
     /// window.
     private func watchForReselection() {
-        guard config.feedback.correctOffer else { reselect.stop(); return }
+        guard config.feedback.correctOffer else { reselect.stop(); edits.stop(); return }
         guard let last = lastDictated,
               !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               case .field = last.landing, let element = last.element else {
+            // Said out loud, because the two watches below are the only way the
+            // app ever learns what a name should have been, and a dictation
+            // that lands anywhere else silently teaches nothing.
+            let why: String
+            if lastDictated == nil {
+                why = "nothing was dictated"
+            } else if lastDictated?.element == nil {
+                why = "the field it went into was never captured"
+            } else {
+                why = "it landed as \(String(describing: lastDictated?.landing))"
+            }
+            Log.write("edit watch: not watching — \(why)")
             reselect.stop()
+            edits.stop()
             return
         }
         reselect.onSelection = { [weak self] selection in
             self?.offerOverReselected(selection)
         }
         reselect.start(over: last.text, in: element)
+        watchForEdits(in: element)
+    }
+
+    /// Watch the field the dictation landed in for one word being changed.
+    ///
+    /// The snapshot is the whole field and not the dictation, because both
+    /// sides of the comparison have to be the same thing — see
+    /// `EditWatch.change`. Reading it costs one accessibility call, here rather
+    /// than at the first keystroke so that what is captured is the field before
+    /// anybody touched it.
+    private func watchForEdits(in element: AXUIElement) {
+        guard let last = lastDictated else { edits.stop(); return }
+        edits.onCorrections = { [weak self] changes in
+            self?.offerToLearn(changes)
+        }
+        edits.start(dictated: last.text, in: element)
+    }
+
+    /// Put what was corrected by hand in front of you, as rules to keep or not.
+    ///
+    /// The panel rather than a notice, because a correction read off a screen is
+    /// a guess about what somebody meant: the words are right, what they are a
+    /// rule *for* is not always. Reviewing it is a second, and a rule saved
+    /// wrongly decides other sentences for as long as it stands.
+    ///
+    /// Only names. A correction into a word both word lists know — `remain` to
+    /// `remaining` — is English being fixed, not a term being taught, and a
+    /// panel about it would be noise on every dictation.
+    private func offerToLearn(_ changes: [EditWatch.Change]) {
+        let sentence = changes.first?.sentence ?? ""
+        let worth = changes.filter { teaches($0) }
+        guard !worth.isEmpty else { return }
+        // Never over a panel already up. `show` replaces the rows and rebinds
+        // the save, so a second offer would throw the first away without
+        // showing it — and this is the only caller that arrives uninvited, so
+        // it is the only one that can do that to you. The reselection offer
+        // refuses for the same reason.
+        guard !correctionPanel.isUp else {
+            Log.write("correction: a panel is already up; not offering "
+                + worth.map { "\"\($0.was)\" -> \"\($0.now)\"" }.joined(separator: ", "))
+            return
+        }
+        // The pairs, not just the count. What the panel was offering could not
+        // be read back off the log, so the noise it was showing could not be
+        // described — only that there was some.
+        Log.write("correction: offering \(worth.count) rule(s) to keep — "
+            + worth.map { "\"\($0.was)\" -> \"\($0.now)\"" }.joined(separator: ", "))
+        correctionPanel.onSave = { [weak self] rules, _ in
+            // The field is already right — the person fixed it themselves. Only
+            // the rules are new, so `learn` and nothing after it.
+            _ = self?.learn(rules, in: sentence)
+        }
+        correctionPanel.onCancel = { Log.write("correction: the rules were declined") }
+        correctionPanel.show(
+            rules: worth.map { (heard: $0.was, corrected: $0.now) }, over: sentence
+        )
+    }
+
+    /// Is this correction about a name, or about English?
+    ///
+    /// The panel used to show every one-word change, which is every typo and
+    /// every reword. Distance does not separate them — measured on this
+    /// speaker's own `heard:` lists against ordinary edits, `its -> it\'s`
+    /// scores 1.000 and `Prezi -> Praisy` scores 0.304, so any floor drawn
+    /// through spelling keeps the noise and drops the names.
+    ///
+    /// What separates them is the word the correction lands *on*. Measured on
+    /// the same two sets: the two word lists call 8 of 9 real corrections
+    /// unknown and all 10 of the ordinary ones known. `Sentry` is the miss, and
+    /// it is capitalised, so the second half catches it.
+    ///
+    /// An `or`, which is also the answer to why this was left out before: the
+    /// day `Vercel` enters a dictionary, the capital still offers it.
+    private func teaches(_ change: EditWatch.Change) -> Bool {
+        let letters = { (s: String) in String(s.filter { $0.isLetter || $0.isNumber }) }
+        // Punctuation or case alone is not a pronunciation. Spacing is: gluing
+        // two words into one is most of this vocabulary — `Red Rock` to
+        // `Redrock`, `Better Stack` to `BetterStack`, `Ghost T` to `Ghostty` —
+        // so the test that ignores punctuation must not ignore the space, or it
+        // throws away the commonest correction there is.
+        let spaced = { (s: String) in
+            String(s.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }).lowercased()
+        }
+        guard spaced(change.was) != spaced(change.now) else {
+            Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is punctuation,"
+                + " not a name; not offered")
+            return false
+        }
+        if Vocabulary.unseenWord(letters(change.now)) { return true }
+        // A capital that is not the one every sentence starts with.
+        let line = change.sentence.trimmingCharacters(in: .whitespaces)
+        let opens = line.hasPrefix(change.now) || line.dropFirst().hasPrefix(change.now)
+        if change.now.first?.isUppercase == true, !opens { return true }
+        Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is ordinary English;"
+            + " not offered")
+        return false
     }
 
     /// The offer, over words that were dictated and have been selected again.
@@ -4562,12 +4719,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// False means one could not be written and the user has already been shown
     /// why. Nothing after it should run: a correction that half-saved and then
     /// went on to rewrite the field would leave the two disagreeing.
-    private func learn(_ rules: [TaughtRule]) -> Bool {
+    private func learn(_ rules: [TaughtRule], in corrected: String) -> Bool {
         for rule in rules {
             do {
                 try ConfigWriter.addVocabularyPronunciation(
                     term: rule.corrected, heard: rule.heard, kind: rule.kind
                 )
+                // The sentence too, not only the mapping. It is what a term's
+                // portrait is built from, and this is the only moment the app
+                // knows a sentence is right.
+                do {
+                    try TermUses.record(
+                        term: rule.corrected, said: corrected, span: rule.corrected
+                    )
+                } catch {
+                    // A portrait that missed one sentence is worth less than a
+                    // correction that refused to save over it.
+                    Log.write("could not record the use: \(error.localizedDescription)")
+                }
                 Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                 Trace.correction(heard: rule.heard, corrected: rule.corrected, via: "command")
             } catch {
@@ -4597,7 +4766,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         into target: Correction,
         clipboardWhenChosen: Int
     ) {
-        guard learn(rules) else { return }
+        guard learn(rules, in: correctedText) else { return }
         // On the clipboard, or not written at all, and `replace` has said which.
         // A rule notice on top of that would bury the one thing you need to act
         // on.
@@ -4618,7 +4787,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ rules: [TaughtRule],
         correctedText: String
     ) {
-        guard learn(rules) else {
+        guard learn(rules, in: correctedText) else {
             pendingSelection = nil
             return
         }

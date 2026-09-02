@@ -1,15 +1,13 @@
 # Two name steps in one pipeline, which a pipeline is allowed to have.
 #
 # Both publish under the same namespace and the second wins, for `before`
-# exactly as for `changes`. The pair stays consistent — the review reads the
-# last step's changes beside the last step's input — and the first step's
+# exactly as for `changes`. The pair stays consistent — the second step reads
+# the last step's changes beside the last step's input — and the first step's
 # changes are not readable at all, which was already true before `before`
 # existed.
 #
-# No model is defined, so the stage places and publishes `vocabulary.slots` and
-# then declines rather than asking. The run is the same with Ollama up or down,
-# and every case here scores the places the stage found, never what was decided
-# at them.
+# The stage gathers the places and publishes `vocabulary.slots`. Every case
+# here scores the places it found, not what was decided at them.
 languages: [en]
 vocabulary:
   terms:

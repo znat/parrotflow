@@ -102,7 +102,6 @@ $PF --normalize "<text>"
 $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
 $PF --inflected <term> <heard>
 $PF --word-gate <word> [term] [--in "<sentence>"]
-$PF --verdicts <count> "<reply>"
 $PF --teaching "<sentence>" <word>
 $PF --suggest "<sentence>" [--lang fr]
 ```
@@ -119,41 +118,36 @@ nothing reading the sentence — `--word-gate Frederick` prints `judge`,
 to say they have never seen the word: `NSSpellChecker`, which has no first
 names in it, and the whole-word half of a tokenizer vocabulary
 (`data/wordpiece.txt`), which has no rare compounds in it. Both verdicts are
-printed, because a word reaches `judge` from either side. No model runs — it is
-a set lookup.
+printed, because a word reaches `judge` from either side. `judge` is the route
+label for "this gate does not settle it"; nothing is asked, and a place nothing
+settles keeps what arrived. No model runs — it is a set lookup.
 
 Name the term as well and the whole gate answers about that pair —
 `--word-gate "Mirza's" Mirza` prints `possessive dropped` and `judge`. One
 condition is not about a word at all: a `'s` the heard text carries and the
-term does not would be taken out of the sentence, so it goes to the judge.
+term does not would be taken out of the sentence, so this gate leaves it open.
 `scripts/check-word-gate.sh` scores both forms against
 `tests/word-gate-cases.yaml`.
 
 Name the sentence too — with the term, which the model tiers are about —
 `--word-gate merge Vercel --in "Go back to main and merge."` prints
 `slot Verb` and `route decline`. `slot` is what the masked slot wants, from
-ten fillers put back and tagged; `rank` is how far the word is from being the
-weakest place in its sentence; `route` is where the proposal goes. A name goes
-in a `Noun`, `Adjective` or `Pronoun` slot and never in a `Verb`, `Adverb` or
-`Preposition` one — see `SlotGate`. Nothing is downloaded: with no cached
+ten fillers put back and tagged; `route` is where the proposal goes. The slot
+only ever declines: a name goes in a `Noun`, `Adjective` or `Pronoun` slot and
+never in a `Verb`, `Adverb` or `Preposition` one, and every other proposal
+reads `judge` — see `SlotGate`. Nothing is downloaded: with no cached
 sentence model the slot reads `unavailable` and the route is `judge`.
 `scripts/check-slot-gate.sh` scores the whole route against
 `tests/judge-cases.yaml`. It needs the 300 MB model, so it is not in
 `make test`.
 
-`--verdicts` asks what the name judge reads out of a model's reply —
-`--verdicts 2 "1. KEEP` newline `2. REVERT"` prints `KEEP REVERT`. It is
-`VocabularyJudge.verdicts` and nothing else. A reply read wrongly puts a name
-into somebody's sentence or takes one out, so it has its own set:
-`scripts/check-verdicts.sh` against `tests/verdict-cases.yaml`, malformed
-replies included.
-
 `--teaching` asks whether a substitution sits inside a spelling lesson —
 `--teaching "Hey Barrot Versal Spells V E R C E L" Versal` prints `REVERT`, and
 `ASK` for anything else. The word before `spells` is what a lesson is teaching,
 so writing the term over it destroys the correction: "Mirza spells mirza"
-teaches nothing. The judge reverts those without asking a model, because every
-model measured answered all four of the archive's cases the wrong way.
+teaches nothing. The stage reverts those whatever else was proposed about them,
+because every model measured answered all four of the archive's cases the wrong
+way.
 
 Most lessons never reach it. "hey parrot, Tasmin spells T A S M E E N" is a
 [spoken instruction](#testing-a-spoken-instruction) and the vocabulary stage is
@@ -186,6 +180,11 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   result. It is how a stage whose only contribution is a fact gets scored at
   all, and the first thing to reach for when a condition is not deciding what
   you expected. See [pipelines.md](pipelines.md#variables).
+- `--warm` waits for the word vectors and the sentence model before the run.
+  The sentence gate never makes a dictation wait, so in a one-shot run nothing
+  has loaded them and the two tests that read the sentence are skipped every
+  time — this is the only way to see them from the command line. Off by
+  default: it is a 700 MB download, and `make test` must not need one.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 
@@ -702,8 +701,6 @@ scripts/check-span.sh              # a composer-shaped page, or Slack, or Outloo
 scripts/probe-offsets.sh           # measures whether an app's offsets index its own value
 scripts/check-vocabulary-config.sh # what vocabulary.yaml adds up to, old keys included
 scripts/check-possessive.sh        # whether a possessive survives a substitution
-scripts/check-verdicts.sh          # what the name judge reads out of a reply
-scripts/check-judge-prompt.sh      # the judge's prompt is one its parser can read
 scripts/check-spells-rule.sh       # a spelling lesson keeps the word it is teaching
 scripts/check-suggest.sh           # which words the correction panel proposes
 scripts/check-no-voice.sh          # nothing in git is one person's voice

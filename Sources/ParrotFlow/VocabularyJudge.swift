@@ -1,25 +1,19 @@
 import Foundation
 
-/// Takes one KEEP or REVERT per substitution the vocabulary pass made.
+/// Every place in a sentence a vocabulary term may claim, and the free rules
+/// that settle them.
 ///
-/// The pass matches spelling and sound, and cannot read the sentence, so it
-/// writes names over ordinary words that happen to look or sound like one.
-/// This is where that gets undone.
+/// The vocabulary pass matches spelling and sound. It cannot read the
+/// sentence, so it writes names over ordinary words that happen to look or
+/// sound like one. This file gathers those places — from a `replacements`
+/// rule, from a near miss, from the sound path — and holds the rules that
+/// decide the ones that can be decided for free.
 ///
-/// ## The shape, and why it changed
+/// ## There used to be a model here
 ///
-/// It used to build every reading the substitutions allowed and ask the model
-/// to pick one by letter. That shape was chosen because one word can go two
-/// ways in one sentence:
-///
-///     heard:  Mira and Mirza … deployed on Versailles … the Versailles castle
-///     meant:  Mira and Mirza … deployed on Vercel     … the Versailles castle
-///
-/// A menu can say that. So can one verdict per change, and the verdict is the
-/// smaller question.
-///
-/// **Measured on 74 substitutions from one speaker's own dictation**, three
-/// replays, zero flips:
+/// Every place the free rules left open was put to a local model, one KEEP or
+/// REVERT per substitution. It worked. **Measured on 74 substitutions from one
+/// speaker's own dictation**, three replays, zero flips:
 ///
 ///     arm                                 all      name said   name not
 ///     one verdict per change              63/74    21/22       42/52
@@ -27,139 +21,42 @@ import Foundation
 ///     blind: every substitution stands    22/74    22/22       0/52
 ///     blind: every substitution goes      52/74    0/22        52/52
 ///
-/// The two blind rows are the point — a mechanism that does not beat its own
-/// blind version has not been shown to work. Head to head the verdict wins 36
-/// and loses 2 against the menu, and 42 to 1 against leaving the substitutions
-/// alone. On the 42 clips the wording was *not* chosen on it is 42/50 against
-/// the menu's 20/50.
+/// On `tests/judge-cases.yaml` it scored 46 of 50, where reverting every
+/// substitution scores 33 of 50. It cost about 900 ms per dictation and an
+/// Ollama running on the machine.
 ///
-/// The menu's own record is why it went: four rounds and ten framings never
-/// moved it off 0 of 8 on the clips where an ordinary word was overwritten,
-/// because a menu asks the model to rank whole sentences and it answers by
-/// agreeing with the first one.
+/// It is gone because the free gates now cover what it covered: the two word
+/// lists (`settle`), the slot's part of speech (`SlotGate`), and the two tests
+/// that read the sentence (`SentenceGate`). What none of them settles keeps
+/// what arrived.
 ///
-/// The harness and the labelled clips are not in the tree — the numbers are
-/// recorded in PR #102 and here. What is testable without them is: the parser
-/// (`scripts/check-verdicts.sh`) and the prompt's own shape
-/// (`scripts/check-judge-prompt.sh`).
+/// The numbers are kept because they are what any replacement has to beat.
+/// PR #102 holds the 74 clips; `scripts/validate-judge.py`,
+/// `scripts/tune-judge.py` and `scripts/judge-framings.py` are how they were
+/// run.
 ///
-/// The model still never writes the transcript. It answers KEEP or REVERT and
-/// this file puts the words back, which is what stops it tidying the grammar
-/// on the way past — a prompt asked to return the corrected sentence mangled
-/// 15 of 58 inputs.
-///
-/// ## Why it is in the app
+/// ## Why this is in the app
 ///
 /// It was a Python transform reading `vocabulary.proposals` out of a JSON
 /// variable. Four of the prototype's bugs lived in that hand-off (F5, F9): the
 /// positions had to be re-derived from occurrence counts, the JSON escaped two
 /// characters out of the ones that need it, and a config that installed the
-/// script without rebuilding the app left the judge silently off. Nothing
+/// script without rebuilding the app left the stage silently off. Nothing
 /// crosses a process boundary now, so nothing can be re-derived wrongly.
-///
-/// ## Why the prompt is not a file any more
-///
-/// It was a file the pipeline entry named and the user owned. Nobody should
-/// own this one. It is not a matter of taste — a wording is right or wrong
-/// against a measurement, five wordings of one sentence in the old prompt
-/// scored 38, 39, 40, 41 and 42 on the same cases, and the shape the text has
-/// to keep is decided by the parser below it.
-///
-/// So it is compiled in, and a config still naming a file is **refused**
-/// rather than warned about. A warning leaves a filename in a config doing
-/// nothing, and somebody who edits that file and sees the judge behave exactly
-/// as before has no way to find out why.
 enum VocabularyJudge {
 
-    /// What the model is asked, minus the sentence.
-    ///
-    /// `Sage` is deliberately a name no real vocabulary here holds, so the
-    /// example teaches the shape of the question rather than the answer for
-    /// any particular term. Keep that property if the example changes.
-    ///
-    /// There is no paragraph about how clearly the recogniser heard each
-    /// spelling. The old prompt had one, saying a gap over about 4 meant the
-    /// sound could decide. The largest gap in the data is 2.72, and argmax on
-    /// those numbers scores 28 of 57 spans against 34 for the constant "keep
-    /// what the decoder wrote". It was describing a scale that does not exist.
-    ///
-    /// `{terms}` can carry `(person)` / `(place)` / `(organization)` after a
-    /// name — see where the caller builds it, from `Config.Vocabulary.Term.kind`
-    /// — with nothing here telling the model what that means. An earlier draft
-    /// added a sentence explaining it and no worked example ever showed it in
-    /// use, which is the shape this file elsewhere argues against. Give it a
-    /// worked example before writing a sentence about it.
-    static let prompt = """
-        The user dictates text. A deterministic pass has already replaced some words
-        with names from their vocabulary.
-
-        That pass matches spelling only. It never hears the sentence. It fires on every
-        occurrence of a spelling it knows, including the ones where the user meant the
-        ordinary word.
-
-        Below is the sentence as the recogniser wrote it, and the same sentence after
-        the pass. For each replacement, say whether it should stand.
-
-        A replacement stands when that name makes sense where it sits. Revert it when
-        the original was the ordinary word and the name does not belong in that
-        sentence.
-
-        The names in their vocabulary are: {terms}. Anything else in the sentence is an
-        ordinary word, however much it looks like one of them.
-
-        Example.
-
-          heard:   add a little sage to the sauce and let it rest
-          after:   add a little Sage to the sauce and let it rest
-          changed: 1. sage -> Sage
-
-          The sentence is about cooking. An accounting system does not go in a sauce.
-          1. REVERT
-
-          heard:   the invoice is still sitting in sage
-          after:   the invoice is still sitting in Sage
-          changed: 1. sage -> Sage
-
-          An invoice sitting in the accounting system is what the sentence is about.
-          1. KEEP
-        """
-
-    /// The sentence to judge, as the model sees it.
-    ///
-    /// Split from `prompt` so the standing instructions can be cached as a
-    /// system message while this changes every dictation.
-    static func question(heard: String, after: String, changes: [Change]) -> String {
-        let listed = changes.enumerated().map { index, change in
-            let line = "\(index + 1). \(change.was) -> \(change.now)"
-            return index == 0 ? line : String(repeating: " ", count: 11) + line
-        }.joined(separator: "\n")
-        return """
-            Now this one.
-
-              heard:   \(heard)
-              after:   \(after)
-              changed: \(listed)
-
-            Answer with one line per change: its number, then KEEP or REVERT. Nothing else.
-            """
-    }
-
-    /// How much of one sentence may be put to the model at once. Optional
-    /// stage params, because they are the numbers a person tuning their own
-    /// pipeline wants to move, and an environment variable is not something a
-    /// config file can say.
+    /// How many places one sentence may offer, and how many readings each.
+    /// Optional stage params, because they are the numbers a person tuning
+    /// their own pipeline wants to move, and an environment variable is not
+    /// something a config file can say.
     struct Caps: Equatable, Codable {
-        /// Uncertain positions, not proposals. One rule can rewrite three
-        /// words. Past this many the stage keeps what the decoder wrote and
-        /// says so — a list nobody can read decides nothing.
-        var slots = 4
         /// Readings per place, the decoder's own included.
         ///
-        /// Two, and two is now the ceiling as well as the default: a verdict
-        /// has two sides, so a third reading of one span cannot be expressed.
-        /// It was 3 while the answer was a letter on a menu. A place that
-        /// offers `Praisy` and `Praisy's` over "praise" loses the second of
-        /// them here, which is the price of the shape.
+        /// Two, and two is the ceiling as well as the default: a place is one
+        /// span with one alternative, so a third reading of it cannot be
+        /// expressed. It was 3 while the answer was a letter on a menu. A
+        /// place that offers `Praisy` and `Praisy's` over "praise" loses the
+        /// second of them here, which is the price of the shape.
         var perSlot = 2
         /// Places in one sentence that may be about the same term.
         ///
@@ -168,8 +65,8 @@ enum VocabularyJudge {
         /// `replacements` rule that already rewrote the text, a `heard:`
         /// rendering matched fuzzily, the rescorer's own proposal, the wider
         /// spans built around it, and the CTC spotter hearing it somewhere
-        /// else entirely. On `17-39-40` that is six slots for three terms,
-        /// which is past `slots` and declines the whole sentence.
+        /// else entirely. On `17-39-40` that is six slots for three terms
+        /// about three names.
         ///
         /// So the list grows with the size of the vocabulary rather than with
         /// how noisily one term fires. Two, because a name said twice in one
@@ -178,21 +75,28 @@ enum VocabularyJudge {
         /// See `slots(in:from:caps:)` for which two survive.
         var perTerm = 2
 
-        /// `max_readings:`, kept only so it can be refused by name.
+        /// `max_readings:` and `max_slots:`, kept only so they can be refused
+        /// by name.
         ///
-        /// It capped a lettered menu. There is no menu, so the number would do
-        /// nothing — and a number in a config file doing nothing is the
-        /// failure this whole type's `problems` exists to prevent.
+        /// `max_readings` capped a lettered menu. `max_slots` capped one model
+        /// call — past that many open places the stage declined the sentence
+        /// rather than send a list nobody could read. There is no menu and no
+        /// model call, so both numbers would do nothing, and a number in a
+        /// config file doing nothing is the failure this type's `problems`
+        /// exists to prevent.
         var readings: Int?
+        var slots: Int?
 
         static let standard = Caps()
 
-        /// Two readings a place, whatever was typed. A verdict has two sides.
+        /// Two readings a place, whatever was typed: the word that was heard,
+        /// and the term.
         static let readingCeiling = 2
 
         /// What is wrong with these numbers, in the words `--check-config`
         /// uses. A cap of zero silences the stage on every transcript, which
-        /// reads as the judge being broken rather than as a number being wrong.
+        /// reads as the vocabulary being broken rather than as a number being
+        /// wrong.
         ///
         /// **Refused, not clamped.** A number quietly rounded down is a
         /// configuration that says one thing and does another, and the person
@@ -203,21 +107,26 @@ enum VocabularyJudge {
         var problems: [String] {
             var found: [String] = []
             for (name, value) in [
-                ("max_slots", slots), ("max_per_slot", perSlot), ("max_per_term", perTerm),
+                ("max_per_slot", perSlot), ("max_per_term", perTerm),
             ] where value < 1 {
                 found.append("vocabulary: \(name) is \(value) — it has to be at least 1")
             }
             if perSlot > Self.readingCeiling {
-                found.append("vocabulary: max_per_slot is \(perSlot), and the judge answers"
-                    + " KEEP or REVERT — \(Self.readingCeiling) is the most a place can"
-                    + " offer. Anything past the second reading would be built and never"
-                    + " shown")
+                found.append("vocabulary: max_per_slot is \(perSlot), and a place is one"
+                    + " span with one alternative — \(Self.readingCeiling) is the most it"
+                    + " can offer. Anything past the second reading would be built and"
+                    + " never shown")
             }
             if let readings {
                 found.append("vocabulary: max_readings is \(readings) and nothing reads it."
-                    + " It capped a lettered menu of whole sentences; the judge answers one"
-                    + " change at a time now. Delete the line — `max_slots` is the cap that"
-                    + " is left")
+                    + " It capped a lettered menu of whole sentences, and there has been no"
+                    + " menu for some time. Delete the line")
+            }
+            if let slots {
+                found.append("vocabulary: max_slots is \(slots) and nothing reads it."
+                    + " It capped one model call, and this stage makes none — the word"
+                    + " lists, the slot's part of speech and the two sentence tests decide,"
+                    + " and every place they leave open keeps what arrived. Delete the line")
             }
             return found
         }
@@ -266,7 +175,7 @@ enum VocabularyJudge {
         /// The second row is a model agreeing with whatever it is shown first,
         /// which reads as confidence and is worth eight points of damage.
         var options: [String]
-        /// The vocabulary terms this slot is about, for `{terms}`.
+        /// The vocabulary terms this slot is about, carried into `Change`.
         let terms: [String]
         /// The best-evidenced of the readings in it, for `Caps.perTerm`.
         let standing: Standing
@@ -285,7 +194,7 @@ enum VocabularyJudge {
         let decoded: String
         /// The other reading.
         let other: String
-        /// The vocabulary term at stake, for `{terms}`.
+        /// The vocabulary term at stake.
         let term: String
         /// Where this reading came from, for `Caps.perTerm`.
         let standing: Standing
@@ -633,9 +542,10 @@ enum VocabularyJudge {
     /// `NSSpellChecker` is a better dictionary than that file, so the shipped
     /// gate should catch it; the measured number is the pessimistic one.
     ///
-    /// Nothing here writes a word on its own. A match becomes a change the
-    /// model votes on, which is the second reason it is safe to be this loose:
-    /// the looser half of the mechanism sits behind the judge.
+    /// Nothing here writes a word on its own. A match becomes one more place
+    /// for the gates to settle, and a place none of them settles keeps the
+    /// word that was heard — so being this loose costs a gate call, not a
+    /// sentence.
     static let fuzzyEdits = 1
 
     /// Whether the two spellings differ only in apostrophes.
@@ -774,8 +684,9 @@ enum VocabularyJudge {
     /// written in and wrong here: the words this fires on are `pressed`,
     /// `phrases`, `geler`, `pretty` — ordinary words, every one, and the
     /// ordinary ones are the whole point. Nothing is written. Each match is
-    /// one more reading for the model to vote on, and the floor is what pays
-    /// for that.
+    /// one more place for the gates to settle, and a place none of them
+    /// settles keeps the word that was heard; the floor is what pays for the
+    /// gate calls.
     ///
     /// English only, by the caller. espeak's `en-us` letter-to-sound over a
     /// French transcript answers, and the answer is noise.
@@ -933,28 +844,27 @@ enum VocabularyJudge {
         /// The reading the pass wants there — the term, inflected as the span
         /// needs it.
         let now: String
-        /// The vocabulary terms this place is about, for `{terms}`.
+        /// The vocabulary terms this place is about, for anything reporting
+        /// what the stage decided.
         let terms: [String]
         /// Where the reading came from, carried through from the slot. Read by
         /// `settle`, which gates one source and not the others.
         let standing: Standing
     }
 
-    /// The substitutions to put to the model, left to right.
+    /// The substitutions to settle, left to right.
     ///
     /// A slot offers the decoder's own reading first and the term's second, so
     /// a change is just those two. A slot with no second reading is not a
     /// question and does not appear.
     ///
-    /// **A place the pass only proposed is a change too.** The acoustic pass
+    /// **A place the pass only proposed is a change too.** The sound pass
     /// hands over spans it has not written, and the text still holds the
     /// decoder's word there. The question is the same one either way — does
-    /// this name belong here — so the sentence shown as `after` is the one
-    /// where every change has been taken, whether the pass took it or not.
-    /// That is also how it was measured.
+    /// this name belong here.
     ///
     /// Left to right and never overlapping, checked here rather than assumed.
-    /// `sentences` and `applying` walk the list with one cursor, so a range
+    /// `settling` walks the list with one cursor, so a range
     /// that starts before the previous one ended would slice the string
     /// backwards and **trap** — losing the whole dictation, not one name.
     /// `slots` merges overlaps already; this is what keeps that a local
@@ -975,7 +885,8 @@ enum VocabularyJudge {
         return built
     }
 
-    /// The changes a spelling lesson settles, so no model is asked about them.
+    /// The changes a spelling lesson settles, whatever else was proposed
+    /// about them.
     ///
     /// "urza spells mirza" teaches a mapping. The word before `spells` is the
     /// source, and writing the term over it destroys the lesson — "Mirza spells
@@ -1010,52 +921,15 @@ enum VocabularyJudge {
         }
     }
 
-    /// The sentence with every change taken, and the one with none of them.
-    ///
-    /// Both are built here rather than read off the transcript because the
-    /// transcript is neither: a rule has already rewritten its span and the
-    /// acoustic pass has not rewritten its own.
-    static func sentences(
-        in text: String, from changes: [Change]
-    ) -> (heard: String, after: String) {
-        var heard = "", after = "", cursor = text.startIndex
-        for change in changes {
-            heard += text[cursor..<change.range.lowerBound] + change.was
-            after += text[cursor..<change.range.lowerBound] + change.now
-            cursor = change.range.upperBound
-        }
-        return (heard + text[cursor...], after + text[cursor...])
-    }
-
-    /// The transcript the verdicts ask for.
-    ///
-    /// `true` keeps the substitution, `false` puts the decoder's word back. A
-    /// verdict list shorter than the changes keeps the rest, which is the same
-    /// direction every other failure in this stage falls: what arrived is what
-    /// ships.
-    static func applying(
-        _ verdicts: [Bool], to text: String, changes: [Change]
-    ) -> String {
-        var out = "", cursor = text.startIndex
-        for (index, change) in changes.enumerated() {
-            let keep = index < verdicts.count ? verdicts[index] : true
-            out += text[cursor..<change.range.lowerBound] + (keep ? change.now : change.was)
-            cursor = change.range.upperBound
-        }
-        return out + text[cursor...]
-    }
-
     /// Text with each span written the way it was settled, and every span
     /// nothing settled left exactly as `text` already has it.
     ///
-    /// Three outcomes where `applying` has two, and the third is the one that
-    /// matters when no model ran: `nil` writes neither reading, it copies what
-    /// is there. A rule substitution is already in the text, so copying keeps
-    /// it; a sound proposal is not, so copying leaves the decoder's word. Both
-    /// are "what arrived ships", which is this stage's contract on every path
-    /// where something went wrong.
-    ///
-    /// `reverting(taught:)` is this with `true` unreachable.
+    /// Three outcomes, and the third is the one that carries the stage:
+    /// `nil` writes neither reading, it copies what is there. A rule
+    /// substitution is already in the text, so copying keeps it; a sound
+    /// proposal is not, so copying leaves the decoder's word. Both are "what
+    /// arrived ships", which is this stage's contract wherever nothing can
+    /// decide.
     static func settling(_ decided: [Bool?], in text: String, changes: [Change]) -> String {
         var out = "", cursor = text.startIndex
         for (index, change) in changes.enumerated() {
@@ -1065,24 +939,6 @@ enum VocabularyJudge {
             case .some(false): out += change.was
             case .none:        out += String(text[change.range])
             }
-            cursor = change.range.upperBound
-        }
-        return out + text[cursor...]
-    }
-
-    /// Text with every taught span put back to what the decoder wrote, and
-    /// every other span left exactly as `text` already has it.
-    ///
-    /// Unlike `applying`, a change that is not being reverted is not
-    /// rewritten to `now` — the model may never have run, so there is no
-    /// verdict to write it from. This is what a spelling lesson mixed with an
-    /// ordinary substitution needs when the model is disabled or unreachable:
-    /// the lesson still gets undone, the ordinary change is left untouched.
-    static func reverting(_ taught: [Bool], in text: String, changes: [Change]) -> String {
-        var out = "", cursor = text.startIndex
-        for (index, change) in changes.enumerated() {
-            out += text[cursor..<change.range.lowerBound]
-            out += (index < taught.count && taught[index]) ? change.was : String(text[change.range])
             cursor = change.range.upperBound
         }
         return out + text[cursor...]
@@ -1100,12 +956,11 @@ enum VocabularyJudge {
         case full
     }
 
-    /// The verdicts the gates settle, so no model is asked about them.
+    /// What the two free rules settle.
     ///
     /// One entry per change. `true` writes the term, `false` writes back what
-    /// the decoder wrote, `nil` is a question for the model. Exactly the shape
-    /// `applying` already takes, and exactly what `taught` already does for a
-    /// spelling lesson — this is the same idea with four more rules in it.
+    /// the decoder wrote, `nil` is still open. Exactly the shape `settling`
+    /// takes, and exactly what `taught` already does for a spelling lesson.
     ///
     /// The rules, in the order they are asked, which is the order they were
     /// measured in:
@@ -1118,13 +973,9 @@ enum VocabularyJudge {
     ///    the model would put there, tag them. A spot that wants a verb, an
     ///    adverb or a preposition cannot hold a name, so the reading is
     ///    impossible and there is nothing to ask. Refuse it.
-    /// 3. **Is that the spot the sentence reads worst?** The span must be both
-    ///    the least expected word and inside the least expected pair. Write the
-    ///    term. Anything else goes to the model.
     ///
-    /// Measured at 47/50 with 21 model calls instead of 50 and no error either
-    /// way — on `tests/judge-cases.yaml`, with no audio in it. See
-    /// `Vocabulary.autoApplies(heard:term:)` for why that matters.
+    /// There was a third — write the term when its span reads worst in the
+    /// sentence — and it is gone. See `SlotGate` for what it cost.
     ///
     /// **What each source may be settled by is not the same.** A rule
     /// substitution is already written into the text, so keeping one costs
@@ -1134,29 +985,21 @@ enum VocabularyJudge {
     /// The sound path writes nothing until somebody says so, so it gets
     /// `.full`.
     ///
-    /// This is what settles `Versal -> Vercel` without a model. `Versal` is in
-    /// neither list, so the rule that wrote it is right and there is nothing to
-    /// ask. `Versailles -> Vercel` fires the same rule in the same sentence and
-    /// is *not* settled: the spell checker knows the word, the lists say
-    /// nothing, and it goes to the judge — which is where it belongs, and where
-    /// the judge got it right. Under `.full` the rank would have ranked
-    /// `Versailles` first of fifteen and written `Vercel Castle`.
-    ///
-    /// Rule 3 is the weak one and it is on by `rank`. It asks whether a word is
-    /// *unexpected*, not whether it is *wrong*, and a rare proper noun is both
-    /// unexpected and correct: on "visiting the Versailles Castle" it ranks
-    /// `Versailles` first of fifteen and would write `Vercel Castle`. Rules 1
-    /// and 2 have no such confound.
+    /// This is what settles `Versal -> Vercel`. `Versal` is in neither list,
+    /// so the rule that wrote it is right and there is nothing left to decide.
+    /// `Versailles -> Vercel` fires the same rule in the same sentence and is
+    /// *not* settled here: the spell checker knows the word and the lists say
+    /// nothing, so it is left to `SentenceGate`.
     static func settle(
         _ changes: [Change], in text: String, by policy: [Standing: Gating],
-        gate: SlotGate?, rank: Bool
+        gate: SlotGate?
     ) -> [Bool?] {
         changes.map { change -> Bool? in
             guard let allowed = policy[change.standing] else { return nil }
             // The reading that is actually going in, not the canonical term.
             // `Precy's -> Praisy's` keeps its possessive; asking about
             // `Praisy` made `dropsPossessive` read it as one being thrown
-            // away, and the name was sent to a model that reverted it.
+            // away, and the name was reverted.
             if Vocabulary.autoApplies(heard: change.was, term: change.now) {
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
                     + " is in neither word list — written, not asked")
@@ -1169,111 +1012,9 @@ enum VocabularyJudge {
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
                     + " — the spot wants \(reading.tag), which cannot hold a name; refused")
                 return false
-            case .apply:
-                // The rank is the half that can be wrong in silence, so it is
-                // the half with a switch.
-                guard rank else { return nil }
-                Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
-                    + " is the worst-reading spot of its sentence"
-                    + (reading.rank.map { " (rank \($0) of \(reading.windows))" } ?? "")
-                    + " — written, not asked")
-                return true
             case .judge:
                 return nil
             }
         }
-    }
-
-    /// One verdict per change, read off the reply. `true` is KEEP.
-    ///
-    /// A number, then the word. Read loosely because a model that answers
-    /// "1) KEEP" or "1 - revert" has decided and formatted it badly, and
-    /// refusing that is refusing a correct answer.
-    ///
-    /// **A change the reply never names keeps its substitution.** That is the
-    /// same default a reply nobody can read gets, and it is the direction that
-    /// costs least: keeping leaves the transcript as it arrived, and this
-    /// stage's whole contract is that what arrived is what ships when anything
-    /// goes wrong.
-    ///
-    /// **A bare KEEP or REVERT with no number answers a one-change sentence.**
-    /// Most sentences have one change and the model often drops the numbering
-    /// for them. Past one change an unnumbered word is ignored, because
-    /// spreading it over every change would let one word undo a name the
-    /// model never spoke about.
-    static func verdicts(_ reply: String, count: Int) -> [Bool] {
-        guard count > 0 else { return [] }
-        var read = [Bool?](repeating: nil, count: count)
-        let upper = reply.uppercased()
-        var scanner = upper.startIndex
-        var number: Int?
-        while scanner < upper.endIndex {
-            let character = upper[scanner]
-            if character.isNumber {
-                var digits = ""
-                while scanner < upper.endIndex, upper[scanner].isNumber {
-                    digits.append(upper[scanner])
-                    scanner = upper.index(after: scanner)
-                }
-                // A run of digits too long to be an `Int` is not a change
-                // number; zero names none, so the word after it is dropped
-                // rather than read as the answer to change one.
-                number = Int(digits) ?? 0
-                continue
-            }
-            if character.isLetter {
-                var word = ""
-                while scanner < upper.endIndex, upper[scanner].isLetter {
-                    word.append(upper[scanner])
-                    scanner = upper.index(after: scanner)
-                }
-                if word == "KEEP" || word == "REVERT" {
-                    // No number in front and one change to answer about: the
-                    // word is the answer. Otherwise it needs to say which.
-                    let at = (number ?? (count == 1 ? 1 : 0)) - 1
-                    if at >= 0, at < count, read[at] == nil { read[at] = word == "KEEP" }
-                }
-                number = nil
-                continue
-            }
-            scanner = upper.index(after: scanner)
-        }
-        return read.map { $0 ?? true }
-    }
-
-    /// The exchange, appended to `PARROTFLOW_JUDGE_DUMP`.
-    ///
-    /// A harness wants to replay a dictation against another wording without
-    /// re-running the app for every prompt it wants to try, and it wants to
-    /// know whether the change list was right before blaming the answer. Two
-    /// failures wear the same face in a transcript — a change list that missed
-    /// the substitution, and a judge that kept the wrong one — and only the
-    /// first is worth widening the proposals for.
-    static func dump(system: String, user: String) {
-        guard let path = ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"],
-              !path.isEmpty
-        else { return }
-        let body = "SYSTEM " + escaped(system) + "\nUSER " + escaped(user) + "\n"
-        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-        guard let data = body.data(using: .utf8) else { return }
-        if let handle = try? FileHandle(forWritingTo: url) {
-            defer { try? handle.close() }
-            _ = try? handle.seekToEnd()
-            try? handle.write(contentsOf: data)
-        } else {
-            try? data.write(to: url)
-        }
-    }
-
-    /// One line per record, so a system message holding newlines cannot be
-    /// read as the start of the next record.
-    ///
-    /// Newlines only, and backslashes left alone. A harness reverses this with
-    /// one `replace("\\n", "\n")`, and escaping the backslash too would need
-    /// it to learn a second rule for a character no prompt here contains.
-    private static func escaped(_ text: String) -> String {
-        text.replacingOccurrences(of: "\r\n", with: "\\n")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\n")
     }
 }

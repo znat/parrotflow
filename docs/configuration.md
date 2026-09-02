@@ -482,8 +482,7 @@ transcription:
     offer_below: -2.0    # offer the join, do not write it
 ```
 
-`sentences: false` turns the whole stage off, the way `review: false` does on a
-pipeline step.
+`sentences: false` turns the whole stage off.
 
 The score is `log P(".") − log P(" <next word>")`, read from a masked language
 model at the position of the period. It is negative when the model would rather
@@ -582,10 +581,12 @@ is timed in tenths of a second, and it sees every word you say.
 capitals out of speech is the job a small local model is worst at — so it is
 the first one worth pointing somewhere bigger.
 
-The KEEP/REVERT review is not here. It belongs to the `vocabulary` pipeline
-stage that runs it, and binds there as `review:` — see
-[pipelines.md](pipelines.md). It binds on the step, so two `vocabulary` steps
-under different conditions can reach different models.
+There is no entry for the `vocabulary` stage. It calls no model — the two word
+lists, the slot's part of speech and the two tests that read the sentence
+decide, and every place they leave open keeps what arrived. See
+[pipelines.md](pipelines.md#the-name-stage). `review:` on that step named the
+model that used to decide; it is read and does nothing, and `--check-config`
+says so.
 
 There is no `enabled:` key any more. A config that defines no `models:` calls
 no model, which says the same thing and cannot fall out of step with itself.

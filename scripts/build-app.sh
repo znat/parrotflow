@@ -63,6 +63,27 @@ cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
 # WordPieces.fileURL.
 cp "$ROOT/data/wordpiece.txt" "$APP/Contents/Resources/wordpiece.txt"
 
+# SwiftPM resource bundles, which the binary looks for beside itself.
+#
+# MLX keeps its Metal shaders in one of these. Without it every MLX call ends
+# in "Failed to load the default metallib" and the process is torn down from
+# inside the library, so the app dies mid-dictation with nothing in its own log.
+# Copied by pattern rather than by name: a dependency that gains a bundle should
+# not need this file edited to be packaged.
+for bundle in "$BIN_DIR"/*.bundle; do
+    [ -e "$bundle" ] || continue
+    cp -R "$bundle" "$APP/Contents/Resources/"
+    echo "==> Bundled $(basename "$bundle")"
+done
+
+# Named, because losing this one is silent until a dictation dies. MLX tears the
+# process down from inside the library when its shaders are missing, so there is
+# nothing in the app's own log to read afterwards.
+if [ ! -d "$APP/Contents/Resources/mlx-swift_Cmlx.bundle" ]; then
+    echo "error: mlx-swift_Cmlx.bundle is not in the app — MLX will abort at the first call"
+    exit 1
+fi
+
 # Resources/Info.plist carries the released identity; the dev bundle is that
 # file with three keys rewritten. One template rather than two files means a key
 # cannot be added to one variant and forgotten in the other.

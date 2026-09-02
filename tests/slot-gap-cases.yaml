@@ -1,0 +1,46 @@
+# What the slot says about a rewrite, on cases from tests/judge-cases.yaml.
+#
+# expect: refuse      the heard word wins by more than SlotReference.floor
+# expect: no opinion  the two readings are too close to settle
+#
+# The numbers move with the Core ML conversion of ModernBERT, so this scores
+# the decision and not the number. Cases were picked well clear of the line:
+# a refusal here sits below -0.30 and a no-opinion above -0.05.
+
+cases:
+- said: The team deserves praise for how quickly they shipped a Ruxby.
+  heard: praise
+  term: Praisy
+  expect: refuse
+- said: In practice, this is the ratio of test code versus feature code.
+  heard: versus
+  term: Vercel
+  expect: refuse
+- said: Can you look at this PR? Explain me very shortly how to reproduce the issue and verify it is resolved.
+    And also let me know if you are able to automatically reproduce it and verify it.
+  heard: verify
+  term: Vercel
+  expect: refuse
+- said: Can you look at this PR? Explain me very shortly how to reproduce the issue and verify it is resolved.
+    And also let me know if you are able to automatically reproduce it and verify it.
+  heard: reproduce
+  term: Redrock
+  expect: refuse
+- said: Uh good morning Urza. Could you please test uploading this file, this crawl file in the dashboard
+    editor.
+  heard: please
+  term: Supabase
+  expect: refuse
+- said: I don't know how it was implemented. All I know is that there is a compression layer before between
+    history and upload and Versal. Sending the file to its back end.
+  heard: Versal
+  term: Vercel
+  expect: no opinion
+- said: I want to talk to Salman and Tasmine.
+  heard: Tasmine
+  term: Tasmeen
+  expect: no opinion
+- said: It's a community that Tasmin asked me to crawl.
+  heard: Tasmin
+  term: Tasmeen
+  expect: no opinion

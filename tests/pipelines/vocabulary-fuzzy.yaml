@@ -15,7 +15,8 @@
 # `fuzzy` is absent here, because absent means on. See
 # tests/pipelines/vocabulary-exact.yaml for the same sentences with it off.
 #
-# Nothing is written by a match. It opens a place, and the model decides.
+# Nothing is written by a match. It opens a place, and the gates decide —
+# a place none of them settles keeps the word that was heard.
 #
 languages: [en]
 vocabulary:

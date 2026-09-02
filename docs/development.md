@@ -125,7 +125,6 @@ last tag there is nothing to open a PR for.
 scripts/check-default-config.sh   # the config a new install gets still parses
 scripts/check-pipeline.sh         # stages, conditions, app gating
 scripts/check-pipeline-config.sh  # which pipeline a whole config resolves to
-scripts/check-verdicts.sh         # what the name judge reads out of a reply
 scripts/check-dotted.sh           # the one rewrite that fires on ordinary language
 scripts/check-numbers.sh          # 97 cases, English and French
 scripts/check-routing.sh          # which transform an instruction reaches

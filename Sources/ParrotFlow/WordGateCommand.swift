@@ -30,12 +30,10 @@ import Foundation
 ///     possessive kept
 ///     gate       judge
 ///     slot       Verb
-///     rank       not asked
 ///     route      decline
 ///
-/// `slot` is what the masked slot wants, `rank` is where the span's two-word
-/// window sits among the sentence's, and `route` is where the proposal goes —
-/// see `SlotGate`. Nothing is downloaded: with no cached model the slot reads
+/// `slot` is what the masked slot wants and `route` is where the proposal goes
+/// — see `SlotGate`. Nothing is downloaded: with no cached model the slot reads
 /// `unavailable` and the route is `judge`.
 ///
 /// No audio. The pair form fixes the scores so the term wins, because the
@@ -127,11 +125,12 @@ enum WordGateCommand {
             return
         }
         print("slot       \(reading.tag.isEmpty ? "untagged" : reading.tag)")
-        print("rank       \(reading.rank.map { "\($0) of \(reading.windows)" } ?? "not asked")")
+        // `apply` is not a route any more — the lexical gate is the only thing
+        // that writes without asking, and it has already printed its verdict.
         let route = applies
-            ? SlotGate.Route.apply
-            : (Vocabulary.dropsPossessive(heard: heard, term: term) ? .judge : reading.route)
-        print("route      \(route.rawValue)")
+            ? "apply"
+            : (Vocabulary.dropsPossessive(heard: heard, term: term) ? "judge" : reading.route.rawValue)
+        print("route      \(route)")
     }
 
     /// The probe, or nil when the model has never been fetched.
