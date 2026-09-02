@@ -135,7 +135,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// Toggle does not clear it. There the press was the whole gesture, and
     /// starting when the answer arrives is what was asked for.
-    private var pressAwaitingMicrophone: Int?
+    ///
+    /// Which is why the mode is kept here rather than read back from the config
+    /// when the release arrives. `config.hotkey.mode` is reloaded from the file
+    /// while the app runs, and a press can sit on the dialog long enough for it
+    /// to change underneath — so the gesture that began the press is the one
+    /// that decides how it ends.
+    private var pressAwaitingMicrophone: (run: Int, pushToTalk: Bool)?
 
     /// When the hotkey last went down. Read once by `startRecording`, which
     /// freezes it onto the recording — the press that *stops* a toggle moves
@@ -1559,10 +1565,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleHotKeyRelease() {
+        // Before the mode guard, and decided by the mode the press *started*
+        // in. `config.hotkey.mode` is reloaded from the file while the app
+        // runs, so a press can be waiting on the microphone dialog when the
+        // mode changes underneath it — and then this guard would return, the
+        // pending press would survive its own release, and a grant would start
+        // a recording nobody is holding. The gesture that began it is the one
+        // that decides how it ends.
+        if pressAwaitingMicrophone?.pushToTalk == true { pressAwaitingMicrophone = nil }
+
         guard config.hotkey.mode == .pushToTalk else { return }
-        // A press still waiting on the microphone dialog ends here, like any
-        // other. See `pressAwaitingMicrophone`.
-        pressAwaitingMicrophone = nil
         // The character key is actually up now, so there is nothing left for
         // the modifier poll to catch — unlike the poll's own call below, where
         // the character key is still down and a flicked-back modifier means
@@ -1670,14 +1682,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         guard Permissions.microphone == .granted else {
             let run = pressRun
-            pressAwaitingMicrophone = run
+            pressAwaitingMicrophone = (run: run, pushToTalk: config.hotkey.mode == .pushToTalk)
             Permissions.requestMicrophone { [weak self] granted in
                 guard let self else { return }
                 self.permissions.model.refresh()
                 // The key came up while the dialog was open, or a later press
                 // has taken over. Either way this press is over and starting
                 // now would start a dictation nobody is holding.
-                guard self.pressAwaitingMicrophone == run else {
+                guard self.pressAwaitingMicrophone?.run == run else {
                     self.dictationCancelled(run)
                     return
                 }
