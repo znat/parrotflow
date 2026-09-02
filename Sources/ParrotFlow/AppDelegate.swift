@@ -4910,10 +4910,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // portrait is built from, and this is the only moment the app
                 // knows a sentence is right.
                 do {
-                    try TermUses.record(
-                        term: rule.corrected, said: corrected, span: rule.corrected
-                    )
-                    rebuildPortrait(for: rule.corrected)
+                    // The vocabulary's own spelling, not the one that was
+                    // typed. Matching is case-insensitive everywhere else, so
+                    // saving `praisy` against an existing `Praisy` would file
+                    // the sentence under a second key and build a portrait
+                    // there — while the gate goes on reading `Praisy` and finds
+                    // neither. Nil is a term the vocabulary has not got yet,
+                    // and then what was typed is the name.
+                    //
+                    // The span stays as typed. It has to be the word standing
+                    // in the sentence, and the sentence holds what was written.
+                    let term = existingTerm(named: rule.corrected) ?? rule.corrected
+                    try TermUses.record(term: term, said: corrected, span: rule.corrected)
+                    rebuildPortrait(for: term)
                 } catch {
                     // A portrait that missed one sentence is worth less than a
                     // correction that refused to save over it.
