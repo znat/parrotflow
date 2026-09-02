@@ -3477,6 +3477,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let sentence = changes.first?.sentence ?? ""
         let worth = changes.filter { teaches($0) }
         guard !worth.isEmpty else { return }
+        // Never over a panel already up. `show` replaces the rows and rebinds
+        // the save, so a second offer would throw the first away without
+        // showing it — and this is the only caller that arrives uninvited, so
+        // it is the only one that can do that to you. The reselection offer
+        // refuses for the same reason.
+        guard !correctionPanel.isUp else {
+            Log.write("correction: a panel is already up; not offering "
+                + worth.map { "\"\($0.was)\" -> \"\($0.now)\"" }.joined(separator: ", "))
+            return
+        }
         // The pairs, not just the count. What the panel was offering could not
         // be read back off the log, so the noise it was showing could not be
         // described — only that there was some.

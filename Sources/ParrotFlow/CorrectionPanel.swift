@@ -31,6 +31,10 @@ final class CorrectionPanel {
         present()
     }
 
+    /// Is a panel on screen right now? `show` replaces what is in the one
+    /// panel, so a caller that was not asked for has to look first.
+    var isUp: Bool { panel?.isVisible == true }
+
     /// The application that was in front when the panel opened, so the focus
     /// can go back to it. Nil while no panel is up.
     private var cameFrom: NSRunningApplication?
