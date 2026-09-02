@@ -276,6 +276,8 @@ $PF --prompt <name> "<instruction>" "<text>"
 $PF --command "hey parrot, Tasmin spells T A S M E E N" "<last transcript>" \
     [--phrases "hey parrot,by the way parrot"]
 $PF --learn <heard> <corrected>
+$PF --for <term> "<sentence>" [word]
+$PF --against <term> "<sentence>" <word>
 ```
 
 `--route` shows which transform an instruction reaches and why — the router
@@ -295,6 +297,18 @@ the previous transcript does it target.
 
 `--learn` adds a pronunciation to `vocabulary.yaml` from the terminal, the
 same one the correction panel would have written.
+
+`--for` records a sentence a term belongs in, without touching the
+pronunciations. `--against` records the opposite: a sentence where the term
+does not belong, with the ordinary word that stands where it would go. Both
+are written to `vocabulary-uses.yaml`, which is what a term's portrait is
+built from. `--against` writes no pronunciation — a counter-example teaches
+nothing about how a word sounds.
+
+```
+$ ParrotFlow --against Vercel "I love visiting the Versailles Castle." Versailles
+✓ Vercel does not belong at "Versailles"
+```
 
 ## Giving a model its API key
 
