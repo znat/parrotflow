@@ -56,6 +56,12 @@ cases:
     now:     So we have Praisy in our team. She is an expert about the Vercel platform.
     expect:  "Prezi -> Praisy | versal -> Vercel"
 
+  # The same wrong word twice, corrected to two different names. Both are
+  # reported, so the place and not the word is what names a correction.
+  - written: Prezi and Prezi are different people
+    now:     Praisy and Preston are different people
+    expect:  "Prezi -> Praisy | Prezi -> Preston"
+
   # A phrase replaced by another. There is no telling which part was meant.
   - written: I use Ghostty as a terminal app
     now:     I use the other one as a terminal app

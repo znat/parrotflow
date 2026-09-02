@@ -35,6 +35,10 @@ final class EditWatch {
         /// The whole line as it stands, which is the sentence the change
         /// belongs to.
         let sentence: String
+        /// Which word of the line as it was written. Two occurrences of one
+        /// word are two corrections, and telling them apart needs the place
+        /// rather than the word.
+        let at: Int
     }
 
     var onChange: ((Change) -> Void)?
@@ -57,7 +61,12 @@ final class EditWatch {
     private var reported: Set<String> = []
     /// What each replaced word has become so far. Only the last state of each
     /// is a correction, so they are held here until the watch ends.
-    private var seen: [String: Change] = [:]
+    ///
+    /// Keyed by where the word stood, not by the word. `before` does not change
+    /// while the watch runs, so the place is a stable name for one correction —
+    /// and keying by the word lost one of `versal is not versal` corrected to
+    /// `Vercel is not Versailles`.
+    private var seen: [Int: Change] = [:]
     private var lastLook = Date.distantPast
     /// The read waiting for you to stop typing. Cancelled and replaced by every
     /// key, so it only ever runs once the field has been still.
@@ -65,6 +74,14 @@ final class EditWatch {
     /// Keys seen since the watch started, so "nobody typed" can be told from
     /// "the read never ran".
     private var keysSeen = 0
+    /// Which watch a queued retry belongs to.
+    ///
+    /// `start` can be called while the search for the line is still retrying —
+    /// a rewrite from the correction panel does it. The queued retry then runs
+    /// against the new field with the old attempt count, and at its last
+    /// attempt it either takes a half-typed line as the baseline or stops the
+    /// new watch outright.
+    private var generation = 0
 
     /// How long the field has to be still before it is read.
     ///
@@ -82,15 +99,22 @@ final class EditWatch {
     /// Called again for every dictation: an older snapshot is not something
     /// anybody is still editing.
     func start(dictated words: String, in element: AXUIElement?) {
+        generation += 1
         before = nil
         dictated = words
         field = element
         reported = []
         seen = [:]
         keysSeen = 0
-        guard monitors.isEmpty else { return }
         guard Permissions.accessibility == .granted else {
             Log.write("edit watch: accessibility is not granted; corrections cannot be seen")
+            return
+        }
+        // The monitors outlive one watch, so a second start reuses them. The
+        // search for the line is started either way: returning early here left
+        // a restarted watch with no baseline and nothing looking for one.
+        guard monitors.isEmpty else {
+            findLine(attempt: 0, generation: generation)
             return
         }
 
@@ -112,7 +136,7 @@ final class EditWatch {
             monitors.append(local)
         }
         Log.write("edit watch: \(monitors.count) key monitor(s) installed")
-        findLine(attempt: 0)
+        findLine(attempt: 0, generation: generation)
     }
 
     /// The line the words landed on, once they are actually there.
@@ -120,7 +144,8 @@ final class EditWatch {
     /// In a terminal ParrotFlow types rather than writes, so the field is a
     /// keystroke or two behind when the dictation is declared finished. Looking
     /// once found nothing and gave up; the words arrived a moment later.
-    private func findLine(attempt: Int) {
+    private func findLine(attempt: Int, generation: Int) {
+        guard generation == self.generation else { return }
         guard let field, let dictated, before == nil else { return }
         let snapshot = CaretAnchor.snapshot(of: field)
         // Its size, not its contents. The field is a whole terminal or editor
@@ -149,7 +174,7 @@ final class EditWatch {
         // three seconds gave up on it. Nothing is read until the line is found,
         // so waiting costs only the wait.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.findLine(attempt: attempt + 1)
+            self?.findLine(attempt: attempt + 1, generation: generation)
         }
     }
 
@@ -201,7 +226,7 @@ final class EditWatch {
     /// Hand over what was found, once, in the order it was found.
     private func tell() {
         guard !seen.isEmpty else { return }
-        let changes = seen.values.sorted { $0.was < $1.was }
+        let changes = seen.values.sorted { $0.at < $1.at }
         seen = [:]
         for change in changes {
             Log.write("edit watch: \"\(change.was)\" became \"\(change.now)\"")
@@ -250,7 +275,7 @@ final class EditWatch {
         // nobody meant — deleting `Prezi` back to `P` before typing `Praisy`
         // reported `Prezi -> P` as a correction — and only the last state is
         // one. Told when the watch ends, which is when you move on.
-        for change in found { seen[change.was] = change }
+        for change in found { seen[change.at] = change }
     }
 
     // MARK: - the comparison
@@ -311,7 +336,8 @@ final class EditWatch {
             found.append(Change(
                 was: old[fromI ..< i].joined(separator: " "),
                 now: new[fromJ ..< j].joined(separator: " "),
-                sentence: now
+                sentence: now,
+                at: fromI
             ))
         }
         return found
