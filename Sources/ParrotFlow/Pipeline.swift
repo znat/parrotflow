@@ -970,12 +970,21 @@ struct Pipeline: Equatable, Codable {
         // near miss has to raise this or that stage never runs.
         var nearMisses = 0
         var bySound = 0
+        // Where this stage's time goes, split at its two model calls. The
+        // stage's own `ms` is one number for all of it, so it cannot tell a
+        // pronunciation the model has never been asked for from a term
+        // portrait being rebuilt. Those are the two things that put a
+        // dictation past a second here.
+        var soundSeconds = 0.0
+        var gateSeconds = 0.0
         func result(_ text: String, _ vars: [String: Scope.Value]) -> StageResult {
             let wrote: [String: Scope.Value] = [
                 "count": .int(exact.count + nearMisses + bySound),
                 "changes": .string(exact.changes),
                 "before": .string(handed),
                 "protected": .string(exact.protected),
+                "sound_ms": .int(Int((soundSeconds * 1000).rounded())),
+                "gate_ms": .int(Int((gateSeconds * 1000).rounded())),
             ]
             return StageResult(text: text, vars: wrote.merging(vars) { _, new in new })
         }
@@ -1021,10 +1030,12 @@ struct Pipeline: Equatable, Codable {
         // measured over 20891 dictations — see `phonemeParts` for what fires
         // and what it costs.
         if step.bySound ?? true, Pipeline.language(of: text, config: config) == "en" {
+            let askedAt = Date()
             let heard = await VocabularyJudge.phonemeParts(
                 in: text, sounds: config.vocabularySounds, voice: "en-us",
                 language: "en", floor: config.vocabulary.soundBelow, claimed: parts
             )
+            soundSeconds = Date().timeIntervalSince(askedAt)
             bySound = heard.count
             parts += heard
         }
@@ -1064,6 +1075,7 @@ struct Pipeline: Equatable, Codable {
         //
         // `taught` wins over the gate, because a spelling lesson is settled by
         // a rule that is 4/4 where the models measured were 0/4.
+        let gatedAt = Date()
         let settled = (step.gate ?? true)
             ? VocabularyJudge.settle(
                 changes, in: text, by: [.sound: .full, .rule: .lists],
@@ -1076,6 +1088,7 @@ struct Pipeline: Equatable, Codable {
         if config.vocabulary.gateSentence, #available(macOS 14, *) {
             decided = await SentenceGate.settle(changes, in: text, given: decided)
         }
+        gateSeconds = Date().timeIntervalSince(gatedAt)
 
         let gated = decided.enumerated().filter { $0.element != nil && !taught[$0.offset] }.count
         if gated > 0 {

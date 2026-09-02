@@ -2289,6 +2289,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write(String(
                     format: "transcriber: warmed up in %.1fs", Date().timeIntervalSince(started)
                 ))
+                // Loaded is not the same as run. See `warmDecode`.
+                await transcriber.warmDecode()
             } catch {
                 // Nothing else is worth fetching. Without speech the app
                 // cannot transcribe at all, so 700 MB more buys nothing, and
@@ -2305,6 +2307,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await transcriber.warmSentenceModel()
             // 81 MB, and the sound pass is on by default.
             Task.detached(priority: .background) {
+                // What the model said last time, before anything asks it. Reads
+                // a file the first dictation would otherwise read itself, and
+                // it is worth doing whether or not the download below runs.
+                NeuralPhonemes.warmCache()
                 guard await !NeuralPhonemes.isReady() else { return }
                 do { try await NeuralPhonemes.download() } catch {
                     Log.write("sound model: \(error.localizedDescription); the next"

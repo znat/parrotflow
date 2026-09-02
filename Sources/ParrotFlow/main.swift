@@ -15,7 +15,7 @@ let arguments = CommandLine.arguments
 // flush and the rest did not, so `--replace` was dropping the very lines that
 // explain what the pipeline did — a stage saying it skipped, and why. Doing it
 // here covers every path, including the ones added later.
-atexit { Log.flush(); Trace.flush() }
+atexit { Log.flush(); Trace.flush(); NeuralPhonemes.flushCache() }
 
 // First, and above the config: this is the handshake that says which code you
 // are running, and it must answer even when the config is broken or missing.
