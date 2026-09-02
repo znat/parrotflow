@@ -2289,6 +2289,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write(String(
                     format: "transcriber: warmed up in %.1fs", Date().timeIntervalSince(started)
                 ))
+                // Loaded is not the same as run. See `warmDecode`.
+                await transcriber.warmDecode()
             } catch {
                 // Nothing else is worth fetching. Without speech the app
                 // cannot transcribe at all, so 700 MB more buys nothing, and
@@ -2305,11 +2307,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await transcriber.warmSentenceModel()
             // 81 MB, and the sound pass is on by default.
             Task.detached(priority: .background) {
-                guard await !NeuralPhonemes.isReady() else { return }
-                do { try await NeuralPhonemes.download() } catch {
-                    Log.write("sound model: \(error.localizedDescription); the next"
-                        + " dictation that needs it tries again")
+                if await !NeuralPhonemes.isReady() {
+                    do { try await NeuralPhonemes.download() } catch {
+                        Log.write("sound model: \(error.localizedDescription); the next"
+                            + " dictation that needs it tries again")
+                        return
+                    }
                 }
+                // What the model said last time, read here rather than by the
+                // first dictation. After the fetch, not before: the table is
+                // keyed on a hash of the weights, so with no weights on disk
+                // there is nothing to check it against and it would be dropped
+                // on the one launch that installed them.
+                NeuralPhonemes.warmCache()
             }
             // 335 MB, and only the sentence gate reads them. Someone who turns
             // the gate off should not pay for it.

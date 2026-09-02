@@ -98,6 +98,37 @@ actor Transcriber {
         return try await task.value
     }
 
+    /// One decode of silence, so the first real clip does not pay for the
+    /// graph being run for the first time.
+    ///
+    /// `prepare` loads the weights and stops there. Core ML compiles and lays
+    /// out its kernels on the first inference, and over the archive that shows
+    /// up as the first dictation after a gap being slower: 0.074s of processing
+    /// per second of audio on the 20 dictations that opened a session, against
+    /// 0.046s on the other 849, and 0.30s on the worst one.
+    ///
+    /// A second of silence rather than a real clip. The encoder is the part
+    /// that compiles and it runs on whatever it is given; the decoder runs its
+    /// frames too and commits nothing, which is the point.
+    ///
+    /// Nothing waits on this and nothing reads its result. A failure is logged
+    /// and dropped: the first dictation is then as slow as it is today.
+    func warmDecode() async {
+        guard let models else { return }
+        let started = Date()
+        let asr = AsrManager(models: models)
+        var state = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
+        let silence = [Float](repeating: 0, count: Int(Self.sampleRate))
+        do {
+            _ = try await asr.transcribe(silence, decoderState: &state)
+            Log.write(String(
+                format: "transcriber: warm decode in %.2fs", Date().timeIntervalSince(started)
+            ))
+        } catch {
+            Log.write("transcriber: warm decode failed — \(error.localizedDescription)")
+        }
+    }
+
     private var lastReportedPercent: Int = -1
 
     private func reportDownload(_ label: String, _ progress: DownloadProgress) {

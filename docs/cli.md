@@ -844,6 +844,15 @@ jq -r '.stages[]? | select(.seconds) | [.name, .seconds] | @tsv' trace.jsonl |
   awk '{n[$1]++; s[$1]+=$2} END {for (k in n) printf "%-28s %6.3fs  ×%d\n", k, s[k]/n[k], n[k]}' |
   sort -k2 -rn
 
+# Where the vocabulary stage's time goes. It has two halves that call a model
+# and the stage's own `seconds` covers both: `sound_ms` is the sound pass
+# asking the G2P model for pronunciations, `gate_ms` is the word lists, the
+# slot and the sentence gate deciding. A dictation past a second here is
+# almost always one of the two, and this says which.
+jq -r '.stages[]? | select(.name == "vocabulary" and .vars.gate_ms) |
+       [.seconds, .vars.sound_ms, .vars.gate_ms, .vars.slots] | @tsv' trace.jsonl |
+  sort -rn | head -20
+
 # Every dictation a prompt stage rewrote, and into what.
 jq -r '.stages[]? | select(.before and .before != .after) |
        [.name, .before, .after] | @tsv' trace.jsonl
