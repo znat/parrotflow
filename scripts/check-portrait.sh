@@ -27,6 +27,10 @@ check() {
   if printf '%s' "$3" | grep -q "$2"; then printf '  ✓ %s\n' "$1"
   else printf '  ✗ %s: %s\n' "$1" "${3:-no output}"; failed=1; fi
 }
+absent() {
+  if printf '%s' "$3" | grep -q "$2"; then printf '  ✗ %s: %s\n' "$1" "$3"; failed=1
+  else printf '  ✓ %s\n' "$1"; fi
+}
 
 out="$(run --portrait Praisy | tail -1)"
 check "a term with no uses has no portrait" "no portrait" "$out"
@@ -56,6 +60,30 @@ check "the portrait refuses a real one, which is what the band costs" \
   "refuses" "$write"
 slot="$(run --slot-gap "Prezi joined the team in March." Prezi Praisy | tail -1)"
 check "and neither does the slot, so it falls through" "no opinion" "$slot"
+
+# A term with counter-examples is read against them instead of against the
+# floor. Three uses about deploying, three about the palace.
+run --for Vercel "We deploy the dashboard on Vercel every Friday." Vercel >/dev/null
+run --for Vercel "The build is green on Vercel again." Vercel >/dev/null
+run --for Vercel "I pushed the site to Vercel this morning." Vercel >/dev/null
+run --against Vercel "The palace of Versailles was built for Louis the Fourteenth." \
+  Versailles >/dev/null
+run --against Vercel "We toured Versailles in the rain last weekend." Versailles >/dev/null
+
+# Two is below `TermPortrait.counterMinimum`, so the floor still decides and the
+# line carries no second score.
+out="$(run --portrait Vercel "Have you ever walked the grounds at Versailles?" \
+  Versailles | tail -1)"
+absent "two counters are too few, so the floor still decides" "counters" "$out"
+
+run --against Vercel "I love visiting the Versailles Castle." Versailles >/dev/null
+out="$(run --portrait Vercel "Have you ever walked the grounds at Versailles?" \
+  Versailles | tail -1)"
+check "the third turns it into a comparison" "^score 0\..*   counters 0\." "$out"
+check "and a sentence like the counters is refused" "refuses" "$out"
+out="$(run --portrait Vercel "The Vercel deploy hook fired twice this morning." \
+  Vercel | tail -1)"
+check "a sentence like the uses is authorised" "authorises" "$out"
 
 [ "$failed" -eq 0 ] && echo "Every check passed." || echo "Failed: portrait"
 exit "$failed"

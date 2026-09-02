@@ -9,6 +9,13 @@ import Foundation
 ///     uses 3   tightness 0.874   floor 0.821
 ///     score 0.795   no opinion
 ///
+/// A term with enough counter-examples is read against those instead of against
+/// the floor, and both scores are printed:
+///
+///     ParrotFlow --portrait BetterStack "…a better stack for us." "better stack"
+///     uses 5   against 4   tightness 0.882   floor 0.858
+///     score 0.928   counters 1.018   refuses
+///
 /// The floor is read off the term's own sentences and never chosen, so printing
 /// it is the only way to see what a term has decided about itself.
 @available(macOS 14, *)
@@ -45,7 +52,8 @@ enum TermPortraitCommand {
     }
 
     static func run(term: String, sentence: String?, span: String?) -> Int32 {
-        let outcome = Blocking.run { () async -> Result<(TermPortrait.Summary?, Double?), Error> in
+        typealias Answer = (TermPortrait.Summary?, TermPortrait.Reading?)
+        let outcome = Blocking.run { () async -> Result<Answer, Error> in
             do {
                 let summary = try await TermPortrait.shared.summary(for: term)
                 guard summary != nil, let sentence, let span else {
@@ -58,10 +66,8 @@ enum TermPortraitCommand {
                 let near = TermUses.occurrence(of: span, in: sentence).map {
                     TermPortrait.window(around: $0, in: sentence)
                 } ?? sentence
-                let score = try await TermPortrait.shared.score(
-                    of: span, in: near, for: term
-                )
-                return .success((summary, score))
+                let reading = try await TermPortrait.shared.read(span, in: near, as: term)
+                return .success((summary, reading))
             } catch {
                 return .failure(error)
             }
@@ -70,14 +76,18 @@ enum TermPortraitCommand {
         case .failure(let error):
             print("✗ \(error.localizedDescription)")
             return 1
-        case .success(let (summary, score)):
+        case .success(let (summary, reading)):
             guard let summary else {
                 let held = TermUses.load()[term]?.filter { !$0.counter }.count ?? 0
                 print("no portrait: \(held) confirmed use(s), \(TermPortrait.minimum) needed")
                 return 0
             }
+            // `against` only when there is one, so a term with no counters
+            // prints the line it has always printed.
+            let against = summary.counters > 0 ? "against \(summary.counters)   " : ""
             print(
-                "uses \(summary.uses)   tightness \(String(format: "%.3f", summary.tightness))"
+                "uses \(summary.uses)   \(against)"
+                    + "tightness \(String(format: "%.3f", summary.tightness))"
                     + "   floor \(String(format: "%.3f", summary.floor))"
             )
             if sentence == nil {
@@ -88,16 +98,16 @@ enum TermPortraitCommand {
                     print("  \(mark) \(use.said)")
                 }
             }
-            if let score {
+            if let reading {
                 let verdict: String
-                if score > summary.floor {
-                    verdict = "authorises"
-                } else if score < summary.floor - TermPortrait.refusal {
-                    verdict = "refuses"
-                } else {
-                    verdict = "no opinion"
+                switch reading.verdict {
+                case .authorises: verdict = "authorises"
+                case .refuses:    verdict = "refuses"
+                case .nothing:    verdict = "no opinion"
                 }
-                print("score \(String(format: "%.3f", score))   \(verdict)")
+                let counters = reading.against
+                    .map { "counters \(String(format: "%.3f", $0))   " } ?? ""
+                print("score \(String(format: "%.3f", reading.own))   \(counters)\(verdict)")
             }
             return 0
         }
