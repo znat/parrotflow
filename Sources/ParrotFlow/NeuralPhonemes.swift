@@ -95,25 +95,34 @@ enum NeuralPhonemes {
             .appendingPathComponent("phonemes-multilingual-g2p.json")
     }
 
-    /// What the weights on disk look like: every file inside the two G2P model
-    /// bundles, by path, size and modification date, hashed.
+    /// The weights on disk, hashed. Every byte of both G2P bundles, each file
+    /// preceded by its path under the cache root so a file moving counts too.
     ///
     /// The table has to be thrown away when the model changes, and there is
-    /// nothing to hang that on. FluidAudio publishes no version for these
-    /// models and `ModelNames.MultilingualG2P` is two file names and no
-    /// revision, so the file name cannot carry it. The files themselves are the
-    /// identity: new weights are a new download, and a download rewrites them.
+    /// nothing cheaper to hang that on. FluidAudio publishes no version for
+    /// these models, `ModelNames.MultilingualG2P` is two file names and no
+    /// revision, and the download leaves no manifest — the `config.json` beside
+    /// the bundles is `{}`. The bytes are the only identity there is.
     ///
-    /// Sizes and dates rather than contents. The weights are 81 MB and this
-    /// answers a question that is almost always "unchanged". What that allows
-    /// is a re-download of the same weights invalidating a table that was fine,
-    /// which costs one session of warm-up. What it cannot allow is the other
-    /// way round: weights the model reads differently, with the files the same.
+    /// Path, size and modification date were tried first and are not enough:
+    /// weights can be replaced with different bytes of the same size and the
+    /// dates put back, and the table would then be kept against a model that no
+    /// longer agrees with it. The damage is a mixed table rather than an old
+    /// one — a window read by the new model scored against a term read by the
+    /// old one over a 0.85 floor, with neither reading wrong on its own.
     ///
-    /// The walk is the whole FluidAudio cache, which is 28 files here, and it
-    /// stops descending as soon as it has a bundle.
+    /// One pass over 79 MB, once per launch — the answer is held in `weights`
+    /// for the life of the process. It is cheaper than it sounds because the
+    /// files are in the page cache by the time anything asks: the model has
+    /// just been loaded. `--sound` end to end is 0.37-0.44s with this and was
+    /// 0.43s without it, which is inside the noise. A genuinely cold read costs
+    /// about a second, and `AppDelegate` pays it on the same background task
+    /// that fetches the model, so a dictation waits on it only if one is
+    /// started before that task gets there.
     ///
-    /// Nil when both bundles are not there to look at, and then nothing is
+    /// Streamed in 1 MB chunks. The point is a digest, not 79 MB resident.
+    ///
+    /// Nil when both bundles are not there to read, and then nothing is
     /// written: a table that cannot be keyed cannot be trusted next launch.
     private static func weightsFingerprint() -> String? {
         cacheLock.lock()
@@ -124,36 +133,47 @@ enum NeuralPhonemes {
         guard let root = try? TtsCacheDirectory.ensure() else { return nil }
         let wanted = ModelNames.MultilingualG2P.requiredModels
         let manager = FileManager.default
-        let keys: Set<URLResourceKey> = [.fileSizeKey, .contentModificationDateKey]
         guard let walk = manager.enumerator(
-            at: root, includingPropertiesForKeys: Array(keys)
+            at: root, includingPropertiesForKeys: nil
         ) else { return nil }
 
         var seen: Set<String> = []
-        var lines: [String] = []
+        var files: [URL] = []
         for case let url as URL in walk where wanted.contains(url.lastPathComponent) {
             walk.skipDescendants()
             seen.insert(url.lastPathComponent)
             guard let inside = manager.enumerator(
-                at: url, includingPropertiesForKeys: Array(keys)
+                at: url, includingPropertiesForKeys: nil
             ) else { return nil }
             for case let file as URL in inside {
-                let values = try? file.resourceValues(forKeys: keys)
-                let stamp = values?.contentModificationDate?.timeIntervalSince1970 ?? -1
-                // The path from the cache root, not the file name: both bundles
-                // hold a `model.mil` and a `weights/weight.bin`.
-                lines.append("\(file.path.dropFirst(root.path.count))\u{1}"
-                    + "\(values?.fileSize ?? -1)\u{1}\(Int(stamp))")
+                var directory: ObjCBool = false
+                guard manager.fileExists(atPath: file.path, isDirectory: &directory),
+                      !directory.boolValue
+                else { continue }
+                files.append(file)
             }
         }
-        guard seen == wanted, !lines.isEmpty else { return nil }
+        guard seen == wanted, !files.isEmpty else { return nil }
 
-        let digest = SHA256.hash(data: Data(lines.sorted().joined(separator: "\u{2}").utf8))
-        let mark = digest.compactMap { String(format: "%02x", $0) }.joined().prefix(16)
+        var hasher = SHA256()
+        // Sorted, so the digest does not depend on the order the enumerator
+        // happened to walk in. The path goes in with the bytes: both bundles
+        // hold a `model.mil` and a `weights/weight.bin`.
+        for file in files.sorted(by: { $0.path < $1.path }) {
+            hasher.update(data: Data(file.path.dropFirst(root.path.count).utf8))
+            guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+            defer { try? handle.close() }
+            while let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty {
+                hasher.update(data: chunk)
+            }
+        }
+        let mark = String(
+            hasher.finalize().compactMap { String(format: "%02x", $0) }.joined().prefix(16)
+        )
         cacheLock.lock()
-        weights = String(mark)
+        weights = mark
         cacheLock.unlock()
-        return String(mark)
+        return mark
     }
 
     /// Reads the table now, so the first dictation of the session does not.
