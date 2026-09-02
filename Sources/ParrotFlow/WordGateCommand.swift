@@ -38,14 +38,21 @@ import Foundation
 ///
 /// A span that glues to the term is the one case where the two lines disagree:
 ///
-///     ParrotFlow --word-gate "better stack" BetterStack
+///     ParrotFlow --word-gate "better stack" BetterStack --in \
+///       "I think Node.js and MongoDB is a much better stack than PHP and MySQL."
 ///     gate       auto-apply (a rule's write is left to the sentence)
+///     slot       Adverb
+///     route      judge
 ///
 /// The lists are never asked about a glued span, so the gate really does say
 /// auto-apply. What happens next depends on where the proposal came from, and
 /// that is not something a word and a term can say: a `replacements` rule is
 /// left open by `VocabularyJudge.settle`, and the sound path still writes it.
 /// The route printed is the rule's, since these two arguments carry no audio.
+///
+/// The slot is still printed and it still decides nothing. `settle` gates a
+/// rule with `.lists`, so the slot is never asked about one — `Adverb` above
+/// is in `blocks` and would refuse it, and does not.
 ///
 /// No audio. The pair form fixes the scores so the term wins, because the
 /// acoustic half is not what it is asking; a proposal whose term loses on
@@ -60,7 +67,10 @@ enum WordGateCommand {
                 print("route      judge")
                 return 0
             }
-            printSlot(heard: word, term: term, in: sentence, applies: writes)
+            printSlot(
+                heard: word, term: term, in: sentence,
+                applies: writes, glues: Vocabulary.glues(heard: word, term: term)
+            )
             return 0
         }
 
@@ -116,7 +126,7 @@ enum WordGateCommand {
     /// `Vocabulary.slotRoute`.
     @available(macOS 14, *)
     private static func printSlot(
-        heard: String, term: String, in sentence: String, applies: Bool
+        heard: String, term: String, in sentence: String, applies: Bool, glues: Bool
     ) {
         let config = (try? ConfigStore.load()) ?? Config()
         let language = Pipeline.language(of: sentence, config: config)
@@ -144,11 +154,20 @@ enum WordGateCommand {
         print("slot       \(reading.tag.isEmpty ? "untagged" : reading.tag)")
         // `apply` is not a route any more — the lexical gate is the only thing
         // that writes without asking, and it has already printed its verdict.
-        // A glued span reaches here as `false`: `settle` leaves a rule's write
-        // to the sentence and never asks the slot about it.
-        let route = applies
-            ? "apply"
-            : (Vocabulary.dropsPossessive(heard: heard, term: term) ? "judge" : reading.route.rawValue)
+        //
+        // A glued span is neither. `settle` gates a rule with `.lists` and
+        // never reaches the slot, so the place is left open whatever the tag
+        // above says.
+        let route: String
+        if glues {
+            route = "judge"
+        } else if applies {
+            route = "apply"
+        } else if Vocabulary.dropsPossessive(heard: heard, term: term) {
+            route = "judge"
+        } else {
+            route = reading.route.rawValue
+        }
         print("route      \(route)")
     }
 
