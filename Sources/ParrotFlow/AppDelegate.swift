@@ -3795,11 +3795,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let ours = heard.contains { $0.caseInsensitiveCompare(back) == .orderedSame }
         do {
             try TermUses.record(term: term, said: sentence, span: back, counter: true)
+            rebuildPortrait(for: term)
             // One term corrected into another — `Praizy` into `Praisy` — says
             // two things at once, and both are worth keeping: the first does
             // not live here and the second does.
             if let right = existingTerm(named: back) {
                 try TermUses.record(term: right, said: sentence, span: back)
+                rebuildPortrait(for: right)
             }
             Log.write(
                 "correction: \"\(written)\" -> \"\(back)\" is a counter-example for"
@@ -3810,6 +3812,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
         return true
+    }
+
+    /// Builds a term's portrait now, because its uses just changed.
+    ///
+    /// `TermPortrait.summary` caches under a fingerprint of the term's stored
+    /// uses, so recording one invalidates it and the *next* dictation naming
+    /// that term pays the rebuild — one embedding pass per use and per
+    /// counter-example, up to `TermUses.keep` of each.
+    ///
+    /// A correction is the moment the uses changed and the moment nobody is
+    /// waiting, so the work moves here. Nothing waits on it and nothing reads
+    /// the result: if it fails, or the app quits first, the next dictation
+    /// rebuilds exactly as it does today. Calling `summary` and dropping the
+    /// answer *is* the rebuild — it is the same call the dictation would make,
+    /// and it writes the same cache.
+    ///
+    /// **How much this is worth is not measured.** The mechanism is certain —
+    /// the fingerprint changes here and the rebuild lands there — but the size
+    /// is not. It cannot be measured from the CLI: `SentenceGate.settle` stands
+    /// aside whenever the word vectors are not loaded, and in a one-shot
+    /// process they never are, so no `--pipeline` run reaches a portrait at
+    /// all. The archive's 26 slow dictations of 957 arrive in bursts that look
+    /// like a session of corrections, which is the reason to think this
+    /// matters, and `gate_ms` on a running app is what would settle it.
+    ///
+    /// Only with the sentence gate on. `SentenceGate` is the only thing that
+    /// reads a portrait, and with it off this would fetch 335 MB of word
+    /// vectors to answer a question nobody asks.
+    private func rebuildPortrait(for term: String) {
+        guard config.vocabulary.gateSentence else { return }
+        guard #available(macOS 14, *) else { return }
+        Task.detached(priority: .background) {
+            let started = Date()
+            // Nil covers both "too few uses to describe" and "it threw", and
+            // neither is worth a line: nothing was built either way.
+            guard (try? await TermPortrait.shared.summary(for: term)) != nil else { return }
+            // Not "rebuilt". The fingerprint decides whether there was work to
+            // do, and the time says which happened — a rebuild is seconds, a
+            // portrait that was already good is instant.
+            Log.write(String(
+                format: "portrait: %@ is current in %.1fs, so the next dictation does not wait",
+                term, Date().timeIntervalSince(started)
+            ))
+        }
     }
 
     /// The vocabulary term this word is, ignoring case and any possessive.
@@ -4864,9 +4910,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // portrait is built from, and this is the only moment the app
                 // knows a sentence is right.
                 do {
-                    try TermUses.record(
-                        term: rule.corrected, said: corrected, span: rule.corrected
-                    )
+                    // The vocabulary's own spelling, not the one that was
+                    // typed. Matching is case-insensitive everywhere else, so
+                    // saving `praisy` against an existing `Praisy` would file
+                    // the sentence under a second key and build a portrait
+                    // there — while the gate goes on reading `Praisy` and finds
+                    // neither. Nil is a term the vocabulary has not got yet,
+                    // and then what was typed is the name.
+                    //
+                    // The span stays as typed. It has to be the word standing
+                    // in the sentence, and the sentence holds what was written.
+                    let term = existingTerm(named: rule.corrected) ?? rule.corrected
+                    try TermUses.record(term: term, said: corrected, span: rule.corrected)
+                    rebuildPortrait(for: term)
                 } catch {
                     // A portrait that missed one sentence is worth less than a
                     // correction that refused to save over it.

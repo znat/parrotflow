@@ -174,6 +174,10 @@ actor TermPortrait {
     private var cache: [String: Summary] = [:]
     private var loadedFromDisk = false
 
+    /// The build running for a term, and the uses it was started for. See
+    /// `summary` for why an actor alone does not stop two of them.
+    private var building: [String: (mark: String, task: Task<Summary, Error>)] = [:]
+
     /// Keyed by the model, because the numbers are only comparable within one
     /// set of weights. A model change invalidates every summary and no
     /// sentence.
@@ -293,7 +297,34 @@ actor TermPortrait {
         if !loadedFromDisk { cache = Self.readCache(); loadedFromDisk = true }
         if let held = cache[term], held.fingerprint == mark { return held }
 
-        let built = try await Self.build(uses, against: counters, fingerprint: mark)
+        // A build already running for this same fingerprint is the build this
+        // caller wants, so join it rather than start a second one.
+        //
+        // Actor isolation is not enough on its own. `build` awaits a vector per
+        // use, and an actor lets another call in at every one of those
+        // suspensions — so two callers can both find the cache stale on either
+        // side of the same await and both do the whole thing. That is exactly
+        // the pair this stage now creates: the rebuild a correction starts, and
+        // the dictation that names the term while it is still running. Without
+        // this the dictation waits for a full build anyway, and the machine
+        // does the work twice. Same shape as `Transcriber.loadingModels` and
+        // `WordVectors.loading`.
+        //
+        // Keyed on the fingerprint too, because a build in flight for older
+        // uses is the wrong answer for this caller — another correction may
+        // have landed since it started.
+        if let running = building[term], running.mark == mark {
+            return try await running.task.value
+        }
+
+        let task = Task { try await Self.build(uses, against: counters, fingerprint: mark) }
+        building[term] = (mark: mark, task: task)
+        // Only if it is still ours. A correction arriving mid-build starts its
+        // own task under this key, and clearing that one would let a third
+        // caller start a duplicate of it.
+        defer { if building[term]?.mark == mark { building[term] = nil } }
+
+        let built = try await task.value
         cache[term] = built
         Self.writeCache(cache)
         return built
