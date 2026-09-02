@@ -1001,6 +1001,19 @@ enum VocabularyJudge {
             // `Praisy` made `dropsPossessive` read it as one being thrown
             // away, and the name was reverted.
             if Vocabulary.autoApplies(heard: change.was, term: change.now) {
+                // A span that glues to the term is matched before any list is
+                // read, so `better stack -> BetterStack` was written in every
+                // sentence and nothing could refuse it. Left open instead when
+                // a rule already wrote it: an open rule place keeps the rule's
+                // write, so this costs nothing on its own and lets the two
+                // sentence tests see the place. Under `.full` nothing has been
+                // written yet and the glue still decides, which is what keeps
+                // `Ghost E -> Ghostty` on the sound path.
+                if allowed == .lists, Vocabulary.glues(heard: change.was, term: change.now) {
+                    Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
+                        + " glues to the term — the rule's write is left to the sentence")
+                    return nil
+                }
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
                     + " is in neither word list — written, not asked")
                 return true

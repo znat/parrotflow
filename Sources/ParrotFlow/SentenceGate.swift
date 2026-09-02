@@ -7,8 +7,9 @@ import Foundation
 /// the tokenizer by construction, so its vector sits further from any centre
 /// than a real word's and the comparison cannot be made to write.
 /// `TermPortrait` answers about the term alone: whether this sentence looks like
-/// the ones it was confirmed in. It authorises when it does, refuses when the
-/// sentence is well outside, and says nothing between.
+/// the ones it was confirmed in, or more like the ones it was corrected out of.
+/// It authorises when it looks like the first, refuses when it looks like the
+/// second, and says nothing when the two are too close to call.
 ///
 /// So there are four outcomes and only one of them is a disagreement:
 ///

@@ -399,6 +399,16 @@ not "Mirza thoughts" — and only something that reads the sentence can decide
 it. The other direction is untouched: `Matthew at` -> `Matthieu's` is a term
 carrying a possessive the decoded span does not, and that correction is right.
 
+Neither list is asked about a span with a space in it. Both halves are ordinary
+words, so the pair is matched glued instead: `red crawl` is `Redcrawl` with a
+space in it. That test cannot tell a split name from an English phrase whose
+glued form is also a term, and `better stack` is one — "how this is a better
+stack for us" shipped as "a BetterStack for us". So a `replacements` rule that
+has already written the term over a glued span is left open here and the two
+sentence tests below decide it, which costs nothing: an open place keeps what
+is already in the text. The sound path has written nothing yet, so it still
+applies the glue and `Ghost E` still becomes `Ghostty`.
+
 If the list cannot be read the gate stops auto-applying entirely and leaves
 every place open. `--word-gate <word>` prints both verdicts and the
 decision, and `--word-gate <word> <term>` prints the possessive verdict and the
@@ -415,14 +425,33 @@ term, and everything it does not refuse it leaves open, `Determiner` slots
 included: those are modifier positions and names do sit in them (`cloud code`,
 `bedrock principles`).
 
-Measured over the 50 English cases of `tests/judge-cases.yaml`: 13 written by
-the word lists, 14 refused by the slot, 23 left open, and no error either way.
+Measured over the 50 English cases of `tests/judge-cases.yaml`: 12 written by
+the word lists, 14 refused by the slot, 24 left open, and no error either way.
 `scripts/check-slot-gate.sh` is the run. See `SlotGate`. The route label for
 "left open" is still `judge`, from when a model answered those.
 
 The model is never waited for. Until it is on disk — and on a language it was
 not trained for — every place this tier would judge is simply left open, which
 is the behaviour before this tier.
+
+**What the slot cannot settle, the term itself can.** Every sentence you
+confirm a term in is kept in `vocabulary-uses.yaml`, and from three of them the
+term gets a portrait: the average of what those sentences look like, with the
+term itself left out. Every sentence you correct a term *out* of is kept there
+too, as a counter-example, and from three of those the term gets a second
+average. Then a new sentence is written when it sits closer to the first than
+to the second, and refused when it sits closer to the second. There is no
+threshold to set: the two are compared directly, and a difference under 0.01
+says nothing either way.
+
+This is what separates "how this is a better stack for us" from "BetterStack
+paged me again at three": both look like sentences BetterStack lives in, and
+only the first also looks like the ones it was taken out of. Measured on 20
+held-out sentences
+over four terms: 20 right, 0 wrong, 0 quiet, where the floor rule that came
+before it scores 17 / 2 / 1. A term with fewer than three counter-examples
+keeps that floor rule. `--portrait <term> "<sentence>" <word>` prints both
+scores and the verdict; `scripts/check-counter-portrait.sh` is the run.
 
 What the stage decided is written to `trace.jsonl` under its variables, so a
 decision can be replayed rather than guessed at.

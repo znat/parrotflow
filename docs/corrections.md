@@ -46,7 +46,10 @@ fix cost nothing.
 ordinary word back over a term the app wrote — `Vercel` back to `Versailles` —
 no rule is offered. The rule would be the mirror of one you already have, and
 then each word would propose the other forever. The sentence is kept under the
-term instead, as a counter-example: a place that term does not belong.
+term instead, as a counter-example: a place that term does not belong. Three of
+them and the term stops being written wherever it is proposed: a new sentence
+has to look more like the ones you confirmed than like the ones you took it out
+of — see [Checking the result](transcription.md#checking-the-result).
 
 ## Saying the spelling instead
 

@@ -1,0 +1,39 @@
+# What a term's portrait should say about a sentence, and the row to hide first.
+#
+#   want	term	span	sentence	hold out
+#
+# `want` is `write` or `refuse`. `span` is the word standing where the term
+# would go, which is the term itself on a write case and an ordinary word on a
+# refuse case. `hold out`, when it is there, names a stored sentence in
+# tests/fixtures/vocabulary-uses-portrait.yaml that has to be removed before
+# this case is scored: without it the case would be compared with itself.
+#
+# The first 20 rows are held out of the fixture by construction — none of them
+# is stored. The last 4 come from issue #249 and are near-duplicates of stored
+# rows, so each names the row it duplicates.
+#
+# Scored by scripts/check-counter-portrait.sh.
+refuse	Vercel	Versailles	The palace of Versailles was built for Louis the Fourteenth.	
+refuse	Vercel	Versailles	We toured Versailles in the rain last weekend.	
+refuse	Vercel	versatile	This little tool is versatile but painfully slow.	
+refuse	Vercel	Versailles	Have you ever walked the grounds at Versailles?	
+refuse	Praisy	praise	He got a lot of praise for that conference talk.	
+refuse	Praisy	crazy	The release schedule is crazy this month.	
+refuse	Praisy	praise	Faint praise is worse than none at all.	
+refuse	Qwen	Gwen	Gwen booked the meeting room for Thursday.	
+refuse	Qwen	Gwen	I sat next to Gwen at the offsite dinner.	
+refuse	BetterStack	better stack	There is no better stack than boring technology.	
+write	Vercel	Vercel	The Vercel deploy hook fired twice this morning.	
+write	Vercel	Vercel	We pinned the Node version in the Vercel settings.	
+write	Vercel	Vercel	Rolling back on Vercel took one click.	
+write	Vercel	Vercel	The Vercel logs show a cold start on every request.	
+write	Praisy	Praisy	Praisy pushed the hotfix just before lunch.	
+write	Praisy	Praisy	I paired with Praisy on the parser rewrite.	
+write	Praisy	Praisy	Ask Praisy whether the migration ran cleanly.	
+write	Qwen	Qwen	Qwen handles the French embeddings better than the old model.	
+write	Qwen	Qwen	We quantised Qwen down to four bits.	
+write	BetterStack	BetterStack	BetterStack sent a false alarm at midnight.	
+refuse	BetterStack	better stack	So tell me exactly how this is a better stack for us.	So tell me exactly how this is a better stack for us.
+refuse	BetterStack	better stack	I think Node.js and MongoDB is a much better stack than PHP and MySQL.	I think Node.js and MongoDB is a much better stack than PHP and MySQL.
+write	BetterStack	BetterStack	BetterStack paged me again at three.	BetterStack paged me at three in the morning.
+write	BetterStack	BetterStack	We route our uptime alerts through BetterStack.	We route all our uptime alerts through BetterStack.

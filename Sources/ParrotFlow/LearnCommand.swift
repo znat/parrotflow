@@ -129,8 +129,8 @@ enum LearnCommand {
     /// belong in, with the ordinary word that stands where it would go.
     ///
     /// No pronunciation is written: this teaches nothing about how a word
-    /// sounds. It is the other half of a portrait, and the only way to seed
-    /// enough of them to measure `TermPortrait.refusal` rather than choose it.
+    /// sounds. It is the other half of a portrait: three of these and the term
+    /// is read against them instead of against a floor.
     static func against(term: String, sentence: String, span: String) -> Int32 {
         guard TermUses.occurrence(of: span, in: sentence) != nil else {
             print("✗ \"\(span)\" does not stand as a word in that sentence")

@@ -303,7 +303,9 @@ pronunciations. `--against` records the opposite: a sentence where the term
 does not belong, with the ordinary word that stands where it would go. Both
 are written to `vocabulary-uses.yaml`, which is what a term's portrait is
 built from. `--against` writes no pronunciation — a counter-example teaches
-nothing about how a word sounds.
+nothing about how a word sounds. Three of them under one term and the portrait
+stops reading that term against a floor: a new sentence is written when it sits
+closer to the sentences the term belongs in than to these.
 
 ```
 $ ParrotFlow --against Vercel "I love visiting the Versailles Castle." Versailles

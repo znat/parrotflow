@@ -8,6 +8,10 @@
 #   gate: judge       something reads the sentence before the word is replaced
 #   gate: auto-apply  the word is replaced, and nothing reads the sentence
 #
+# One `auto-apply` carries a note: a span the term glues to. The lists are
+# never asked about one, and what happens next depends on where the proposal
+# came from — see the block on it below.
+#
 # A case with a `term` asks the whole gate about that pair, and reads
 # `possessive` instead of the two lists:
 #
@@ -179,6 +183,31 @@ cases:
       goes to the judge because the tokenizer knows it; `Fredericks` is known
       to neither list, so before this rule the possessive form auto-applied
       and `--inflected Redrock "Frederick's"` wrote `Redrock's`.
+
+  # --- a term the decoder split in two --------------------------------------
+  # Neither list is asked. Both halves are ordinary words, so the pair is
+  # matched glued instead: `red crawl` is `Redcrawl` with a space in it.
+  #
+  # The test cannot tell that from an English phrase whose glued form happens
+  # to be a term, and `better stack` is one. So a `replacements` rule that has
+  # already written the term is left open by `VocabularyJudge.settle` and the
+  # two sentence tests decide it. The sound path, which has written nothing
+  # yet, still applies the glue. The note on the `gate` line says which.
+
+  - word: "red crawl"
+    term: Redcrawl
+    possessive: kept
+    gate: auto-apply
+    why: the decoder puts a space in one name, which is a question about spelling
+
+  - word: "better stack"
+    term: BetterStack
+    possessive: kept
+    gate: auto-apply
+    why: >
+      the same test on an ordinary English phrase. Seen live 2026-09-01: "how
+      this is a better stack for us" shipped as "a BetterStack for us". The
+      lists still say auto-apply; what stops it now is the sentence.
 
   # --- the same class the other way round ------------------------------------
   # The term carries the possessive and the heard text does not. That

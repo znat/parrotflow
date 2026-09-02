@@ -13,6 +13,11 @@ import Foundation
 /// A new sentence is scored against the centre and divided by the tightness.
 /// Above the floor, the rewrite is authorised.
 ///
+/// A term that has been corrected out of enough sentences gets a second centre
+/// built the same way from those. Then there is no floor: the sentence is
+/// written when it is closer to the first centre than to the second, and
+/// refused when it is closer to the second. See `band`.
+///
 /// **Why divide by the tightness.** A portrait built from many varied sentences
 /// has a centre further from everything, so the same cosine means less. Dividing
 /// puts every term on one scale: 1.00 is "as typical of this term as its own
@@ -24,8 +29,9 @@ import Foundation
 /// Measured on one term grown to 32 uses: the average makes 2 wrong decisions of
 /// 5, the tenth percentile none.
 ///
-/// This half only ever authorises. `SlotReference` is the half that refuses, and
-/// when the two disagree neither wins — the reading is offered instead.
+/// This half authorises, and refuses when the sentence is far enough the other
+/// way. `SlotReference` only refuses, and when the two disagree neither wins —
+/// the reading is offered instead.
 @available(macOS 14, *)
 actor TermPortrait {
 
@@ -132,6 +138,23 @@ actor TermPortrait {
     /// out, so it is a number to re-measure and not one to trust.
     static let refusal = 0.04
 
+    /// How many counter-examples a term needs before the comparison replaces
+    /// the floor.
+    ///
+    /// Below this the counter centre is untestable, and the one term measured
+    /// with two counters got both of its own cases wrong. 3 costs nothing on
+    /// either bench set and is `minimum` again, so there is one number here and
+    /// not two.
+    static let counterMinimum = 3
+
+    /// How far apart the two scores have to be before either side wins.
+    ///
+    /// A hedge, not a fix. Measured on the 20 held-out cases: it removes no
+    /// error at any width up to 0.05, and every width above 0.01 starts turning
+    /// correct decisions quiet — the two tightest correct margins are ±0.017.
+    /// So 0.01 is the widest band that costs nothing.
+    static let band = 0.01
+
     struct Summary: Codable, Equatable {
         let centre: [Float]
         let tightness: Double
@@ -140,6 +163,12 @@ actor TermPortrait {
         /// they change and not otherwise.
         let fingerprint: String
         let uses: Int
+        /// The same two numbers over the term's counter-examples, or nil when
+        /// it has fewer than `counterMinimum` of them.
+        var counterCentre: [Float]?
+        var counterTightness: Double?
+        /// Counted whether or not there were enough to build a centre.
+        var counters: Int
     }
 
     private var cache: [String: Summary] = [:]
@@ -162,9 +191,7 @@ actor TermPortrait {
     /// not the term. It is left out of the vector, so what is measured is the
     /// sentence around it.
     func score(of span: String, in sentence: String, for term: String) async throws -> Double? {
-        guard let summary = try await summary(for: term) else { return nil }
-        let vector = try await WordVectors.shared.vector(.around, of: span, in: sentence)
-        return WordVectors.cosine(vector, summary.centre) / summary.tightness
+        try await read(span, in: sentence, as: term)?.own
     }
 
     /// What the term's own sentences say about this one.
@@ -177,24 +204,73 @@ actor TermPortrait {
         case nothing
     }
 
-    func reads(_ span: String, in sentence: String, as term: String) async -> Verdict {
-        do {
-            guard let summary = try await summary(for: term),
-                  let score = try await score(of: span, in: sentence, for: term)
-            else { return .nothing }
+    /// One reading of one sentence, with the numbers behind it.
+    ///
+    /// The app and `--portrait` both go through this, so the bench scores the
+    /// rule that ships and not a second copy of it.
+    struct Reading {
+        let verdict: Verdict
+        /// Against the term's own sentences: cosine over tightness.
+        let own: Double
+        /// Against its counter-examples, the same way, or nil when it has too
+        /// few for a centre.
+        let against: Double?
+        let floor: Double
+    }
+
+    /// How this sentence reads, or nil if the term has no portrait yet.
+    func read(_ span: String, in sentence: String, as term: String) async throws -> Reading? {
+        guard let summary = try await summary(for: term) else { return nil }
+        let vector = try await WordVectors.shared.vector(.around, of: span, in: sentence)
+        let own = WordVectors.cosine(vector, summary.centre) / summary.tightness
+
+        guard let centre = summary.counterCentre, let tightness = summary.counterTightness,
+              tightness > 0
+        else {
             let verdict: Verdict
-            if score > summary.floor {
+            if own > summary.floor {
                 verdict = .authorises
-            } else if score < summary.floor - Self.refusal {
+            } else if own < summary.floor - Self.refusal {
                 verdict = .refuses
             } else {
                 verdict = .nothing
             }
-            Log.write(String(
-                format: "portrait: %@ at \"%@\" scores %.3f against a floor of %.3f — %@",
-                term, span, score, summary.floor, "\(verdict)"
-            ))
-            return verdict
+            return Reading(verdict: verdict, own: own, against: nil, floor: summary.floor)
+        }
+
+        // Both sides divided by their own tightness. Mixing the scales was
+        // measured at 14 right / 5 wrong / 1 quiet against 22 / 1 / 1.
+        let against = WordVectors.cosine(vector, centre) / tightness
+        let apart = own - against
+        let verdict: Verdict
+        if apart > Self.band {
+            verdict = .authorises
+        } else if apart < -Self.band {
+            verdict = .refuses
+        } else {
+            verdict = .nothing
+        }
+        return Reading(verdict: verdict, own: own, against: against, floor: summary.floor)
+    }
+
+    func reads(_ span: String, in sentence: String, as term: String) async -> Verdict {
+        do {
+            guard let reading = try await read(span, in: sentence, as: term) else {
+                return .nothing
+            }
+            if let against = reading.against {
+                Log.write(String(
+                    format: "portrait: %@ at \"%@\" is %.3f like its own sentences"
+                        + " and %.3f like its counters — %@",
+                    term, span, reading.own, against, "\(reading.verdict)"
+                ))
+            } else {
+                Log.write(String(
+                    format: "portrait: %@ at \"%@\" scores %.3f against a floor of %.3f — %@",
+                    term, span, reading.own, reading.floor, "\(reading.verdict)"
+                ))
+            }
+            return reading.verdict
         } catch {
             Log.write("portrait: \(term) could not be scored (\(error.localizedDescription))")
             return .nothing
@@ -206,24 +282,25 @@ actor TermPortrait {
     func summary(for term: String) async throws -> Summary? {
         let all = TermUses.load()[term] ?? []
         // Counter-examples are sentences the term does *not* belong in. They
-        // are fingerprinted, so adding one rebuilds, but they never enter the
-        // centre, the tightness or the floor: those describe where the term
-        // lives, and a counter is the other place.
+        // never enter the centre, the tightness or the floor: those describe
+        // where the term lives, and a counter is the other place. They get a
+        // centre of their own instead.
         let uses = all.filter { !$0.counter }
+        let counters = all.filter(\.counter)
         guard uses.count >= Self.minimum else { return nil }
         let mark = Self.fingerprint(of: all)
 
         if !loadedFromDisk { cache = Self.readCache(); loadedFromDisk = true }
         if let held = cache[term], held.fingerprint == mark { return held }
 
-        let built = try await Self.build(uses, fingerprint: mark)
+        let built = try await Self.build(uses, against: counters, fingerprint: mark)
         cache[term] = built
         Self.writeCache(cache)
         return built
     }
 
     private static func build(
-        _ uses: [TermUses.Use], fingerprint mark: String
+        _ uses: [TermUses.Use], against counters: [TermUses.Use], fingerprint mark: String
     ) async throws -> Summary {
         var vectors: [[Float]] = []
         for use in uses {
@@ -232,6 +309,24 @@ actor TermPortrait {
             )
         }
         let (centre, tightness) = middle(of: vectors)
+
+        // Built exactly as the positives are, from the ordinary word that
+        // stands at the site rather than from the term.
+        var counterCentre: [Float]?
+        var counterTightness: Double?
+        if counters.count >= Self.counterMinimum {
+            var against: [[Float]] = []
+            for use in counters {
+                against.append(
+                    try await WordVectors.shared.vector(.around, of: use.span, in: use.said)
+                )
+            }
+            let (middleOf, spread) = middle(of: against)
+            if spread > 0 {
+                counterCentre = middleOf
+                counterTightness = spread
+            }
+        }
 
         // What a genuine use scores, each one measured against a portrait that
         // does not contain it. Anything else compares a sentence with itself.
@@ -248,7 +343,10 @@ actor TermPortrait {
             tightness: tightness,
             floor: quantileOf(selves, at: quantile),
             fingerprint: mark,
-            uses: uses.count
+            uses: uses.count,
+            counterCentre: counterCentre,
+            counterTightness: counterTightness,
+            counters: counters.count
         )
     }
 
@@ -295,11 +393,21 @@ actor TermPortrait {
 
     // MARK: - the cache
 
+    /// An entry written by an older build is dropped, not kept.
+    ///
+    /// `Summary` has gained fields twice. Decoded as a whole dictionary, one
+    /// old entry throws away every current one; kept as it is, a portrait would
+    /// be read with a counter side it never had.
+    private struct Entry: Decodable {
+        let summary: Summary?
+        init(from decoder: Decoder) throws { summary = try? Summary(from: decoder) }
+    }
+
     private static func readCache() -> [String: Summary] {
         guard let data = try? Data(contentsOf: cacheURL),
-              let decoded = try? JSONDecoder().decode([String: Summary].self, from: data)
+              let decoded = try? JSONDecoder().decode([String: Entry].self, from: data)
         else { return [:] }
-        return decoded
+        return decoded.compactMapValues(\.summary)
     }
 
     private static func writeCache(_ summaries: [String: Summary]) {
