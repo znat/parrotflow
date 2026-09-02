@@ -509,7 +509,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The other half of the first press. The engine warms above; this is
         // the pill's own window, which costs as much again.
         pill.warm()
-        warmModels()
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }
@@ -547,6 +546,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        // After the preview flags return. Those launches draw a panel and
+        // quit; nothing there transcribes, and fetching 1.16 GB for them
+        // is what `warmUpTranscriber` avoided by sitting below this point.
+        warmModels()
+
 
         warmUpLLM()
 
