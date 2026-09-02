@@ -73,8 +73,14 @@ enum LearnCommand {
                     said: said, span: use.span, from: use.from, counter: use.counter
                 )
                 // The custom `==` is on the sentence and the span, so two rows
-                // that narrow to the same sentence collapse into one.
-                if !kept.contains(now) { kept.append(now) }
+                // that narrow to the same sentence collapse into one. The last
+                // wins, which is how `record` settles two rows that disagree
+                // about whether the term belongs there.
+                if let already = kept.firstIndex(of: now) {
+                    kept[already] = now
+                } else {
+                    kept.append(now)
+                }
             }
             if !kept.isEmpty { out[term] = kept }
         }

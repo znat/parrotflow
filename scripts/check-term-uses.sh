@@ -237,6 +237,41 @@ out="$(PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --portrait Vercel 2>/dev/null)"
 check "a counter does not count toward the portrait minimum" 1 \
   "$(printf '%s' "$out" | grep -c 'no portrait: 2 confirmed use(s)')"
 
+# One sentence cannot both hold the term and refuse it. The later correction
+# is the one that stands, rather than the first one silently winning.
+FLIP="$WORK/flip"; mkdir -p "$FLIP"
+FY="$FLIP/vocabulary-uses.yaml"
+PARROTFLOW_CONFIG_DIR="$FLIP" "$BIN" --for Vercel \
+  "I love visiting the Versailles Castle." Versailles >/dev/null 2>&1
+PARROTFLOW_CONFIG_DIR="$FLIP" "$BIN" --against Vercel \
+  "I love visiting the Versailles Castle." Versailles >/dev/null 2>&1
+check "the same sentence recorded both ways is one row" 1 "$(matches '^    - said:' "$FY")"
+check "and holds the later polarity" 1 "$(matches '^      counter: true' "$FY")"
+PARROTFLOW_CONFIG_DIR="$FLIP" "$BIN" --for Vercel \
+  "I love visiting the Versailles Castle." Versailles >/dev/null 2>&1
+check "and back again" 0 "$(matches '^      counter: true' "$FY")"
+
+# Each polarity has its own budget. Sharing one, a term corrected the wrong way
+# often enough evicts the uses its portrait is built from.
+BUDGET="$WORK/budget"; mkdir -p "$BUDGET"
+BY="$BUDGET/vocabulary-uses.yaml"
+{
+  printf 'terms:\n  "Vercel":\n'
+  for i in $(seq 1 41); do
+    printf '    - said: "Train %s to Versailles was late."\n      span: "Versailles"\n' "$i"
+    printf '      from: seeded\n      counter: true\n'
+  done
+  for i in $(seq 1 3); do
+    printf '    - said: "We deployed build %s on Vercel."\n      span: "Vercel"\n' "$i"
+    printf '      from: seeded\n'
+  done
+} > "$BY"
+PARROTFLOW_CONFIG_DIR="$BUDGET" "$BIN" --against Vercel \
+  "The last train to Versailles was late." Versailles >/dev/null 2>&1
+check "counters stop at their own budget" 40 "$(matches '^      counter: true' "$BY")"
+check "and evict no confirmed use" 3 \
+  "$(( $(matches '^    - said:' "$BY") - 40 ))"
+
 # --tidy-uses rewrites every row, so it has to carry the polarity across.
 PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --tidy-uses >/dev/null 2>&1
 check "--tidy-uses keeps a counter marked" 1 "$(matches '^      counter: true' "$AY")"

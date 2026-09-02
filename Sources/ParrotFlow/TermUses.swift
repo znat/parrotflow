@@ -62,10 +62,10 @@ enum TermUses {
     /// more of them separate better rather than worse. This bounds the work of
     /// recomputing a portrait, which is one forward pass per use.
     ///
-    /// Oldest first, whatever its polarity. A term corrected forty times the
-    /// wrong way would evict the uses its portrait is built from, and then have
-    /// no portrait at all. Not reachable yet — nothing reads counters — but the
-    /// day one does, this needs its own budget.
+    /// Each polarity has its own budget. Shared, a term corrected forty times
+    /// the wrong way would evict the uses its portrait is built from and leave
+    /// it with no portrait at all, and the bound this exists for is the number
+    /// of confirmed uses.
     static let keep = 40
 
     /// The file is there and cannot be parsed as a whole.
@@ -122,6 +122,10 @@ enum TermUses {
     ///
     /// The oldest goes when the list is full, so a term that moves on stops
     /// being described by what it used to mean.
+    ///
+    /// The same sentence and span recorded the other way round replaces what
+    /// was there. One sentence cannot both hold the term and refuse it, and
+    /// the later correction is the one that stands.
     static func record(
         term: String, said: String, span: String, from: Use.Source = .correction,
         counter: Bool = false
@@ -134,9 +138,24 @@ enum TermUses {
         var all = try read()
         var uses = all[term] ?? []
         let use = Use(said: sentence, span: span, from: from, counter: counter)
-        guard !uses.contains(use) else { return }
+        if let already = uses.firstIndex(of: use) {
+            guard uses[already].counter != counter else { return }
+            uses.remove(at: already)
+        }
         uses.append(use)
-        if uses.count > keep { uses.removeFirst(uses.count - keep) }
+        // A budget per polarity, oldest dropped. Sharing one, a term corrected
+        // forty times the wrong way evicts every use its portrait is built
+        // from, and the term is then left with no portrait at all.
+        for polarity in [false, true] {
+            let over = uses.filter { $0.counter == polarity }.count - keep
+            guard over > 0 else { continue }
+            var dropped = 0
+            uses.removeAll { use in
+                guard dropped < over, use.counter == polarity else { return false }
+                dropped += 1
+                return true
+            }
+        }
         all[term] = uses
         try write(all)
     }
