@@ -77,6 +77,10 @@ final class EditWatch {
     /// and keying by the word lost one of `versal is not versal` corrected to
     /// `Vercel is not Versailles`.
     private var seen: [Int: Change] = [:]
+    /// What has been handed over already. The pending read in `stop` finds
+    /// the same diff for as long as the line stands, and a correction declined
+    /// at one press was offered again at the next.
+    private var told: Set<String> = []
     private var lastLook = Date.distantPast
     /// The read waiting for you to stop typing. Cancelled and replaced by every
     /// key, so it only ever runs once the field has been still.
@@ -115,6 +119,7 @@ final class EditWatch {
         field = element
         reported = []
         seen = [:]
+        told = []
         keysSeen = 0
         guard Permissions.accessibility == .granted else {
             Log.write("edit watch: accessibility is not granted; corrections cannot be seen")
@@ -237,7 +242,14 @@ final class EditWatch {
     private func tell() {
         guard !seen.isEmpty else { return }
         let changes = seen.values.sorted { $0.at < $1.at }
+            .filter { told.insert("\($0.at)\u{1}\($0.now)").inserted }
         seen = [:]
+        guard !changes.isEmpty else { return }
+        // Both lines whole, so the log says what the diff ran over and not
+        // only what it found. A 60-character prefix could not explain
+        // `prone.maybe` becoming `prone point.maybe`.
+        Log.write("edit watch: was \"\(before ?? "")\"")
+        Log.write("edit watch: now \"\(changes[0].sentence)\"")
         for change in changes {
             Log.write("edit watch: \"\(change.was)\" became \"\(change.now)\"")
         }
@@ -362,6 +374,10 @@ final class EditWatch {
     /// Only punctuation is cut, never letters. `Prizzy -> Praizy` shares "Pr"
     /// and "zy" and must survive whole; cutting shared letters would offer
     /// "iz -> aiz", which is not a word anybody said.
+    ///
+    /// The same at the tail. `prone.maybe` became `prone point.maybe`: the
+    /// two share `.maybe`, and the second sentence is not part of the
+    /// correction. It comes off from the first mark of the shared suffix.
     static func trimmed(was: String, now: String) -> (was: String, now: String) {
         let a = Array(was), b = Array(now)
         func plain(_ c: Character) -> Bool { c.isLetter || c.isNumber }
@@ -371,16 +387,79 @@ final class EditWatch {
         var head = 0
         for i in 0 ..< shared where !plain(a[i]) { head = i + 1 }
 
-        var tail = 0
-        while tail < a.count - head, tail < b.count - head,
-              a[a.count - 1 - tail] == b[b.count - 1 - tail],
-              !plain(a[a.count - 1 - tail]) {
-            tail += 1
+        var sharedTail = 0
+        while sharedTail < a.count - head, sharedTail < b.count - head,
+              a[a.count - 1 - sharedTail] == b[b.count - 1 - sharedTail] {
+            sharedTail += 1
         }
+        var tail = 0
+        for i in 0 ..< sharedTail where !plain(a[a.count - 1 - i]) { tail = i + 1 }
 
         guard head + tail > 0, a.count - head - tail > 0, b.count - head - tail > 0
         else { return (was, now) }
         return (String(a[head ..< (a.count - tail)]), String(b[head ..< (b.count - tail)]))
+    }
+
+    // MARK: - the offer
+
+    /// Why a change is not worth a panel.
+    enum Refusal: CustomStringConvertible {
+        /// Punctuation or case alone. Not a pronunciation.
+        case punctuation
+        /// Every word it lands on is one the word lists know.
+        case ordinary
+
+        var description: String {
+            switch self {
+            case .punctuation: return "punctuation, not a name"
+            case .ordinary: return "ordinary English"
+            }
+        }
+    }
+
+    /// Is this correction about a name, or about English?
+    ///
+    /// Spelling distance does not separate them. Measured on this speaker's
+    /// own `heard:` lists against ordinary edits, `its -> it's` scores 1.000
+    /// and `Prezi -> Praisy` 0.304, so any floor drawn through spelling keeps
+    /// the noise and drops the names.
+    ///
+    /// The word the correction lands *on* does. On the same two sets the two
+    /// word lists call 8 of 9 real corrections unknown and all 10 ordinary ones
+    /// known. `Sentry` is the miss, and it is capitalised, so the capital is
+    /// the second test — an `or`, so the day `Vercel` enters a dictionary it is
+    /// still offered.
+    ///
+    /// Word by word. `prone -> prone point` was glued to `pronepoint` before it
+    /// was looked up, and no list knows that, so a sentence being repaired was
+    /// offered as a term. One name in the span is enough to offer it.
+    static func refusal(
+        for change: Change, unseen: (String) -> Bool = Vocabulary.unseenWord
+    ) -> Refusal? {
+        let letters = { (s: String) in String(s.filter { $0.isLetter || $0.isNumber }) }
+        // Punctuation or case alone is not a pronunciation. Spacing is: gluing
+        // two words into one is most of this vocabulary — `Red Rock` to
+        // `Redrock`, `Ghost T` to `Ghostty` — so the test that ignores
+        // punctuation must not ignore the space.
+        let spaced = { (s: String) in
+            String(s.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }).lowercased()
+        }
+        guard spaced(change.was) != spaced(change.now) else { return .punctuation }
+        let said = change.now.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        for (offset, word) in said.enumerated() {
+            let bare = letters(word)
+            guard !bare.isEmpty else { continue }
+            if unseen(bare) { return nil }
+            // A capital that is not the one every sentence starts with. The
+            // first word of the *line* was not the right test: a line holds
+            // several sentences, and correcting `Fais` to `Et` at the start of
+            // one mid-line read as a name because of it.
+            if bare.first?.isUppercase == true,
+               !opensSentence(in: change.sentence, at: change.nowAt + offset) {
+                return nil
+            }
+        }
+        return .ordinary
     }
 
     /// The words of a line, punctuation kept: `Vercel.` and `Vercel` are not the
