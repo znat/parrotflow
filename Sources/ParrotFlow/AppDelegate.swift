@@ -3748,9 +3748,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// sentence is kept under that term as a counter-example — a place it does
     /// not live — and no row is offered. Returns true when it took the change.
     ///
-    /// Nothing reads counter-examples yet. `TermPortrait.refusal` is a number
-    /// that was chosen on one dictation, and these are what it takes to measure
-    /// one instead.
+    /// Three of these and `TermPortrait` stops reading the term against a
+    /// floor and reads it against them.
     private func recordCounter(_ change: EditWatch.Change, in sentence: String) -> Bool {
         recordCounter(wrote: change.was, put: change.now, in: sentence)
     }

@@ -444,9 +444,10 @@ to the second, and refused when it sits closer to the second. There is no
 threshold to set: the two are compared directly, and a difference under 0.01
 says nothing either way.
 
-This is what separates "we host our databases on superbase" from "the rocket
-landed on the moon on its superbase", and "how this is a better stack for us"
-from "BetterStack paged me again at three". Measured on 20 held-out sentences
+This is what separates "how this is a better stack for us" from "BetterStack
+paged me again at three": both look like sentences BetterStack lives in, and
+only the first also looks like the ones it was taken out of. Measured on 20
+held-out sentences
 over four terms: 20 right, 0 wrong, 0 quiet, where the floor rule that came
 before it scores 17 / 2 / 1. A term with fewer than three counter-examples
 keeps that floor rule. `--portrait <term> "<sentence>" <word>` prints both

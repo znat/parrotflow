@@ -37,9 +37,8 @@ enum TermUses {
         /// term called Versailles, and everything about where Vercel lives.
         /// `span` is then the word standing at the site, not the term.
         ///
-        /// Nothing decides on these yet. They are kept because
-        /// `TermPortrait.refusal` is a number that was chosen, and these are
-        /// what it takes to measure it instead.
+        /// Three of them under one term and `TermPortrait` builds a second
+        /// centre from them, and reads a new sentence against both.
         var counter: Bool = false
 
         enum Source: String, Codable {
