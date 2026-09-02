@@ -69,7 +69,9 @@ enum LearnCommand {
                     continue
                 }
                 if said != use.said { cut += 1 }
-                let now = TermUses.Use(said: said, span: use.span, from: use.from)
+                let now = TermUses.Use(
+                    said: said, span: use.span, from: use.from, counter: use.counter
+                )
                 // The custom `==` is on the sentence and the span, so two rows
                 // that narrow to the same sentence collapse into one.
                 if !kept.contains(now) { kept.append(now) }
@@ -110,6 +112,35 @@ enum LearnCommand {
         do {
             try TermUses.record(term: term, said: sentence, span: written, from: .seeded)
             print("✓ \(term) belongs at \"\(written)\"")
+            return 0
+        } catch {
+            print("✗ \(error.localizedDescription)")
+            return 1
+        }
+    }
+
+    /// `--against <term> "<sentence>" <word>` — a sentence the term does *not*
+    /// belong in, with the ordinary word that stands where it would go.
+    ///
+    /// No pronunciation is written: this teaches nothing about how a word
+    /// sounds. It is the other half of a portrait, and the only way to seed
+    /// enough of them to measure `TermPortrait.refusal` rather than choose it.
+    static func against(term: String, sentence: String, span: String) -> Int32 {
+        guard TermUses.occurrence(of: span, in: sentence) != nil else {
+            print("✗ \"\(span)\" does not stand as a word in that sentence")
+            return 1
+        }
+        // The term standing in its own sentence is a use, not a counter. Stored
+        // as one it would say the term does not belong where it belongs.
+        guard span.caseInsensitiveCompare(term) != .orderedSame else {
+            print("✗ \"\(span)\" is the term itself — use --for")
+            return 1
+        }
+        do {
+            try TermUses.record(
+                term: term, said: sentence, span: span, from: .seeded, counter: true
+            )
+            print("✓ \(term) does not belong at \"\(span)\"")
             return 0
         } catch {
             print("✗ \(error.localizedDescription)")

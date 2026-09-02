@@ -349,6 +349,16 @@ if let index = arguments.firstIndex(of: "--for") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--against") {
+    guard arguments.indices.contains(index + 3) else {
+        print("usage: ParrotFlow --against <term> \"<sentence>\" <word>")
+        exit(2)
+    }
+    exit(LearnCommand.against(
+        term: arguments[index + 1], sentence: arguments[index + 2], span: arguments[index + 3]
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--forget") {
     guard arguments.indices.contains(index + 1), !arguments[index + 1].hasPrefix("--") else {
         print("usage: ParrotFlow --forget <term>")

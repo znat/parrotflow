@@ -30,6 +30,17 @@ enum TermUses {
         /// telling them apart afterwards is the only way to know which you are
         /// looking at.
         var from: Source = .correction
+        /// The other polarity: a sentence where this term does *not* belong.
+        ///
+        /// Written when a correction runs the other way — the app wrote
+        /// `Vercel` and you put `Versailles` back. That says nothing about a
+        /// term called Versailles, and everything about where Vercel lives.
+        /// `span` is then the word standing at the site, not the term.
+        ///
+        /// Nothing decides on these yet. They are kept because
+        /// `TermPortrait.refusal` is a number that was chosen, and these are
+        /// what it takes to measure it instead.
+        var counter: Bool = false
 
         enum Source: String, Codable {
             /// The correction panel, the spoken command, or `--learn`.
@@ -50,6 +61,11 @@ enum TermUses {
     /// Not a quality limit: with a threshold read off the term's own uses,
     /// more of them separate better rather than worse. This bounds the work of
     /// recomputing a portrait, which is one forward pass per use.
+    ///
+    /// Oldest first, whatever its polarity. A term corrected forty times the
+    /// wrong way would evict the uses its portrait is built from, and then have
+    /// no portrait at all. Not reachable yet — nothing reads counters — but the
+    /// day one does, this needs its own budget.
     static let keep = 40
 
     /// The file is there and cannot be parsed as a whole.
@@ -92,7 +108,10 @@ enum TermUses {
                       said.contains(span)
                 else { return nil }
                 let from = (row["from"] as? String).flatMap(Use.Source.init(rawValue:))
-                return Use(said: said, span: span, from: from ?? .correction)
+                return Use(
+                    said: said, span: span, from: from ?? .correction,
+                    counter: row["counter"] as? Bool ?? false
+                )
             }
             if !uses.isEmpty { out[term] = uses }
         }
@@ -104,7 +123,8 @@ enum TermUses {
     /// The oldest goes when the list is full, so a term that moves on stops
     /// being described by what it used to mean.
     static func record(
-        term: String, said: String, span: String, from: Use.Source = .correction
+        term: String, said: String, span: String, from: Use.Source = .correction,
+        counter: Bool = false
     ) throws {
         let sentence = narrowed(said, to: span)
         // A word, not a substring. `contains` alone let `Vercelli` in.
@@ -113,7 +133,7 @@ enum TermUses {
 
         var all = try read()
         var uses = all[term] ?? []
-        let use = Use(said: sentence, span: span, from: from)
+        let use = Use(said: sentence, span: span, from: from, counter: counter)
         guard !uses.contains(use) else { return }
         uses.append(use)
         if uses.count > keep { uses.removeFirst(uses.count - keep) }
@@ -219,6 +239,9 @@ enum TermUses {
             "#",
             "# Each one teaches what kind of sentence its term appears in. Delete a line",
             "# that was recorded by mistake; the term forgets it at the next correction.",
+            "#",
+            "# `counter: true` is the opposite: a sentence where the term does not belong,",
+            "# recorded when you put an ordinary word back over it. Its `span` is that word.",
             "",
             "terms:",
         ]
@@ -229,6 +252,7 @@ enum TermUses {
                 lines.append("    - said: \(quoted(use.said))")
                 lines.append("      span: \(quoted(use.span))")
                 lines.append("      from: \(use.from.rawValue)")
+                if use.counter { lines.append("      counter: true") }
             }
         }
         lines.append("")

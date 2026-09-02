@@ -198,5 +198,49 @@ PARROTFLOW_CONFIG_DIR="$ODD" "$BIN" --tidy-uses >/dev/null 2>&1
 check "--tidy-uses keeps the sentences of a file it can parse" 3 \
   "$(grep -c '^    - said:' "$ODD/vocabulary-uses.yaml")"
 
+# A correction that runs the other way: the sentence is kept under the term as
+# a place it does not belong, with the ordinary word that stands there.
+AGAINST="$WORK/against"; mkdir -p "$AGAINST"
+AY="$AGAINST/vocabulary-uses.yaml"
+against() { PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --against "$@" 2>/dev/null; }
+# How many lines match, and 0 when the file is not there at all.
+matches() { [ -f "$2" ] || { echo 0; return; }; grep -c "$1" "$2"; }
+
+against Vercel "I love visiting the Versailles Castle." Versailles >/dev/null
+check "a counter-example is stored" 1 "$(matches '^    - said:' "$AY")"
+check "and marked as one" 1 "$(matches '^      counter: true' "$AY")"
+check "under the term, not the word" 1 "$(python3 -c '
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))["terms"]
+print(len([u for u in d.get("Vercel", []) if u.get("counter")]))
+' "$AY" 2>/dev/null)"
+check "and no pronunciation is written" 0 \
+  "$(matches 'heard: Versailles' "$AGAINST/vocabulary.yaml")"
+
+out="$(against Vercel "The word is simply not here." Versailles)"
+check "a sentence without the word is refused" 1 \
+  "$(printf '%s' "$out" | grep -c 'does not stand as a word')"
+check "and nothing is written" 1 "$(matches '^    - said:' "$AY")"
+
+out="$(against Vercel "We deploy the docs on Vercel." Vercel)"
+check "the term standing in its own sentence is not a counter" 1 \
+  "$(printf '%s' "$out" | grep -c 'is the term itself')"
+
+# The portrait is built from confirmed uses, so a counter must not make one
+# look ready. Two uses and a counter is still two uses. No model is loaded:
+# under the minimum, nothing is ever scored.
+PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --for Vercel \
+  "We deploy the dashboard on Vercel every Friday." >/dev/null 2>&1
+PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --for Vercel \
+  "The build is green on Vercel again." >/dev/null 2>&1
+out="$(PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --portrait Vercel 2>/dev/null)"
+check "a counter does not count toward the portrait minimum" 1 \
+  "$(printf '%s' "$out" | grep -c 'no portrait: 2 confirmed use(s)')"
+
+# --tidy-uses rewrites every row, so it has to carry the polarity across.
+PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --tidy-uses >/dev/null 2>&1
+check "--tidy-uses keeps a counter marked" 1 "$(matches '^      counter: true' "$AY")"
+check "and keeps the confirmed uses beside it" 3 "$(matches '^    - said:' "$AY")"
+
 [ "$failed" -eq 0 ] && echo "Every check passed." || echo "Failed: term-uses"
 exit "$failed"
