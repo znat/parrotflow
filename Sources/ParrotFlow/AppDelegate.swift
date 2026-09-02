@@ -509,7 +509,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The other half of the first press. The engine warms above; this is
         // the pill's own window, which costs as much again.
         pill.warm()
-        warmModels()
         recorder.onLevel = { [weak self] level in
             self?.pill.model.level = level
         }
@@ -547,9 +546,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        // After the preview flags return. Those launches draw a panel and
+        // quit; nothing there transcribes, and fetching 1.16 GB for them
+        // is what `warmUpTranscriber` avoided by sitting below this point.
+        warmModels()
+
 
         warmUpLLM()
-        warmUpTranscriber()
 
         // Anything still missing opens the walk, and nothing is asked for yet.
         // The prompt used to fire here, the moment the window appeared — a
@@ -2034,36 +2037,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func warmModels() {
         guard config.transcription.enabled else { return }
         let transcriber = transcriber
-        Task.detached(priority: .background) { await transcriber.warmSentenceModel() }
-        // 81 MB, and the sound pass is on by default, so it is one of the three
-        // rather than something a first dictation waits for.
-        Task.detached(priority: .background) {
-            guard await !NeuralPhonemes.isReady() else { return }
-            do { try await NeuralPhonemes.download() } catch {
-                Log.write("sound model: \(error.localizedDescription); the next"
-                    + " dictation that needs it tries again")
-            }
-        }
-        // 335 MB, and only the sentence gate reads them. Someone who turns the
-        // gate off should not pay for it.
-        if #available(macOS 14, *), config.vocabulary.gateSentence {
-            Task.detached(priority: .background) { await WordVectors.shared.warm() }
-        }
-    }
-
-    /// Starts the Parakeet (and VAD) download at launch, so it's already
-    /// running — ideally already done — by the time the first dictation
-    /// needs it, instead of the first dictation triggering and waiting on it.
-    ///
-    /// `transcriber.prepare` is safe to call again from `transcribe(...)`
-    /// once this is in flight: overlapping callers converge on the same
-    /// download rather than racing two.
-    private func warmUpTranscriber() {
-        guard config.transcription.enabled else { return }
-
-        let transcriber = transcriber
         let config = config
         Task.detached(priority: .background) {
+            // Speech first, on its own. Nothing can be transcribed until it
+            // lands, and it is the only one somebody is waiting for. Started
+            // together, four fetches share the connection and the one that
+            // gates the app finishes last.
+            //
+            // `transcriber.prepare` is safe to call again from `transcribe(...)`
+            // once this is in flight: overlapping callers converge on the same
+            // download rather than racing two.
             let started = Date()
             do {
                 try await transcriber.prepare(config: config)
@@ -2071,7 +2054,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     format: "transcriber: warmed up in %.1fs", Date().timeIntervalSince(started)
                 ))
             } catch {
-                Log.write("transcriber: warm-up failed — \(error.localizedDescription)")
+                // Nothing else is worth fetching. Without speech the app
+                // cannot transcribe at all, so 700 MB more buys nothing, and
+                // whatever stopped this will most likely stop those too. Each
+                // has its own retry on the dictation that first needs it.
+                Log.write("transcriber: warm-up failed — \(error.localizedDescription);"
+                    + " the other models are left for first use")
+                return
+            }
+
+            // The rest together, once speech is in. None of them blocks a
+            // dictation: the stages that read them stand aside until they are
+            // in memory.
+            await transcriber.warmSentenceModel()
+            // 81 MB, and the sound pass is on by default.
+            Task.detached(priority: .background) {
+                guard await !NeuralPhonemes.isReady() else { return }
+                do { try await NeuralPhonemes.download() } catch {
+                    Log.write("sound model: \(error.localizedDescription); the next"
+                        + " dictation that needs it tries again")
+                }
+            }
+            // 335 MB, and only the sentence gate reads them. Someone who turns
+            // the gate off should not pay for it.
+            if #available(macOS 14, *), config.vocabulary.gateSentence {
+                Task.detached(priority: .background) { await WordVectors.shared.warm() }
             }
         }
     }
