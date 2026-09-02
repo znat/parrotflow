@@ -82,14 +82,68 @@ enum NeuralPhonemes {
     private static var cache: [String: [String: String]] = [:]
     private static var loadedFromDisk = false
     private static var savePending = false
+    /// The languages `verifyCache` has already settled this launch.
+    private static var verified: Set<String> = []
     private static let cacheLock = NSLock()
     private static let saveQueue = DispatchQueue(label: "com.parrotflow.phonemes")
 
-    /// Keyed by the model, because an entry is only right for the weights that
-    /// wrote it.
+    /// Named for the model, which is as far as a name gets here. FluidAudio
+    /// publishes no version for these weights and `ModelNames.MultilingualG2P`
+    /// carries no revision, so an updated model arrives under the same two file
+    /// names. `verifyCache` is what actually decides the table is still valid.
     private static var cacheURL: URL {
         AppVariant.supportDirectory
             .appendingPathComponent("phonemes-multilingual-g2p.json")
+    }
+
+    /// Asks the model to confirm a few entries it wrote, and drops the whole
+    /// table if it will not.
+    ///
+    /// A name cannot answer this. New weights land under the same file names,
+    /// and the table under them is then from the model before. The damage is a
+    /// mixed table rather than an old one: a window read by the new model is
+    /// scored against a term read by the old one, over a 0.85 floor, and
+    /// neither reading is wrong on its own.
+    ///
+    /// So three entries per language are asked again, on the first dictation of
+    /// each launch. Three calls, against a table that saves about seven a
+    /// dictation. A disagreement drops everything rather than trying to work
+    /// out which entries are stale, because there is no way to tell: a word the
+    /// two models agree on looks exactly like a word only the new one has seen.
+    ///
+    /// A call that throws decides nothing, same as in `of`. It is a busy model,
+    /// not a different one, and it must not cost a table that is fine.
+    private static func verifyCache(language: MultilingualG2PLanguage) async {
+        let table = language.rawValue
+        cacheLock.lock()
+        let checked = verified.contains(table)
+        let canaries = checked ? [] : (cache[table] ?? [:])
+            .filter { !$0.value.isEmpty }
+            .sorted { $0.key < $1.key }
+            .prefix(3)
+            .map { ($0.key, $0.value) }
+        if !checked { verified.insert(table) }
+        cacheLock.unlock()
+        guard !canaries.isEmpty else { return }
+
+        for (word, was) in canaries {
+            let now: String
+            do {
+                now = try await MultilingualG2PModel.shared
+                    .phonemize(word: word, language: language)?
+                    .joined() ?? ""
+            } catch {
+                return
+            }
+            guard Phonemes.clip(now) != was else { continue }
+            Log.write("phonemes: the model no longer reads \(word) the same way;"
+                + " the saved pronunciations are from other weights and are dropped")
+            cacheLock.lock()
+            cache = [:]
+            cacheLock.unlock()
+            scheduleSave()
+            return
+        }
     }
 
     /// Reads the table now, so the first dictation of the session does not.
@@ -180,6 +234,7 @@ enum NeuralPhonemes {
     ) async -> [String: String] {
         guard await isReady() else { return [:] }
         warmCache()
+        await verifyCache(language: language)
         let table = language.rawValue
         var answer: [String: String] = [:]
         var added = false
