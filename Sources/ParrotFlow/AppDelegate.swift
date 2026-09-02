@@ -3705,7 +3705,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// panel about it would be noise on every dictation.
     private func offerToLearn(_ changes: [EditWatch.Change]) {
         let sentence = changes.first?.sentence ?? ""
-        let worth = changes.filter { teaches($0) }
+        // The counters first. A change that runs the other way is not a rule
+        // to weigh, and `teaches` would drop half of them — `BetterStack` put
+        // back to `better stack` lands on two ordinary words.
+        let worth = changes.filter { !recordCounter($0, in: sentence) }.filter { teaches($0) }
         guard !worth.isEmpty else { return }
         // Never over a panel already up. `show` replaces the rows and rebinds
         // the save, so a second offer would throw the first away without
@@ -3731,6 +3734,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         correctionPanel.show(
             rules: worth.map { (heard: $0.was, corrected: $0.now) }, over: sentence
         )
+    }
+
+    /// A correction that runs the other way, and what to do with it.
+    ///
+    /// `Vercel -> Versailles` is not a term called Versailles. It is the app
+    /// having written `Vercel` where it did not belong, and you putting the
+    /// ordinary word back. Offering it as a rule would build the mirror of a
+    /// rule that already exists, and then each word proposes the other for as
+    /// long as both stand.
+    ///
+    /// So the tell is the left side: a heard word that is already a term. The
+    /// sentence is kept under that term as a counter-example — a place it does
+    /// not live — and no row is offered. Returns true when it took the change.
+    ///
+    /// Nothing reads counter-examples yet. `TermPortrait.refusal` is a number
+    /// that was chosen on one dictation, and these are what it takes to measure
+    /// one instead.
+    private func recordCounter(_ change: EditWatch.Change, in sentence: String) -> Bool {
+        recordCounter(wrote: change.was, put: change.now, in: sentence)
+    }
+
+    /// The term a correction runs against, or nil if it runs the usual way.
+    ///
+    /// The same term standing on both sides is a capital or a possessive being
+    /// fixed — `vercel` to `Vercel` — and says nothing about where the term
+    /// belongs. `teaches` throws those out on its own.
+    private func counterTerm(wrote written: String, put back: String) -> String? {
+        guard let term = existingTerm(named: written) else { return nil }
+        guard existingTerm(named: back) != term else { return nil }
+        return term
+    }
+
+    /// Keep the sentence under the term as a place it does not belong.
+    ///
+    /// True only when a row was written. `TermUses.record` writes nothing when
+    /// the word does not stand in the sentence as a word, and says so by doing
+    /// nothing at all, so the position is asked for first: a change that is
+    /// neither kept nor offered is a correction the app watched you make and
+    /// threw away.
+    private func recordCounter(
+        wrote written: String, put back: String, in sentence: String
+    ) -> Bool {
+        guard let term = counterTerm(wrote: written, put: back) else { return false }
+        guard TermUses.occurrence(of: back, in: sentence) != nil else {
+            Log.write("correction: \"\(back)\" does not stand in the sentence,"
+                + " so \(term) gets no counter-example")
+            return false
+        }
+        let heard = config.vocabulary.terms[term]?.heard ?? []
+        let ours = heard.contains { $0.caseInsensitiveCompare(back) == .orderedSame }
+        do {
+            try TermUses.record(term: term, said: sentence, span: back, counter: true)
+            // One term corrected into another — `Praizy` into `Praisy` — says
+            // two things at once, and both are worth keeping: the first does
+            // not live here and the second does.
+            if let right = existingTerm(named: back) {
+                try TermUses.record(term: right, said: sentence, span: back)
+            }
+            Log.write(
+                "correction: \"\(written)\" -> \"\(back)\" is a counter-example for"
+                    + " \(term)\(ours ? ", written by its own rule" : "")")
+            flash("Noted  \(term) does not belong there", tone: .done)
+        } catch {
+            Log.write("could not record the counter-example: \(error.localizedDescription)")
+            return false
+        }
+        return true
+    }
+
+    /// The vocabulary term this word is, ignoring case and any possessive.
+    private func existingTerm(named word: String) -> String? {
+        var bare = word.trimmingCharacters(in: .whitespaces)
+        if let mine = Vocabulary.possessive(in: bare) {
+            bare = String(bare.dropLast(mine.suffix.count))
+        }
+        bare = bare.trimmingCharacters(in: .punctuationCharacters)
+        guard !bare.isEmpty else { return nil }
+        return config.vocabulary.terms.keys.first {
+            $0.caseInsensitiveCompare(bare) == .orderedSame
+        }
     }
 
     /// Is this correction about a name, or about English?
@@ -4745,6 +4828,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// went on to rewrite the field would leave the two disagreeing.
     private func learn(_ rules: [TaughtRule], in corrected: String) -> Bool {
         for rule in rules {
+            // A rule whose heard side is already a term runs the other way:
+            // the app wrote the term where it did not belong and you put the
+            // ordinary word back. The sentence is kept under the term as a
+            // counter-example and the pronunciation is not written — it would
+            // be the mirror of a rule that stands, and then each word proposes
+            // the other for as long as both are there.
+            if let term = counterTerm(wrote: rule.heard, put: rule.corrected) {
+                if !recordCounter(wrote: rule.heard, put: rule.corrected, in: corrected) {
+                    Log.write("correction: \(rule.heard) -> \(rule.corrected) runs against"
+                        + " \(term); no counter-example was written and no rule either")
+                }
+                continue
+            }
             do {
                 try ConfigWriter.addVocabularyPronunciation(
                     term: rule.corrected, heard: rule.heard, kind: rule.kind
