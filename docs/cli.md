@@ -358,6 +358,11 @@ $PF --audio-recovery     # what the recorder does when the microphone changes
 bit depth, peak level, and whether the file is the right size for its duration.
 A silent clip or a short file gets a non-zero exit.
 
+It also prints how long it waited for the first sample. `start` returns as soon
+as the audio graph is running, which is before the device sends anything, and
+anything said in that window is not in the file. Measured cold on this machine:
+330 ms, of which 105 ms was after the engine was up.
+
 `--watch-modifiers` is the one to reach for if a bare-modifier hotkey seems
 dead — it shows whether the key is reaching the app at all, and whether left
 and right are distinguishable on your keyboard.
@@ -810,6 +815,13 @@ jq -r 'select((.asr.words|length > 0) and (.vad.segments|length > 0)) |
 # `silenceRetryPads` exists — see Transcriber.swift.
 jq -r 'select(((.asr.text // "") | length) == 0 and (.vad.segments|length > 0)) |
        [.wav, .vad.speech, .vad.total] | @tsv' trace.jsonl
+
+# How much of a dictation is spoken before the microphone is recording.
+# `capture.first_sample` is seconds from the key going down; `capture.engine`
+# is the part of it spent getting the audio graph running. Live dictations
+# only — a clip replayed from disk was never pressed for.
+jq -r 'select(.capture.first_sample) |
+       [.wav, .capture.engine, .capture.first_sample] | @tsv' trace.jsonl
 
 # What each stage really costs on your own sentences.
 jq -r '.stages[]? | select(.seconds) | [.name, .seconds] | @tsv' trace.jsonl |

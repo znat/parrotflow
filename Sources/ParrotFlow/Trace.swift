@@ -88,6 +88,7 @@ enum Trace {
         let source: Source
         private var asr: ASR?
         private var vad: VAD?
+        private var capture: Capture?
         private var stages: [Stage] = []
         private var final: String?
         private var lang: String?
@@ -127,6 +128,19 @@ enum Trace {
                 speech: speech, total: total,
                 segments: segments.map { [$0.0, $0.1] }
             )
+        }
+
+        /// How long the press waited, in seconds, before the engine was running
+        /// and before the microphone delivered anything.
+        ///
+        /// Both from the press, so the difference between them is the device's
+        /// own start-up. Everything before `firstSample` is speech that was
+        /// said into a microphone that was not yet recording — the clips that
+        /// begin mid-word have no other explanation, and until this field there
+        /// was nothing on disk that could size it.
+        func recordCapture(engine: Double?, firstSample: Double?) {
+            lock.lock(); defer { lock.unlock() }
+            capture = Capture(engine: engine, firstSample: firstSample)
         }
 
         /// - Parameter code: the category, for grouping. The prose beside it
@@ -178,7 +192,7 @@ enum Trace {
             return Record(
                 v: Trace.version, kind: Kind.dictation.rawValue,
                 at: at, wav: wav, source: source.rawValue, app: app, lang: lang,
-                asr: asr, vad: vad, stages: stages, final: final
+                asr: asr, vad: vad, capture: capture, stages: stages, final: final
             )
         }
     }
@@ -374,6 +388,7 @@ enum Trace {
         let lang: String?
         let asr: ASR?
         let vad: VAD?
+        let capture: Capture?
         let stages: [Stage]
         let final: String?
     }
@@ -416,6 +431,18 @@ enum Trace {
         let speech: Double
         let total: Double
         let segments: [[Double]]
+    }
+
+    /// Seconds from the hotkey press. Written by a live dictation only: a clip
+    /// replayed from disk was never pressed for.
+    fileprivate struct Capture: Encodable {
+        let engine: Double?
+        let firstSample: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case engine
+            case firstSample = "first_sample"
+        }
     }
 
     struct Word: Encodable {

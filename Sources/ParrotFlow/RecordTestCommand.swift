@@ -26,6 +26,10 @@ enum RecordTestCommand {
         var peak: Float = 0
         recorder.onLevel = { peak = max(peak, $0) }
 
+        // Stands in for the hotkey press: the app measures from the key going
+        // down, and the question is the same one — how much of what follows is
+        // said before anything is recording.
+        let pressed = Date()
         do {
             let url = try recorder.start(config: config)
             print("● recording \(seconds)s → \(url.lastPathComponent)")
@@ -42,15 +46,22 @@ enum RecordTestCommand {
             return 1
         }
 
-        return report(recording: recording, peak: peak, config: config)
+        return report(recording: recording, peak: peak, config: config, pressed: pressed)
     }
 
-    private static func report(recording: Recorder.Recording, peak: Float, config: Config) -> Int32 {
+    private static func report(
+        recording: Recorder.Recording, peak: Float, config: Config, pressed: Date
+    ) -> Int32 {
         let attributes = try? FileManager.default.attributesOfItem(atPath: recording.url.path)
         let bytes = (attributes?[.size] as? Int) ?? 0
 
         print("✓ wrote \(recording.url.path)")
         print("  duration   \(String(format: "%.2f", recording.duration))s")
+        // The gap this prints is speech that would have been lost. `start`
+        // returns as soon as the graph runs; the device sends when it is ready.
+        if let first = recording.firstSampleAt {
+            print("  waited     \(String(format: "%.0f", first.timeIntervalSince(pressed) * 1000)) ms for the first sample")
+        }
         print("  size       \(bytes) bytes")
         // The same number the app judges a clip by, so what this prints and
         // what the menu bar would warn about are one measurement.
