@@ -94,7 +94,29 @@ final class CorrectionModel: ObservableObject {
     /// this way has a heard word like any other.
     func load(rules proposed: [(heard: String, corrected: String)], over sentence: String = "") {
         self.sentence = sentence
-        rows = proposed.map { rule in
+        // What the vocabulary already says about this term beats what a tagger
+        // guesses about the word. A term you have already labelled is labelled,
+        // and offering a different answer for it invites you to disagree with
+        // yourself one row at a time.
+        let known = ((try? ConfigStore.load())?.vocabulary.terms ?? [:])
+            .reduce(into: [String: WordKind]()) { out, entry in
+                if let kind = entry.value.kind { out[entry.key.lowercased()] = kind }
+            }
+        rows = proposed.map { proposal in
+            // The possessive belongs to the sentence, not to the name. Saved as
+            // it stands, `Precey's -> Praizy's` teaches a term called `Praizy's`
+            // beside the one called `Praizy`, and a vocabulary that holds both
+            // is worse than one that holds neither.
+            var rule = proposal
+            if let mine = Vocabulary.possessive(in: rule.corrected),
+               let theirs = Vocabulary.possessive(in: rule.heard) {
+                rule.corrected = String(rule.corrected.dropLast(mine.suffix.count))
+                rule.heard = String(rule.heard.dropLast(theirs.suffix.count))
+            }
+            let word = rule.corrected.trimmingCharacters(in: .punctuationCharacters)
+            if let already = known[word.lowercased()] {
+                return CorrectionRow(heard: rule.heard, corrected: rule.corrected, kind: already)
+            }
             let tag = Tagger.tokens(in: rule.corrected, language: nil).first?.tag
             return CorrectionRow(
                 heard: rule.heard, corrected: rule.corrected, kind: .from(tag: tag)

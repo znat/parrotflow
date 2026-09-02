@@ -41,7 +41,11 @@ final class EditWatch {
         let at: Int
     }
 
-    var onChange: ((Change) -> Void)?
+    /// Every correction of one settling, handed over at once.
+    ///
+    /// At once because they are reviewed at once: several words fixed in one
+    /// pass are one act, and one panel listing them is what that act deserves.
+    var onCorrections: (([Change]) -> Void)?
 
     /// The whole field as it stood when the dictation landed. Both sides of the
     /// comparison are field snapshots, so neither has to be located in the
@@ -230,8 +234,8 @@ final class EditWatch {
         seen = [:]
         for change in changes {
             Log.write("edit watch: \"\(change.was)\" became \"\(change.now)\"")
-            onChange?(change)
         }
+        onCorrections?(changes)
     }
 
     private func read() {
@@ -333,14 +337,44 @@ final class EditWatch {
             // of it was meant.
             guard left >= 1, right >= 1, left <= 2, right <= 2, left + right <= 3
             else { continue }
-            found.append(Change(
+            let pair = Self.trimmed(
                 was: old[fromI ..< i].joined(separator: " "),
-                now: new[fromJ ..< j].joined(separator: " "),
-                sentence: now,
-                at: fromI
-            ))
+                now: new[fromJ ..< j].joined(separator: " ")
+            )
+            found.append(Change(was: pair.was, now: pair.now, sentence: now, at: fromI))
         }
         return found
+    }
+
+    /// The two readings with the punctuation they share taken off both.
+    ///
+    /// A word here is whatever stood between two spaces, and two dictations
+    /// that ran together have none: "terminal.Ghost" became "terminal.Ghostty"
+    /// and the whole run was offered as the rule. What was corrected is the
+    /// letters, so the shared prompt, stop or comma comes off first.
+    ///
+    /// Only punctuation is cut, never letters. `Prizzy -> Praizy` shares "Pr"
+    /// and "zy" and must survive whole; cutting shared letters would offer
+    /// "iz -> aiz", which is not a word anybody said.
+    static func trimmed(was: String, now: String) -> (was: String, now: String) {
+        let a = Array(was), b = Array(now)
+        func plain(_ c: Character) -> Bool { c.isLetter || c.isNumber }
+
+        var shared = 0
+        while shared < a.count, shared < b.count, a[shared] == b[shared] { shared += 1 }
+        var head = 0
+        for i in 0 ..< shared where !plain(a[i]) { head = i + 1 }
+
+        var tail = 0
+        while tail < a.count - head, tail < b.count - head,
+              a[a.count - 1 - tail] == b[b.count - 1 - tail],
+              !plain(a[a.count - 1 - tail]) {
+            tail += 1
+        }
+
+        guard head + tail > 0, a.count - head - tail > 0, b.count - head - tail > 0
+        else { return (was, now) }
+        return (String(a[head ..< (a.count - tail)]), String(b[head ..< (b.count - tail)]))
     }
 
     /// The words of a line, punctuation kept: `Vercel.` and `Vercel` are not the
@@ -360,6 +394,10 @@ final class EditWatch {
     }
 
     /// What terminals and shells put in front of the line being typed.
+    ///
+    /// A terminal artefact and nothing more general: it is here because the
+    /// field being watched is often a shell prompt, not because a chevron means
+    /// anything anywhere else.
     private static let prompts: Set<Character> = ["❯", ">", "$", "%", "#", "›", "→"]
 
     /// The line the words went on.
