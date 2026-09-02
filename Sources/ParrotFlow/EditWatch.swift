@@ -393,6 +393,17 @@ final class EditWatch {
         return text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
     }
 
+    /// Whether the word at `at` opens a sentence on this line.
+    ///
+    /// The first word of the line does, and so does any word after one that
+    /// ends in a stop. Both are places a capital means nothing.
+    static func opensSentence(in line: String, at index: Int) -> Bool {
+        guard index > 0 else { return true }
+        let said = words(of: line)
+        guard index - 1 < said.count else { return true }
+        return ".!?".contains(said[index - 1].last ?? " ")
+    }
+
     /// What terminals and shells put in front of the line being typed.
     ///
     /// A terminal artefact and nothing more general: it is here because the

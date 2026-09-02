@@ -16,7 +16,14 @@ enum EditDiffCommand {
             print("no single change")
             return 0
         }
-        for change in changes { print("\(change.was) -> \(change.now)") }
+        for change in changes {
+            print("\(change.was) -> \(change.now)")
+            // Whether a capital here means anything. `teaches` offers a
+            // correction onto a capitalised word unless the word opens a
+            // sentence, where every word is capitalised and the capital says
+            // nothing about the word.
+            print("  opens: \(EditWatch.opensSentence(in: change.sentence, at: change.at))")
+        }
         print("  in: \(changes[0].sentence)")
         return 0
     }

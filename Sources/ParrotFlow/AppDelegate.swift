@@ -3765,8 +3765,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if Vocabulary.unseenWord(letters(change.now)) { return true }
         // A capital that is not the one every sentence starts with.
-        let line = change.sentence.trimmingCharacters(in: .whitespaces)
-        let opens = line.hasPrefix(change.now) || line.dropFirst().hasPrefix(change.now)
+        // A capital that is not the one every sentence starts with.
+        //
+        // The first word of the *line* was not the right test. A line holds
+        // several sentences, and every one of them opens with a capital:
+        // correcting `Fais` to `Et` at the start of a sentence mid-line read
+        // as a name because of it, and a French grammar fix was offered as a
+        // vocabulary rule.
+        let opens = EditWatch.opensSentence(in: change.sentence, at: change.at)
         if change.now.first?.isUppercase == true, !opens { return true }
         Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is ordinary English;"
             + " not offered")
