@@ -2054,7 +2054,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     format: "transcriber: warmed up in %.1fs", Date().timeIntervalSince(started)
                 ))
             } catch {
-                Log.write("transcriber: warm-up failed — \(error.localizedDescription)")
+                // Nothing else is worth fetching. Without speech the app
+                // cannot transcribe at all, so 700 MB more buys nothing, and
+                // whatever stopped this will most likely stop those too. Each
+                // has its own retry on the dictation that first needs it.
+                Log.write("transcriber: warm-up failed — \(error.localizedDescription);"
+                    + " the other models are left for first use")
+                return
             }
 
             // The rest together, once speech is in. None of them blocks a
