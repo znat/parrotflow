@@ -384,15 +384,34 @@ actor Vocabulary {
             term = right.stem
         }
         let letters = heard.filter { $0.isLetter || $0.isWhitespace }
-        if letters.contains(" ") {
-            let glued = letters.replacingOccurrences(of: " ", with: "").lowercased()
-            return glued == term.lowercased()
-        }
+        if letters.contains(" ") { return glues(heard: heard, term: term) }
         let bare = String(letters)
         guard !bare.isEmpty else { return false }
         guard !dropsPossessive(heard: heard, term: term) else { return false }
         guard !dropsApostrophe(heard: heard, term: term) else { return false }
         return unseenWord(bare)
+    }
+
+    /// A term the decoder split into words: `red crawl` for `Redcrawl`.
+    ///
+    /// Same phonemes, a space in the middle, so no word list can be asked about
+    /// it — both halves are ordinary words. It is matched glued instead.
+    ///
+    /// True whenever the glued form is the term, which is also true when the
+    /// glued form is an ordinary English phrase: `better stack` is `BetterStack`
+    /// by this test and a stack that is better in every sentence anybody says.
+    /// `VocabularyJudge.settle` is where that costs nothing and where it does.
+    static func glues(heard: String, term: String) -> Bool {
+        var heard = heard, term = term
+        if let left = possessive(in: heard), let right = possessive(in: term),
+           !left.stem.isEmpty, !right.stem.isEmpty {
+            heard = left.stem
+            term = right.stem
+        }
+        let letters = heard.filter { $0.isLetter || $0.isWhitespace }
+        guard letters.contains(" ") else { return false }
+        let glued = letters.replacingOccurrences(of: " ", with: "").lowercased()
+        return glued == term.lowercased()
     }
 
     /// Whether writing the term here would take away a possessive the speaker

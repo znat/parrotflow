@@ -36,20 +36,31 @@ import Foundation
 /// — see `SlotGate`. Nothing is downloaded: with no cached model the slot reads
 /// `unavailable` and the route is `judge`.
 ///
+/// A span that glues to the term is the one case where the two lines disagree:
+///
+///     ParrotFlow --word-gate "better stack" BetterStack
+///     gate       auto-apply (a rule's write is left to the sentence)
+///
+/// The lists are never asked about a glued span, so the gate really does say
+/// auto-apply. What happens next depends on where the proposal came from, and
+/// that is not something a word and a term can say: a `replacements` rule is
+/// left open by `VocabularyJudge.settle`, and the sound path still writes it.
+/// The route printed is the rule's, since these two arguments carry no audio.
+///
 /// No audio. The pair form fixes the scores so the term wins, because the
 /// acoustic half is not what it is asking; a proposal whose term loses on
 /// sound never reaches these conditions.
 enum WordGateCommand {
     static func run(word: String, term: String? = nil, sentence: String? = nil) -> Int32 {
         if let term, !term.isEmpty {
-            let applies = pair(heard: word, term: term)
+            let writes = pair(heard: word, term: term)
             guard let sentence, !sentence.isEmpty else { return 0 }
             guard #available(macOS 14, *) else {
                 print("slot       unavailable")
                 print("route      judge")
                 return 0
             }
-            printSlot(heard: word, term: term, in: sentence, applies: applies)
+            printSlot(heard: word, term: term, in: sentence, applies: writes)
             return 0
         }
 
@@ -88,8 +99,14 @@ enum WordGateCommand {
         let applies = Vocabulary.autoApplies(
             heard: heard, term: term, heardScore: -1, termScore: 0
         )
-        print("gate       \(applies ? "auto-apply" : "judge")")
-        return applies
+        let glues = applies && Vocabulary.glues(heard: heard, term: term)
+        let verdict = applies
+            ? (glues ? "auto-apply (a rule's write is left to the sentence)" : "auto-apply")
+            : "judge"
+        print("gate       \(verdict)")
+        // What a rule would do. These arguments carry no audio, so a rule is
+        // the proposal this can answer about.
+        return applies && !glues
     }
 
     /// The model tiers, on the proposal the lexical gate did not settle.
@@ -127,6 +144,8 @@ enum WordGateCommand {
         print("slot       \(reading.tag.isEmpty ? "untagged" : reading.tag)")
         // `apply` is not a route any more — the lexical gate is the only thing
         // that writes without asking, and it has already printed its verdict.
+        // A glued span reaches here as `false`: `settle` leaves a rule's write
+        // to the sentence and never asks the slot about it.
         let route = applies
             ? "apply"
             : (Vocabulary.dropsPossessive(heard: heard, term: term) ? "judge" : reading.route.rawValue)
