@@ -42,6 +42,12 @@ settings untouched — and puts the corrected sentence back where it came from.
 A row with a blank right-hand side is skipped, so the words you did not come to
 fix cost nothing.
 
+**A correction the other way teaches nothing to save.** When you put an
+ordinary word back over a term the app wrote — `Vercel` back to `Versailles` —
+no rule is offered. The rule would be the mirror of one you already have, and
+then each word would propose the other forever. The sentence is kept under the
+term instead, as a counter-example: a place that term does not belong.
+
 ## Saying the spelling instead
 
 You can skip the panel entirely and just say the correction:

@@ -21,9 +21,13 @@ enum TermPortraitCommand {
             print("no confirmed uses yet — correct a name, or seed one with --learn --in")
             return 0
         }
-        print("  term            uses  seeded  floor   last sentence")
+        print("  term            uses  seeded  against  floor   last sentence")
         for term in stored.keys.sorted() {
-            guard let uses = stored[term] else { continue }
+            guard let all = stored[term] else { continue }
+            // `uses` and `seeded` count what a portrait is built from, so a
+            // counter shows in one column only.
+            let uses = all.filter { !$0.counter }
+            let against = all.count - uses.count
             let seeded = uses.filter { $0.from == .seeded }.count
             let floor = Blocking.run { () async -> Double? in
                 (try? await TermPortrait.shared.summary(for: term))??.floor
@@ -31,7 +35,7 @@ enum TermPortraitCommand {
             let shown = floor.map { String(format: "%.3f", $0) } ?? "   —"
             let last = uses.last?.said ?? ""
             print("  \(pad(term, 15)) \(pad(String(uses.count), 5)) \(pad(String(seeded), 7))"
-                + " \(shown)   \(last.prefix(44))")
+                + " \(pad(String(against), 8)) \(shown)   \(last.prefix(44))")
         }
         return 0
     }
@@ -68,7 +72,7 @@ enum TermPortraitCommand {
             return 1
         case .success(let (summary, score)):
             guard let summary else {
-                let held = TermUses.load()[term]?.count ?? 0
+                let held = TermUses.load()[term]?.filter { !$0.counter }.count ?? 0
                 print("no portrait: \(held) confirmed use(s), \(TermPortrait.minimum) needed")
                 return 0
             }
@@ -78,7 +82,10 @@ enum TermPortraitCommand {
             )
             if sentence == nil {
                 for use in TermUses.load()[term] ?? [] {
-                    print("  \(use.from == .seeded ? "seeded " : "learned") \(use.said)")
+                    let mark = use.counter
+                        ? "against"
+                        : (use.from == .seeded ? "seeded " : "learned")
+                    print("  \(mark) \(use.said)")
                 }
             }
             if let score {

@@ -204,20 +204,27 @@ actor TermPortrait {
     // MARK: - building it
 
     func summary(for term: String) async throws -> Summary? {
-        let uses = TermUses.load()[term] ?? []
+        let all = TermUses.load()[term] ?? []
+        // Counter-examples are sentences the term does *not* belong in. They
+        // are fingerprinted, so adding one rebuilds, but they never enter the
+        // centre, the tightness or the floor: those describe where the term
+        // lives, and a counter is the other place.
+        let uses = all.filter { !$0.counter }
         guard uses.count >= Self.minimum else { return nil }
-        let mark = Self.fingerprint(of: uses)
+        let mark = Self.fingerprint(of: all)
 
         if !loadedFromDisk { cache = Self.readCache(); loadedFromDisk = true }
         if let held = cache[term], held.fingerprint == mark { return held }
 
-        let built = try await Self.build(uses)
+        let built = try await Self.build(uses, fingerprint: mark)
         cache[term] = built
         Self.writeCache(cache)
         return built
     }
 
-    private static func build(_ uses: [TermUses.Use]) async throws -> Summary {
+    private static func build(
+        _ uses: [TermUses.Use], fingerprint mark: String
+    ) async throws -> Summary {
         var vectors: [[Float]] = []
         for use in uses {
             vectors.append(
@@ -240,7 +247,7 @@ actor TermPortrait {
             centre: centre,
             tightness: tightness,
             floor: quantileOf(selves, at: quantile),
-            fingerprint: fingerprint(of: uses),
+            fingerprint: mark,
             uses: uses.count
         )
     }
@@ -277,7 +284,11 @@ actor TermPortrait {
     }
 
     private static func fingerprint(of uses: [TermUses.Use]) -> String {
-        let joined = uses.map { "\($0.span)\u{1}\($0.said)" }.joined(separator: "\u{2}")
+        // The polarity is in the mark, so a counter added to a term rebuilds
+        // its portrait even though it never enters one.
+        let joined = uses
+            .map { "\($0.counter ? "-" : "+")\($0.span)\u{1}\($0.said)" }
+            .joined(separator: "\u{2}")
         let digest = SHA256.hash(data: Data(joined.utf8))
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
