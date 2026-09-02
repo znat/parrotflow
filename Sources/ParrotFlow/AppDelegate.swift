@@ -3715,6 +3715,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// panel about it would be noise on every dictation.
     private func offerToLearn(_ changes: [EditWatch.Change]) {
         let sentence = changes.first?.sentence ?? ""
+        // Every change is written down first, whatever the panel does with
+        // it. A word changed to a word both lists know is not offered, and it
+        // is the one label a misheard-word stage cannot get any other way.
+        for change in changes where !EditWatch.onlyPunctuation(change) {
+            let heard = EditWatch.asHeard(change)
+            Trace.edit(
+                heard: change.was, corrected: change.now,
+                text: heard.text, range: heard.range,
+                lang: DictationLanguage.forCorrection(
+                    transcript: heard.text, allowed: config.transcription.languages
+                ),
+                app: lastDictated?.owner?.localizedName,
+                after: Date().timeIntervalSince(edits.startedAt)
+            )
+        }
         // The counters first. A change that runs the other way is not a rule
         // to weigh, and `teaches` would drop half of them — `BetterStack` put
         // back to `better stack` lands on two ordinary words.

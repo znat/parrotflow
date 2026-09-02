@@ -32,6 +32,18 @@ in two — "red crawl" for Redcrawl arrives as two ordinary words and no proposa
 can join them. Type over the left field to widen the row to the span you meant,
 and the rule taught is `red crawl => Redcrawl`, which leaves the colour alone.
 
+**Every word you change by hand is written down**, whether or not the panel
+opens on it. One line per change in `trace.jsonl` beside your recordings,
+with `kind: "edit"`: the word as heard, what you typed, the twelve words
+either side as they were before you changed them, and where the heard word
+stands in that text. A misheard ordinary word — `backgrounds` for `bigrams` —
+is never a vocabulary rule, and this is the only record of it. The file holds
+your own sentences, and that is deliberate: a count without its context is
+no use to anything that would put the right word back. The same file holds
+your dictation records, so to forget the edits alone keep the other lines:
+
+    jq -c 'select(.kind != "edit")' trace.jsonl > kept.jsonl
+
 Saving writes one rule per row to `vocabulary.yaml` — comments and your other
 settings untouched — and puts the corrected sentence back where it came from.
 A row with a blank right-hand side is skipped, so the words you did not come to

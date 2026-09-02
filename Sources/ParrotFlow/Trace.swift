@@ -50,6 +50,7 @@ enum Trace {
     enum Kind: String {
         case dictation
         case correction
+        case edit
     }
 
     /// The app a dictation was spoken into.
@@ -249,6 +250,22 @@ enum Trace {
         )
     }
 
+    /// Writes down a word changed by hand. See `Edit`.
+    static func edit(
+        heard: String, corrected: String, text: String, range: Range<Int>,
+        lang: String, app: String?, after: TimeInterval
+    ) {
+        append(
+            Edit(
+                v: version, kind: Kind.edit.rawValue, at: stamp(),
+                heard: heard, corrected: corrected, text: text,
+                range: [range.lowerBound, range.upperBound], lang: lang, app: app,
+                after: (after * 10).rounded() / 10
+            ),
+            to: directory
+        )
+    }
+
     private static let queue = DispatchQueue(label: "com.parrotflow.trace")
 
     /// Waits for queued writes to reach the file. Same reason as `Log.flush` —
@@ -400,11 +417,8 @@ enum Trace {
     /// got a word wrong and what the right one was. It cannot be reconstructed
     /// afterwards from anything else on disk.
     ///
-    /// These are the corrections ParrotFlow already mediates — the panel, an
-    /// inline instruction, `--learn` — and nothing more. Watching the field
-    /// after the text lands would catch more of them, and would mean reading
-    /// another app's content back out through Accessibility after we have given
-    /// focus away. That is a different thing to be, and not one this file needs.
+    /// These are the corrections ParrotFlow mediates — the panel, an inline
+    /// instruction, `--learn`. A change made by hand in the field is `Edit`.
     fileprivate struct Correction: Encodable {
         let v: Int
         let kind: String
@@ -412,6 +426,40 @@ enum Trace {
         let heard: String
         let corrected: String
         let via: String
+    }
+
+    /// A word changed by hand in the field after the dictation landed.
+    ///
+    /// Every one the watch sees, not only the ones the panel opens on. A
+    /// misheard ordinary word — `backgrounds` for `bigrams` — is refused by
+    /// the panel because both sides are words the lists know, and it is
+    /// exactly the label a misheard-word stage would need. Rewords are kept
+    /// too: at record time nothing can tell `hear -> say` from `drew -> few`,
+    /// since real mishearings score 0.20 to 0.43 on the sound measure and
+    /// unrelated words in the same slot score the same. Sound is a question
+    /// for whoever reads the file.
+    ///
+    /// `text` is the line **as heard**, before the change, and `range` is
+    /// where `heard` stands in it, in characters. A sentence with the fix
+    /// already in it is worse than none: the term portrait was once scored
+    /// on text after the rule had written the term in, and 4 of 4 cases
+    /// flipped when scored as heard.
+    ///
+    /// This stores the person's own sentences. That is the point of it: a
+    /// count table keeps statistics and drops the context, and the context is
+    /// what a scorer needs. `docs/corrections.md` says so.
+    fileprivate struct Edit: Encodable {
+        let v: Int
+        let kind: String
+        let at: String
+        let heard: String
+        let corrected: String
+        let text: String
+        let range: [Int]
+        let lang: String
+        let app: String?
+        /// Seconds between the dictation landing and the change.
+        let after: Double
     }
 
     fileprivate struct ASR: Encodable {

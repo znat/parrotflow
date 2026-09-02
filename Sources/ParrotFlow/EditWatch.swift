@@ -45,6 +45,11 @@ final class EditWatch {
         /// words into one or splits one into two, so anything reading
         /// `sentence` by index has to use this one.
         let nowAt: Int
+        /// The line as it was written, which `at` indexes. What a scorer
+        /// needs is the text as heard, and `sentence` already has the fix in.
+        let written: String
+        /// How many words of `written` the change covers, from `at`.
+        let span: Int
     }
 
     /// Every correction of one settling, handed over at once.
@@ -107,6 +112,11 @@ final class EditWatch {
 
     var isRunning: Bool { !monitors.isEmpty }
 
+    /// When the dictation this watch is about landed. A change two seconds
+    /// later is most likely a mishearing being fixed; five minutes later it
+    /// is more likely a change of mind. Recorded, not decided on.
+    private(set) var startedAt = Date()
+
     /// Watch the field the dictation just landed in.
     ///
     /// `snapshot` is the whole field as it stands now, not the dictation alone.
@@ -114,6 +124,7 @@ final class EditWatch {
     /// anybody is still editing.
     func start(dictated words: String, in element: AXUIElement?) {
         generation += 1
+        startedAt = Date()
         before = nil
         dictated = words
         field = element
@@ -359,7 +370,10 @@ final class EditWatch {
                 was: old[fromI ..< i].joined(separator: " "),
                 now: new[fromJ ..< j].joined(separator: " ")
             )
-            found.append(Change(was: pair.was, now: pair.now, sentence: now, at: fromI, nowAt: fromJ))
+            found.append(Change(
+                was: pair.was, now: pair.now, sentence: now, at: fromI, nowAt: fromJ,
+                written: before, span: i - fromI
+            ))
         }
         return found
     }
@@ -400,6 +414,27 @@ final class EditWatch {
         return (String(a[head ..< (a.count - tail)]), String(b[head ..< (b.count - tail)]))
     }
 
+    /// The line as heard around the change, and where `was` stands in it.
+    ///
+    /// Twelve words either side, clipped to the line. That is the window the
+    /// scorers read; the whole line is a terminal's input box and may hold
+    /// several dictations. The words are joined with single spaces, so a row
+    /// that wrapped comes back as one line, and the range is in characters
+    /// of the text returned.
+    static func asHeard(_ change: Change, margin: Int = 12) -> (text: String, range: Range<Int>) {
+        let said = words(of: change.written)
+        let end = min(said.count, change.at + change.span)
+        guard change.at < end else { return (change.was, 0 ..< change.was.count) }
+        let from = max(0, change.at - margin)
+        let to = min(said.count, end + margin)
+        let text = said[from ..< to].joined(separator: " ")
+        let run = said[change.at ..< end].joined(separator: " ")
+        let head = said[from ..< change.at].reduce(0) { $0 + $1.count + 1 }
+        let inner = run.range(of: change.was).map { run.distance(from: run.startIndex, to: $0.lowerBound) } ?? 0
+        let start = head + inner
+        return (text, start ..< start + change.was.count)
+    }
+
     // MARK: - the offer
 
     /// Why a change is not worth a panel.
@@ -415,6 +450,17 @@ final class EditWatch {
             case .ordinary: return "ordinary English"
             }
         }
+    }
+
+    /// Punctuation or case alone, which is not a pronunciation. Spacing is:
+    /// gluing two words into one is most of this vocabulary — `Red Rock` to
+    /// `Redrock`, `Ghost T` to `Ghostty` — so the test that ignores
+    /// punctuation must not ignore the space.
+    static func onlyPunctuation(_ change: Change) -> Bool {
+        let spaced = { (s: String) in
+            String(s.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }).lowercased()
+        }
+        return spaced(change.was) == spaced(change.now)
     }
 
     /// Is this correction about a name, or about English?
@@ -437,14 +483,7 @@ final class EditWatch {
         for change: Change, unseen: (String) -> Bool = Vocabulary.unseenWord
     ) -> Refusal? {
         let letters = { (s: String) in String(s.filter { $0.isLetter || $0.isNumber }) }
-        // Punctuation or case alone is not a pronunciation. Spacing is: gluing
-        // two words into one is most of this vocabulary — `Red Rock` to
-        // `Redrock`, `Ghost T` to `Ghostty` — so the test that ignores
-        // punctuation must not ignore the space.
-        let spaced = { (s: String) in
-            String(s.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }).lowercased()
-        }
-        guard spaced(change.was) != spaced(change.now) else { return .punctuation }
+        guard !onlyPunctuation(change) else { return .punctuation }
         let said = change.now.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         for (offset, word) in said.enumerated() {
             let bare = letters(word)

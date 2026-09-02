@@ -31,6 +31,10 @@ enum EditDiffCommand {
             } else {
                 print("  offer: yes")
             }
+            // What `trace.jsonl` would keep: the window as heard and where
+            // the heard word stands in it.
+            let heard = EditWatch.asHeard(change)
+            print("  heard: \(heard.range.lowerBound)..<\(heard.range.upperBound) in \"\(heard.text)\"")
         }
         print("  in: \(changes[0].sentence)")
         return 0

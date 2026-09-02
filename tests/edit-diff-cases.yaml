@@ -4,6 +4,7 @@
 # expect: none               a rewrite, two edits, or nothing worth learning
 # offer:  yes | no, <why>    whether the panel opens on it; optional, and one
 #                            per span when there are several
+# heard:  <a>..<b> in "…"    the window and range written to the trace; optional
 #
 # The strict half matters more than the generous one. A rewrite read as a
 # correction teaches a term a sentence nobody meant, and a portrait built on
@@ -92,6 +93,7 @@ cases:
   - written: "I like it.Ghost T is my terminal"
     now:     "I like it.Ghostty is my terminal"
     expect:  "Ghost T -> Ghostty"
+    heard:   '10..<17 in "I like it.Ghost T is my terminal"'
 
   # The same at the other end.
   - written: "the ghostly, terminal"
@@ -190,6 +192,14 @@ cases:
     now:     "we count bigram"
     expect:  "BRAM -> bigram"
     offer:   "no, ordinary English"
+
+  # The window is twelve words either side, clipped to the line, and the
+  # prompt is not a word. The range is the heard word in that window.
+  - written: "❯ one two three four five six seven eight nine ten eleven twelve thirteen the backgrounds are, counted here and more"
+    now:     "❯ one two three four five six seven eight nine ten eleven twelve thirteen the bigrams are, counted here and more"
+    expect:  "backgrounds -> bigrams"
+    offer:   "no, ordinary English"
+    heard:   '68..<79 in "three four five six seven eight nine ten eleven twelve thirteen the backgrounds are, counted here and more"'
 
 
 # Not here: the input box between two rules, and a line wrapped onto a second

@@ -11,7 +11,8 @@
 #
 # A case with `offer:` also checks `EditWatch.refusal`, which says whether the
 # panel opens on the correction. That half asks the spell checker and the
-# word-piece list, so it is this machine's answer.
+# word-piece list, so it is this machine's answer. A case with `heard:` checks
+# the window and range `EditWatch.asHeard` writes to the trace.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN=""
@@ -23,10 +24,17 @@ done
 
 failed=0
 seen=0
-while IFS=$'\t' read -r written now want offer; do
+while IFS=$'\t' read -r written now want offer heard; do
   seen=$((seen + 1))
   out="$("$BIN" --edit-diff "$written" "$now" 2>/dev/null)"
-  got="$(grep -vE "^  (in|opens|offer): " <<<"$out" | paste -sd '|' - | sed 's/|/ | /g')"
+  got="$(grep -vE "^  (in|opens|offer|heard): " <<<"$out" | paste -sd '|' - | sed 's/|/ | /g')"
+  if [ "$heard" != "-" ]; then
+    gotHeard="$(grep -E "^  heard: " <<<"$out" | sed 's/^  heard: //' | paste -sd '|' - | sed 's/|/ | /g')"
+    if [ "$gotHeard" != "$heard" ]; then
+      printf '  ✗ %s: heard "%s", expected "%s"\n' "${written:0:34}" "$gotHeard" "$heard"
+      failed=1
+    fi
+  fi
   [ "$want" = "none" ] && want="no single change"
   if [ "$got" = "$want" ]; then
     printf '  ✓ %s\n' "$got"
@@ -45,7 +53,7 @@ while IFS=$'\t' read -r written now want offer; do
 done < <(python3 -c '
 import sys, yaml
 for c in yaml.safe_load(open(sys.argv[1]))["cases"]:
-    print("\t".join([c["written"], c["now"], str(c["expect"]), str(c.get("offer", "-"))]))
+    print("\t".join([c["written"], c["now"], str(c["expect"]), str(c.get("offer", "-")), str(c.get("heard", "-"))]))
 ' "$ROOT/tests/edit-diff-cases.yaml")
 
 if [ "$seen" -eq 0 ]; then echo "Failed: edit-diff — no case was read"; exit 1; fi
