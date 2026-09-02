@@ -37,8 +37,14 @@ final class EditWatch {
         let sentence: String
         /// Which word of the line as it was written. Two occurrences of one
         /// word are two corrections, and telling them apart needs the place
-        /// rather than the word.
+        /// rather than the word. Keyed on the written line because that is the
+        /// fixed baseline: the line on screen changes under every keystroke.
         let at: Int
+        /// The same change's place in `sentence`, which is the line as it
+        /// stands now. The two drift the moment an earlier change merges two
+        /// words into one or splits one into two, so anything reading
+        /// `sentence` by index has to use this one.
+        let nowAt: Int
     }
 
     /// Every correction of one settling, handed over at once.
@@ -341,7 +347,7 @@ final class EditWatch {
                 was: old[fromI ..< i].joined(separator: " "),
                 now: new[fromJ ..< j].joined(separator: " ")
             )
-            found.append(Change(was: pair.was, now: pair.now, sentence: now, at: fromI))
+            found.append(Change(was: pair.was, now: pair.now, sentence: now, at: fromI, nowAt: fromJ))
         }
         return found
     }
@@ -391,6 +397,25 @@ final class EditWatch {
         // Every kind of whitespace, not just spaces. A row that wrapped keeps
         // its newline, and `versatile\n` is not the word anybody corrected.
         return text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+    }
+
+    /// Whether the word at `at` opens a sentence on this line.
+    ///
+    /// The first word of the line does, and so does any word after one that
+    /// ends in a stop. Both are places a capital means nothing.
+    static func opensSentence(in line: String, at index: Int) -> Bool {
+        guard index > 0 else { return true }
+        let said = words(of: line)
+        guard index - 1 < said.count else { return true }
+        // The stop is not always the last character. `He said "hello."` ends
+        // on a quote, `(that was it.)` on a bracket. So the whole run of
+        // punctuation the word ends on is what gets asked, not one character.
+        //
+        // The run is empty for `Node.js`, which is what keeps a stop inside a
+        // word from reading as the end of one.
+        let before = said[index - 1]
+        let tail = before.reversed().prefix { !$0.isLetter && !$0.isNumber }
+        return tail.contains { ".!?".contains($0) }
     }
 
     /// What terminals and shells put in front of the line being typed.

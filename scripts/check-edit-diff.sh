@@ -21,7 +21,7 @@ failed=0
 seen=0
 while IFS=$'\t' read -r written now want; do
   seen=$((seen + 1))
-  got="$("$BIN" --edit-diff "$written" "$now" 2>/dev/null | grep -vE "^  in: " \
+  got="$("$BIN" --edit-diff "$written" "$now" 2>/dev/null | grep -vE "^  (in|opens): " \
     | paste -sd '|' - | sed 's/|/ | /g')"
   [ "$want" = "none" ] && want="no single change"
   if [ "$got" = "$want" ]; then
