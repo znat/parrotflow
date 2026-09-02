@@ -22,7 +22,7 @@ enum EditDiffCommand {
             // correction onto a capitalised word unless the word opens a
             // sentence, where every word is capitalised and the capital says
             // nothing about the word.
-            print("  opens: \(EditWatch.opensSentence(in: change.sentence, at: change.at))")
+            print("  opens: \(EditWatch.opensSentence(in: change.sentence, at: change.nowAt))")
         }
         print("  in: \(changes[0].sentence)")
         return 0

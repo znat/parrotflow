@@ -3772,7 +3772,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // correcting `Fais` to `Et` at the start of a sentence mid-line read
         // as a name because of it, and a French grammar fix was offered as a
         // vocabulary rule.
-        let opens = EditWatch.opensSentence(in: change.sentence, at: change.at)
+        let opens = EditWatch.opensSentence(in: change.sentence, at: change.nowAt)
         if change.now.first?.isUppercase == true, !opens { return true }
         Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is ordinary English;"
             + " not offered")
