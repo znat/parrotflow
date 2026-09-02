@@ -4,8 +4,8 @@ import SwiftUI
 
 /// Teach me the words I got wrong.
 ///
-/// A table: what was heard, what it should be, what kind of thing it names. The
-/// rows are proposed by the spell check rather than typed from nothing — see
+/// A table: what was heard and what it should be. The rows are proposed by the
+/// spell check rather than typed from nothing — see
 /// `VocabularySuggest` for what it finds and what it cannot.
 ///
 /// Visually a sibling of the pill: near-black at 95%, the same plumage rim.
@@ -173,9 +173,8 @@ enum CorrectionMetrics {
     static let heardWidth: CGFloat = 165
     static let arrowWidth: CGFloat = 12
     static let correctedWidth: CGFloat = 185
-    static let kindWidth: CGFloat = 96
-    /// The three columns, the arrow, the ✕, and the gaps between them.
-    static let width: CGFloat = 572
+    /// The two columns, the arrow, the ✕, and the gaps between them.
+    static let width: CGFloat = 482
     static let rowHeight: CGFloat = 40
     static let maxRows = 7
     /// Title, column labels, the add-a-word row, and the buttons. Measured

@@ -237,15 +237,14 @@ enum PanelsCommand {
         // the case the table has to be able to hold.
         let rule = CorrectionModel()
         rule.load(sentence: "we deployed on Ver Sal")
-        rule.rows = [CorrectionRow(heard: "Ver Sal", corrected: "Vercel",
-                                   kind: .organization)]
+        rule.rows = [CorrectionRow(heard: "Ver Sal", corrected: "Vercel")]
         // The rows were replaced wholesale, so the focus `load` left points at
         // a row that no longer exists.
         rule.focus = CorrectionModel.Cell(row: rule.rows[0].id, column: .corrected)
 
-        // Two rows, so the picker is drawn twice against different words. The
-        // sheet cannot show a focus ring on any of them: it renders offscreen,
-        // in no key window, and SwiftUI grants focus to neither.
+        // Two rows. The sheet cannot show a focus ring on any of them: it
+        // renders offscreen, in no key window, and SwiftUI grants focus to
+        // neither.
         let several = CorrectionModel()
         several.load(sentence: "Olama runs polyma for Tasmine")
 

@@ -272,6 +272,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         owner: NSRunningApplication?, landing: Correction.Landing
     )?
 
+    /// Where each run's clip went, so a hand edit is filed beside the
+    /// dictation it is about. `output_dir` can change between the two — see
+    /// `Trace.record` — and the global would file them apart.
+    private var clipDirectories: [Int: URL] = [:]
+
     /// The focused element's text as it was at the press, for an app that gave
     /// no caret. What changed in it afterwards is where the words went.
     ///
@@ -2145,6 +2150,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // The trace is opened around the whole chain, not just the
                 // decoder: the stages that follow write into the same record,
                 // and the line is appended even if one of them throws.
+                self?.clipDirectories[press.run] = recording.url.deletingLastPathComponent()
+                self?.clipDirectories = self?.clipDirectories.filter { $0.key > press.run - 8 } ?? [:]
                 let text = try await Trace.record(
                     wav: recording.url.lastPathComponent, source: .live,
                     app: app.map { Trace.App(name: $0.name, bundleID: $0.bundleID) },
@@ -3715,6 +3722,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// panel about it would be noise on every dictation.
     private func offerToLearn(_ changes: [EditWatch.Change]) {
         let sentence = changes.first?.sentence ?? ""
+        // Every change is written down first, whatever the panel does with
+        // it. A word changed to a word both lists know is not offered, and it
+        // is the one label a misheard-word stage cannot get any other way.
+        for change in changes where !EditWatch.onlyPunctuation(change) {
+            let heard = EditWatch.asHeard(change)
+            Trace.edit(
+                heard: change.was, corrected: change.now,
+                text: heard.text, range: heard.range,
+                lang: DictationLanguage.forCorrection(
+                    transcript: heard.text, allowed: config.transcription.languages
+                ),
+                app: lastDictated?.owner?.localizedName,
+                after: Date().timeIntervalSince(edits.startedAt),
+                beside: lastDictated.flatMap { clipDirectories[$0.run] }
+            )
+        }
         // The counters first. A change that runs the other way is not a rule
         // to weigh, and `teaches` would drop half of them — `BetterStack` put
         // back to `better stack` lands on two ordinary words.
@@ -3871,48 +3894,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Is this correction about a name, or about English?
-    ///
-    /// The panel used to show every one-word change, which is every typo and
-    /// every reword. Distance does not separate them — measured on this
-    /// speaker's own `heard:` lists against ordinary edits, `its -> it\'s`
-    /// scores 1.000 and `Prezi -> Praisy` scores 0.304, so any floor drawn
-    /// through spelling keeps the noise and drops the names.
-    ///
-    /// What separates them is the word the correction lands *on*. Measured on
-    /// the same two sets: the two word lists call 8 of 9 real corrections
-    /// unknown and all 10 of the ordinary ones known. `Sentry` is the miss, and
-    /// it is capitalised, so the second half catches it.
-    ///
-    /// An `or`, which is also the answer to why this was left out before: the
-    /// day `Vercel` enters a dictionary, the capital still offers it.
+    /// Is this correction about a name, or about English? The decision is
+    /// `EditWatch.refusal`, which has a case set; this only says why in the log.
     private func teaches(_ change: EditWatch.Change) -> Bool {
-        let letters = { (s: String) in String(s.filter { $0.isLetter || $0.isNumber }) }
-        // Punctuation or case alone is not a pronunciation. Spacing is: gluing
-        // two words into one is most of this vocabulary — `Red Rock` to
-        // `Redrock`, `Better Stack` to `BetterStack`, `Ghost T` to `Ghostty` —
-        // so the test that ignores punctuation must not ignore the space, or it
-        // throws away the commonest correction there is.
-        let spaced = { (s: String) in
-            String(s.filter { $0.isLetter || $0.isNumber || $0.isWhitespace }).lowercased()
-        }
-        guard spaced(change.was) != spaced(change.now) else {
-            Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is punctuation,"
-                + " not a name; not offered")
-            return false
-        }
-        if Vocabulary.unseenWord(letters(change.now)) { return true }
-        // A capital that is not the one every sentence starts with.
-        // A capital that is not the one every sentence starts with.
-        //
-        // The first word of the *line* was not the right test. A line holds
-        // several sentences, and every one of them opens with a capital:
-        // correcting `Fais` to `Et` at the start of a sentence mid-line read
-        // as a name because of it, and a French grammar fix was offered as a
-        // vocabulary rule.
-        let opens = EditWatch.opensSentence(in: change.sentence, at: change.nowAt)
-        if change.now.first?.isUppercase == true, !opens { return true }
-        Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is ordinary English;"
+        guard let refusal = EditWatch.refusal(for: change) else { return true }
+        Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is \(refusal);"
             + " not offered")
         return false
     }
@@ -4904,7 +4890,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             do {
                 try ConfigWriter.addVocabularyPronunciation(
-                    term: rule.corrected, heard: rule.heard, kind: rule.kind
+                    term: rule.corrected, heard: rule.heard
                 )
                 // The sentence too, not only the mapping. It is what a term's
                 // portrait is built from, and this is the only moment the app
@@ -5513,7 +5499,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for rule in rules {
                 do {
                     try ConfigWriter.addVocabularyPronunciation(
-                        term: rule.corrected, heard: rule.heard, kind: rule.kind
+                        term: rule.corrected, heard: rule.heard
                     )
                     Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                     Trace.correction(

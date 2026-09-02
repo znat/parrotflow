@@ -2,6 +2,9 @@
 #
 # expect: "<was> -> <now>"   the one span that changed
 # expect: none               a rewrite, two edits, or nothing worth learning
+# offer:  yes | no, <why>    whether the panel opens on it; optional, and one
+#                            per span when there are several
+# heard:  <a>..<b> in "…"    the window and range written to the trace; optional
 #
 # The strict half matters more than the generous one. A rewrite read as a
 # correction teaches a term a sentence nobody meant, and a portrait built on
@@ -90,6 +93,7 @@ cases:
   - written: "I like it.Ghost T is my terminal"
     now:     "I like it.Ghostty is my terminal"
     expect:  "Ghost T -> Ghostty"
+    heard:   '10..<17 in "I like it.Ghost T is my terminal"'
 
   # The same at the other end.
   - written: "the ghostly, terminal"
@@ -110,6 +114,92 @@ cases:
   - written: "we run Node.js and Gwen"
     now:     "we run Node.js and Qwen"
     expect:  "Gwen -> Qwen"
+    offer:   "yes"
+
+  # From the log, 2026-09-02. Two dictations ran together, and the first was
+  # repaired by putting a word back. The shared tail `.maybe` is the next
+  # sentence, not the correction; and what is left lands on two ordinary
+  # words, which the glued-together lookup `pronepoint` used to call a name.
+  - written: "❯ It is error prone.maybe it is fine"
+    now:     "❯ It is error prone point.maybe it is fine"
+    expect:  "prone -> prone point"
+    offer:   "no, ordinary English"
+
+  # Punctuation alone. Both from the log.
+  - written: "keep the diff small."
+    now:     "keep the diff small"
+    expect:  "small. -> small"
+    offer:   "no, punctuation, not a name"
+
+  - written: "(before offering vocabulary options."
+    now:     "(before offering vocabulary options.)"
+    expect:  "options. -> options.)"
+    offer:   "no, punctuation, not a name"
+
+  # Two corrections in one line, one onto a name and one onto a word the
+  # lists know.
+  - written: "We have e speak and we have a fluid audio model."
+    now:     "We have espeak and we have a FluidAudio model."
+    expect:  "e speak -> espeak | fluid audio -> FluidAudio"
+    offer:   "yes | yes"
+
+  - written: "the idiots are detected before submitting"
+    now:     "the edits are detected before submitting"
+    expect:  "idiots -> edits"
+    offer:   "no, ordinary English"
+
+  - written: "say point instead"
+    now:     "say dot instead"
+    expect:  "point -> dot"
+    offer:   "no, ordinary English"
+
+  - written: "we compare Ribrovent with Dorselex"
+    now:     "we compare Rybrevant with Darzalex"
+    expect:  "Ribrovent -> Rybrevant | Dorselex -> Darzalex"
+    offer:   "yes | yes"
+
+  # A word the dictionary knows, made a name by its capital mid-sentence.
+  - written: "errors go to century"
+    now:     "errors go to Sentry"
+    expect:  "century -> Sentry"
+    offer:   "yes"
+
+  # The capital that opens a sentence says nothing about the word.
+  - written: "Fais attention. Fais le maintenant"
+    now:     "Fais attention. Et le maintenant"
+    expect:  "Fais -> Et"
+    offer:   "no, ordinary English"
+
+  # One name in the span is enough.
+  - written: "I met Prezi yesterday"
+    now:     "I met Praisy Dupont yesterday"
+    expect:  "Prezi -> Praisy Dupont"
+    offer:   "yes"
+
+  # A reword, 2026-09-03: two words put in for one. Glued to `forinstance`
+  # no list knew it, and the panel offered it as a name.
+  - written: "a thing to see or two"
+    now:     "a thing to, see for instance. two"
+    expect:  "to -> to, | or -> for instance."
+    offer:   "no, punctuation, not a name | no, ordinary English"
+
+  - written: "the model can hear what Drew said"
+    now:     "the model can say what a drew said"
+    expect:  "hear -> say | Drew -> a drew"
+    offer:   "no, ordinary English | no, ordinary English"
+
+  - written: "we count BRAM"
+    now:     "we count bigram"
+    expect:  "BRAM -> bigram"
+    offer:   "no, ordinary English"
+
+  # The window is twelve words either side, clipped to the line, and the
+  # prompt is not a word. The range is the heard word in that window.
+  - written: "❯ one two three four five six seven eight nine ten eleven twelve thirteen the backgrounds are, counted here and more"
+    now:     "❯ one two three four five six seven eight nine ten eleven twelve thirteen the bigrams are, counted here and more"
+    expect:  "backgrounds -> bigrams"
+    offer:   "no, ordinary English"
+    heard:   '68..<79 in "three four five six seven eight nine ten eleven twelve thirteen the backgrounds are, counted here and more"'
 
 
 # Not here: the input box between two rules, and a line wrapped onto a second

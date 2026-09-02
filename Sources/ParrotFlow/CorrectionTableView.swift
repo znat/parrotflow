@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The teach-a-word panel: one row per word, mapping what ParrotFlow wrote to
-/// what it should have written, and what kind of thing that is.
+/// what it should have written.
 ///
 /// The rows are proposed rather than enumerated. An earlier version put one row
 /// per word of the selection, which is a wall of rows to read on a long
@@ -72,7 +72,6 @@ struct CorrectionView: View {
             Color.clear.frame(width: CorrectionMetrics.arrowWidth)
             Text("SHOULD BE")
                 .frame(width: CorrectionMetrics.correctedWidth, alignment: .leading)
-            Text("TYPE")
             Spacer()
         }
         .font(.system(size: 11, weight: .semibold, design: .rounded))
@@ -107,8 +106,6 @@ struct CorrectionView: View {
                 .parrotField(focused: focused == cell(id, .corrected))
                 .frame(width: CorrectionMetrics.correctedWidth)
 
-            kindPicker(row.kind, id: id)
-
             Button {
                 model.remove(id)
             } label: {
@@ -123,28 +120,6 @@ struct CorrectionView: View {
         }
         .font(.system(size: 15, weight: .medium, design: .monospaced))
         .frame(height: CorrectionMetrics.rowHeight)
-    }
-
-    /// A menu rather than four segments. The proposal is right most of the time,
-    /// so the common case is reading one word and moving on; four segments would
-    /// spend the width of the panel on a control nobody touches.
-    private func kindPicker(_ kind: Binding<WordKind>, id: UUID) -> some View {
-        Menu {
-            ForEach(WordKind.allCases, id: \.self) { option in
-                Button(option.label) { kind.wrappedValue = option }
-            }
-        } label: {
-            Text(kind.wrappedValue.label)
-                .font(.system(size: 13, weight: .medium, design: .rounded))
-        }
-        .menuStyle(.borderlessButton)
-        .frame(width: CorrectionMetrics.kindWidth - 18)
-        // A menu is not in the tab ring unless it asks to be, and macOS only
-        // tabs to non-text controls when Full Keyboard Access is on. The panel
-        // catches Tab itself, so the ring here is ours either way.
-        .focusable()
-        .focused($focused, equals: cell(id, .kind))
-        .parrotField(focused: focused == cell(id, .kind))
     }
 
     private func cell(_ id: UUID, _ column: CorrectionModel.Column) -> CorrectionModel.Cell {
