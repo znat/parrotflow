@@ -4904,7 +4904,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             do {
                 try ConfigWriter.addVocabularyPronunciation(
-                    term: rule.corrected, heard: rule.heard, kind: rule.kind
+                    term: rule.corrected, heard: rule.heard
                 )
                 // The sentence too, not only the mapping. It is what a term's
                 // portrait is built from, and this is the only moment the app
@@ -5513,7 +5513,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for rule in rules {
                 do {
                     try ConfigWriter.addVocabularyPronunciation(
-                        term: rule.corrected, heard: rule.heard, kind: rule.kind
+                        term: rule.corrected, heard: rule.heard
                     )
                     Log.write("learned pronunciation: \(rule.heard) -> \(rule.corrected)")
                     Trace.correction(

@@ -6,14 +6,14 @@ colleagues' names all day. A rule you teach once is written to your
 
 When a name comes out wrong, select it in whatever app you're in, hold the
 hotkey and say **"hey parrot"**. A panel opens with a row for each word that
-looks wrong: what it heard, what it should be, and what kind of thing that is.
+looks wrong: what it heard and what it should be.
 
     VOCABULARY  TEACH A WORD
 
-    HEARD AS            SHOULD BE          TYPE
+    HEARD AS            SHOULD BE
 
-    [ Tasmin        ] → [ Tasmeen      ]   Person ⌄   ✕
-    [ Versal        ] → [ Vercel       ]   Org ⌄      ✕
+    [ Tasmin        ] → [ Tasmeen      ]   ✕
+    [ Versal        ] → [ Vercel       ]   ✕
     + Add a word
 
     2 rules to save              Cancel esc    Save ↩
@@ -31,11 +31,6 @@ a word the dictionary knows, so no row is proposed and you type it yourself.
 in two — "red crawl" for Redcrawl arrives as two ordinary words and no proposal
 can join them. Type over the left field to widen the row to the span you meant,
 and the rule taught is `red crawl => Redcrawl`, which leaves the colour alone.
-
-**The type column** is proposed from the macOS word tagger and is often wrong
-about products: it calls Vercel a place. Change it with the menu. It is written
-to the term as `kind:` and nothing reads it yet — it is recorded now so the
-stages that will need it have something to read.
 
 Saving writes one rule per row to `vocabulary.yaml` — comments and your other
 settings untouched — and puts the corrected sentence back where it came from.

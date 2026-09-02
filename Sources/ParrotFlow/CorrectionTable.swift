@@ -1,16 +1,10 @@
 import Foundation
 import SwiftUI
 
-/// One thing the panel taught: what was heard, what it should be, and what kind
-/// of thing it names.
-///
-/// `kind` is optional because most callers have no opinion. Only the panel
-/// fills it in, and only a filled-in one is written to `vocabulary.yaml` — a
-/// default written as if it were a decision is worse than no line at all.
+/// One thing the panel taught: what was heard and what it should be.
 struct TaughtRule: Equatable {
     var heard: String
     var corrected: String
-    var kind: WordKind?
 }
 
 /// One row of the panel.
@@ -21,7 +15,6 @@ struct CorrectionRow: Identifiable, Equatable {
     /// the whole reason it is a field and not a label.
     var heard: String
     var corrected: String = ""
-    var kind: WordKind = .word
     /// Proposed by the spell check rather than typed. Only used to decide
     /// where the caret starts.
     var suggested: Bool = false
@@ -46,7 +39,7 @@ final class CorrectionModel: ObservableObject {
             let heard = row.heard.trimmingCharacters(in: .whitespacesAndNewlines)
             let corrected = row.corrected.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !heard.isEmpty, !corrected.isEmpty, heard != corrected else { return nil }
-            return TaughtRule(heard: heard, corrected: corrected, kind: row.kind)
+            return TaughtRule(heard: heard, corrected: corrected)
         }
     }
 
@@ -77,7 +70,7 @@ final class CorrectionModel: ObservableObject {
     func load(sentence: String, language: String? = nil) {
         self.sentence = sentence
         rows = VocabularySuggest.rows(in: sentence, language: language).map {
-            CorrectionRow(heard: $0.heard, kind: $0.kind, suggested: true)
+            CorrectionRow(heard: $0.heard, suggested: true)
         }
         if rows.isEmpty { rows = [CorrectionRow(heard: "")] }
         focusFirstRow()
@@ -89,19 +82,8 @@ final class CorrectionModel: ObservableObject {
     /// More than one row when the utterance carried more than one correction:
     /// "Tasmeen spells T A S M E E N and Mick spells M I K" is two rules, and
     /// splitting them across two panels would mean saying it twice.
-    ///
-    /// The kind is still proposed from the tag, because a rule that arrived
-    /// this way has a heard word like any other.
     func load(rules proposed: [(heard: String, corrected: String)], over sentence: String = "") {
         self.sentence = sentence
-        // What the vocabulary already says about this term beats what a tagger
-        // guesses about the word. A term you have already labelled is labelled,
-        // and offering a different answer for it invites you to disagree with
-        // yourself one row at a time.
-        let known = ((try? ConfigStore.load())?.vocabulary.terms ?? [:])
-            .reduce(into: [String: WordKind]()) { out, entry in
-                if let kind = entry.value.kind { out[entry.key.lowercased()] = kind }
-            }
         rows = proposed.map { proposal in
             // The possessive belongs to the sentence, not to the name. Saved as
             // it stands, `Precey's -> Praizy's` teaches a term called `Praizy's`
@@ -113,14 +95,7 @@ final class CorrectionModel: ObservableObject {
                 rule.corrected = String(rule.corrected.dropLast(mine.suffix.count))
                 rule.heard = String(rule.heard.dropLast(theirs.suffix.count))
             }
-            let word = rule.corrected.trimmingCharacters(in: .punctuationCharacters)
-            if let already = known[word.lowercased()] {
-                return CorrectionRow(heard: rule.heard, corrected: rule.corrected, kind: already)
-            }
-            let tag = Tagger.tokens(in: rule.corrected, language: nil).first?.tag
-            return CorrectionRow(
-                heard: rule.heard, corrected: rule.corrected, kind: .from(tag: tag)
-            )
+            return CorrectionRow(heard: rule.heard, corrected: rule.corrected)
         }
         if rows.isEmpty { rows = [CorrectionRow(heard: "")] }
         focusFirstRow()
@@ -150,10 +125,9 @@ final class CorrectionModel: ObservableObject {
 
     // MARK: - Focus
 
-    enum Column: Hashable { case heard, corrected, kind }
+    enum Column: Hashable { case heard, corrected }
 
-    /// One editable thing on the panel. The type menu is one of them: it is a
-    /// third of what a row says, so Tab has to reach it.
+    /// One editable thing on the panel.
     struct Cell: Hashable {
         let row: UUID
         let column: Column
@@ -169,8 +143,7 @@ final class CorrectionModel: ObservableObject {
     private var ring: [Cell] {
         rows.flatMap { row in
             [Cell(row: row.id, column: .heard),
-             Cell(row: row.id, column: .corrected),
-             Cell(row: row.id, column: .kind)]
+             Cell(row: row.id, column: .corrected)]
         }
     }
 
