@@ -1652,15 +1652,17 @@ struct Config: Decodable, Equatable {
         /// at all.
         var languages: [String] = ["en"]
 
-        /// When a mark the transcriber wrote is taken out again — see
-        /// `SentenceJoin`.
+        /// Legacy. The switch the boundary readings had before they were the
+        /// `interpret` pipeline step — see `SentenceJoin`.
         ///
         ///     sentences: false               never look at a boundary
         ///     sentences:
         ///       marks: [".", ",", "?"]       what a boundary can be written
         ///
-        /// Two spellings, like `review:` on a pipeline step: a bare `false`
-        /// turns the stage off, anything else says what it runs with.
+        /// Both spellings are still read, and neither is refused. A rename
+        /// that turns a stage on or off without a word is the one outcome this
+        /// move must not have: `false` still turns the step off, and `marks:`
+        /// still feeds it where the step names none. `notices()` says both.
         ///
         /// One list, two jobs. The sentence enders in it — `.` and `?` — are
         /// where a boundary is looked for. Everything else in it — the comma —
@@ -1671,9 +1673,6 @@ struct Config: Decodable, Equatable {
         /// There is no threshold; the reading the model scores highest is the
         /// one that is written. `;` and `:` were measured and never changed a
         /// decision in English, so they are not in the default.
-        ///
-        /// The marks live in `per_language` now. `marks:` here is still read
-        /// and still answers for English — see `marks(for:)`.
         var sentences: Sentences = Sentences()
 
         struct Sentences: Decodable, Equatable {
@@ -1735,11 +1734,13 @@ struct Config: Decodable, Equatable {
         /// English's.
         var perLanguage: [String: Language] = [:]
 
-        /// The marks the sentence stage tries beside removing the period.
+        /// The marks the `interpret` step tries beside removing the period,
+        /// where the step names none of its own.
         ///
-        /// `transcription.sentences.marks` is the old home of the same set. It
-        /// is still read, and it answers for English only: that stage has never
-        /// run in another language.
+        /// Two old homes of the same set, in order: `per_language.<lang>.marks`
+        /// then `transcription.sentences.marks`. Both are still read, and both
+        /// answer for English only — that stage has never run in another
+        /// language.
         func marks(for language: String) -> [String] {
             if let written = perLanguage[language]?.marks { return written }
             if language == "en", sentences.marksWritten { return sentences.marks }
@@ -1828,15 +1829,15 @@ struct Config: Decodable, Equatable {
                     )
                 }
                 // The enders in the list are where a boundary is looked for.
-                // With none the stage finds nothing and does nothing, which is
-                // what `sentences: false` is for.
+                // With none the stage finds nothing and does nothing, and the
+                // way to say that is to take the step out.
                 guard kept.contains(where: { SentenceReadings.enders.contains($0) }) else {
                     throw ConfigError.invalidValue(
                         key: key,
                         value: kept.map { "`\($0)`" }.joined(separator: ", "),
                         expected: "at least one of `.`, `?` or `!` — those are where a"
                             + " boundary is looked for, so with none the stage never runs."
-                            + " Use `sentences: false` to turn it off"
+                            + " Delete the `interpret` step to turn it off"
                     )
                 }
                 let wrong = kept.filter { $0.count != 1 || !($0.first?.isPunctuation ?? false) }
@@ -1970,6 +1971,14 @@ struct Config: Decodable, Equatable {
         ///       by_sound: false
         ///       review: gpt
         ///       max_slots: 4
+        ///
+        /// `interpret` takes its options the same way:
+        ///
+        ///     - interpret
+        ///     - stage: interpret
+        ///       marks: [".", ",", "?"]
+        ///       capitals: false
+        ///       pause: 0
         struct PipelineEntry: Decodable {
             let name: String
             var transform: String?
@@ -1981,6 +1990,9 @@ struct Config: Decodable, Equatable {
             /// What `review:` said, for `Transcription.retiredReview`. Read so
             /// it can be reported, never used.
             var review: String?
+            var marks: [String]?
+            var capitals: Bool?
+            var pause: Double?
             var when: String?
             var unless: String?
             var app: String?
@@ -1997,6 +2009,7 @@ struct Config: Decodable, Equatable {
                 case maxReadings = "max_readings"
                 case maxPerSlot = "max_per_slot"
                 case maxPerTerm = "max_per_term"
+                case marks, capitals, pause
             }
 
             init(from decoder: Decoder) throws {
@@ -2052,6 +2065,17 @@ struct Config: Decodable, Equatable {
                     } else {
                         review = try c.decodeIfPresent(String.self, forKey: .review)
                     }
+                }
+                // Each optional and each on its own, as the vocabulary caps
+                // are: turning the capitals off must not restate the marks.
+                if name.caseInsensitiveCompare("interpret") == .orderedSame {
+                    if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
+                        marks = try Language.checked(
+                            marks: written, key: "pipeline.interpret.marks"
+                        )
+                    }
+                    capitals = try c.decodeIfPresent(Bool.self, forKey: .capitals)
+                    pause = try c.decodeIfPresent(Double.self, forKey: .pause)
                 }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
@@ -2235,12 +2259,18 @@ struct Config: Decodable, Equatable {
                             stage: stage, transform: entry.transform,
                             prompt: entry.prompt, caps: entry.caps,
                             nearMisses: entry.nearMisses, bySound: entry.bySound,
-                            gate: entry.gate,
+                            gate: entry.gate, marks: entry.marks,
+                            capitals: entry.capitals, pause: entry.pause,
                             when: entry.when, unless: entry.unless, app: entry.app
                         )
                     }
                     pipeline = Pipeline(steps: steps)
                 }
+            } catch let bad as ConfigError {
+                // A step's own key — `pipeline.interpret.marks` — already says
+                // what is wrong and where. Rewriting it as "not a list of
+                // steps" would send the reader to the wrong line.
+                throw bad
             } catch {
                 throw ConfigError.invalidValue(
                     key: "transcription.pipeline",
@@ -2887,14 +2917,50 @@ struct Config: Decodable, Equatable {
         // file-level key and nothing else.
         said += vocabulary.legacy.map { "vocabulary: \($0)" }
         said += transcription.sentences.legacy.map { "sentences: \($0)" }
-        // Still read, and still English's set. It moved because the slot floor
-        // keys off the language too, and two settings keyed the same way belong
-        // in one block.
-        if transcription.sentences.marksWritten, transcription.perLanguage["en"]?.marks == nil {
-            said.append("sentences: `marks:` now lives at"
-                + " `transcription.per_language.en.marks`. Yours is still read")
+        // The boundary readings are the `interpret` step now, so both of their
+        // older switches are legacy. Each is still read: a rename that turns a
+        // stage on or off without a word is the one outcome it must not have.
+        let interpret = Pipeline.resolved(config: self).steps.first { $0.stage == .interpret }
+        if !transcription.sentences.enabled {
+            said.append("sentences: `transcription.sentences: false` is legacy; remove the"
+                + " `interpret` step from the pipeline instead."
+                + (interpret == nil ? "" : " The step is in your pipeline and this key"
+                    + " is what still turns it off"))
+        }
+        // The marks moved twice — out of `sentences:` into `per_language`, and
+        // now onto the step. Both older homes still answer for English.
+        let legacyMarks = transcription.sentences.marksWritten
+            || transcription.perLanguage["en"]?.marks != nil
+        if legacyMarks, interpret?.marks != nil {
+            said.append("sentences: `marks:` is set on the `interpret` step and in"
+                + " `transcription."
+                + (transcription.perLanguage["en"]?.marks != nil
+                    ? "per_language.en" : "sentences")
+                + ".marks`. The step is what runs")
+        } else if legacyMarks {
+            said.append("sentences: `marks:` belongs on the `interpret` step now —"
+                + " `- {stage: interpret, marks: [\".\", \",\", \"?\"]}`."
+                + " Yours is still read")
+        }
+        // Said, not done. A pipeline written before the step existed loses the
+        // readings, and nobody runs `--check-config` after an update — so this
+        // is also what the log says at launch, through `notices()`.
+        if transcription.pipeline != nil, interpret == nil, transcription.sentences.enabled {
+            said.append("sentences: the sentence readings no longer run; add"
+                + " `- interpret` to the front of `transcription.pipeline`")
         }
         return said
+    }
+
+    /// Whether the `interpret` step will actually read a boundary: it is in
+    /// the pipeline, and the legacy switch has not turned it off.
+    ///
+    /// One predicate, because two places warm the 320 MB sentence model and a
+    /// warm that disagrees with `Pipeline.skipReason` fetches weights nothing
+    /// will read.
+    var readsBoundaries: Bool {
+        transcription.sentences.enabled
+            && Pipeline.resolved(config: self).stages.contains(.interpret)
     }
 
     var resolvedOutputDir: URL {

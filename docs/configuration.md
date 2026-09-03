@@ -27,7 +27,6 @@ transcription:
   activation_phrases: [hey parrot, by the way parrot]
   languages: [en]       # en and fr are the supported values
   rewrite_line: true
-  sentences: …          # or false — joining a sentence a pause cut in two
   per_language: …       # the settings that differ from one language to the next
   pipeline: …           # see pipelines.md
   transforms: …         # see pipelines.md
@@ -455,17 +454,17 @@ language code.
 ```yaml
 transcription:
   per_language:
-    en: {marks: [".", ","], slot_floor: 0.20}
-    fr: {marks: [".", ","], slot_floor: 0.30}
+    en: {slot_floor: 0.20}
+    fr: {slot_floor: 0.30}
 ```
 
 Those are the defaults, so an empty block changes nothing. An entry overrides
 only the keys it names. A language with no entry gets English's values.
 
-`marks` are the punctuation the sentence stage tries beside removing the period
-— see [`transcription.sentences`](#transcriptionsentences). Each entry is one
-punctuation character; anything else is refused, because a mark is written into
-the sentence as punctuation.
+`marks` under a language is legacy. The set lives on the `interpret` step now —
+see [pipelines.md](pipelines.md#the-interpret-stage). One written here is still
+read, still answers for English, and is beaten by a `marks:` on the step;
+`--check-config` says which one is running.
 
 `slot_floor` is how far the word you were heard to say must beat a vocabulary
 term by before the gate refuses to write the term. The number is a difference of
@@ -477,7 +476,7 @@ free in both and costs the English gate 35 of the 55 wrong rewrites it catches.
 The gate only ever refuses, so a floor set too tight costs a name you have to
 type, never a wrong word in your text.
 
-`--check-config` prints both values for every language you listed.
+`--check-config` prints the floor for every language you listed.
 
 ## `transcription.activation_phrases`
 
@@ -502,52 +501,23 @@ correction ended up appended to the end of a line instead of replacing a word in
 it: ⌃K clears nothing in a composer, and the paste that followed landed on the
 end of what was still there.
 
-## `transcription.sentences`
+## `transcription.sentences` (legacy)
 
-A pause mid-sentence makes the transcriber write a period or a question mark,
-and capitalise the next word, so one sentence becomes two. Every such boundary
-in an English transcript is read several ways and the reading the model likes
-best wins.
+The switch for the boundary readings before they became a pipeline step. The
+step is `interpret`, and everything this key used to say now lives on that
+line — see [pipelines.md](pipelines.md#the-interpret-stage).
 
-`sentences: false` turns the whole stage off. The marks it works with are
-[`transcription.per_language`](#transcriptionper_language), default
-`[".", ",", "?"]`.
+Both spellings are still read, so an update cannot silently change what runs:
 
-One list, two jobs. The sentence enders in it — `.` and `?` — are **where a
-boundary is looked for**. Everything else in it — the comma — is a **reading
-tried at a boundary**. So each boundary is read three ways: the mark it
-carries, the comma, and no mark at all. Take `?` out of the list and question
-marks stop being scanned; take `.` out and periods do.
+- `sentences: false` still turns the step off, even when the pipeline lists it.
+  `--check-config` says to delete the `- interpret` line instead.
+- `sentences: {marks: [...]}` still feeds the step, as does
+  `per_language.<code>.marks`. A `marks:` on the step beats both, and
+  `--check-config` prints the set that is running.
 
-There is no threshold. The stage builds those three readings — `". The
-vocabulary is slower"`, `", the vocabulary is slower"`, `" the vocabulary is
-slower"` — scores each with a small causal language model, and writes the
-winner. A score is the log-probability of the continuation divided by its token
-count. Where the reading with no mark wins, the mark is removed and the next
-word is lowercased.
-
-Measured over one speaker's dictation: 81% of 140 period cuts repaired with no
-real period joined, and 82% of 325 question cuts repaired at one wrong join in
-111 real questions. The two thresholds this used to take, `join_below:` and
-`offer_below:`, repaired 26%. They are still read, and `--check-config` says
-they no longer do anything.
-
-`;` and `:` were measured and never changed a decision in English, so they are
-not in the default. Each entry is one punctuation character, and at least one
-must end a sentence; anything else is refused, because a mark is written into
-the sentence as punctuation. The set is a setting because it is
-language-dependent, which is why it lives in the language block. `marks:` under
-`sentences:` is still read and still answers for English; `--check-config` says
-where it moved.
-
-A word after a question mark does not have to be capitalised. Of 19 lines where
-the transcriber wrote `word? lowercase`, 7 hold a mark that should go and 12 a
-real question, so the reading decides and no rule could. A word after a *period*
-does have to be: that shape has never been measured, so it is left alone.
-
-English only, and only where the model is already on disk. Nothing is
-downloaded for this and nothing waits: with no model the transcript arrives as
-it was. See [transcription.md](transcription.md).
+A pipeline written before the step existed has no `- interpret` line in it, so
+the readings do not run. Nothing is inserted for you: `--check-config` and the
+log at launch both say to add the line to the front of the list.
 
 ## `transcription.replacements` is retired
 

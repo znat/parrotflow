@@ -5,6 +5,7 @@ Everything a finished transcript goes through, in order:
 ```yaml
 transcription:
   pipeline:
+    - interpret
     - vocabulary
     - numbers
     - transform: dotted
@@ -42,6 +43,7 @@ can get wrong.
 
 | Stage | What it does |
 |---|---|
+| `interpret` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The interpret stage](#the-interpret-stage). English only. |
 | `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
@@ -50,6 +52,76 @@ can get wrong.
 
 `numbers` rewrites transcripts that were already correct, so run `--numbers` on
 a line to see exactly what it would do before leaving it in.
+
+## The interpret stage
+
+`interpret` reads what the transcript says against what the speaker meant. It
+is not called `repunctuate` because punctuation is only the first thing it
+does: the misheard-word and disfluency passes belong here too, and they will be
+further switches on this same line.
+
+```yaml
+- interpret
+```
+
+A pause mid-sentence makes the transcriber write a period or a question mark
+and capitalise the next word, so one sentence becomes two. This stage reads
+every such boundary three ways — the mark that is there, a comma, and no mark
+at all — and writes the reading a small language model scores highest. There is
+no threshold. Where the joined reading wins, the mark is removed and the next
+word is lowercased. See
+[transcription.md](transcription.md#sentences-a-pause-cut-in-two) for what that
+repairs and what it costs.
+
+With anything to say about it, spell the stage out:
+
+```yaml
+- stage: interpret
+  marks: [".", ",", "?"]   # optional; default. What a boundary can be written with
+  capitals: true           # optional; default. false reads marks only
+  pause: 1.0               # optional; default. Seconds of silence before a bare capital
+```
+
+`marks:` is one list doing two jobs. The sentence enders in it — `.` and `?` —
+are **where a boundary is looked for**. Everything else — the comma — is a
+**reading tried at a boundary**. Take `?` out and question marks stop being
+scanned. Each entry is one punctuation character and at least one must end a
+sentence; anything else is refused by name.
+
+`capitals:` covers the fourth shape: a capitalised word with no mark in front
+of it at all, which is about a third as common as `word. Capital`. Half of
+those capitals are correct, so the stage refuses a run of capitals, a capital
+inside the word and every part of speech but the ones that open a clause.
+`capitals: false` scans the marks and nothing else.
+
+`pause:` is the silence a bare capital needs in front of it before it is read.
+A latency cut, not a safety one: the readings answer those boundaries the same
+way with or without it, and a capital with no pause in front of it is rarely
+the shape this repairs. `pause: 0` reads every one.
+
+**English only, and it says so itself.** The readings are scored by an English
+base model and the mark set is English, so the stage refuses every other
+language. `when: language == "en"` on the step would only restate that.
+
+**Put it first.** The pause gate lines the transcript up against the decoder's
+token timings, so a stage above it that rewrites a word breaks the alignment.
+When that happens the gate stands down for that dictation, the log says so, and
+the readings still run. It is the one stage allowed above `vocabulary`: it
+removes a mark rather than rewriting a word, and it ran above the whole
+pipeline before it was a step.
+
+**Nothing waits for the model, and nothing is downloaded for it here.** 320 MB,
+fetched in the background when the pipeline holds this step and never
+otherwise. A dictation that arrives before the weights are in memory keeps its
+boundaries, and the step still publishes `ran: true` with `changed: false` —
+the failure direction every stage here shares.
+
+It publishes `interpret.count`: how many boundaries were joined.
+
+`transcription.sentences` is the switch this replaces. `sentences: false` still
+turns the step off and `--check-config` says to delete the step instead;
+`marks:` under `sentences:` or under `per_language.<lang>` still feeds the
+step, and `marks:` on the step wins over both.
 
 ## The name stage
 
@@ -150,9 +222,11 @@ text. `--check-config` refuses a pipeline that puts `numbers` or a transform
 above it, because a span that has moved cannot be told from a span that was
 always wrong.
 
-There used to be one exception, `replacements`, because the stage offers a
-rule's substitution back and the rules had to have fired first. That pass is
-inside this stage now, so there is no exception left to state.
+`interpret` is the one exception, and it is where the default puts it. It
+removes a mark rather than rewriting a word, and it ran above the whole
+pipeline before it was a step. `replacements` used to be the exception, because
+the stage offers a rule's substitution back and the rules had to have fired
+first; that pass is inside this stage now.
 
 It publishes `vocabulary.slots` (how many places the sentence offered),
 `vocabulary.reverted` (the substitutions it undid, as `term -> word`) and
@@ -999,7 +1073,8 @@ any of this exists:
 They are **derived, never claimed**. A stage cannot forget to report `changed`,
 and cannot report it about the wrong string.
 
-Stages add their own on top. The built-in ones publish `vocabulary.count`,
+Stages add their own on top. `interpret.count` is how many boundaries it
+joined. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
 ones, and the sentence the stage was handed — `numbers.language`, which grammar
 actually read the numbers and is not the same answer as the pipeline's

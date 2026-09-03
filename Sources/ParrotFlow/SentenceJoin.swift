@@ -313,12 +313,12 @@ actor SentenceJoin {
     /// starts in the text.
     ///
     /// The decoder's words joined by single spaces are the text, so a word's
-    /// offset is a running length. `Transcriber.swift` runs this stage before
-    /// the pipeline for exactly that reason — every text stage after it
-    /// rewrites words the timings index. Words that do not rebuild the text
-    /// give no gate rather than a wrong one.
-    static func pauses(in text: String, words: [Trace.Word]) -> [Int: Double] {
-        guard words.map(\.word).joined(separator: " ") == text else { return [:] }
+    /// offset is a running length. The `interpret` step is first in the
+    /// pipeline for exactly that reason — every text stage above it rewrites
+    /// words the timings index. Nil when they no longer rebuild the text: no
+    /// gate rather than a wrong one, and `apply` says so in the log.
+    static func pauses(in text: String, words: [Trace.Word]) -> [Int: Double]? {
+        guard words.map(\.word).joined(separator: " ") == text else { return nil }
         var out: [Int: Double] = [:]
         var offset = 0
         var previous: Trace.Word?
@@ -338,31 +338,52 @@ actor SentenceJoin {
     /// the text as it is being rebuilt. A join only removes a mark, so the
     /// window a later boundary reads is the same words either way.
     ///
-    /// Nothing here waits for the model. A dictation that arrives before the
-    /// weights are in memory keeps its boundaries and starts the load, so the
-    /// first dictation after a launch pays nothing and the second is repaired.
+    /// Nothing here waits for the model, and nothing here loads it. A
+    /// dictation that arrives before the weights are in memory keeps its
+    /// boundaries; the transcriber started the load before the pipeline ran,
+    /// so the first dictation after a launch pays nothing and the second is
+    /// repaired. Loading from here would mean every `--pipeline` run and every
+    /// check script paying 1.3s, or fetching 320 MB it has no business
+    /// fetching.
+    ///
+    /// `marks`, `capitals` and `pause` are the `interpret` step's options.
     /// `words` are the decoder's own, for the pause gate. Without them every
     /// candidate is read, which is what `--sentence-join` and the tests do.
+    ///
+    /// English only, and it refuses the rest here rather than at the call
+    /// site: the readings are scored by an English base model and the mark set
+    /// is English, so `when: language == "en"` on the step would be a line
+    /// that only restates what the stage already does.
     func apply(
-        to text: String, config: Config, words: [Trace.Word] = []
+        to text: String, config: Config, marks written: [String]? = nil,
+        capitals: Bool = true, pause: Double = SentenceJoin.paused,
+        words: [Trace.Word] = []
     ) async -> Outcome {
         let settings = config.transcription.sentences
         guard settings.enabled else { return .unchanged(text) }
         let language = Pipeline.language(of: text, config: config)
-        let marks = config.transcription.marks(for: language)
+        guard language == "en" else { return .unchanged(text) }
+        let marks = written ?? config.transcription.marks(for: language)
         let found = (
             Self.boundaries(in: text, scanning: Self.scanned(marks))
-            + Self.bareBoundaries(in: text)
+            + (capitals ? Self.bareBoundaries(in: text) : [])
         ).sorted { $0.next.lowerBound < $1.next.lowerBound }
         guard !found.isEmpty else { return .unchanged(text) }
         guard await SentenceReadings.shared.isLoaded else {
-            await SentenceReadings.shared.warm()
             Log.write("sentences: \(found.count) boundary(s) left as decoded;"
                 + " the model is not in memory yet")
             return .unchanged(text)
         }
         let terms = Array(config.vocabulary.terms.keys)
-        let pauses = words.isEmpty ? [:] : Self.pauses(in: text, words: words)
+        var pauses: [Int: Double] = [:]
+        if !words.isEmpty {
+            if let measured = Self.pauses(in: text, words: words) {
+                pauses = measured
+            } else {
+                Log.write("sentences: the words no longer rebuild the transcript, so the"
+                    + " pause gate stands down; every capital is read")
+            }
+        }
 
         var readings: [Reading] = []
         var rebuilt = ""
@@ -378,7 +399,7 @@ actor SentenceJoin {
                now == word || !Self.readable(word, in: whole, at: offset) {
                 continue
             }
-            if boundary.mark == nil, let gap = pauses[offset], gap < Self.paused {
+            if boundary.mark == nil, pause > 0, let gap = pauses[offset], gap < pause {
                 continue
             }
             let started = DispatchTime.now().uptimeNanoseconds
