@@ -103,6 +103,9 @@ final class PermissionsModel: ObservableObject {
     /// Whether espeak-ng is on this Mac. Polled on the same timer as the
     /// permissions, so a Terminal install lands on the row without a button.
     @Published var espeak: EspeakPresence = .missing
+    /// "Not now" was pressed, this launch or an earlier one. Leaving without
+    /// eSpeak NG should be a decision, and a decision is only asked for once.
+    @Published var espeakDeclined: Bool = EspeakInstall.declined
 
     /// Every model this launch is fetching. Held so `begin` can tell whether
     /// there is a Downloads step at all; the panes observe the same object as
@@ -157,6 +160,7 @@ final class PermissionsModel: ObservableObject {
         self.context = context
         refresh()
         espeak = Phonemes.locate() == nil ? .missing : .found
+        espeakDeclined = EspeakInstall.declined
         steps = PermissionStep.allCases
             .filter { status(of: $0) != .granted }
             .map(SetupStep.permission)
@@ -193,7 +197,8 @@ final class PermissionsModel: ObservableObject {
     static func showingSetup(
         _ downloads: ModelDownloads, context: PermissionsContext = .installing,
         axStatus: Permissions.Status = .granted, hotkeyDisplay: String = "Right ⌥",
-        hotkeyRegistered: Bool = true, espeak: EspeakPresence = .missing
+        hotkeyRegistered: Bool = true, espeak: EspeakPresence = .missing,
+        espeakDeclined: Bool = false
     ) -> PermissionsModel {
         let model = PermissionsModel(downloads: downloads)
         model.context = context
@@ -204,6 +209,7 @@ final class PermissionsModel: ObservableObject {
         model.hotkeyDisplay = hotkeyDisplay
         model.hotkeyRegistered = hotkeyRegistered
         model.espeak = espeak
+        model.espeakDeclined = espeakDeclined
         return model
     }
 
@@ -354,19 +360,9 @@ final class PermissionsWindowController {
         let view = PermissionsView(
             onAsk: { [weak self] step in self?.ask(step) },
             onDecline: { [weak self] in self?.decline() },
-            onClose: { [weak self] in self?.window?.close() },
+            onClose: { [weak self] in self?.finish() },
             onRetry: { [weak self] in self?.onRetryDownloads?() },
-            onInstallEspeak: { [weak self] in
-                guard let self else { return }
-                let started = EspeakInstall.runInTerminal { [weak self] opened in
-                    guard let self, !opened, self.model.espeak == .opening else { return }
-                    self.model.espeak = .missing
-                    self.openedTerminalAt = nil
-                }
-                guard started else { return }
-                self.model.espeak = .opening
-                self.openedTerminalAt = Date()
-            }
+            onInstallEspeak: { [weak self] in self?.installEspeak() }
         )
         .environmentObject(model)
         .environmentObject(model.downloads)
@@ -399,6 +395,60 @@ final class PermissionsWindowController {
         ) { [weak self] _ in
             self?.timer?.invalidate()
             self?.timer = nil
+        }
+    }
+
+    private func installEspeak() {
+        let started = EspeakInstall.runInTerminal { [weak self] opened in
+            guard let self, !opened, self.model.espeak == .opening else { return }
+            self.model.espeak = .missing
+            self.openedTerminalAt = nil
+        }
+        guard started else { return }
+        model.espeak = .opening
+        openedTerminalAt = Date()
+    }
+
+    /// Done. It stops once, and only once: leaving without eSpeak NG should be
+    /// a decision rather than something nobody read.
+    ///
+    /// Not on the failed-download screen — that button says Try again and does
+    /// something else — and not after the question has been answered, this
+    /// launch or an earlier one.
+    private func finish() {
+        guard let window else { return }
+        guard model.espeak == .missing, !model.espeakDeclined else {
+            window.close()
+            return
+        }
+        askAboutEspeak(on: window)
+    }
+
+    private func askAboutEspeak(on window: NSWindow) {
+        let alert = NSAlert()
+        alert.messageText = "Install eSpeak NG?"
+        alert.informativeText = "Without it, ParrotFlow misses some of the names in your"
+            + " vocabulary. It is a separate program, so it installs in Terminal and takes"
+            + " about a minute."
+        // The real app icon, the same file System Settings reads. `NSAlert`
+        // finds it by itself in the app; running the bare binary it does not.
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: url) {
+            alert.icon = icon
+        }
+        alert.addButton(withTitle: "Install it")
+        alert.addButton(withTitle: "Not now")
+        alert.beginSheetModal(for: window) { [weak self] answer in
+            guard let self else { return }
+            guard answer == .alertFirstButtonReturn else {
+                self.model.espeakDeclined = true
+                EspeakInstall.declined = true
+                window.close()
+                return
+            }
+            // The window stays open, so the line can show Terminal opening and
+            // then the binary landing.
+            self.installEspeak()
         }
     }
 
@@ -518,6 +568,7 @@ struct PermissionsView: View {
                     hotkeyDisplay: model.hotkeyDisplay,
                     hotkeyRegistered: model.hotkeyRegistered,
                     context: model.context, espeak: model.espeak,
+                    espeakDeclined: model.espeakDeclined,
                     onDecline: onDecline, onClose: onClose, onRetry: onRetry,
                     onInstallEspeak: onInstallEspeak
                 )
@@ -784,6 +835,7 @@ private struct SetupPane: View {
     let hotkeyRegistered: Bool
     let context: PermissionsContext
     let espeak: PermissionsModel.EspeakPresence
+    let espeakDeclined: Bool
     let onDecline: () -> Void
     let onClose: () -> Void
     let onRetry: () -> Void
@@ -1024,35 +1076,143 @@ private struct SetupPane: View {
         }
     }
 
-    /// The one line the app cannot fetch, so the one line with a button.
+    /// The one thing here the app cannot fetch, so the one thing that asks for
+    /// a decision — and the only thing on the screen drawn as a card.
     ///
     /// Amber, not scarlet: CharsiuG2P covers the base case, so an absent eSpeak
     /// NG costs some names rather than the feature.
     @ViewBuilder
     private var espeakLines: some View {
         SetupLine(
-            glyph: espeak == .found ? .granted : (espeak == .opening ? .downloading : .absent),
+            glyph: espeakGlyph,
             title: "eSpeak NG",
             detail: "GPL-3 · a separate program",
-            note: espeak == .opening ? "Terminal open" : nil,
-            button: espeak == .missing ? ("Run in Terminal", onInstallEspeak) : nil
+            note: espeakNote
         )
-        if espeak != .found {
-            SetupNote(text: espeakHow, tone: Parrot.amber)
-            CommandField()
+        switch espeakState {
+        case .found:
+            EmptyView()
+        case .opening:
+            SetupNote(
+                text: "Terminal is running it now. This line notices on its own when it lands.",
+                tone: Parrot.amber
+            )
+        case .skipped:
+            SetupNote(
+                text: "Skipped. Install it any time from Setup… in the menu bar.",
+                tone: Parrot.amber
+            )
+        case .missing:
+            EspeakCard(onInstall: onInstallEspeak)
         }
     }
 
-    private var espeakHow: String {
-        if espeak == .opening {
-            return "Terminal is running it now. This line notices on its own when it lands."
+    /// Four ways the line reads. "Skipped" is missing plus an answer already
+    /// given, which is not the same thing as missing and unanswered.
+    private enum EspeakState {
+        case found
+        case opening
+        case missing
+        case skipped
+    }
+
+    private var espeakState: EspeakState {
+        switch espeak {
+        case .found: return .found
+        case .opening: return .opening
+        case .missing: return espeakDeclined ? .skipped : .missing
         }
-        let backs = "Backs up CharsiuG2P on names it misses."
+    }
+
+    private var espeakGlyph: SetupGlyph {
+        switch espeakState {
+        case .found: return .granted
+        case .opening: return .downloading
+        case .missing, .skipped: return .absent
+        }
+    }
+
+    private var espeakNote: String? {
+        switch espeakState {
+        case .found: return nil
+        case .opening: return "Terminal open"
+        case .missing: return "not installed"
+        case .skipped: return "skipped"
+        }
+    }
+}
+
+/// What is lost without eSpeak NG, what it is, and the two ways to install it.
+///
+/// A card because it is the one thing on this screen that asks for a decision.
+/// Amber because the decision is not urgent: an absent eSpeak costs some names,
+/// not the feature.
+private struct EspeakCard: View {
+    let onInstall: () -> Void
+
+    @State private var copied = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Not installed. Some of your names will be missed without it.")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Parrot.amber)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(what)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // The chained one-liner is 140 characters. Inside a sentence it is
+            // unreadable and unselectable, so it gets a field of its own.
+            Text(EspeakInstall.command)
+                .font(.system(size: 10, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(
+                    Color.primary.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
+                )
+                .padding(.vertical, 1)
+
+            HStack(spacing: 10) {
+                Button("Run in Terminal", action: onInstall)
+                    .buttonStyle(.borderedProminent)
+                Button(copied ? "Copied" : "Copy the command") {
+                    EspeakInstall.copyCommand()
+                    copied = true
+                }
+            }
+            .controlSize(.small)
+            .padding(.top, 2)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 8)
+        .padding(.bottom, 9)
+        .background(
+            Parrot.amber.opacity(0.11),
+            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(Parrot.amber.opacity(0.38), lineWidth: 1)
+        }
+        .padding(.leading, SetupMetrics.indent)
+        .padding(.top, 2)
+    }
+
+    private var what: String {
+        let backs = "It backs up CharsiuG2P on the names it misses. It is a separate program"
+            + " under GPL-3, so ParrotFlow cannot install it for you."
         if EspeakInstall.brew != nil {
-            return "\(backs) Not installed. This runs it in Terminal, where you can watch it."
+            return "\(backs) This runs the install in Terminal, where you can watch it."
         }
-        return "\(backs) Not installed, and neither is Homebrew. This installs Homebrew first,"
-            + " then eSpeak NG."
+        return "\(backs) Homebrew is missing too, so this installs Homebrew first, then"
+            + " eSpeak NG, in Terminal."
     }
 }
 
@@ -1120,36 +1280,6 @@ private struct SetupNote: View {
             .fixedSize(horizontal: false, vertical: true)
             .padding(.leading, SetupMetrics.indent)
             .padding(.bottom, 4)
-    }
-}
-
-/// The chained one-liner is 140 characters. Inside a sentence it is unreadable
-/// and unselectable, so it gets a field and a way to copy.
-private struct CommandField: View {
-    @State private var copied = false
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(EspeakInstall.command)
-                .font(.system(size: 10, design: .monospaced))
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Button(copied ? "Copied" : "Copy") {
-                EspeakInstall.copyCommand()
-                copied = true
-            }
-            .controlSize(.small)
-        }
-        .padding(.leading, 10)
-        .padding(.trailing, 8)
-        .padding(.vertical, 6)
-        .background(
-            Color.primary.opacity(0.08),
-            in: RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
-        )
-        .padding(.leading, SetupMetrics.indent)
-        .padding(.bottom, 2)
     }
 }
 

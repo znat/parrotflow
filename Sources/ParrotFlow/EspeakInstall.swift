@@ -29,6 +29,19 @@ enum EspeakInstall {
             + " && /opt/homebrew/bin/brew install espeak-ng"
     }
 
+    /// Whether the answer to "Install eSpeak NG?" was "Not now".
+    ///
+    /// `UserDefaults`, like the microphone notice and the update reminder: this
+    /// is an answer the app already has, not a setting somebody chose, so it
+    /// does not belong in `config.yaml` where it would have to be read past.
+    /// Per bundle identifier, so the two builds ask separately.
+    static var declined: Bool {
+        get { UserDefaults.standard.bool(forKey: declinedKey) }
+        set { UserDefaults.standard.set(newValue, forKey: declinedKey) }
+    }
+
+    private static let declinedKey = "Setup.espeakDeclined"
+
     static func copyCommand() {
         let board = NSPasteboard.general
         board.clearContents()

@@ -140,7 +140,10 @@ at launch), and eSpeak NG. Nothing there has to be waited for — *Done* closes
 the window and the downloads carry on. The title says the state, and only the
 permissions and the speech model change it: "Almost ready" until Parakeet is
 in, then "Ready". The one line with a button is eSpeak NG, which the app looks
-for rather than downloads.
+for rather than downloads: it is GPL-3 and a separate program, so *Run in
+Terminal* runs the Homebrew command where it can be watched. Pressing *Done*
+without it asks once — *Install it* or *Not now* — and remembers the answer, so
+the question is asked once per install and not once per launch.
 
 ## Step 3 — Prove transcription works with no voice
 

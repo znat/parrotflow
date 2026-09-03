@@ -686,8 +686,10 @@ how you keep it on screen for as long as you want to look at it.
 process fetches nothing, so it runs on a sample registry whose percentage
 climbs — which is the part of that screen a still cannot show. The sheet draws
 the same screen in its four states: *Almost ready*, *Ready*, *Something was
-switched off* and *Something did not arrive*. The title is the state, so those
-four are the thing to compare.
+switched off*, *Something did not arrive* for each of the two models a
+dictation waits on, and the same screen after eSpeak NG was skipped. The title
+is the state, so those are the thing to compare. The alert *Done* raises when
+eSpeak NG is missing is a sheet on the window and cannot be drawn here.
 
 `sequence` is the one that cannot be checked from a still. The pill is a single
 panel that changes width and crossfades its contents rather than being replaced

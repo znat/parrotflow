@@ -293,6 +293,13 @@ enum PanelsCommand {
         let vadPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(vadDidNotArrive, espeak: .found))
             .environmentObject(vadDidNotArrive))
+        // The same screen after "Not now": the card is gone and the line says
+        // what was decided. The alert that asks is a sheet on the window and
+        // cannot be drawn here.
+        let skippedPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(
+                ready, context: .revisiting, espeakDeclined: true))
+            .environmentObject(ready))
 
         // The third element is the appearance to draw in. Every floating
         // surface is dark whatever the system is set to — that is decided in
@@ -332,6 +339,7 @@ enum PanelsCommand {
             (switchedOffPane, setupSize(switchedOffPane), .dark, false),
             (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
             (vadPane, setupSize(vadPane), .dark, false),
+            (skippedPane, setupSize(skippedPane), .light, false),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), .dark, true),
             (AnyView(PillView().environmentObject(thinking)),
