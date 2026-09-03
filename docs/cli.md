@@ -682,11 +682,12 @@ on its own.
 Put the pointer on it and the fading stops, which is both what the app does and
 how you keep it on screen for as long as you want to look at it.
 
-`setup` is the first-run window, on the step that reports the downloads. This
+`setup` is the first-run window, on the one screen the walk ends on. This
 process fetches nothing, so it runs on a sample registry whose percentage
 climbs — which is the part of that screen a still cannot show. The sheet draws
-the same step twice, once with rows arriving and once with the speech model
-failed, and the last screen in four of its states.
+the same screen in its four states: *Almost ready*, *Ready*, *Something was
+switched off* and *Something did not arrive*. The title is the state, so those
+four are the thing to compare.
 
 `sequence` is the one that cannot be checked from a still. The pill is a single
 panel that changes width and crossfades its contents rather than being replaced

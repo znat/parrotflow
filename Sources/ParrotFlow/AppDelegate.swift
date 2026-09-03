@@ -5795,23 +5795,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // After the pill, which writes the label too: this has to hold the
             // token of the last write, or `.ready` never clears the menu bar.
             transcriberLabelToken = labelToken
-            // `what` reads like "speech model 43%" — the number, if this is
-            // the one download that carries one, is the only part worth a
-            // second field for; the rest is already the sentence above.
-            let percent = what.split(separator: " ").last.flatMap { token -> Int? in
-                token.hasSuffix("%") ? Int(token.dropLast()) : nil
-            }
-            // Only for a download that holds dictation up. This row says
-            // whether you can speak yet, and a background fetch does not
-            // change that answer.
-            if blocking { permissions.model.speechModel = .preparing(percent: percent) }
         case .loading:
             setLabel("Loading speech model…")
             if ownsDownloadPill {
                 updateProgress("Loading speech model…", token: dictationProgressToken)
             }
             transcriberLabelToken = labelToken
-            permissions.model.speechModel = .preparing(percent: nil)
         case .failed(let message):
             setLabel("Model error: \(message)")
             transcriberLabelToken = labelToken
@@ -5820,11 +5809,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // run waiting on the model gets it as a thrown error whose catch
             // already hides the pill and puts up the alert. Two endings on
             // screen for one failure is worse than one.
-            // Not surfaced as "preparing" forever: the permissions window
-            // isn't the place a transcription failure gets diagnosed, and a
-            // stuck "downloading" badge there would outlive the one place
-            // that does explain it — this label, and the log.
-            permissions.model.speechModel = .ready
         case .ready, .idle:
             if transcriberLabelToken == labelToken { setLabel(nil) }
             transcriberLabelToken = nil
@@ -5835,7 +5819,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 updateProgress("Transcribing…", token: dictationProgressToken)
             }
             pillDownloadRun = nil
-            permissions.model.speechModel = .ready
         }
     }
 

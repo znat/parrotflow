@@ -265,11 +265,27 @@ enum PanelsCommand {
             after: "I think we should have asked them first — they're going to be annoyed."
         )
 
-        let midDownload = sampleDownloads(speech: .downloading(percent: 62))
-        let failedDownload = sampleDownloads(speech: .failed(.unreachable))
-        let doneDownloads = sampleDownloads(speech: .installed)
-        doneDownloads.update(NeuralPhonemes.soundDownload.id, to: .installed)
-        doneDownloads.update(SentenceModel.download.id, to: .installed)
+        // The four states of the one screen, in the order they happen.
+        let almostReady = sampleDownloads(speech: .downloading(percent: 62))
+        let didNotArrive = sampleDownloads(speech: .failed(.unreachable))
+        let ready = sampleDownloads(speech: .installed)
+        ready.update(NeuralPhonemes.soundDownload.id, to: .installed)
+        ready.update(SentenceModel.download.id, to: .installed)
+
+        let almostReadyPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(almostReady))
+            .environmentObject(almostReady))
+        let readyPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(
+                ready, context: .revisiting, espeak: .found))
+            .environmentObject(ready))
+        let switchedOffPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(
+                ready, axStatus: .notGranted, espeak: .found))
+            .environmentObject(ready))
+        let didNotArrivePane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(didNotArrive))
+            .environmentObject(didNotArrive))
 
         // The third element is the appearance to draw in. Every floating
         // surface is dark whatever the system is set to — that is decided in
@@ -301,47 +317,13 @@ enum PanelsCommand {
                     .accessibility, asked: true, context: .revisiting))
                 .environmentObject(ModelDownloads())),
              NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
-            // The Downloads step, in the two shapes worth comparing: rows
-            // arriving, and the one row a dictation waits on having failed —
-            // which is the only failure that reaches the foot.
-            (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.showingDownloads(midDownload))
-                .environmentObject(midDownload)),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.downloadsHeight),
-             .light, false),
-            (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.showingDownloads(
-                    failedDownload, espeak: .found))
-                .environmentObject(failedDownload)),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.downloadsHeight),
-             .dark, false),
-            // The screen after both are granted, in the shapes it comes in:
-            // the speech model already there, still on its way, there but the
-            // hotkey never bound, and a permission switched off afterwards.
-            (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.done(downloads: doneDownloads))
-                .environmentObject(doneDownloads)),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.doneHeight),
-             .dark, false),
-            (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.done(
-                    speechModel: .preparing(percent: 43), downloads: midDownload,
-                    espeak: .missing))
-                .environmentObject(midDownload)),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.doneHeight),
-             .light, false),
-            (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.done(
-                    hotkeyRegistered: false, downloads: doneDownloads))
-                .environmentObject(doneDownloads)),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.doneHeight),
-             .dark, false),
-            (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.done(
-                    axStatus: .notGranted, downloads: doneDownloads))
-                .environmentObject(doneDownloads)),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.doneHeight),
-             .dark, false),
+            // The one screen the walk ends on, in its four states. The title
+            // is the state, so this is the only place the four sentences can
+            // be read against each other.
+            (almostReadyPane, setupSize(almostReadyPane), .light, false),
+            (readyPane, setupSize(readyPane), .dark, false),
+            (switchedOffPane, setupSize(switchedOffPane), .dark, false),
+            (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), .dark, true),
             (AnyView(PillView().environmentObject(thinking)),
@@ -528,6 +510,16 @@ enum PanelsCommand {
         return downloads
     }
 
+    /// The setup screen has no fixed height: it takes the one its content asks
+    /// for, the same way the window does.
+    private static func setupSize(_ view: AnyView) -> NSSize {
+        let fitting = NSHostingView(rootView: view).fittingSize
+        return NSSize(
+            width: PermissionMetrics.width,
+            height: fitting.height > 0 ? fitting.height : PermissionMetrics.setupHeight
+        )
+    }
+
     /// An ordinary titled window. The setup screen is the one surface that is
     /// a window rather than a panel over somebody's words.
     private static func window(for view: AnyView, size: NSSize) -> NSWindow {
@@ -641,17 +633,13 @@ enum PanelsCommand {
         // that cannot be checked from a still.
         case "setup":
             let downloads = sampleDownloads(speech: .downloading(percent: 8))
-            let model = PermissionsModel.showingDownloads(downloads)
-            setupWindow = window(
-                for: AnyView(
-                    PermissionsView()
-                        .environmentObject(model)
-                        .environmentObject(downloads)
-                ),
-                size: NSSize(
-                    width: PermissionMetrics.width, height: PermissionMetrics.downloadsHeight
-                )
+            let model = PermissionsModel.showingSetup(downloads)
+            let pane = AnyView(
+                PermissionsView()
+                    .environmentObject(model)
+                    .environmentObject(downloads)
             )
+            setupWindow = window(for: pane, size: setupSize(pane))
             var percent = 8
             ticker = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
                 percent += 1
