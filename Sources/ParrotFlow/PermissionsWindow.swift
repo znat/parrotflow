@@ -386,7 +386,12 @@ final class PermissionsWindowController {
             onRetry: { [weak self] in self?.onRetryDownloads?() },
             onInstallEspeak: { [weak self] in
                 guard let self else { return }
-                guard EspeakInstall.runInTerminal() else { return }
+                let started = EspeakInstall.runInTerminal { [weak self] opened in
+                    guard let self, !opened, self.model.espeak == .opening else { return }
+                    self.model.espeak = .missing
+                    self.openedTerminalAt = nil
+                }
+                guard started else { return }
                 self.model.espeak = .opening
                 self.openedTerminalAt = Date()
             }

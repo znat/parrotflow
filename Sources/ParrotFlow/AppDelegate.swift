@@ -2364,6 +2364,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// two background fetches clear themselves when they fail. Rows that
     /// already installed keep saying so.
     private func retryDownloads() {
+        // A damaged copy is bytes on disk that will not load. Every fetch here
+        // skips the download when the files are already there, so re-running
+        // the warm-up would hand the loader the same bytes. The cache goes
+        // first, and only for the rows that said "damaged".
+        let damaged = ModelDownloads.shared.damaged
+        if #available(macOS 14, *) {
+            if damaged.contains(Transcriber.speechDownload.id) {
+                Transcriber.discardSpeechModel()
+            }
+            if damaged.contains(SentenceModel.download.id) { SentenceModel.discardCache() }
+            if damaged.contains(WordVectors.download.id) { WordVectors.discardCache() }
+        }
         ModelDownloads.shared.retrying()
         warmModels()
     }

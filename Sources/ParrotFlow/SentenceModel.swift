@@ -160,6 +160,14 @@ actor SentenceModel {
         try await body()
     }
 
+    /// Deletes the cache, so the next `prepare` fetches it again.
+    ///
+    /// `build` already re-fetches a cache that will not load, once. This is for
+    /// the retry after that one failed too.
+    static func discardCache() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
     private static func load() throws -> MLModel {
         try MLModel(contentsOf: compiledURL)
     }

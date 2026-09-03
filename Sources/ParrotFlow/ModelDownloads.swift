@@ -112,9 +112,17 @@ final class ModelDownloads: ObservableObject {
     /// Idempotent, and it keeps the order of first registration. A second call
     /// leaves the state alone: that belongs to the fetch, and a retry that put
     /// an installed row back to "waiting" would report work nobody is doing.
+    ///
+    /// The one state a second call does write is `.off`, both ways. `update`
+    /// drops every report for a row a setting switched off, so a row left off
+    /// after the setting came back would never move again.
     func expect(_ model: ModelDownload, off reason: String? = nil) {
         if let at = rows.firstIndex(where: { $0.id == model.id }) {
-            if let reason { rows[at].state = .off(reason) }
+            if let reason {
+                rows[at].state = .off(reason)
+            } else if case .off = rows[at].state {
+                rows[at].state = model.state
+            }
             return
         }
         var row = model
@@ -154,6 +162,12 @@ final class ModelDownloads: ObservableObject {
     /// It is the only kind that reaches the foot of the screen.
     var blockingFailure: ModelDownload.Failure? {
         rows.first { $0.blocking && $0.state.hasFailed }?.state.failure
+    }
+
+    /// The rows whose bytes are on disk and will not load. Their repair is to
+    /// throw the cache away, which the retry does before it fetches again.
+    var damaged: Set<String> {
+        Set(rows.filter { $0.state.failure == .damaged }.map(\.id))
     }
 
     var anyDownloading: Bool {
