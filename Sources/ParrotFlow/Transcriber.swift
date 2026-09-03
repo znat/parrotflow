@@ -491,20 +491,24 @@ actor Transcriber {
         // downloads at once halve the bandwidth of the one somebody is
         // watching.
         //
-        // English only, and the sentence pass below shares that gate: the
-        // readings are scored by an English base model and the mark set is
-        // English.
+        // The vocabulary gate's two models, in any language: mmBERT-small
+        // answers in French and so do the word vectors.
+        //
+        // Fetched at launch too. This is the retry: a fetch that failed clears
+        // itself, and the next dictation tries again.
+        warmSlotModel()
+        if config.vocabulary.gateSentence, #available(macOS 14, *) {
+            Task { await WordVectors.shared.warm() }
+        }
+
+        // The sentence pass is English only: the readings are scored by an
+        // English base model and the mark set is English. So is the sound pass
+        // — espeak's letter-to-sound answers for French words and the answer is
+        // noise.
         var joinedSentences = 0
         if Pipeline.language(of: text, config: config) == "en" {
-            // Fetched at launch now. This is the retry: a fetch that failed
-            // clears itself, and the next English dictation is the next chance
-            // to try again.
-            warmSlotModel()
             if #available(macOS 14, *), config.transcription.sentences.enabled {
                 Task { await SentenceReadings.shared.warm() }
-            }
-            if config.vocabulary.gateSentence, #available(macOS 14, *) {
-                Task { await WordVectors.shared.warm() }
             }
             // The set the sound pass actually reads, not the shorter one the
             // audio search needed. `vocabularyTerms` drops anything under five

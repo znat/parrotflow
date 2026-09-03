@@ -467,14 +467,15 @@ if let index = arguments.firstIndex(of: "--slot-gap") {
         exit(1)
     }
     guard arguments.indices.contains(index + 3) else {
-        print("usage: ParrotFlow --slot-gap \"<sentence>\" <heard> <term>")
+        print("usage: ParrotFlow --slot-gap \"<sentence>\" <heard> <term> [--lang <code>]")
         exit(2)
     }
     exit(
         SlotGapCommand.run(
             sentence: arguments[index + 1],
             heard: arguments[index + 2],
-            term: arguments[index + 3]
+            term: arguments[index + 3],
+            language: languageList(arguments)?.first ?? "en"
         )
     )
 }

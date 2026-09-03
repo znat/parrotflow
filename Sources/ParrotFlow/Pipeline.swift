@@ -1088,7 +1088,9 @@ struct Pipeline: Equatable, Codable {
         if config.vocabulary.gateSentence, #available(macOS 14, *) {
             decided = await SentenceGate.settle(
                 changes, in: text, given: decided,
-                language: Pipeline.language(of: text, config: config)
+                floor: config.transcription.slotFloor(
+                    for: Pipeline.language(of: text, config: config)
+                )
             )
         }
         gateSeconds = Date().timeIntervalSince(gatedAt)

@@ -28,6 +28,7 @@ transcription:
   languages: [en]       # en and fr are the supported values
   rewrite_line: true
   sentences: …          # or false — joining a sentence a pause cut in two
+  per_language: …       # the settings that differ from one language to the next
   pipeline: …           # see pipelines.md
   transforms: …         # see pipelines.md
 
@@ -445,6 +446,32 @@ language. One entry means no detection runs at all.
 
 Most spoken first: the first entry is the fallback for transcripts too short to
 judge, under four words. Supported values are `en` and `fr`.
+
+## `transcription.per_language`
+
+The settings that differ from one language to the next, in one block keyed by
+language code.
+
+```yaml
+transcription:
+  per_language:
+    en: {slot_floor: 0.20}
+    fr: {slot_floor: 0.30}
+```
+
+Those are the defaults, so an empty block changes nothing. An entry overrides
+only the keys it names. A language with no entry gets English's values.
+
+`slot_floor` is how far the word you were heard to say must beat a vocabulary
+term by before the gate refuses to write the term. The number is a difference of
+two cosines, so it must be above 0 and at most 2. It does not carry between
+languages: French gaps are about a third narrower, so the English 0.20 refuses
+correct French rewrites where 0.30 does not. No single value works for both —
+0.40 is free in both and costs the English gate 35 of the 55 wrong rewrites it
+catches. The gate only ever refuses, so a floor set too tight costs a name you
+have to type, never a wrong word in your text.
+
+`--check-config` prints the floor for every language you listed.
 
 ## `transcription.activation_phrases`
 

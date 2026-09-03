@@ -33,9 +33,13 @@ enum SentenceGate {
     /// `settled` carries one entry per change: `true` writes the term, `false`
     /// keeps what was heard, `nil` is still open. Only the open ones are asked
     /// about, so a place the word lists already settled costs nothing.
+    ///
+    /// `floor` is how far the heard word must win by before `SlotReference`
+    /// refuses. It keys off the language of the transcript — see
+    /// `Config.Transcription.slotFloor(for:)`.
     static func settle(
         _ changes: [VocabularyJudge.Change], in text: String, given settled: [Bool?],
-        language: String
+        floor: Double
     ) async -> [Bool?] {
         // Never on the dictation's time. The word vectors are 400 MB and the
         // first MLX call warms Metal; waiting for that with the pill on screen
@@ -116,7 +120,7 @@ enum SentenceGate {
                 let gap = try await SlotReference.gap(
                     term: change.now, heard: change.was, at: change.range, in: text
                 )
-                refuses = gap < -SlotReference.floor(for: language)
+                refuses = gap < -floor
             } catch {
                 // A place the slot cannot read is a place this stage has no
                 // opinion about, not one to guess at.

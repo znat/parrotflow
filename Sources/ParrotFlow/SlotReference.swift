@@ -27,28 +27,18 @@ import Foundation
 /// to write. `TermPortrait` is the half that authorises.
 ///
 /// Measured on 59 hand-labelled proposals and on 35 more from fresh dictation,
-/// at `floor`: no correct rewrite refused, no ordinary word overwritten.
+/// at the English floor: no correct rewrite refused, no ordinary word
+/// overwritten.
+///
+/// **The floor is per language and it lives in the config**, at
+/// `transcription.per_language.<code>.slot_floor` — 0.20 in English, 0.30 in
+/// French. It is the raw difference of two cosines, not divided by anything.
+/// Dividing by the spread of the ten words looks like it should help and does
+/// the opposite: a sentence holding a rare name makes the ten words collapse
+/// together, the spread goes to 0.002, and the ratio explodes on exactly the
+/// cases that should be written.
 @available(macOS 14, *)
 enum SlotReference {
-
-    /// How far the heard word must win by before the rewrite is refused.
-    ///
-    /// The raw difference of two cosines, not divided by anything. Dividing by
-    /// the spread of the ten words looks like it should help and does the
-    /// opposite: a sentence holding a rare name makes the ten words collapse
-    /// together, the spread goes to 0.002, and the ratio explodes on exactly
-    /// the cases that should be written.
-    ///
-    /// 0.20 holds on three sets, two of them chosen after it was fixed.
-    /// Ordinary words sit at -0.30 to -0.43 and correct rewrites at -0.02 to
-    /// -0.18, and nothing lands between.
-    ///
-    /// Per language, because the value does not transfer. Only English is in
-    /// the table: the gate runs on nothing else yet.
-    static func floor(for language: String) -> Double { floors[language] ?? english }
-
-    private static let english = 0.20
-    private static let floors: [String: Double] = ["en": english]
 
     /// How many words the reference is built from, and how deep to look for
     /// them. Ten is what every measurement used.

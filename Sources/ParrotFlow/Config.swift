@@ -1749,6 +1749,76 @@ struct Config: Decodable, Equatable {
             }
         }
 
+        /// The settings that key off which language you dictated in.
+        ///
+        ///     transcription:
+        ///       per_language:
+        ///         fr:
+        ///           slot_floor: 0.30
+        ///
+        /// An entry overrides only the keys it names. Everything else keeps the
+        /// built-in value for that language, and a language with no entry keeps
+        /// English's.
+        var perLanguage: [String: Language] = [:]
+
+        /// How far the heard word must win by before the vocabulary gate
+        /// refuses a rewrite — see `SlotReference`.
+        func slotFloor(for language: String) -> Double {
+            perLanguage[language]?.slotFloor
+                ?? Language.builtIn[language]?.slotFloor
+                ?? Language.defaultSlotFloor
+        }
+
+        /// What one language sets. Every key is optional: naming a language to
+        /// change one of them must not silently reset the others.
+        struct Language: Decodable, Equatable {
+            var slotFloor: Double?
+
+            /// English's floor. Ordinary words sit at -0.30 to -0.43 and
+            /// correct rewrites at -0.02 to -0.18, and nothing lands between.
+            static let defaultSlotFloor = 0.20
+
+            /// What each language gets with nothing in the file.
+            ///
+            /// French gaps are compressed by about a third, so the English
+            /// floor refuses correct French rewrites. No single value serves
+            /// both: 0.40 is free in both and costs the English gate 35 of the
+            /// 55 wrong rewrites it catches.
+            static let builtIn: [String: Language] = [
+                "en": Language(slotFloor: defaultSlotFloor),
+                "fr": Language(slotFloor: 0.30),
+            ]
+
+            init(slotFloor: Double? = nil) {
+                self.slotFloor = slotFloor
+            }
+
+            enum CodingKeys: String, CodingKey {
+                case slotFloor = "slot_floor"
+            }
+
+            init(from decoder: Decoder) throws {
+                let named = decoder.codingPath.last?.stringValue ?? ""
+                let path = "transcription.per_language"
+                    + (named.isEmpty ? "" : ".\(named)")
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                if let written = try c.decodeIfPresent(Double.self, forKey: .slotFloor) {
+                    // The gap is one cosine minus another, so it never goes
+                    // below -2 and a floor of 2 refuses nothing. At 0 or less
+                    // the faintest lean against the term refuses it.
+                    guard written > 0, written <= 2 else {
+                        throw ConfigError.invalidValue(
+                            key: "\(path).slot_floor",
+                            value: "\(written)",
+                            expected: "a number above 0 and at most 2 — 0.20 in English,"
+                                + " 0.30 in French"
+                        )
+                    }
+                    slotFloor = written
+                }
+            }
+        }
+
         enum InsertMode: String, Codable, Equatable {
             case paste
             case clipboard
@@ -1756,6 +1826,7 @@ struct Config: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey {
             case enabled, replacements, pipeline, languages, sentences
+            case perLanguage = "per_language"
             case insertMode = "insert_mode"
             case activationPhrases = "activation_phrases"
             case activationPhrase = "activation_phrase"
@@ -2074,6 +2145,31 @@ struct Config: Decodable, Equatable {
                     key: "transcription.sentences",
                     value: "not a sentence setting",
                     expected: "`false`, or `marks:` as a list of punctuation marks"
+                )
+            }
+            // Not `try?` either, and for the same reason: a floor the file got
+            // wrong must not leave the gate running on a stock one.
+            do {
+                if let written = try c.decodeIfPresent(
+                    [String: Language].self, forKey: .perLanguage
+                ) {
+                    let unknown = written.keys.filter { !DictationLanguage.supported.contains($0) }
+                    guard unknown.isEmpty else {
+                        throw ConfigError.invalidValue(
+                            key: "transcription.per_language",
+                            value: unknown.sorted().map { "`\($0)`" }.joined(separator: ", "),
+                            expected: "one of \(DictationLanguage.supported.joined(separator: ", "))"
+                        )
+                    }
+                    perLanguage = written
+                }
+            } catch let bad as ConfigError {
+                throw bad
+            } catch {
+                throw ConfigError.invalidValue(
+                    key: "transcription.per_language",
+                    value: "not a language block",
+                    expected: "a language code, then `marks:` or `slot_floor:` under it"
                 )
             }
             // Wrapped, as `replacements:` is below and for the same reason.
