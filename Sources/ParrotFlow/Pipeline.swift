@@ -174,10 +174,40 @@ struct Pipeline: Equatable, Codable {
         /// whatever arrived, which is what the gate was measured against and
         /// the only way to measure it again.
         var gate: Bool?
+        /// Written `slot_gate:`. Whether anything reads the mmBERT slot — the
+        /// part of speech the spot wants, in `SlotGate`, and the ten words it
+        /// expects there, in `SlotReference`. Absent means true.
+        ///
+        /// One switch for both because they are one model, and the promise the
+        /// switch makes is that `false` downloads nothing. Each half takes the
+        /// path it already has on a machine the 269 MB is not on: the lexical
+        /// gate settles what the word lists settle and asks nothing more, and
+        /// the sentence gate is left to the portrait alone.
+        var slotGate: Bool?
+        /// Written `portrait:`. Whether a term's own sentences and its
+        /// counter-examples may settle a proposal — see `TermPortrait`. Absent
+        /// means true.
+        ///
+        /// `false` takes the path a term with too few uses already has: the
+        /// portrait says nothing, and the slot's refusal is all that can speak.
+        var portrait: Bool?
+        /// Written `slot_floor:`. How far the heard word must win by before
+        /// `SlotReference` refuses the rewrite. A language it does not name
+        /// keeps the built-in value for that language — see
+        /// `Transcription.slotFloor(for:on:)`.
+        var slotFloor: SlotFloor?
         /// `marks:` on an `interpret` step. What a boundary can be written
-        /// with: the sentence enders in the list are where one is looked for,
-        /// the rest are readings tried at one. Absent falls back to
-        /// `transcription.per_language.<lang>.marks`.
+        /// with. Absent takes the built-in set for the language.
+        ///
+        /// One list, two jobs. The sentence enders in it — `.` and `?` — are
+        /// where a boundary is looked for. Everything else in it — the comma —
+        /// is a reading tried at every boundary. So a boundary is read three
+        /// ways: the mark it carries, the comma, and no mark at all. Drop `?`
+        /// from the list and question marks stop being scanned.
+        ///
+        /// There is no threshold; the reading the model scores highest is the
+        /// one that is written. `;` and `:` were measured and never changed a
+        /// decision in English, so they are not in the default.
         var marks: [String]?
         /// `capitals:` on an `interpret` step. Whether a capital with no mark
         /// in front of it is read as a boundary too. Absent means true.
@@ -202,6 +232,21 @@ struct Pipeline: Equatable, Codable {
         /// the cost of an anchor people forget — which `validate` refuses
         /// rather than leaving to run everywhere in silence.
         var app: String?
+
+        /// What `slot_floor:` said, in either spelling.
+        ///
+        ///     slot_floor: 0.20                 every language
+        ///     slot_floor: {en: 0.20, fr: 0.30} one at a time
+        ///
+        /// A language the map does not name keeps its built-in floor.
+        struct SlotFloor: Equatable, Codable {
+            var everyLanguage: Double?
+            var byLanguage: [String: Double] = [:]
+
+            func value(for language: String) -> Double? {
+                byLanguage[language] ?? everyLanguage
+            }
+        }
 
         /// Whether a condition is a pattern rather than an expression.
         ///
@@ -540,15 +585,6 @@ struct Pipeline: Equatable, Codable {
         for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil,
         scope: Scope = Scope()
     ) -> Skip? {
-        // The legacy off switch. `transcription.sentences: false` predates the
-        // step and still turns it off: reading it as "on, because the step is
-        // listed" would start a stage somebody switched off, without a word.
-        if step.stage == .interpret, !config.transcription.sentences.enabled {
-            return Skip(
-                code: "legacy_off",
-                described: "`transcription.sentences: false` turns this step off"
-            )
-        }
         if step.stage == .vocabulary {
             // It costs a model call, so it answers to the same two guards a
             // prompt does: `--replace` must stay off the network, and a spoken
@@ -1116,7 +1152,14 @@ struct Pipeline: Equatable, Codable {
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary: \(slots.count) slot(s) from \(parts.count) proposal(s)"
         if bySound > 0 { census += " (\(bySound) by sound)" }
-        if config.vocabulary.gateSentence { census += ", sentence gate on" }
+        // Which of the two halves is on, not just that the gate is: a place
+        // decided by the portrait alone reads nothing like one both tests saw.
+        let reading = [
+            (step.slotGate ?? true) ? "slot" : nil, (step.portrait ?? true) ? "portrait" : nil,
+        ].compactMap { $0 }
+        if config.vocabulary.gateSentence, !reading.isEmpty {
+            census += ", sentence gate on (\(reading.joined(separator: " + ")))"
+        }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
             census += " — " + slots.map {
                 "\"\(text[$0.range])\" (\($0.terms.joined(separator: "/")))"
@@ -1139,11 +1182,18 @@ struct Pipeline: Equatable, Codable {
         // `taught` wins over the gate, because a spelling lesson is settled by
         // a rule that is 4/4 where the models measured were 0/4.
         let gatedAt = Date()
-        let settled = (step.gate ?? true)
-            ? VocabularyJudge.settle(
-                changes, in: text, by: [.sound: .full, .rule: .lists],
-                gate: await Vocabulary.shared.slotGate())
-            : [Bool?](repeating: nil, count: changes.count)
+        let settled: [Bool?]
+        if step.gate ?? true {
+            // `slot_gate: false` passes no gate at all, which is the path a
+            // machine without the 269 MB model already takes: the word lists
+            // settle what they settle and the slot is never asked. Read inside
+            // the branch so `gate: false` does not load it either.
+            let slot = (step.slotGate ?? true) ? await Vocabulary.shared.slotGate() : nil
+            settled = VocabularyJudge.settle(
+                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
+        } else {
+            settled = [Bool?](repeating: nil, count: changes.count)
+        }
         var decided: [Bool?] = changes.indices.map { index in
             index < taught.count && taught[index] ? false : settled[index]
         }
@@ -1152,8 +1202,9 @@ struct Pipeline: Equatable, Codable {
             decided = await SentenceGate.settle(
                 changes, in: text, given: decided,
                 floor: config.transcription.slotFloor(
-                    for: Pipeline.language(of: text, config: config)
-                )
+                    for: Pipeline.language(of: text, config: config), on: step
+                ),
+                slot: step.slotGate ?? true, portrait: step.portrait ?? true
             )
         }
         gateSeconds = Date().timeIntervalSince(gatedAt)

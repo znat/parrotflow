@@ -36,11 +36,17 @@ enum SentenceGate {
     ///
     /// `floor` is how far the heard word must win by before `SlotReference`
     /// refuses. It keys off the language of the transcript — see
-    /// `Config.Transcription.slotFloor(for:)`.
+    /// `Config.Transcription.slotFloor(for:on:)`.
+    ///
+    /// `slot` and `portrait` are the step's own switches. Each off is the path
+    /// that half already has when it cannot answer: `SlotReference` refuses
+    /// nothing, the portrait says nothing. The four outcomes above are read the
+    /// same way either way, so one half off leaves the other deciding alone.
     static func settle(
         _ changes: [VocabularyJudge.Change], in text: String, given settled: [Bool?],
-        floor: Double
+        floor: Double, slot: Bool = true, portrait: Bool = true
     ) async -> [Bool?] {
+        guard slot || portrait else { return settled }
         // Never on the dictation's time. The word vectors are 400 MB and the
         // first MLX call warms Metal; waiting for that with the pill on screen
         // reads as the app having hung, which is what it did.
@@ -49,7 +55,9 @@ enum SentenceGate {
             Log.write("sentence gate: the word vectors are not loaded yet; skipped")
             return settled
         }
-        guard SlotModel.isCached else {
+        // Only the slot half reads it. With that half off the portrait runs on
+        // a machine the 269 MB was never fetched to.
+        if slot, !SlotModel.isCached {
             Log.write("sentence gate: the slot model is not cached yet; skipped")
             return settled
         }
@@ -98,11 +106,15 @@ enum SentenceGate {
             let near = TermPortrait.window(around: from ..< upto, in: heard)
 
             if out[index] == true {
-                let portrait = await TermPortrait.shared.reads(
+                // Only the portrait may take a rule's write back out. With it
+                // off the write stands, which is what it did before the
+                // portrait existed.
+                guard portrait else { continue }
+                let read = await TermPortrait.shared.reads(
                     change.was, in: near, as: term
                 )
                 looked += 1
-                if portrait == .refuses {
+                if read == .refuses {
                     out[index] = false
                     Log.write(
                         "sentence gate: \"\(change.was)\" -> \(term) taken back out"
@@ -115,23 +127,25 @@ enum SentenceGate {
                 continue
             }
 
-            let refuses: Bool
-            do {
-                let gap = try await SlotReference.gap(
-                    term: change.now, heard: change.was, at: change.range, in: text
-                )
-                refuses = gap < -floor
-            } catch {
-                // A place the slot cannot read is a place this stage has no
-                // opinion about, not one to guess at.
-                Log.write("sentence gate: \(change.was) — \(error.localizedDescription)")
-                continue
+            var refuses = false
+            if slot {
+                do {
+                    let gap = try await SlotReference.gap(
+                        term: change.now, heard: change.was, at: change.range, in: text
+                    )
+                    refuses = gap < -floor
+                } catch {
+                    // A place the slot cannot read is a place this stage has no
+                    // opinion about, not one to guess at.
+                    Log.write("sentence gate: \(change.was) — \(error.localizedDescription)")
+                    continue
+                }
             }
-            let portrait = await TermPortrait.shared.reads(
-                change.was, in: near, as: term
-            )
+            let read = portrait
+                ? await TermPortrait.shared.reads(change.was, in: near, as: term)
+                : TermPortrait.Verdict.nothing
 
-            switch (refuses, portrait) {
+            switch (refuses, read) {
             case (true, .authorises):
                 Log.write("sentence gate: \"\(change.was)\" -> \(term) — the two disagree")
             case (true, _), (false, .refuses):

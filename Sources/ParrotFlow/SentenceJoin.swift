@@ -359,8 +359,6 @@ actor SentenceJoin {
         capitals: Bool = true, pause: Double = SentenceJoin.paused,
         words: [Trace.Word] = []
     ) async -> Outcome {
-        let settings = config.transcription.sentences
-        guard settings.enabled else { return .unchanged(text) }
         let language = Pipeline.language(of: text, config: config)
         guard language == "en" else { return .unchanged(text) }
         let marks = written ?? config.transcription.marks(for: language)

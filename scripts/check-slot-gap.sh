@@ -29,7 +29,7 @@ done
 [ -n "$BIN" ] || { echo "build first: swift build"; exit 1; }
 
 CASES="$ROOT/tests/slot-gap-cases.yaml"
-# A scratch config, so a `per_language:` floor on this machine cannot change the
+# A scratch config, so a `slot_floor:` on this machine cannot change the
 # verdicts. The floors the cases were picked against are the built-in ones.
 WORK="$(mktemp -d -t parrotflow-slot-gap)"
 trap 'rm -rf "$WORK"' EXIT

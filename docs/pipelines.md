@@ -118,10 +118,8 @@ the failure direction every stage here shares.
 
 It publishes `interpret.count`: how many boundaries were joined.
 
-`transcription.sentences` is the switch this replaces. `sentences: false` still
-turns the step off and `--check-config` says to delete the step instead;
-`marks:` under `sentences:` or under `per_language.<lang>` still feeds the
-step, and `marks:` on the step wins over both.
+Delete the line to turn the step off. A pipeline without it does not read
+boundaries at all, and nothing is downloaded for it.
 
 ## The name stage
 
@@ -143,6 +141,9 @@ name or a mapping, and it cannot be both:
   near_misses: true   # optional; default. false matches renderings exactly
   by_sound: true      # optional; default. false matches spelling only
   gate: true          # optional; default. false leaves every place open
+  slot_gate: true     # optional; default. false reads no slot model
+  portrait: true      # optional; default. false reads no term portrait
+  slot_floor: 0.20    # optional; or {en: 0.20, fr: 0.30}
   max_per_slot: 2     # optional; readings per place, the decoder's included
   max_per_term: 2     # optional; places in one sentence about the same name
 ```
@@ -151,6 +152,11 @@ name or a mapping, and it cannot be both:
 what the decoder wrote and the term — so a third reading would be built and
 never shown. Refused rather than rounded down, because a number that says one
 thing and does another teaches nobody anything.
+
+**An option on the wrong stage is refused.** `slot_gate:` on `numbers`, or
+`marks:` on `vocabulary`, used to load and do nothing. `--check-config` names
+the key, the stage it was written on and the stage that reads it. A switch that
+loads and does nothing is somebody believing a gate is off while it runs.
 
 **It calls no model.** It used to: every substitution went to a local model,
 one KEEP or REVERT each, at about 900 ms a dictation and an Ollama on the
@@ -163,8 +169,7 @@ machine. What decides now is free and local to the app:
    preposition cannot hold a name. Refuse it.
 3. **The two tests that read the sentence** — whether the term belongs where
    the word was heard, and whether this sentence looks like the ones the term
-   was confirmed in. See `gate_sentence:` in
-   [docs/configuration.md](configuration.md).
+   was confirmed in. `slot_gate:` and `portrait:` below switch them.
 
 **Everything they leave open keeps what arrived.** A `replacements` rule has
 already written its term, so an open place ships the term. A near miss or a
@@ -208,6 +213,53 @@ Neither writes anything. Each opens one more place for the gates to settle, and
 a place none of them settles keeps the word that was heard — so the looser
 match costs a gate call, not a sentence. `near_misses: false` puts matching
 back to exact and whole-word.
+
+**`slot_gate:` and `portrait:` switch the two tests that read the sentence.**
+Both on by default, and each off is a path the stage already has.
+
+- `slot_gate: false` reads no slot model. That is mmBERT-small, 269 MB, and
+  nothing downloads it: rule 2 above is skipped, and the test that asks whether
+  the term belongs where the word was heard is skipped too. Every place is left
+  to the portrait, or to whatever arrived. It is what the stage does today on a
+  machine the weights are not on.
+- `portrait: false` reads no portrait. A term's own sentences say nothing, so
+  nothing is authorised on that evidence and a rule's substitution is never
+  taken back out. It is what the stage does today for a term with fewer than
+  three confirmed uses.
+
+Both off and neither model is fetched. `--check-config` prints one line per
+`vocabulary` step, carrying the step's floors and its two switches — the same
+switches that decide whether each model is downloaded:
+
+```
+  · languages         en, fr
+      vocabulary            slot floor en 0.20  fr 0.30  slot on, portrait on
+      vocabulary in /term/  slot floor en 0.45  fr 0.45  slot on, portrait off
+```
+
+One line per step and not one for the pipeline, because a pipeline may hold
+more than one `vocabulary` step — one per app is the reason these options are
+on the step — and each names its own.
+
+**`slot_floor:` is how far the heard word must win by** before the slot test
+refuses the rewrite. A number applies to every language; a map names them one
+at a time and a language it leaves out keeps its built-in floor.
+
+```yaml
+- {stage: vocabulary, slot_floor: 0.20}
+- {stage: vocabulary, slot_floor: {en: 0.20, fr: 0.30}}
+```
+
+0.20 in English and 0.30 in French are the built-in values. French gaps are
+about a third narrower, and no single number serves both: on a 201-case French
+bench the English floor wrongly refuses 7 correct rewrites of 84 and 0.30
+refuses 2. It must be above 0 and at most 2, and a map key has to be a language
+the app supports — one that is not is refused rather than silently ignored. A
+key that names a supported language your `languages:` list leaves out loads and
+never runs, and `--check-config` says so.
+
+`--check-config` prints the resolved floor for every language you listed, on
+the step's own line.
 
 **`max_per_term` is the one to move if a name is being missed.** One name
 reaches the list from five directions — a rule that already rewrote the text,

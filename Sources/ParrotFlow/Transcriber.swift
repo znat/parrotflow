@@ -497,8 +497,8 @@ actor Transcriber {
         //
         // Fetched at launch too. This is the retry: a fetch that failed clears
         // itself, and the next dictation tries again.
-        warmSlotModel()
-        if config.vocabulary.gateSentence, #available(macOS 14, *) {
+        if config.readsSlots { warmSlotModel() }
+        if config.readsSentenceGate, #available(macOS 14, *) {
             Task { await WordVectors.shared.warm() }
         }
 
