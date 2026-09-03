@@ -534,6 +534,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildStatusItem()
+        // Before anything asks for a model, and whatever the config says: a
+        // cache nothing reads is 300 MB whether transcription is on or not.
+        RetiredModels.prune(in: AppVariant.supportDirectory)
         loadConfig(announceErrors: false)
         watchConfig()
 
