@@ -91,7 +91,7 @@ release-certificate:
 CHECKS := numbers replacements pipeline pipeline-config wake split dotted dates keyed \
           transform-folders eval audio-recovery possessive word-gate suggest input join \
           profiles span-rule clipboard default-config vocabulary-config learn \
-          signing-identity no-voice sound tokenizer slot-tokenizer sentence-case term-uses \
+          signing-identity no-voice sound slot-tokenizer sentence-case term-uses \
           edit-diff sentence-open
 
 test:

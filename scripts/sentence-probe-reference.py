@@ -1,14 +1,9 @@
 #!/usr/bin/env python3
-"""Writes the two fixtures the Swift sentence code is checked against.
+"""Writes the fixture the Swift boundary code is checked against.
 
-    scripts/sentence-probe-reference.py tokens     -> tests/tokenizer-cases.json
     scripts/sentence-probe-reference.py readings   -> tests/sentence-boundary-cases.json
 
-`tokens` needs the `tokenizers` package and ModernBERT's `tokenizer.json`. That
-tokenizer belongs to the vocabulary slot gate, which still reads the masked
-model.
-
-`readings` needs the release binary and the Qwen model on disk. It runs
+It needs the release binary and the Qwen model on disk. It runs
 `--sentence-probe --bench` over a sample of the boundary bench and stores what
 came back, so the fixture is by construction what the binary produces. Point
 --data at the bench directory; its files hold `left` and `right` already
@@ -25,54 +20,8 @@ right — none of the three is a real ending a join would spoil.
 import argparse
 import json
 import os
-import sys
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TOKENIZER = os.path.expanduser(
-    "~/Library/Application Support/ParrotFlow/models/modernbert-base-64/tokenizer.json"
-)
-LENGTH = 64
-
-# Every class the Swift tokenizer can get wrong on its own: the byte alphabet,
-# the merge order, the NFC normaliser, the added tokens, and the empty string.
-CASES = [
-    "we have to do it. That works well",
-    "The capital of Ireland is Dublin",
-    "we have to do it [MASK] that works well",
-    "Naïve café résumé, don't you think",
-    "ParrotFlow—the dictation app—works offline (mostly)",
-    "  double  spaces   here",
-    "It cost $1,234.56 on 2026-08-30 at 07:15",
-    '"quoted" \'single\' `backtick` <angle> {brace}',
-    "CamelCaseIdentifier snake_case_name kebab-case",
-    "emoji 🚀 and fi ligature",
-    "日本語のテキストです",
-    "",
-    " a",
-    "a ",
-    ".",
-    " .",
-    "That",
-    " That",
-    " ".join(["antidisestablishmentarianism unwieldy paraphernalia"] * 12),
-]
-
-
-def load_tokenizer(path):
-    from tokenizers import Tokenizer
-    return Tokenizer.from_file(path)
-
-
-def tokens(args):
-    tk = load_tokenizer(args.tokenizer)
-    out = []
-    for text in CASES:
-        encoded = tk.encode(text, add_special_tokens=False)
-        out.append({"text": text, "ids": encoded.ids, "tokens": encoded.tokens})
-    long_case = max(len(case["ids"]) for case in out)
-    if long_case <= LENGTH:
-        sys.exit(f"no case is longer than {LENGTH} tokens (longest is {long_case})")
-    write(args.out or os.path.join(HERE, "tests/tokenizer-cases.json"), out)
 
 
 def readings(args):
@@ -132,12 +81,10 @@ def write(path, rows):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("what", choices=("tokens", "readings"))
-parser.add_argument("--tokenizer", default=TOKENIZER)
+parser.add_argument("what", choices=("readings",))
 parser.add_argument("--data", default=".")
 parser.add_argument("--binary", default=os.path.join(HERE, ".build/release/ParrotFlow"))
 parser.add_argument("--count", type=int, default=40)
 parser.add_argument("--questions", type=int, default=20)
 parser.add_argument("--out")
-args = parser.parse_args()
-(tokens if args.what == "tokens" else readings)(args)
+readings(parser.parse_args())
