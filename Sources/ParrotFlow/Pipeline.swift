@@ -1182,14 +1182,18 @@ struct Pipeline: Equatable, Codable {
         // `taught` wins over the gate, because a spelling lesson is settled by
         // a rule that is 4/4 where the models measured were 0/4.
         let gatedAt = Date()
-        // `slot_gate: false` passes no gate at all, which is the path a machine
-        // without the 269 MB model already takes: the word lists settle what
-        // they settle and the slot's part of speech is never asked.
-        let slotGate = (step.slotGate ?? true) ? await Vocabulary.shared.slotGate() : nil
-        let settled = (step.gate ?? true)
-            ? VocabularyJudge.settle(
-                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slotGate)
-            : [Bool?](repeating: nil, count: changes.count)
+        let settled: [Bool?]
+        if step.gate ?? true {
+            // `slot_gate: false` passes no gate at all, which is the path a
+            // machine without the 269 MB model already takes: the word lists
+            // settle what they settle and the slot is never asked. Read inside
+            // the branch so `gate: false` does not load it either.
+            let slot = (step.slotGate ?? true) ? await Vocabulary.shared.slotGate() : nil
+            settled = VocabularyJudge.settle(
+                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
+        } else {
+            settled = [Bool?](repeating: nil, count: changes.count)
+        }
         var decided: [Bool?] = changes.indices.map { index in
             index < taught.count && taught[index] ? false : settled[index]
         }
