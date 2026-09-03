@@ -470,12 +470,21 @@ if let index = arguments.firstIndex(of: "--slot-gap") {
         print("usage: ParrotFlow --slot-gap \"<sentence>\" <heard> <term> [--lang <code>]")
         exit(2)
     }
+    // Refused rather than defaulted. An unknown code takes English's floor, so
+    // `--lang eng` would print a confident verdict about a language nobody asked
+    // about.
+    let slotGapLanguage = languageList(arguments)?.first ?? "en"
+    guard DictationLanguage.supported.contains(slotGapLanguage) else {
+        print("✗ --lang \(slotGapLanguage): the gate knows a floor for"
+            + " \(DictationLanguage.supported.joined(separator: ", ")) only")
+        exit(2)
+    }
     exit(
         SlotGapCommand.run(
             sentence: arguments[index + 1],
             heard: arguments[index + 2],
             term: arguments[index + 3],
-            language: languageList(arguments)?.first ?? "en"
+            language: slotGapLanguage
         )
     )
 }
