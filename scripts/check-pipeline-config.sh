@@ -235,6 +235,33 @@ check "and each names its own floor and its own gates" \
   "$(steps)" \
   "slot floor en 0.25  fr 0.25  slot on, portrait on|in /term/  slot floor en 0.45  fr 0.45  slot on, portrait off|"
 
+# --- an option on the wrong stage ---------------------------------------------
+#
+# Refused, not dropped. A switch that loads and does nothing is somebody
+# believing a gate is off while it runs.
+
+run_config option_wrong_stage 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: numbers, slot_gate: false}
+    - {stage: vocabulary, marks: [".", "?"]}'
+
+check "an option on a stage that does not read it is refused" \
+  "$(printf '%s\n' "$out" | grep -c 'is an option on the')" "2"
+check "and each message names the stage that does read it" \
+  "$(printf '%s\n' "$out" | grep -c 'option on the `vocabulary` stage')" "1"
+check "and the stage it was written on" \
+  "$(printf '%s\n' "$out" | grep -c '`numbers`: `slot_gate:`')" "1"
+
+run_config option_right_stage 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: interpret, marks: [".", "?"]}
+    - {stage: vocabulary, slot_gate: false, near_misses: false}'
+
+check "an option on the stage that reads it is not refused" \
+  "$(printf '%s\n' "$out" | grep -c 'is an option on the')" "0"
+
 # --- the slot floor, on the step ----------------------------------------------
 
 run_config floor_scalar 'transcription:

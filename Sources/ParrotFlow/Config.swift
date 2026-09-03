@@ -1824,6 +1824,15 @@ struct Config: Decodable, Equatable {
         /// "grammar is not a stage" is not what went wrong.
         var contradictoryEntries: [String] = []
 
+        /// An option written on a stage that does not read it — `slot_gate:`
+        /// on `numbers`, `marks:` on `vocabulary`. Each entry is already a
+        /// sentence, because the key and the stage it belongs to are both known
+        /// where it is found and neither is known here.
+        ///
+        /// Refused rather than ignored: a switch that loads and does nothing is
+        /// somebody believing a gate is off while it runs.
+        var misplacedOptions: [String] = []
+
         /// `review:` on a `vocabulary` step, which named the model that read
         /// each substitution. There is no model in that stage now, so the key
         /// is read and does nothing — announced through `notices()` the way
@@ -1910,6 +1919,9 @@ struct Config: Decodable, Equatable {
             var app: String?
             /// `stage:` and `transform:`/`prompt:`/`vocabulary:` on one entry.
             var namesBoth = false
+            /// Options this stage does not read — see
+            /// `Transcription.misplacedOptions`.
+            var misplaced: [String] = []
 
             private enum CodingKeys: String, CodingKey {
                 case stage, transform, prompt, vocabulary, when, unless, app
@@ -1995,10 +2007,27 @@ struct Config: Decodable, Equatable {
                     capitals = try c.decodeIfPresent(Bool.self, forKey: .capitals)
                     pause = try c.decodeIfPresent(Double.self, forKey: .pause)
                 }
+                for (owner, keys) in Self.stageKeys
+                where owner.caseInsensitiveCompare(name) != .orderedSame {
+                    misplaced += keys.filter { c.contains($0) }.map {
+                        "`\($0.stringValue):` is an option on the `\(owner)` stage."
+                            + " It does nothing here"
+                    }
+                }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
                 app = try c.decodeIfPresent(String.self, forKey: .app)
             }
+
+            /// Which stage reads which option. Only these two stages have any:
+            /// `stage:`, `when:`, `unless:` and `app:` are read on every line.
+            private static let stageKeys: [(String, [CodingKeys])] = [
+                ("vocabulary", [
+                    .nearMisses, .bySound, .gate, .slotGate, .portrait, .slotFloor,
+                    .review, .maxSlots, .maxReadings, .maxPerSlot, .maxPerTerm,
+                ]),
+                ("interpret", [.marks, .capitals, .pause]),
+            ]
 
             /// `slot_floor:` in either spelling — a number for every language,
             /// or a map naming them one by one.
@@ -2179,6 +2208,7 @@ struct Config: Decodable, Equatable {
                             .trimmingCharacters(in: .whitespacesAndNewlines), !named.isEmpty {
                             retiredReview.append(named)
                         }
+                        misplacedOptions += entry.misplaced.map { "`\(entry.name)`: \($0)" }
                         return Pipeline.Step(
                             stage: stage, transform: entry.transform,
                             prompt: entry.prompt, caps: entry.caps,
@@ -2683,6 +2713,9 @@ struct Config: Decodable, Equatable {
         for name in Set(transcription.unknownStages).sorted() {
             found.append("pipeline: \"\(name)\" is not a stage — have: "
                 + Pipeline.stageNames.joined(separator: ", "))
+        }
+        for said in Set(transcription.misplacedOptions).sorted() {
+            found.append("pipeline: \(said)")
         }
         for name in Set(transcription.contradictoryEntries).sorted() {
             found.append("pipeline: an entry names both `stage:` and `prompt: \(name)`"

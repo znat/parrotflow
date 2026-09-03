@@ -153,6 +153,11 @@ what the decoder wrote and the term — so a third reading would be built and
 never shown. Refused rather than rounded down, because a number that says one
 thing and does another teaches nobody anything.
 
+**An option on the wrong stage is refused.** `slot_gate:` on `numbers`, or
+`marks:` on `vocabulary`, used to load and do nothing. `--check-config` names
+the key, the stage it was written on and the stage that reads it. A switch that
+loads and does nothing is somebody believing a gate is off while it runs.
+
 **It calls no model.** It used to: every substitution went to a local model,
 one KEEP or REVERT each, at about 900 ms a dictation and an Ollama on the
 machine. What decides now is free and local to the app:
