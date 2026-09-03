@@ -222,12 +222,19 @@ Both on by default, and each off is a path the stage already has.
   taken back out. It is what the stage does today for a term with fewer than
   three confirmed uses.
 
-Both off and neither model is fetched. `--check-config` prints the pair on one
-line, from the same predicates that decide whether each model is downloaded:
+Both off and neither model is fetched. `--check-config` prints one line per
+`vocabulary` step, carrying the step's floors and its two switches — the same
+switches that decide whether each model is downloaded:
 
 ```
-  · vocabulary gates  slot on, portrait off
+  · languages         en, fr
+      vocabulary            slot floor en 0.20  fr 0.30  slot on, portrait on
+      vocabulary in /term/  slot floor en 0.45  fr 0.45  slot on, portrait off
 ```
+
+One line per step and not one for the pipeline, because a pipeline may hold
+more than one `vocabulary` step — one per app is the reason these options are
+on the step — and each names its own.
 
 **`slot_floor:` is how far the heard word must win by** before the slot test
 refuses the rewrite. A number applies to every language; a map names them one
@@ -246,7 +253,8 @@ the app supports — one that is not is refused rather than silently ignored. A
 key that names a supported language your `languages:` list leaves out loads and
 never runs, and `--check-config` says so.
 
-`--check-config` prints the resolved floor for every language you listed.
+`--check-config` prints the resolved floor for every language you listed, on
+the step's own line.
 
 **`max_per_term` is the one to move if a name is being missed.** One name
 reaches the list from five directions — a rule that already rewrote the text,

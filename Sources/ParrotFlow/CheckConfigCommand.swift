@@ -107,42 +107,27 @@ enum CheckConfigCommand {
             // `interpret` step, which is English only, and they are printed
             // with it below.
             emit("  · languages         \(transcription.languages.joined(separator: ", "))")
-            // A pipeline may hold more than one `vocabulary` step — one per app
-            // is the reason the options are on the step at all — and each names
-            // its own floor and its own gates. Printing the first step's numbers
-            // for all of them describes a pipeline nobody wrote, so with more
-            // than one they are printed a step at a time, named as the pipeline
-            // line names them.
-            if vocabularySteps.count > 1 {
-                let width = vocabularySteps.map { described($0).count }.max() ?? 0
-                for step in vocabularySteps {
-                    let floors = transcription.languages.map { language in
-                        let floor = transcription.slotFloor(for: language, on: step)
-                        return "\(language) \(String(format: "%.2f", floor))"
-                    }.joined(separator: "  ")
-                    let name = described(step)
-                        .padding(toLength: width, withPad: " ", startingAt: 0)
-                    emit("      \(name)  slot floor \(floors)"
-                        + "  \(gates(of: step, config: config))")
-                }
-            } else {
-                for language in transcription.languages {
-                    let floor = transcription.slotFloor(
-                        for: language, on: vocabularySteps.first
-                    )
-                    emit("      \(language)  slot floor \(String(format: "%.2f", floor))")
-                }
+            // One line per `vocabulary` step, whether there is one or five. A
+            // pipeline may hold several — one per app is the reason these
+            // options live on the step — and each names its own floor and its
+            // own gates, so there is no step whose numbers can stand for the
+            // rest. Silent when the pipeline holds none, which is also what
+            // says nothing is downloaded for them: the switches on these lines
+            // are the ones that decide whether each model is fetched.
+            let width = vocabularySteps.map { described($0).count }.max() ?? 0
+            for step in vocabularySteps {
+                let floors = transcription.languages.map { language in
+                    let floor = transcription.slotFloor(for: language, on: step)
+                    return "\(language) \(String(format: "%.2f", floor))"
+                }.joined(separator: "  ")
+                let name = described(step)
+                    .padding(toLength: width, withPad: " ", startingAt: 0)
+                emit("      \(name)  slot floor \(floors)"
+                    + "  \(gates(of: step, config: config))")
             }
-            // Which of the two tests that read the sentence will run. The same
-            // switches decide whether each model is fetched, so a line saying a
-            // half is off is also saying nothing is downloaded for it. Silent
-            // when the pipeline holds no `vocabulary` step, and printed with
-            // each step above when it holds several.
-            if vocabularySteps.count == 1, let step = vocabularySteps.first {
-                emit("  · vocabulary gates  \(gates(of: step, config: config))"
-                    + (config.vocabulary.gateSentence
-                        ? "" : "  (the sentence tests are off —"
-                            + " `vocabulary.gate_sentence: false`)"))
+            if !vocabularySteps.isEmpty, !config.vocabulary.gateSentence {
+                emit("      the sentence tests are off —"
+                    + " `vocabulary.gate_sentence: false`")
             }
             // The set the step runs with. Silent when the pipeline holds no
             // step at all, which is also what says nothing is downloaded for it.

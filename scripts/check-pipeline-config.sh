@@ -170,12 +170,10 @@ check "and nothing is said about the step being absent" \
 # the model behind each one is fetched, so a gate reported off is a gate
 # nothing is downloaded for.
 
-gates() {
-  printf '%s\n' "$out" | sed -n 's/^  · vocabulary gates  *//p'
-}
-# One language's resolved slot floor, whichever of the two homes it came from.
-floor() {
-  printf '%s\n' "$out" | sed -n "s/^      $1  slot floor //p"
+# The `vocabulary` step lines, one per step, joined with |. Each carries the
+# step's resolved floors and its two switches.
+steps() {
+  printf '%s\n' "$out" | sed -n 's/^      vocabulary *//p' | tr '\n' '|'
 }
 
 run_config gates_default 'transcription:
@@ -183,8 +181,8 @@ run_config gates_default 'transcription:
   pipeline:
     - vocabulary'
 
-check "a bare - vocabulary line has both gates on" "$(gates)" "slot on, portrait on"
-check "and the built-in floors" "$(floor en)/$(floor fr)" "0.20/0.30"
+check "a bare - vocabulary line has both gates on and the built-in floors" \
+  "$(steps)" "slot floor en 0.20  fr 0.30  slot on, portrait on|"
 
 run_config gates_slot_off 'transcription:
   languages: [en]
@@ -193,7 +191,7 @@ run_config gates_slot_off 'transcription:
 
 check "slot_gate: false loads" "$code" "0"
 check "and reports the slot gate off, the portrait still on" \
-  "$(gates)" "slot off, portrait on"
+  "$(steps)" "slot floor en 0.20  slot off, portrait on|"
 
 run_config gates_portrait_off 'transcription:
   languages: [en]
@@ -202,7 +200,7 @@ run_config gates_portrait_off 'transcription:
 
 check "portrait: false loads" "$code" "0"
 check "and reports the portrait off, the slot gate still on" \
-  "$(gates)" "slot on, portrait off"
+  "$(steps)" "slot floor en 0.20  slot on, portrait off|"
 
 run_config gates_both_off 'transcription:
   languages: [en]
@@ -210,7 +208,8 @@ run_config gates_both_off 'transcription:
     - {stage: vocabulary, slot_gate: false, portrait: false}'
 
 check "both switches off loads" "$code" "0"
-check "and neither model is read" "$(gates)" "slot off, portrait off"
+check "and neither model is read" \
+  "$(steps)" "slot floor en 0.20  slot off, portrait off|"
 
 run_config gates_file_switch 'transcription:
   languages: [en]
@@ -219,7 +218,9 @@ run_config gates_file_switch 'transcription:
 
 check "gate_sentence: false loads" "$code" "0"
 check "and turns both sentence tests off, naming the key" \
-  "$(gates)" "slot on, portrait off  (the sentence tests are off — \`vocabulary.gate_sentence: false\`)"
+  "$(steps)" "slot floor en 0.20  slot on, portrait off|"
+check "and the key is named under the step" \
+  "$(printf '%s\n' "$out" | grep -c 'the sentence tests are off')" "1"
 
 run_config gates_two_steps 'transcription:
   languages: [en, fr]
@@ -231,10 +232,8 @@ check "two vocabulary steps load" "$code" "0"
 # One line each. The first step's numbers printed for both would describe a
 # pipeline nobody wrote.
 check "and each names its own floor and its own gates" \
-  "$(printf '%s\n' "$out" | sed -n 's/^      vocabulary *//p' | tr '\n' '|')" \
+  "$(steps)" \
   "slot floor en 0.25  fr 0.25  slot on, portrait on|in /term/  slot floor en 0.45  fr 0.45  slot on, portrait off|"
-check "and no single gates line is printed as well" \
-  "$(gates)" ""
 
 # --- the slot floor, on the step ----------------------------------------------
 
@@ -244,7 +243,8 @@ run_config floor_scalar 'transcription:
     - {stage: vocabulary, slot_floor: 0.35}'
 
 check "a bare number loads" "$code" "0"
-check "and applies to every language" "$(floor en)/$(floor fr)" "0.35/0.35"
+check "and applies to every language" \
+  "$(steps)" "slot floor en 0.35  fr 0.35  slot on, portrait on|"
 
 run_config floor_map 'transcription:
   languages: [en, fr]
@@ -252,7 +252,8 @@ run_config floor_map 'transcription:
     - {stage: vocabulary, slot_floor: {en: 0.25, fr: 0.45}}'
 
 check "a map loads" "$code" "0"
-check "and each language gets its own" "$(floor en)/$(floor fr)" "0.25/0.45"
+check "and each language gets its own" \
+  "$(steps)" "slot floor en 0.25  fr 0.45  slot on, portrait on|"
 
 run_config floor_map_partial 'transcription:
   languages: [en, fr]
@@ -261,7 +262,7 @@ run_config floor_map_partial 'transcription:
 
 check "a map naming one language loads" "$code" "0"
 check "and the language it misses keeps its built-in floor" \
-  "$(floor en)/$(floor fr)" "0.20/0.45"
+  "$(steps)" "slot floor en 0.20  fr 0.45  slot on, portrait on|"
 
 run_config floor_bad 'transcription:
   languages: [en]
@@ -289,7 +290,8 @@ run_config floor_idle_language 'transcription:
     - {stage: vocabulary, slot_floor: {en: 0.25, fr: 0.45}}'
 
 check "a floor for a language languages: omits loads" "$code" "0"
-check "and the floor that does run is the step's" "$(floor en)" "0.25"
+check "and the floor that does run is the step's" \
+  "$(steps)" "slot floor en 0.25  slot on, portrait on|"
 check "and the notice says the other one never runs" \
   "$(printf '%s\n' "$out" | grep -c 'that floor never runs')" "1"
 
