@@ -7,11 +7,11 @@ import Foundation
 /// asks it for the ten words a position expects, and `SlotGate` asks it what
 /// part of speech those words are. Both run over `SlotProbe`.
 ///
-/// **Why not ModernBERT, which is already here.** ModernBERT is English-only,
-/// so the whole vocabulary gate is English-only. mmBERT-small covers 1,800
-/// languages and ties it on the English bench — 192/238 each at the shipped
-/// floor, AUC 0.888 against 0.887. That is what makes a French gate possible,
-/// and it is the whole reason for the swap.
+/// **Why not ModernBERT, which this stage used to read.** ModernBERT is
+/// English-only, so the whole vocabulary gate was English-only. mmBERT-small
+/// covers 1,800 languages and ties it on the English bench — 192/238 each at
+/// the shipped floor, AUC 0.888 against 0.887. That is what makes a French gate
+/// possible, and it is the whole reason for the swap.
 ///
 /// It is not cheaper. The weights are 282 MB against ModernBERT's 299, but the
 /// tokenizer is 18 MB against 2, so the cache is the same size. A forward pass
