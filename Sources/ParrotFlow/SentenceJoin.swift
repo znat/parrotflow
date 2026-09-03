@@ -184,7 +184,8 @@ actor SentenceJoin {
             // A single space, and a letter or a digit before it: anything else
             // is a mark, a bracket or a line break, and none of those is this
             // shape.
-            guard text.index(after: previous.upperBound) == range.lowerBound,
+            guard previous.upperBound < text.endIndex,
+                  text.index(after: previous.upperBound) == range.lowerBound,
                   let last = text[previous].last, last.isLetter || last.isNumber
             else { continue }
             guard !opens(previous), n + 1 == words.count || !opens(words[n + 1]) else {
@@ -259,7 +260,7 @@ actor SentenceJoin {
     /// Measured over 621 candidates from one speaker's dictation: refusing
     /// every class but these removes 93% of the capitals that must not be
     /// touched, and costs 9 repairs of which 4 were reachable at all.
-    static let readable: Set<String> = [
+    static let readableClasses: Set<String> = [
         "Conjunction", "Determiner", "Pronoun", "Adverb",
         "Preposition", "Particle", "Interjection", "Verb",
     ]
@@ -282,7 +283,7 @@ actor SentenceJoin {
         tagger.string = joined
         tagger.setLanguage(.english, range: joined.startIndex..<joined.endIndex)
         let tag = tagger.tag(at: from, unit: .word, scheme: .nameTypeOrLexicalClass).0?.rawValue
-        return Self.readable.contains(tag ?? "")
+        return Self.readableClasses.contains(tag ?? "")
     }
 
     /// The whole text with one mark taken out, and where the word after it
