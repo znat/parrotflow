@@ -221,6 +221,21 @@ check "gate_sentence: false loads" "$code" "0"
 check "and turns both sentence tests off, naming the key" \
   "$(gates)" "slot on, portrait off  (the sentence tests are off — \`vocabulary.gate_sentence: false\`)"
 
+run_config gates_two_steps 'transcription:
+  languages: [en, fr]
+  pipeline:
+    - {stage: vocabulary, slot_floor: 0.25}
+    - {stage: vocabulary, slot_floor: 0.45, portrait: false, app: /term/}'
+
+check "two vocabulary steps load" "$code" "0"
+# One line each. The first step's numbers printed for both would describe a
+# pipeline nobody wrote.
+check "and each names its own floor and its own gates" \
+  "$(printf '%s\n' "$out" | sed -n 's/^      vocabulary *//p' | tr '\n' '|')" \
+  "slot floor en 0.25  fr 0.25  slot on, portrait on|in /term/  slot floor en 0.45  fr 0.45  slot on, portrait off|"
+check "and no single gates line is printed as well" \
+  "$(gates)" ""
+
 # --- the slot floor, on the step ----------------------------------------------
 
 run_config floor_scalar 'transcription:
