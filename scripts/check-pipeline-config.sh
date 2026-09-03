@@ -268,6 +268,16 @@ check "an out-of-range language in a map is refused" "$code" "1"
 check "and the message names that language" \
   "$(printf '%s\n' "$out" | grep -c 'pipeline.vocabulary.slot_floor.fr')" "1"
 
+run_config floor_idle_language 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: vocabulary, slot_floor: {en: 0.25, fr: 0.45}}'
+
+check "a floor for a language languages: omits loads" "$code" "0"
+check "and the floor that does run is the step's" "$(floor en)" "0.25"
+check "and the notice says the other one never runs" \
+  "$(printf '%s\n' "$out" | grep -c 'that floor never runs')" "1"
+
 run_config floor_bad_language 'transcription:
   languages: [en]
   pipeline:

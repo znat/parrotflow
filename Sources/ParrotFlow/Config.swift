@@ -2842,6 +2842,19 @@ struct Config: Decodable, Equatable {
         // Said whether or not there are terms: a file can carry the old
         // file-level key and nothing else.
         said += vocabulary.legacy.map { "vocabulary: \($0)" }
+        // A floor for a language `languages:` does not list never runs: the
+        // lookup keys off the language of the transcript, and that list is
+        // what the detector may answer. Said rather than refused — the floor
+        // is a real setting for a real language, and `languages:` is the
+        // narrower list, changed far more often than the floors are.
+        for step in Pipeline.resolved(config: self).steps where step.stage == .vocabulary {
+            let idle = (step.slotFloor?.byLanguage.keys.sorted() ?? [])
+                .filter { !transcription.languages.contains($0) }
+            guard !idle.isEmpty else { continue }
+            said.append("pipeline: `slot_floor:` names"
+                + " \(idle.map { "`\($0)`" }.joined(separator: ", ")), which"
+                + " `transcription.languages` does not — that floor never runs")
+        }
         return said
     }
 

@@ -242,7 +242,9 @@ at a time and a language it leaves out keeps its built-in floor.
 about a third narrower, and no single number serves both: on a 201-case French
 bench the English floor wrongly refuses 7 correct rewrites of 84 and 0.30
 refuses 2. It must be above 0 and at most 2, and a map key has to be a language
-the app supports — one that is not is refused rather than silently ignored.
+the app supports — one that is not is refused rather than silently ignored. A
+key that names a supported language your `languages:` list leaves out loads and
+never runs, and `--check-config` says so.
 
 `--check-config` prints the resolved floor for every language you listed.
 
