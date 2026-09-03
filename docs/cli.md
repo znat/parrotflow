@@ -184,7 +184,10 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   sentence gate never makes a dictation wait, so in a one-shot run nothing has
   loaded them and the two tests that read the sentence are skipped every time —
   this is the only way to see them from the command line. Off by default: it is
-  about 600 MB of downloads, and `make test` must not need one.
+  about 600 MB of downloads, and `make test` must not need one. Only what the
+  fixture's own pipeline reads: a fixture with `slot_gate: false` on its
+  `vocabulary` step fetches no slot model, and one with no `vocabulary` step
+  fetches neither.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 

@@ -223,7 +223,7 @@ Both on by default, and each off is a path the stage already has.
   three confirmed uses.
 
 Both off and neither model is fetched. `--check-config` prints the pair on one
-line, from the same predicate that decides whether each model is downloaded:
+line, from the same predicates that decide whether each model is downloaded:
 
 ```
   · vocabulary gates  slot on, portrait off
