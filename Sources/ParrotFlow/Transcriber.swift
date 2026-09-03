@@ -982,16 +982,28 @@ actor Transcriber {
             "\(note)dropped \(tail.count) invented trailing word(s), "
                 + "\(tail.reason): \"\(dropped)\""
         )
+        let kept = Array(timings[0..<(keep > 0 ? grouped[keep - 1].tokens.upperBound : 0)])
         return ASRResult(
             text: text,
-            confidence: result.confidence,
+            confidence: confidence(of: kept) ?? result.confidence,
             duration: result.duration,
             processingTime: result.processingTime,
-            tokenTimings: Array(timings[0..<(keep > 0 ? grouped[keep - 1].tokens.upperBound : 0)]),
+            tokenTimings: kept,
             performanceMetrics: result.performanceMetrics,
             ctcDetectedTerms: result.ctcDetectedTerms,
             ctcAppliedTerms: result.ctcAppliedTerms
         )
+    }
+
+    /// The aggregate the decoder would have reported for these tokens alone:
+    /// FluidAudio's `calculateConfidence`, the mean token confidence clamped
+    /// to 0.1...1. Recomputed after a trim so the low-confidence warning and
+    /// `asr.confidence` conditions read the words that were delivered, not the
+    /// ones that were cut. Nil with no tokens.
+    private nonisolated static func confidence(of timings: [TokenTiming]) -> Float? {
+        guard !timings.isEmpty else { return nil }
+        let mean = timings.map(\.confidence).reduce(0, +) / Float(timings.count)
+        return max(0.1, min(1, mean))
     }
 
     /// `text` without its last `dropping` whitespace-separated words, or nil

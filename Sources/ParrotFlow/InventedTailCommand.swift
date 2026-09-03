@@ -71,6 +71,20 @@ enum InventedTailCommand {
         if lostTimings != lostText {
             problems.append("\(lostTimings) word(s) of timing dropped against \(lostText) of text")
         }
+        // The aggregate has to describe the words that survive, as the
+        // decoder would have scored them on their own: the mean, clamped to
+        // 0.1...1.
+        let survivors = Array(testCase.words.prefix(testCase.words.count - lostText))
+        if !survivors.isEmpty {
+            let mean = survivors.map(\.confidence).reduce(0, +) / Float(survivors.count)
+            let expected = lostText == 0 ? result.confidence : max(0.1, min(1, mean))
+            if abs(trimmed.confidence - expected) > 0.0005 {
+                problems.append(String(
+                    format: "confidence %.3f after the trim, expected %.3f from the kept words",
+                    trimmed.confidence, expected
+                ))
+            }
+        }
         if let wanted = testCase.nothing {
             let gate = Transcriber.SpeechGate(
                 samples: [], segments: [(start: 0, end: testCase.speechEnd ?? 1)], decodable: true
@@ -104,11 +118,14 @@ enum InventedTailCommand {
 
     /// The case as the decoder would have handed it over: one token per word,
     /// marked the way SentencePiece marks a word's first piece, so
-    /// `Trace.words` gives the case's own words back.
+    /// `Trace.words` gives the case's own words back. The aggregate is the
+    /// mean, which is what FluidAudio puts there.
     private static func decode(_ testCase: Case) -> ASRResult {
-        ASRResult(
+        let mean = testCase.words.map(\.confidence).reduce(0, +)
+            / Float(max(testCase.words.count, 1))
+        return ASRResult(
             text: testCase.text,
-            confidence: testCase.words.map(\.confidence).min() ?? 0,
+            confidence: max(0.1, min(1, mean)),
             duration: testCase.words.last?.end ?? 0,
             processingTime: 0,
             tokenTimings: testCase.words.map {
