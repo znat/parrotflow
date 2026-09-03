@@ -174,11 +174,11 @@ enum WordGateCommand {
     /// The probe, or nil when the model has never been fetched.
     @available(macOS 14, *)
     static func load() -> SlotGate? {
-        guard SentenceModel.isCached else { return nil }
+        guard SlotModel.isCached else { return nil }
         var gate: SlotGate?
         let done = DispatchSemaphore(value: 0)
         Task {
-            gate = (try? await SentenceProbe.load()).map(SlotGate.init(probe:))
+            gate = (try? await SlotProbe.load()).map(SlotGate.init(probe:))
             done.signal()
         }
         done.wait()

@@ -4,14 +4,14 @@
 #   scripts/check-slot-gap.sh
 #
 # The vocabulary pass proposes a rewrite from spelling alone. This asks
-# ModernBERT what belongs in the slot and measures both readings against the
+# mmBERT-small what belongs in the slot and measures both readings against the
 # answer. Below `SlotReference.floor` the rewrite is refused.
 #
 # tests/slot-gap-cases.yaml scores the decision, not the number: the gap moves
-# with the Core ML conversion of ModernBERT, and every case here sits well clear
+# with the model and with its Core ML conversion, and every case here sits clear
 # of the line — a refusal below -0.30, a no-opinion above -0.05.
 #
-# Not in `make test`: it needs the 300 MB sentence model and the 400 MB
+# Not in `make test`: it needs the 269 MB slot model and the 400 MB
 # word-vector model, which CI has no business downloading. Run it by hand after
 # touching SlotReference or WordVectors.
 set -uo pipefail

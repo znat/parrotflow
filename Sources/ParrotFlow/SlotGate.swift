@@ -6,9 +6,9 @@ import NaturalLanguage
 ///
 /// The judge is a model call of about 900 ms and every proposal the lexical
 /// gate does not settle goes to it. This settles some of them with the masked
-/// language model `SentenceProbe` already loads: one forward pass to see what
-/// the slot wants, and one per word only when that pass says a name could go
-/// there. A pass is about 8 ms at sequence length 64.
+/// language model `SlotProbe` reads: one forward pass to see what the slot
+/// wants, and one tag per word only when that pass says a name could go there.
+/// A pass is about 15 ms at sequence length 64, read out and ranked.
 ///
 /// One rule:
 ///
@@ -41,8 +41,9 @@ import NaturalLanguage
 /// costs a wrong decline.
 ///
 /// Measured over the 50 English cases of `tests/judge-cases.yaml` by
-/// `scripts/check-slot-gate.sh`: 13 applied by the lexical gate, 14 declined
-/// here, 23 left for the judge, and no error of either kind.
+/// `scripts/check-slot-gate.sh`: 12 applied by the lexical gate, 15 declined
+/// here, 23 left for the judge, and no error of either kind. ModernBERT
+/// declined 14 and left 24 on the same set, also with no error.
 @available(macOS 14, *)
 struct SlotGate {
 
@@ -56,7 +57,7 @@ struct SlotGate {
     /// How many fillers vote on what the slot wants.
     static let fillers = 10
 
-    let probe: SentenceProbe
+    let probe: SlotProbe
 
     struct Reading {
         /// The modal tag of the fillers, or "" when nothing tagged.
@@ -86,7 +87,7 @@ struct SlotGate {
         var counts: [String: Int] = [:]
         var order: [String] = []
         for filler in slot.top(Self.fillers) {
-            let word = filler.word.trimmingCharacters(in: .whitespaces)
+            let word = filler.trimmingCharacters(in: .whitespaces)
             guard !word.isEmpty, word.contains(where: \.isLetter) else { continue }
             let sentence = left + (left.isEmpty ? "" : " ") + word + right
             let at = left.isEmpty ? 0 : left.count + 1
@@ -155,15 +156,15 @@ struct SlotGate {
         return (words, span)
     }
 
-    /// The words either side of the span, as `SentenceProbe.at` wants them:
+    /// The words either side of the span, as `SlotProbe.at` wants them:
     /// the left with no trailing space, the right carrying its own leading one.
     ///
     /// The span's trailing punctuation stays on the right. "cancel." masked
     /// whole takes the full stop with it, and the slot then reads as the middle
     /// of a sentence rather than the end of one.
     static func masked(_ words: [String], at span: Range<Int>) -> (left: String, right: String) {
-        let head = words[..<span.lowerBound].suffix(SentenceProbe.radius)
-        let tail = words[span.upperBound...].prefix(SentenceProbe.radius)
+        let head = words[..<span.lowerBound].suffix(SlotProbe.radius)
+        let tail = words[span.upperBound...].prefix(SlotProbe.radius)
         let marks = String(words[span.upperBound - 1].suffix(
             words[span.upperBound - 1].count - bare(words[span.upperBound - 1]).count
         ))

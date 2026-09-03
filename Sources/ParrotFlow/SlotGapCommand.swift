@@ -3,8 +3,8 @@ import Foundation
 /// `--slot-gap "<sentence>" <heard> <term>` — what the slot says about a rewrite.
 ///
 ///     ParrotFlow --slot-gap "The old house looked ghostly in the fog." ghostly Ghostty
-///     expected  Windsor White Prague Royal Edinburgh old National Scottish Vatican Danish
-///     gap       -0.264   refuse
+///     expected  grey like deserted good lost beautiful white cool green ugly
+///     gap       -0.243   refuse
 ///
 /// The ten words are the reference the two readings are measured against, and
 /// they are printed because they explain the number: a slot whose ten words are
@@ -39,7 +39,8 @@ enum SlotGapCommand {
             return 1
         case .success(let (gap, words)):
             print("expected  \(words.joined(separator: " "))")
-            let verdict = gap < -SlotReference.floor ? "refuse" : "no opinion"
+            // English, which is the only language the gate runs in.
+            let verdict = gap < -SlotReference.floor(for: "en") ? "refuse" : "no opinion"
             print("gap       \(String(format: "%+.3f", gap))   \(verdict)")
             return 0
         }

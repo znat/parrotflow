@@ -459,16 +459,16 @@ actor Vocabulary {
     }
 
     /// The masked language model, once per process, and only if it is already
-    /// on disk. `SentenceModel` fetches it in the background after the first
+    /// on disk. `SlotModel` fetches it in the background after the first
     /// English dictation; nothing here waits for that.
     private var loadedSlotGate: SlotGate?
     private var slotGateFailed = false
 
     func slotGate() async -> SlotGate? {
         if let loadedSlotGate { return loadedSlotGate }
-        guard !slotGateFailed, SentenceModel.isCached else { return nil }
+        guard !slotGateFailed, SlotModel.isCached else { return nil }
         do {
-            loadedSlotGate = SlotGate(probe: try await SentenceProbe.load())
+            loadedSlotGate = SlotGate(probe: try await SlotProbe.load())
         } catch {
             slotGateFailed = true
             Log.write("vocabulary: no slot gate (\(error.localizedDescription));"

@@ -3,7 +3,7 @@
 # expect: refuse      the heard word wins by more than SlotReference.floor
 # expect: no opinion  the two readings are too close to settle
 #
-# The numbers move with the Core ML conversion of ModernBERT, so this scores
+# The numbers move with the model and with its Core ML conversion, so this scores
 # the decision and not the number. Cases were picked well clear of the line:
 # a refusal here sits below -0.30 and a no-opinion above -0.05.
 

@@ -34,7 +34,8 @@ enum SentenceGate {
     /// keeps what was heard, `nil` is still open. Only the open ones are asked
     /// about, so a place the word lists already settled costs nothing.
     static func settle(
-        _ changes: [VocabularyJudge.Change], in text: String, given settled: [Bool?]
+        _ changes: [VocabularyJudge.Change], in text: String, given settled: [Bool?],
+        language: String
     ) async -> [Bool?] {
         // Never on the dictation's time. The word vectors are 400 MB and the
         // first MLX call warms Metal; waiting for that with the pill on screen
@@ -44,8 +45,8 @@ enum SentenceGate {
             Log.write("sentence gate: the word vectors are not loaded yet; skipped")
             return settled
         }
-        guard SentenceModel.isCached else {
-            Log.write("sentence gate: the sentence model is not cached yet; skipped")
+        guard SlotModel.isCached else {
+            Log.write("sentence gate: the slot model is not cached yet; skipped")
             return settled
         }
 
@@ -115,7 +116,7 @@ enum SentenceGate {
                 let gap = try await SlotReference.gap(
                     term: change.now, heard: change.was, at: change.range, in: text
                 )
-                refuses = gap < -SlotReference.floor
+                refuses = gap < -SlotReference.floor(for: language)
             } catch {
                 // A place the slot cannot read is a place this stage has no
                 // opinion about, not one to guess at.

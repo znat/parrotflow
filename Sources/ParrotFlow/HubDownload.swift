@@ -30,10 +30,10 @@ enum HubDownload {
         }
     }
 
-    static func url(repo: String, path: String) -> URL? {
+    static func url(repo: String, revision: String = "main", path: String) -> URL? {
         let escaped = path
             .addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path
-        return URL(string: "https://huggingface.co/\(repo)/resolve/main/\(escaped)")
+        return URL(string: "https://huggingface.co/\(repo)/resolve/\(revision)/\(escaped)")
     }
 
     /// Downloads `paths` into `directory`, keeping the repository's own layout.
@@ -42,13 +42,18 @@ enum HubDownload {
     /// number rather than one per file. Sequential, not parallel: one 299 MB
     /// file is 99% of this set, and racing three small ones against it only
     /// makes the number jump.
+    ///
+    /// `revision` is a branch or a commit. A caller whose case set is the
+    /// answer for one upload passes the commit, so a new one upstream has to be
+    /// adopted rather than arriving on its own.
     static func fetch(
         repo: String,
+        revision: String = "main",
         paths: [String],
         into directory: URL,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
-        let listed = try await sizes(repo: repo)
+        let listed = try await sizes(repo: repo, revision: revision)
         var wanted: [String: Int64] = [:]
         for path in paths {
             guard let size = listed[path] else { throw Failure.unlisted(path: path) }
@@ -61,7 +66,7 @@ enum HubDownload {
             let expected = wanted[path] ?? 0
             let before = done
             try await download(
-                repo: repo, path: path, expecting: expected,
+                repo: repo, revision: revision, path: path, expecting: expected,
                 to: directory.appendingPathComponent(path)
             ) { written in
                 progress(Double(before + min(written, expected)) / Double(max(total, 1)))
@@ -77,8 +82,8 @@ enum HubDownload {
     /// gzipped, and a gzipped response carries no length at all — the header
     /// that does arrive describes the compressed bytes, not the file. This
     /// listing gives the real size, which is what the length check needs.
-    private static func sizes(repo: String) async throws -> [String: Int64] {
-        let path = "api/models/\(repo)/tree/main?recursive=true"
+    private static func sizes(repo: String, revision: String) async throws -> [String: Int64] {
+        let path = "api/models/\(repo)/tree/\(revision)?recursive=true"
         guard let url = URL(string: "https://huggingface.co/\(path)") else { return [:] }
         let (data, response) = try await URLSession.shared.data(from: url)
         if let http = response as? HTTPURLResponse, http.statusCode != 200 {
@@ -98,12 +103,13 @@ enum HubDownload {
 
     private static func download(
         repo: String,
+        revision: String,
         path: String,
         expecting: Int64,
         to destination: URL,
         progress: @escaping @Sendable (Int64) -> Void
     ) async throws {
-        guard let url = url(repo: repo, path: path) else {
+        guard let url = url(repo: repo, revision: revision, path: path) else {
             throw Failure.unlisted(path: path)
         }
         let watcher = Watcher(onWrite: progress)

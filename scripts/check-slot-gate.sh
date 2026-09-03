@@ -11,7 +11,7 @@
 # gate does not settle goes to it today. `SlotGate` settles some of them with a
 # masked language model — see that file for the rules and their order.
 #
-# Not in `make test` and not in CI: it needs the 300 MB sentence model, which
+# Not in `make test` and not in CI: it needs the 269 MB slot model, which
 # CI has no business downloading. Run it by hand after touching `SlotGate`,
 # `Vocabulary.autoApplies` or the tag sets. Nothing is downloaded here either —
 # with no cached model every case routes to `judge` and the run says so.

@@ -414,11 +414,11 @@ every place open. `--word-gate <word>` prints both verdicts and the
 decision, and `--word-gate <word> <term>` prints the possessive verdict and the
 decision for that pair; `scripts/check-word-gate.sh` scores them.
 
-**What the lists cannot settle, the sentence model can.** The word lists are
-about one word. A second tier reads the slot the word sits in, using the
-masked language model `SentenceModel` already fetches. Mask the word, take the
-ten most likely fillers, put each one back and tag it: the modal tag is what
-the slot wants. A name goes in a `Noun`, `Adjective` or `Pronoun` slot and
+**What the lists cannot settle, the slot model can.** The word lists are about
+one word. A second tier reads the slot the word sits in, using mmBERT-small —
+the masked language model `SlotModel` fetches. Mask the word, take the ten most
+likely fillers, put each one back and tag it: the modal tag is what the slot
+wants. A name goes in a `Noun`, `Adjective` or `Pronoun` slot and
 never in a `Verb`, `Adverb` or `Preposition` one, so `merge` -> `Vercel` and
 `ready` -> `Arexvy` are refused. This tier only refuses. It never writes a
 term, and everything it does not refuse it leaves open, `Determiner` slots
@@ -426,13 +426,16 @@ included: those are modifier positions and names do sit in them (`cloud code`,
 `bedrock principles`).
 
 Measured over the 50 English cases of `tests/judge-cases.yaml`: 12 written by
-the word lists, 14 refused by the slot, 24 left open, and no error either way.
+the word lists, 15 refused by the slot, 23 left open, and no error either way.
 `scripts/check-slot-gate.sh` is the run. See `SlotGate`. The route label for
-"left open" is still `judge`, from when a model answered those.
+"left open" is still `judge`, from when a model answered those. ModernBERT
+refused 14 and left 24 on the same set, also with no error; mmBERT-small
+replaced it because it covers French, at no cost in English.
 
-The model is never waited for. Until it is on disk — and on a language it was
-not trained for — every place this tier would judge is simply left open, which
-is the behaviour before this tier.
+The model is never waited for. Until it is on disk, every place this tier would
+judge is simply left open, which is the behaviour before this tier. The gate is
+still reached on English dictation only: mmBERT-small answers in French too, and
+turning that on needs its own floor, which is a change of its own.
 
 **What the slot cannot settle, the term itself can.** Every sentence you
 confirm a term in is kept in `vocabulary-uses.yaml`, and from three of them the

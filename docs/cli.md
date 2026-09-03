@@ -135,10 +135,10 @@ Name the sentence too — with the term, which the model tiers are about —
 ten fillers put back and tagged; `route` is where the proposal goes. The slot
 only ever declines: a name goes in a `Noun`, `Adjective` or `Pronoun` slot and
 never in a `Verb`, `Adverb` or `Preposition` one, and every other proposal
-reads `judge` — see `SlotGate`. Nothing is downloaded: with no cached
-sentence model the slot reads `unavailable` and the route is `judge`.
+reads `judge` — see `SlotGate`. Nothing is downloaded: with no cached slot
+model the slot reads `unavailable` and the route is `judge`.
 `scripts/check-slot-gate.sh` scores the whole route against
-`tests/judge-cases.yaml`. It needs the 300 MB model, so it is not in
+`tests/judge-cases.yaml`. It needs the 269 MB model, so it is not in
 `make test`.
 
 `--teaching` asks whether a substitution sits inside a spelling lesson —
@@ -180,11 +180,12 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   result. It is how a stage whose only contribution is a fact gets scored at
   all, and the first thing to reach for when a condition is not deciding what
   you expected. See [pipelines.md](pipelines.md#variables).
-- `--warm` waits for the word vectors and the sentence model before the run.
-  The sentence gate never makes a dictation wait, so in a one-shot run nothing
-  has loaded them and the two tests that read the sentence are skipped every
-  time — this is the only way to see them from the command line. Off by
-  default: it is a 700 MB download, and `make test` must not need one.
+- `--warm` waits for the word vectors, the sentence model and the slot model
+  before the run. The sentence gate never makes a dictation wait, so in a
+  one-shot run nothing has loaded them and the two tests that read the sentence
+  are skipped every time — this is the only way to see them from the command
+  line. Off by default: it is about 1 GB of downloads, and `make test` must not
+  need one.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 
@@ -419,6 +420,41 @@ say -o /tmp/t.wav --data-format=LEI16@16000 --channels=1 "testing one two three"
 $PF --transcribe /tmp/t.wav
 ```
 
+## What word does this slot want
+
+```sh
+$PF --slot-model                                           # fetch, compile and load mmBERT-small
+$PF --slot-probe "<left half>" "<right half>"              # the ten words the slot expects, and the time
+$PF --slot-probe --encode "<text>"                         # the tokenizer alone, no model
+$PF --slot-gap "<sentence>" <heard> <term>                 # what the slot says about a rewrite
+```
+
+The vocabulary pass proposes a rewrite from spelling and sound alone. The slot
+reads the sentence instead: mask the word, ask mmBERT-small for the ten words it
+expects there, and measure both readings against them with the word vectors.
+
+```
+$PF --slot-gap "The old house looked ghostly in the fog." ghostly Ghostty
+  expected  grey like deserted good lost beautiful white cool green ugly
+  gap       -0.243   refuse
+```
+
+`gap` is `cos(term, centre) − cos(heard, centre)`. Below −0.20 the rewrite is
+refused; above it the slot has no opinion. It only ever refuses — a term is
+unknown to the tokenizer by construction, so it can never win this comparison.
+The ten words are printed because they explain the number: a slot whose ten
+words are pronouns cannot tell two names apart, and the gap comes out near zero.
+`scripts/check-slot-gap.sh` scores the decisions against
+`tests/slot-gap-cases.yaml`; it needs both models, so it is not in `make test`.
+
+`--slot-probe --encode` prints ids and loads no model, which is what
+`scripts/check-slot-tokenizer.sh` compares against HuggingFace's own tokenizer.
+
+mmBERT-small and not ModernBERT: it ties ModernBERT on the English bench and
+covers 1,800 languages, where ModernBERT is English-only. It is not cheaper —
+the same cache size, and 18 ms per pass against 11, because its head is five
+times wider. Multilingual is the whole reason for the swap.
+
 ## Is this period real
 
 ```sh
@@ -454,15 +490,15 @@ it is the only way to get a latency number; `--vectors` loads the word vectors
 as well, so the memory line describes the process the app runs.
 
 `--encode` prints ModernBERT's ids and loads no model, which is what
-`scripts/check-tokenizer.sh` compares against HuggingFace's own tokenizer. That
-tokenizer belongs to the vocabulary slot gate, not to this stage.
+`scripts/check-tokenizer.sh` compares against HuggingFace's own tokenizer.
 `scripts/check-sentence-probe.sh` compares the readings against
 tests/sentence-boundary-cases.json; it needs the model, so it is not in
 `make test`.
 
 `--sentence-model` fetches both: the Qwen base model the readings are scored
-with, and ModernBERT, which the vocabulary slot gate still fills a masked slot
-with.
+with, and ModernBERT, which no stage reads any more. The slot gate moved to
+mmBERT-small, so ModernBERT is now a download with nothing behind it, and a
+follow-up takes it out.
 
 ## Which periods a pause put there
 
@@ -732,8 +768,10 @@ scripts/check-clipboard.sh         # when a rewrite may go to the clipboard, and
 scripts/check-span-rule.sh         # which range a rewrite is written as, before any app sees it
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
 scripts/check-tokenizer.sh         # the hand-written BPE against HuggingFace's own
+scripts/check-slot-tokenizer.sh    # the slot tokenizer against HuggingFace's own
 scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the model)
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
+scripts/check-slot-gap.sh          # what the slot says about a rewrite (needs both models)
 scripts/check-sentence-case.sh     # the capital after a period the join removes
 scripts/check-sentence-join.sh     # which periods the join removes (needs the model)
 

@@ -1086,7 +1086,10 @@ struct Pipeline: Equatable, Codable {
         }
         // The two tests that read the sentence, on whatever is still open.
         if config.vocabulary.gateSentence, #available(macOS 14, *) {
-            decided = await SentenceGate.settle(changes, in: text, given: decided)
+            decided = await SentenceGate.settle(
+                changes, in: text, given: decided,
+                language: Pipeline.language(of: text, config: config)
+            )
         }
         gateSeconds = Date().timeIntervalSince(gatedAt)
 
