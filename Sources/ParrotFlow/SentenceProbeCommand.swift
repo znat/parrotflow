@@ -16,6 +16,10 @@ import MLX
 ///       reading   join      -4.5571  4
 ///       winner    join
 ///
+/// `--bare` reads the boundary as a capital the transcriber wrote with nothing
+/// in front of it: four readings instead of three, the extra one being the text
+/// exactly as decoded. A `"mark": ""` row in a bench file is the same thing.
+///
 /// `--bench <cases.json> --out <scores.json>` scores a whole file in one loaded
 /// process — `[{"left": …, "right": …}]` in, one row of scores out, with the
 /// milliseconds each decision took. A row may carry `"mark": "?"` where the
@@ -36,13 +40,17 @@ enum SentenceProbeCommand {
         return marks.first { SentenceReadings.enders.contains($0) } ?? "."
     }
 
-    static func run(left: String, right: String) -> Int32 {
+    static func run(left: String, right: String, bare: Bool = false) -> Int32 {
         var exitCode: Int32 = 0
         let done = DispatchSemaphore(value: 0)
         // English: this is the English boundary probe, and the stage it stands
         // in runs in no other language.
         let marks = ((try? ConfigStore.load()) ?? Config()).transcription.marks(for: "en")
-        let mark = found(in: left, marks: marks)
+        // `--bare`: the transcriber wrote the capital with no mark at all, so
+        // the text as decoded is a reading of its own. A left half with no mark
+        // is otherwise read as a period, which is what it writes most of the
+        // time.
+        let mark = bare ? "" : found(in: left, marks: marks)
 
         Task {
             do {

@@ -165,13 +165,18 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
             cases: arguments[bench + 1], out: out, vectors: arguments.contains("--vectors")
         ))
     }
-    guard arguments.indices.contains(at + 2) else {
-        print("usage: ParrotFlow --sentence-probe \"<left half>\" \"<right half>\"")
+    let halves = arguments[(at + 1)...].filter { !$0.hasPrefix("--") }
+    guard halves.count >= 2 else {
+        print("usage: ParrotFlow --sentence-probe [--bare] \"<left half>\" \"<right half>\"")
         print("       ParrotFlow --sentence-probe --bench <cases.json>"
               + " [--out <scores.json>] [--vectors]")
         exit(2)
     }
-    exit(SentenceProbeCommand.run(left: arguments[at + 1], right: arguments[at + 2]))
+    exit(SentenceProbeCommand.run(
+        left: halves[halves.startIndex],
+        right: halves[halves.index(after: halves.startIndex)],
+        bare: arguments.contains("--bare")
+    ))
 }
 
 if let at = arguments.firstIndex(of: "--sentence-join") {
