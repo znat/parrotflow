@@ -29,10 +29,6 @@ enum PipelineCommand {
     /// A fixture is a config with everything irrelevant left out.
     private struct Fixture: Decodable {
         var languages: [String] = ["en"]
-        /// The floor the vocabulary gate reads and the marks the sentence
-        /// stage tries. A fixture that cannot state its floor cannot say what
-        /// the gate was scored at.
-        var perLanguage: [String: Config.Transcription.Language] = [:]
         var replacements: [String: [String]] = [:]
         var pipeline: [Config.Transcription.PipelineEntry] = []
         /// Its own `transforms:`, decoded by `Config` rather than re-read here,
@@ -54,15 +50,11 @@ enum PipelineCommand {
 
         enum CodingKeys: String, CodingKey {
             case languages, replacements, pipeline, transforms, vocabulary, lists, models
-            case perLanguage = "per_language"
         }
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) { languages = v }
-            if let v = try c.decodeIfPresent(
-                [String: Config.Transcription.Language].self, forKey: .perLanguage
-            ) { perLanguage = v }
             if let v = try c.decodeIfPresent([String: [String]].self, forKey: .replacements) {
                 replacements = v
             }
@@ -148,7 +140,6 @@ enum PipelineCommand {
         let pipeline = Pipeline(steps: steps)
         var config = Config()
         config.transcription.languages = fixture.languages
-        config.transcription.perLanguage = fixture.perLanguage
         config.transcription.replacements = fixture.replacements
         config.transcription.pipeline = pipeline
         config.transforms = fixture.transforms

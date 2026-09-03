@@ -118,10 +118,8 @@ the failure direction every stage here shares.
 
 It publishes `interpret.count`: how many boundaries were joined.
 
-`transcription.sentences` is the switch this replaces. `sentences: false` still
-turns the step off and `--check-config` says to delete the step instead;
-`marks:` under `sentences:` or under `per_language.<lang>` still feeds the
-step, and `marks:` on the step wins over both.
+Delete the line to turn the step off. A pipeline without it does not read
+boundaries at all, and nothing is downloaded for it.
 
 ## The name stage
 
@@ -245,9 +243,7 @@ about a third narrower, and no single number serves both: on a 201-case French
 bench the English floor wrongly refuses 7 correct rewrites of 84 and 0.30
 refuses 2. It must be above 0 and at most 2.
 
-`transcription.per_language.<lang>.slot_floor` is the old home. It is still
-read and still feeds a step that names no floor of its own; a `slot_floor:` on
-the step beats it, and `--check-config` says which is running.
+`--check-config` prints the resolved floor for every language you listed.
 
 **`max_per_term` is the one to move if a name is being missed.** One name
 reaches the list from five directions — a rule that already rewrote the text,

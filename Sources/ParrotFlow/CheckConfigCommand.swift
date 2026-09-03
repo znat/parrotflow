@@ -122,18 +122,12 @@ enum CheckConfigCommand {
                         ? "" : "  (the sentence tests are off —"
                             + " `vocabulary.gate_sentence: false`)"))
             }
-            // The set the step actually runs with, whichever of its three homes
-            // it came from. Silent when the pipeline holds no step at all.
-            //
-            // `readsBoundaries` is the same predicate that decides whether the
-            // 320 MB model is fetched, so a line saying the step is off is
-            // also saying nothing will be downloaded for it.
+            // The set the step runs with. Silent when the pipeline holds no
+            // step at all, which is also what says nothing is downloaded for it.
             if let step = pipeline.steps.first(where: { $0.stage == .interpret }) {
                 let marks = step.marks ?? transcription.marks(for: "en")
                 emit("  · sentence marks    \(marks.joined(separator: " "))"
-                    + (step.capitals == false ? "  (bare capitals off)" : "")
-                    + (config.readsBoundaries
-                        ? "" : "  (off — `transcription.sentences: false`)"))
+                    + (step.capitals == false ? "  (bare capitals off)" : ""))
             }
             // An empty pipeline is a choice, not a blank: printing nothing
             // there reads as a display fault rather than as the answer to "why

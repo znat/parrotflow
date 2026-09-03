@@ -192,14 +192,22 @@ struct Pipeline: Equatable, Codable {
         /// portrait says nothing, and the slot's refusal is all that can speak.
         var portrait: Bool?
         /// Written `slot_floor:`. How far the heard word must win by before
-        /// `SlotReference` refuses the rewrite. Absent falls back to the legacy
-        /// `transcription.per_language.<lang>.slot_floor`, then to the built-in
-        /// value for the language — see `Transcription.slotFloor(for:on:)`.
+        /// `SlotReference` refuses the rewrite. A language it does not name
+        /// keeps the built-in value for that language — see
+        /// `Transcription.slotFloor(for:on:)`.
         var slotFloor: SlotFloor?
         /// `marks:` on an `interpret` step. What a boundary can be written
-        /// with: the sentence enders in the list are where one is looked for,
-        /// the rest are readings tried at one. Absent falls back to
-        /// `transcription.per_language.<lang>.marks`.
+        /// with. Absent takes the built-in set for the language.
+        ///
+        /// One list, two jobs. The sentence enders in it — `.` and `?` — are
+        /// where a boundary is looked for. Everything else in it — the comma —
+        /// is a reading tried at every boundary. So a boundary is read three
+        /// ways: the mark it carries, the comma, and no mark at all. Drop `?`
+        /// from the list and question marks stop being scanned.
+        ///
+        /// There is no threshold; the reading the model scores highest is the
+        /// one that is written. `;` and `:` were measured and never changed a
+        /// decision in English, so they are not in the default.
         var marks: [String]?
         /// `capitals:` on an `interpret` step. Whether a capital with no mark
         /// in front of it is read as a boundary too. Absent means true.
@@ -230,9 +238,7 @@ struct Pipeline: Equatable, Codable {
         ///     slot_floor: 0.20                 every language
         ///     slot_floor: {en: 0.20, fr: 0.30} one at a time
         ///
-        /// A language the map does not name keeps its built-in floor. The map
-        /// is read as the whole statement of the floors, so it does not fall
-        /// back to `per_language` for the languages it leaves out.
+        /// A language the map does not name keeps its built-in floor.
         struct SlotFloor: Equatable, Codable {
             var everyLanguage: Double?
             var byLanguage: [String: Double] = [:]
@@ -579,15 +585,6 @@ struct Pipeline: Equatable, Codable {
         for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil,
         scope: Scope = Scope()
     ) -> Skip? {
-        // The legacy off switch. `transcription.sentences: false` predates the
-        // step and still turns it off: reading it as "on, because the step is
-        // listed" would start a stage somebody switched off, without a word.
-        if step.stage == .interpret, !config.transcription.sentences.enabled {
-            return Skip(
-                code: "legacy_off",
-                described: "`transcription.sentences: false` turns this step off"
-            )
-        }
         if step.stage == .vocabulary {
             // It costs a model call, so it answers to the same two guards a
             // prompt does: `--replace` must stay off the network, and a spoken

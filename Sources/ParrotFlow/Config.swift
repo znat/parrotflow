@@ -1652,131 +1652,30 @@ struct Config: Decodable, Equatable {
         /// at all.
         var languages: [String] = ["en"]
 
-        /// Legacy. The switch the boundary readings had before they were the
-        /// `interpret` pipeline step — see `SentenceJoin`.
-        ///
-        ///     sentences: false               never look at a boundary
-        ///     sentences:
-        ///       marks: [".", ",", "?"]       what a boundary can be written
-        ///
-        /// Both spellings are still read, and neither is refused. A rename
-        /// that turns a stage on or off without a word is the one outcome this
-        /// move must not have: `false` still turns the step off, and `marks:`
-        /// still feeds it where the step names none. `notices()` says both.
-        ///
-        /// One list, two jobs. The sentence enders in it — `.` and `?` — are
-        /// where a boundary is looked for. Everything else in it — the comma —
-        /// is a reading tried at every boundary. So a boundary is read three
-        /// ways: the mark it carries, the comma, and no mark at all. Drop `?`
-        /// from the list and question marks stop being scanned.
-        ///
-        /// There is no threshold; the reading the model scores highest is the
-        /// one that is written. `;` and `:` were measured and never changed a
-        /// decision in English, so they are not in the default.
-        var sentences: Sentences = Sentences()
-
-        struct Sentences: Decodable, Equatable {
-            var enabled = true
-            /// The old home of the mark set. Read through
-            /// `Transcription.marks(for:)`, which prefers `per_language`;
-            /// `marksWritten` says the file set this one.
-            var marks: [String] = Language.defaultMarks
-            var marksWritten = false
-
-            /// Keys still read and no longer acted on, for `notices()`.
-            var legacy: [String] = []
-
-            enum CodingKeys: String, CodingKey {
-                case marks
-            }
-
-            /// The two thresholds the argmax replaced. Read only so that a
-            /// config still setting them can be told they do nothing.
-            private enum LegacyKeys: String, CodingKey {
-                case joinBelow = "join_below"
-                case offerBelow = "offer_below"
-            }
-
-            init() {}
-
-            init(from decoder: Decoder) throws {
-                if let on = try? decoder.singleValueContainer().decode(Bool.self) {
-                    enabled = on
-                    return
-                }
-                let c = try decoder.container(keyedBy: CodingKeys.self)
-                if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
-                    marks = try Language.checked(
-                        marks: written, key: "transcription.sentences.marks"
-                    )
-                    marksWritten = true
-                }
-                let old = try decoder.container(keyedBy: LegacyKeys.self)
-                for key in [LegacyKeys.joinBelow, .offerBelow]
-                where ((try? old.decodeIfPresent(Double.self, forKey: key)) ?? nil) != nil {
-                    legacy.append("`\(key.stringValue):` was a threshold on a score."
-                        + " The boundary is settled by which reading the model scores"
-                        + " highest now, so there is nothing left to set")
-                }
-            }
-        }
-
-        /// Legacy. The settings that key off which language you dictated in.
-        ///
-        ///     transcription:
-        ///       per_language:
-        ///         fr:
-        ///           slot_floor: 0.30
-        ///           marks: [".", ",", "?"]
-        ///
-        /// Both of its keys live on a pipeline step now — `marks:` on
-        /// `interpret`, `slot_floor:` on `vocabulary` — so the whole block is
-        /// legacy. It is still read, and neither key is refused: a move that
-        /// changes what a gate does without a word is the one outcome this must
-        /// not have. `notices()` says so.
-        ///
-        /// An entry overrides only the keys it names. Everything else keeps the
-        /// built-in value for that language, and a language with no entry keeps
-        /// English's.
-        var perLanguage: [String: Language] = [:]
-
         /// The marks the `interpret` step tries beside removing the period,
-        /// where the step names none of its own.
-        ///
-        /// Two old homes of the same set, in order: `per_language.<lang>.marks`
-        /// then `transcription.sentences.marks`. Both are still read, and both
-        /// answer for English only — that stage has never run in another
-        /// language.
+        /// where the step names none of its own. English only — that stage has
+        /// never run in another language.
         func marks(for language: String) -> [String] {
-            if let written = perLanguage[language]?.marks { return written }
-            if language == "en", sentences.marksWritten { return sentences.marks }
-            return Language.builtIn[language]?.marks ?? Language.defaultMarks
+            Language.builtIn[language]?.marks ?? Language.defaultMarks
         }
 
         /// How far the heard word must win by before the vocabulary gate
         /// refuses a rewrite — see `SlotReference`.
         ///
-        /// `step` is the `vocabulary` step that is running. A `slot_floor:` on
-        /// it answers alone: a language its map does not name keeps the
-        /// built-in value rather than falling back to `per_language`, so one
-        /// map is one complete statement of the floors.
-        ///
-        /// `transcription.per_language.<lang>.slot_floor` is the old home and
-        /// still feeds a step that names none.
+        /// `step` is the `vocabulary` step that is running. Its `slot_floor:`
+        /// answers where it names the language, and a language it does not
+        /// name keeps the built-in value.
         func slotFloor(for language: String, on step: Pipeline.Step? = nil) -> Double {
-            if let written = step?.slotFloor {
-                return written.value(for: language)
-                    ?? Language.builtIn[language]?.slotFloor
-                    ?? Language.defaultSlotFloor
-            }
-            return perLanguage[language]?.slotFloor
+            step?.slotFloor?.value(for: language)
                 ?? Language.builtIn[language]?.slotFloor
                 ?? Language.defaultSlotFloor
         }
 
-        /// What one language sets. Every key is optional: naming a language to
-        /// change one of them must not silently reset the others.
-        struct Language: Decodable, Equatable {
+        /// What one language gets before a step says otherwise. Both values
+        /// live on a pipeline step now — `marks:` on `interpret`, `slot_floor:`
+        /// on `vocabulary` — so this is the built-in table and the two checks
+        /// those keys are read through, and nothing in the file decodes into it.
+        struct Language: Equatable {
             var marks: [String]?
             var slotFloor: Double?
 
@@ -1802,30 +1701,12 @@ struct Config: Decodable, Equatable {
                 self.slotFloor = slotFloor
             }
 
-            enum CodingKeys: String, CodingKey {
-                case marks
-                case slotFloor = "slot_floor"
-            }
-
-            init(from decoder: Decoder) throws {
-                let named = decoder.codingPath.last?.stringValue ?? ""
-                let path = "transcription.per_language"
-                    + (named.isEmpty ? "" : ".\(named)")
-                let c = try decoder.container(keyedBy: CodingKeys.self)
-                if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
-                    marks = try Self.checked(marks: written, key: "\(path).marks")
-                }
-                if let written = try c.decodeIfPresent(Double.self, forKey: .slotFloor) {
-                    slotFloor = try Self.checked(slotFloor: written, key: "\(path).slot_floor")
-                }
-            }
-
             /// The gap is one cosine minus another, so it never goes below -2
             /// and a floor of 2 refuses nothing. At 0 or less the faintest lean
             /// against the term refuses it.
             ///
-            /// `key` names where it was written, because there are two homes —
-            /// the step's `slot_floor:` and the legacy `per_language` one.
+            /// `key` names the language the map entry was written under, so a
+            /// bad number in a map says which one.
             static func checked(slotFloor written: Double, key: String) throws -> Double {
                 guard written > 0, written <= 2 else {
                     throw ConfigError.invalidValue(
@@ -1884,8 +1765,7 @@ struct Config: Decodable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, replacements, pipeline, languages, sentences
-            case perLanguage = "per_language"
+            case enabled, replacements, pipeline, languages
             case insertMode = "insert_mode"
             case activationPhrases = "activation_phrases"
             case activationPhrase = "activation_phrase"
@@ -2260,47 +2140,6 @@ struct Config: Decodable, Equatable {
                 // than no language at all, so a typo degrades instead of
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
-            }
-            // Not `try?`. Swallowing the error leaves joining on with stock
-            // thresholds, and a stage that rewrites the transcript must not be
-            // reached by a line the file got wrong.
-            do {
-                if let v = try c.decodeIfPresent(Sentences.self, forKey: .sentences) {
-                    sentences = v
-                }
-            } catch let bad as ConfigError {
-                throw bad
-            } catch {
-                throw ConfigError.invalidValue(
-                    key: "transcription.sentences",
-                    value: "not a sentence setting",
-                    expected: "`false`, or `marks:` as a list of punctuation marks"
-                )
-            }
-            // Not `try?` either, and for the same reason: a floor the file got
-            // wrong must not leave the gate running on a stock one.
-            do {
-                if let written = try c.decodeIfPresent(
-                    [String: Language].self, forKey: .perLanguage
-                ) {
-                    let unknown = written.keys.filter { !DictationLanguage.supported.contains($0) }
-                    guard unknown.isEmpty else {
-                        throw ConfigError.invalidValue(
-                            key: "transcription.per_language",
-                            value: unknown.sorted().map { "`\($0)`" }.joined(separator: ", "),
-                            expected: "one of \(DictationLanguage.supported.joined(separator: ", "))"
-                        )
-                    }
-                    perLanguage = written
-                }
-            } catch let bad as ConfigError {
-                throw bad
-            } catch {
-                throw ConfigError.invalidValue(
-                    key: "transcription.per_language",
-                    value: "not a language block",
-                    expected: "a language code, then `marks:` or `slot_floor:` under it"
-                )
             }
             // Wrapped, as `replacements:` is below and for the same reason.
             // Anything thrown here leaves `ConfigStore.load()` entirely, and at
@@ -2992,62 +2831,16 @@ struct Config: Decodable, Equatable {
         // Said whether or not there are terms: a file can carry the old
         // file-level key and nothing else.
         said += vocabulary.legacy.map { "vocabulary: \($0)" }
-        said += transcription.sentences.legacy.map { "sentences: \($0)" }
-        // The boundary readings are the `interpret` step now, so both of their
-        // older switches are legacy. Each is still read: a rename that turns a
-        // stage on or off without a word is the one outcome it must not have.
-        let interpret = Pipeline.resolved(config: self).steps.first { $0.stage == .interpret }
-        if !transcription.sentences.enabled {
-            said.append("sentences: `transcription.sentences: false` is legacy; remove the"
-                + " `interpret` step from the pipeline instead."
-                + (interpret == nil ? "" : " The step is in your pipeline and this key"
-                    + " is what still turns it off"))
-        }
-        // The marks moved twice — out of `sentences:` into `per_language`, and
-        // now onto the step. Both older homes still answer for English.
-        let legacyMarks = transcription.sentences.marksWritten
-            || transcription.perLanguage["en"]?.marks != nil
-        if legacyMarks, interpret?.marks != nil {
-            said.append("sentences: `marks:` is set on the `interpret` step and in"
-                + " `transcription."
-                + (transcription.perLanguage["en"]?.marks != nil
-                    ? "per_language.en" : "sentences")
-                + ".marks`. The step is what runs")
-        } else if legacyMarks {
-            said.append("sentences: `marks:` belongs on the `interpret` step now —"
-                + " `- {stage: interpret, marks: [\".\", \",\", \"?\"]}`."
-                + " Yours is still read")
-        }
-        // Said, not done. A pipeline written before the step existed loses the
-        // readings, and nobody runs `--check-config` after an update — so this
-        // is also what the log says at launch, through `notices()`.
-        if transcription.pipeline != nil, interpret == nil, transcription.sentences.enabled {
-            said.append("sentences: the sentence readings no longer run; add"
-                + " `- interpret` to the front of `transcription.pipeline`")
-        }
-        // Both keys of `per_language` live on a step now, so the block itself
-        // is legacy. Still read, and the step wins where both are written.
-        if transcription.perLanguage.values.contains(where: { $0.slotFloor != nil }) {
-            let step = Pipeline.resolved(config: self).steps.first { $0.stage == .vocabulary }
-            said.append("per_language: `transcription.per_language` is legacy —"
-                + " `slot_floor:` belongs on the `vocabulary` step now,"
-                + " `- {stage: vocabulary, slot_floor: {en: 0.20, fr: 0.30}}`."
-                + (step?.slotFloor == nil
-                    ? " Yours is still read"
-                    : " The step names one, and the step is what runs"))
-        }
         return said
     }
 
-    /// Whether the `interpret` step will actually read a boundary: it is in
-    /// the pipeline, and the legacy switch has not turned it off.
+    /// Whether the `interpret` step will read a boundary: it is in the
+    /// pipeline.
     ///
     /// One predicate, because two places warm the 320 MB sentence model and a
-    /// warm that disagrees with `Pipeline.skipReason` fetches weights nothing
-    /// will read.
+    /// warm that disagrees with the pipeline fetches weights nothing will read.
     var readsBoundaries: Bool {
-        transcription.sentences.enabled
-            && Pipeline.resolved(config: self).stages.contains(.interpret)
+        Pipeline.resolved(config: self).stages.contains(.interpret)
     }
 
     /// The `vocabulary` steps in the pipeline. More than one is legal, so

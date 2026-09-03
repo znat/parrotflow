@@ -29,7 +29,7 @@ enum SentenceJoinCommand {
         let config = (try? ConfigStore.load()) ?? Config()
         if caseOnly {
             let terms = Array(config.vocabulary.terms.keys)
-            let scan = SentenceJoin.scanned(config.transcription.sentences.marks)
+            let scan = SentenceJoin.scanned(config.transcription.marks(for: "en"))
             let found = (
                 SentenceJoin.boundaries(in: text, scanning: scan)
                 + SentenceJoin.bareBoundaries(in: text)

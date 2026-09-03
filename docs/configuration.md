@@ -27,7 +27,6 @@ transcription:
   activation_phrases: [hey parrot, by the way parrot]
   languages: [en]       # en and fr are the supported values
   rewrite_line: true
-  per_language: …       # legacy; both of its keys live on a pipeline step now
   pipeline: …           # see pipelines.md
   transforms: …         # see pipelines.md
 
@@ -446,44 +445,6 @@ language. One entry means no detection runs at all.
 Most spoken first: the first entry is the fallback for transcripts too short to
 judge, under four words. Supported values are `en` and `fr`.
 
-## `transcription.per_language` (legacy)
-
-The settings that differed from one language to the next, in one block keyed by
-language code. Both of its keys live on a pipeline step now, so the whole block
-is legacy — `marks` on `interpret`, `slot_floor` on `vocabulary`. See
-[pipelines.md](pipelines.md).
-
-```yaml
-transcription:
-  per_language:
-    en: {slot_floor: 0.20}
-    fr: {slot_floor: 0.30}
-```
-
-Neither key is refused, so an update cannot silently change what runs. An entry
-overrides only the keys it names, and a language with no entry gets English's
-values.
-
-- `marks` is still read and still answers for English. A `marks:` on the
-  `interpret` step beats it.
-- `slot_floor` is still read and still feeds a `vocabulary` step that names no
-  floor of its own. A `slot_floor:` on the step beats it, and the step's map is
-  the whole statement: a language the map leaves out takes its built-in floor
-  rather than the one written here.
-
-`--check-config` says which home is running, and prints the resolved floor for
-every language you listed.
-
-`slot_floor` is how far the word you were heard to say must beat a vocabulary
-term by before the gate refuses to write the term. The number is a difference of
-two cosines, so it must be above 0 and at most 2. It does not carry between
-languages: French gaps are about a third narrower. On a 201-case French bench,
-0.20 wrongly refuses 7 correct rewrites of 84 and 0.30 refuses 2, at a cost of
-19 of the 117 wrong rewrites caught. No single value works for both — 0.40 is
-free in both and costs the English gate 35 of the 55 wrong rewrites it catches.
-The gate only ever refuses, so a floor set too tight costs a name you have to
-type, never a wrong word in your text.
-
 ## `transcription.activation_phrases`
 
 Say one of these instead of dictating and what follows is an instruction:
@@ -506,24 +467,6 @@ never touches this. It used to be the fallback for those too, which is how a
 correction ended up appended to the end of a line instead of replacing a word in
 it: ⌃K clears nothing in a composer, and the paste that followed landed on the
 end of what was still there.
-
-## `transcription.sentences` (legacy)
-
-The switch for the boundary readings before they became a pipeline step. The
-step is `interpret`, and everything this key used to say now lives on that
-line — see [pipelines.md](pipelines.md#the-interpret-stage).
-
-Both spellings are still read, so an update cannot silently change what runs:
-
-- `sentences: false` still turns the step off, even when the pipeline lists it.
-  `--check-config` says to delete the `- interpret` line instead.
-- `sentences: {marks: [...]}` still feeds the step, as does
-  `per_language.<code>.marks`. A `marks:` on the step beats both, and
-  `--check-config` prints the set that is running.
-
-A pipeline written before the step existed has no `- interpret` line in it, so
-the readings do not run. Nothing is inserted for you: `--check-config` and the
-log at launch both say to add the line to the front of the list.
 
 ## `transcription.replacements` is retired
 

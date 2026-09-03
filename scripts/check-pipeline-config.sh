@@ -78,7 +78,7 @@ check "and gets the built-in default, said out loud" \
 #
 # The boundary readings were a pass that ran before the pipeline and answered
 # to `transcription.sentences`. They are a step now, so the list is the switch
-# and the options live on the line.
+# and the options live on the line. Neither old key is read any more.
 
 # What `--check-config` prints for the marks the step resolves to.
 marks() {
@@ -145,65 +145,12 @@ check "marks with no sentence ender is refused" "$code" "1"
 check "and says where a boundary is looked for" \
   "$(printf '%s\n' "$out" | grep -c 'at least one of')" "1"
 
-# --- the legacy keys ----------------------------------------------------------
-
-run_config legacy_off 'transcription:
-  languages: [en]
-  sentences: false
-  pipeline:
-    - numbers'
-
-check "sentences: false with no step loads" "$code" "0"
-check "and the notice says to remove the step instead" \
-  "$(printf '%s\n' "$out" | grep -c 'is legacy; remove the `interpret` step')" "1"
-check "and no migration line is printed as well" \
-  "$(printf '%s\n' "$out" | grep -c 'the sentence readings no longer run')" "0"
-
-run_config legacy_off_listed 'transcription:
-  languages: [en]
-  sentences: false
-  pipeline:
-    - interpret'
-
-check "sentences: false beside the step loads" "$code" "0"
-check "and says the key is what still turns it off" \
-  "$(printf '%s\n' "$out" | grep -c 'this key is what still turns it off')" "1"
-# The same predicate decides whether the 320 MB model is fetched, so a step
-# reported as off is also a step nothing is downloaded for.
-check "and the step is reported off, not merely configured" \
-  "$(marks)" ". , ?  (off — \`transcription.sentences: false\`)"
-
-run_config legacy_marks 'transcription:
-  languages: [en]
-  sentences:
-    marks: [".", "?"]
-  pipeline:
-    - interpret'
-
-check "the old marks: key loads" "$code" "0"
-check "and feeds the step" "$(marks)" ". ?"
-check "and the notice points at the step" \
-  "$(printf '%s\n' "$out" | grep -c '`marks:` belongs on the `interpret` step now')" "1"
-
-run_config legacy_marks_both 'transcription:
-  languages: [en]
-  per_language:
-    en: {marks: [".", "?"]}
-  pipeline:
-    - {stage: interpret, marks: [".", ",", "?"]}'
-
-check "both homes for marks: loads" "$code" "0"
-check "and the step wins" "$(marks)" ". , ?"
-check "and the notice says the step is what runs" \
-  "$(printf '%s\n' "$out" | grep -c 'The step is what runs')" "1"
-
-# --- a pipeline written before the step existed -------------------------------
+# --- a pipeline with no interpret step ----------------------------------------
 #
-# Nothing is inserted. The readings stop, and the line that says so is printed
-# by `--check-config` and written to the log at launch, because nobody runs
-# `--check-config` after an update.
+# Absent from the list means off, in silence, like every other step. Nothing is
+# inserted and nothing is said about it.
 
-run_config no_interpret 'transcription:
+run_config without_step 'transcription:
   languages: [en]
   pipeline:
     - vocabulary
@@ -211,10 +158,10 @@ run_config no_interpret 'transcription:
 
 check "a pipeline with no interpret step loads" "$code" "0"
 check "and nothing is inserted into it" "$(stages)" "vocabulary → numbers"
-check "and the migration line says what to add" \
-  "$(printf '%s\n' "$out" | grep -c 'add `- interpret` to the front')" "1"
 check "and no marks line is printed for a step that is not there" \
   "$(marks)" ""
+check "and nothing is said about the step being absent" \
+  "$(printf '%s\n' "$out" | grep -ci 'interpret')" "0"
 
 # --- the vocabulary step's gates ----------------------------------------------
 #
@@ -329,45 +276,6 @@ run_config floor_bad_shape 'transcription:
 check "a floor that is neither a number nor a map is refused" "$code" "1"
 check "and the message shows both spellings" \
   "$(printf '%s\n' "$out" | grep -c 'slot_floor: {en: 0.20, fr: 0.30}')" "1"
-
-# --- the legacy floor ---------------------------------------------------------
-#
-# `transcription.per_language` is legacy now that both of its keys live on a
-# step. It is still read, and it still feeds a step that names no floor.
-
-run_config floor_legacy 'transcription:
-  languages: [en, fr]
-  per_language:
-    fr: {slot_floor: 0.45}
-  pipeline:
-    - vocabulary'
-
-check "the old per_language floor loads" "$code" "0"
-check "and feeds the step" "$(floor en)/$(floor fr)" "0.20/0.45"
-check "and the notice says the block is legacy" \
-  "$(printf '%s\n' "$out" | grep -c '`transcription.per_language` is legacy')" "1"
-
-run_config floor_both 'transcription:
-  languages: [en, fr]
-  per_language:
-    fr: {slot_floor: 0.45}
-  pipeline:
-    - {stage: vocabulary, slot_floor: {fr: 0.35}}'
-
-check "both homes for the floor loads" "$code" "0"
-check "and the step wins, the language it misses taking its built-in" \
-  "$(floor en)/$(floor fr)" "0.20/0.35"
-check "and the notice says the step is what runs" \
-  "$(printf '%s\n' "$out" | grep -c 'the step is what runs')" "1"
-
-run_config floor_legacy_bad 'transcription:
-  languages: [en]
-  per_language:
-    en: {slot_floor: 0}'
-
-check "an out-of-range legacy floor is refused as it always was" "$code" "1"
-check "and still names its own key" \
-  "$(printf '%s\n' "$out" | grep -c 'transcription.per_language.en.slot_floor')" "1"
 
 # --- the retired key ----------------------------------------------------------
 #
