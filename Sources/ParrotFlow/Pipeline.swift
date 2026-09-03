@@ -174,6 +174,28 @@ struct Pipeline: Equatable, Codable {
         /// whatever arrived, which is what the gate was measured against and
         /// the only way to measure it again.
         var gate: Bool?
+        /// Written `slot_gate:`. Whether anything reads the mmBERT slot — the
+        /// part of speech the spot wants, in `SlotGate`, and the ten words it
+        /// expects there, in `SlotReference`. Absent means true.
+        ///
+        /// One switch for both because they are one model, and the promise the
+        /// switch makes is that `false` downloads nothing. Each half takes the
+        /// path it already has on a machine the 269 MB is not on: the lexical
+        /// gate settles what the word lists settle and asks nothing more, and
+        /// the sentence gate is left to the portrait alone.
+        var slotGate: Bool?
+        /// Written `portrait:`. Whether a term's own sentences and its
+        /// counter-examples may settle a proposal — see `TermPortrait`. Absent
+        /// means true.
+        ///
+        /// `false` takes the path a term with too few uses already has: the
+        /// portrait says nothing, and the slot's refusal is all that can speak.
+        var portrait: Bool?
+        /// Written `slot_floor:`. How far the heard word must win by before
+        /// `SlotReference` refuses the rewrite. Absent falls back to the legacy
+        /// `transcription.per_language.<lang>.slot_floor`, then to the built-in
+        /// value for the language — see `Transcription.slotFloor(for:on:)`.
+        var slotFloor: SlotFloor?
         /// `marks:` on an `interpret` step. What a boundary can be written
         /// with: the sentence enders in the list are where one is looked for,
         /// the rest are readings tried at one. Absent falls back to
@@ -202,6 +224,23 @@ struct Pipeline: Equatable, Codable {
         /// the cost of an anchor people forget — which `validate` refuses
         /// rather than leaving to run everywhere in silence.
         var app: String?
+
+        /// What `slot_floor:` said, in either spelling.
+        ///
+        ///     slot_floor: 0.20                 every language
+        ///     slot_floor: {en: 0.20, fr: 0.30} one at a time
+        ///
+        /// A language the map does not name keeps its built-in floor. The map
+        /// is read as the whole statement of the floors, so it does not fall
+        /// back to `per_language` for the languages it leaves out.
+        struct SlotFloor: Equatable, Codable {
+            var everyLanguage: Double?
+            var byLanguage: [String: Double] = [:]
+
+            func value(for language: String) -> Double? {
+                byLanguage[language] ?? everyLanguage
+            }
+        }
 
         /// Whether a condition is a pattern rather than an expression.
         ///
@@ -1116,7 +1155,14 @@ struct Pipeline: Equatable, Codable {
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary: \(slots.count) slot(s) from \(parts.count) proposal(s)"
         if bySound > 0 { census += " (\(bySound) by sound)" }
-        if config.vocabulary.gateSentence { census += ", sentence gate on" }
+        // Which of the two halves is on, not just that the gate is: a place
+        // decided by the portrait alone reads nothing like one both tests saw.
+        let reading = [
+            (step.slotGate ?? true) ? "slot" : nil, (step.portrait ?? true) ? "portrait" : nil,
+        ].compactMap { $0 }
+        if config.vocabulary.gateSentence, !reading.isEmpty {
+            census += ", sentence gate on (\(reading.joined(separator: " + ")))"
+        }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
             census += " — " + slots.map {
                 "\"\(text[$0.range])\" (\($0.terms.joined(separator: "/")))"
@@ -1139,10 +1185,13 @@ struct Pipeline: Equatable, Codable {
         // `taught` wins over the gate, because a spelling lesson is settled by
         // a rule that is 4/4 where the models measured were 0/4.
         let gatedAt = Date()
+        // `slot_gate: false` passes no gate at all, which is the path a machine
+        // without the 269 MB model already takes: the word lists settle what
+        // they settle and the slot's part of speech is never asked.
+        let slotGate = (step.slotGate ?? true) ? await Vocabulary.shared.slotGate() : nil
         let settled = (step.gate ?? true)
             ? VocabularyJudge.settle(
-                changes, in: text, by: [.sound: .full, .rule: .lists],
-                gate: await Vocabulary.shared.slotGate())
+                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slotGate)
             : [Bool?](repeating: nil, count: changes.count)
         var decided: [Bool?] = changes.indices.map { index in
             index < taught.count && taught[index] ? false : settled[index]
@@ -1152,8 +1201,9 @@ struct Pipeline: Equatable, Codable {
             decided = await SentenceGate.settle(
                 changes, in: text, given: decided,
                 floor: config.transcription.slotFloor(
-                    for: Pipeline.language(of: text, config: config)
-                )
+                    for: Pipeline.language(of: text, config: config), on: step
+                ),
+                slot: step.slotGate ?? true, portrait: step.portrait ?? true
             )
         }
         gateSeconds = Date().timeIntervalSince(gatedAt)

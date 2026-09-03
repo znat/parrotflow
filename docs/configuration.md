@@ -27,7 +27,7 @@ transcription:
   activation_phrases: [hey parrot, by the way parrot]
   languages: [en]       # en and fr are the supported values
   rewrite_line: true
-  per_language: …       # the settings that differ from one language to the next
+  per_language: …       # legacy; both of its keys live on a pipeline step now
   pipeline: …           # see pipelines.md
   transforms: …         # see pipelines.md
 
@@ -446,10 +446,12 @@ language. One entry means no detection runs at all.
 Most spoken first: the first entry is the fallback for transcripts too short to
 judge, under four words. Supported values are `en` and `fr`.
 
-## `transcription.per_language`
+## `transcription.per_language` (legacy)
 
-The settings that differ from one language to the next, in one block keyed by
-language code.
+The settings that differed from one language to the next, in one block keyed by
+language code. Both of its keys live on a pipeline step now, so the whole block
+is legacy — `marks` on `interpret`, `slot_floor` on `vocabulary`. See
+[pipelines.md](pipelines.md).
 
 ```yaml
 transcription:
@@ -458,13 +460,19 @@ transcription:
     fr: {slot_floor: 0.30}
 ```
 
-Those are the defaults, so an empty block changes nothing. An entry overrides
-only the keys it names. A language with no entry gets English's values.
+Neither key is refused, so an update cannot silently change what runs. An entry
+overrides only the keys it names, and a language with no entry gets English's
+values.
 
-`marks` under a language is legacy. The set lives on the `interpret` step now —
-see [pipelines.md](pipelines.md#the-interpret-stage). One written here is still
-read, still answers for English, and is beaten by a `marks:` on the step;
-`--check-config` says which one is running.
+- `marks` is still read and still answers for English. A `marks:` on the
+  `interpret` step beats it.
+- `slot_floor` is still read and still feeds a `vocabulary` step that names no
+  floor of its own. A `slot_floor:` on the step beats it, and the step's map is
+  the whole statement: a language the map leaves out takes its built-in floor
+  rather than the one written here.
+
+`--check-config` says which home is running, and prints the resolved floor for
+every language you listed.
 
 `slot_floor` is how far the word you were heard to say must beat a vocabulary
 term by before the gate refuses to write the term. The number is a difference of
@@ -475,8 +483,6 @@ languages: French gaps are about a third narrower. On a 201-case French bench,
 free in both and costs the English gate 35 of the 55 wrong rewrites it catches.
 The gate only ever refuses, so a floor set too tight costs a name you have to
 type, never a wrong word in your text.
-
-`--check-config` prints the floor for every language you listed.
 
 ## `transcription.activation_phrases`
 

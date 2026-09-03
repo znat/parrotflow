@@ -133,7 +133,9 @@ enum PipelineCommand {
             return Pipeline.Step(
                 stage: stage, transform: entry.transform, prompt: entry.prompt,
                 caps: entry.caps, nearMisses: entry.nearMisses,
-                bySound: entry.bySound, gate: entry.gate, marks: entry.marks,
+                bySound: entry.bySound, gate: entry.gate, slotGate: entry.slotGate,
+                portrait: entry.portrait, slotFloor: entry.slotFloor,
+                marks: entry.marks,
                 capitals: entry.capitals, pause: entry.pause, when: entry.when,
                 unless: entry.unless, app: entry.app
             )
@@ -200,11 +202,18 @@ enum PipelineCommand {
         if warm, #available(macOS 14, *) {
             let failures = Blocking.run { () async -> [String] in
                 var found: [String] = []
-                do { try await WordVectors.shared.prepare() } catch {
-                    found.append("word vectors — \(error.localizedDescription)")
+                // Only what the pipeline's own steps will read. A fixture that
+                // switches a gate off has nothing to do with these weights, and
+                // `--warm` is a download.
+                if config.readsSentenceGate {
+                    do { try await WordVectors.shared.prepare() } catch {
+                        found.append("word vectors — \(error.localizedDescription)")
+                    }
                 }
-                do { _ = try await SlotModel.shared.prepare() } catch {
-                    found.append("slot model — \(error.localizedDescription)")
+                if config.readsSlots {
+                    do { _ = try await SlotModel.shared.prepare() } catch {
+                        found.append("slot model — \(error.localizedDescription)")
+                    }
                 }
                 // Only for a pipeline that holds the step. It is 320 MB, and a
                 // fixture without the step has nothing to read them.

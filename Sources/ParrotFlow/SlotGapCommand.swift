@@ -42,8 +42,10 @@ enum SlotGapCommand {
             return 1
         case .success(let (gap, words)):
             print("expected  \(words.joined(separator: " "))")
-            let floor = ((try? ConfigStore.load()) ?? Config())
-                .transcription.slotFloor(for: language)
+            let config = (try? ConfigStore.load()) ?? Config()
+            let floor = config.transcription.slotFloor(
+                for: language, on: config.vocabularyStep
+            )
             let verdict = gap < -floor ? "refuse" : "no opinion"
             print("gap       \(String(format: "%+.3f", gap))   \(verdict)")
             return 0

@@ -30,9 +30,9 @@ import Foundation
 /// at the English floor: no correct rewrite refused, no ordinary word
 /// overwritten.
 ///
-/// **The floor is per language and it lives in the config**, at
-/// `transcription.per_language.<code>.slot_floor` — 0.20 in English, 0.30 in
-/// French. It is the raw difference of two cosines, not divided by anything.
+/// **The floor is per language and it lives in the config**, as `slot_floor:`
+/// on the `vocabulary` step — 0.20 in English, 0.30 in French. It is the raw
+/// difference of two cosines, not divided by anything.
 /// Dividing by the spread of the ten words looks like it should help and does
 /// the opposite: a sentence holding a rare name makes the ten words collapse
 /// together, the spread goes to 0.002, and the ratio explodes on exactly the

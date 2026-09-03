@@ -440,8 +440,8 @@ $PF --slot-gap "The old house looked ghostly in the fog." ghostly Ghostty
 
 `gap` is `cos(term, centre) − cos(heard, centre)`. Below the floor for the
 language the rewrite is refused; above it the slot has no opinion. The floor is
-`transcription.per_language.<code>.slot_floor`, 0.20 in English and 0.30 in
-French, and `--lang` picks which one the verdict is read at. The gap itself is
+`slot_floor:` on the `vocabulary` step, 0.20 in English and 0.30 in French, and
+`--lang` picks which one the verdict is read at. The gap itself is
 the same number either way. It only ever refuses — a term is
 unknown to the tokenizer by construction, so it can never win this comparison.
 The ten words are printed because they explain the number: a slot whose ten

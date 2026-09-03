@@ -1721,13 +1721,19 @@ struct Config: Decodable, Equatable {
             }
         }
 
-        /// The settings that key off which language you dictated in.
+        /// Legacy. The settings that key off which language you dictated in.
         ///
         ///     transcription:
         ///       per_language:
         ///         fr:
         ///           slot_floor: 0.30
         ///           marks: [".", ",", "?"]
+        ///
+        /// Both of its keys live on a pipeline step now — `marks:` on
+        /// `interpret`, `slot_floor:` on `vocabulary` — so the whole block is
+        /// legacy. It is still read, and neither key is refused: a move that
+        /// changes what a gate does without a word is the one outcome this must
+        /// not have. `notices()` says so.
         ///
         /// An entry overrides only the keys it names. Everything else keeps the
         /// built-in value for that language, and a language with no entry keeps
@@ -1749,8 +1755,21 @@ struct Config: Decodable, Equatable {
 
         /// How far the heard word must win by before the vocabulary gate
         /// refuses a rewrite — see `SlotReference`.
-        func slotFloor(for language: String) -> Double {
-            perLanguage[language]?.slotFloor
+        ///
+        /// `step` is the `vocabulary` step that is running. A `slot_floor:` on
+        /// it answers alone: a language its map does not name keeps the
+        /// built-in value rather than falling back to `per_language`, so one
+        /// map is one complete statement of the floors.
+        ///
+        /// `transcription.per_language.<lang>.slot_floor` is the old home and
+        /// still feeds a step that names none.
+        func slotFloor(for language: String, on step: Pipeline.Step? = nil) -> Double {
+            if let written = step?.slotFloor {
+                return written.value(for: language)
+                    ?? Language.builtIn[language]?.slotFloor
+                    ?? Language.defaultSlotFloor
+            }
+            return perLanguage[language]?.slotFloor
                 ?? Language.builtIn[language]?.slotFloor
                 ?? Language.defaultSlotFloor
         }
@@ -1797,19 +1816,26 @@ struct Config: Decodable, Equatable {
                     marks = try Self.checked(marks: written, key: "\(path).marks")
                 }
                 if let written = try c.decodeIfPresent(Double.self, forKey: .slotFloor) {
-                    // The gap is one cosine minus another, so it never goes
-                    // below -2 and a floor of 2 refuses nothing. At 0 or less
-                    // the faintest lean against the term refuses it.
-                    guard written > 0, written <= 2 else {
-                        throw ConfigError.invalidValue(
-                            key: "\(path).slot_floor",
-                            value: "\(written)",
-                            expected: "a number above 0 and at most 2 — 0.20 in English,"
-                                + " 0.30 in French"
-                        )
-                    }
-                    slotFloor = written
+                    slotFloor = try Self.checked(slotFloor: written, key: "\(path).slot_floor")
                 }
+            }
+
+            /// The gap is one cosine minus another, so it never goes below -2
+            /// and a floor of 2 refuses nothing. At 0 or less the faintest lean
+            /// against the term refuses it.
+            ///
+            /// `key` names where it was written, because there are two homes —
+            /// the step's `slot_floor:` and the legacy `per_language` one.
+            static func checked(slotFloor written: Double, key: String) throws -> Double {
+                guard written > 0, written <= 2 else {
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: "\(written)",
+                        expected: "a number above 0 and at most 2 — 0.20 in English,"
+                            + " 0.30 in French"
+                    )
+                }
+                return written
             }
 
             /// A mark is one punctuation character. Any word here would be
@@ -1969,6 +1995,9 @@ struct Config: Decodable, Equatable {
         ///       when: vocabulary.count > 0
         ///       near_misses: false
         ///       by_sound: false
+        ///       slot_gate: false
+        ///       portrait: false
+        ///       slot_floor: {en: 0.20, fr: 0.30}
         ///       review: gpt
         ///       max_slots: 4
         ///
@@ -1987,6 +2016,9 @@ struct Config: Decodable, Equatable {
             var nearMisses: Bool?
             var bySound: Bool?
             var gate: Bool?
+            var slotGate: Bool?
+            var portrait: Bool?
+            var slotFloor: Pipeline.Step.SlotFloor?
             /// What `review:` said, for `Transcription.retiredReview`. Read so
             /// it can be reported, never used.
             var review: String?
@@ -2010,6 +2042,9 @@ struct Config: Decodable, Equatable {
                 case maxPerSlot = "max_per_slot"
                 case maxPerTerm = "max_per_term"
                 case marks, capitals, pause
+                case slotGate = "slot_gate"
+                case portrait
+                case slotFloor = "slot_floor"
             }
 
             init(from decoder: Decoder) throws {
@@ -2057,6 +2092,9 @@ struct Config: Decodable, Equatable {
                     nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
                     bySound = try c.decodeIfPresent(Bool.self, forKey: .bySound)
                     gate = try c.decodeIfPresent(Bool.self, forKey: .gate)
+                    slotGate = try c.decodeIfPresent(Bool.self, forKey: .slotGate)
+                    portrait = try c.decodeIfPresent(Bool.self, forKey: .portrait)
+                    slotFloor = try Self.slotFloor(from: c)
                     // Two spellings, `review: false` and `review: <model>`,
                     // and neither reaches anything now. Read in both shapes so
                     // the message names what was written.
@@ -2080,6 +2118,42 @@ struct Config: Decodable, Equatable {
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
                 app = try c.decodeIfPresent(String.self, forKey: .app)
+            }
+
+            /// `slot_floor:` in either spelling — a number for every language,
+            /// or a map naming them one by one.
+            ///
+            /// Two spellings because a single-language machine should not have
+            /// to write its own language code to move one number, and a
+            /// bilingual one cannot say what it means with a single number:
+            /// the two floors were measured apart.
+            private static func slotFloor(
+                from c: KeyedDecodingContainer<CodingKeys>
+            ) throws -> Pipeline.Step.SlotFloor? {
+                let key = "pipeline.vocabulary.slot_floor"
+                if let every = (try? c.decodeIfPresent(Double.self, forKey: .slotFloor)) ?? nil {
+                    return Pipeline.Step.SlotFloor(
+                        everyLanguage: try Language.checked(slotFloor: every, key: key)
+                    )
+                }
+                guard let written = (try? c.decodeIfPresent(
+                    [String: Double].self, forKey: .slotFloor
+                )) ?? nil else {
+                    guard c.contains(.slotFloor) else { return nil }
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: "neither a number nor a map",
+                        expected: "a number for every language — `slot_floor: 0.20` — or a"
+                            + " map — `slot_floor: {en: 0.20, fr: 0.30}`"
+                    )
+                }
+                var floors: [String: Double] = [:]
+                for (language, floor) in written {
+                    floors[language] = try Language.checked(
+                        slotFloor: floor, key: "\(key).\(language)"
+                    )
+                }
+                return Pipeline.Step.SlotFloor(byLanguage: floors)
             }
         }
 
@@ -2259,7 +2333,9 @@ struct Config: Decodable, Equatable {
                             stage: stage, transform: entry.transform,
                             prompt: entry.prompt, caps: entry.caps,
                             nearMisses: entry.nearMisses, bySound: entry.bySound,
-                            gate: entry.gate, marks: entry.marks,
+                            gate: entry.gate, slotGate: entry.slotGate,
+                            portrait: entry.portrait, slotFloor: entry.slotFloor,
+                            marks: entry.marks,
                             capitals: entry.capitals, pause: entry.pause,
                             when: entry.when, unless: entry.unless, app: entry.app
                         )
@@ -2949,6 +3025,17 @@ struct Config: Decodable, Equatable {
             said.append("sentences: the sentence readings no longer run; add"
                 + " `- interpret` to the front of `transcription.pipeline`")
         }
+        // Both keys of `per_language` live on a step now, so the block itself
+        // is legacy. Still read, and the step wins where both are written.
+        if transcription.perLanguage.values.contains(where: { $0.slotFloor != nil }) {
+            let step = Pipeline.resolved(config: self).steps.first { $0.stage == .vocabulary }
+            said.append("per_language: `transcription.per_language` is legacy —"
+                + " `slot_floor:` belongs on the `vocabulary` step now,"
+                + " `- {stage: vocabulary, slot_floor: {en: 0.20, fr: 0.30}}`."
+                + (step?.slotFloor == nil
+                    ? " Yours is still read"
+                    : " The step names one, and the step is what runs"))
+        }
         return said
     }
 
@@ -2961,6 +3048,40 @@ struct Config: Decodable, Equatable {
     var readsBoundaries: Bool {
         transcription.sentences.enabled
             && Pipeline.resolved(config: self).stages.contains(.interpret)
+    }
+
+    /// The `vocabulary` steps in the pipeline. More than one is legal, so
+    /// every predicate below asks whether *any* of them wants the model.
+    private var vocabularySteps: [Pipeline.Step] {
+        Pipeline.resolved(config: self).steps.filter { $0.stage == .vocabulary }
+    }
+
+    /// The `vocabulary` step the commands report on. The first, because a
+    /// second one is a rerun of the same stage rather than a different
+    /// configuration to describe.
+    var vocabularyStep: Pipeline.Step? { vocabularySteps.first }
+
+    /// Whether anything will read the 269 MB slot model: a `vocabulary` step
+    /// is in the pipeline and has not switched it off.
+    ///
+    /// One predicate for the same reason `readsBoundaries` is one: three
+    /// places warm this model, and a warm that disagrees with the step
+    /// downloads weights nothing will read.
+    var readsSlots: Bool {
+        vocabularySteps.contains { $0.slotGate ?? true }
+    }
+
+    /// Whether anything will read the 400 MB word vectors. Both tests that
+    /// read the sentence need them, so either switch keeps them.
+    var readsSentenceGate: Bool {
+        vocabulary.gateSentence
+            && vocabularySteps.contains { ($0.slotGate ?? true) || ($0.portrait ?? true) }
+    }
+
+    /// Whether a term's portrait is worth building — see
+    /// `AppDelegate.rebuildPortrait`.
+    var readsPortraits: Bool {
+        vocabulary.gateSentence && vocabularySteps.contains { $0.portrait ?? true }
     }
 
     var resolvedOutputDir: URL {

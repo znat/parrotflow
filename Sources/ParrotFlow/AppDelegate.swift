@@ -2314,7 +2314,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The rest together, once speech is in. None of them blocks a
             // dictation: the stages that read them stand aside until they are
             // in memory.
-            await transcriber.warmSlotModel()
+            if config.readsSlots { await transcriber.warmSlotModel() }
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
             // a launch keep the periods a pause put in. Not fetched at all when
@@ -2340,9 +2340,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // on the one launch that installed them.
                 NeuralPhonemes.warmCache()
             }
-            // 335 MB, and only the sentence gate reads them. Someone who turns
-            // the gate off should not pay for it.
-            if #available(macOS 14, *), config.vocabulary.gateSentence {
+            // 335 MB, and only the two tests that read the sentence read
+            // them. Someone who switches both off should not pay for it.
+            if #available(macOS 14, *), config.readsSentenceGate {
                 Task.detached(priority: .background) { await WordVectors.shared.warm() }
             }
         }
@@ -3872,11 +3872,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// like a session of corrections, which is the reason to think this
     /// matters, and `gate_ms` on a running app is what would settle it.
     ///
-    /// Only with the sentence gate on. `SentenceGate` is the only thing that
-    /// reads a portrait, and with it off this would fetch 335 MB of word
-    /// vectors to answer a question nobody asks.
+    /// Only where a portrait will be read. `SentenceGate` is the only thing
+    /// that reads one, so with `portrait: false` on the step — or the legacy
+    /// `gate_sentence: false` — this would fetch 335 MB of word vectors to
+    /// answer a question nobody asks.
     private func rebuildPortrait(for term: String) {
-        guard config.vocabulary.gateSentence else { return }
+        guard config.readsPortraits else { return }
         guard #available(macOS 14, *) else { return }
         Task.detached(priority: .background) {
             let started = Date()

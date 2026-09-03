@@ -33,6 +33,8 @@ run_config() {
   local dir="$WORK/$1"
   mkdir -p "$dir"
   printf '%s\n' "$2" > "$dir/config.yaml"
+  # `gate_sentence:` is the only key here that lives in vocabulary.yaml.
+  if [ "$#" -ge 3 ]; then printf '%s\n' "$3" > "$dir/vocabulary.yaml"; fi
   out="$(PARROTFLOW_CONFIG_DIR="$dir" "$BIN" --check-config 2>/dev/null)"
   code=$?
 }
@@ -213,6 +215,159 @@ check "and the migration line says what to add" \
   "$(printf '%s\n' "$out" | grep -c 'add `- interpret` to the front')" "1"
 check "and no marks line is printed for a step that is not there" \
   "$(marks)" ""
+
+# --- the vocabulary step's gates ----------------------------------------------
+#
+# Two tests read the sentence and each has its own switch, both on by default.
+# The line `--check-config` prints is the same predicate that decides whether
+# the model behind each one is fetched, so a gate reported off is a gate
+# nothing is downloaded for.
+
+gates() {
+  printf '%s\n' "$out" | sed -n 's/^  · vocabulary gates  *//p'
+}
+# One language's resolved slot floor, whichever of the two homes it came from.
+floor() {
+  printf '%s\n' "$out" | sed -n "s/^      $1  slot floor //p"
+}
+
+run_config gates_default 'transcription:
+  languages: [en, fr]
+  pipeline:
+    - vocabulary'
+
+check "a bare - vocabulary line has both gates on" "$(gates)" "slot on, portrait on"
+check "and the built-in floors" "$(floor en)/$(floor fr)" "0.20/0.30"
+
+run_config gates_slot_off 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: vocabulary, slot_gate: false}'
+
+check "slot_gate: false loads" "$code" "0"
+check "and reports the slot gate off, the portrait still on" \
+  "$(gates)" "slot off, portrait on"
+
+run_config gates_portrait_off 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: vocabulary, portrait: false}'
+
+check "portrait: false loads" "$code" "0"
+check "and reports the portrait off, the slot gate still on" \
+  "$(gates)" "slot on, portrait off"
+
+run_config gates_both_off 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: vocabulary, slot_gate: false, portrait: false}'
+
+check "both switches off loads" "$code" "0"
+check "and neither model is read" "$(gates)" "slot off, portrait off"
+
+run_config gates_legacy_switch 'transcription:
+  languages: [en]
+  pipeline:
+    - vocabulary' 'gate_sentence: false'
+
+check "the legacy gate_sentence: false loads" "$code" "0"
+check "and turns both sentence tests off, naming the key" \
+  "$(gates)" "slot on, portrait off  (the sentence tests are off — \`vocabulary.gate_sentence: false\`)"
+
+# --- the slot floor, on the step ----------------------------------------------
+
+run_config floor_scalar 'transcription:
+  languages: [en, fr]
+  pipeline:
+    - {stage: vocabulary, slot_floor: 0.35}'
+
+check "a bare number loads" "$code" "0"
+check "and applies to every language" "$(floor en)/$(floor fr)" "0.35/0.35"
+
+run_config floor_map 'transcription:
+  languages: [en, fr]
+  pipeline:
+    - {stage: vocabulary, slot_floor: {en: 0.25, fr: 0.45}}'
+
+check "a map loads" "$code" "0"
+check "and each language gets its own" "$(floor en)/$(floor fr)" "0.25/0.45"
+
+run_config floor_map_partial 'transcription:
+  languages: [en, fr]
+  pipeline:
+    - {stage: vocabulary, slot_floor: {fr: 0.45}}'
+
+check "a map naming one language loads" "$code" "0"
+check "and the language it misses keeps its built-in floor" \
+  "$(floor en)/$(floor fr)" "0.20/0.45"
+
+run_config floor_bad 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: vocabulary, slot_floor: 0}'
+
+check "a floor of 0 on the step is refused" "$code" "1"
+check "and the message names the key that was written" \
+  "$(printf '%s\n' "$out" | grep -c 'pipeline.vocabulary.slot_floor')" "1"
+check "and says what a floor may be, as it always has" \
+  "$(printf '%s\n' "$out" | grep -c 'a number above 0 and at most 2')" "1"
+
+run_config floor_bad_map 'transcription:
+  languages: [en, fr]
+  pipeline:
+    - {stage: vocabulary, slot_floor: {en: 0.20, fr: 3}}'
+
+check "an out-of-range language in a map is refused" "$code" "1"
+check "and the message names that language" \
+  "$(printf '%s\n' "$out" | grep -c 'pipeline.vocabulary.slot_floor.fr')" "1"
+
+run_config floor_bad_shape 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: vocabulary, slot_floor: "0.20"}'
+
+check "a floor that is neither a number nor a map is refused" "$code" "1"
+check "and the message shows both spellings" \
+  "$(printf '%s\n' "$out" | grep -c 'slot_floor: {en: 0.20, fr: 0.30}')" "1"
+
+# --- the legacy floor ---------------------------------------------------------
+#
+# `transcription.per_language` is legacy now that both of its keys live on a
+# step. It is still read, and it still feeds a step that names no floor.
+
+run_config floor_legacy 'transcription:
+  languages: [en, fr]
+  per_language:
+    fr: {slot_floor: 0.45}
+  pipeline:
+    - vocabulary'
+
+check "the old per_language floor loads" "$code" "0"
+check "and feeds the step" "$(floor en)/$(floor fr)" "0.20/0.45"
+check "and the notice says the block is legacy" \
+  "$(printf '%s\n' "$out" | grep -c '`transcription.per_language` is legacy')" "1"
+
+run_config floor_both 'transcription:
+  languages: [en, fr]
+  per_language:
+    fr: {slot_floor: 0.45}
+  pipeline:
+    - {stage: vocabulary, slot_floor: {fr: 0.35}}'
+
+check "both homes for the floor loads" "$code" "0"
+check "and the step wins, the language it misses taking its built-in" \
+  "$(floor en)/$(floor fr)" "0.20/0.35"
+check "and the notice says the step is what runs" \
+  "$(printf '%s\n' "$out" | grep -c 'the step is what runs')" "1"
+
+run_config floor_legacy_bad 'transcription:
+  languages: [en]
+  per_language:
+    en: {slot_floor: 0}'
+
+check "an out-of-range legacy floor is refused as it always was" "$code" "1"
+check "and still names its own key" \
+  "$(printf '%s\n' "$out" | grep -c 'transcription.per_language.en.slot_floor')" "1"
 
 # --- the retired key ----------------------------------------------------------
 #

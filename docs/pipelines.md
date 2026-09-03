@@ -143,6 +143,9 @@ name or a mapping, and it cannot be both:
   near_misses: true   # optional; default. false matches renderings exactly
   by_sound: true      # optional; default. false matches spelling only
   gate: true          # optional; default. false leaves every place open
+  slot_gate: true     # optional; default. false reads no slot model
+  portrait: true      # optional; default. false reads no term portrait
+  slot_floor: 0.20    # optional; or {en: 0.20, fr: 0.30}
   max_per_slot: 2     # optional; readings per place, the decoder's included
   max_per_term: 2     # optional; places in one sentence about the same name
 ```
@@ -163,8 +166,7 @@ machine. What decides now is free and local to the app:
    preposition cannot hold a name. Refuse it.
 3. **The two tests that read the sentence** — whether the term belongs where
    the word was heard, and whether this sentence looks like the ones the term
-   was confirmed in. See `gate_sentence:` in
-   [docs/configuration.md](configuration.md).
+   was confirmed in. `slot_gate:` and `portrait:` below switch them.
 
 **Everything they leave open keeps what arrived.** A `replacements` rule has
 already written its term, so an open place ships the term. A near miss or a
@@ -208,6 +210,44 @@ Neither writes anything. Each opens one more place for the gates to settle, and
 a place none of them settles keeps the word that was heard — so the looser
 match costs a gate call, not a sentence. `near_misses: false` puts matching
 back to exact and whole-word.
+
+**`slot_gate:` and `portrait:` switch the two tests that read the sentence.**
+Both on by default, and each off is a path the stage already has.
+
+- `slot_gate: false` reads no slot model. That is mmBERT-small, 269 MB, and
+  nothing downloads it: rule 2 above is skipped, and the test that asks whether
+  the term belongs where the word was heard is skipped too. Every place is left
+  to the portrait, or to whatever arrived. It is what the stage does today on a
+  machine the weights are not on.
+- `portrait: false` reads no portrait. A term's own sentences say nothing, so
+  nothing is authorised on that evidence and a rule's substitution is never
+  taken back out. It is what the stage does today for a term with fewer than
+  three confirmed uses.
+
+Both off and neither model is fetched. `--check-config` prints the pair on one
+line, from the same predicate that decides whether each model is downloaded:
+
+```
+  · vocabulary gates  slot on, portrait off
+```
+
+**`slot_floor:` is how far the heard word must win by** before the slot test
+refuses the rewrite. A number applies to every language; a map names them one
+at a time and a language it leaves out keeps its built-in floor.
+
+```yaml
+- {stage: vocabulary, slot_floor: 0.20}
+- {stage: vocabulary, slot_floor: {en: 0.20, fr: 0.30}}
+```
+
+0.20 in English and 0.30 in French are the built-in values. French gaps are
+about a third narrower, and no single number serves both: on a 201-case French
+bench the English floor wrongly refuses 7 correct rewrites of 84 and 0.30
+refuses 2. It must be above 0 and at most 2.
+
+`transcription.per_language.<lang>.slot_floor` is the old home. It is still
+read and still feeds a step that names no floor of its own; a `slot_floor:` on
+the step beats it, and `--check-config` says which is running.
 
 **`max_per_term` is the one to move if a name is being missed.** One name
 reaches the list from five directions — a rule that already rewrote the text,
