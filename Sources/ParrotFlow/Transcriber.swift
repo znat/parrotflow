@@ -926,17 +926,17 @@ actor Transcriber {
     ) -> (count: Int, reason: String)? {
         guard words.count >= 2 else { return nil }
 
-        var index = words.count - 1
-        while index > 0, sameTime(words[index], words[index - 1]) { index -= 1 }
-        let burst = words.count - index >= 2 ? words.count - index : 0
+        var first = words.count - 1
+        while first > 0, sameTime(words[first], words[first - 1]) { first -= 1 }
+        let burst = words.count - first >= 2 ? words.count - first : 0
 
         var after = 0
         if let speechEnd {
-            var index = words.count
-            while index > 0, words[index - 1].start >= speechEnd + inventedTailMargin {
-                index -= 1
+            var late = words.count
+            while late > 0, words[late - 1].start >= speechEnd + inventedTailMargin {
+                late -= 1
             }
-            let run = words[index...]
+            let run = words[late...]
             if run.count >= 2, run.allSatisfy({ $0.confidence < inventedTailConfidence }) {
                 after = run.count
             }
