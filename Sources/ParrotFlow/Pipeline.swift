@@ -30,6 +30,17 @@ struct Pipeline: Equatable, Codable {
     /// drift apart — a stage that cannot be spelled is a stage nobody can ask
     /// for.
     enum Stage: String, Equatable, Codable, CaseIterable {
+        /// What the speaker meant, where the decoder wrote what it heard.
+        ///
+        /// Today that is the marks a pause put in: a period or a question mark
+        /// mid-sentence, and the capital after it — see `SentenceJoin`.
+        /// `marks:`, `capitals:` and `pause:` on the step say how far it
+        /// reaches. English only, and it refuses every other language itself.
+        ///
+        /// First in the list, because it reads the decoder's own words: the
+        /// pause gate lines the text up against the token timings, and a stage
+        /// above it that rewrites a word breaks that alignment.
+        case interpret
         /// Names: matched from `vocabulary.yaml`, then each match settled
         /// against the sentence it stands in. `near_misses:`, `by_sound:` and
         /// `gate:` on the step say how far it reaches — see `Step`.
@@ -62,9 +73,8 @@ struct Pipeline: Equatable, Codable {
         ///
         /// Only used to say where `vocabulary` belongs: it reads spans the
         /// acoustic pass measured before the pipeline started, and every stage
-        /// that edits text moves them (F10). `replacements` is the exception it
-        /// has to live with — the judge offers a rule's substitution back, so
-        /// the rules must already have fired.
+        /// that edits text moves them (F10). `interpret` is the exception, and
+        /// `vocabularyOrderProblems` is where that is written down.
         var editsText: Bool { self != .context && self != .input && self != .vocabulary }
 
         /// Whether it can be in a default nobody wrote.
@@ -164,6 +174,18 @@ struct Pipeline: Equatable, Codable {
         /// whatever arrived, which is what the gate was measured against and
         /// the only way to measure it again.
         var gate: Bool?
+        /// `marks:` on an `interpret` step. What a boundary can be written
+        /// with: the sentence enders in the list are where one is looked for,
+        /// the rest are readings tried at one. Absent falls back to
+        /// `transcription.per_language.<lang>.marks`.
+        var marks: [String]?
+        /// `capitals:` on an `interpret` step. Whether a capital with no mark
+        /// in front of it is read as a boundary too. Absent means true.
+        var capitals: Bool?
+        /// `pause:` on an `interpret` step. Seconds of silence a bare capital
+        /// needs in front of it before it is read. Zero or less reads every
+        /// one. Absent means `SentenceJoin.paused`.
+        var pause: Double?
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -413,8 +435,11 @@ struct Pipeline: Equatable, Codable {
     /// now, so there is no exception left to state.
     private func vocabularyOrderProblems() -> [String] {
         guard let judge = stages.firstIndex(of: .vocabulary) else { return [] }
+        // `interpret` is the exception. It ran above the whole pipeline until
+        // it became a step, so it has always been above this one, and it takes
+        // a mark out rather than rewriting a word.
         let above = steps[..<judge]
-            .filter { $0.stage.editsText }
+            .filter { $0.stage.editsText && $0.stage != .interpret }
             .map { Pipeline.namespace(of: $0) }
         guard !above.isEmpty else { return [] }
         return ["vocabulary runs after \(above.joined(separator: ", ")), which rewrite the"
@@ -514,6 +539,15 @@ struct Pipeline: Equatable, Codable {
         for step: Step, text: String, config: Config, allowPrompts: Bool, app: App? = nil,
         scope: Scope = Scope()
     ) -> Skip? {
+        // The legacy off switch. `transcription.sentences: false` predates the
+        // step and still turns it off: reading it as "on, because the step is
+        // listed" would start a stage somebody switched off, without a word.
+        if step.stage == .interpret, !config.transcription.sentences.enabled {
+            return Skip(
+                code: "legacy_off",
+                described: "`transcription.sentences: false` turns this step off"
+            )
+        }
         if step.stage == .vocabulary {
             // It costs a model call, so it answers to the same two guards a
             // prompt does: `--replace` must stay off the network, and a spoken
@@ -645,12 +679,12 @@ struct Pipeline: Equatable, Codable {
     ///   the way to a transcript would say less than one that never moved.
     func run(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(),
+        seed: Scope = Scope(), words: [Trace.Word] = [],
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await runCollectingScope(
             text, config: config, allowPrompts: allowPrompts, app: app,
-            seed: seed, progress: progress
+            seed: seed, words: words, progress: progress
         ).text
     }
 
@@ -661,9 +695,12 @@ struct Pipeline: Equatable, Codable {
     /// have to say `.text` to get it. `--pipeline` and the case sets want both,
     /// and they are the reason the scope is reachable at all: a variable nothing
     /// can print is a variable nobody can debug.
+    /// `words` are the decoder's own, for the `interpret` step's pause gate.
+    /// Every other way in has no audio and hands over none, and the gate then
+    /// stands down rather than guessing.
     func runCollectingScope(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(),
+        seed: Scope = Scope(), words: [Trace.Word] = [],
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> (text: String, scope: Scope) {
         var output = text
@@ -735,7 +772,7 @@ struct Pipeline: Equatable, Codable {
             let before = output
             let started = CFAbsoluteTimeGetCurrent()
             let result = await apply(
-                step, to: output, config: config, app: app, scope: scope
+                step, to: output, config: config, app: app, scope: scope, words: words
             )
             let seconds = CFAbsoluteTimeGetCurrent() - started
             output = result.text
@@ -782,9 +819,11 @@ struct Pipeline: Equatable, Codable {
 
     private func apply(
         _ step: Step, to text: String, config: Config, app: App?, scope: Scope,
-
+        words: [Trace.Word]
     ) async -> StageResult {
         switch step.stage {
+        case .interpret:
+            return await interpret(step, on: text, config: config, words: words)
         case .numbers:
             let done = Numbers.read(text, languages: config.transcription.languages)
             return StageResult(text: done.text, vars: ["language": .string(done.language)])
@@ -928,6 +967,29 @@ struct Pipeline: Equatable, Codable {
             if let appending = capture.appending { vars["appending"] = .bool(appending) }
             return StageResult(text: text, vars: vars)
         }
+    }
+
+    /// The marks a pause put in, taken out again — see `SentenceJoin`.
+    ///
+    /// Fails open. No model on disk, a model not in memory yet, a language
+    /// that is not English: the transcript arrives as it was, and the step
+    /// still publishes `ran: true` with `count: 0`. A boundary left as decoded
+    /// is a worse transcript; an error here would cost the sentence.
+    private func interpret(
+        _ step: Step, on text: String, config: Config, words: [Trace.Word]
+    ) async -> StageResult {
+        guard #available(macOS 14, *) else {
+            return StageResult(text: text, vars: ["count": .int(0)])
+        }
+        let language = Pipeline.language(of: text, config: config)
+        let outcome = await SentenceJoin.shared.apply(
+            to: text, config: config,
+            marks: step.marks ?? config.transcription.marks(for: language),
+            capitals: step.capitals ?? true,
+            pause: step.pause ?? SentenceJoin.paused,
+            words: words
+        )
+        return StageResult(text: outcome.text, vars: ["count": .int(outcome.count(.join))])
     }
 
     /// Every substitution the vocabulary pass made, settled where it stands.

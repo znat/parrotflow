@@ -133,7 +133,8 @@ enum PipelineCommand {
             return Pipeline.Step(
                 stage: stage, transform: entry.transform, prompt: entry.prompt,
                 caps: entry.caps, nearMisses: entry.nearMisses,
-                bySound: entry.bySound, gate: entry.gate, when: entry.when,
+                bySound: entry.bySound, gate: entry.gate, marks: entry.marks,
+                capitals: entry.capitals, pause: entry.pause, when: entry.when,
                 unless: entry.unless, app: entry.app
             )
         }
@@ -204,6 +205,13 @@ enum PipelineCommand {
                 }
                 do { _ = try await SlotModel.shared.prepare() } catch {
                     found.append("slot model — \(error.localizedDescription)")
+                }
+                // Only for a pipeline that holds the step. It is 320 MB, and a
+                // fixture without the step has nothing to read them.
+                if pipeline.stages.contains(.interpret) {
+                    do { try await SentenceReadings.shared.prepare() } catch {
+                        found.append("sentence readings — \(error.localizedDescription)")
+                    }
                 }
                 return found
             }

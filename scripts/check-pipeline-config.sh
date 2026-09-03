@@ -70,7 +70,145 @@ run_config absent 'transcription:
 
 check "a config naming no pipeline loads" "$code" "0"
 check "and gets the built-in default, said out loud" \
-  "$(stages)" "numbers  (nothing configured, so every stage)"
+  "$(stages)" "interpret → numbers  (nothing configured, so every stage)"
+
+# --- the interpret step -------------------------------------------------------
+#
+# The boundary readings were a pass that ran before the pipeline and answered
+# to `transcription.sentences`. They are a step now, so the list is the switch
+# and the options live on the line.
+
+# What `--check-config` prints for the marks the step resolves to.
+marks() {
+  printf '%s\n' "$out" | sed -n 's/^  · sentence marks  *//p'
+}
+
+run_config interpret_bare 'transcription:
+  languages: [en]
+  pipeline:
+    - interpret
+    - vocabulary
+    - numbers'
+
+check "a bare - interpret line loads" "$code" "0"
+check "and runs above vocabulary without being refused for it" \
+  "$(stages)" "interpret → vocabulary → numbers"
+check "and takes the built-in marks" "$(marks)" ". , ?"
+
+run_config interpret_options 'transcription:
+  languages: [en]
+  pipeline:
+    - stage: interpret
+      marks: [".", "?"]
+      capitals: false
+      pause: 0
+      app: /term/'
+
+check "a map with every option loads" "$code" "0"
+check "and the condition is printed with the step" \
+  "$(stages)" "interpret in /term/"
+check "and the step marks are what runs" "$(marks)" ". ?  (bare capitals off)"
+
+run_config interpret_capitals 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: interpret, capitals: false}'
+
+check "capitals: false alone loads" "$code" "0"
+check "and says so beside the marks" "$(marks)" ". , ?  (bare capitals off)"
+
+run_config interpret_pause 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: interpret, pause: 0}'
+
+check "pause: 0 loads" "$code" "0"
+check "and the step still resolves" "$(stages)" "interpret"
+
+run_config interpret_bad_marks 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: interpret, marks: ["hello"]}'
+
+check "a mark that is a word is refused" "$code" "1"
+check "and the message names the key that was written" \
+  "$(printf '%s\n' "$out" | grep -c 'pipeline.interpret.marks')" "1"
+
+run_config interpret_comma_only 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: interpret, marks: [","]}'
+
+check "marks with no sentence ender is refused" "$code" "1"
+check "and says where a boundary is looked for" \
+  "$(printf '%s\n' "$out" | grep -c 'at least one of')" "1"
+
+# --- the legacy keys ----------------------------------------------------------
+
+run_config legacy_off 'transcription:
+  languages: [en]
+  sentences: false
+  pipeline:
+    - numbers'
+
+check "sentences: false with no step loads" "$code" "0"
+check "and the notice says to remove the step instead" \
+  "$(printf '%s\n' "$out" | grep -c 'is legacy; remove the `interpret` step')" "1"
+check "and no migration line is printed as well" \
+  "$(printf '%s\n' "$out" | grep -c 'the sentence readings no longer run')" "0"
+
+run_config legacy_off_listed 'transcription:
+  languages: [en]
+  sentences: false
+  pipeline:
+    - interpret'
+
+check "sentences: false beside the step loads" "$code" "0"
+check "and says the key is what still turns it off" \
+  "$(printf '%s\n' "$out" | grep -c 'this key is what still turns it off')" "1"
+
+run_config legacy_marks 'transcription:
+  languages: [en]
+  sentences:
+    marks: [".", "?"]
+  pipeline:
+    - interpret'
+
+check "the old marks: key loads" "$code" "0"
+check "and feeds the step" "$(marks)" ". ?"
+check "and the notice points at the step" \
+  "$(printf '%s\n' "$out" | grep -c '`marks:` belongs on the `interpret` step now')" "1"
+
+run_config legacy_marks_both 'transcription:
+  languages: [en]
+  per_language:
+    en: {marks: [".", "?"]}
+  pipeline:
+    - {stage: interpret, marks: [".", ",", "?"]}'
+
+check "both homes for marks: loads" "$code" "0"
+check "and the step wins" "$(marks)" ". , ?"
+check "and the notice says the step is what runs" \
+  "$(printf '%s\n' "$out" | grep -c 'The step is what runs')" "1"
+
+# --- a pipeline written before the step existed -------------------------------
+#
+# Nothing is inserted. The readings stop, and the line that says so is printed
+# by `--check-config` and written to the log at launch, because nobody runs
+# `--check-config` after an update.
+
+run_config no_interpret 'transcription:
+  languages: [en]
+  pipeline:
+    - vocabulary
+    - numbers'
+
+check "a pipeline with no interpret step loads" "$code" "0"
+check "and nothing is inserted into it" "$(stages)" "vocabulary → numbers"
+check "and the migration line says what to add" \
+  "$(printf '%s\n' "$out" | grep -c 'add `- interpret` to the front')" "1"
+check "and no marks line is printed for a step that is not there" \
+  "$(marks)" ""
 
 # --- the retired key ----------------------------------------------------------
 #
@@ -92,7 +230,7 @@ check "and says what to write instead" \
 check "and says the built-in default is what runs" \
   "$(printf '%s\n' "$out" | grep -c 'no pipeline of yours is running')" "1"
 check "and that is what resolves" \
-  "$(stages)" "numbers  (nothing configured, so every stage)"
+  "$(stages)" "interpret → numbers  (nothing configured, so every stage)"
 
 # --- any shape under the retired key ------------------------------------------
 #
@@ -109,7 +247,7 @@ check "a bare list under pipelines: is refused the same way" "$code" "1"
 check "with the same one message" \
   "$(printf '%s\n' "$out" | grep -c 'transcription.pipelines: is retired')" "1"
 check "and the built-in default resolves" \
-  "$(stages)" "numbers  (nothing configured, so every stage)"
+  "$(stages)" "interpret → numbers  (nothing configured, so every stage)"
 
 # --- the rest of the config still loads ---------------------------------------
 #
@@ -129,7 +267,7 @@ check "a refused pipelines: does not cost the rest of the config" \
 check "including a setting read after it" \
   "$(printf '%s\n' "$out" | grep -c 'copy to clipboard')" "1"
 check "and the built-in default is still what resolves" \
-  "$(stages)" "numbers  (nothing configured, so every stage)"
+  "$(stages)" "interpret → numbers  (nothing configured, so every stage)"
 
 # --- both keys ----------------------------------------------------------------
 

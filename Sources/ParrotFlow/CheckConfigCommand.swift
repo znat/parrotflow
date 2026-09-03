@@ -98,18 +98,25 @@ enum CheckConfigCommand {
                 .map { "\"\($0)\"" }.joined(separator: ", ")
             emit("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
             emit("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
-            // Neither setting is the same in two languages, so both are printed
-            // per language rather than once.
+            // The floor is not the same in two languages, so it is printed per
+            // language rather than once. The marks are not: they belong to the
+            // `interpret` step, which is English only, and they are printed
+            // with it below.
             emit("  · languages         \(transcription.languages.joined(separator: ", "))")
             for language in transcription.languages {
-                emit("      \(language)  marks"
-                    + " \(transcription.marks(for: language).joined(separator: " "))"
-                    + "  slot floor"
+                emit("      \(language)  slot floor"
                     + " \(String(format: "%.2f", transcription.slotFloor(for: language)))")
             }
             // The pipeline, because "why was this not converted" is a question
             // about the order and not about a setting any more.
             let pipeline = Pipeline.resolved(config: config)
+            // The set the step actually runs with, whichever of its three homes
+            // it came from. Silent when nothing reads it.
+            if let step = pipeline.steps.first(where: { $0.stage == .interpret }) {
+                let marks = step.marks ?? transcription.marks(for: "en")
+                emit("  · sentence marks    \(marks.joined(separator: " "))"
+                    + (step.capitals == false ? "  (bare capitals off)" : ""))
+            }
             // An empty pipeline is a choice, not a blank: printing nothing
             // there reads as a display fault rather than as the answer to "why
             // did none of this run".

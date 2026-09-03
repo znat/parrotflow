@@ -501,13 +501,16 @@ actor Transcriber {
             Task { await WordVectors.shared.warm() }
         }
 
-        // The sentence pass is English only: the readings are scored by an
-        // English base model and the mark set is English. So is the sound pass
-        // — espeak's letter-to-sound answers for French words and the answer is
-        // noise.
-        var joinedSentences = 0
+        // The sound pass is English only — espeak's letter-to-sound answers for
+        // French words and the answer is noise. So is the boundary reading,
+        // which runs in the pipeline now as the `interpret` step and refuses
+        // every other language itself.
         if Pipeline.language(of: text, config: config) == "en" {
-            if #available(macOS 14, *), config.transcription.sentences.enabled {
+            // 320 MB and a 1.3s load, and a dictation never waits for either.
+            // Fetched for a pipeline that holds the step and for no other, so
+            // deleting the line stops the download.
+            if #available(macOS 14, *),
+               Pipeline.resolved(config: config).stages.contains(.interpret) {
                 Task { await SentenceReadings.shared.warm() }
             }
             // The set the sound pass actually reads, not the shorter one the
@@ -516,14 +519,6 @@ actor Transcriber {
             // and `crawl file` alone would never fetch the model that is the
             // only thing able to match them.
             if !config.vocabularySounds.isEmpty { warmSoundModel() }
-            if #available(macOS 14, *) {
-                let joins = await SentenceJoin.shared.apply(
-                    to: text, config: config,
-                    words: Trace.words(from: result.tokenTimings ?? [])
-                )
-                text = joins.text
-                joinedSentences = joins.count(.join)
-            }
         }
 
         // After the vocabulary pass rather than before it, though the words
@@ -559,14 +554,16 @@ actor Transcriber {
                 // pipeline can read rather than an error about a missing path.
                 "vocabulary.count": .int(vocabularyCount),
                 "vocabulary.changes": .string(vocabularyChanges),
-                // The periods a pause put in and this run took out.
-                "sentences.joined": .int(joinedSentences),
         ])
         // Only when there is one. Absent says "no press", which is the honest
         // answer off the hotkey path and the one `input` declines on.
         if let press { seed.set("press.run", .int(press)) }
+        // The decoder's own words, for the `interpret` step's pause gate. This
+        // is the only caller that has them; every other way into the pipeline
+        // has no audio, and the gate stands down there.
         return await Self.applyReplacements(
             to: text, config: config, app: app, seed: seed,
+            words: Trace.words(from: result.tokenTimings ?? []),
             progress: progress
         )
     }
@@ -1060,11 +1057,12 @@ actor Transcriber {
     /// How names get fixed — see `Replacements`.
     nonisolated static func applyReplacements(
         to text: String, config: Config, app: Pipeline.App? = nil,
-        seed: Scope = Scope(),
+        seed: Scope = Scope(), words: [Trace.Word] = [],
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await Replacements.apply(
-            to: text, config: config, app: app, seed: seed, progress: progress
+            to: text, config: config, app: app, seed: seed, words: words,
+            progress: progress
         )
     }
 }

@@ -485,8 +485,8 @@ said     "you should see a parrot at the top right of your screen"
 written  "You should see a parrot. At the top right of your screen."
 ```
 
-After the vocabulary pass, every such boundary in an English transcript is read
-three ways and scored by a small causal language model
+The `interpret` step reads every such boundary in an English transcript three
+ways and scores each with a small causal language model
 (`mlx-community/Qwen3-0.6B-Base-4bit`, 320 MB):
 
 ```
@@ -497,9 +497,16 @@ three ways and scored by a small causal language model
 
 Each reading is the log-probability of its continuation divided by its token
 count, and the highest wins. Nothing is compared to a threshold, so there is
-nothing to calibrate. The marks are `transcription.per_language.<code>.marks`,
-default `[".", ",", "?"]`; `;` and `:` were measured and never changed a
-decision in English.
+nothing to calibrate. The marks are `marks:` on the step, default
+`[".", ",", "?"]`; `;` and `:` were measured and never changed a decision in
+English.
+
+This is a pipeline step, and it runs at the position the list gives it — see
+[The interpret stage](pipelines.md#the-interpret-stage) for the three options
+and why it belongs first. It used to run before the pipeline, switched by
+`transcription.sentences`. That key is legacy now: a pipeline with no
+`- interpret` line in it does not read boundaries at all, and `--check-config`
+and the log at launch both say so.
 
 The list does two jobs. `.` and `?` are where a boundary is looked for; the
 comma is a reading tried at one. The first reading is always the mark the
@@ -598,8 +605,10 @@ never seen it, which is what a name it has not been told about looks like. A
 term in your `vocabulary.yaml` is asked first, because a name that is also an
 English word is the one case the lemma rule cannot see.
 
-English only. The readings are scored by an English base model, and the mark
-set is English: French uses `:` where English does not. Nothing is waited for:
+English only, and the stage refuses the rest itself, so `when: language == "en"`
+on the step is not needed. The readings are scored by an English base model, and
+the mark set is English: French uses `:` where English does not. Nothing is
+waited for:
 with no cached model, a load that threw or a boundary it cannot read, the text
 arrives as it was. A dictation that arrives before the weights are in memory
 keeps its boundaries and starts the load.
