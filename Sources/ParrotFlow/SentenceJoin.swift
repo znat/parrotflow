@@ -17,7 +17,7 @@ import NaturalLanguage
 /// word after it is lowercased.
 ///
 /// The thresholds this used to carry repaired 26% of the cuts. The choice
-/// repairs 82%, and joins none of 172 real sentence endings.
+/// repairs 81%, and joins none of 172 real sentence endings.
 ///
 /// English only. The reading is scored by an English base model, and the mark
 /// set is English: French wants `:` where English does not.

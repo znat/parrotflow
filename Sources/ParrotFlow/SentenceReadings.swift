@@ -20,7 +20,7 @@ import MLXLMCommon
 ///
 /// The comma is a reading, not a term in a subtraction. 26% of real sentence
 /// endings pick it, and that is why none of them picks `join`. Scoring
-/// `max(mark) - log P(next)` instead gives 64% against this shape's 82%.
+/// `max(mark) - log P(next)` instead gives 64% against this shape's 81%.
 ///
 /// `mlx-community/Qwen3-0.6B-Base-4bit`, not the DWQ checkpoint: despite the
 /// name that one is a quant of the *instruct* model and repairs 76%.
@@ -67,11 +67,6 @@ actor SentenceReadings {
     /// Words kept either side of the boundary, the next word counting as the
     /// first on the right. The measurement was made at 12.
     static let radius = 12
-
-    /// The MLX buffer pool grows with the variety of shapes it has seen: 1.0 GB
-    /// after one pass over the bench and 2.0 GB after four. Three models share
-    /// this process, and the limit is process-wide, so it is set once here.
-    static let cacheLimit = 256 * 1024 * 1024
 
     enum Failure: LocalizedError {
         case notQwen(String)
@@ -207,7 +202,7 @@ actor SentenceReadings {
         guard context.model is Qwen3Model else {
             throw Failure.notQwen(String(describing: type(of: context.model)))
         }
-        MLX.GPU.set(cacheLimit: cacheLimit)
+        MLXModelCache.limitBufferPool()
         return context
     }
 

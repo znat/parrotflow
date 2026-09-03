@@ -122,6 +122,7 @@ actor WordVectors {
         guard context.model is Qwen3Model else {
             throw Failure.notQwen(String(describing: type(of: context.model)))
         }
+        MLXModelCache.limitBufferPool()
         return context
     }
 

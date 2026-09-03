@@ -1,4 +1,5 @@
 import Foundation
+import MLX
 import MLXLMCommon
 @preconcurrency import Tokenizers
 
@@ -37,6 +38,16 @@ struct MLXModelCache: Sendable {
                 return "another ParrotFlow process is fetching the \(label) model"
             }
         }
+    }
+
+    /// Caps the MLX buffer pool, which is process-wide.
+    ///
+    /// It grows with the variety of shapes it has seen: 1.0 GB after one pass
+    /// over the boundary bench and 2.0 GB after four. Measured with both models
+    /// resident, 256 MB gives the same 36 ms median as 2 GB and holds 620 MB
+    /// less. Called on every model load; setting it twice costs nothing.
+    static func limitBufferPool() {
+        MLX.GPU.set(cacheLimit: 256 * 1024 * 1024)
     }
 
     var isCached: Bool {

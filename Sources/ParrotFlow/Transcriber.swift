@@ -505,7 +505,7 @@ actor Transcriber {
             // that failed clears itself, and the next English dictation is the
             // next chance to try again.
             warmSentenceModel()
-            if #available(macOS 14, *) {
+            if #available(macOS 14, *), config.transcription.sentences.enabled {
                 Task { await SentenceReadings.shared.warm() }
             }
             if config.vocabulary.gateSentence, #available(macOS 14, *) {
