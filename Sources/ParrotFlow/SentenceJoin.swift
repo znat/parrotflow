@@ -213,7 +213,9 @@ actor SentenceJoin {
     func apply(to text: String, config: Config) async -> Outcome {
         let settings = config.transcription.sentences
         guard settings.enabled else { return .unchanged(text) }
-        let found = Self.boundaries(in: text, scanning: Self.scanned(settings.marks))
+        let language = Pipeline.language(of: text, config: config)
+        let marks = config.transcription.marks(for: language)
+        let found = Self.boundaries(in: text, scanning: Self.scanned(marks))
         guard !found.isEmpty else { return .unchanged(text) }
         guard await SentenceReadings.shared.isLoaded else {
             await SentenceReadings.shared.warm()
@@ -235,7 +237,7 @@ actor SentenceJoin {
                     left: String(text[..<boundary.at]),
                     right: String(text[boundary.next.lowerBound...]),
                     found: String(boundary.mark),
-                    marks: settings.marks
+                    marks: marks
                 )
             } catch {
                 Log.write(

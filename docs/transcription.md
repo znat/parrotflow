@@ -433,9 +433,9 @@ refused 14 and left 24 on the same set, also with no error; mmBERT-small
 replaced it because it covers French, at no cost in English.
 
 The model is never waited for. Until it is on disk, every place this tier would
-judge is simply left open, which is the behaviour before this tier. The gate is
-still reached on English dictation only: mmBERT-small answers in French too, and
-turning that on needs its own floor, which is a change of its own.
+judge is simply left open, which is the behaviour before this tier. This tier is
+reached only from the sound pass, and that pass is English only, so it was
+measured in English only and runs nowhere else.
 
 **What the slot cannot settle, the term itself can.** Every sentence you
 confirm a term in is kept in `vocabulary-uses.yaml`, and from three of them the
@@ -497,9 +497,9 @@ three ways and scored by a small causal language model
 
 Each reading is the log-probability of its continuation divided by its token
 count, and the highest wins. Nothing is compared to a threshold, so there is
-nothing to calibrate. The marks are `transcription.sentences.marks`, default
-`[".", ",", "?"]`; `;` and `:` were measured and never changed a decision in
-English.
+nothing to calibrate. The marks are `transcription.per_language.<code>.marks`,
+default `[".", ",", "?"]`; `;` and `:` were measured and never changed a
+decision in English.
 
 The list does two jobs. `.` and `?` are where a boundary is looked for; the
 comma is a reading tried at one. The first reading is always the mark the

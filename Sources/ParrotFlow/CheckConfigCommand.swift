@@ -98,6 +98,15 @@ enum CheckConfigCommand {
                 .map { "\"\($0)\"" }.joined(separator: ", ")
             emit("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
             emit("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
+            // Neither setting is the same in two languages, so both are printed
+            // per language rather than once.
+            emit("  · languages         \(transcription.languages.joined(separator: ", "))")
+            for language in transcription.languages {
+                emit("      \(language)  marks"
+                    + " \(transcription.marks(for: language).joined(separator: " "))"
+                    + "  slot floor"
+                    + " \(String(format: "%.2f", transcription.slotFloor(for: language)))")
+            }
             // The pipeline, because "why was this not converted" is a question
             // about the order and not about a setting any more.
             let pipeline = Pipeline.resolved(config: config)

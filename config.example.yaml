@@ -87,8 +87,17 @@ transcription:
   # model scores highest is written. On by default, and only where the model is
   # already on disk. `sentences: false` turns it off.
   #
-  # sentences:
-  #   marks: [".", ",", "?"]  # `.` and `?` are scanned, `,` is read beside them
+  # sentences: false
+
+  # The settings that differ from one language to the next. `marks` is the
+  # list above: `.` and `?` are scanned, `,` is read beside them. `slot_floor`
+  # is how far the heard word must win by before the vocabulary gate refuses a
+  # rewrite: 0.20 in English, 0.30 in French, where the gaps are a third
+  # narrower.
+  #
+  # per_language:
+  #   en: {marks: [".", ",", "?"], slot_floor: 0.20}
+  #   fr: {marks: [".", ",", "?"], slot_floor: 0.30}
 
   # What a transcript runs through, in order. Remove a line to skip that
   # stage. One list for every language: a step that should only run in one

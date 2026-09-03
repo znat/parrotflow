@@ -425,7 +425,7 @@ $PF --transcribe /tmp/t.wav
 $PF --slot-model                                           # fetch, compile and load mmBERT-small
 $PF --slot-probe "<left half>" "<right half>"              # the ten words the slot expects, and the time
 $PF --slot-probe --encode "<text>"                         # the tokenizer alone, no model
-$PF --slot-gap "<sentence>" <heard> <term>                 # what the slot says about a rewrite
+$PF --slot-gap "<sentence>" <heard> <term> [--lang fr]     # what the slot says about a rewrite
 ```
 
 The vocabulary pass proposes a rewrite from spelling and sound alone. The slot
@@ -438,8 +438,11 @@ $PF --slot-gap "The old house looked ghostly in the fog." ghostly Ghostty
   gap       -0.243   refuse
 ```
 
-`gap` is `cos(term, centre) − cos(heard, centre)`. Below −0.20 the rewrite is
-refused; above it the slot has no opinion. It only ever refuses — a term is
+`gap` is `cos(term, centre) − cos(heard, centre)`. Below the floor for the
+language the rewrite is refused; above it the slot has no opinion. The floor is
+`transcription.per_language.<code>.slot_floor`, 0.20 in English and 0.30 in
+French, and `--lang` picks which one the verdict is read at. The gap itself is
+the same number either way. It only ever refuses — a term is
 unknown to the tokenizer by construction, so it can never win this comparison.
 The ten words are printed because they explain the number: a slot whose ten
 words are pronouns cannot tell two names apart, and the gap comes out near zero.
@@ -525,9 +528,10 @@ $PF --sentence-join "…the first usage of the LLM with. The vocabulary is slowe
 ```
 
 The mark is removed where `join` wins, and left alone otherwise. Which marks are
-scanned, and which are read beside them, is `transcription.sentences.marks` in
-`config.yaml` — the sentence enders in that list are scanned, the rest are
-readings. `scripts/check-sentence-join.sh` scores the decisions against
+scanned, and which are read beside them, is
+`transcription.per_language.<code>.marks` in `config.yaml` — the sentence enders
+in that list are scanned, the rest are readings.
+`scripts/check-sentence-join.sh` scores the decisions against
 tests/sentence-boundary-cases.json, in both shapes; it needs the model, so it is
 run by hand.
 
