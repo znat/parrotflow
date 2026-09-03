@@ -1,197 +1,41 @@
 [
- {
-  "text": "I will ask him. Nathan knows the answer.",
-  "want": "Nathan",
-  "why": "a personal name"
- },
- {
-  "text": "we can send it to her. Sarah is already on it.",
-  "want": "Sarah",
-  "why": "a personal name"
- },
- {
-  "text": "I booked the tickets. Paris is expensive in June.",
-  "want": "Paris",
-  "why": "a place name"
- },
- {
-  "text": "he lives there now. London was cheaper then.",
-  "want": "London",
-  "why": "a place name"
- },
- {
-  "text": "I sent the invoice. Google has not paid it yet.",
-  "want": "Google",
-  "why": "an organization name"
- },
- {
-  "text": "we merged it yesterday. Greptile said nothing about it.",
-  "want": "Greptile",
-  "why": "an organization name"
- },
- {
-  "text": "we should ship it. Redcrawl is the one that breaks.",
-  "want": "Redcrawl",
-  "why": "a project name the tagger does not know"
- },
- {
-  "text": "I looked at the log. ParrotFlow wrote it twice.",
-  "want": "ParrotFlow",
-  "why": "the tagger calls it a plain noun, and it has no lemma"
- },
- {
-  "text": "it ran all night. Ollama was not even started.",
-  "want": "Ollama",
-  "why": "a tool name with no lemma"
- },
- {
-  "text": "we lost the thread. Compass was the one that broke.",
-  "want": "Compass",
-  "why": "a vocabulary term that is also an English word"
- },
- {
-  "text": "you should see a parrot. At the top right of your screen.",
-  "want": "at",
-  "why": "a preposition"
- },
- {
-  "text": "the release notes are not bigger than the height. Another feature is missing.",
-  "want": "another",
-  "why": "a determiner"
- },
- {
-  "text": "they look great now. But I still do not see the prompt.",
-  "want": "but",
-  "why": "a conjunction"
- },
- {
-  "text": "we can do that. If there is more than two fixes.",
-  "want": "if",
-  "why": "a conjunction"
- },
- {
-  "text": "it is not working. Because the first usage is slow.",
-  "want": "because",
-  "why": "a conjunction"
- },
- {
-  "text": "I wanted to go one by one. The vocabulary is slower.",
-  "want": "the",
-  "why": "a determiner"
- },
- {
-  "text": "that is not what I meant. Which one did you pick?",
-  "want": "which",
-  "why": "a pronoun"
- },
- {
-  "text": "we have to do it. That works well.",
-  "want": "that",
-  "why": "a pronoun"
- },
- {
-  "text": "he said he would come. When the build is done.",
-  "want": "when",
-  "why": "an adverb"
- },
- {
-  "text": "I will look at it. So we can move on.",
-  "want": "so",
-  "why": "a conjunction"
- },
- {
-  "text": "let me check the config. There is nothing in it.",
-  "want": "there",
-  "why": "an adverb"
- },
- {
-  "text": "put it in the folder. Then run the script again.",
-  "want": "then",
-  "why": "an adverb"
- },
- {
-  "text": "he did not answer. Everybody was waiting.",
-  "want": "everybody",
-  "why": "a pronoun"
- },
- {
-  "text": "we tried it twice. Nothing changed.",
-  "want": "nothing",
-  "why": "a pronoun"
- },
- {
-  "text": "I read the page. Every line was wrong.",
-  "want": "every",
-  "why": "a determiner"
- },
- {
-  "text": "you can skip it. Most people do.",
-  "want": "most",
-  "why": "a determiner"
- },
- {
-  "text": "she will call back. Around four o'clock.",
-  "want": "around",
-  "why": "a preposition"
- },
- {
-  "text": "no but that is not what I wanted. I wanted to go one by one.",
-  "want": "I",
-  "why": "the pronoun I"
- },
- {
-  "text": "she asked for it. I'll send it tonight.",
-  "want": "I'll",
-  "why": "a contraction of I"
- },
- {
-  "text": "we changed the endpoint. API keys are in the keychain.",
-  "want": "API",
-  "why": "capitals throughout"
- },
- {
-  "text": "the model is cached. CI has no business downloading it.",
-  "want": "CI",
-  "why": "capitals throughout"
- },
- {
-  "text": "imports name definitions And all the things we said",
-  "want": "and",
-  "why": "no mark in front of it, a conjunction"
- },
- {
-  "text": "we should think about it So the next step is clear",
-  "want": "so",
-  "why": "no mark in front of it, an adverb"
- },
- {
-  "text": "I asked whether the caret moves However the field was empty",
-  "want": "however",
-  "why": "no mark in front of it, a pronoun to the tagger"
- },
- {
-  "text": "the sound pass reads it in Slack for the moment",
-  "want": "Slack",
-  "why": "no mark in front of it, a noun is a name here"
- },
- {
-  "text": "we are writing it in English for the other reviewers",
-  "want": "English",
-  "why": "no mark in front of it, the lexicon knows this noun"
- },
- {
-  "text": "I want to paste it into WhatsApp and the other apps",
-  "want": "WhatsApp",
-  "why": "no mark in front of it, a capital inside the word"
- },
- {
-  "text": "the release goes out on Friday if the checks are green",
-  "want": "Friday",
-  "why": "no mark in front of it, a weekday is a noun"
- },
- {
-  "text": "we can format the functions in TypeScript for that case",
-  "want": "TypeScript",
-  "why": "no mark in front of it, a capital inside the word"
- }
+ { "text": "I will ask him. Nathan knows the answer.", "want": "Nathan", "why": "a personal name" },
+ { "text": "we can send it to her. Sarah is already on it.", "want": "Sarah", "why": "a personal name" },
+ { "text": "I booked the tickets. Paris is expensive in June.", "want": "Paris", "why": "a place name" },
+ { "text": "he lives there now. London was cheaper then.", "want": "London", "why": "a place name" },
+ { "text": "I sent the invoice. Google has not paid it yet.", "want": "Google", "why": "an organization name" },
+ { "text": "we merged it yesterday. Greptile said nothing about it.", "want": "Greptile", "why": "an organization name" },
+ { "text": "we should ship it. Redcrawl is the one that breaks.", "want": "Redcrawl", "why": "a project name the tagger does not know" },
+ { "text": "I looked at the log. ParrotFlow wrote it twice.", "want": "ParrotFlow", "why": "the tagger calls it a plain noun, and it has no lemma" },
+ { "text": "it ran all night. Ollama was not even started.", "want": "Ollama", "why": "a tool name with no lemma" },
+ { "text": "we lost the thread. Compass was the one that broke.", "want": "Compass", "why": "a vocabulary term that is also an English word" },
+ { "text": "you should see a parrot. At the top right of your screen.", "want": "at", "why": "a preposition" },
+ { "text": "the release notes are not bigger than the height. Another feature is missing.", "want": "another", "why": "a determiner" },
+ { "text": "they look great now. But I still do not see the prompt.", "want": "but", "why": "a conjunction" },
+ { "text": "we can do that. If there is more than two fixes.", "want": "if", "why": "a conjunction" },
+ { "text": "it is not working. Because the first usage is slow.", "want": "because", "why": "a conjunction" },
+ { "text": "I wanted to go one by one. The vocabulary is slower.", "want": "the", "why": "a determiner" },
+ { "text": "that is not what I meant. Which one did you pick?", "want": "which", "why": "a pronoun" },
+ { "text": "we have to do it. That works well.", "want": "that", "why": "a pronoun" },
+ { "text": "he said he would come. When the build is done.", "want": "when", "why": "an adverb" },
+ { "text": "I will look at it. So we can move on.", "want": "so", "why": "a conjunction" },
+ { "text": "let me check the config. There is nothing in it.", "want": "there", "why": "an adverb" },
+ { "text": "put it in the folder. Then run the script again.", "want": "then", "why": "an adverb" },
+ { "text": "he did not answer. Everybody was waiting.", "want": "everybody", "why": "a pronoun" },
+ { "text": "we tried it twice. Nothing changed.", "want": "nothing", "why": "a pronoun" },
+ { "text": "I read the page. Every line was wrong.", "want": "every", "why": "a determiner" },
+ { "text": "you can skip it. Most people do.", "want": "most", "why": "a determiner" },
+ { "text": "she will call back. Around four o'clock.", "want": "around", "why": "a preposition" },
+ { "text": "no but that is not what I wanted. I wanted to go one by one.", "want": "I", "why": "the pronoun I" },
+ { "text": "she asked for it. I'll send it tonight.", "want": "I'll", "why": "a contraction of I" },
+ { "text": "we changed the endpoint. API keys are in the keychain.", "want": "API", "why": "capitals throughout" },
+ { "text": "the model is cached. CI has no business downloading it.", "want": "CI", "why": "capitals throughout" },
+ { "text": "imports name definitions And all the things we said", "want": "and", "why": "no mark in front of it, a conjunction" },
+ { "text": "we should think about it So the next step is clear", "want": "so", "why": "no mark in front of it, an adverb" },
+ { "text": "I asked whether the caret moves However the field was empty", "want": "however", "why": "no mark in front of it, a pronoun to the tagger" },
+ { "text": "the sound pass reads it in Slack for the moment", "want": "Slack", "why": "no mark in front of it, a noun is a name here" },
+ { "text": "we are writing it in English for the other reviewers", "want": "English", "why": "no mark in front of it, the lexicon knows this noun" },
+ { "text": "I want to paste it into WhatsApp and the other apps", "want": "WhatsApp", "why": "no mark in front of it, a capital inside the word" },
+ { "text": "the release goes out on Friday if the checks are green", "want": "Friday", "why": "no mark in front of it, a weekday is a noun" },
+ { "text": "we can format the functions in TypeScript for that case", "want": "TypeScript", "why": "no mark in front of it, a capital inside the word" }
 ]
