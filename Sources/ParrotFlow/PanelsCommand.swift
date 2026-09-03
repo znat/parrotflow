@@ -265,6 +265,42 @@ enum PanelsCommand {
             after: "I think we should have asked them first — they're going to be annoyed."
         )
 
+        // The four states of the one screen, in the order they happen.
+        let almostReady = sampleDownloads(speech: .downloading(percent: 62))
+        let didNotArrive = sampleDownloads(speech: .failed(.unreachable))
+        let ready = sampleDownloads(speech: .installed)
+        ready.update(NeuralPhonemes.soundDownload.id, to: .installed)
+        ready.update(SentenceModel.download.id, to: .installed)
+        // The other blocking row. Its failure costs the speech gate rather than
+        // the whole feature, and the sentence has to say which row it is about.
+        let vadDidNotArrive = sampleDownloads(speech: .installed)
+        vadDidNotArrive.update(Transcriber.voiceDownload.id, to: .failed(.stopped))
+
+        let almostReadyPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(almostReady))
+            .environmentObject(almostReady))
+        let readyPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(
+                ready, context: .revisiting, espeak: .found))
+            .environmentObject(ready))
+        let switchedOffPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(
+                ready, axStatus: .notGranted, espeak: .found))
+            .environmentObject(ready))
+        let didNotArrivePane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(didNotArrive))
+            .environmentObject(didNotArrive))
+        let vadPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(vadDidNotArrive, espeak: .found))
+            .environmentObject(vadDidNotArrive))
+        // The same screen after "Not now": the card is gone and the line says
+        // what was decided. The alert that asks is a sheet on the window and
+        // cannot be drawn here.
+        let skippedPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(
+                ready, context: .revisiting, espeakDeclined: true))
+            .environmentObject(ready))
+
         // The third element is the appearance to draw in. Every floating
         // surface is dark whatever the system is set to — that is decided in
         // `adoptParrotAppearance` and is not a preference. The permissions
@@ -287,24 +323,23 @@ enum PanelsCommand {
             // between them and it is the part worth being able to see: setting
             // up says "Cancel installation", revisiting says "Not now".
             (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.showing(.microphone))),
+                .environmentObject(PermissionsModel.showing(.microphone))
+                .environmentObject(ModelDownloads())),
              NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .light, false),
             (AnyView(PermissionsView()
                 .environmentObject(PermissionsModel.showing(
-                    .accessibility, asked: true, context: .revisiting))),
+                    .accessibility, asked: true, context: .revisiting))
+                .environmentObject(ModelDownloads())),
              NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
-            // The screen after both are granted, in the three shapes it comes
-            // in: the speech model already there, still on its way, and there
-            // but the hotkey never bound — the states DonePane's invitation
-            // sentence chooses between.
-            (AnyView(PermissionsView().environmentObject(PermissionsModel.done())),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
-            (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.done(speechModel: .preparing(percent: 43)))),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
-            (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.done(hotkeyRegistered: false))),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
+            // The one screen the walk ends on, in its four states. The title
+            // is the state, so this is the only place the four sentences can
+            // be read against each other.
+            (almostReadyPane, setupSize(almostReadyPane), .light, false),
+            (readyPane, setupSize(readyPane), .dark, false),
+            (switchedOffPane, setupSize(switchedOffPane), .dark, false),
+            (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
+            (vadPane, setupSize(vadPane), .dark, false),
+            (skippedPane, setupSize(skippedPane), .light, false),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), .dark, true),
             (AnyView(PillView().environmentObject(thinking)),
@@ -476,6 +511,45 @@ enum PanelsCommand {
         return NSWorkspace.shared.icon(forFile: url.path)
     }
 
+    /// A registry with one row in each state it can be in. The real one is
+    /// filled in by the code that fetches — see `AppDelegate.warmModels`.
+    static func sampleDownloads(speech: ModelDownload.State) -> ModelDownloads {
+        let downloads = ModelDownloads()
+        downloads.expect(Transcriber.speechDownload)
+        downloads.update(Transcriber.speechDownload.id, to: speech)
+        downloads.expect(Transcriber.voiceDownload)
+        downloads.update(Transcriber.voiceDownload.id, to: .installed)
+        downloads.expect(NeuralPhonemes.soundDownload)
+        downloads.update(NeuralPhonemes.soundDownload.id, to: .failed(.unreachable))
+        downloads.expect(SentenceModel.download)
+        downloads.expect(WordVectors.download, off: ModelDownload.gateOff)
+        return downloads
+    }
+
+    /// The setup screen has no fixed height: it takes the one its content asks
+    /// for, the same way the window does.
+    private static func setupSize(_ view: AnyView) -> NSSize {
+        let fitting = NSHostingView(rootView: view).fittingSize
+        return NSSize(
+            width: PermissionMetrics.setupWidth,
+            height: fitting.height > 0 ? fitting.height : PermissionMetrics.setupHeight
+        )
+    }
+
+    /// An ordinary titled window. The setup screen is the one surface that is
+    /// a window rather than a panel over somebody's words.
+    private static func window(for view: AnyView, size: NSSize) -> NSWindow {
+        let hosting = NSHostingController(rootView: view)
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "\(AppVariant.displayName) Setup"
+        window.styleMask = [.titled, .closable]
+        window.setContentSize(size)
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        return window
+    }
+
     static func run(surface: String, seconds: Double) -> Int32 {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -488,6 +562,7 @@ enum PanelsCommand {
         let micNotice = MicNotice()
         let updatePanel = UpdatePanel()
         var ticker: Timer?
+        var setupWindow: NSWindow?
 
         switch surface {
         case "notice":
@@ -568,6 +643,37 @@ enum PanelsCommand {
                     later: { print("update: later") }
                 )
             )
+        // The setup window, on the step that reports the downloads. A real
+        // registry is empty in this process — nothing here fetches anything —
+        // so it runs on a sample whose percentage climbs, which is the part
+        // that cannot be checked from a still.
+        case "setup":
+            let downloads = sampleDownloads(speech: .downloading(percent: 8))
+            let model = PermissionsModel.showingSetup(downloads)
+            let pane = AnyView(
+                PermissionsView()
+                    .environmentObject(model)
+                    .environmentObject(downloads)
+            )
+            setupWindow = window(for: pane, size: setupSize(pane))
+            var percent = 8
+            ticker = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
+                percent += 1
+                if percent > 100 {
+                    // Parakeet lands first and Silero VAD follows it, which is
+                    // the moment the title has to name the second row rather
+                    // than the first.
+                    downloads.update(Transcriber.speechDownload.id, to: .installed)
+                    downloads.update(
+                        Transcriber.voiceDownload.id, to: .downloading(percent: nil)
+                    )
+                    downloads.update(SentenceModel.download.id, to: .downloading(percent: nil))
+                    return
+                }
+                downloads.update(
+                    Transcriber.speechDownload.id, to: .downloading(percent: percent)
+                )
+            }
         case "pill":
             pill.recording(icon: sampleIcon())
             // A meter frozen at zero says nothing about how the meter looks.
@@ -609,12 +715,13 @@ enum PanelsCommand {
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
                 + "|vocabulary|punctuation|rule|dictation|preview|microphone|pill"
-                + "|update|sequence> [seconds]")
+                + "|update|setup|sequence> [seconds]")
             return 2
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
             ticker?.invalidate()
+            setupWindow?.close()
             exit(0)
         }
         app.run()

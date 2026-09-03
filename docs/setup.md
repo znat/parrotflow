@@ -134,6 +134,17 @@ grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
+**The last screen.** After the two permissions the setup window shows one
+screen: both permissions, the five models it is fetching (about 1.2 GB, started
+at launch), and eSpeak NG. Nothing there has to be waited for — *Done* closes
+the window and the downloads carry on. The title says the state, and only the
+permissions and the speech model change it: "Almost ready" until Parakeet is
+in, then "Ready". The one line with a button is eSpeak NG, which the app looks
+for rather than downloads: it is GPL-3 and a separate program, so *Run in
+Terminal* runs the Homebrew command where it can be watched. Pressing *Done*
+without it asks once — *Install it* or *Not now* — and remembers the answer, so
+the question is asked once per install and not once per launch.
+
 ## Step 3 — Prove transcription works with no voice
 
 Needs no microphone.
@@ -373,8 +384,7 @@ mention but notifies nobody — tell them that.
 >
 > Settings are in `~/.config/parrotflow/config.yaml`, and the names it has
 > learnt are in `vocabulary.yaml` beside it. Both reload on save. The menu bar
-> icon has *Settings* — *Edit Config…* and *View Transforms* — and
-> *Permissions…*.
+> icon has *Settings* — *Edit Config…* and *View Transforms* — and *Setup…*.
 
 ---
 
