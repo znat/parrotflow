@@ -180,12 +180,11 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   result. It is how a stage whose only contribution is a fact gets scored at
   all, and the first thing to reach for when a condition is not deciding what
   you expected. See [pipelines.md](pipelines.md#variables).
-- `--warm` waits for the word vectors, the sentence model and the slot model
-  before the run. The sentence gate never makes a dictation wait, so in a
-  one-shot run nothing has loaded them and the two tests that read the sentence
-  are skipped every time — this is the only way to see them from the command
-  line. Off by default: it is about 1 GB of downloads, and `make test` must not
-  need one.
+- `--warm` waits for the word vectors and the slot model before the run. The
+  sentence gate never makes a dictation wait, so in a one-shot run nothing has
+  loaded them and the two tests that read the sentence are skipped every time —
+  this is the only way to see them from the command line. Off by default: it is
+  about 600 MB of downloads, and `make test` must not need one.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 
@@ -450,17 +449,17 @@ words are pronouns cannot tell two names apart, and the gap comes out near zero.
 `--slot-probe --encode` prints ids and loads no model, which is what
 `scripts/check-slot-tokenizer.sh` compares against HuggingFace's own tokenizer.
 
-mmBERT-small and not ModernBERT: it ties ModernBERT on the English bench and
-covers 1,800 languages, where ModernBERT is English-only. It is not cheaper —
-the same cache size, and 18 ms per pass against 11, because its head is five
-times wider. Multilingual is the whole reason for the swap.
+mmBERT-small and not ModernBERT, which this stage used to read: the two tie on
+the English bench, and mmBERT-small covers 1,800 languages where ModernBERT is
+English-only. It is not cheaper — the same cache size, and 18 ms per pass
+against 11, because its head is five times wider. Multilingual is the whole
+reason for the swap.
 
 ## Is this sentence mark real
 
 ```sh
-$PF --sentence-model                                       # fetch both sentence models
+$PF --sentence-model                                       # fetch the model the readings need
 $PF --sentence-probe "<left half>" "<right half>"          # read one boundary
-$PF --sentence-probe --encode "<text>"                     # the masked tokenizer, no model
 $PF --sentence-probe --bench <cases.json> --out <out.json> # a whole file, one loaded process
 ```
 
@@ -495,16 +494,12 @@ It loads the model once, so it is the only way to get a latency number;
 `--vectors` loads the word vectors as well, so the memory line describes the
 process the app runs.
 
-`--encode` prints ModernBERT's ids and loads no model, which is what
-`scripts/check-tokenizer.sh` compares against HuggingFace's own tokenizer.
 `scripts/check-sentence-probe.sh` compares the readings against
 tests/sentence-boundary-cases.json; it needs the model, so it is not in
 `make test`.
 
-`--sentence-model` fetches both: the Qwen base model the readings are scored
-with, and ModernBERT, which no stage reads any more. The slot gate moved to
-mmBERT-small, so ModernBERT is now a download with nothing behind it, and a
-follow-up takes it out.
+`--sentence-model` fetches the Qwen base model the readings are scored with.
+The vocabulary slot gate has its own model and its own command, `--slot-model`.
 
 ## Which sentence marks a pause put there
 
@@ -777,7 +772,6 @@ scripts/check-profiles.sh          # which app gets examined, named, or read for
 scripts/check-clipboard.sh         # when a rewrite may go to the clipboard, and stay there
 scripts/check-span-rule.sh         # which range a rewrite is written as, before any app sees it
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
-scripts/check-tokenizer.sh         # the hand-written BPE against HuggingFace's own
 scripts/check-slot-tokenizer.sh    # the slot tokenizer against HuggingFace's own
 scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the model)
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)

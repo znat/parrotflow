@@ -673,10 +673,11 @@ The benches are not committed. They live under
 `~/Documents/parrotflow-scratch/`, and the boundary bench and its scorers are in
 `sentence-join/harness/`.
 
-Two earlier rejections are recorded in code rather than here. The rank rule that
-wrote a name at the weakest-reading span is in `SlotGate`'s header. The French
-ModernBERTs that score near chance on the probe are in `SentenceJoin`'s header,
-and in the join section above.
+One earlier rejection is recorded in code rather than here: the rank rule that
+wrote a name at the weakest-reading span, in `SlotGate`'s header. A second, the
+French ModernBERTs that score near chance on the probe, left the app with
+ModernBERT itself. The boundary reads Qwen now, and is English-only for the
+reason `SentenceJoin`'s header gives.
 
 ## Voice corrections
 
