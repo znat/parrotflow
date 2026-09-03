@@ -333,6 +333,14 @@ actor Transcriber {
         // returned empty.
         var result = try await asr.transcribe(url, decoderState: &decoderState)
 
+        // Here rather than after the retries below, because an invented ending
+        // is clamped to the end of the clip and every check downstream reads
+        // that as the decoder having reached the end: `droppedTail` stops
+        // firing, and no padded arm can reach further than a first pass that
+        // already claims the last frame.
+        let speechEnd = gated.map(Self.lastSpeechEnd)
+        result = Self.withoutInventedTail(result, speechEnd: speechEnd)
+
         // Closing the pause up and decoding again puts those words in a window
         // with speech either side of them. It is a retry rather than the first
         // thing tried, because moving the windows is not free: done to every
@@ -344,7 +352,11 @@ actor Transcriber {
         if let gated, Self.droppedTail(result, gate: gated), let closed = Self.closeLongPauses(gated) {
             var retryState = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
             let raw = try await asr.transcribe(closed.samples, decoderState: &retryState)
-            let retried = Self.restoreTimings(raw, closed: closed, seconds: gated.seconds)
+            let retried = Self.withoutInventedTail(
+                Self.restoreTimings(raw, closed: closed, seconds: gated.seconds),
+                speechEnd: speechEnd,
+                note: "long-pause retry: "
+            )
             if Self.lastWordEnd(retried) > Self.lastWordEnd(result), Self.extends(result, by: retried) {
                 Log.write(String(
                     format: "decoder stopped %.2fs before the speech did; "
@@ -383,8 +395,14 @@ actor Transcriber {
         // Separate from the retry above, which needs words to measure a
         // dropped tail against and so cannot reach this case at all:
         // `droppedTail` is false on an empty decode by definition.
+        //
+        // One unsure "Yeah." is the same failure wearing a word, and goes the
+        // same way — see `decodedOnlyYeah`.
         if let gated, Self.decodedNothing(result, gate: gated) {
             let speech = Self.speechSeconds(gated)
+            let wrote = Self.decodedOnlyYeah(result)
+                ? "only \"\(result.text.trimmingCharacters(in: .whitespacesAndNewlines))\""
+                : "nothing"
             var recovered: (pad: Double, result: ASRResult)?
             if opinions.isEmpty {
                 for pad in Self.silenceRetryPads where recovered == nil {
@@ -414,16 +432,16 @@ actor Transcriber {
             }
             if let recovered {
                 Log.write(String(
-                    format: "decoder returned nothing for %.2fs of speech; "
+                    format: "decoder returned %@ for %.2fs of speech; "
                         + "%.0fms of silence either side recovered it",
-                    speech, recovered.pad * 1000
+                    wrote, speech, recovered.pad * 1000
                 ))
                 result = recovered.result
             } else {
                 Log.write(String(
-                    format: "decoder returned nothing for %.2fs of speech, "
+                    format: "decoder returned %@ for %.2fs of speech, "
                         + "and no padded retry returned anything either",
-                    speech
+                    wrote, speech
                 ))
             }
         } else if !opinions.isEmpty {
@@ -582,7 +600,16 @@ actor Transcriber {
         guard let padded = paddedWithSilence(gate, pad: pad) else { return nil }
         var state = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
         let raw = try await asr.transcribe(padded, decoderState: &state)
-        return unpadTimings(raw, by: pad, seconds: gate.seconds)
+        // Before the arm is compared with anything. An arm whose only addition
+        // is an invented run then adds nothing, and loses on the guards that
+        // are already there. Unpadding clamps a word running past the end of
+        // the clip back to the clip's length, so those words land on one point
+        // on the clock and the burst rule sees them.
+        return withoutInventedTail(
+            unpadTimings(raw, by: pad, seconds: gate.seconds),
+            speechEnd: lastSpeechEnd(gate),
+            note: String(format: "second opinion at %.0fms: ", pad * 1000)
+        )
     }
 
     /// Starts one padded decode per rung of `silenceRetryPads`, running now.
@@ -858,6 +885,151 @@ actor Transcriber {
         return lastSpeechEnd(gate) - lastWordEnd(result) > droppedTailSeconds
     }
 
+    // MARK: - Endings the decoder invented
+
+    /// Two words are at the same place on the clock. Half the length of one
+    /// encoder frame, so nothing the decoder can actually separate lands here.
+    private static let sameTimeSeconds = 0.005
+
+    /// How far past the last speech the gate heard a word has to start before
+    /// it is read as invented. On top of the VAD's own 0.75s hangover, so the
+    /// boundary this measures against is already generous.
+    static let inventedTailMargin = 0.3
+
+    /// A word at or above this is left alone by the after-speech rule. The one
+    /// thing that separates an invented ending from a real late clause: "C'est
+    /// le signal qu'on ne peut pas savoir." decodes its last five words after
+    /// the gate's last segment, at 0.94 to 1.00.
+    static let inventedTailConfidence: Float = 0.8
+
+    /// The trailing words the decoder wrote over silence, and which rule found
+    /// them. Nil when the decode ends in speech.
+    ///
+    /// Two shapes, measured over 7315 first-pass decodes and checked against
+    /// Whisper large-v3-turbo on every clip that still had a wav.
+    ///
+    /// A burst is two or more trailing words sharing one start and one end.
+    /// The decoder emitted them at a single point on the clock, which speech
+    /// never is. 45 clips, and Whisper heard none of the dropped words on the
+    /// 41 that had a wav — including bursts holding a word scored 0.9 and
+    /// above, which is why there is no confidence test on this half.
+    ///
+    /// After the speech is two or more trailing words that start at least
+    /// `inventedTailMargin` past the gate's last segment, none of them
+    /// confident. Together the two fire on 56 of the 7315, with no false
+    /// positive found.
+    ///
+    /// `speechEnd` is nil when there was no gate, which turns the second rule
+    /// off — it has nothing to measure against.
+    nonisolated static func inventedTail(
+        words: [Trace.Word], speechEnd: Double?
+    ) -> (count: Int, reason: String)? {
+        guard words.count >= 2 else { return nil }
+
+        var index = words.count - 1
+        while index > 0, sameTime(words[index], words[index - 1]) { index -= 1 }
+        let burst = words.count - index >= 2 ? words.count - index : 0
+
+        var after = 0
+        if let speechEnd {
+            var index = words.count
+            while index > 0, words[index - 1].start >= speechEnd + inventedTailMargin {
+                index -= 1
+            }
+            let run = words[index...]
+            if run.count >= 2, run.allSatisfy({ $0.confidence < inventedTailConfidence }) {
+                after = run.count
+            }
+        }
+
+        if burst > 0, burst >= after { return (burst, "burst") }
+        if after > 0 { return (after, "after speech") }
+        return nil
+    }
+
+    private nonisolated static func sameTime(_ one: Trace.Word, _ other: Trace.Word) -> Bool {
+        abs(one.start - other.start) < sameTimeSeconds
+            && abs(one.end - other.end) < sameTimeSeconds
+    }
+
+    /// The decode without the ending it invented, text and timings together.
+    ///
+    /// Both or neither. `ASRResult.text` is a separate string from the
+    /// timings, so trimming one and not the other leaves the HUD, the trace
+    /// and the pipeline disagreeing about what was said. The two agreed on the
+    /// word count in all 22136 trace records that carry both, so the text is
+    /// cut back word by word from its end and the original spacing of what
+    /// survives is left as it was. A decode where they ever disagree is kept
+    /// whole: a wrong cut is worse than a kept invention.
+    nonisolated static func withoutInventedTail(
+        _ result: ASRResult, speechEnd: Double?, note: String = ""
+    ) -> ASRResult {
+        let timings = result.tokenTimings ?? []
+        let grouped = Trace.grouped(from: timings)
+        guard let tail = inventedTail(words: grouped.map(\.word), speechEnd: speechEnd) else {
+            return result
+        }
+        let keep = grouped.count - tail.count
+        guard let text = trimmedText(result.text, dropping: tail.count, of: grouped.count) else {
+            Log.write(
+                "\(note)\(tail.count) trailing word(s) look invented, but the text and the "
+                    + "timings do not line up; keeping the decode as it is"
+            )
+            return result
+        }
+        let dropped = grouped[keep...].map(\.word.word).joined(separator: " ")
+        Log.write(
+            "\(note)dropped \(tail.count) invented trailing word(s), "
+                + "\(tail.reason): \"\(dropped)\""
+        )
+        return ASRResult(
+            text: text,
+            confidence: result.confidence,
+            duration: result.duration,
+            processingTime: result.processingTime,
+            tokenTimings: Array(timings[0..<(keep > 0 ? grouped[keep - 1].tokens.upperBound : 0)]),
+            performanceMetrics: result.performanceMetrics,
+            ctcDetectedTerms: result.ctcDetectedTerms,
+            ctcAppliedTerms: result.ctcAppliedTerms
+        )
+    }
+
+    /// `text` without its last `dropping` whitespace-separated words, or nil
+    /// when it does not hold exactly `of` of them.
+    nonisolated static func trimmedText(
+        _ text: String, dropping: Int, of words: Int
+    ) -> String? {
+        guard text.split(whereSeparator: \.isWhitespace).count == words else { return nil }
+        var end = text.endIndex
+        for _ in 0..<dropping {
+            while end > text.startIndex, text[text.index(before: end)].isWhitespace {
+                end = text.index(before: end)
+            }
+            while end > text.startIndex, !text[text.index(before: end)].isWhitespace {
+                end = text.index(before: end)
+            }
+        }
+        while end > text.startIndex, text[text.index(before: end)].isWhitespace {
+            end = text.index(before: end)
+        }
+        return String(text[text.startIndex..<end])
+    }
+
+    /// A word this unsure, on its own, is not a word.
+    static let loneYeahConfidence: Float = 0.6
+
+    /// True when the whole decode is one unsure "Yeah." — a failed alignment
+    /// rather than something somebody said.
+    ///
+    /// Measured on 24 such clips: Whisper heard "yeah" in none of them, and a
+    /// padded decode returned real words on 19 of the 23 it could read. So it
+    /// is handed to the empty-decode recovery rather than deleted.
+    nonisolated static func decodedOnlyYeah(_ result: ASRResult) -> Bool {
+        let words = Trace.words(from: result.tokenTimings ?? [])
+        guard words.count == 1, words[0].confidence < loneYeahConfidence else { return false }
+        return words[0].word.lowercased().filter(\.isLetter) == "yeah"
+    }
+
     /// How much silence the empty-decode retry puts either side of the clip,
     /// tried in order until one of them decodes to something.
     ///
@@ -880,14 +1052,16 @@ actor Transcriber {
         gate.segments.reduce(0) { $0 + ($1.end - $1.start) }
     }
 
-    /// True when the gate heard speech and the decoder wrote nothing at all.
+    /// True when the gate heard speech and the decoder wrote nothing worth
+    /// keeping — no text at all, or one unsure "Yeah."
     ///
     /// The text, not the timings: a decode with no words is the thing being
     /// caught, and whether it also carried an empty timing array is a detail
     /// of the decoder rather than the symptom.
     nonisolated static func decodedNothing(_ result: ASRResult, gate: SpeechGate) -> Bool {
         guard !gate.segments.isEmpty else { return false }
-        return result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if result.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+        return decodedOnlyYeah(result)
     }
 
     /// The clip with `pad` seconds of silence at each end, or nil when the

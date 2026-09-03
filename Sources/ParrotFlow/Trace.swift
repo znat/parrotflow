@@ -336,21 +336,32 @@ enum Trace {
     /// confidence: a name that came through as one solid piece and one shaky
     /// one is a shaky name, and averaging hides exactly that.
     static func words(from timings: [TokenTiming]) -> [Word] {
-        var words: [Word] = []
+        grouped(from: timings).map(\.word)
+    }
+
+    /// The same grouping, with the tokens each word was built from.
+    ///
+    /// One implementation, because a caller that cuts words off a decode has to
+    /// cut the tokens the same way. A second copy of this loop would drift.
+    static func grouped(from timings: [TokenTiming]) -> [(word: Word, tokens: Range<Int>)] {
+        var words: [(word: Word, tokens: Range<Int>)] = []
         var text = ""
         var start = 0.0
         var end = 0.0
         var confidence = Float.greatestFiniteMagnitude
+        var first = 0
+        var last = 0
 
         func flush() {
             let trimmed = text.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { return }
-            words.append(
-                Word(word: trimmed, start: start, end: end, confidence: confidence)
-            )
+            words.append((
+                Word(word: trimmed, start: start, end: end, confidence: confidence),
+                first..<(last + 1)
+            ))
         }
 
-        for timing in timings {
+        for (index, timing) in timings.enumerated() {
             let token = timing.token
             if token.isEmpty || token == "<blank>" || token == "<pad>" { continue }
 
@@ -361,11 +372,13 @@ enum Trace {
                 text = token.replacingOccurrences(of: "\u{2581}", with: "")
                 start = timing.startTime
                 confidence = timing.confidence
+                first = index
             } else {
                 text += token
                 confidence = min(confidence, timing.confidence)
             }
             end = timing.endTime
+            last = index
         }
         flush()
         return words

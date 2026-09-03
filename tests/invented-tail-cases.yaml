@@ -1,0 +1,252 @@
+# Endings Parakeet wrote over silence, and endings it really heard.
+#
+# Run with scripts/check-invented-tail.sh. Every case is a decode taken from
+# trace.jsonl — the words, their timings and their confidences exactly as the
+# decoder returned them on a clip somebody dictated. Nothing here is invented
+# by hand, because the whole question is what the decoder does, and a made-up
+# word array can be made to prove anything.
+#
+#   speech_end  where the gate's last speech segment ended. Absent means there
+#               was no gate, which turns the after-speech rule off.
+#   words       "<word> <start> <end> <confidence>", in order.
+#   text        what the decoder wrote. Absent means the words joined by
+#               spaces, which is what the trace shows on all but one record.
+#   keeps       the text that must survive. Absent means all of it.
+#   reason      burst | after speech. Absent means nothing may be dropped.
+#   nothing     what `decodedNothing` must say about the decode.
+#
+# The must-not-fire half is the half that matters. A dictation that loses a
+# real last word loses it silently, and the word most at risk is a name — the
+# thing the decoder is least sure of and the speaker most wants.
+
+# ---------------------------------------------------------------- must fire
+
+- name: three words at one point on the clock, 6s after the speech stopped
+  # B3813269. Whisper heard "Because you could look for" and nothing after it.
+  speech_end: 2.404
+  text: "Because you could look for the first time."
+  words:
+    - Because  0.76 1.08 0.907
+    - you      1.08 1.24 0.996
+    - could    1.24 1.56 0.994
+    - look     1.56 1.88 0.996
+    - for      1.88 2.20 1.000
+    - the      8.09 8.09 0.152
+    - first    8.09 8.09 0.038
+    - time.    8.09 8.09 0.192
+  keeps: "Because you could look for"
+  reason: burst
+
+- name: a burst that is also after the speech
+  # D5D66F4A. Both rules find the same four words. The burst is reported,
+  # because it is the stronger evidence: no confidence had to be read.
+  speech_end: 2.148
+  text: "And if you ask it, you can see it."
+  words:
+    - And   0.72 0.96 0.529
+    - if    0.96 1.20 0.948
+    - you   1.20 1.36 0.962
+    - ask   1.36 1.76 0.971
+    - it,   1.76 3.76 0.160
+    - you   3.76 3.84 0.141
+    - can   3.76 3.84 0.281
+    - see   3.76 3.84 0.110
+    - it.   3.76 3.84 0.200
+  keeps: "And if you ask it,"
+  reason: burst
+
+- name: two words at the very end of a clip that is all speech
+  # 33B103E7. The gate heard speech to the last sample, so only the burst can
+  # find this one.
+  speech_end: 2.277
+  text: "Sorry, back to the first time."
+  words:
+    - Sorry,   0.24 0.72 0.533
+    - back     0.72 0.96 0.944
+    - to       0.96 1.28 0.987
+    - the      1.28 1.52 0.981
+    - first    2.16 2.24 0.036
+    - time.    2.16 2.24 0.125
+  keeps: "Sorry, back to the"
+  reason: burst
+
+- name: a burst holding a word scored 0.82
+  # 402455DD. "It's not just" is what was said. The invented ending carries
+  # "bit" at 0.823, which is why the burst rule reads no confidence at all.
+  speech_end: 1.371
+  text: "It's not just a little bit"
+  words:
+    - It's   0.00 0.36 0.553
+    - not    0.36 0.68 0.999
+    - just   0.68 1.00 0.993
+    - a      1.37 1.37 0.234
+    - little 1.37 1.37 0.093
+    - bit    1.37 1.37 0.823
+  keeps: "It's not just"
+  reason: burst
+
+- name: six words repeating themselves, two of them scored above 0.8
+  # 0F0910EC. Same shape, longer, and the repetition is the tell a confidence
+  # test would have to ignore anyway.
+  speech_end: 3.878
+  text: "Can you use a little bit of a little bit"
+  words:
+    - Can    2.00 2.32 0.653
+    - you    2.32 2.56 0.983
+    - use    2.56 2.88 0.976
+    - a      2.88 3.12 0.550
+    - little 3.76 3.84 0.060
+    - bit    3.76 3.84 0.819
+    - of     3.76 3.84 0.329
+    - a      3.76 3.84 0.240
+    - little 3.76 3.84 0.053
+    - bit    3.76 3.84 0.833
+  keeps: "Can you use a"
+  reason: burst
+
+- name: four words after the speech, none of them at the same time
+  # 58D2647D. No burst to find: the four have four different timings. They
+  # start 2.6s past the gate's last segment, and one of them scores 0.75 —
+  # which is what the 0.8 floor is for.
+  speech_end: 5.732
+  text: "It should have been found by the comments of the U.S."
+  words:
+    - It       0.56 0.80 0.553
+    - should   0.80 1.12 0.947
+    - have     1.12 1.28 0.980
+    - been     1.28 1.52 0.996
+    - found    3.92 4.48 0.904
+    - by       4.48 4.80 0.991
+    - the      4.80 5.12 0.976
+    - comments 8.32 8.64 0.136
+    - of       8.80 8.88 0.324
+    - the      8.88 8.96 0.750
+    - U.S.     9.84 9.92 0.028
+  keeps: "It should have been found by the"
+  reason: after speech
+
+- name: a lone unsure Yeah is not a word
+  # DB189782. Whisper heard no "yeah" on any of the 24 clips like this one.
+  speech_end: 0.931
+  words:
+    - Yeah. 0.72 0.88 0.467
+  nothing: true
+
+- name: and the same at 0.52
+  # A096B2F3.
+  speech_end: 1.771
+  words:
+    - Yeah. 1.44 1.60 0.523
+  nothing: true
+
+# ------------------------------------------------------------ must not fire
+
+- name: an unsure name at the end of a question
+  # 67C849E2. "Kim?" scores 0.458 and is the word the speaker cared about.
+  speech_end: 1.181
+  text: "What do you think, Kim?"
+  words:
+    - What    0.12 0.36 0.945
+    - do      0.36 0.44 0.993
+    - you     0.44 0.52 0.994
+    - think,  0.52 0.68 0.497
+    - Kim?    0.76 1.08 0.458
+
+- name: an unsure product name at the end of a list
+  # 462679BD. "WordPress." at 0.338, real, and inside the speech.
+  speech_end: 7.927
+  text: "In Slack, in web forms, in WordPress."
+  words:
+    - In          0.44 0.76 0.797
+    - Slack,      0.76 2.36 0.748
+    - in          2.36 2.68 0.981
+    - web         2.68 2.84 0.781
+    - forms,      3.16 5.24 0.866
+    - in          5.24 5.56 0.978
+    - WordPress.  6.84 7.93 0.338
+
+- name: two invented-sounding names in one sentence, both said
+  # 97CE83D3. 0.167 and 0.212, and the second is the last word.
+  speech_end: 7.586
+  text: "But why were search terms recoverable in Ribrovent and not in Dorselex?"
+  words:
+    - But         0.62 0.94 0.973
+    - why         0.94 1.34 1.000
+    - were        1.34 1.66 0.999
+    - search      1.66 2.06 0.745
+    - terms       2.06 2.70 0.900
+    - recoverable 2.70 3.66 1.000
+    - in          3.98 4.30 1.000
+    - Ribrovent   4.54 5.50 0.167
+    - and         5.66 5.90 1.000
+    - not         5.90 6.14 1.000
+    - in          6.14 6.30 0.952
+    - Dorselex?   6.46 7.59 0.212
+
+- name: counting in French, close together and unsure
+  # 44B479DD. "Un," scores 0.439 and the three words run end to end.
+  speech_end: 1.942
+  text: "Prisonniers en France. Un, deux, trois."
+  words:
+    - Prisonniers 0.00 0.30 0.503
+    - en          0.38 0.46 0.979
+    - France.     0.46 0.70 0.532
+    - Un,         0.86 1.10 0.439
+    - deux,       1.10 1.34 0.971
+    - trois.      1.34 1.94 0.831
+
+- name: five words after the gate's last segment, all confident
+  # 422E0A9E. The rule-B shape exactly: the gate stopped at 0.868 and the
+  # speaker carried on at 3.76. The confidences are 0.94 to 1.00, so the
+  # 0.8 floor is the only thing keeping this sentence whole.
+  speech_end: 0.868
+  text: "C'est le signal qu'on ne peut pas savoir."
+  words:
+    - C'est    0.00 0.40 0.636
+    - le       0.40 0.64 0.999
+    - signal   0.64 1.28 1.000
+    - qu'on    3.76 4.08 0.939
+    - ne       4.08 4.24 0.994
+    - peut     4.24 4.40 0.997
+    - pas      4.40 4.64 0.999
+    - savoir.  4.64 5.84 0.723
+
+- name: a lone Yes below the Yeah floor
+  # 2026-08-10T21-20-59, at 0.565. The rule is about the word, not about the
+  # confidence: an unsure "Yes." is an answer somebody gave.
+  speech_end: 1.686
+  words:
+    - Yes. 0.72 1.28 0.565
+  nothing: false
+
+- name: an ordinary sentence, nothing to drop
+  # 402455DD's opening on its own, so the same words score both ways.
+  speech_end: 1.371
+  text: "It's not just"
+  words:
+    - It's 0.00 0.36 0.553
+    - not  0.36 0.68 0.999
+    - just 0.68 1.00 0.993
+  nothing: false
+
+# ------------------------------------------------------------------ the trim
+
+- name: a text whose words do not line up with the timings is kept whole
+  # The same burst as B3813269, with the ending written as one word. The rule
+  # still sees three invented words; the trim refuses, because it cannot say
+  # which letters they are. On the archive this never happens — the two counts
+  # agreed on all 22136 records that carry both — and if it ever does, a kept
+  # invention beats a sentence cut in the wrong place.
+  speech_end: 2.404
+  text: "Because you could look for the-first-time."
+  words:
+    - Because  0.76 1.08 0.907
+    - you      1.08 1.24 0.996
+    - could    1.24 1.56 0.994
+    - look     1.56 1.88 0.996
+    - for      1.88 2.20 1.000
+    - the      8.09 8.09 0.152
+    - first    8.09 8.09 0.038
+    - time.    8.09 8.09 0.192
+  keeps: "Because you could look for the-first-time."
+  reason: burst
