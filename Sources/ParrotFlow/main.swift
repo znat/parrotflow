@@ -476,7 +476,10 @@ if let index = arguments.firstIndex(of: "--slot-gap") {
     let slotGapLanguage: String
     if arguments.contains("--lang") {
         let listed = languageList(arguments) ?? []
-        guard listed.count == 1, let only = listed.first,
+        // `languageList` reads the first `--lang` and ignores a second one, so
+        // the count is checked here rather than there.
+        guard arguments.filter({ $0 == "--lang" }).count == 1,
+              listed.count == 1, let only = listed.first,
               DictationLanguage.supported.contains(only) else {
             print("✗ --lang wants one of"
                 + " \(DictationLanguage.supported.joined(separator: ", "))"
