@@ -1,13 +1,13 @@
 import Foundation
 import MLX
 
-/// `--sentence-probe` — is this period real, or did a pause cut one sentence
-/// in two?
+/// `--sentence-probe` — is this sentence mark real, or did a pause cut one
+/// sentence in two?
 ///
-/// The two halves of the boundary, left then right. The period on the left is
-/// optional; the capital on the right is expected, because that is what the
-/// transcriber writes. Every reading of the boundary is scored, per token of
-/// the continuation, and the highest wins.
+/// The two halves of the boundary, left then right. The mark on the left says
+/// which boundary this is — end the left half with `?` to read a question, and
+/// with nothing or a period to read a period. Every reading of the boundary is
+/// scored, per token of the continuation, and the highest wins.
 ///
 ///     ParrotFlow --sentence-probe "…the LLM with." "The vocabulary is slower"
 ///       prefix    the first usage of the LLM with
@@ -22,17 +22,29 @@ import MLX
 ///
 /// `--bench <cases.json> --out <scores.json>` scores a whole file in one loaded
 /// process — `[{"left": …, "right": …}]` in, one row of scores out, with the
-/// milliseconds each decision took. One process per boundary would pay the 1.3s
-/// load every time, so this is the only way to get a latency number. `--vectors`
-/// loads the word vectors as well, so the memory line describes the process the
-/// app actually runs, with both MLX models in it.
+/// milliseconds each decision took. A row may carry `"mark": "?"` where the
+/// left half does not end with the mark itself. One process per boundary would
+/// pay the 1.3s load every time, so this is the only way to get a latency
+/// number. `--vectors` loads the word vectors as well, so the memory line
+/// describes the process the app actually runs, with both MLX models in it.
 @available(macOS 14, *)
 enum SentenceProbeCommand {
+
+    /// The mark the boundary carries, taken from the end of the left half. With
+    /// nothing there it is a period, which is what the transcriber writes most
+    /// of the time.
+    static func found(in left: String, marks: [String]) -> String {
+        if let last = left.last, SentenceJoin.scanned(marks).contains(last) {
+            return String(last)
+        }
+        return marks.first { SentenceReadings.enders.contains($0) } ?? "."
+    }
 
     static func run(left: String, right: String) -> Int32 {
         var exitCode: Int32 = 0
         let done = DispatchSemaphore(value: 0)
         let marks = ((try? ConfigStore.load()) ?? Config()).transcription.sentences.marks
+        let mark = found(in: left, marks: marks)
 
         Task {
             do {
@@ -42,11 +54,11 @@ enum SentenceProbeCommand {
                 }
                 print("\r\u{1B}[K", terminator: "")
                 guard let built = SentenceReadings.build(
-                    left: left, right: right, marks: marks
+                    left: left, right: right, found: mark, marks: marks
                 ) else { throw SentenceReadings.Failure.empty }
                 print("  prefix    \(built.prefix)")
                 let scores = try await SentenceReadings.shared.read(
-                    left: left, right: right, marks: marks
+                    left: left, right: right, found: mark, marks: marks
                 )
                 for score in scores {
                     // `%@` ignores a width on this platform, so the column
@@ -72,7 +84,14 @@ enum SentenceProbeCommand {
 
     /// Every boundary in a file, scored in one loaded process.
     static func bench(cases path: String, out: String?, vectors: Bool) -> Int32 {
-        struct Row: Decodable { let left: String; let right: String }
+        struct Row: Decodable {
+            let left: String
+            let right: String
+            /// The mark the boundary carries, where the left half does not end
+            /// with it. `enq_real.json` is mined by splitting on the mark, so
+            /// its left halves have none.
+            let mark: String?
+        }
         var exitCode: Int32 = 0
         let done = DispatchSemaphore(value: 0)
         let marks = ((try? ConfigStore.load()) ?? Config()).transcription.sentences.marks
@@ -88,8 +107,9 @@ enum SentenceProbeCommand {
                 var times: [Double] = []
                 for (i, row) in rows.enumerated() {
                     let start = DispatchTime.now().uptimeNanoseconds
+                    let mark = row.mark ?? found(in: row.left, marks: marks)
                     guard let scores = try? await SentenceReadings.shared.read(
-                        left: row.left, right: row.right, marks: marks
+                        left: row.left, right: row.right, found: mark, marks: marks
                     ) else { continue }
                     let winner = SentenceJoin.winner(of: scores)?.key ?? "none"
                     let elapsed = Double(
@@ -105,7 +125,7 @@ enum SentenceProbeCommand {
                     }
                     results.append([
                         "i": i, "mean": means, "n": tokens, "winner": winner,
-                        "ms": elapsed,
+                        "mark": mark, "ms": elapsed,
                         "retokenised": scores.contains(where: \.retokenised),
                     ])
                 }

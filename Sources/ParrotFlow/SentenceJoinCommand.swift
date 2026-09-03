@@ -29,7 +29,8 @@ enum SentenceJoinCommand {
         let config = (try? ConfigStore.load()) ?? Config()
         if caseOnly {
             let terms = Array(config.vocabulary.terms.keys)
-            for boundary in SentenceJoin.boundaries(in: text) {
+            let scan = SentenceJoin.scanned(config.transcription.sentences.marks)
+            for boundary in SentenceJoin.boundaries(in: text, scanning: scan) {
                 let (whole, offset) = SentenceJoin.joining(text, at: boundary)
                 let word = String(text[boundary.next])
                 let now = SentenceJoin.written(word, in: whole, at: offset, terms: terms)

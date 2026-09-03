@@ -14,6 +14,10 @@ came back, so the fixture is by construction what the binary produces. Point
 --data at the bench directory; its files hold `left` and `right` already
 windowed to +-12 words, which is the window the app builds.
 
+Four sets, two marks. --count rows come from the period pair and --questions
+rows from the question pair, so raising one does not resample the other. Each
+row carries the mark its boundary is written with.
+
 Real endings carrying a hand label are left out. `join` means the period is
 wrong, `drop` that the row is not a dictation, and `tie` that both readings are
 right — none of the three is a real ending a join would spoil.
@@ -83,14 +87,22 @@ def readings(args):
         for key in ("join", "drop", "tie"):
             labelled |= set(labels.get(key, []))
 
+    sets = (
+        ("en_real.json", ".", labelled, args.count // 2),
+        ("en_cuts.json", ".", set(), args.count // 2),
+        ("enq_real.json", "?", set(), args.questions // 2),
+        ("enq_cuts_hard.json", "?", set(), args.questions // 2),
+    )
+
     out = []
-    for name, skip in (("en_real.json", labelled), ("en_cuts.json", set())):
+    for name, mark, skip, take in sets:
         entries = json.load(open(os.path.join(args.data, name)))
         wanted = [i for i in range(len(entries)) if i not in skip]
-        step = max(1, len(wanted) // (args.count // 2))
-        wanted = wanted[::step][: args.count // 2]
+        step = max(1, len(wanted) // take)
+        wanted = wanted[::step][:take]
         rows = [
-            {"left": entries[i]["left"], "right": entries[i]["right"]} for i in wanted
+            {"left": entries[i]["left"], "right": entries[i]["right"], "mark": mark}
+            for i in wanted
         ]
         with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as work:
             cases = os.path.join(work, "cases.json")
@@ -103,6 +115,7 @@ def readings(args):
             for row in json.load(open(scored)):
                 out.append({
                     "set": name,
+                    "mark": mark,
                     "left": rows[row["i"]]["left"],
                     "right": rows[row["i"]]["right"],
                     "winner": row["winner"],
@@ -124,6 +137,7 @@ parser.add_argument("--tokenizer", default=TOKENIZER)
 parser.add_argument("--data", default=".")
 parser.add_argument("--binary", default=os.path.join(HERE, ".build/release/ParrotFlow"))
 parser.add_argument("--count", type=int, default=40)
+parser.add_argument("--questions", type=int, default=20)
 parser.add_argument("--out")
 args = parser.parse_args()
 (tokens if args.what == "tokens" else readings)(args)

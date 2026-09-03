@@ -3,10 +3,11 @@
 #
 #   scripts/check-sentence-join.sh
 #
-# Half the cases are real periods and half are pauses that cut one sentence in
-# two. Two numbers decide: how many cuts were repaired, and how many real
-# periods were joined by mistake. A joined real period is a sentence nobody
-# wrote, with nothing on screen to say so, so one of those fails the run.
+# Half the cases are real sentence endings and half are pauses that cut one
+# sentence in two, in both the period and the question-mark shape. Two numbers
+# decide per shape: how many cuts were repaired, and how many real endings were
+# joined by mistake. A joined real ending is a sentence nobody wrote, with
+# nothing on screen to say so, so one of those fails the run.
 #
 # Each case also carries the readings measured when the set was built. This
 # compares the binary's against them. That is what says the app reads a boundary
@@ -38,10 +39,14 @@ binary = root / ".build/release/ParrotFlow"
 cases = json.load(open(root / "tests/sentence-boundary-cases.json"))
 
 # The set stores the two halves already windowed to twelve words each, which is
-# the window the app builds. Glued back into one text, the boundary the app
-# finds is the one the set is about.
+# the window the app builds. Glued back into one text with the case's own mark,
+# the boundary the app finds is the one the set is about.
+def mark_of(case):
+    return case.get("mark", ".")
+
+
 def text_of(case):
-    return case["left"].rstrip(".") + ". " + case["right"]
+    return case["left"].rstrip(".?!") + mark_of(case) + " " + case["right"]
 
 
 # The boundary this case is about, not the first one printed. Several of the
@@ -49,7 +54,8 @@ def text_of(case):
 # boundaries in the glued text and only one of them is the measured one. It is
 # named by the word each side of it.
 def block_of(out, case):
-    wanted = "%s. %s ->" % (case["left"].rstrip(".").split()[-1], case["right"].split()[0])
+    wanted = "%s%s %s ->" % (
+        case["left"].rstrip(".?!").split()[-1], mark_of(case), case["right"].split()[0])
     block, mine = None, None
     for line in out.splitlines():
         parts = line.split(None, 1)
@@ -70,7 +76,8 @@ def block_of(out, case):
     return None
 
 DRIFT = 0.05
-tally = {"en_real.json": {}, "en_cuts.json": {}}
+tally = {name: {} for name in
+         ("en_real.json", "en_cuts.json", "enq_real.json", "enq_cuts_hard.json")}
 drifted = []
 
 for case in cases:
@@ -90,30 +97,35 @@ for case in cases:
     if gap > DRIFT:
         drifted.append((text_of(case), case["winner"], winner, gap))
         mark = "✗"
-    print("  %s  %-5s %-5s stored %-5s  gap %.4f  %s" % (
-        mark, case["set"].removeprefix("en_").removesuffix(".json"),
-        winner, case["winner"], gap, case["left"][:48]))
+    print("  %s  %-10s %-5s stored %-5s  gap %.4f  %s" % (
+        mark, case["set"].removeprefix("en").removeprefix("_").removesuffix(".json"),
+        winner, case["winner"], gap, case["left"][:44]))
 
 def row(name, key):
     counts = tally[key]
     total = sum(counts.values())
     listed = ", ".join("%d %s" % (n, k) for k, n in sorted(counts.items()))
-    print("  %-13s %s  (of %d)" % (name, listed, total))
+    print("  %-16s %s  (of %d)" % (name, listed, total))
     return counts, total
 
 print()
-cuts, cut_total = row("cuts", "en_cuts.json")
-real, real_total = row("real periods", "en_real.json")
-
-if not cut_total or not real_total:
-    print("  ✗ no cases read from tests/sentence-boundary-cases.json")
-    sys.exit(1)
-
-joined = cuts.get("join", 0)
-false_joins = real.get("join", 0)
-print()
-print("  %d%% of cuts repaired, %.1f false joins per 100 real periods" % (
-    round(100 * joined / cut_total), 100 * false_joins / real_total))
+shapes = (
+    ("period", "en_cuts.json", "en_real.json"),
+    ("question", "enq_cuts_hard.json", "enq_real.json"),
+)
+false_joins = 0
+for shape, cut_key, real_key in shapes:
+    cuts, cut_total = row(shape + " cuts", cut_key)
+    real, real_total = row(shape + " real", real_key)
+    if not cut_total or not real_total:
+        print("  ✗ no %s cases read from tests/sentence-boundary-cases.json" % shape)
+        sys.exit(1)
+    wrong = real.get("join", 0)
+    false_joins += wrong
+    print("  %d%% of %s cuts repaired, %.1f false joins per 100 real endings" % (
+        round(100 * cuts.get("join", 0) / cut_total), shape,
+        100 * wrong / real_total))
+    print()
 
 if drifted:
     print()

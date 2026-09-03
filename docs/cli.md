@@ -455,7 +455,7 @@ covers 1,800 languages, where ModernBERT is English-only. It is not cheaper —
 the same cache size, and 18 ms per pass against 11, because its head is five
 times wider. Multilingual is the whole reason for the swap.
 
-## Is this period real
+## Is this sentence mark real
 
 ```sh
 $PF --sentence-model                                       # fetch both sentence models
@@ -464,11 +464,15 @@ $PF --sentence-probe --encode "<text>"                     # the masked tokenize
 $PF --sentence-probe --bench <cases.json> --out <out.json> # a whole file, one loaded process
 ```
 
-A pause in the middle of a sentence makes the transcriber write a period. The
-probe builds one reading of the boundary per mark and one with no mark at all,
-and scores each with `mlx-community/Qwen3-0.6B-Base-4bit`. The score is the
-log-probability of the continuation divided by its token count. The highest
-wins, and there is no threshold.
+A pause in the middle of a sentence makes the transcriber write a period or a
+question mark. The probe builds three readings of the boundary — the mark on
+the left half, the comma, and no mark at all — and scores each with
+`mlx-community/Qwen3-0.6B-Base-4bit`. The score is the log-probability of the
+continuation divided by its token count. The highest wins, and there is no
+threshold.
+
+End the left half with `?` to read a question boundary. With no mark there it
+is read as a period.
 
 ```
 $PF --sentence-probe "…the first usage of the LLM with." "The vocabulary is slower"
@@ -485,9 +489,11 @@ reading is scored from the first token that actually differs — 2 of 972 bench
 sequences do this.
 
 `--bench` reads `[{"left": …, "right": …}]` and writes one row of scores per
-boundary, with the milliseconds each decision took. It loads the model once, so
-it is the only way to get a latency number; `--vectors` loads the word vectors
-as well, so the memory line describes the process the app runs.
+boundary, with the mark it read and the milliseconds each decision took. A row
+may carry `"mark": "?"` where the left half does not end with the mark itself.
+It loads the model once, so it is the only way to get a latency number;
+`--vectors` loads the word vectors as well, so the memory line describes the
+process the app runs.
 
 `--encode` prints ModernBERT's ids and loads no model, which is what
 `scripts/check-tokenizer.sh` compares against HuggingFace's own tokenizer.
@@ -500,7 +506,7 @@ with, and ModernBERT, which no stage reads any more. The slot gate moved to
 mmBERT-small, so ModernBERT is now a download with nothing behind it, and a
 follow-up takes it out.
 
-## Which periods a pause put there
+## Which sentence marks a pause put there
 
 ```sh
 $PF --sentence-join "<text>"            # read every boundary, and join what wins
@@ -508,7 +514,9 @@ $PF --sentence-join --case "<text>"     # the lowercasing alone, no model
 ```
 
 `--sentence-join` is the pass the app runs, on the text you give it. One block
-per `word. Capital` boundary, then the text it hands on.
+per boundary, then the text it hands on. A boundary is a `.` or a `?` followed
+by a word — a capital after a period, a capital or a lowercase word after a
+question mark.
 
 ```
 $PF --sentence-join "…the first usage of the LLM with. The vocabulary is slower"
@@ -521,12 +529,14 @@ $PF --sentence-join "…the first usage of the LLM with. The vocabulary is slowe
   text       …the first usage of the LLM with the vocabulary is slower
 ```
 
-The period is removed where `join` wins, and left alone otherwise. The marks
-tried are `transcription.sentences.marks` in `config.yaml`.
-`scripts/check-sentence-join.sh` scores the decisions against
-tests/sentence-boundary-cases.json; it needs the model, so it is run by hand.
+The mark is removed where `join` wins, and left alone otherwise. Which marks are
+scanned, and which are read beside them, is `transcription.sentences.marks` in
+`config.yaml` — the sentence enders in that list are scanned, the rest are
+readings. `scripts/check-sentence-join.sh` scores the decisions against
+tests/sentence-boundary-cases.json, in both shapes; it needs the model, so it is
+run by hand.
 
-`--case` answers only what the capitalised word becomes once the period is
+`--case` answers only what the capitalised word becomes once the mark is
 gone. `NLTagger` and your vocabulary decide that, so no model is loaded and
 `scripts/check-sentence-case.sh` runs in CI. See `SentenceJoin`.
 
@@ -772,8 +782,8 @@ scripts/check-slot-tokenizer.sh    # the slot tokenizer against HuggingFace's ow
 scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the model)
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
 scripts/check-slot-gap.sh          # what the slot says about a rewrite (needs both models)
-scripts/check-sentence-case.sh     # the capital after a period the join removes
-scripts/check-sentence-join.sh     # which periods the join removes (needs the model)
+scripts/check-sentence-case.sh     # the capital after a mark the join removes
+scripts/check-sentence-join.sh     # which sentence marks the join removes (needs the model)
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

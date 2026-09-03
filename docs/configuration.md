@@ -471,35 +471,48 @@ end of what was still there.
 
 ## `transcription.sentences`
 
-A pause mid-sentence makes the transcriber write a period and capitalise the
-next word, so one sentence becomes two. Every `word. Capital` boundary in an
-English transcript is read several ways and the reading the model likes best
-wins.
+A pause mid-sentence makes the transcriber write a period or a question mark,
+and capitalise the next word, so one sentence becomes two. Every such boundary
+in an English transcript is read several ways and the reading the model likes
+best wins.
 
 ```yaml
 transcription:
   sentences:
-    marks: [".", ","]    # the marks tried beside removing the period
+    marks: [".", ",", "?"]    # what a boundary can be written
 ```
 
 `sentences: false` turns the whole stage off.
 
-There is no threshold. For a `word. Capital` boundary the stage builds one
-reading per mark — `". The vocabulary is slower"`, `", the vocabulary is
-slower"` — and one with no mark at all, scores each with a small causal
-language model, and writes the winner. A score is the log-probability of the
-continuation divided by its token count. Where the reading with no mark wins,
-the period is removed and the next word is lowercased.
+One list, two jobs. The sentence enders in it — `.` and `?` — are **where a
+boundary is looked for**. Everything else in it — the comma — is a **reading
+tried at a boundary**. So each boundary is read three ways: the mark it
+carries, the comma, and no mark at all. Take `?` out of the list and question
+marks stop being scanned; take `.` out and periods do.
 
-Measured over 172 real periods and 140 cuts of one speaker's dictation: 81% of
-the cuts repaired and no real period joined. The two thresholds this used to
-take, `join_below:` and `offer_below:`, repaired 26%. They are still read, and
-`--check-config` says they no longer do anything.
+There is no threshold. The stage builds those three readings — `". The
+vocabulary is slower"`, `", the vocabulary is slower"`, `" the vocabulary is
+slower"` — scores each with a small causal language model, and writes the
+winner. A score is the log-probability of the continuation divided by its token
+count. Where the reading with no mark wins, the mark is removed and the next
+word is lowercased.
 
-`;` and `:` were measured and never changed a decision in English, so the
-default is the two marks that do. The set is a setting because it is
-language-dependent. Each entry is one punctuation character; anything else is
-refused, because a mark is written into the sentence as punctuation.
+Measured over one speaker's dictation: 81% of 140 period cuts repaired with no
+real period joined, and 82% of 325 question cuts repaired at one wrong join in
+111 real questions. The two thresholds this used to take, `join_below:` and
+`offer_below:`, repaired 26%. They are still read, and `--check-config` says
+they no longer do anything.
+
+`;` and `:` were measured and never changed a decision in English, so they are
+not in the default. The set is a setting because it is language-dependent. Each
+entry is one punctuation character, and at least one must end a sentence;
+anything else is refused, because a mark is written into the sentence as
+punctuation.
+
+A word after a question mark does not have to be capitalised. Of 19 lines where
+the transcriber wrote `word? lowercase`, 7 hold a mark that should go and 12 a
+real question, so the reading decides and no rule could. A word after a *period*
+does have to be: that shape has never been measured, so it is left alone.
 
 English only, and only where the model is already on disk. Nothing is
 downloaded for this and nothing waits: with no model the transcript arrives as

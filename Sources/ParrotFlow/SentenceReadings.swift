@@ -3,14 +3,20 @@ import MLX
 import MLXLLM
 import MLXLMCommon
 
-/// Reads one `word. Capital` boundary three ways and says which reading the
-/// language model prefers.
+/// Reads one boundary three ways and says which reading the language model
+/// prefers.
 ///
 /// For `…the LLM with. The vocabulary is slower` the three readings are
 ///
 ///     ". The vocabulary is slower"     the period is real
 ///     " the vocabulary is slower"      the pause cut one sentence in two
 ///     ", the vocabulary is slower"     it is really a comma
+///
+/// The first reading is the mark the transcriber actually wrote, so a
+/// `word? Capital` boundary is read `"? Word"`, `", word"` and `" word"`.
+/// Reading every configured ender at every boundary was measured too and is
+/// worse: 259 of 325 question cuts repaired against 265, for a fourth forward
+/// pass.
 ///
 /// Each is scored as `sum of log P(token | everything before it)` over the
 /// continuation, **divided by the token count**, and the highest wins. There is
@@ -103,24 +109,29 @@ actor SentenceReadings {
         let retokenised: Bool
     }
 
-    /// The readings, in the order the winner is picked from: the marks as
-    /// configured, then the join. First past the post, so an exact tie leaves
-    /// the boundary alone.
-    static func readings(marks: [String]) -> [Reading] {
-        marks.map { Reading(key: $0, mark: $0, capital: enders.contains($0)) }
+    /// The readings, in the order the winner is picked from: the mark found in
+    /// the text, then the configured marks that do not end a sentence, then
+    /// the join. First past the post, so an exact tie leaves the boundary
+    /// alone.
+    ///
+    /// The other enders are left out. A boundary already carries one, and
+    /// swapping a period for a question mark is not a repair this stage makes.
+    static func readings(found: String, marks: [String]) -> [Reading] {
+        ([found] + marks.filter { !enders.contains($0) && $0 != found })
+            .map { Reading(key: $0, mark: $0, capital: enders.contains($0)) }
             + [Reading(key: join, mark: "", capital: false)]
     }
 
     /// The shared prefix and one continuation per reading.
     ///
-    /// The left side loses its trailing period, so a caller that kept it and
-    /// one that did not build the same window.
+    /// The left side loses its trailing mark, so a caller that kept it and one
+    /// that did not build the same window.
     static func build(
-        left: String, right: String, marks: [String]
+        left: String, right: String, found: String, marks: [String]
     ) -> (prefix: String, continuations: [String])? {
-        let leftWords = left
-            .replacingOccurrences(of: "\\.+$", with: "", options: .regularExpression)
-            .split(whereSeparator: \.isWhitespace).map(String.init)
+        var bare = left
+        while let last = bare.last, enders.contains(String(last)) { bare.removeLast() }
+        let leftWords = bare.split(whereSeparator: \.isWhitespace).map(String.init)
         let rightWords = right.split(whereSeparator: \.isWhitespace).map(String.init)
         guard !leftWords.isEmpty, !rightWords.isEmpty else { return nil }
         let prefix = leftWords.suffix(radius).joined(separator: " ")
@@ -130,7 +141,7 @@ actor SentenceReadings {
         let rest = rightWords.count > 1
             ? Array(rightWords[1 ..< min(radius, rightWords.count)]) : []
         let tail = rest.isEmpty ? "" : " " + rest.joined(separator: " ")
-        let continuations = readings(marks: marks).map {
+        let continuations = readings(found: found, marks: marks).map {
             "\($0.mark) \($0.capital ? up : lo)\(tail)"
         }
         return (prefix, continuations)
@@ -209,8 +220,12 @@ actor SentenceReadings {
     // MARK: - scoring
 
     /// The three readings of one boundary, scored.
-    func read(left: String, right: String, marks: [String]) async throws -> [Score] {
-        guard let built = Self.build(left: left, right: right, marks: marks) else {
+    func read(
+        left: String, right: String, found: String, marks: [String]
+    ) async throws -> [Score] {
+        guard let built = Self.build(
+            left: left, right: right, found: found, marks: marks
+        ) else {
             throw Failure.empty
         }
         let context = try await context()
@@ -219,7 +234,7 @@ actor SentenceReadings {
         }
         return Self.score(
             prefix: built.prefix, continuations: built.continuations,
-            keys: Self.readings(marks: marks).map(\.key),
+            keys: Self.readings(found: found, marks: marks).map(\.key),
             model: model, tokenizer: context.tokenizer
         )
     }
