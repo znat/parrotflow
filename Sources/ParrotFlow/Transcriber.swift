@@ -174,6 +174,54 @@ actor Transcriber {
         }
     }
 
+    /// The slot model fetch, once per process. Same shape and same reasons as
+    /// the sentence model above.
+    private var slotModelFetch: Task<Void, Never>?
+    private var slotModelRunning = false
+
+    /// Starts the slot model download and does not wait for it.
+    ///
+    /// mmBERT-small, 269 MB, read by the vocabulary gate. The gate stands
+    /// aside until it is on disk — `SlotModel.isCached` — so no dictation waits
+    /// here. It reports progress but never `.failed`: a gate that is not there
+    /// yet is a gate that asks the judge, not a model error.
+    func warmSlotModel() {
+        guard slotModelFetch == nil else { return }
+        slotModelRunning = true
+        slotModelFetch = Task { [weak self] in
+            guard let self else { return }
+            // After the sentence model, not beside it. Two downloads at once
+            // halve the bandwidth of the one the menu bar is showing.
+            await self.pendingSentenceModelFetch()?.value
+            var failed = false
+            do {
+                try await SlotModel.shared.prepare { label in
+                    Task { await self.reportSlotModel(label) }
+                }
+            } catch {
+                Log.write("slot model: \(error.localizedDescription);"
+                    + " the vocabulary gate asks the judge until it arrives")
+                failed = true
+            }
+            await self.finishSlotModel(failed: failed)
+        }
+    }
+
+    /// Hands the task out rather than awaiting it here, so the waiter does not
+    /// sit on this actor while a 300 MB download finishes.
+    private func pendingSentenceModelFetch() -> Task<Void, Never>? { sentenceModelFetch }
+
+    private func reportSlotModel(_ label: String) {
+        guard slotModelRunning else { return }
+        onStatusChange(.downloading(label, blocking: false))
+    }
+
+    private func finishSlotModel(failed: Bool) {
+        slotModelRunning = false
+        if failed { slotModelFetch = nil }
+        restoreStatusIfIdle()
+    }
+
     /// The sound model fetch, once per process. Same shape and same reasons
     /// as the sentence model above.
     private var soundModelFetch: Task<Void, Never>?
@@ -217,12 +265,12 @@ actor Transcriber {
 
     /// Puts the ordinary status back, but only when no fetch is still running.
     ///
-    /// Two downloads can be in flight at once, and each used to restore the
+    /// Several downloads can be in flight at once, and each used to restore the
     /// status on its own. The first to finish then wiped the other's
     /// percentage out of the menu bar, and the one somebody was watching
     /// appeared to stall.
     private func restoreStatusIfIdle() {
-        guard !sentenceModelRunning, !soundModelRunning else { return }
+        guard !sentenceModelRunning, !slotModelRunning, !soundModelRunning else { return }
         onStatusChange(status)
     }
 
@@ -505,6 +553,7 @@ actor Transcriber {
             // that failed clears itself, and the next English dictation is the
             // next chance to try again.
             warmSentenceModel()
+            warmSlotModel()
             if #available(macOS 14, *), config.transcription.sentences.enabled {
                 Task { await SentenceReadings.shared.warm() }
             }

@@ -8,9 +8,16 @@ import Foundation
 /// Claude Code in Ghostly all day". Same heard word, same term, opposite right
 /// answers. Only the sentence separates them.
 ///
-/// This asks ModernBERT for the ten words it expects in the slot, then measures
-/// both readings against them with `WordVectors`. Negative means the heard word
-/// fits better.
+/// This asks mmBERT-small for the ten words it expects in the slot, then
+/// measures both readings against them with `WordVectors`. Negative means the
+/// heard word fits better.
+///
+/// **mmBERT-small and not ModernBERT.** ModernBERT is English-only, which is
+/// the reason this whole gate is English-only. mmBERT-small covers 1,800
+/// languages and ties it here: 192 of the 238 bench cases each at the shipped
+/// floor, AUC 0.888 against 0.887, eight decisions flipped. It is not cheaper —
+/// see `SlotModel` for what it costs, and for why mmBERT was not given
+/// ModernBERT's other job as well.
 ///
 /// **It only ever refuses.** Across every measurement it never authorised a
 /// rewrite the stage had not already made, and its widest write is +0.7 of the
@@ -35,7 +42,13 @@ enum SlotReference {
     /// 0.20 holds on three sets, two of them chosen after it was fixed.
     /// Ordinary words sit at -0.30 to -0.43 and correct rewrites at -0.02 to
     /// -0.18, and nothing lands between.
-    static let floor = 0.20
+    ///
+    /// Per language, because the value does not transfer. Only English is in
+    /// the table: the gate runs on nothing else yet.
+    static func floor(for language: String) -> Double { floors[language] ?? english }
+
+    private static let english = 0.20
+    private static let floors: [String: Double] = ["en": english]
 
     /// How many words the reference is built from, and how deep to look for
     /// them. Ten is what every measurement used.
@@ -54,16 +67,19 @@ enum SlotReference {
 
     /// The ten words the mask expects, in order.
     ///
-    /// Alphabetic only, and one per spelling: ModernBERT offers `GitHub` and
+    /// Alphabetic only, and one per spelling: the model offers `GitHub` and
     /// `github` for the same slot, and counting both narrows the reference to
     /// one word wearing two hats.
+    ///
+    /// `isLetter` and not A-Z. A French slot answers with `château` and `déjà`,
+    /// and an ASCII filter drops them.
     static func expected(left: String, right: String) async throws -> [String] {
-        let probe = try await SentenceProbe.load()
+        let probe = try await SlotProbe.load()
         let slot = try probe.at(left: left, right: right)
         var words: [String] = []
         var seen = Set<String>()
-        for prediction in slot.top(depth) {
-            let word = prediction.word.trimmingCharacters(in: .whitespaces)
+        for filler in slot.top(depth) {
+            let word = filler.trimmingCharacters(in: .whitespaces)
             guard word.allSatisfy({ $0.isLetter }), !word.isEmpty else { continue }
             guard seen.insert(word.lowercased()).inserted else { continue }
             words.append(word)
@@ -98,7 +114,7 @@ enum SlotReference {
     }
 
     /// `left` ends on a word with no trailing space, `right` carries its own
-    /// leading space — the shape `SentenceProbe` reads.
+    /// leading space — the shape `SlotProbe` reads.
     static func gap(
         term: String, heard: String, left: String, right: String
     ) async throws -> Double {

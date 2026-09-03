@@ -253,6 +253,13 @@ jobs:
       - name: The tokenizer against HuggingFace's own
         run: scripts/check-tokenizer.sh
 
+      # The slot tokenizer is swift-transformers over mmBERT-small's Gemma-style
+      # file, and its mistakes are just as quiet: a lost prefix space or a
+      # dropped accent changes the ten words the gate reads and raises nothing.
+      # Also the tokenizer files alone — 18 MB — never the 269 MB model.
+      - name: The slot tokenizer against HuggingFace's own
+        run: scripts/check-slot-tokenizer.sh
+
       # Joining two sentences lowercases the word after the period. Getting
       # that wrong writes "ask him nathan knows". NLTagger and the vocabulary
       # answer it, so no model is needed — the scored half of the join,

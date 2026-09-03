@@ -2312,6 +2312,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // dictation: the stages that read them stand aside until they are
             // in memory.
             await transcriber.warmSentenceModel()
+            await transcriber.warmSlotModel()
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
             // a launch keep the periods a pause put in. Not fetched at all when

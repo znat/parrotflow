@@ -128,6 +128,30 @@ if arguments.contains("--sentence-model") {
     exit(SentenceModelCommand.run())
 }
 
+if arguments.contains("--slot-model") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot model needs macOS 14 or later")
+        exit(1)
+    }
+    exit(SlotModelCommand.run())
+}
+
+if let at = arguments.firstIndex(of: "--slot-probe") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot probe needs macOS 14 or later")
+        exit(1)
+    }
+    if let encode = arguments.firstIndex(of: "--encode"), arguments.indices.contains(encode + 1) {
+        exit(SlotProbeCommand.encode(arguments[encode + 1]))
+    }
+    guard arguments.indices.contains(at + 2) else {
+        print("usage: ParrotFlow --slot-probe \"<left half>\" \"<right half>\"")
+        print("       ParrotFlow --slot-probe --encode \"<text>\"")
+        exit(2)
+    }
+    exit(SlotProbeCommand.run(left: arguments[at + 1], right: arguments[at + 2]))
+}
+
 if let at = arguments.firstIndex(of: "--sentence-probe") {
     guard #available(macOS 14, *) else {
         print("✗ the sentence probe needs macOS 14 or later")
