@@ -9,15 +9,22 @@ import NaturalLanguage
 ///     said     "you should see a parrot at the top right of your screen"
 ///     written  "You should see a parrot. At the top right of your screen."
 ///
-/// Every `word. Capital` boundary in the finished transcript is read three
-/// ways by `SentenceReadings` — with a period, with a comma, and with nothing
-/// at all — and the reading the language model scores highest is the one that
-/// is written. Nothing is compared to a threshold, so there is nothing to
-/// calibrate. Where the joined reading wins, the period is removed and the
-/// word after it is lowercased.
+/// Every boundary in the finished transcript is read three ways by
+/// `SentenceReadings` — with the mark the transcriber wrote, with a comma, and
+/// with nothing at all — and the reading the language model scores highest is
+/// the one that is written. Nothing is compared to a threshold, so there is
+/// nothing to calibrate. Where the joined reading wins, the mark is removed
+/// and the word after it is lowercased.
 ///
 /// The thresholds this used to carry repaired 26% of the cuts. The choice
-/// repairs 81%, and joins none of 172 real sentence endings.
+/// repairs 81% of the period cuts and joins none of 172 real sentence endings,
+/// and 82% of the question cuts at one wrong join in 111 real questions.
+///
+/// A pause is written `word? Capital` or `word? lowercase` about a quarter as
+/// often as `word. Capital`, so question marks are scanned as well. A period
+/// followed by a lowercase word is not: the transcriber did not start a
+/// sentence there, and the shape has never been measured. A capital with no
+/// mark in front of it is not either — it does not separate (AUC 0.750).
 ///
 /// English only. The reading is scored by an English base model, and the mark
 /// set is English: French wants `:` where English does not.
@@ -43,7 +50,8 @@ actor SentenceJoin {
         }
     }
 
-    /// One boundary, read every way. `change` reads `parrot. At -> parrot at`.
+    /// One boundary, read every way. `change` reads `parrot. At -> parrot at`,
+    /// with the mark the transcriber wrote.
     struct Reading: Sendable {
         let change: String
         let scores: [SentenceReadings.Score]
@@ -63,41 +71,67 @@ actor SentenceJoin {
         }
     }
 
-    /// One `word. Capital` boundary: the period, and the word after it.
+    /// One boundary: where the mark is, which mark it is, and the word after
+    /// it. The mark travels with the boundary so the readings, the log line
+    /// and the change all name the one the transcriber wrote.
     struct Boundary {
-        let period: String.Index
+        let at: String.Index
+        let mark: Character
         let next: Range<String.Index>
     }
 
-    /// Tags a capital must survive. A name stays a name once the period goes.
+    /// Marks that only start a boundary in front of a capital.
+    ///
+    /// `word? lowercase` is a boundary: of 19 such lines in the user's
+    /// dictation, 7 hold a spurious mark and 12 a real question, so the reading
+    /// has to decide and no rule can. `word. lowercase` is left alone, because
+    /// that shape has never been measured.
+    static let capitalOnly: Set<Character> = ["."]
+
+    /// Where a boundary is looked for: the sentence enders in the configured
+    /// mark list. The rest of the list — the comma — is a reading tried at a
+    /// boundary, not a place to find one.
+    static func scanned(_ marks: [String]) -> Set<Character> {
+        Set(marks.filter { SentenceReadings.enders.contains($0) }.compactMap(\.first))
+    }
+
+    /// Tags a capital must survive. A name stays a name once the mark goes.
     static let names: Set<String> = ["PersonalName", "PlaceName", "OrganizationName"]
 
     // MARK: - Finding the boundaries
 
-    /// Every place a period is followed by a capitalised word.
+    /// Every place one of `marks` is followed by a word.
     ///
-    /// Three things that look like one and are not. A period inside a run of
-    /// them is an ellipsis. A period after a single letter is an initial —
-    /// "J. Smith". A period after anything but a letter or a digit is closing
-    /// something rather than ending a sentence.
-    static func boundaries(in text: String) -> [Boundary] {
+    /// Three things that look like a boundary and are not. A mark inside a run
+    /// of them is an ellipsis or a stutter. A mark after a single letter is an
+    /// initial — "J. Smith". A mark after anything but a letter or a digit is
+    /// closing something rather than ending a sentence.
+    static func boundaries(in text: String, scanning marks: Set<Character>) -> [Boundary] {
         var found: [Boundary] = []
         var cursor = text.startIndex
-        while let period = text[cursor...].firstIndex(of: ".") {
-            cursor = text.index(after: period)
-            guard period > text.startIndex, cursor < text.endIndex, text[cursor] != "." else {
+        while let at = text[cursor...].firstIndex(where: { marks.contains($0) }) {
+            let mark = text[at]
+            cursor = text.index(after: at)
+            guard at > text.startIndex, cursor < text.endIndex, text[cursor] != mark else {
                 continue
             }
-            let word = text[..<period].reversed().prefix { $0.isLetter || $0.isNumber }
+            let word = text[..<at].reversed().prefix { $0.isLetter || $0.isNumber }
             guard word.count > 1 else { continue }
 
             var start = cursor
             while start < text.endIndex, text[start].isWhitespace {
                 start = text.index(after: start)
             }
-            guard start > cursor, start < text.endIndex, text[start].isUppercase else { continue }
-            let end = text[start...].firstIndex(where: \.isWhitespace) ?? text.endIndex
-            found.append(Boundary(period: period, next: start..<end))
+            guard start > cursor, start < text.endIndex, text[start].isLetter else { continue }
+            guard text[start].isUppercase || !capitalOnly.contains(mark) else { continue }
+            // The next word can carry the mark of the boundary after it —
+            // "…the format. Right? We have". The word stops before that mark,
+            // so the scan reaches it instead of stepping over it.
+            var end = text[start...].firstIndex(where: \.isWhitespace) ?? text.endIndex
+            while end > start, marks.contains(text[text.index(before: end)]) {
+                end = text.index(before: end)
+            }
+            found.append(Boundary(at: at, mark: mark, next: start..<end))
             cursor = end
         }
         return found
@@ -155,22 +189,22 @@ actor SentenceJoin {
         return word.prefix(1).lowercased() + word.dropFirst()
     }
 
-    /// The whole text with one period taken out, and where the word after it
+    /// The whole text with one mark taken out, and where the word after it
     /// then starts. Both halves of what `written` needs to tag.
     static func joining(_ text: String, at boundary: Boundary) -> (text: String, offset: Int) {
         var joined = text
-        joined.remove(at: boundary.period)
-        // The period sits before the word, so removing it moves the word one
+        joined.remove(at: boundary.at)
+        // The mark sits before the word, so removing it moves the word one
         // character left and nothing else moves at all.
         return (joined, text.distance(from: text.startIndex, to: boundary.next.lowerBound) - 1)
     }
 
     // MARK: - The pass
 
-    /// The transcript with the false periods taken out.
+    /// The transcript with the false sentence marks taken out.
     ///
     /// Every boundary is scored against the text as it arrived, not against
-    /// the text as it is being rebuilt. A join only removes a period, so the
+    /// the text as it is being rebuilt. A join only removes a mark, so the
     /// window a later boundary reads is the same words either way.
     ///
     /// Nothing here waits for the model. A dictation that arrives before the
@@ -179,7 +213,7 @@ actor SentenceJoin {
     func apply(to text: String, config: Config) async -> Outcome {
         let settings = config.transcription.sentences
         guard settings.enabled else { return .unchanged(text) }
-        let found = Self.boundaries(in: text)
+        let found = Self.boundaries(in: text, scanning: Self.scanned(settings.marks))
         guard !found.isEmpty else { return .unchanged(text) }
         guard await SentenceReadings.shared.isLoaded else {
             await SentenceReadings.shared.warm()
@@ -198,8 +232,9 @@ actor SentenceJoin {
             let scores: [SentenceReadings.Score]
             do {
                 scores = try await SentenceReadings.shared.read(
-                    left: String(text[..<boundary.period]),
+                    left: String(text[..<boundary.at]),
                     right: String(text[boundary.next.lowerBound...]),
+                    found: String(boundary.mark),
                     marks: settings.marks
                 )
             } catch {
@@ -214,9 +249,9 @@ actor SentenceJoin {
             let (whole, offset) = Self.joining(text, at: boundary)
             let now = Self.written(word, in: whole, at: offset, terms: terms)
             let before = String(
-                text[..<boundary.period].reversed().prefix { !$0.isWhitespace }.reversed()
+                text[..<boundary.at].reversed().prefix { !$0.isWhitespace }.reversed()
             )
-            let change = "\(before). \(word) -> \(before) \(now)"
+            let change = "\(before)\(boundary.mark) \(word) -> \(before) \(now)"
             let listed = scores
                 .map { String(format: "%@ %.2f", $0.key, $0.mean) }
                 .joined(separator: "  ")
@@ -227,8 +262,8 @@ actor SentenceJoin {
             readings.append(Reading(change: change, scores: scores, winner: best.key))
 
             if best.key == SentenceReadings.join {
-                rebuilt += text[cursor..<boundary.period]
-                rebuilt += text[text.index(after: boundary.period)..<boundary.next.lowerBound]
+                rebuilt += text[cursor..<boundary.at]
+                rebuilt += text[text.index(after: boundary.at)..<boundary.next.lowerBound]
                 rebuilt += now
                 cursor = boundary.next.upperBound
             }

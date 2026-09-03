@@ -1,6 +1,7 @@
 [
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "if it's because the release notes are not bigger than the height",
   "right": "Another features. If there is more than two fixes then there is",
   "winner": ",",
@@ -12,6 +13,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "what we're doing anymore.I thought we had a success with audio clips",
   "right": "We had a discussion about whether they make a different Vercel's rules",
   "winner": ".",
@@ -23,6 +25,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "though is that I didn't actually have the the bar fully filled",
   "right": "It just there's a little space between the end and the where",
   "winner": ",",
@@ -34,6 +37,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "with E4B? The yes-no?Also, if I understand correctly, the sequential doesn't hurt",
   "right": "It's the same score. Right? For example, in sentences with only one",
   "winner": ",",
@@ -45,6 +49,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "word and every LLM prompt receives the result of the previous one",
   "right": "So for example, if the first word was resolved. Then it is",
   "winner": ".",
@@ -56,6 +61,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "would just use Python for everything. I would drop Ollama in Swift",
   "right": "It's not necessarily it's not necessary.I would just implement a pipeline runner",
   "winner": ".",
@@ -67,6 +73,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "go to A remote AI provider.Here a feature is it's using parakeet",
   "right": "Blazing fast. local Transcription. Model.",
   "winner": ".",
@@ -78,6 +85,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "They can be selected with arrows left, right, and enter",
   "right": "And of course, the focus is there. When the hood appears. Show",
   "winner": ".",
@@ -89,6 +97,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "hesitations, mumbling, and hesitations and back and forth like For example this",
   "right": "I was with Peter, not with Peter, with James. And uh we",
   "winner": ".",
@@ -100,6 +109,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "recognize. For example, in my case it would be French and English",
   "right": "And then all the prompts would be localized. So instead of trying",
   "winner": ",",
@@ -111,6 +121,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "want. I want a tail. So I want a C L command",
   "right": "So it would be like a Swift script or a Python one.",
   "winner": ".",
@@ -122,6 +133,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "also I want a panel showing up when the appis laucnching",
   "right": "It seems like when you open the app, the only visible effect",
   "winner": ".",
@@ -133,6 +145,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "of the seven terms with none — that puts 23 rows back",
   "right": "Do not ship MFCC + DTW; it was chosen to be cheap,",
   "winner": ".",
@@ -144,6 +157,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "and the one sentence definition. At the beginning it could be mind",
   "right": "It could be mind from slack. With a good prompt in the",
   "winner": ".",
@@ -155,6 +169,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "so the point was to ed to iterate on the dictating pill",
   "right": "So the HUD we see while dictating.Can you make a few suggestions?We",
   "winner": ",",
@@ -166,6 +181,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "But there can be a replacement",
   "right": "Why can't we count it?",
   "winner": ",",
@@ -177,6 +193,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "So I was prompted but declined before I dictated anything",
   "right": "Then I dictated something, asked to fix grammar. And nothing happened.",
   "winner": ".",
@@ -188,6 +205,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "it For claude code for now so we can have an idea",
   "right": "Make it a system pipeline stage similarly to numbers replacements or fuzzy.",
   "winner": ".",
@@ -199,6 +217,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "use a reject transform and add simple date transformation for the script",
   "right": "For the pipeline you want to add the grammar check only on",
   "winner": ".",
@@ -210,6 +229,7 @@
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "Then mention Ollama setup. So if the model is there, fine",
   "right": "If Ollama is there but not the model, just say you're download",
   "winner": ".",
@@ -221,6 +241,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "alive is not working because the first usage of the LLM with.",
   "right": "The vocabulary is slower",
   "winner": "join",
@@ -232,6 +253,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "So okay, sure, let's rebase let's get.",
   "right": "In your the scratch pad",
   "winner": "join",
@@ -243,6 +265,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "A local, fast and programmable dictation tool shaped around.",
   "right": "Your voice and your work",
   "winner": "join",
@@ -254,6 +277,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "I mean, can we use Olama as an.",
   "right": "Interface for commercial models",
   "winner": "join",
@@ -265,6 +289,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "I want to do all this in.",
   "right": "Another in a subsequent one",
   "winner": "join",
@@ -276,6 +301,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "and btw when pressing Enter to submit the text the hud.",
   "right": "Should also vanish immediatly and stop decaying",
   "winner": "join",
@@ -287,6 +313,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Context could be the dictation before or.",
   "right": "After, or what was on the screen",
   "winner": "join",
@@ -298,6 +325,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "The script has not changed, the permissions were still there, and.",
   "right": "Parakeet was immediately available",
   "winner": "join",
@@ -309,6 +337,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "before the judge and only let the judge decide between what was.",
   "right": "Heard by the decoder and what the decoder found similar",
   "winner": "join",
@@ -320,6 +349,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "I've done plenty I've.",
   "right": "Done it plenty of times now",
   "winner": "join",
@@ -331,6 +361,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Do a grammar check on the selected text.",
   "right": "And also write a section about what's gonna be installed succinctly",
   "winner": ",",
@@ -342,6 +373,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "pinned row could clear a newer.",
   "right": "Prompt after focus advances",
   "winner": "join",
@@ -353,6 +385,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Mira and Mira were on.",
   "right": "Vacation and have visited Versailles Castle while the app was being deployed",
   "winner": "join",
@@ -364,6 +397,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "I'd like to use some sort of.",
   "right": "Object programming, interface and implementation classes on top",
   "winner": "join",
@@ -375,6 +409,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "So how would you.",
   "right": "Use in practice a negative example",
   "winner": "join",
@@ -386,6 +421,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Can you give me an.",
   "right": "Example so that I understand visually",
   "winner": "join",
@@ -397,6 +433,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "ordinary word, however much.",
   "right": "It looks like one of them",
   "winner": "join",
@@ -408,6 +445,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Can you make the.",
   "right": "Type menu more visible because it seems like it's very small compared",
   "winner": "join",
@@ -419,6 +457,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Okay, the same happened but there was another still window.",
   "right": "From a maybe a previous process still open",
   "winner": "join",
@@ -430,6 +469,7 @@
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "As usual, check Greptile reviews, address comments, and continue.",
   "right": "Until Greptile is happy",
   "winner": "join",
@@ -437,6 +477,246 @@
    ",": -3.2308,
    ".": -4.3363,
    "join": -2.7409
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "But that is not the evaluation format. Right",
+  "right": "We have a markdown format generated with a script from the thermal",
+  "winner": "?",
+  "mean": {
+   ",": -5.0898,
+   "?": -5.0011,
+   "join": -5.4792
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "What is enabled for?Can we just enable them by default",
+  "right": "What would it change?Also is there a better place to put router",
+  "winner": ",",
+  "mean": {
+   ",": -3.9177,
+   "?": -3.9834,
+   "join": -4.1526
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "we don't have audio calibration, can you simplify the Claude onboarding procedure",
+  "right": "Give me the main steps that the Claude onboarding procedure will do.",
+  "winner": "?",
+  "mean": {
+   ",": -3.294,
+   "?": -3.2426,
+   "join": -3.6342
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "Again about ordering. Where is the ordering there",
+  "right": "And I don't understand where the 25000 pairs come from so you",
+  "winner": "?",
+  "mean": {
+   ",": -3.1406,
+   "?": -3.0329,
+   "join": -3.2182
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "So what happened here",
+  "right": "How many times did the prompt run?",
+  "winner": "?",
+  "mean": {
+   ",": -4.2509,
+   "?": -4.1002,
+   "join": -4.9657
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "we land this to prod? What is the magnitude of the change",
+  "right": "How many PRs would we have to ship?",
+  "winner": "?",
+  "mean": {
+   ",": -4.2028,
+   "?": -4.0261,
+   "join": -4.6543
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "things we have tried. where does spelling candidate come from? text rules",
+  "right": "And btw how do accoustic similarity is measured.",
+  "winner": ",",
+  "mean": {
+   ",": -5.9919,
+   "?": -6.2055,
+   "join": -6.3905
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "So audio clips are still in",
+  "right": "I thought all the experiments we made were in f favor of",
+  "winner": ",",
+  "mean": {
+   ",": -6.2287,
+   "?": -6.3328,
+   "join": -6.5318
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "So if we could combine transforms into transforms, wouldn't it be easier",
+  "right": "We could have groups. Use the AI to identify the first name",
+  "winner": "?",
+  "mean": {
+   ",": -4.9373,
+   "?": -4.7363,
+   "join": -5.4272
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "Can you implement some basic formatting rules",
+  "right": "Again a Python transform, I suppose, but for example if I dictate",
+  "winner": "?",
+  "mean": {
+   ",": -5.2356,
+   "?": -4.9798,
+   "join": -5.6493
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "Does the latest release include the changes?",
+  "right": "In the config example",
+  "winner": "join",
+  "mean": {
+   ",": -6.5446,
+   "?": -6.7433,
+   "join": -5.504
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "Are you testing against that?",
+  "right": "Same plant we use in GPT Luna that does pretty much everything",
+  "winner": "join",
+  "mean": {
+   ",": -5.9797,
+   "?": -6.1438,
+   "join": -5.9056
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "But what is a rule?",
+  "right": "If it's not a substitution",
+  "winner": ",",
+  "mean": {
+   ",": -3.7699,
+   "?": -4.0366,
+   "join": -4.1886
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "And what if you?",
+  "right": "Have several words in a sentence",
+  "winner": "join",
+  "mean": {
+   ",": -4.6872,
+   "?": -5.1829,
+   "join": -3.5982
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "So if we could combine?",
+  "right": "Transforms into transforms, wouldn't it be easier",
+  "winner": "join",
+  "mean": {
+   ",": -4.3884,
+   "?": -4.7321,
+   "join": -3.7069
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "what is the command for the llm?",
+  "right": "Vocab judge in the config",
+  "winner": "?",
+  "mean": {
+   ",": -7.0322,
+   "?": -6.7963,
+   "join": -7.2856
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "How does a prompt work when several vocabulary terms?",
+  "right": "Are in the same transcription",
+  "winner": "join",
+  "mean": {
+   ",": -5.7768,
+   "?": -6.9,
+   "join": -3.7899
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "When I open the post-dictation?",
+  "right": "Menu with the buttons, hotkeys won't work",
+  "winner": "join",
+  "mean": {
+   ",": -4.7084,
+   "?": -5.444,
+   "join": -4.1
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "have the probability of the dot lower than the next word that?",
+  "right": "Don't make sense as a new sentence",
+  "winner": "join",
+  "mean": {
+   ",": -4.7908,
+   "?": -5.395,
+   "join": -3.7754
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "I mean if we had someone speak for longer, would?",
+  "right": "It give better results",
+  "winner": "join",
+  "mean": {
+   ",": -5.9299,
+   "?": -6.9357,
+   "join": -3.8142
   }
  }
 ]

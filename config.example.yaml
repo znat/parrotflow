@@ -81,14 +81,14 @@ transcription:
   languages: [en, fr]
 
   # A pause mid-sentence makes the transcriber write a period and capitalise
-  # the next word. English dictations are checked for that and the period is
-  # taken out again. Every boundary is read once per mark and once with no
-  # mark at all, and the reading the model scores highest is written. On by
-  # default, and only where the model is already on disk. `sentences: false`
-  # turns it off.
+  # the next word, or writes a question mark. English dictations are checked
+  # for that and the mark is taken out again. Each boundary is read three ways
+  # — the mark it carries, the comma, and no mark at all — and the reading the
+  # model scores highest is written. On by default, and only where the model is
+  # already on disk. `sentences: false` turns it off.
   #
   # sentences:
-  #   marks: [".", ","]  # the marks tried beside removing the period
+  #   marks: [".", ",", "?"]  # `.` and `?` are scanned, `,` is read beside them
 
   # What a transcript runs through, in order. Remove a line to skip that
   # stage. One list for every language: a step that should only run in one

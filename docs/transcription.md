@@ -485,8 +485,8 @@ said     "you should see a parrot at the top right of your screen"
 written  "You should see a parrot. At the top right of your screen."
 ```
 
-After the vocabulary pass, every `word. Capital` boundary in an English
-transcript is read three ways and scored by a small causal language model
+After the vocabulary pass, every such boundary in an English transcript is read
+three ways and scored by a small causal language model
 (`mlx-community/Qwen3-0.6B-Base-4bit`, 320 MB):
 
 ```
@@ -498,8 +498,21 @@ transcript is read three ways and scored by a small causal language model
 Each reading is the log-probability of its continuation divided by its token
 count, and the highest wins. Nothing is compared to a threshold, so there is
 nothing to calibrate. The marks are `transcription.sentences.marks`, default
-`[".", ","]`; `;` and `:` were measured and never changed a decision in
+`[".", ",", "?"]`; `;` and `:` were measured and never changed a decision in
 English.
+
+The list does two jobs. `.` and `?` are where a boundary is looked for; the
+comma is a reading tried at one. The first reading is always the mark the
+transcriber wrote, so a `word? Capital` boundary is read `"? Word"`, `", word"`
+and `" word"`. Reading every ender at every boundary was measured too and is
+worse: 259 of 325 question cuts repaired against 265, for a fourth forward pass.
+
+A question mark counts even when the next word is lowercase. Of 19 such lines
+in one speaker's dictation, 7 hold a mark that should go and 12 a real
+question, so the reading has to decide. A period followed by a lowercase word is
+left alone: the transcriber did not start a sentence there and the shape has
+never been measured. A capital with no mark in front of it is left alone too —
+it does not separate (AUC 0.750 over 26 hand-labelled cases).
 
 Three things are load-bearing. Per token, not summed: on summed
 log-probability the joined reading wins by being shortest, which repairs 97% of
@@ -509,14 +522,28 @@ the join. And the three readings go into one padded forward pass, which costs
 50 ms against 70 ms for three passes; a shared KV cache for the prefix is
 slower still.
 
-Measured over 172 real periods and 140 cuts of one speaker's dictation: 81% of
-the cuts repaired, no real period joined. The two thresholds this stage used to
-carry repaired 26%, and the higher one could not be raised — it was set by the
-single lowest-scoring real ending.
+Measured over one speaker's dictation. Periods: 81% of 140 cuts repaired, none
+of 172 real periods joined. Question marks: 82% of 325 cuts repaired, and **one
+wrong join in 111 real questions**. The two thresholds this stage used to carry
+repaired 26% of the period cuts, and the higher one could not be raised — it was
+set by the single lowest-scoring real ending.
 
-Joining removes the period and lowercases the word after it. Not every capital
+The question shape is not silent-safe the way the period shape is. One wrong
+join in 111 bounds the true rate at 4.9 per 100 with 95% confidence, against 1.7
+for the period shape. The wrong join is a real question ending, and it loses to
+the join by 0.045 of a log-probability:
+
+```
+said     ... what's the best grammatical model we can use? For now part flow
+         is open source so doesn't make a big issue.
+written  ... what's the best grammatical model we can use for now part flow
+         is open source so doesn't make a big issue.
+```
+
+Joining removes the mark and lowercases the word after it. Not every capital
 there is because of the period: "I will ask him. Nathan knows the answer" must
 not become "ask him nathan knows". So the rule asks for a reason to lowercase.
+A word that was already lowercase is left as it is.
 `I` and its contractions keep the capital, so does a word in capitals
 throughout, so does a `PersonalName`, `PlaceName` or `OrganizationName` from
 `NLTagger`, and so does a word `NLTagger` gives no lemma for — the lexicon has

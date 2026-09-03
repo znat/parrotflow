@@ -3,15 +3,16 @@
 #
 #   scripts/check-sentence-probe.sh [tolerance]
 #
-# tests/sentence-boundary-cases.json holds 40 boundaries from a scored set of
-# the user's own dictation, half real periods and half pauses that cut one
-# sentence in two, with the per-token score of every reading and the winner.
-# This answers "does this build still read a boundary the same way": the window,
-# the three continuations, the padded batch, the log-softmax and the argmax.
-# Regenerate it with scripts/sentence-probe-reference.py readings.
+# tests/sentence-boundary-cases.json holds 60 boundaries from a scored set of
+# the user's own dictation: 40 written with a period and 20 with a question
+# mark, half of each real and half pauses that cut one sentence in two, with
+# the per-token score of every reading and the winner. This answers "does this
+# build still read a boundary the same way": the window, the three
+# continuations, the padded batch, the log-softmax and the argmax. Regenerate it
+# with scripts/sentence-probe-reference.py readings.
 #
-# One loaded process for all 40, through `--sentence-probe --bench`. A process
-# per case would pay the 1.3s model load forty times.
+# One loaded process for all 60, through `--sentence-probe --bench`. A process
+# per case would pay the 1.3s model load sixty times.
 #
 # Not in `make test`: it needs the 320 MB model, which CI has no business
 # downloading. Run it by hand after touching SentenceReadings.
@@ -29,7 +30,9 @@ export PARROTFLOW_CONFIG_DIR="$WORK/config"
 python3 -c '
 import json, sys
 cases = json.load(open(sys.argv[1]))
-json.dump([{"left": c["left"], "right": c["right"]} for c in cases], open(sys.argv[2], "w"))
+json.dump([
+    {"left": c["left"], "right": c["right"], "mark": c.get("mark", ".")} for c in cases
+], open(sys.argv[2], "w"))
 ' "$ROOT/tests/sentence-boundary-cases.json" "$WORK/cases.json" || {
   echo "  ✗ tests/sentence-boundary-cases.json could not be read"; exit 1; }
 
@@ -56,7 +59,8 @@ for i, case in enumerate(cases):
     if gap <= tolerance and row["winner"] == case["winner"]:
         passed += 1
     else:
-        print("  ✗ %s. %s" % (case["left"].rstrip("."), case["right"].split()[0]))
+        print("  ✗ %s%s %s" % (
+            case["left"].rstrip(".?!"), case.get("mark", "."), case["right"].split()[0]))
         print("      winner %s, stored %s   gap %.4f" % (
             row["winner"], case["winner"], gap))
 

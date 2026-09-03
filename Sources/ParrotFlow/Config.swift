@@ -1652,26 +1652,30 @@ struct Config: Decodable, Equatable {
         /// at all.
         var languages: [String] = ["en"]
 
-        /// When a period the transcriber wrote is taken out again — see
+        /// When a mark the transcriber wrote is taken out again — see
         /// `SentenceJoin`.
         ///
-        ///     sentences: false          never look at a boundary
+        ///     sentences: false               never look at a boundary
         ///     sentences:
-        ///       marks: [".", ","]       the marks tried beside the join
+        ///       marks: [".", ",", "?"]       what a boundary can be written
         ///
         /// Two spellings, like `review:` on a pipeline step: a bare `false`
         /// turns the stage off, anything else says what it runs with.
         ///
-        /// There is no threshold. Every boundary is read as many ways as there
-        /// are marks, plus once with no mark at all, and the reading the model
-        /// scores highest is the one that is written. `;` and `:` were measured
-        /// and never changed a decision in English, so the default is the two
-        /// that do.
+        /// One list, two jobs. The sentence enders in it — `.` and `?` — are
+        /// where a boundary is looked for. Everything else in it — the comma —
+        /// is a reading tried at every boundary. So a boundary is read three
+        /// ways: the mark it carries, the comma, and no mark at all. Drop `?`
+        /// from the list and question marks stop being scanned.
+        ///
+        /// There is no threshold; the reading the model scores highest is the
+        /// one that is written. `;` and `:` were measured and never changed a
+        /// decision in English, so they are not in the default.
         var sentences: Sentences = Sentences()
 
         struct Sentences: Decodable, Equatable {
             var enabled = true
-            var marks: [String] = [".", ","]
+            var marks: [String] = [".", ",", "?"]
 
             /// Keys still read and no longer acted on, for `notices()`.
             var legacy: [String] = []
@@ -1707,6 +1711,18 @@ struct Config: Decodable, Equatable {
                             value: "an empty list",
                             expected: "at least one mark — with none, joining is the only"
                                 + " reading and every period would be removed"
+                        )
+                    }
+                    // The enders in the list are where a boundary is looked
+                    // for. With none the stage finds nothing and does nothing,
+                    // which is what `sentences: false` is for.
+                    guard kept.contains(where: { SentenceReadings.enders.contains($0) }) else {
+                        throw ConfigError.invalidValue(
+                            key: "transcription.sentences.marks",
+                            value: kept.map { "`\($0)`" }.joined(separator: ", "),
+                            expected: "at least one of `.`, `?` or `!` — those are where a"
+                                + " boundary is looked for, so with none the stage never runs."
+                                + " Use `sentences: false` to turn it off"
                         )
                     }
                     // A mark is one punctuation character. Any word here would
