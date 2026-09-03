@@ -2027,6 +2027,17 @@ struct Config: Decodable, Equatable {
                             + " map — `slot_floor: {en: 0.20, fr: 0.30}`"
                     )
                 }
+                // A language nothing dictates in is a floor that never runs.
+                // Refused rather than kept, because a key that loads and does
+                // nothing is the failure `problems()` exists to prevent.
+                let unknown = written.keys.filter { !DictationLanguage.supported.contains($0) }
+                guard unknown.isEmpty else {
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: unknown.sorted().map { "`\($0)`" }.joined(separator: ", "),
+                        expected: "one of \(DictationLanguage.supported.joined(separator: ", "))"
+                    )
+                }
                 var floors: [String: Double] = [:]
                 for (language, floor) in written {
                     floors[language] = try Language.checked(

@@ -241,7 +241,8 @@ at a time and a language it leaves out keeps its built-in floor.
 0.20 in English and 0.30 in French are the built-in values. French gaps are
 about a third narrower, and no single number serves both: on a 201-case French
 bench the English floor wrongly refuses 7 correct rewrites of 84 and 0.30
-refuses 2. It must be above 0 and at most 2.
+refuses 2. It must be above 0 and at most 2, and a map key has to be a language
+the app supports — one that is not is refused rather than silently ignored.
 
 `--check-config` prints the resolved floor for every language you listed.
 

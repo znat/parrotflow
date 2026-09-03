@@ -212,12 +212,12 @@ run_config gates_both_off 'transcription:
 check "both switches off loads" "$code" "0"
 check "and neither model is read" "$(gates)" "slot off, portrait off"
 
-run_config gates_legacy_switch 'transcription:
+run_config gates_file_switch 'transcription:
   languages: [en]
   pipeline:
     - vocabulary' 'gate_sentence: false'
 
-check "the legacy gate_sentence: false loads" "$code" "0"
+check "gate_sentence: false loads" "$code" "0"
 check "and turns both sentence tests off, naming the key" \
   "$(gates)" "slot on, portrait off  (the sentence tests are off — \`vocabulary.gate_sentence: false\`)"
 
@@ -267,6 +267,15 @@ run_config floor_bad_map 'transcription:
 check "an out-of-range language in a map is refused" "$code" "1"
 check "and the message names that language" \
   "$(printf '%s\n' "$out" | grep -c 'pipeline.vocabulary.slot_floor.fr')" "1"
+
+run_config floor_bad_language 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: vocabulary, slot_floor: {fe: 0.30}}'
+
+check "a language nothing dictates in is refused" "$code" "1"
+check "and the message says which languages there are" \
+  "$(printf '%s\n' "$out" | grep -c 'one of en, fr')" "1"
 
 run_config floor_bad_shape 'transcription:
   languages: [en]
