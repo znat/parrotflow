@@ -14,8 +14,8 @@ import MLXLMCommon
 ///
 /// The first reading is the mark the transcriber actually wrote, so a
 /// `word? Capital` boundary is read `"? Word"`, `", word"` and `" word"`. A
-/// boundary with no mark is read four ways — see `bare` — because the text as
-/// decoded is then a candidate rather than what happens by default.
+/// boundary with no mark is read four ways — see `bareReadings` — because the
+/// text as decoded is then a candidate rather than what happens by default.
 /// Reading every configured ender at every boundary was measured too and is
 /// worse: 259 of 325 question cuts repaired against 265, for a fourth forward
 /// pass.
@@ -122,7 +122,7 @@ actor SentenceReadings {
     /// The other enders are left out. A boundary already carries one, and
     /// swapping a period for a question mark is not a repair this stage makes.
     static func readings(found: String, marks: [String]) -> [Reading] {
-        guard !found.isEmpty else { return bare(marks: marks) }
+        guard !found.isEmpty else { return bareReadings(marks: marks) }
         return ([found] + marks.filter { !enders.contains($0) && $0 != found })
             .map { Reading(key: $0, mark: $0, capital: enders.contains($0)) }
             + [Reading(key: join, mark: "", capital: false)]
@@ -138,7 +138,7 @@ actor SentenceReadings {
     /// One ender, not every configured one. Which sentence mark belongs here is
     /// a question this stage does not answer — it never inserts one — so a
     /// second ender would buy a fifth forward pass and no decision.
-    static func bare(marks: [String]) -> [Reading] {
+    private static func bareReadings(marks: [String]) -> [Reading] {
         (marks.first { enders.contains($0) }.map {
             [Reading(key: $0, mark: $0, capital: true)]
         } ?? [])
