@@ -426,13 +426,14 @@ struct Pipeline: Equatable, Codable {
     /// the stage then has to re-anchor by searching for the words — which is
     /// the mechanism that put the menu on the wrong `Versailles` (F3, F10).
     ///
-    /// Nothing that rewrites the transcript may run above it.
+    /// Nothing that rewrites the transcript may run above it, except
+    /// `interpret` — see below.
     ///
     /// The stage reads spans the acoustic pass measured before the pipeline
     /// started, and any edit above it moves them (F10). The exact pass used to
-    /// be the one exception, because it ran as a separate `replacements` stage
+    /// be an exception too, because it ran as a separate `replacements` stage
     /// and the judge needs the rules to have fired; it is inside this stage
-    /// now, so there is no exception left to state.
+    /// now.
     private func vocabularyOrderProblems() -> [String] {
         guard let judge = stages.firstIndex(of: .vocabulary) else { return [] }
         // `interpret` is the exception. It ran above the whole pipeline until

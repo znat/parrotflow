@@ -473,10 +473,11 @@ actor Transcriber {
         }
         Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
-        // Before the pipeline, because this is the last point where the words
-        // still line up with the audio they came from. Every text stage after
-        // it — numbers especially — rewrites words the token timings index.
-        var text = result.text
+        // Nothing rewrites the transcript here any more. The last pass that
+        // did — the boundary readings — is the `interpret` step, and it is
+        // handed the token timings so it can still line the words up against
+        // the audio they came from.
+        let text = result.text
         var vocabularyCount = 0
         var vocabularyChanges = ""
         // What the pass proposed and did not write, with the text it measured
@@ -509,8 +510,7 @@ actor Transcriber {
             // 320 MB and a 1.3s load, and a dictation never waits for either.
             // Fetched for a pipeline that holds the step and for no other, so
             // deleting the line stops the download.
-            if #available(macOS 14, *),
-               Pipeline.resolved(config: config).stages.contains(.interpret) {
+            if Pipeline.resolved(config: config).stages.contains(.interpret) {
                 Task { await SentenceReadings.shared.warm() }
             }
             // The set the sound pass actually reads, not the shorter one the
