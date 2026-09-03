@@ -531,7 +531,7 @@ enum PanelsCommand {
     private static func setupSize(_ view: AnyView) -> NSSize {
         let fitting = NSHostingView(rootView: view).fittingSize
         return NSSize(
-            width: PermissionMetrics.width,
+            width: PermissionMetrics.setupWidth,
             height: fitting.height > 0 ? fitting.height : PermissionMetrics.setupHeight
         )
     }
