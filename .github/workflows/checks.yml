@@ -247,12 +247,6 @@ jobs:
       - name: No speaker audio in the repository
         run: scripts/check-no-voice.sh
 
-      # The BPE tokenizer is hand-written and its mistakes are silent: a wrong
-      # id scores nothing at every threshold and raises no error. This runs on
-      # tokenizer.json alone, 2 MB, never the 300 MB model.
-      - name: The tokenizer against HuggingFace's own
-        run: scripts/check-tokenizer.sh
-
       # The slot tokenizer is swift-transformers over mmBERT-small's Gemma-style
       # file, and its mistakes are just as quiet: a lost prefix space or a
       # dropped accent changes the ten words the gate reads and raises nothing.

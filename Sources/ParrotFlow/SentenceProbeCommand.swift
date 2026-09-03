@@ -16,10 +16,6 @@ import MLX
 ///       reading   join      -4.5571  4
 ///       winner    join
 ///
-/// `--encode "<text>"` prints ModernBERT's ids and loads no model, which is
-/// what `scripts/check-tokenizer.sh` compares against the reference tokenizer.
-/// That tokenizer is the vocabulary slot gate's, not this stage's.
-///
 /// `--bench <cases.json> --out <scores.json>` scores a whole file in one loaded
 /// process — `[{"left": …, "right": …}]` in, one row of scores out, with the
 /// milliseconds each decision took. A row may carry `"mark": "?"` where the
@@ -157,20 +153,5 @@ enum SentenceProbeCommand {
 
         done.wait()
         return exitCode
-    }
-
-    /// The tokenizer of the masked model the vocabulary slot gate reads. No
-    /// model, so this answers on a machine that has never run a dictation.
-    static func encode(_ text: String) -> Int32 {
-        do {
-            let tokenizer = try BPETokenizer.load(contentsOf: SentenceProbe.tokenizerURL)
-            let ids = tokenizer.encode(text)
-            print("ids \(ids.map(String.init).joined(separator: ","))")
-            print("tokens \(ids.compactMap { tokenizer.word(of: $0)?.debugDescription }.joined(separator: " "))")
-            return 0
-        } catch {
-            print("✗ \(error.localizedDescription)")
-            return 1
-        }
     }
 }

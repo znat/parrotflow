@@ -7,11 +7,11 @@ import Foundation
 /// asks it for the ten words a position expects, and `SlotGate` asks it what
 /// part of speech those words are. Both run over `SlotProbe`.
 ///
-/// **Why not ModernBERT, which is already here.** ModernBERT is English-only,
-/// so the whole vocabulary gate is English-only. mmBERT-small covers 1,800
-/// languages and ties it on the English bench — 192/238 each at the shipped
-/// floor, AUC 0.888 against 0.887. That is what makes a French gate possible,
-/// and it is the whole reason for the swap.
+/// **Why not ModernBERT, which this stage used to read.** ModernBERT is
+/// English-only, so the whole vocabulary gate was English-only. mmBERT-small
+/// covers 1,800 languages and ties it on the English bench — 192/238 each at
+/// the shipped floor, AUC 0.888 against 0.887. That is what makes a French gate
+/// possible, and it is the whole reason for the swap.
 ///
 /// It is not cheaper. The weights are 282 MB against ModernBERT's 299, but the
 /// tokenizer is 18 MB against 2, so the cache is the same size. A forward pass
@@ -21,16 +21,12 @@ import Foundation
 /// **It was not given the boundary job.** mmBERT loses that one badly — 59% of
 /// spurious breaks repaired against ModernBERT's 83%, three quarters of the loss
 /// in the `P(".")` term alone. It does not know where an English sentence ends.
-/// That stage reads Qwen now. With this change no pipeline stage reads
-/// ModernBERT, and `SentenceModel`, `SentenceProbe` and `BPETokenizer` go in a
-/// follow-up of their own.
+/// That stage reads Qwen now, and ModernBERT has left the app.
 ///
 /// The weights are fp16, which is what `ct.convert` writes for an ML program by
 /// default. Against the fp32 PyTorch model on the 238-case bench it changes no
 /// decision, and the gaps agree to 0.031.
 ///
-/// **A copy of `SentenceModel`, deliberately.** That one is ModernBERT's loader
-/// and leaves with it, so a base class the two shared would leave too.
 @available(macOS 14, *)
 actor SlotModel {
 

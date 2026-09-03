@@ -140,43 +140,14 @@ actor Transcriber {
         setStatus(.downloading("\(label) \(percent)%", blocking: true))
     }
 
-    /// The sentence model fetch, once per process. Cleared when it fails, so
-    /// the next English dictation tries again.
-    private var sentenceModelFetch: Task<Void, Never>?
+    /// The slot model fetch, once per process. Cleared when it fails, so the
+    /// next English dictation tries again.
+    private var slotModelFetch: Task<Void, Never>?
 
     /// True while that fetch is running. Its progress callback reaches this
     /// actor through an unstructured task, so a percentage can arrive after
     /// the fetch has already put the real status back — and the menu bar then
     /// keeps a finished download's number until something else writes to it.
-    private var sentenceModelRunning = false
-
-    /// Starts the sentence model download and does not wait for it.
-    ///
-    /// The vocabulary slot gate reads it, and that gate stands aside until the
-    /// weights are there, so awaiting it would park the first English dictation
-    /// behind 300 MB for no gain. It reports progress but never `.failed`: a
-    /// stage that stands aside must not put "Model error" in the menu bar.
-    func warmSentenceModel() {
-        guard sentenceModelFetch == nil else { return }
-        sentenceModelRunning = true
-        sentenceModelFetch = Task { [weak self] in
-            guard let self else { return }
-            var failed = false
-            do {
-                try await SentenceModel.shared.prepare { label in
-                    Task { await self.reportSentenceModel(label) }
-                }
-            } catch {
-                Log.write("sentence model: \(error.localizedDescription); nothing reads it yet")
-                failed = true
-            }
-            await self.finishSentenceModel(failed: failed)
-        }
-    }
-
-    /// The slot model fetch, once per process. Same shape and same reasons as
-    /// the sentence model above.
-    private var slotModelFetch: Task<Void, Never>?
     private var slotModelRunning = false
 
     /// Starts the slot model download and does not wait for it.
@@ -190,9 +161,6 @@ actor Transcriber {
         slotModelRunning = true
         slotModelFetch = Task { [weak self] in
             guard let self else { return }
-            // After the sentence model, not beside it. Two downloads at once
-            // halve the bandwidth of the one the menu bar is showing.
-            await self.pendingSentenceModelFetch()?.value
             var failed = false
             do {
                 try await SlotModel.shared.prepare { label in
@@ -207,10 +175,6 @@ actor Transcriber {
         }
     }
 
-    /// Hands the task out rather than awaiting it here, so the waiter does not
-    /// sit on this actor while a 300 MB download finishes.
-    private func pendingSentenceModelFetch() -> Task<Void, Never>? { sentenceModelFetch }
-
     private func reportSlotModel(_ label: String) {
         guard slotModelRunning else { return }
         onStatusChange(.downloading(label, blocking: false))
@@ -223,7 +187,7 @@ actor Transcriber {
     }
 
     /// The sound model fetch, once per process. Same shape and same reasons
-    /// as the sentence model above.
+    /// as the slot model above.
     private var soundModelFetch: Task<Void, Never>?
     private var soundModelRunning = false
 
@@ -270,26 +234,9 @@ actor Transcriber {
     /// percentage out of the menu bar, and the one somebody was watching
     /// appeared to stall.
     private func restoreStatusIfIdle() {
-        guard !sentenceModelRunning, !slotModelRunning, !soundModelRunning else { return }
+        guard !slotModelRunning, !soundModelRunning else { return }
         onStatusChange(status)
     }
-
-    private func reportSentenceModel(_ label: String) {
-        guard sentenceModelRunning else { return }
-        // Reported, not recorded. `status` says whether the transcriber can
-        // transcribe, and during this fetch it can.
-        onStatusChange(.downloading(label, blocking: false))
-    }
-
-    private func finishSentenceModel(failed: Bool) {
-        sentenceModelRunning = false
-        if failed { sentenceModelFetch = nil }
-        // Whatever was true before this started is true again. Usually
-        // `.ready`, which is what clears the label the fetch put up — unless
-        // the other fetch is still going, and then its label stays.
-        restoreStatusIfIdle()
-    }
-
 
     // MARK: - Transcription
 
@@ -549,10 +496,9 @@ actor Transcriber {
         // English.
         var joinedSentences = 0
         if Pipeline.language(of: text, config: config) == "en" {
-            // Both are fetched at launch now. These are the retry: a fetch
-            // that failed clears itself, and the next English dictation is the
-            // next chance to try again.
-            warmSentenceModel()
+            // Fetched at launch now. This is the retry: a fetch that failed
+            // clears itself, and the next English dictation is the next chance
+            // to try again.
             warmSlotModel()
             if #available(macOS 14, *), config.transcription.sentences.enabled {
                 Task { await SentenceReadings.shared.warm() }
