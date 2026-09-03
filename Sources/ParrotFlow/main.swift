@@ -165,18 +165,26 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
             cases: arguments[bench + 1], out: out, vectors: arguments.contains("--vectors")
         ))
     }
-    let halves = arguments[(at + 1)...].filter { !$0.hasPrefix("--") }
-    guard halves.count >= 2 else {
+    // Only `--bare` is taken as an option, and only the first one. Everything
+    // else is transcript, including a half that starts with a dash.
+    var bare = false
+    var halves: [String] = []
+    var index = at + 1
+    while index < arguments.count, halves.count < 2 {
+        if arguments[index] == "--bare", !bare {
+            bare = true
+        } else {
+            halves.append(arguments[index])
+        }
+        index += 1
+    }
+    guard halves.count == 2 else {
         print("usage: ParrotFlow --sentence-probe [--bare] \"<left half>\" \"<right half>\"")
         print("       ParrotFlow --sentence-probe --bench <cases.json>"
               + " [--out <scores.json>] [--vectors]")
         exit(2)
     }
-    exit(SentenceProbeCommand.run(
-        left: halves[halves.startIndex],
-        right: halves[halves.index(after: halves.startIndex)],
-        bare: arguments.contains("--bare")
-    ))
+    exit(SentenceProbeCommand.run(left: halves[0], right: halves[1], bare: bare))
 }
 
 if let at = arguments.firstIndex(of: "--sentence-join") {
