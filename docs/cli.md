@@ -729,6 +729,7 @@ scripts/check-tokenizer.sh         # the hand-written BPE against HuggingFace's 
 scripts/check-sentence-probe.sh    # the boundary score against coremltools (needs the model)
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
 scripts/check-sentence-case.sh     # the capital after a period the join removes
+scripts/check-invented-tail.sh     # the endings the decoder wrote over silence
 scripts/check-sentence-join.sh     # the two tiers of the sentence join (needs the model)
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal

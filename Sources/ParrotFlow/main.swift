@@ -94,6 +94,13 @@ if arguments.contains("--audio-recovery") {
     exit(AudioRecoveryCommand.run(casesPath: casesPath))
 }
 
+if arguments.contains("--invented-tail") {
+    let casesPath = arguments.firstIndex(of: "--cases").flatMap {
+        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+    }
+    exit(InventedTailCommand.run(casesPath: casesPath))
+}
+
 if let index = arguments.firstIndex(of: "--set-key") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --set-key <model> [--forget]")
