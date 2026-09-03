@@ -13,32 +13,50 @@ import Foundation
 /// accident costs somebody a launch.
 enum RetiredModels {
 
-    /// What ModernBERT left behind. The lock sits beside its directory rather
-    /// than inside it, which is why it is named separately.
-    private static let names = ["modernbert-base-64", "modernbert-base-64.lock"]
+    private static let cacheName = "modernbert-base-64"
 
-    /// Removes them once, quietly. A machine that never had them does nothing
-    /// and says nothing.
+    /// The lock the version that fetched this model took around its download.
+    /// It sits beside the cache directory rather than inside it, so a fetch
+    /// that deletes the cache does not delete the lock it is holding.
+    private static let lockName = "modernbert-base-64.lock"
+
+    /// Removes the cache once, quietly. A machine that never had it does
+    /// nothing and says nothing.
+    ///
+    /// The lock is taken first, and a launch that cannot take it leaves
+    /// everything alone. An older build can still be downloading into this
+    /// directory — `--sentence-model` from an old `/Applications` copy, or an
+    /// app that has not been replaced yet — and deleting the directory under it
+    /// fails its next write. `flock` follows the open file, not the name, so
+    /// unlinking the lock would not stop that process; it would only let a
+    /// third one take a fresh lock and start a second download.
     static func prune(in supportDirectory: URL) {
         let files = FileManager.default
         let models = supportDirectory.appendingPathComponent("models", isDirectory: true)
-        let present = names
-            .map { models.appendingPathComponent($0) }
-            .filter { files.fileExists(atPath: $0.path) }
-        guard !present.isEmpty else { return }
+        let cache = models.appendingPathComponent(cacheName, isDirectory: true)
+        let lock = models.appendingPathComponent(lockName)
+        guard files.fileExists(atPath: cache.path) else { return }
 
-        var removed: [String] = []
-        var failures: [String] = []
-        for url in present {
-            do {
-                try files.removeItem(at: url)
-                removed.append(url.lastPathComponent)
-            } catch {
-                failures.append("\(url.lastPathComponent) (\(error.localizedDescription))")
-            }
+        let handle = open(lock.path, O_CREAT | O_RDWR, 0o644)
+        guard handle >= 0 else { return }
+        defer { close(handle) }
+        guard flock(handle, LOCK_EX | LOCK_NB) == 0 else {
+            Log.write("models: the retired ModernBERT cache is in use;"
+                + " leaving it for the next launch")
+            return
         }
-        Log.write("models: removed the retired ModernBERT cache — "
-            + (removed.isEmpty ? "nothing" : removed.joined(separator: ", "))
-            + (failures.isEmpty ? "" : "; could not remove \(failures.joined(separator: ", "))"))
+
+        do {
+            try files.removeItem(at: cache)
+        } catch {
+            Log.write("models: could not remove the retired ModernBERT cache —"
+                + " \(error.localizedDescription)")
+            return
+        }
+        // Last, and still under the lock, so nothing is downloading when the
+        // name goes. Left behind if it will not go: an empty file is not worth
+        // a second error line.
+        try? files.removeItem(at: lock)
+        Log.write("models: removed the retired ModernBERT cache, about 300 MB")
     }
 }
