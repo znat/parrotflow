@@ -116,4 +116,78 @@ enum AppVariant {
 
         return NSAttributedString(string: "github.com/znat/parrotflow", attributes: attributes)
     }
+
+    /// What the app contains: the repository line, then every model it fetches
+    /// and every library that fetches or runs one.
+    ///
+    /// The About panel is the one surface that names a program this app did not
+    /// write, and it is the only place the licences are stated. Two paragraph
+    /// styles: the repository line stays centred, and a centred list is
+    /// unreadable, so everything under it goes left.
+    ///
+    /// Only models this build actually fetches are named. eSpeak NG is set
+    /// apart because it is the one name here that is not shipped and not
+    /// downloaded — nothing is distributed, so no GPL source offer applies; it
+    /// is named because the app runs it.
+    static var credits: NSAttributedString {
+        let left = NSMutableParagraphStyle()
+        left.alignment = .natural
+        left.paragraphSpacing = 3
+
+        let credits = NSMutableAttributedString(attributedString: repositoryLink)
+        credits.append(NSAttributedString(string: "\n\n"))
+
+        func line(_ text: String, size: CGFloat = 10.5, bold: Bool = false, dim: Bool = false) {
+            credits.append(NSAttributedString(string: text + "\n", attributes: [
+                .font: bold
+                    ? NSFont.boldSystemFont(ofSize: size) : NSFont.systemFont(ofSize: size),
+                .foregroundColor: dim ? NSColor.tertiaryLabelColor : NSColor.secondaryLabelColor,
+                .paragraphStyle: left,
+            ]))
+        }
+
+        /// A name in bold, then what it does and what it is under.
+        func item(_ name: String, _ role: String) {
+            let entry = NSMutableAttributedString(
+                string: name,
+                attributes: [
+                    .font: NSFont.boldSystemFont(ofSize: 10.5),
+                    .foregroundColor: NSColor.labelColor,
+                    .paragraphStyle: left,
+                ]
+            )
+            entry.append(NSAttributedString(string: " — \(role)\n", attributes: [
+                .font: NSFont.systemFont(ofSize: 10.5),
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .paragraphStyle: left,
+            ]))
+            credits.append(entry)
+        }
+
+        line("BUILT WITH", size: 9, bold: true, dim: true)
+        item("Parakeet TDT 0.6B v3", "speech recognition · CC BY 4.0")
+        item("Silero VAD", "finds where speech is · MIT")
+        item("CharsiuG2P", "pronunciations, for matching your terms by sound")
+        // Two lines because the code and the weights are not under the same
+        // terms, and the weights the app fetches are not the upstream ones.
+        line(
+            "MIT for the code · the Core ML weights it fetches are Apache 2.0;"
+                + " the upstream weights state no licence",
+            size: 10, dim: true
+        )
+        item("ModernBERT", "sentence boundaries · Apache 2.0")
+        item("Qwen3 Embedding 0.6B", "word vectors for the vocabulary gate · Apache 2.0")
+        item("MLX", "runs Qwen3 Embedding · MIT")
+        item("FluidAudio", "fetching and Core ML plumbing · Apache 2.0")
+
+        credits.append(NSAttributedString(string: "\n"))
+        item(
+            "eSpeak NG",
+            "GPL-3.0. Not distributed with ParrotFlow. If you install it yourself,"
+                + " ParrotFlow runs it as a separate program and reads its output."
+        )
+        line("github.com/espeak-ng/espeak-ng", size: 10, dim: true)
+
+        return credits
+    }
 }

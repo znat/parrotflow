@@ -42,6 +42,12 @@ actor SentenceReadings {
 
     static let shared = SentenceReadings()
 
+    /// The row the setup screen draws for it.
+    static let download = ModelDownload(
+        id: "sentence-readings", name: "Qwen3 0.6B Base", megabytes: 320, peak: 320,
+        group: .language, blocking: false
+    )
+
     /// `model.safetensors.index.json` is absent from this repository — the
     /// weights are one file — and listing it would fail the fetch.
     static let cache = MLXModelCache(
@@ -61,7 +67,8 @@ actor SentenceReadings {
             .appendingPathComponent("models/qwen3-0.6b-base-4bit", isDirectory: true),
         lockURL: AppVariant.supportDirectory
             .appendingPathComponent("models/qwen3-0.6b-base.lock"),
-        label: "sentence readings"
+        label: "sentence readings",
+        downloadID: download.id
     )
 
     static var directory: URL { cache.directory }
@@ -231,9 +238,18 @@ actor SentenceReadings {
         let task = Task<ModelContext, Error> { try await Self.build(progress: progress) }
         loading = task
         defer { loading = nil }
-        let built = try await task.value
-        loaded = built
-        return built
+        do {
+            let built = try await task.value
+            loaded = built
+            ModelDownloads.report(Self.download.id, .installed)
+            return built
+        } catch {
+            ModelDownloads.report(
+                Self.download.id,
+                .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
+            )
+            throw error
+        }
     }
 
     private static func build(
