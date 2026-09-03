@@ -30,7 +30,8 @@ actor WordVectors {
     /// The row the setup screen draws for it.
     static let download = ModelDownload(
         id: "word-vectors", name: "Qwen3 Embedding 0.6B", megabytes: 335, peak: 335,
-        group: .language, blocking: false
+        group: .language, blocking: false,
+        costOfFailure: "the sentence gate stands aside"
     )
 
     private static let repository = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"

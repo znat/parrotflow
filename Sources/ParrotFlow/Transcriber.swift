@@ -34,12 +34,15 @@ actor Transcriber {
     /// `Status.downloading` cannot drift apart.
     static let speechDownload = ModelDownload(
         id: "speech", name: "Parakeet TDT 0.6B v3", megabytes: 461, peak: 461,
-        group: .sound, blocking: true
+        group: .sound, blocking: true,
+        costOfFailure: "nothing transcribes without it"
     )
 
     static let voiceDownload = ModelDownload(
         id: "voice-detector", name: "Silero VAD", megabytes: 1, peak: 1,
-        group: .sound, blocking: true
+        group: .sound, blocking: true,
+        costOfFailure: "dictation runs without it, transcribing the whole clip"
+            + " rather than only where you spoke"
     )
 
     private var vad: VadManager?

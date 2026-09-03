@@ -848,12 +848,19 @@ private struct SetupPane: View {
         case ready
         case permissionLost
         case somethingDidNotArrive
+        case dictationOff
     }
 
-    /// A permission first: it is the only one of the four that cannot be fixed
-    /// by waiting, and it is fixed somewhere else.
+    /// A permission first: it is the only one of these that cannot be fixed by
+    /// waiting, and it is fixed somewhere else.
+    ///
+    /// An empty registry means `transcription.enabled` is false. `warmModels`
+    /// declares all five rows before this window opens and returns before
+    /// declaring any only on that one setting, so there is nothing else it can
+    /// mean.
     private var moment: Moment {
         if lostPermission != nil { return .permissionLost }
+        if downloads.rows.isEmpty { return .dictationOff }
         if downloads.blockingFailure != nil { return .somethingDidNotArrive }
         return downloads.speechIsIn ? .ready : .almostReady
     }
@@ -864,15 +871,16 @@ private struct SetupPane: View {
         return nil
     }
 
-    /// The model the title is about — the first one a dictation waits on, which
-    /// is the speech model.
-    private var speechName: String {
-        downloads.rows.first { $0.blocking }?.name ?? "The speech model"
+    /// The model still being waited for, which is the one the title is about.
+    private var awaited: ModelDownload? {
+        downloads.rows.first { $0.blocking && !$0.state.hasFailed } ?? downloads.blockingFailure
     }
 
     private var title: String {
         switch moment {
-        case .permissionLost: return "Something was switched off"
+        // A setting that is off is a setting that was switched off, whether
+        // the switch is in System Settings or in config.yaml.
+        case .permissionLost, .dictationOff: return "Something was switched off"
         case .somethingDidNotArrive: return "Something did not arrive"
         case .almostReady: return "Almost ready"
         case .ready: return hotkeyRegistered ? "Ready" : "Almost ready"
@@ -912,15 +920,22 @@ private struct SetupPane: View {
             guard let step = lostPermission else { return nil }
             return "\(step.title) is switched off. Turn it back on in System Settings,"
                 + " and this window updates itself."
+        case .dictationOff:
+            return "Dictation is switched off. Set transcription: enabled: true in"
+                + " config.yaml, then reopen this window."
         case .somethingDidNotArrive:
-            let opening = "\(speechName) could not be downloaded, and nothing transcribes"
-                + " without it."
+            // The row that failed, not the first one a dictation waits on: a
+            // voice detector that did not arrive must not be reported as a
+            // speech model that did not arrive.
+            guard let row = downloads.blockingFailure else { return nil }
+            let opening = "\(row.name) could not be downloaded, and \(row.costOfFailure)."
             // The key line finishes this sentence. Without a hotkey there is no
             // key line, and it would end on "or".
             return hotkeyRegistered ? "\(opening) Try again, or" : "\(opening) Try again"
         case .almostReady:
             guard hotkeyRegistered else { return unregisteredHotkey }
-            return "\(speechName) is still coming down. Once it is here,"
+            guard let row = awaited else { return nil }
+            return "\(row.name) is still coming down. Once it is here,"
         case .ready:
             return hotkeyRegistered ? nil : unregisteredHotkey
         }
@@ -936,7 +951,7 @@ private struct SetupPane: View {
 
     private var keySentence: (String, String)? {
         switch moment {
-        case .permissionLost: return nil
+        case .permissionLost, .dictationOff: return nil
         case .somethingDidNotArrive: return ("hold", "later and it tries again on its own.")
         case .almostReady: return ("hold", "and start dictating.")
         case .ready: return ("Hold", "and start dictating.")
@@ -947,11 +962,12 @@ private struct SetupPane: View {
     /// dictation waits for reaches the foot.
     private var primaryTitle: String {
         guard moment == .somethingDidNotArrive else { return "Done" }
-        return downloads.blockingFailure?.retryTitle ?? "Done"
+        return downloads.blockingFailure?.state.failure?.retryTitle ?? "Done"
     }
 
     private func primaryAction() {
-        if moment == .somethingDidNotArrive, downloads.blockingFailure?.retryTitle != nil {
+        if moment == .somethingDidNotArrive,
+           downloads.blockingFailure?.state.failure?.retryTitle != nil {
             onRetry()
         } else {
             onClose()

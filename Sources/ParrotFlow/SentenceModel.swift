@@ -26,7 +26,8 @@ actor SentenceModel {
     /// the compile finishes.
     static let download = ModelDownload(
         id: "sentence", name: "ModernBERT", megabytes: 288, peak: 600,
-        group: .language, blocking: false
+        group: .language, blocking: false,
+        costOfFailure: "a sentence a pause cut in two is left as it arrived"
     )
 
     private static let repository = "znaat/modernbert-coreml"
