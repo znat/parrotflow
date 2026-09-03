@@ -511,8 +511,55 @@ A question mark counts even when the next word is lowercase. Of 19 such lines
 in one speaker's dictation, 7 hold a mark that should go and 12 a real
 question, so the reading has to decide. A period followed by a lowercase word is
 left alone: the transcriber did not start a sentence there and the shape has
-never been measured. A capital with no mark in front of it is left alone too —
-it does not separate (AUC 0.750 over 26 hand-labelled cases).
+never been measured.
+
+### A capital with no mark in front of it
+
+A pause does not always make the transcriber write the mark. It writes
+`imports name definitions And all the things`, and that shape is about a third
+as common as `word. Capital`. It is scanned too, with a **fourth reading**: the
+text exactly as it was decoded.
+
+```
+". A before section B"     the sentence really ended
+" A before section B"      as decoded, a capital that belongs
+" a before section B"      a pause cut one sentence in two
+", a before section B"     it is really a comma
+```
+
+The fourth reading exists because there is no mark to take out. Everywhere else
+"leave it alone" is what happens when a mark wins; here it is a candidate of its
+own, and it is the one that saves `paste it into Outlook and the other apps`.
+Only the third writes anything. The period is never inserted — where a mark
+wins, the text is left as it was decoded and the decision is logged.
+
+Half of these capitals are correct and must not be touched: `Slack`, `English`,
+`Friday`, `TypeScript`, `Google Cloud`. Four rules refuse a candidate before any
+reading, on top of the ones that decide the word after a joined period:
+
+- a **run of two or more** capitals is never a candidate. Over 621 candidates
+  from one speaker it is 53% names — `Better Stack`, `Hugging Face` — and 13%
+  boundaries, so it is a different question and is left for one.
+- a **capital inside the word**: `WhatsApp`, `TypeScript`, `OpenAI`.
+- the **part of speech**, from the tag the lowercasing rule already asks for.
+  Only a conjunction, determiner, pronoun, adverb, preposition, particle,
+  interjection or verb goes on. A noun or an adjective here is a name, a
+  product or a title.
+- a **pause shorter than a second** in front of the capital, when the decoder's
+  word timings are there. This one is for latency, not safety: it removes 13%
+  of the candidates that reach the model. `--sentence-join` has no audio and
+  applies no gate.
+
+Measured over 7659 English dictations from one speaker. 2433 bare capitals,
+1645 refused by the lowercasing rules, and 236 of the rest reach the readings —
+**3.1 per 100 dictations, 2.7 after the pause gate**. On 110 hand-labelled
+candidates: **64% of the spurious capitals lowercased, no correct capital
+touched, and none of 15 real sentence starts joined.** The fourth reading is
+what makes the second number hold; without it four correct capitals are
+lowercased and not one repair is gained.
+
+#256 measured this shape at AUC 0.750 and dropped it. That was the threshold
+probe on ModernBERT, which has since been replaced.
 
 Three things are load-bearing. Per token, not summed: on summed
 log-probability the joined reading wins by being shortest, which repairs 97% of

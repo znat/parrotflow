@@ -41,7 +41,15 @@ fi
 pass=0; total=0
 while IFS= read -r text && IFS= read -r want && IFS= read -r why; do
   total=$((total + 1))
-  got="$("$BIN" --sentence-join --case "$text" 2>/dev/null | awk '$1 == "next" { print $4; exit }')"
+  # The line for this case's own boundary, not the first one printed. A text
+  # can hold several — "what I meant. Which one" has a bare "I" before the
+  # period — and only one of them is what the case is about.
+  got="$("$BIN" --sentence-join --case "$text" 2>/dev/null | awk -v w="$want" '
+    $1 == "next" {
+      a = tolower(substr($2, 1, 1)) substr($2, 2)
+      b = tolower(substr(w, 1, 1)) substr(w, 2)
+      if (a == b) { print $4; exit }
+    }')"
   if [ "$got" = "$want" ]; then
     pass=$((pass + 1))
     printf '  ✓  %-12s %s\n' "$got" "$why"

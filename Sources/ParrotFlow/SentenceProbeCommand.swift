@@ -61,7 +61,7 @@ enum SentenceProbeCommand {
                 for score in scores {
                     // `%@` ignores a width on this platform, so the column
                     // is padded here.
-                    let key = score.key.padding(toLength: 8, withPad: " ", startingAt: 0)
+                    let key = score.key.padding(toLength: 10, withPad: " ", startingAt: 0)
                     print(String(
                         format: "  reading   %@ %8.4f  %d%@",
                         key, score.mean, score.tokens,

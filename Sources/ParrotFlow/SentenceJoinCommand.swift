@@ -30,10 +30,19 @@ enum SentenceJoinCommand {
         if caseOnly {
             let terms = Array(config.vocabulary.terms.keys)
             let scan = SentenceJoin.scanned(config.transcription.sentences.marks)
-            for boundary in SentenceJoin.boundaries(in: text, scanning: scan) {
+            let found = (
+                SentenceJoin.boundaries(in: text, scanning: scan)
+                + SentenceJoin.bareBoundaries(in: text)
+            ).sorted { $0.next.lowerBound < $1.next.lowerBound }
+            for boundary in found {
                 let (whole, offset) = SentenceJoin.joining(text, at: boundary)
                 let word = String(text[boundary.next])
-                let now = SentenceJoin.written(word, in: whole, at: offset, terms: terms)
+                var now = SentenceJoin.written(word, in: whole, at: offset, terms: terms)
+                // A bare capital that the filter refuses is never read, so the
+                // word it would be written as is the word itself.
+                if boundary.mark == nil, !SentenceJoin.readable(word, in: whole, at: offset) {
+                    now = word
+                }
                 print("  next       \(word) -> \(now)")
             }
             return 0
@@ -65,7 +74,7 @@ enum SentenceJoinCommand {
         for reading in outcome.readings {
             print("  boundary   \(reading.change)")
             for score in reading.scores {
-                let key = score.key.padding(toLength: 8, withPad: " ", startingAt: 0)
+                let key = score.key.padding(toLength: 10, withPad: " ", startingAt: 0)
                 print(String(format: "  reading    %@ %8.4f  %d",
                              key, score.mean, score.tokens))
             }

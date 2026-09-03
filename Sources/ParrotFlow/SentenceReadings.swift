@@ -13,7 +13,9 @@ import MLXLMCommon
 ///     ", the vocabulary is slower"     it is really a comma
 ///
 /// The first reading is the mark the transcriber actually wrote, so a
-/// `word? Capital` boundary is read `"? Word"`, `", word"` and `" word"`.
+/// `word? Capital` boundary is read `"? Word"`, `", word"` and `" word"`. A
+/// boundary with no mark is read four ways — see `bare` — because the text as
+/// decoded is then a candidate rather than what happens by default.
 /// Reading every configured ender at every boundary was measured too and is
 /// worse: 259 of 325 question cuts repaired against 265, for a fourth forward
 /// pass.
@@ -67,6 +69,9 @@ actor SentenceReadings {
     /// The key of the reading that removes the period.
     static let join = "join"
 
+    /// The key of the reading that leaves a bare capital exactly as decoded.
+    static let asDecoded = "as-decoded"
+
     /// Marks after which the next word keeps its capital.
     static let enders: Set<String> = [".", "?", "!"]
 
@@ -117,9 +122,31 @@ actor SentenceReadings {
     /// The other enders are left out. A boundary already carries one, and
     /// swapping a period for a question mark is not a repair this stage makes.
     static func readings(found: String, marks: [String]) -> [Reading] {
-        ([found] + marks.filter { !enders.contains($0) && $0 != found })
+        guard !found.isEmpty else { return bare(marks: marks) }
+        return ([found] + marks.filter { !enders.contains($0) && $0 != found })
             .map { Reading(key: $0, mark: $0, capital: enders.contains($0)) }
             + [Reading(key: join, mark: "", capital: false)]
+    }
+
+    /// The readings of a boundary that holds no mark at all — a capital the
+    /// transcriber wrote after a pause, with nothing in front of it.
+    ///
+    /// Four, not three. The text as decoded is a reading of its own here: with
+    /// no mark to remove, "leave it alone" is a real candidate rather than the
+    /// thing that happens when a mark wins. Only `join` writes anything.
+    ///
+    /// One ender, not every configured one. Which sentence mark belongs here is
+    /// a question this stage does not answer — it never inserts one — so a
+    /// second ender would buy a fifth forward pass and no decision.
+    static func bare(marks: [String]) -> [Reading] {
+        (marks.first { enders.contains($0) }.map {
+            [Reading(key: $0, mark: $0, capital: true)]
+        } ?? [])
+        + [Reading(key: asDecoded, mark: "", capital: true)]
+        + marks.filter { !enders.contains($0) }.map {
+            Reading(key: $0, mark: $0, capital: false)
+        }
+        + [Reading(key: join, mark: "", capital: false)]
     }
 
     /// The shared prefix and one continuation per reading.
