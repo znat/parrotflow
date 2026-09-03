@@ -1,8 +1,8 @@
 import Foundation
 import MLX
 
-/// `--sentence-probe` — is this period real, or did a pause cut one sentence
-/// in two?
+/// `--sentence-probe` — is this sentence mark real, or did a pause cut one
+/// sentence in two?
 ///
 /// The two halves of the boundary, left then right. The mark on the left says
 /// which boundary this is — end the left half with `?` to read a question, and
@@ -23,10 +23,10 @@ import MLX
 /// `--bench <cases.json> --out <scores.json>` scores a whole file in one loaded
 /// process — `[{"left": …, "right": …}]` in, one row of scores out, with the
 /// milliseconds each decision took. A row may carry `"mark": "?"` where the
-/// left half does not end with the mark itself. One process per boundary would pay the 1.3s
-/// load every time, so this is the only way to get a latency number. `--vectors`
-/// loads the word vectors as well, so the memory line describes the process the
-/// app actually runs, with both MLX models in it.
+/// left half does not end with the mark itself. One process per boundary would
+/// pay the 1.3s load every time, so this is the only way to get a latency
+/// number. `--vectors` loads the word vectors as well, so the memory line
+/// describes the process the app actually runs, with both MLX models in it.
 @available(macOS 14, *)
 enum SentenceProbeCommand {
 
