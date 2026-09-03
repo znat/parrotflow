@@ -1767,10 +1767,11 @@ struct Config: Decodable, Equatable {
 
             /// What each language gets with nothing in the file.
             ///
-            /// French gaps are compressed by about a third, so the English
-            /// floor refuses correct French rewrites. No single value serves
-            /// both: 0.40 is free in both and costs the English gate 35 of the
-            /// 55 wrong rewrites it catches.
+            /// French gaps are compressed by about a third. On a 201-case
+            /// French bench the English floor wrongly refuses 7 correct
+            /// rewrites of 84 and 0.30 refuses 2. No single value serves both:
+            /// 0.40 is free in both and costs the English gate 35 of the 55
+            /// wrong rewrites it catches.
             static let builtIn: [String: Language] = [
                 "en": Language(marks: defaultMarks, slotFloor: defaultSlotFloor),
                 "fr": Language(marks: defaultMarks, slotFloor: 0.30),

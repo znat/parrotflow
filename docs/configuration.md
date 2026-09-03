@@ -470,11 +470,12 @@ the sentence as punctuation.
 `slot_floor` is how far the word you were heard to say must beat a vocabulary
 term by before the gate refuses to write the term. The number is a difference of
 two cosines, so it must be above 0 and at most 2. It does not carry between
-languages: French gaps are about a third narrower, so the English 0.20 refuses
-correct French rewrites where 0.30 does not. No single value works for both —
-0.40 is free in both and costs the English gate 35 of the 55 wrong rewrites it
-catches. The gate only ever refuses, so a floor set too tight costs a name you
-have to type, never a wrong word in your text.
+languages: French gaps are about a third narrower. On a 201-case French bench,
+0.20 wrongly refuses 7 correct rewrites of 84 and 0.30 refuses 2, at a cost of
+19 of the 117 wrong rewrites caught. No single value works for both — 0.40 is
+free in both and costs the English gate 35 of the 55 wrong rewrites it catches.
+The gate only ever refuses, so a floor set too tight costs a name you have to
+type, never a wrong word in your text.
 
 `--check-config` prints both values for every language you listed.
 

@@ -433,9 +433,9 @@ refused 14 and left 24 on the same set, also with no error; mmBERT-small
 replaced it because it covers French, at no cost in English.
 
 The model is never waited for. Until it is on disk, every place this tier would
-judge is simply left open, which is the behaviour before this tier. This tier
-runs in every language and was measured in English only. Its error direction is
-the same cheap one: it refuses, so its mistake costs a name you type yourself.
+judge is simply left open, which is the behaviour before this tier. This tier is
+reached only from the sound pass, and that pass is English only, so it was
+measured in English only and runs nowhere else.
 
 **What the slot cannot settle, the term itself can.** Every sentence you
 confirm a term in is kept in `vocabulary-uses.yaml`, and from three of them the
