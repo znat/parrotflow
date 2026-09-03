@@ -21,6 +21,14 @@ actor SentenceModel {
 
     static let shared = SentenceModel()
 
+    /// The row the setup screen draws for it. The peak is not the size on
+    /// disk: the 299 MB package and the 288 MB compile of it both exist until
+    /// the compile finishes.
+    static let download = ModelDownload(
+        id: "sentence", name: "ModernBERT", megabytes: 288, peak: 600,
+        group: .language, blocking: false
+    )
+
     private static let repository = "znaat/modernbert-coreml"
     private static let packageName = "ModernBERT-base-64.mlpackage"
 
@@ -104,9 +112,18 @@ actor SentenceModel {
         }
         loading = task
         defer { loading = nil }
-        let loaded = try await task.value
-        model = loaded
-        return loaded
+        do {
+            let loaded = try await task.value
+            model = loaded
+            ModelDownloads.report(Self.download.id, .installed)
+            return loaded
+        } catch {
+            ModelDownloads.report(
+                Self.download.id,
+                .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
+            )
+            throw error
+        }
     }
 
     private static func build(
@@ -183,13 +200,14 @@ actor SentenceModel {
         defer { try? files.removeItem(at: staging) }
 
         let reported = Reported()
+        ModelDownloads.report(download.id, .downloading(percent: nil))
         try await HubDownload.fetch(
             repo: repository, paths: Self.files, into: staging
         ) { fraction in
-            guard let progress else { return }
             let percent = Int((fraction * 100).rounded())
             guard reported.advanced(to: percent) else { return }
-            progress("sentence model \(percent)%")
+            ModelDownloads.report(download.id, .downloading(percent: percent))
+            progress?("sentence model \(percent)%")
         }
 
         let compiled = try await MLModel.compileModel(

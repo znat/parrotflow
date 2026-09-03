@@ -36,11 +36,19 @@ enum Phonemes {
     /// guessed was stressed.
     static let marks: Set<Character> = ["ˈ", "ˌ", "ː", "ˑ"]
 
-    /// Where espeak-ng is, if it is anywhere. Resolved once.
+    /// Where espeak-ng is, if it is anywhere.
     ///
+    /// Resolved once when it is there. When it is not, the search runs again:
+    /// it can be installed while the app is running, and the setup screen
+    /// offers to do exactly that. Four `isExecutableFile` calls, and only on a
+    /// machine that does not have it.
+    static var binary: String? { firstLook ?? locate() }
+
+    private static let firstLook: String? = locate()
+
     /// `PARROTFLOW_ESPEAK` first, so a test can point at a stub, then the
     /// two places Homebrew puts it, then the system path.
-    static let binary: String? = {
+    static func locate() -> String? {
         var places: [String] = []
         if let named = ProcessInfo.processInfo.environment["PARROTFLOW_ESPEAK"] {
             places.append(named)
@@ -48,7 +56,7 @@ enum Phonemes {
         places += ["/opt/homebrew/bin/espeak-ng", "/usr/local/bin/espeak-ng",
                    "/usr/bin/espeak-ng"]
         return places.first { FileManager.default.isExecutableFile(atPath: $0) }
-    }()
+    }
 
     // MARK: - Asking espeak
 

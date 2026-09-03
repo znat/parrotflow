@@ -31,6 +31,13 @@ import FluidAudio
 /// whole feature.
 enum NeuralPhonemes {
 
+    /// The row the setup screen draws for it. Named for the model rather than
+    /// for the job: it is CharsiuG2P, run through FluidAudio's Core ML build.
+    static let soundDownload = ModelDownload(
+        id: "sound", name: "CharsiuG2P", megabytes: 81, peak: 81,
+        group: .sound, blocking: false
+    )
+
     /// The languages the model has, in the app's own terms. Nil for a
     /// language it does not speak — every other one it would guess at.
     static func language(_ code: String) -> MultilingualG2PLanguage? {
@@ -57,14 +64,29 @@ enum NeuralPhonemes {
     /// that is where `MultilingualG2PModel` looks for them and nothing here
     /// should teach it a second path.
     static func download(progress: (@Sendable (String) -> Void)? = nil) async throws {
-        if await isReady() { return }
+        if await isReady() {
+            ModelDownloads.report(soundDownload.id, .installed)
+            return
+        }
         progress?("sound model")
-        let directory = try TtsCacheDirectory.ensure().appendingPathComponent("Models")
-        try await ModelHub.download(
-            .kokoro, to: directory,
-            additionalModelNames: ModelNames.MultilingualG2P.requiredModels
-        )
-        try await MultilingualG2PModel.shared.ensureModelsAvailable()
+        // No percentage: `ModelHub.download` reports none, and a number nobody
+        // measured is worse than a spinner.
+        ModelDownloads.report(soundDownload.id, .downloading(percent: nil))
+        do {
+            let directory = try TtsCacheDirectory.ensure().appendingPathComponent("Models")
+            try await ModelHub.download(
+                .kokoro, to: directory,
+                additionalModelNames: ModelNames.MultilingualG2P.requiredModels
+            )
+            try await MultilingualG2PModel.shared.ensureModelsAvailable()
+            ModelDownloads.report(soundDownload.id, .installed)
+        } catch {
+            ModelDownloads.report(
+                soundDownload.id,
+                .failed(ModelDownloads.failure(error, needs: soundDownload.peakLabel))
+            )
+            throw error
+        }
     }
 
     // MARK: - what the model has already said

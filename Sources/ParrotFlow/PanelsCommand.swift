@@ -265,6 +265,12 @@ enum PanelsCommand {
             after: "I think we should have asked them first — they're going to be annoyed."
         )
 
+        let midDownload = sampleDownloads(speech: .downloading(percent: 62))
+        let failedDownload = sampleDownloads(speech: .failed(.unreachable))
+        let doneDownloads = sampleDownloads(speech: .installed)
+        doneDownloads.update(NeuralPhonemes.soundDownload.id, to: .installed)
+        doneDownloads.update(SentenceModel.download.id, to: .installed)
+
         // The third element is the appearance to draw in. Every floating
         // surface is dark whatever the system is set to — that is decided in
         // `adoptParrotAppearance` and is not a preference. The permissions
@@ -287,24 +293,55 @@ enum PanelsCommand {
             // between them and it is the part worth being able to see: setting
             // up says "Cancel installation", revisiting says "Not now".
             (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.showing(.microphone))),
+                .environmentObject(PermissionsModel.showing(.microphone))
+                .environmentObject(ModelDownloads())),
              NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .light, false),
             (AnyView(PermissionsView()
                 .environmentObject(PermissionsModel.showing(
-                    .accessibility, asked: true, context: .revisiting))),
+                    .accessibility, asked: true, context: .revisiting))
+                .environmentObject(ModelDownloads())),
              NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
-            // The screen after both are granted, in the three shapes it comes
-            // in: the speech model already there, still on its way, and there
-            // but the hotkey never bound — the states DonePane's invitation
-            // sentence chooses between.
-            (AnyView(PermissionsView().environmentObject(PermissionsModel.done())),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
+            // The Downloads step, in the two shapes worth comparing: rows
+            // arriving, and the one row a dictation waits on having failed —
+            // which is the only failure that reaches the foot.
             (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.done(speechModel: .preparing(percent: 43)))),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
+                .environmentObject(PermissionsModel.showingDownloads(midDownload))
+                .environmentObject(midDownload)),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.downloadsHeight),
+             .light, false),
             (AnyView(PermissionsView()
-                .environmentObject(PermissionsModel.done(hotkeyRegistered: false))),
-             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
+                .environmentObject(PermissionsModel.showingDownloads(
+                    failedDownload, espeak: .found))
+                .environmentObject(failedDownload)),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.downloadsHeight),
+             .dark, false),
+            // The screen after both are granted, in the shapes it comes in:
+            // the speech model already there, still on its way, there but the
+            // hotkey never bound, and a permission switched off afterwards.
+            (AnyView(PermissionsView()
+                .environmentObject(PermissionsModel.done(downloads: doneDownloads))
+                .environmentObject(doneDownloads)),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.doneHeight),
+             .dark, false),
+            (AnyView(PermissionsView()
+                .environmentObject(PermissionsModel.done(
+                    speechModel: .preparing(percent: 43), downloads: midDownload,
+                    espeak: .missing))
+                .environmentObject(midDownload)),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.doneHeight),
+             .light, false),
+            (AnyView(PermissionsView()
+                .environmentObject(PermissionsModel.done(
+                    hotkeyRegistered: false, downloads: doneDownloads))
+                .environmentObject(doneDownloads)),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.doneHeight),
+             .dark, false),
+            (AnyView(PermissionsView()
+                .environmentObject(PermissionsModel.done(
+                    axStatus: .notGranted, downloads: doneDownloads))
+                .environmentObject(doneDownloads)),
+             NSSize(width: PermissionMetrics.width, height: PermissionMetrics.doneHeight),
+             .dark, false),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), .dark, true),
             (AnyView(PillView().environmentObject(thinking)),
@@ -476,6 +513,35 @@ enum PanelsCommand {
         return NSWorkspace.shared.icon(forFile: url.path)
     }
 
+    /// A registry with one row in each state it can be in. The real one is
+    /// filled in by the code that fetches — see `AppDelegate.warmModels`.
+    static func sampleDownloads(speech: ModelDownload.State) -> ModelDownloads {
+        let downloads = ModelDownloads()
+        downloads.expect(Transcriber.speechDownload)
+        downloads.update(Transcriber.speechDownload.id, to: speech)
+        downloads.expect(Transcriber.voiceDownload)
+        downloads.update(Transcriber.voiceDownload.id, to: .installed)
+        downloads.expect(NeuralPhonemes.soundDownload)
+        downloads.update(NeuralPhonemes.soundDownload.id, to: .failed(.unreachable))
+        downloads.expect(SentenceModel.download)
+        downloads.expect(WordVectors.download, off: ModelDownload.gateOff)
+        return downloads
+    }
+
+    /// An ordinary titled window. The setup screen is the one surface that is
+    /// a window rather than a panel over somebody's words.
+    private static func window(for view: AnyView, size: NSSize) -> NSWindow {
+        let hosting = NSHostingController(rootView: view)
+        let window = NSWindow(contentViewController: hosting)
+        window.title = "\(AppVariant.displayName) Setup"
+        window.styleMask = [.titled, .closable]
+        window.setContentSize(size)
+        window.center()
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        return window
+    }
+
     static func run(surface: String, seconds: Double) -> Int32 {
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
@@ -488,6 +554,7 @@ enum PanelsCommand {
         let micNotice = MicNotice()
         let updatePanel = UpdatePanel()
         var ticker: Timer?
+        var setupWindow: NSWindow?
 
         switch surface {
         case "notice":
@@ -568,6 +635,35 @@ enum PanelsCommand {
                     later: { print("update: later") }
                 )
             )
+        // The setup window, on the step that reports the downloads. A real
+        // registry is empty in this process — nothing here fetches anything —
+        // so it runs on a sample whose percentage climbs, which is the part
+        // that cannot be checked from a still.
+        case "setup":
+            let downloads = sampleDownloads(speech: .downloading(percent: 8))
+            let model = PermissionsModel.showingDownloads(downloads)
+            setupWindow = window(
+                for: AnyView(
+                    PermissionsView()
+                        .environmentObject(model)
+                        .environmentObject(downloads)
+                ),
+                size: NSSize(
+                    width: PermissionMetrics.width, height: PermissionMetrics.downloadsHeight
+                )
+            )
+            var percent = 8
+            ticker = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
+                percent += 1
+                if percent > 100 {
+                    downloads.update(Transcriber.speechDownload.id, to: .installed)
+                    downloads.update(SentenceModel.download.id, to: .downloading(percent: nil))
+                    return
+                }
+                downloads.update(
+                    Transcriber.speechDownload.id, to: .downloading(percent: percent)
+                )
+            }
         case "pill":
             pill.recording(icon: sampleIcon())
             // A meter frozen at zero says nothing about how the meter looks.
@@ -609,12 +705,13 @@ enum PanelsCommand {
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
                 + "|vocabulary|punctuation|rule|dictation|preview|microphone|pill"
-                + "|update|sequence> [seconds]")
+                + "|update|setup|sequence> [seconds]")
             return 2
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
             ticker?.invalidate()
+            setupWindow?.close()
             exit(0)
         }
         app.run()

@@ -603,6 +603,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // After the preview flags return. Those launches draw a panel and
         // quit; nothing there transcribes, and fetching 1.16 GB for them
         // is what `warmUpTranscriber` avoided by sitting below this point.
+        // The one button the setup screen offers for a download that did not
+        // arrive. The window reports the fetches; it does not own them.
+        permissions.onRetryDownloads = { [weak self] in self?.retryDownloads() }
         warmModels()
 
 
@@ -2281,6 +2284,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard config.transcription.enabled else { return }
         let transcriber = transcriber
         let config = config
+
+        // The launch set, declared by the code that fetches it. Each model
+        // describes itself next to its own download; nothing here holds a list
+        // of what those models are. A row switched off by a setting says so
+        // rather than sitting on "waiting" for a fetch that never starts.
+        let downloads = ModelDownloads.shared
+        downloads.expect(Transcriber.speechDownload)
+        downloads.expect(
+            Transcriber.voiceDownload,
+            off: config.audio.speechGate ? nil : ModelDownload.gateOff
+        )
+        downloads.expect(SentenceModel.download)
+        downloads.expect(NeuralPhonemes.soundDownload)
+        downloads.expect(
+            WordVectors.download,
+            off: config.vocabulary.gateSentence ? nil : ModelDownload.gateOff
+        )
+
         Task.detached(priority: .background) {
             // Speech first, on its own. Nothing can be transcribed until it
             // lands, and it is the only one somebody is waiting for. Started
@@ -2314,12 +2335,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await transcriber.warmSentenceModel()
             // 81 MB, and the sound pass is on by default.
             Task.detached(priority: .background) {
-                if await !NeuralPhonemes.isReady() {
-                    do { try await NeuralPhonemes.download() } catch {
-                        Log.write("sound model: \(error.localizedDescription); the next"
-                            + " dictation that needs it tries again")
-                        return
-                    }
+                // `download` returns at once when the models are already there,
+                // and reports the row either way.
+                do { try await NeuralPhonemes.download() } catch {
+                    Log.write("sound model: \(error.localizedDescription); the next"
+                        + " dictation that needs it tries again")
+                    return
                 }
                 // What the model said last time, read here rather than by the
                 // first dictation. After the fetch, not before: the table is
@@ -2334,6 +2355,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Task.detached(priority: .background) { await WordVectors.shared.warm() }
             }
         }
+    }
+
+    /// Runs the launch fetches again, for the button a blocking failure puts
+    /// in the foot of the Downloads step.
+    ///
+    /// Safe: `prepare` converges overlapping callers onto one download, and the
+    /// two background fetches clear themselves when they fail. Rows that
+    /// already installed keep saying so.
+    private func retryDownloads() {
+        ModelDownloads.shared.retrying()
+        warmModels()
     }
 
     /// Keeps the model warm by running one token a minute through it.
@@ -5881,7 +5913,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(settingsItem)
 
         permissionsItem = NSMenuItem(
-            title: "Permissions…",
+            title: "Setup…",
             action: #selector(openPermissions),
             keyEquivalent: ""
         )
@@ -6166,7 +6198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: AppVariant.displayName,
             .applicationVersion: AppVariant.version,
-            .credits: AppVariant.repositoryLink,
+            .credits: AppVariant.credits,
         ])
     }
 

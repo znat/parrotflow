@@ -652,7 +652,7 @@ $PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
 `confidence`, `vocabulary`, `punctuation`, `rule`, `dictation`, `preview`,
-`microphone`, `update` or `sequence`.
+`microphone`, `update`, `setup` or `sequence`.
 `--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
 
@@ -681,6 +681,12 @@ seconds and thins out over the next two, the same as in the app, so it leaves
 on its own.
 Put the pointer on it and the fading stops, which is both what the app does and
 how you keep it on screen for as long as you want to look at it.
+
+`setup` is the first-run window, on the step that reports the downloads. This
+process fetches nothing, so it runs on a sample registry whose percentage
+climbs — which is the part of that screen a still cannot show. The sheet draws
+the same step twice, once with rows arriving and once with the speech model
+failed, and the last screen in four of its states.
 
 `sequence` is the one that cannot be checked from a still. The pill is a single
 panel that changes width and crossfades its contents rather than being replaced

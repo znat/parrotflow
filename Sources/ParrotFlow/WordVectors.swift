@@ -27,6 +27,12 @@ actor WordVectors {
 
     static let shared = WordVectors()
 
+    /// The row the setup screen draws for it.
+    static let download = ModelDownload(
+        id: "word-vectors", name: "Qwen3 Embedding 0.6B", megabytes: 335, peak: 335,
+        group: .language, blocking: false
+    )
+
     private static let repository = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
 
     /// `model.safetensors.index.json` is not in the repository — the weights
@@ -119,9 +125,18 @@ actor WordVectors {
         let task = Task<ModelContext, Error> { try await Self.build(progress: progress) }
         loading = task
         defer { loading = nil }
-        let built = try await task.value
-        loaded = built
-        return built
+        do {
+            let built = try await task.value
+            loaded = built
+            ModelDownloads.report(Self.download.id, .installed)
+            return built
+        } catch {
+            ModelDownloads.report(
+                Self.download.id,
+                .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
+            )
+            throw error
+        }
     }
 
     private static func build(
@@ -162,11 +177,12 @@ actor WordVectors {
         defer { try? manager.removeItem(at: staging) }
 
         let reported = Reported()
+        ModelDownloads.report(download.id, .downloading(percent: nil))
         try await HubDownload.fetch(repo: repository, paths: files, into: staging) { fraction in
-            guard let progress else { return }
             let percent = Int((fraction * 100).rounded())
             guard reported.advanced(to: percent) else { return }
-            progress("word vectors \(percent)%")
+            ModelDownloads.report(download.id, .downloading(percent: percent))
+            progress?("word vectors \(percent)%")
         }
         for name in files {
             let target = directory.appendingPathComponent(name)

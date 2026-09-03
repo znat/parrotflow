@@ -29,6 +29,19 @@ actor Transcriber {
 
     private(set) var status: Status = .idle
 
+    /// The two rows the setup screen draws for this file. `blocking` is read
+    /// back out where the status is set, so a row's severity and the flag on
+    /// `Status.downloading` cannot drift apart.
+    static let speechDownload = ModelDownload(
+        id: "speech", name: "Parakeet TDT 0.6B v3", megabytes: 461, peak: 461,
+        group: .sound, blocking: true
+    )
+
+    static let voiceDownload = ModelDownload(
+        id: "voice-detector", name: "Silero VAD", megabytes: 1, peak: 1,
+        group: .sound, blocking: true
+    )
+
     private var vad: VadManager?
     private var models: AsrModels?
 
@@ -71,7 +84,11 @@ actor Transcriber {
 
     private func loadModels() async throws -> AsrModels {
         if let loadingModels { return try await loadingModels.value }
-        setStatus(.downloading("speech model", blocking: true))
+        let row = Self.speechDownload
+        setStatus(.downloading("speech model", blocking: row.blocking))
+        // Before the first percentage, which does not arrive for a copy that
+        // is already on disk.
+        ModelDownloads.report(row.id, .downloading(percent: nil))
         let task = Task<AsrModels, Error> {
             try await AsrModels.downloadAndLoad(
                 progressHandler: { [weak self] progress in
@@ -82,16 +99,37 @@ actor Transcriber {
         }
         loadingModels = task
         defer { loadingModels = nil }
-        return try await task.value
+        do {
+            let loaded = try await task.value
+            ModelDownloads.report(row.id, .installed)
+            return loaded
+        } catch {
+            ModelDownloads.report(
+                row.id, .failed(ModelDownloads.failure(error, needs: row.peakLabel))
+            )
+            throw error
+        }
     }
 
     private func loadVad() async throws -> VadManager? {
         if let loadingVad { return try await loadingVad.value }
-        setStatus(.downloading("voice detector", blocking: true))
+        let row = Self.voiceDownload
+        setStatus(.downloading("voice detector", blocking: row.blocking))
+        ModelDownloads.report(row.id, .downloading(percent: nil))
         let task = Task<VadManager?, Error> {
-            let vad = try? await VadManager(config: .default)
-            if vad == nil { Log.write("speech gate: VAD unavailable; transcribing everything") }
-            return vad
+            do {
+                let vad = try await VadManager(config: .default)
+                ModelDownloads.report(row.id, .installed)
+                return vad
+            } catch {
+                // Swallowed, as it always was: without the gate the app
+                // transcribes everything rather than nothing. The row says so.
+                Log.write("speech gate: VAD unavailable; transcribing everything")
+                ModelDownloads.report(
+                    row.id, .failed(ModelDownloads.failure(error, needs: row.peakLabel))
+                )
+                return nil
+            }
         }
         loadingVad = task
         defer { loadingVad = nil }
@@ -137,7 +175,8 @@ actor Transcriber {
         let percent = Int((progress.fractionCompleted * 100).rounded())
         guard percent != lastReportedPercent else { return }
         lastReportedPercent = percent
-        setStatus(.downloading("\(label) \(percent)%", blocking: true))
+        setStatus(.downloading("\(label) \(percent)%", blocking: Self.speechDownload.blocking))
+        ModelDownloads.report(Self.speechDownload.id, .downloading(percent: percent))
     }
 
     /// The sentence model fetch, once per process. Cleared when it fails, so
@@ -206,7 +245,7 @@ actor Transcriber {
 
     private func reportSoundModel(_ label: String) {
         guard soundModelRunning else { return }
-        onStatusChange(.downloading(label, blocking: false))
+        onStatusChange(.downloading(label, blocking: NeuralPhonemes.soundDownload.blocking))
     }
 
     private func finishSoundModel(failed: Bool) {
@@ -230,7 +269,7 @@ actor Transcriber {
         guard sentenceModelRunning else { return }
         // Reported, not recorded. `status` says whether the transcriber can
         // transcribe, and during this fetch it can.
-        onStatusChange(.downloading(label, blocking: false))
+        onStatusChange(.downloading(label, blocking: SentenceModel.download.blocking))
     }
 
     private func finishSentenceModel(failed: Bool) {

@@ -134,6 +134,12 @@ grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
+**The Downloads step.** After the two permissions the setup window shows what
+the app is fetching: five models, about 1.2 GB, started at launch. Nothing on
+that screen has to be waited for — *Continue* is always live, and only the
+speech model decides whether the last screen says "Ready". The one row with a
+button is eSpeak NG, which the app looks for rather than downloads.
+
 ## Step 3 — Prove transcription works with no voice
 
 Needs no microphone.
@@ -373,8 +379,7 @@ mention but notifies nobody — tell them that.
 >
 > Settings are in `~/.config/parrotflow/config.yaml`, and the names it has
 > learnt are in `vocabulary.yaml` beside it. Both reload on save. The menu bar
-> icon has *Settings* — *Edit Config…* and *View Transforms* — and
-> *Permissions…*.
+> icon has *Settings* — *Edit Config…* and *View Transforms* — and *Setup…*.
 
 ---
 
