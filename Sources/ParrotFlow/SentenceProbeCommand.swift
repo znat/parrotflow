@@ -39,7 +39,7 @@ enum SentenceProbeCommand {
     static func run(left: String, right: String) -> Int32 {
         var exitCode: Int32 = 0
         let done = DispatchSemaphore(value: 0)
-        let marks = ((try? ConfigStore.load()) ?? Config()).transcription.sentences.marks
+        let marks = ((try? ConfigStore.load()) ?? Config()).transcription.marks(for: "en")
         let mark = found(in: left, marks: marks)
 
         Task {
@@ -90,7 +90,7 @@ enum SentenceProbeCommand {
         }
         var exitCode: Int32 = 0
         let done = DispatchSemaphore(value: 0)
-        let marks = ((try? ConfigStore.load()) ?? Config()).transcription.sentences.marks
+        let marks = ((try? ConfigStore.load()) ?? Config()).transcription.marks(for: "en")
 
         Task {
             do {

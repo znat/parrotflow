@@ -1671,11 +1671,18 @@ struct Config: Decodable, Equatable {
         /// There is no threshold; the reading the model scores highest is the
         /// one that is written. `;` and `:` were measured and never changed a
         /// decision in English, so they are not in the default.
+        ///
+        /// The marks live in `per_language` now. `marks:` here is still read
+        /// and still answers for English — see `marks(for:)`.
         var sentences: Sentences = Sentences()
 
         struct Sentences: Decodable, Equatable {
             var enabled = true
-            var marks: [String] = [".", ",", "?"]
+            /// The old home of the mark set. Read through
+            /// `Transcription.marks(for:)`, which prefers `per_language`;
+            /// `marksWritten` says the file set this one.
+            var marks: [String] = Language.defaultMarks
+            var marksWritten = false
 
             /// Keys still read and no longer acted on, for `notices()`.
             var legacy: [String] = []
@@ -1700,44 +1707,10 @@ struct Config: Decodable, Equatable {
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
-                    let kept = written
-                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                        .filter { !$0.isEmpty }
-                    // With no mark the join is the only reading, so it wins
-                    // every boundary and every period in the transcript goes.
-                    guard !kept.isEmpty else {
-                        throw ConfigError.invalidValue(
-                            key: "transcription.sentences.marks",
-                            value: "an empty list",
-                            expected: "at least one mark — with none, joining is the only"
-                                + " reading and every period would be removed"
-                        )
-                    }
-                    // The enders in the list are where a boundary is looked
-                    // for. With none the stage finds nothing and does nothing,
-                    // which is what `sentences: false` is for.
-                    guard kept.contains(where: { SentenceReadings.enders.contains($0) }) else {
-                        throw ConfigError.invalidValue(
-                            key: "transcription.sentences.marks",
-                            value: kept.map { "`\($0)`" }.joined(separator: ", "),
-                            expected: "at least one of `.`, `?` or `!` — those are where a"
-                                + " boundary is looked for, so with none the stage never runs."
-                                + " Use `sentences: false` to turn it off"
-                        )
-                    }
-                    // A mark is one punctuation character. Any word here would
-                    // be written into the sentence as if it were punctuation,
-                    // and the word `join` is the name of the reading that
-                    // removes the period, so it would remove one.
-                    let wrong = kept.filter { $0.count != 1 || !($0.first?.isPunctuation ?? false) }
-                    guard wrong.isEmpty else {
-                        throw ConfigError.invalidValue(
-                            key: "transcription.sentences.marks",
-                            value: wrong.map { "`\($0)`" }.joined(separator: ", "),
-                            expected: "one punctuation character each — `[\".\", \",\"]`"
-                        )
-                    }
-                    marks = kept
+                    marks = try Language.checked(
+                        marks: written, key: "transcription.sentences.marks"
+                    )
+                    marksWritten = true
                 }
                 let old = try decoder.container(keyedBy: LegacyKeys.self)
                 for key in [LegacyKeys.joinBelow, .offerBelow]
@@ -1755,11 +1728,23 @@ struct Config: Decodable, Equatable {
         ///       per_language:
         ///         fr:
         ///           slot_floor: 0.30
+        ///           marks: [".", ",", "?"]
         ///
         /// An entry overrides only the keys it names. Everything else keeps the
         /// built-in value for that language, and a language with no entry keeps
         /// English's.
         var perLanguage: [String: Language] = [:]
+
+        /// The marks the sentence stage tries beside removing the period.
+        ///
+        /// `transcription.sentences.marks` is the old home of the same set. It
+        /// is still read, and it answers for English only: that stage has never
+        /// run in another language.
+        func marks(for language: String) -> [String] {
+            if let written = perLanguage[language]?.marks { return written }
+            if language == "en", sentences.marksWritten { return sentences.marks }
+            return Language.builtIn[language]?.marks ?? Language.defaultMarks
+        }
 
         /// How far the heard word must win by before the vocabulary gate
         /// refuses a rewrite — see `SlotReference`.
@@ -1772,8 +1757,10 @@ struct Config: Decodable, Equatable {
         /// What one language sets. Every key is optional: naming a language to
         /// change one of them must not silently reset the others.
         struct Language: Decodable, Equatable {
+            var marks: [String]?
             var slotFloor: Double?
 
+            static let defaultMarks = [".", ",", "?"]
             /// English's floor. Ordinary words sit at -0.30 to -0.43 and
             /// correct rewrites at -0.02 to -0.18, and nothing lands between.
             static let defaultSlotFloor = 0.20
@@ -1785,15 +1772,17 @@ struct Config: Decodable, Equatable {
             /// both: 0.40 is free in both and costs the English gate 35 of the
             /// 55 wrong rewrites it catches.
             static let builtIn: [String: Language] = [
-                "en": Language(slotFloor: defaultSlotFloor),
-                "fr": Language(slotFloor: 0.30),
+                "en": Language(marks: defaultMarks, slotFloor: defaultSlotFloor),
+                "fr": Language(marks: defaultMarks, slotFloor: 0.30),
             ]
 
-            init(slotFloor: Double? = nil) {
+            init(marks: [String]? = nil, slotFloor: Double? = nil) {
+                self.marks = marks
                 self.slotFloor = slotFloor
             }
 
             enum CodingKeys: String, CodingKey {
+                case marks
                 case slotFloor = "slot_floor"
             }
 
@@ -1802,6 +1791,9 @@ struct Config: Decodable, Equatable {
                 let path = "transcription.per_language"
                     + (named.isEmpty ? "" : ".\(named)")
                 let c = try decoder.container(keyedBy: CodingKeys.self)
+                if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
+                    marks = try Self.checked(marks: written, key: "\(path).marks")
+                }
                 if let written = try c.decodeIfPresent(Double.self, forKey: .slotFloor) {
                     // The gap is one cosine minus another, so it never goes
                     // below -2 and a floor of 2 refuses nothing. At 0 or less
@@ -1816,6 +1808,45 @@ struct Config: Decodable, Equatable {
                     }
                     slotFloor = written
                 }
+            }
+
+            /// A mark is one punctuation character. Any word here would be
+            /// written into the sentence as if it were punctuation.
+            static func checked(marks written: [String], key: String) throws -> [String] {
+                let kept = written
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                // With no mark the join is the only reading, so it wins every
+                // boundary and every period in the transcript goes.
+                guard !kept.isEmpty else {
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: "an empty list",
+                        expected: "at least one mark — with none, joining is the only"
+                            + " reading and every period would be removed"
+                    )
+                }
+                // The enders in the list are where a boundary is looked for.
+                // With none the stage finds nothing and does nothing, which is
+                // what `sentences: false` is for.
+                guard kept.contains(where: { SentenceReadings.enders.contains($0) }) else {
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: kept.map { "`\($0)`" }.joined(separator: ", "),
+                        expected: "at least one of `.`, `?` or `!` — those are where a"
+                            + " boundary is looked for, so with none the stage never runs."
+                            + " Use `sentences: false` to turn it off"
+                    )
+                }
+                let wrong = kept.filter { $0.count != 1 || !($0.first?.isPunctuation ?? false) }
+                guard wrong.isEmpty else {
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: wrong.map { "`\($0)`" }.joined(separator: ", "),
+                        expected: "one punctuation character each — `[\".\", \",\", \"?\"]`"
+                    )
+                }
+                return kept
             }
         }
 
@@ -2855,6 +2886,13 @@ struct Config: Decodable, Equatable {
         // file-level key and nothing else.
         said += vocabulary.legacy.map { "vocabulary: \($0)" }
         said += transcription.sentences.legacy.map { "sentences: \($0)" }
+        // Still read, and still English's set. It moved because the slot floor
+        // keys off the language too, and two settings keyed the same way belong
+        // in one block.
+        if transcription.sentences.marksWritten, transcription.perLanguage["en"]?.marks == nil {
+            said.append("sentences: `marks:` now lives at"
+                + " `transcription.per_language.en.marks`. Yours is still read")
+        }
         return said
     }
 

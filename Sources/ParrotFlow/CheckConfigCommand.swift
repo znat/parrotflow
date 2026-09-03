@@ -98,11 +98,13 @@ enum CheckConfigCommand {
                 .map { "\"\($0)\"" }.joined(separator: ", ")
             emit("  · wake phrase       \(listed.isEmpty ? "none — spoken commands are off" : listed)")
             emit("  · rewrite line      \(transcription.rewriteLine ? "on" : "off (terminals can't be edited without it)")")
-            // The floor is not the same in two languages, so it is printed per
-            // language rather than once.
+            // Neither setting is the same in two languages, so both are printed
+            // per language rather than once.
             emit("  · languages         \(transcription.languages.joined(separator: ", "))")
             for language in transcription.languages {
-                emit("      \(language)  slot floor"
+                emit("      \(language)  marks"
+                    + " \(transcription.marks(for: language).joined(separator: " "))"
+                    + "  slot floor"
                     + " \(String(format: "%.2f", transcription.slotFloor(for: language)))")
             }
             // The pipeline, because "why was this not converted" is a question

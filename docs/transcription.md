@@ -497,9 +497,9 @@ three ways and scored by a small causal language model
 
 Each reading is the log-probability of its continuation divided by its token
 count, and the highest wins. Nothing is compared to a threshold, so there is
-nothing to calibrate. The marks are `transcription.sentences.marks`, default
-`[".", ",", "?"]`; `;` and `:` were measured and never changed a decision in
-English.
+nothing to calibrate. The marks are `transcription.per_language.<code>.marks`,
+default `[".", ",", "?"]`; `;` and `:` were measured and never changed a
+decision in English.
 
 The list does two jobs. `.` and `?` are where a boundary is looked for; the
 comma is a reading tried at one. The first reading is always the mark the

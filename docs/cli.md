@@ -528,9 +528,10 @@ $PF --sentence-join "…the first usage of the LLM with. The vocabulary is slowe
 ```
 
 The mark is removed where `join` wins, and left alone otherwise. Which marks are
-scanned, and which are read beside them, is `transcription.sentences.marks` in
-`config.yaml` — the sentence enders in that list are scanned, the rest are
-readings. `scripts/check-sentence-join.sh` scores the decisions against
+scanned, and which are read beside them, is
+`transcription.per_language.<code>.marks` in `config.yaml` — the sentence enders
+in that list are scanned, the rest are readings.
+`scripts/check-sentence-join.sh` scores the decisions against
 tests/sentence-boundary-cases.json, in both shapes; it needs the model, so it is
 run by hand.
 
