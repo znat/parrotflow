@@ -9,35 +9,29 @@ import NaturalLanguage
 ///     said     "you should see a parrot at the top right of your screen"
 ///     written  "You should see a parrot. At the top right of your screen."
 ///
-/// Every `word. Capital` boundary in the finished transcript is scored by
-/// `SentenceProbe` — one masked position, `log P(".") - log P(" <next word>")`
-/// — and two thresholds decide:
+/// Every `word. Capital` boundary in the finished transcript is read three
+/// ways by `SentenceReadings` — with a period, with a comma, and with nothing
+/// at all — and the reading the language model scores highest is the one that
+/// is written. Nothing is compared to a threshold, so there is nothing to
+/// calibrate. Where the joined reading wins, the period is removed and the
+/// word after it is lowercased.
 ///
-///     score < join_below                    join, and say nothing
-///     join_below <= score < offer_below     offer the join, do not write it
-///     score >= offer_below                  leave it alone
+/// The thresholds this used to carry repaired 26% of the cuts. The choice
+/// repairs 82%, and joins none of 172 real sentence endings.
 ///
-/// Joining removes the period and lowercases the word after it.
+/// English only. The reading is scored by an English base model, and the mark
+/// set is English: French wants `:` where English does not.
 ///
-/// English only. The model is English-only, and the same probe measured on
-/// `cservan/french-modernbert-large` and `-base` scores near chance — 0.67 and
-/// 0.58 AUC against 0.96 for English. There is no French model to switch to.
-///
-/// Fails open everywhere. No cached model, a probe that throws, a boundary it
-/// cannot read: the text arrives as it was. A sentence in two halves is a
-/// worse transcript; a rewrite nobody asked for costs the words themselves.
+/// Fails open everywhere. A model still downloading, a load that threw, a
+/// boundary it cannot read: the text arrives as it was. A sentence in two
+/// halves is a worse transcript; a rewrite nobody asked for costs the words
+/// themselves.
 @available(macOS 14, *)
 actor SentenceJoin {
 
     static let shared = SentenceJoin()
 
     /// What one pass did, for the pipeline to read.
-    ///
-    /// `offer` is the tier that does not write. It is a log line and a count
-    /// today: the vocabulary pass's `proposals` road is keyed by term and ends
-    /// at a judge that argues about names, and the pill's offer is a row of
-    /// transform chips. Neither carries a boundary, so this publishes the
-    /// count and waits for a consumer rather than forcing one.
     struct Outcome: Sendable {
         let text: String
         let readings: [Reading]
@@ -49,11 +43,24 @@ actor SentenceJoin {
         }
     }
 
-    /// One boundary, scored. `change` reads `parrot. At -> parrot at`.
+    /// One boundary, read every way. `change` reads `parrot. At -> parrot at`.
     struct Reading: Sendable {
         let change: String
-        let score: Double
-        let tier: Tier
+        let scores: [SentenceReadings.Score]
+        let winner: String
+
+        var tier: Tier { winner == SentenceReadings.join ? .join : .leave }
+    }
+
+    /// The reading with the highest per-token score, or nil if there is none.
+    ///
+    /// First past the post over the order `SentenceReadings.readings` builds —
+    /// the marks, then the join — so an exact tie leaves the boundary alone.
+    static func winner(of scores: [SentenceReadings.Score]) -> SentenceReadings.Score? {
+        scores.reduce(nil) { best, score in
+            guard let best else { return score }
+            return score.mean > best.mean ? score : best
+        }
     }
 
     /// One `word. Capital` boundary: the period, and the word after it.
@@ -160,43 +167,26 @@ actor SentenceJoin {
 
     // MARK: - The pass
 
-    /// The masked language model, once per process, and only if it is already
-    /// on disk. `Transcriber.warmSentenceModel` fetches it in the background
-    /// after the first English dictation; nothing here waits for that.
-    private var loaded: SentenceProbe?
-
-    /// When a failed load may be tried again. A held `flock` on the model cache
-    /// is the failure this exists for: another process is fetching, and the
-    /// next dictation would otherwise never look again. Not a latch — but not
-    /// every dictation either, because a damaged cache makes `load` re-fetch
-    /// 300 MB.
-    private var retryAfter: Date?
-    private static let backoff: TimeInterval = 300
-
-    private func probe() async -> SentenceProbe? {
-        if let loaded { return loaded }
-        if let retryAfter, Date() < retryAfter { return nil }
-        guard SentenceModel.isCached else { return nil }
-        do {
-            loaded = try await SentenceProbe.load()
-            retryAfter = nil
-        } catch {
-            retryAfter = Date().addingTimeInterval(Self.backoff)
-            Log.write("sentences: no probe (\(error.localizedDescription)); left as decoded")
-        }
-        return loaded
-    }
-
     /// The transcript with the false periods taken out.
     ///
     /// Every boundary is scored against the text as it arrived, not against
     /// the text as it is being rebuilt. A join only removes a period, so the
     /// window a later boundary reads is the same words either way.
+    ///
+    /// Nothing here waits for the model. A dictation that arrives before the
+    /// weights are in memory keeps its boundaries and starts the load, so the
+    /// first dictation after a launch pays nothing and the second is repaired.
     func apply(to text: String, config: Config) async -> Outcome {
         let settings = config.transcription.sentences
         guard settings.enabled else { return .unchanged(text) }
         let found = Self.boundaries(in: text)
-        guard !found.isEmpty, let probe = await probe() else { return .unchanged(text) }
+        guard !found.isEmpty else { return .unchanged(text) }
+        guard await SentenceReadings.shared.isLoaded else {
+            await SentenceReadings.shared.warm()
+            Log.write("sentences: \(found.count) boundary(s) left as decoded;"
+                + " the model is not in memory yet")
+            return .unchanged(text)
+        }
         let terms = Array(config.vocabulary.terms.keys)
 
         var readings: [Reading] = []
@@ -204,12 +194,14 @@ actor SentenceJoin {
         var cursor = text.startIndex
         for boundary in found {
             let word = String(text[boundary.next])
-            let score: Double
+            let started = DispatchTime.now().uptimeNanoseconds
+            let scores: [SentenceReadings.Score]
             do {
-                score = try probe.read(
+                scores = try await SentenceReadings.shared.read(
                     left: String(text[..<boundary.period]),
-                    right: String(text[boundary.next.lowerBound...])
-                ).score
+                    right: String(text[boundary.next.lowerBound...]),
+                    marks: settings.marks
+                )
             } catch {
                 Log.write(
                     "sentences: \(word.debugDescription) could not be read"
@@ -217,17 +209,24 @@ actor SentenceJoin {
                 )
                 continue
             }
+            let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e6
+            guard let best = Self.winner(of: scores) else { continue }
             let (whole, offset) = Self.joining(text, at: boundary)
             let now = Self.written(word, in: whole, at: offset, terms: terms)
             let before = String(
                 text[..<boundary.period].reversed().prefix { !$0.isWhitespace }.reversed()
             )
-            let tier = Tier(of: score, by: settings)
             let change = "\(before). \(word) -> \(before) \(now)"
-            Log.write(String(format: "sentences: %@ %.2f %@", change, score, tier.rawValue))
-            readings.append(Reading(change: change, score: score, tier: tier))
+            let listed = scores
+                .map { String(format: "%@ %.2f", $0.key, $0.mean) }
+                .joined(separator: "  ")
+            Log.write(String(
+                format: "sentences: %@ %@ [%@] %.0fms",
+                change, best.key, listed, milliseconds
+            ))
+            readings.append(Reading(change: change, scores: scores, winner: best.key))
 
-            if tier == .join {
+            if best.key == SentenceReadings.join {
                 rebuilt += text[cursor..<boundary.period]
                 rebuilt += text[text.index(after: boundary.period)..<boundary.next.lowerBound]
                 rebuilt += now
@@ -237,18 +236,9 @@ actor SentenceJoin {
         return Outcome(text: rebuilt + text[cursor...], readings: readings)
     }
 
-    /// Which of the three a score falls in.
+    /// What a boundary came to. There is no middle tier: an argmax has no
+    /// threshold to hedge with, so a boundary is either joined or left.
     enum Tier: String {
-        case join, offer, leave
-
-        init(of score: Double, by settings: Config.Transcription.Sentences) {
-            if score < settings.joinBelow {
-                self = .join
-            } else if score < settings.offerBelow {
-                self = .offer
-            } else {
-                self = .leave
-            }
-        }
+        case join, leave
     }
 }

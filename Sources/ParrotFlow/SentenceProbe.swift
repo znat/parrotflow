@@ -1,33 +1,26 @@
 import CoreML
 import Foundation
 
-/// Is this period real, or did a pause cut one sentence in two?
+/// What does ModernBERT put in a masked slot?
 ///
-/// Put a `[MASK]` where the period is, lowercase the word after it, and ask
-/// ModernBERT what belongs in the slot:
+/// Put a `[MASK]` where a word is, and read the distribution over the whole
+/// vocabulary at that one position. `SlotGate` and `SlotReference` read it to
+/// decide whether the word a vocabulary term would replace belongs where it
+/// stands.
 ///
-///     score = log P(".") - log P(" <next word>")
-///
-/// One forward pass reads both. Below the threshold, the period is false and
-/// the two halves are one sentence. Measured over 194 real periods and 130
-/// synthetic cuts of this user's own dictation:
-///
-///     -4    32% of cuts repaired    0.0 false joins per 100 real periods
-///     -2    55%                     1.2
-///      0    82%                     6.1
-///
-/// `SentenceJoin` is the consumer: -4 writes, -2 offers.
+/// It used to answer the sentence-boundary question too — a mask where the
+/// period is, `log P(".") - log P(" <next word>")`, against a threshold. That
+/// repaired 26% of the cuts. `SentenceJoin` chooses between whole readings of
+/// the sentence now; see `SentenceReadings`.
 @available(macOS 14, *)
 struct SentenceProbe {
 
     enum Failure: LocalizedError {
         case shape(String)
-        case empty
 
         var errorDescription: String? {
             switch self {
             case .shape(let what): return "sentence probe: \(what)"
-            case .empty: return "sentence probe: no word after the boundary"
             }
         }
     }
@@ -52,58 +45,13 @@ struct SentenceProbe {
 
     let tokenizer: BPETokenizer
     private let model: MLModel
-    private let period: Int
 
     static func load(progress: (@Sendable (String) -> Void)? = nil) async throws -> SentenceProbe {
         let model = try await SentenceModel.shared.prepare(progress: progress)
         // The tokenizer runs `assertBoundaryIDs` as it parses, so one that
         // would score the wrong ids throws here rather than answering.
         let tokenizer = try await SentenceModel.shared.tokenizer(at: tokenizerURL)
-        guard let period = tokenizer.firstID(of: ".") else {
-            throw Failure.shape("\".\" does not encode")
-        }
-        return SentenceProbe(tokenizer: tokenizer, model: model, period: period)
-    }
-
-    // MARK: - One boundary
-
-    struct Reading {
-        /// `log P(".") - log P(" <next word>")`. Below the threshold, the
-        /// period is false.
-        let score: Double
-        let periodLogProbability: Double
-        let nextLogProbability: Double
-        /// The next word with its leading space, as the model reads it.
-        let next: String
-        let top: [Prediction]
-        /// The masked text the model was given, for a caller checking its work.
-        let text: String
-    }
-
-    func read(left: String, right: String) throws -> Reading {
-        // The period under test is dropped before the words are counted, so a
-        // caller that kept it and one that did not get the same window.
-        let kept = String(left.reversed().drop { $0 == "." }.reversed())
-        let before = kept.split(whereSeparator: \.isWhitespace).suffix(Self.radius).map(String.init)
-        let tail = right.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard var next = tail.first else { throw Failure.empty }
-        next = next.prefix(1).lowercased() + next.dropFirst()
-        let after = ([next] + tail.dropFirst()).prefix(Self.radius).joined(separator: " ")
-
-        guard let nextID = tokenizer.firstID(of: " " + next) else {
-            throw Failure.shape("\((" " + next).debugDescription) does not encode")
-        }
-        let slot = try at(left: before.joined(separator: " "), right: " " + after)
-        let periodLogProbability = slot.logProbability(of: period)
-        let nextLogProbability = slot.logProbability(of: nextID)
-        return Reading(
-            score: periodLogProbability - nextLogProbability,
-            periodLogProbability: periodLogProbability,
-            nextLogProbability: nextLogProbability,
-            next: " " + next,
-            top: slot.top(5),
-            text: before.joined(separator: " ") + " [MASK] " + after
-        )
+        return SentenceProbe(tokenizer: tokenizer, model: model)
     }
 
     // MARK: - One forward pass

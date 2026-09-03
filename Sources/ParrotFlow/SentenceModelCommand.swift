@@ -1,15 +1,22 @@
 import CoreML
 import Foundation
 
-/// `--sentence-model` — fetches, compiles and loads ModernBERT, then says what
-/// it got and how long it took.
+/// `--sentence-model` — fetches both models the sentence stages read, then
+/// says what it got and how long it took.
 ///
 ///     ParrotFlow --sentence-model
-///       sentence model 43%…
-///     ✓ sentence model ready in 41.2s
+///       sentence readings 43%…
+///     ✓ sentence readings ready in 22.4s (downloaded)
+///       cache   ~/Library/Application Support/ParrotFlow/models/qwen3-0.6b-base-4bit
+///     ✓ sentence model ready in 41.2s (downloaded and compiled)
 ///       cache   ~/Library/Application Support/ParrotFlow/models/modernbert-base-64
 ///       inputs  input_ids [1, 64]
 ///       outputs logits [1, 64, 50368]
+///
+/// Two models, because two stages read them. Qwen scores the readings that
+/// decide a boundary; ModernBERT is what the vocabulary slot gate fills a
+/// masked slot with, and it is still fetched here so one command leaves a
+/// machine ready.
 ///
 /// The same call the first English dictation makes, without a microphone. Run
 /// it twice: the second run skips the download and the 7s compile, which is
@@ -22,6 +29,24 @@ enum SentenceModelCommand {
         let done = DispatchSemaphore(value: 0)
 
         Task {
+            let readingsStarted = Date()
+            let readingsCached = SentenceReadings.isCached
+            do {
+                try await SentenceReadings.shared.prepare { label in
+                    print("\r  \(label)…", terminator: "")
+                    fflush(stdout)
+                }
+                print(String(
+                    format: "\r\u{1B}[K✓ sentence readings ready in %.1fs (%@)",
+                    Date().timeIntervalSince(readingsStarted),
+                    readingsCached ? "cached" : "downloaded"
+                ))
+                print("  cache   \(tilde(SentenceReadings.directory.path))")
+            } catch {
+                print("\r\u{1B}[K✗ \(error.localizedDescription)")
+                exitCode = 1
+            }
+
             let started = Date()
             let cached = SentenceModel.isCached
             do {

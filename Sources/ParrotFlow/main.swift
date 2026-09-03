@@ -136,9 +136,19 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
     if let encode = arguments.firstIndex(of: "--encode"), arguments.indices.contains(encode + 1) {
         exit(SentenceProbeCommand.encode(arguments[encode + 1]))
     }
+    if let bench = arguments.firstIndex(of: "--bench"), arguments.indices.contains(bench + 1) {
+        let out = arguments.firstIndex(of: "--out").flatMap {
+            arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+        }
+        exit(SentenceProbeCommand.bench(
+            cases: arguments[bench + 1], out: out, vectors: arguments.contains("--vectors")
+        ))
+    }
     guard arguments.indices.contains(at + 2) else {
         print("usage: ParrotFlow --sentence-probe \"<left half>\" \"<right half>\"")
         print("       ParrotFlow --sentence-probe --encode \"<text>\"")
+        print("       ParrotFlow --sentence-probe --bench <cases.json>"
+              + " [--out <scores.json>] [--vectors]")
         exit(2)
     }
     exit(SentenceProbeCommand.run(left: arguments[at + 1], right: arguments[at + 2]))

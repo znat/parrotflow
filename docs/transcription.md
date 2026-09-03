@@ -483,20 +483,33 @@ written  "You should see a parrot. At the top right of your screen."
 ```
 
 After the vocabulary pass, every `word. Capital` boundary in an English
-transcript is scored by the same masked language model the slot gate uses:
-`score = log P(".") − log P(" <next word>")` at one masked position, ±12
-words. Two thresholds decide, both under `transcription.sentences`:
+transcript is read three ways and scored by a small causal language model
+(`mlx-community/Qwen3-0.6B-Base-4bit`, 320 MB):
 
-| score | what happens |
-|---|---|
-| below `join_below`, default −4 | the period is removed and nothing is said |
-| below `offer_below`, default −2 | the join is offered, not written |
-| above it | left alone |
+```
+". The vocabulary is slower"     the period is real
+" the vocabulary is slower"      a pause cut one sentence in two
+", the vocabulary is slower"     it is really a comma
+```
 
-Measured over 194 real periods and 130 synthetic cuts of one speaker's
-dictation, −4 repaired 32% of the cuts and joined no real period; −2 repaired
-55% and joined 1.2 per 100. A silent rewrite that is wrong costs the words
-themselves, so the writing tier sits where nothing was joined by mistake.
+Each reading is the log-probability of its continuation divided by its token
+count, and the highest wins. Nothing is compared to a threshold, so there is
+nothing to calibrate. The marks are `transcription.sentences.marks`, default
+`[".", ","]`; `;` and `:` were measured and never changed a decision in
+English.
+
+Three things are load-bearing. Per token, not summed: on summed
+log-probability the joined reading wins by being shortest, which repairs 97% of
+the cuts and destroys 33 real endings. The comma is a reading and not a term in
+a subtraction: 26% of real endings pick it, and that is why none of them picks
+the join. And the three readings go into one padded forward pass, which costs
+50 ms against 70 ms for three passes; a shared KV cache for the prefix is
+slower still.
+
+Measured over 172 real periods and 140 cuts of one speaker's dictation: 81% of
+the cuts repaired, no real period joined. The two thresholds this stage used to
+carry repaired 26%, and the higher one could not be raised — it was set by the
+single lowest-scoring real ending.
 
 Joining removes the period and lowercases the word after it. Not every capital
 there is because of the period: "I will ask him. Nathan knows the answer" must
@@ -508,14 +521,15 @@ never seen it, which is what a name it has not been told about looks like. A
 term in your `vocabulary.yaml` is asked first, because a name that is also an
 English word is the one case the lemma rule cannot see.
 
-English only. The model is English-only, and the same probe measured on
-`cservan/french-modernbert-large` and `-base` scores near chance. Nothing is
-waited for: with no cached model, a probe that throws or a boundary it cannot
-read, the text arrives as it was.
+English only. The readings are scored by an English base model, and the mark
+set is English: French uses `:` where English does not. Nothing is waited for:
+with no cached model, a load that threw or a boundary it cannot read, the text
+arrives as it was. A dictation that arrives before the weights are in memory
+keeps its boundaries and starts the load.
 
-`scripts/check-sentence-join.sh` scores the two tiers and needs the model.
+`scripts/check-sentence-join.sh` scores the decisions and needs the model.
 `scripts/check-sentence-case.sh` scores the lowercasing and needs none, so it
-runs in CI. See `SentenceJoin`.
+runs in CI. See `SentenceJoin` and `SentenceReadings`.
 
 ## Voice corrections
 
