@@ -1709,6 +1709,18 @@ struct Config: Decodable, Equatable {
                                 + " reading and every period would be removed"
                         )
                     }
+                    // A mark is one punctuation character. Any word here would
+                    // be written into the sentence as if it were punctuation,
+                    // and the word `join` is the name of the reading that
+                    // removes the period, so it would remove one.
+                    let wrong = kept.filter { $0.count != 1 || !($0.first?.isPunctuation ?? false) }
+                    guard wrong.isEmpty else {
+                        throw ConfigError.invalidValue(
+                            key: "transcription.sentences.marks",
+                            value: wrong.map { "`\($0)`" }.joined(separator: ", "),
+                            expected: "one punctuation character each — `[\".\", \",\"]`"
+                        )
+                    }
                     marks = kept
                 }
                 let old = try decoder.container(keyedBy: LegacyKeys.self)

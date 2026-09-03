@@ -498,7 +498,8 @@ take, `join_below:` and `offer_below:`, repaired 26%. They are still read, and
 
 `;` and `:` were measured and never changed a decision in English, so the
 default is the two marks that do. The set is a setting because it is
-language-dependent.
+language-dependent. Each entry is one punctuation character; anything else is
+refused, because a mark is written into the sentence as punctuation.
 
 English only, and only where the model is already on disk. Nothing is
 downloaded for this and nothing waits: with no model the transcript arrives as
