@@ -272,6 +272,10 @@ enum PanelsCommand {
         ready.update(NeuralPhonemes.soundDownload.id, to: .installed)
         ready.update(SlotModel.download.id, to: .installed)
         ready.update(SentenceReadings.download.id, to: .installed)
+        // The other blocking row. Its failure costs the speech gate rather than
+        // the whole feature, and the sentence has to say which row it is about.
+        let vadDidNotArrive = sampleDownloads(speech: .installed)
+        vadDidNotArrive.update(Transcriber.voiceDownload.id, to: .failed(.stopped))
 
         let almostReadyPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(almostReady))
@@ -287,6 +291,9 @@ enum PanelsCommand {
         let didNotArrivePane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(didNotArrive))
             .environmentObject(didNotArrive))
+        let vadPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(vadDidNotArrive, espeak: .found))
+            .environmentObject(vadDidNotArrive))
 
         // The third element is the appearance to draw in. Every floating
         // surface is dark whatever the system is set to — that is decided in
@@ -325,6 +332,7 @@ enum PanelsCommand {
             (readyPane, setupSize(readyPane), .dark, false),
             (switchedOffPane, setupSize(switchedOffPane), .dark, false),
             (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
+            (vadPane, setupSize(vadPane), .dark, false),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), .dark, true),
             (AnyView(PillView().environmentObject(thinking)),

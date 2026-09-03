@@ -45,7 +45,8 @@ actor SentenceReadings {
     /// The row the setup screen draws for it.
     static let download = ModelDownload(
         id: "sentence-readings", name: "Qwen3 0.6B Base", megabytes: 320, peak: 320,
-        group: .language, blocking: false
+        group: .language, blocking: false,
+        costOfFailure: "a sentence a pause cut in two is left as it arrived"
     )
 
     /// `model.safetensors.index.json` is absent from this repository — the

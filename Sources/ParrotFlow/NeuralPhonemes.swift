@@ -35,7 +35,8 @@ enum NeuralPhonemes {
     /// for the job: it is CharsiuG2P, run through FluidAudio's Core ML build.
     static let soundDownload = ModelDownload(
         id: "sound", name: "CharsiuG2P", megabytes: 81, peak: 81,
-        group: .sound, blocking: false
+        group: .sound, blocking: false,
+        costOfFailure: "your terms are matched by spelling until it arrives"
     )
 
     /// The languages the model has, in the app's own terms. Nil for a

@@ -37,7 +37,8 @@ actor SlotModel {
     /// compile finishes.
     static let download = ModelDownload(
         id: "slot", name: "mmBERT-small", megabytes: 286, peak: 580,
-        group: .language, blocking: false
+        group: .language, blocking: false,
+        costOfFailure: "the vocabulary gate asks the judge instead"
     )
 
     private static let repository = "znaat/mmbert-small-coreml"

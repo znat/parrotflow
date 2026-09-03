@@ -85,6 +85,10 @@ struct ModelDownload: Identifiable, Equatable {
     /// True when a dictation waits on it. Carried by
     /// `Transcriber.Status.downloading(_, blocking:)` for the two that have it.
     let blocking: Bool
+    /// What is lost while it is not here, as the second half of "X could not be
+    /// downloaded, and …". Only a blocking row's is read, because only a
+    /// blocking row's failure reaches the title.
+    let costOfFailure: String
     var state: State = .waiting
 
     var sizeLabel: String { "\(megabytes) MB" }
@@ -158,10 +162,12 @@ final class ModelDownloads: ObservableObject {
         rows.filter { $0.group == group }
     }
 
-    /// The failure of the first row a dictation is waiting on, if one failed.
-    /// It is the only kind that reaches the foot of the screen.
-    var blockingFailure: ModelDownload.Failure? {
-        rows.first { $0.blocking && $0.state.hasFailed }?.state.failure
+    /// The row a dictation is waiting on that failed, if one did. It is the
+    /// only kind of failure that reaches the title and the foot, and the screen
+    /// names this row rather than the first blocking one — a failed voice
+    /// detector must not be reported as a failed speech model.
+    var blockingFailure: ModelDownload? {
+        rows.first { $0.blocking && $0.state.hasFailed }
     }
 
     /// The rows whose bytes are on disk and will not load. Their repair is to
@@ -172,8 +178,14 @@ final class ModelDownloads: ObservableObject {
 
     /// True when nothing a dictation waits on is still coming. A row a setting
     /// switched off is not coming and nothing waits for it either.
+    ///
+    /// False when there is nothing to wait for at all: `allSatisfy` over no
+    /// rows is true, and that would read as ready to dictate on a launch that
+    /// registered no speech model because it will never transcribe.
     var speechIsIn: Bool {
-        rows.filter(\.blocking).allSatisfy {
+        let blocking = rows.filter(\.blocking)
+        guard !blocking.isEmpty else { return false }
+        return blocking.allSatisfy {
             switch $0.state {
             case .installed, .off: return true
             case .waiting, .downloading, .failed: return false
