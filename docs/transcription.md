@@ -517,6 +517,123 @@ read, the text arrives as it was.
 `scripts/check-sentence-case.sh` scores the lowercasing and needs none, so it
 runs in CI. See `SentenceJoin`.
 
+## Measured and rejected
+
+Nine approaches to sentence repair and word correction were measured on
+2026-09-02 and rejected. Each one looked reasonable, and each will look
+reasonable again. This records what was tried, the number it produced, and the
+mechanism behind the failure.
+
+### Sentence boundary — five
+
+**mmBERT in place of ModernBERT on the probe.** 59% of the cuts repaired
+against ModernBERT's 83%, on the contaminated bench and again on the cleaned
+one. 74% of the loss is the `log P(".")` term, not the next-word term: it does
+not know where an English sentence ends. Its medians on real endings are better
+(+5.58 against +5.42), but its tail is a cluster, so forgiving its worst case
+gains nothing while ModernBERT gains 3 points.
+
+**Scoring on `log P(".")` alone.** Same ordering as the shipped subtraction —
+AUC 0.968 against 0.969 — and 56% repaired against 81%. The subtraction
+normalises rather than compares. A real ending at a hard-to-predict position
+has a low `P(".")` and a low `P(next)`, and subtracting cancels the shared
+difficulty.
+
+**Other ways to normalise the same two terms.** Four were measured:
+
+| score | repaired |
+|---|---|
+| `log P(.) − log P(top-1)` | 47% |
+| `log P(.) − log sum P(top-5)` | 48% |
+| `log P(.) + entropy` | 29% |
+| `log P(.) − mean(next, top-1)` | 85% |
+
+The last one is not a win. A 2000-sample bootstrap puts its 90% interval at
+-3.6 to +7.2 points against the shipped score, which is noise.
+
+**Syntactic rules on the left side.** The rule is "the last word before the
+break cannot end a sentence". A closed-class word list gives 10 false joins for
+4 extra catches. `NLTagger` does far better — `Conjunction` covers 10 cuts and
+0 real endings — but the rule fires on 45 cuts of which the probe already
+catches 39. A language model already encodes syntax, so the two instruments
+read the same signal.
+
+**Commas, colons and semicolons as the thing being detected.** AUC 0.443 to
+0.465, below chance.
+
+### Word correction — four
+
+**Deleting a word by asking whether removing it helps.** The score is
+`delta = log P(without) − log P(with)`, for mumbled fragments, repetitions and
+fillers. Naive AUC 0.460, below chance, and 0.123 against recogniser
+substitutions. A vocabulary term looks more like an intrusion than an artifact
+does. A context-aware version reaches 0.707 but flags 51% of vocabulary terms
+at 80% recall.
+
+**A mumbled fragment cannot be deleted on its own.** 7 of 13 score negative:
+the model prefers the sentence with the fragment in it. A mumble is an
+abandoned word-start, so the restart it was abandoned for always follows it —
+`And wa and iterate`, `a rar no a rare noun`, `The inta the install script`.
+Deleting the fragment leaves the restart, so the neighbourhood is disfluent
+either way. The fix needs fragment and restart together, which a single-span
+deletion cannot express.
+
+**Fillers want a word list, not a model.** 13 of 22 phrases are all but never
+fillers for this speaker. He uses them contrastively:
+
+| phrase | filler uses |
+|---|---|
+| `actually` | 0 of 15 |
+| `of course` | 0 of 8 |
+| `right now` | 0 of 9 |
+| `you see` | 0 of 8 |
+| `quoi` | 0 of 12 |
+| `i think` | 1 of 15 |
+
+Three go the other way and need no model either: `en fait` 12 of 12,
+`basically` 7 of 8, `voilà` 2 of 2. Only `you know` and `i mean` are
+genuinely ambiguous, on n=14 and n=11. A word list settles the rest. The model
+is what is rejected, not the step.
+
+**Detecting a real-word mishearing.** The target is a wrong word that is
+itself a real word — `blink slate`, `just prone Claude`. On 40 held-out
+dictation lines, 769 words: 1.04 flags per 100 words, 5 of 8 flags on words
+that were fine, and 0 of 8 proposing the right word. The true pairs barely
+sound alike on the shipped metric — `prone`/`point` 0.20, `drew`/`few` 0.33,
+`pier`/`PR` 0.43, against a vocabulary floor of 0.80 — so no sound gate
+separates them from words that merely fit the context. This entry covers the
+masked-model version of that detector.
+
+### Three findings worth keeping
+
+**AUC and threshold placement keep coming apart, and only the second matters.**
+Three times a method matched the shipped ordering and lost 20 points or more
+in use. AUC is a mean over every pair. The threshold is a minimum over the
+real endings. A mean is robust to outliers; an extremum is defined by them.
+
+**The mined real sentence endings are contaminated.** They were found by
+searching sent messages for `. Capital`, which assumes every period the speaker
+sent was meant. Of the 25 lowest-scoring, 8 were recogniser errors and 4 were
+not dictations at all. One case that was blocking Qwen by 17 points turned out
+not to be a dictation. The hand labels are in
+`~/Documents/parrotflow-scratch/sentence-join/harness/en_real_labels.json` and
+they only transfer to ModernBERT, since they are ModernBERT's worst 25.
+
+**Retrieval works where ranking does not.** In the mishearing work the right
+word was in the candidate list in 3 of 4 wrong proposals and lost on score:
+`clot → click` with `Claude` in the list, said 30 times; `herd → had` with
+`heard` in the list at sound similarity 1.00. Anything worth pursuing in that
+direction is the ranking, not the retrieval.
+
+The benches are not committed. They live under
+`~/Documents/parrotflow-scratch/`, and the boundary bench and its scorers are in
+`sentence-join/harness/`.
+
+Two earlier rejections are recorded in code rather than here. The rank rule that
+wrote a name at the weakest-reading span is in `SlotGate`'s header. The French
+ModernBERTs that score near chance on the probe are in `SentenceJoin`'s header,
+and in the join section above.
+
 ## Voice corrections
 
 Saying "hey parrot, <name> spells T A S M E E N" adds a pronunciation to

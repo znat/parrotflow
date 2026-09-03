@@ -26,7 +26,7 @@ Start from the question you have.
 | [development.md](development.md) | Dev and released builds are separate apps. Building, the Makefile, and how to cut a release. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Sending a change: `make test`, the commit subject rules, and the sign-off. |
 | [architecture.md](architecture.md) | What each file is for, where the time goes, and what the app does not do. |
-| [transcription.md](transcription.md) | The speech model, its limits, and the stages that cover them. |
+| [transcription.md](transcription.md) | The speech model, its limits, the stages that cover them, and what was measured and rejected. |
 | [distribution.md](distribution.md) | How the app ships, how it is signed, and how updates work. |
 | [repo-settings.md](repo-settings.md) | GitHub's own settings for the repository, kept in `settings/repo.yml` and applied from one script. |
 
