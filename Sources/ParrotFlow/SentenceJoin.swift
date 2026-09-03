@@ -23,8 +23,15 @@ import NaturalLanguage
 /// A pause is written `word? Capital` or `word? lowercase` about a quarter as
 /// often as `word. Capital`, so question marks are scanned as well. A period
 /// followed by a lowercase word is not: the transcriber did not start a
-/// sentence there, and the shape has never been measured. A capital with no
-/// mark in front of it is not either — it does not separate (AUC 0.750).
+/// sentence there, and the shape has never been measured.
+///
+/// A capital with no mark at all is scanned, with a fourth reading — the text
+/// as decoded — because there is no mark to take out and "leave it alone" has
+/// to be a candidate rather than a default. Half of those capitals are correct,
+/// so `bareBoundaries` and `readable` refuse a run of capitals, a capital
+/// inside the word and every part of speech but the ones that open a clause.
+/// 64% of the spurious ones lowercased over 110 hand-labelled candidates, no
+/// correct capital touched, none of 15 real sentence starts joined.
 ///
 /// English only. The reading is scored by an English base model, and the mark
 /// set is English: French wants `:` where English does not.
@@ -74,9 +81,13 @@ actor SentenceJoin {
     /// One boundary: where the mark is, which mark it is, and the word after
     /// it. The mark travels with the boundary so the readings, the log line
     /// and the change all name the one the transcriber wrote.
+    ///
+    /// `mark` is nil for a capital the transcriber wrote with nothing in front
+    /// of it, and `at` is then the first letter of that word rather than a
+    /// character to remove.
     struct Boundary {
         let at: String.Index
-        let mark: Character
+        let mark: Character?
         let next: Range<String.Index>
     }
 
@@ -137,6 +148,54 @@ actor SentenceJoin {
         return found
     }
 
+    /// Every capitalised word the transcriber wrote with no mark in front of
+    /// it: `imports name definitions And all the things`.
+    ///
+    /// A pause does not always make the transcriber write a mark, and this
+    /// shape is about a third as common as `word. Capital`. The word before it
+    /// has to end in a letter or a digit, so a capital that already follows a
+    /// mark, a bracket or a quote is the shape above and is not visited twice.
+    ///
+    /// Two capitals in a row are left alone. Over 621 candidates from one
+    /// speaker, a run of two or more is 53% names — `Better Stack`,
+    /// `Hugging Face`, `Red Crawl` — and 13% boundaries, so reading one asks
+    /// the wrong question. Whether a run is a name is its own problem.
+    static func bareBoundaries(in text: String) -> [Boundary] {
+        var found: [Boundary] = []
+        var words: [Range<String.Index>] = []
+        var cursor = text.startIndex
+        while cursor < text.endIndex {
+            while cursor < text.endIndex, text[cursor].isWhitespace {
+                cursor = text.index(after: cursor)
+            }
+            guard cursor < text.endIndex else { break }
+            let end = text[cursor...].firstIndex(where: \.isWhitespace) ?? text.endIndex
+            words.append(cursor..<end)
+            cursor = end
+        }
+
+        func opens(_ range: Range<String.Index>) -> Bool {
+            guard let first = text[range].first else { return false }
+            return first.isUppercase
+        }
+
+        for (n, range) in words.enumerated() where n > 0 && opens(range) {
+            let previous = words[n - 1]
+            // A single space, and a letter or a digit before it: anything else
+            // is a mark, a bracket or a line break, and none of those is this
+            // shape.
+            guard previous.upperBound < text.endIndex,
+                  text.index(after: previous.upperBound) == range.lowerBound,
+                  let last = text[previous].last, last.isLetter || last.isNumber
+            else { continue }
+            guard !opens(previous), n + 1 == words.count || !opens(words[n + 1]) else {
+                continue
+            }
+            found.append(Boundary(at: range.lowerBound, mark: nil, next: range))
+        }
+        return found
+    }
+
     // MARK: - The capital, once the period is gone
 
     /// The next word as it should be written with no period in front of it.
@@ -189,14 +248,86 @@ actor SentenceJoin {
         return word.prefix(1).lowercased() + word.dropFirst()
     }
 
+    /// Classes a capital with no mark in front of it may be read in.
+    ///
+    /// `written` decides how to write the word after a mark that is already
+    /// there, where a capital that is right is rare. Here it is half the
+    /// input, so the same rules are asked first and the part of speech is
+    /// asked as well. A noun or an adjective in this position is a name, a
+    /// product or a title — `Slack`, `English`, `Friday`, `TypeScript` — and
+    /// lowercasing it writes something nobody said.
+    ///
+    /// Measured over 621 candidates from one speaker's dictation: refusing
+    /// every class but these removes 93% of the capitals that must not be
+    /// touched, and costs 9 repairs of which 4 were reachable at all.
+    static let readableClasses: Set<String> = [
+        "Conjunction", "Determiner", "Pronoun", "Adverb",
+        "Preposition", "Particle", "Interjection", "Verb",
+    ]
+
+    /// Whether a bare capital may be read at all. `written` first, then this.
+    ///
+    /// A capital after the first letter says name whatever the sentence says:
+    /// `WhatsApp`, `TypeScript`, `OpenAI`. `written` only refuses a word in
+    /// capitals throughout, so this is the case it does not see.
+    ///
+    /// The tagger is built with the scheme set `written` uses. Asking for
+    /// `.lexicalClass` alongside changes the answer on 3 of the same 621.
+    static func readable(_ word: String, in joined: String, at offset: Int) -> Bool {
+        let bare = String(word.prefix { $0.isLetter })
+        guard !bare.dropFirst().contains(where: \.isUppercase) else { return false }
+        guard let from = joined.index(
+            joined.startIndex, offsetBy: offset, limitedBy: joined.endIndex
+        ) else { return false }
+        let tagger = NLTagger(tagSchemes: [.nameTypeOrLexicalClass, .lemma])
+        tagger.string = joined
+        tagger.setLanguage(.english, range: joined.startIndex..<joined.endIndex)
+        let tag = tagger.tag(at: from, unit: .word, scheme: .nameTypeOrLexicalClass).0?.rawValue
+        return Self.readableClasses.contains(tag ?? "")
+    }
+
     /// The whole text with one mark taken out, and where the word after it
     /// then starts. Both halves of what `written` needs to tag.
     static func joining(_ text: String, at boundary: Boundary) -> (text: String, offset: Int) {
+        let start = text.distance(from: text.startIndex, to: boundary.next.lowerBound)
+        guard boundary.mark != nil else { return (text, start) }
         var joined = text
         joined.remove(at: boundary.at)
         // The mark sits before the word, so removing it moves the word one
         // character left and nothing else moves at all.
-        return (joined, text.distance(from: text.startIndex, to: boundary.next.lowerBound) - 1)
+        return (joined, start - 1)
+    }
+
+    /// A bare capital is only read when the speaker paused this long in front
+    /// of it. Seconds.
+    ///
+    /// This is a latency cut, not a safety one. The readings answer these
+    /// boundaries correctly with or without it — 0 wrong writes either way on
+    /// 110 labelled candidates — but a pause is what makes the transcriber
+    /// write the capital in the first place, so a capital with no pause in
+    /// front of it is rarely the shape this stage repairs. Skipping those
+    /// spends no forward pass on them.
+    static let paused: Double = 1.0
+
+    /// Seconds of silence in front of each word, keyed by where that word
+    /// starts in the text.
+    ///
+    /// The decoder's words joined by single spaces are the text, so a word's
+    /// offset is a running length. `Transcriber.swift` runs this stage before
+    /// the pipeline for exactly that reason — every text stage after it
+    /// rewrites words the timings index. Words that do not rebuild the text
+    /// give no gate rather than a wrong one.
+    static func pauses(in text: String, words: [Trace.Word]) -> [Int: Double] {
+        guard words.map(\.word).joined(separator: " ") == text else { return [:] }
+        var out: [Int: Double] = [:]
+        var offset = 0
+        var previous: Trace.Word?
+        for word in words {
+            if let previous { out[offset] = word.start - previous.end }
+            offset += word.word.count + 1
+            previous = word
+        }
+        return out
     }
 
     // MARK: - The pass
@@ -210,12 +341,19 @@ actor SentenceJoin {
     /// Nothing here waits for the model. A dictation that arrives before the
     /// weights are in memory keeps its boundaries and starts the load, so the
     /// first dictation after a launch pays nothing and the second is repaired.
-    func apply(to text: String, config: Config) async -> Outcome {
+    /// `words` are the decoder's own, for the pause gate. Without them every
+    /// candidate is read, which is what `--sentence-join` and the tests do.
+    func apply(
+        to text: String, config: Config, words: [Trace.Word] = []
+    ) async -> Outcome {
         let settings = config.transcription.sentences
         guard settings.enabled else { return .unchanged(text) }
         let language = Pipeline.language(of: text, config: config)
         let marks = config.transcription.marks(for: language)
-        let found = Self.boundaries(in: text, scanning: Self.scanned(marks))
+        let found = (
+            Self.boundaries(in: text, scanning: Self.scanned(marks))
+            + Self.bareBoundaries(in: text)
+        ).sorted { $0.next.lowerBound < $1.next.lowerBound }
         guard !found.isEmpty else { return .unchanged(text) }
         guard await SentenceReadings.shared.isLoaded else {
             await SentenceReadings.shared.warm()
@@ -224,19 +362,32 @@ actor SentenceJoin {
             return .unchanged(text)
         }
         let terms = Array(config.vocabulary.terms.keys)
+        let pauses = words.isEmpty ? [:] : Self.pauses(in: text, words: words)
 
         var readings: [Reading] = []
         var rebuilt = ""
         var cursor = text.startIndex
         for boundary in found {
             let word = String(text[boundary.next])
+            let (whole, offset) = Self.joining(text, at: boundary)
+            let now = Self.written(word, in: whole, at: offset, terms: terms)
+            // A bare capital is filtered before it is read, never after. Half
+            // of them are a name the transcriber was right about, and a name
+            // must not reach a reading that could vote to lowercase it.
+            if boundary.mark == nil,
+               now == word || !Self.readable(word, in: whole, at: offset) {
+                continue
+            }
+            if boundary.mark == nil, let gap = pauses[offset], gap < Self.paused {
+                continue
+            }
             let started = DispatchTime.now().uptimeNanoseconds
             let scores: [SentenceReadings.Score]
             do {
                 scores = try await SentenceReadings.shared.read(
                     left: String(text[..<boundary.at]),
                     right: String(text[boundary.next.lowerBound...]),
-                    found: String(boundary.mark),
+                    found: boundary.mark.map(String.init) ?? "",
                     marks: marks
                 )
             } catch {
@@ -248,12 +399,14 @@ actor SentenceJoin {
             }
             let milliseconds = Double(DispatchTime.now().uptimeNanoseconds - started) / 1e6
             guard let best = Self.winner(of: scores) else { continue }
-            let (whole, offset) = Self.joining(text, at: boundary)
-            let now = Self.written(word, in: whole, at: offset, terms: terms)
+            // With no mark, `at` is the word itself and the text before it ends
+            // in the space that separates them.
             let before = String(
-                text[..<boundary.at].reversed().prefix { !$0.isWhitespace }.reversed()
+                text[..<boundary.at].reversed()
+                    .drop { $0.isWhitespace }.prefix { !$0.isWhitespace }.reversed()
             )
-            let change = "\(before)\(boundary.mark) \(word) -> \(before) \(now)"
+            let mark = boundary.mark.map(String.init) ?? ""
+            let change = "\(before)\(mark) \(word) -> \(before) \(now)"
             let listed = scores
                 .map { String(format: "%@ %.2f", $0.key, $0.mean) }
                 .joined(separator: "  ")
@@ -265,7 +418,8 @@ actor SentenceJoin {
 
             if best.key == SentenceReadings.join {
                 rebuilt += text[cursor..<boundary.at]
-                rebuilt += text[text.index(after: boundary.at)..<boundary.next.lowerBound]
+                let after = boundary.mark == nil ? boundary.at : text.index(after: boundary.at)
+                rebuilt += text[after..<boundary.next.lowerBound]
                 rebuilt += now
                 cursor = boundary.next.upperBound
             }

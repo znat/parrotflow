@@ -4,7 +4,9 @@
 #   scripts/check-sentence-join.sh
 #
 # Half the cases are real sentence endings and half are pauses that cut one
-# sentence in two, in both the period and the question-mark shape. Two numbers
+# sentence in two, in both the period and the question-mark shape. A third
+# shape, a capital with no mark in front of it, carries its four readings and
+# is checked on drift alone: it has no real/cut pair. Two numbers
 # decide per shape: how many cuts were repaired, and how many real endings were
 # joined by mistake. A joined real ending is a sentence nobody wrote, with
 # nothing on screen to say so, so one of those fails the run.
@@ -77,7 +79,8 @@ def block_of(out, case):
 
 DRIFT = 0.05
 tally = {name: {} for name in
-         ("en_real.json", "en_cuts.json", "enq_real.json", "enq_cuts_hard.json")}
+         ("en_real.json", "en_cuts.json", "enq_real.json", "enq_cuts_hard.json",
+          "bare-capitals")}
 drifted = []
 
 for case in cases:
@@ -90,7 +93,7 @@ for case in cases:
         print("  ✗ the measured boundary was not found in: " + text_of(case))
         sys.exit(1)
     winner = block["winner"]
-    counts = tally[case["set"]]
+    counts = tally.setdefault(case["set"], {})
     counts[winner] = counts.get(winner, 0) + 1
     gap = max(abs(block["mean"].get(k, 0) - v) for k, v in case["mean"].items())
     mark = " "
@@ -125,6 +128,12 @@ for shape, cut_key, real_key in shapes:
     print("  %d%% of %s cuts repaired, %.1f false joins per 100 real endings" % (
         round(100 * cuts.get("join", 0) / cut_total), shape,
         100 * wrong / real_total))
+    print()
+
+bare, bare_total = row("bare capitals", "bare-capitals")
+if bare_total:
+    print("  %d read as the join, %d left as decoded" % (
+        bare.get("join", 0), bare_total - bare.get("join", 0)))
     print()
 
 if drifted:

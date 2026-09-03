@@ -517,7 +517,10 @@ actor Transcriber {
             // only thing able to match them.
             if !config.vocabularySounds.isEmpty { warmSoundModel() }
             if #available(macOS 14, *) {
-                let joins = await SentenceJoin.shared.apply(to: text, config: config)
+                let joins = await SentenceJoin.shared.apply(
+                    to: text, config: config,
+                    words: Trace.words(from: result.tokenTimings ?? [])
+                )
                 text = joins.text
                 joinedSentences = joins.count(.join)
             }

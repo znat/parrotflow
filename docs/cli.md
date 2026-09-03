@@ -463,6 +463,7 @@ reason for the swap.
 ```sh
 $PF --sentence-model                                       # fetch the model the readings need
 $PF --sentence-probe "<left half>" "<right half>"          # read one boundary
+$PF --sentence-probe --bare "<left half>" "<right half>"   # a capital with no mark
 $PF --sentence-probe --bench <cases.json> --out <out.json> # a whole file, one loaded process
 ```
 
@@ -475,6 +476,20 @@ threshold.
 
 End the left half with `?` to read a question boundary. With no mark there it
 is read as a period.
+
+`--bare` reads it as a capital the transcriber wrote with nothing in front of
+it. That shape gets a fourth reading, the text exactly as decoded, because
+there is no mark to take out and leaving it alone has to be a candidate of its
+own rather than what happens when a mark wins.
+
+```
+$PF --sentence-probe --bare "…the dot and the word app" "And decide which one is bigger"
+  reading   .           -4.9574  7
+  reading   as-decoded  -5.3883  6
+  reading   ,           -4.2416  7
+  reading   join        -4.3177  6
+  winner    ,
+```
 
 ```
 $PF --sentence-probe "…the first usage of the LLM with." "The vocabulary is slower"
@@ -492,7 +507,8 @@ sequences do this.
 
 `--bench` reads `[{"left": …, "right": …}]` and writes one row of scores per
 boundary, with the mark it read and the milliseconds each decision took. A row
-may carry `"mark": "?"` where the left half does not end with the mark itself.
+may carry `"mark": "?"` where the left half does not end with the mark itself,
+and `"mark": ""` for the bare-capital shape.
 It loads the model once, so it is the only way to get a latency number;
 `--vectors` loads the word vectors as well, so the memory line describes the
 process the app runs.

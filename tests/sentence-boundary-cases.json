@@ -718,5 +718,70 @@
    "?": -6.9357,
    "join": -3.8142
   }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "This one does not rely on um the harness we can construct",
+  "right": "A test set inspired from a couple of crawl files of HCP",
+  "winner": "join",
+  "mean": {
+   ",": -6.2126,
+   ".": -6.2656,
+   "as-decoded": -6.5784,
+   "join": -5.9801
+  }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "name of the people they interact with and all the jargon from",
+  "right": "The main channels they communicate into We feed it and then from",
+  "winner": "join",
+  "mean": {
+   ",": -6.2038,
+   ".": -6.4045,
+   "as-decoded": -6.5457,
+   "join": -6.0074
+  }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "with and all the jargon from The main channels they communicate into",
+  "right": "We feed it and then from that we identify the terms that",
+  "winner": ",",
+  "mean": {
+   ",": -4.5055,
+   ".": -4.5627,
+   "as-decoded": -5.1056,
+   "join": -4.6273
+  }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "technical terms and acronyms from the code base and from Slack conversations",
+  "right": "And the people I interacted with the last thirty days so a",
+  "winner": ",",
+  "mean": {
+   ",": -4.0813,
+   ".": -4.2839,
+   "as-decoded": -4.5694,
+   "join": -4.1349
+  }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "example if it heard a dot b then it substitution would be",
+  "right": "A dot B and A dot B would be part of the",
+  "winner": "as-decoded",
+  "mean": {
+   ",": -2.8468,
+   ".": -3.1882,
+   "as-decoded": -2.3563,
+   "join": -2.4674
+  }
  }
 ]
