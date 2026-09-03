@@ -422,48 +422,52 @@ $PF --transcribe /tmp/t.wav
 ## Is this period real
 
 ```sh
-$PF --sentence-model                                       # fetch, compile and load ModernBERT
-$PF --sentence-probe "<left half>" "<right half>"          # score one boundary
-$PF --sentence-probe --encode "<text>"                     # the tokenizer alone, no model
+$PF --sentence-model                                       # fetch both sentence models
+$PF --sentence-probe "<left half>" "<right half>"          # read one boundary
+$PF --sentence-probe --encode "<text>"                     # the masked tokenizer, no model
+$PF --sentence-probe --bench <cases.json> --out <out.json> # a whole file, one loaded process
 ```
 
 A pause in the middle of a sentence makes the transcriber write a period. The
-probe asks ModernBERT what belongs where that period is:
-`score = log P(".") − log P(" <next word>")`, both read at one masked position.
-A low score means the period is false and the two halves are one sentence.
-Measured over 194 real periods and 130 synthetic cuts of dictation:
-
-| threshold | cuts repaired | false joins per 100 real periods |
-|---:|---:|---:|
-| −4 | 32% | 0.0 |
-| −2 | 55% | 1.2 |
-| 0 | 82% | 6.1 |
+probe builds one reading of the boundary per mark and one with no mark at all,
+and scores each with `mlx-community/Qwen3-0.6B-Base-4bit`. The score is the
+log-probability of the continuation divided by its token count. The highest
+wins, and there is no threshold.
 
 ```
-$PF --sentence-probe "we have to do it." "That works well"
-  boundary  "." 15   " ." 964   "That" 2773   " That" 2064  ✓
-  text      we have to do it [MASK] that works well
-  score        1.45
-  period      -4.12   "."
-  next        -5.57   " that"
-  top       " and"   -1.54   ","   -2.36   " something"   -2.93
+$PF --sentence-probe "…the first usage of the LLM with." "The vocabulary is slower"
+  prefix    the first usage of the LLM with
+  reading   .        -7.2669  5
+  reading   ,        -6.5327  5
+  reading   join     -4.5571  4
+  winner    join
 ```
 
-The `boundary` line is the tokenizer checking itself against a real
-tokenization. A word after another word carries its leading space, so `" That"`
-is 2064 and `"That"` is 2773 — comparing against the second scores nothing at
-every threshold and raises no error. If that check fails the probe refuses to
-answer.
+The number after the score is how many tokens it was divided by. `retokenised`
+on a line means the mark merged into the last token of the prefix, so that
+reading is scored from the first token that actually differs — 2 of 972 bench
+sequences do this.
 
-`--encode` prints ids and loads no model, which is what
-`scripts/check-tokenizer.sh` compares against HuggingFace's own tokenizer.
-`scripts/check-sentence-probe.sh` goes further and compares the scores;
-it needs the model, so it is not in `make test`.
+`--bench` reads `[{"left": …, "right": …}]` and writes one row of scores per
+boundary, with the milliseconds each decision took. It loads the model once, so
+it is the only way to get a latency number; `--vectors` loads the word vectors
+as well, so the memory line describes the process the app runs.
+
+`--encode` prints ModernBERT's ids and loads no model, which is what
+`scripts/check-tokenizer.sh` compares against HuggingFace's own tokenizer. That
+tokenizer belongs to the vocabulary slot gate, not to this stage.
+`scripts/check-sentence-probe.sh` compares the readings against
+tests/sentence-boundary-cases.json; it needs the model, so it is not in
+`make test`.
+
+`--sentence-model` fetches both: the Qwen base model the readings are scored
+with, and ModernBERT, which the vocabulary slot gate still fills a masked slot
+with.
 
 ## Which periods a pause put there
 
 ```sh
-$PF --sentence-join "<text>"            # score every boundary, and join what is below
+$PF --sentence-join "<text>"            # read every boundary, and join what wins
 $PF --sentence-join --case "<text>"     # the lowercasing alone, no model
 ```
 
@@ -474,14 +478,16 @@ per `word. Capital` boundary, then the text it hands on.
 $PF --sentence-join "…the first usage of the LLM with. The vocabulary is slower"
   language   en
   boundary   with. The -> with the
-  score      -5.0664
-  tier       join
+  reading    .         -7.2669  5
+  reading    ,         -6.5327  5
+  reading    join      -4.5571  4
+  winner     join
   text       …the first usage of the LLM with the vocabulary is slower
 ```
 
-`tier` is `join` below `join_below`, `offer` below `offer_below`, and `leave`
-above it. Both thresholds are `transcription.sentences` in `config.yaml`.
-`scripts/check-sentence-join.sh` scores the two tiers against
+The period is removed where `join` wins, and left alone otherwise. The marks
+tried are `transcription.sentences.marks` in `config.yaml`.
+`scripts/check-sentence-join.sh` scores the decisions against
 tests/sentence-boundary-cases.json; it needs the model, so it is run by hand.
 
 `--case` answers only what the capitalised word becomes once the period is
@@ -726,10 +732,10 @@ scripts/check-clipboard.sh         # when a rewrite may go to the clipboard, and
 scripts/check-span-rule.sh         # which range a rewrite is written as, before any app sees it
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
 scripts/check-tokenizer.sh         # the hand-written BPE against HuggingFace's own
-scripts/check-sentence-probe.sh    # the boundary score against coremltools (needs the model)
+scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the model)
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
 scripts/check-sentence-case.sh     # the capital after a period the join removes
-scripts/check-sentence-join.sh     # the two tiers of the sentence join (needs the model)
+scripts/check-sentence-join.sh     # which periods the join removes (needs the model)
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

@@ -1655,26 +1655,34 @@ struct Config: Decodable, Equatable {
         /// When a period the transcriber wrote is taken out again — see
         /// `SentenceJoin`.
         ///
-        ///     sentences: false        never look at a boundary
+        ///     sentences: false          never look at a boundary
         ///     sentences:
-        ///       join_below: -4.0      remove the period, say nothing
-        ///       offer_below: -2.0     offer the join, do not write it
+        ///       marks: [".", ","]       the marks tried beside the join
         ///
         /// Two spellings, like `review:` on a pipeline step: a bare `false`
         /// turns the stage off, anything else says what it runs with.
         ///
-        /// The defaults are where the score was measured, over 194 real
-        /// periods and 130 synthetic cuts of this speaker's own dictation. -4
-        /// repaired 32% of the cuts and joined no real period; -2 repaired 55%
-        /// and joined 1.2 per 100. So -4 writes and -2 asks.
+        /// There is no threshold. Every boundary is read as many ways as there
+        /// are marks, plus once with no mark at all, and the reading the model
+        /// scores highest is the one that is written. `;` and `:` were measured
+        /// and never changed a decision in English, so the default is the two
+        /// that do.
         var sentences: Sentences = Sentences()
 
         struct Sentences: Decodable, Equatable {
             var enabled = true
-            var joinBelow: Double = -4
-            var offerBelow: Double = -2
+            var marks: [String] = [".", ","]
+
+            /// Keys still read and no longer acted on, for `notices()`.
+            var legacy: [String] = []
 
             enum CodingKeys: String, CodingKey {
+                case marks
+            }
+
+            /// The two thresholds the argmax replaced. Read only so that a
+            /// config still setting them can be told they do nothing.
+            private enum LegacyKeys: String, CodingKey {
                 case joinBelow = "join_below"
                 case offerBelow = "offer_below"
             }
@@ -1687,17 +1695,40 @@ struct Config: Decodable, Equatable {
                     return
                 }
                 let c = try decoder.container(keyedBy: CodingKeys.self)
-                joinBelow = try c.decodeIfPresent(Double.self, forKey: .joinBelow) ?? joinBelow
-                offerBelow = try c.decodeIfPresent(Double.self, forKey: .offerBelow) ?? offerBelow
-                // Read in this order, so the two swapped make every offer a
-                // silent join instead of refusing the file.
-                guard joinBelow < offerBelow else {
-                    throw ConfigError.invalidValue(
-                        key: "transcription.sentences.join_below",
-                        value: "\(joinBelow), against offer_below \(offerBelow)",
-                        expected: "a number below offer_below — joining is the surer tier,"
-                            + " so its threshold is the lower one"
-                    )
+                if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
+                    let kept = written
+                        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                        .filter { !$0.isEmpty }
+                    // With no mark the join is the only reading, so it wins
+                    // every boundary and every period in the transcript goes.
+                    guard !kept.isEmpty else {
+                        throw ConfigError.invalidValue(
+                            key: "transcription.sentences.marks",
+                            value: "an empty list",
+                            expected: "at least one mark — with none, joining is the only"
+                                + " reading and every period would be removed"
+                        )
+                    }
+                    // A mark is one punctuation character. Any word here would
+                    // be written into the sentence as if it were punctuation,
+                    // and the word `join` is the name of the reading that
+                    // removes the period, so it would remove one.
+                    let wrong = kept.filter { $0.count != 1 || !($0.first?.isPunctuation ?? false) }
+                    guard wrong.isEmpty else {
+                        throw ConfigError.invalidValue(
+                            key: "transcription.sentences.marks",
+                            value: wrong.map { "`\($0)`" }.joined(separator: ", "),
+                            expected: "one punctuation character each — `[\".\", \",\"]`"
+                        )
+                    }
+                    marks = kept
+                }
+                let old = try decoder.container(keyedBy: LegacyKeys.self)
+                for key in [LegacyKeys.joinBelow, .offerBelow]
+                where ((try? old.decodeIfPresent(Double.self, forKey: key)) ?? nil) != nil {
+                    legacy.append("`\(key.stringValue):` was a threshold on a score."
+                        + " The boundary is settled by which reading the model scores"
+                        + " highest now, so there is nothing left to set")
                 }
             }
         }
@@ -2026,7 +2057,7 @@ struct Config: Decodable, Equatable {
                 throw ConfigError.invalidValue(
                     key: "transcription.sentences",
                     value: "not a sentence setting",
-                    expected: "`false`, or `join_below:` and `offer_below:` as numbers"
+                    expected: "`false`, or `marks:` as a list of punctuation marks"
                 )
             }
             // Wrapped, as `replacements:` is below and for the same reason.
@@ -2711,6 +2742,7 @@ struct Config: Decodable, Equatable {
         // Said whether or not there are terms: a file can carry the old
         // file-level key and nothing else.
         said += vocabulary.legacy.map { "vocabulary: \($0)" }
+        said += transcription.sentences.legacy.map { "sentences: \($0)" }
         return said
     }
 

@@ -473,25 +473,35 @@ end of what was still there.
 
 A pause mid-sentence makes the transcriber write a period and capitalise the
 next word, so one sentence becomes two. Every `word. Capital` boundary in an
-English transcript is scored, and two thresholds decide what happens.
+English transcript is read several ways and the reading the model likes best
+wins.
 
 ```yaml
 transcription:
   sentences:
-    join_below: -4.0     # remove the period and say nothing
-    offer_below: -2.0    # offer the join, do not write it
+    marks: [".", ","]    # the marks tried beside removing the period
 ```
 
 `sentences: false` turns the whole stage off.
 
-The score is `log P(".") − log P(" <next word>")`, read from a masked language
-model at the position of the period. It is negative when the model would rather
-see the next word there than a full stop. Measured over 194 real periods and
-130 synthetic cuts of one speaker's dictation, −4 repaired 32% of the cuts and
-joined no real period; −2 repaired 55% and joined 1.2 per 100. So −4 writes and
-−2 asks. Nothing shows the offer yet.
+There is no threshold. For a `word. Capital` boundary the stage builds one
+reading per mark — `". The vocabulary is slower"`, `", the vocabulary is
+slower"` — and one with no mark at all, scores each with a small causal
+language model, and writes the winner. A score is the log-probability of the
+continuation divided by its token count. Where the reading with no mark wins,
+the period is removed and the next word is lowercased.
 
-English only, and only where the sentence model is already on disk. Nothing is
+Measured over 172 real periods and 140 cuts of one speaker's dictation: 81% of
+the cuts repaired and no real period joined. The two thresholds this used to
+take, `join_below:` and `offer_below:`, repaired 26%. They are still read, and
+`--check-config` says they no longer do anything.
+
+`;` and `:` were measured and never changed a decision in English, so the
+default is the two marks that do. The set is a setting because it is
+language-dependent. Each entry is one punctuation character; anything else is
+refused, because a mark is written into the sentence as punctuation.
+
+English only, and only where the model is already on disk. Nothing is
 downloaded for this and nothing waits: with no model the transcript arrives as
 it was. See [transcription.md](transcription.md).
 

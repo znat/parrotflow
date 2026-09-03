@@ -27,42 +27,36 @@ actor WordVectors {
 
     static let shared = WordVectors()
 
-    private static let repository = "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ"
+    /// The cache and its download. The file list is not the whole repository:
+    /// `model.safetensors.index.json` is absent from it, and listing a file
+    /// that is not there fails the fetch on `unlisted`.
+    static let cache = MLXModelCache(
+        repository: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ",
+        files: [
+            "config.json",
+            "model.safetensors",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+            "added_tokens.json",
+            "vocab.json",
+            "merges.txt",
+        ],
+        directory: AppVariant.supportDirectory
+            .appendingPathComponent("models/qwen3-embedding-0.6b-4bit", isDirectory: true),
+        lockURL: AppVariant.supportDirectory
+            .appendingPathComponent("models/qwen3-embedding.lock"),
+        label: "word vectors"
+    )
 
-    /// `model.safetensors.index.json` is not in the repository — the weights
-    /// are one file. Listing it would fail the download on `unlisted`.
-    private static let files = [
-        "config.json",
-        "model.safetensors",
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "special_tokens_map.json",
-        "added_tokens.json",
-        "vocab.json",
-        "merges.txt",
-    ]
-
-    static var directory: URL {
-        AppVariant.supportDirectory
-            .appendingPathComponent("models/qwen3-embedding-0.6b-4bit", isDirectory: true)
-    }
-
-    /// Beside the cache directory, not inside it, so a fetch that clears the
-    /// cache does not delete a lock somebody is holding.
-    private static var lockURL: URL {
-        directory.deletingLastPathComponent()
-            .appendingPathComponent("qwen3-embedding.lock")
-    }
+    static var directory: URL { cache.directory }
 
     enum Failure: LocalizedError {
-        case busy
         case notQwen(String)
         case spanNotFound(word: String, in: String)
 
         var errorDescription: String? {
             switch self {
-            case .busy:
-                return "another ParrotFlow process is fetching the word-vector model"
             case .notQwen(let kind):
                 return "the word-vector model loaded as \(kind), not Qwen3"
             case .spanNotFound(let word, let sentence):
@@ -71,11 +65,7 @@ actor WordVectors {
         }
     }
 
-    static var isCached: Bool {
-        files.allSatisfy {
-            FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
-        }
-    }
+    static var isCached: Bool { cache.isCached }
 
     private var loaded: ModelContext?
 
@@ -127,52 +117,13 @@ actor WordVectors {
     private static func build(
         progress: (@Sendable (String) -> Void)?
     ) async throws -> ModelContext {
-        if !isCached { try await underLock { try await fetch(progress: progress) } }
-        let context = try await loadModel(from: directory, using: FolderTokenizer())
+        try await cache.ensure(progress: progress)
+        let context = try await loadModel(from: cache.directory, using: FolderTokenizer())
         guard context.model is Qwen3Model else {
             throw Failure.notQwen(String(describing: type(of: context.model)))
         }
+        MLXModelCache.limitBufferPool()
         return context
-    }
-
-    private static func underLock(_ body: () async throws -> Void) async throws {
-        try FileManager.default.createDirectory(
-            at: lockURL.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        let handle = open(lockURL.path, O_CREAT | O_RDWR, 0o644)
-        guard handle >= 0 else { throw Failure.busy }
-        defer { close(handle) }
-        guard flock(handle, LOCK_EX | LOCK_NB) == 0 else { throw Failure.busy }
-        try await body()
-    }
-
-    /// Fetches into a staging directory and moves the result into place, so a
-    /// half-written cache never loads. Staging sits inside `directory` to keep
-    /// the move a rename on one volume.
-    private static func fetch(progress: (@Sendable (String) -> Void)?) async throws {
-        let manager = FileManager.default
-        try manager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let left = try? manager.contentsOfDirectory(atPath: directory.path)
-        for name in left ?? [] where name.hasPrefix(".staging-") {
-            try? manager.removeItem(at: directory.appendingPathComponent(name))
-        }
-        let staging = directory
-            .appendingPathComponent(".staging-\(UUID().uuidString)", isDirectory: true)
-        try manager.createDirectory(at: staging, withIntermediateDirectories: true)
-        defer { try? manager.removeItem(at: staging) }
-
-        let reported = Reported()
-        try await HubDownload.fetch(repo: repository, paths: files, into: staging) { fraction in
-            guard let progress else { return }
-            let percent = Int((fraction * 100).rounded())
-            guard reported.advanced(to: percent) else { return }
-            progress("word vectors \(percent)%")
-        }
-        for name in files {
-            let target = directory.appendingPathComponent(name)
-            try? manager.removeItem(at: target)
-            try manager.moveItem(at: staging.appendingPathComponent(name), to: target)
-        }
     }
 
     // MARK: - the two vectors
@@ -262,58 +213,4 @@ actor WordVectors {
         return first ..< (last + 1)
     }
 
-    /// The percentage last reported. A class because the progress closure is
-    /// `@Sendable` and escapes.
-    private final class Reported: @unchecked Sendable {
-        private var last = -1
-        private let lock = NSLock()
-
-        func advanced(to percent: Int) -> Bool {
-            lock.lock()
-            defer { lock.unlock() }
-            guard percent > last else { return false }
-            last = percent
-            return true
-        }
-    }
-}
-
-/// `AutoTokenizer` over a folder, as the one protocol `loadModel` needs.
-///
-/// `MLXHuggingFace` provides this behind a macro, and swift-syntax with it.
-/// This is the whole of what that macro expands to for the loading path.
-@available(macOS 14, *)
-private struct FolderTokenizer: TokenizerLoader {
-    func load(from directory: URL) async throws -> any MLXLMCommon.Tokenizer {
-        Adapter(try await AutoTokenizer.from(modelFolder: directory))
-    }
-
-    private struct Adapter: MLXLMCommon.Tokenizer, @unchecked Sendable {
-        let upstream: any Tokenizers.Tokenizer
-
-        init(_ upstream: any Tokenizers.Tokenizer) { self.upstream = upstream }
-
-        func encode(text: String, addSpecialTokens: Bool) -> [Int] {
-            upstream.encode(text: text, addSpecialTokens: addSpecialTokens)
-        }
-        func decode(tokenIds: [Int], skipSpecialTokens: Bool) -> String {
-            upstream.decode(tokens: tokenIds, skipSpecialTokens: skipSpecialTokens)
-        }
-        func convertTokenToId(_ token: String) -> Int? { upstream.convertTokenToId(token) }
-        func convertIdToToken(_ id: Int) -> String? { upstream.convertIdToToken(id) }
-
-        var bosToken: String? { upstream.bosToken }
-        var eosToken: String? { upstream.eosToken }
-        var unknownToken: String? { upstream.unknownToken }
-
-        func applyChatTemplate(
-            messages: [[String: any Sendable]],
-            tools: [[String: any Sendable]]?,
-            additionalContext: [String: any Sendable]?
-        ) throws -> [Int] {
-            // Nothing here holds a conversation. The vocabulary stage sends one
-            // sentence and reads the states back.
-            []
-        }
-    }
 }

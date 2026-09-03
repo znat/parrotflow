@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
-"""Writes the two fixtures the Swift sentence probe is checked against.
+"""Writes the two fixtures the Swift sentence code is checked against.
 
-    scripts/sentence-probe-reference.py tokens          -> tests/tokenizer-cases.json
-    scripts/sentence-probe-reference.py scores <n>      -> tests/sentence-boundary-cases.json
+    scripts/sentence-probe-reference.py tokens     -> tests/tokenizer-cases.json
+    scripts/sentence-probe-reference.py readings   -> tests/sentence-boundary-cases.json
 
-`tokens` needs the `tokenizers` package and `tokenizer.json`. `scores` also
-needs `coremltools` and the `.mlpackage`, and runs the same weights Swift runs
-so a disagreement is Swift's packing, not a conversion difference.
+`tokens` needs the `tokenizers` package and ModernBERT's `tokenizer.json`. That
+tokenizer belongs to the vocabulary slot gate, which still reads the masked
+model.
 
-Boundaries come from a scored set of the user's own dictation. Point --data at
-its directory; the file holds `left` and `right` already windowed to +-12
-words, which is what `SentenceProbe.read` reproduces.
+`readings` needs the release binary and the Qwen model on disk. It runs
+`--sentence-probe --bench` over a sample of the boundary bench and stores what
+came back, so the fixture is by construction what the binary produces. Point
+--data at the bench directory; its files hold `left` and `right` already
+windowed to +-12 words, which is the window the app builds.
+
+Real endings carrying a hand label are left out. `join` means the period is
+wrong, `drop` that the row is not a dictation, and `tie` that both readings are
+right — none of the three is a real ending a join would spoil.
 """
 import argparse
 import json
@@ -22,7 +28,6 @@ TOKENIZER = os.path.expanduser(
     "~/Library/Application Support/ParrotFlow/models/modernbert-base-64/tokenizer.json"
 )
 LENGTH = 64
-RADIUS = 12
 
 # Every class the Swift tokenizer can get wrong on its own: the byte alphabet,
 # the merge order, the NFC normaliser, the added tokens, and the empty string.
@@ -66,68 +71,43 @@ def tokens(args):
     write(args.out or os.path.join(HERE, "tests/tokenizer-cases.json"), out)
 
 
-def build(tk, left, right):
-    """The text and the two ids, exactly as `SentenceProbe.read` builds them."""
-    words = left.rstrip(".").split()[-RADIUS:]
-    after = right.split()
-    if not after or not words:
-        return None
-    nxt = after[0][0].lower() + after[0][1:]
-    after = ([nxt] + after[1:])[:RADIUS]
-    head = tk.encode(" ".join(words), add_special_tokens=False).ids
-    tail = tk.encode(" " + " ".join(after), add_special_tokens=False).ids
-    while len(head) + len(tail) > LENGTH - 3:
-        if len(head) >= len(tail):
-            head = head[1:]
-        else:
-            tail = tail[:-1]
-    ids = [tk.token_to_id("[CLS]")] + head + [tk.token_to_id("[MASK]")] + tail
-    ids += [tk.token_to_id("[SEP]")]
-    mask_at = 1 + len(head)
-    ids += [tk.token_to_id("[PAD]")] * (LENGTH - len(ids))
-    nid = tk.encode(" " + nxt, add_special_tokens=False).ids
-    if not nid:
-        return None
-    return ids, mask_at, nid[0], " ".join(words) + " [MASK] " + " ".join(after)
+def readings(args):
+    """A sample of the bench, scored by the release binary."""
+    import subprocess
+    import tempfile
 
-
-def scores(args):
-    import coremltools as ct
-    import numpy as np
-
-    tk = load_tokenizer(args.tokenizer)
-    model = ct.models.MLModel(args.package)
-    dot = tk.token_to_id(".")
-
-    data = []
-    for name in ("en_real.json", "en_cuts.json"):
-        entries = json.load(open(os.path.join(args.data, name)))
-        step = max(1, len(entries) // (args.count // 2))
-        data += [(name, e) for e in entries[::step]][: args.count // 2]
+    labelled = set()
+    labels_path = os.path.join(args.data, "en_real_labels.json")
+    if os.path.exists(labels_path):
+        labels = json.load(open(labels_path))
+        for key in ("join", "drop", "tie"):
+            labelled |= set(labels.get(key, []))
 
     out = []
-    for name, entry in data:
-        built = build(tk, entry["left"], entry["right"])
-        if built is None:
-            continue
-        ids, mask_at, nid, text = built
-        logits = model.predict(
-            {"input_ids": np.array([ids], dtype=np.int32)}
-        )["logits"][0, mask_at]
-        logits = logits.astype(np.float64)
-        top = logits.max()
-        norm = top + np.log(np.exp(logits - top).sum())
-        period = float(logits[dot] - norm)
-        following = float(logits[nid] - norm)
-        out.append({
-            "set": name,
-            "left": entry["left"],
-            "right": entry["right"],
-            "text": text,
-            "period": round(period, 4),
-            "next": round(following, 4),
-            "score": round(period - following, 4),
-        })
+    for name, skip in (("en_real.json", labelled), ("en_cuts.json", set())):
+        entries = json.load(open(os.path.join(args.data, name)))
+        wanted = [i for i in range(len(entries)) if i not in skip]
+        step = max(1, len(wanted) // (args.count // 2))
+        wanted = wanted[::step][: args.count // 2]
+        rows = [
+            {"left": entries[i]["left"], "right": entries[i]["right"]} for i in wanted
+        ]
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as work:
+            cases = os.path.join(work, "cases.json")
+            scored = os.path.join(work, "scored.json")
+            json.dump(rows, open(cases, "w"))
+            subprocess.run(
+                [args.binary, "--sentence-probe", "--bench", cases, "--out", scored],
+                check=True, stdout=subprocess.DEVNULL,
+            )
+            for row in json.load(open(scored)):
+                out.append({
+                    "set": name,
+                    "left": rows[row["i"]]["left"],
+                    "right": rows[row["i"]]["right"],
+                    "winner": row["winner"],
+                    "mean": {k: round(v, 4) for k, v in sorted(row["mean"].items())},
+                })
     write(args.out or os.path.join(HERE, "tests/sentence-boundary-cases.json"), out)
 
 
@@ -139,11 +119,11 @@ def write(path, rows):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("what", choices=("tokens", "scores"))
+parser.add_argument("what", choices=("tokens", "readings"))
 parser.add_argument("--tokenizer", default=TOKENIZER)
-parser.add_argument("--package", default="ModernBERT-base-64.mlpackage")
 parser.add_argument("--data", default=".")
+parser.add_argument("--binary", default=os.path.join(HERE, ".build/release/ParrotFlow"))
 parser.add_argument("--count", type=int, default=40)
 parser.add_argument("--out")
 args = parser.parse_args()
-(tokens if args.what == "tokens" else scores)(args)
+(tokens if args.what == "tokens" else readings)(args)

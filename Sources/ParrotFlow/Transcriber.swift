@@ -152,10 +152,10 @@ actor Transcriber {
 
     /// Starts the sentence model download and does not wait for it.
     ///
-    /// Nothing reads the model yet, so awaiting it would park the first
-    /// English dictation behind 300 MB for no gain. It reports progress but
-    /// never `.failed`: a model no stage consumes must not put "Model error"
-    /// in the menu bar.
+    /// The vocabulary slot gate reads it, and that gate stands aside until the
+    /// weights are there, so awaiting it would park the first English dictation
+    /// behind 300 MB for no gain. It reports progress but never `.failed`: a
+    /// stage that stands aside must not put "Model error" in the menu bar.
     func warmSentenceModel() {
         guard sentenceModelFetch == nil else { return }
         sentenceModelRunning = true
@@ -497,14 +497,17 @@ actor Transcriber {
         // watching.
         //
         // English only, and the sentence pass below shares that gate: the
-        // masked model is English-only and scores near chance on French.
+        // readings are scored by an English base model and the mark set is
+        // English.
         var joinedSentences = 0
-        var offeredSentences = 0
         if Pipeline.language(of: text, config: config) == "en" {
             // Both are fetched at launch now. These are the retry: a fetch
             // that failed clears itself, and the next English dictation is the
             // next chance to try again.
             warmSentenceModel()
+            if #available(macOS 14, *), config.transcription.sentences.enabled {
+                Task { await SentenceReadings.shared.warm() }
+            }
             if config.vocabulary.gateSentence, #available(macOS 14, *) {
                 Task { await WordVectors.shared.warm() }
             }
@@ -518,7 +521,6 @@ actor Transcriber {
                 let joins = await SentenceJoin.shared.apply(to: text, config: config)
                 text = joins.text
                 joinedSentences = joins.count(.join)
-                offeredSentences = joins.count(.offer)
             }
         }
 
@@ -555,11 +557,8 @@ actor Transcriber {
                 // pipeline can read rather than an error about a missing path.
                 "vocabulary.count": .int(vocabularyCount),
                 "vocabulary.changes": .string(vocabularyChanges),
-                // The periods a pause put in and this run took out, and the
-                // ones it would only offer to take out. Nothing shows the
-                // offer yet — see `SentenceJoin.Outcome`.
+                // The periods a pause put in and this run took out.
                 "sentences.joined": .int(joinedSentences),
-                "sentences.offered": .int(offeredSentences),
         ])
         // Only when there is one. Absent says "no press", which is the honest
         // answer off the hotkey path and the one `input` declines on.
