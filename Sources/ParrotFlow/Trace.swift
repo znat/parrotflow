@@ -495,7 +495,7 @@ enum Trace {
         }
     }
 
-    struct Word: Encodable {
+    struct Word: Encodable, Sendable {
         let word: String
         let start: Double
         let end: Double
