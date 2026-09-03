@@ -872,8 +872,11 @@ private struct SetupPane: View {
     }
 
     /// The model still being waited for, which is the one the title is about.
+    ///
+    /// Not the first blocking row: Parakeet lands before Silero VAD starts, and
+    /// naming it then would say an installed model is still coming down.
     private var awaited: ModelDownload? {
-        downloads.rows.first { $0.blocking && !$0.state.hasFailed } ?? downloads.blockingFailure
+        downloads.rows.first { $0.blocking && $0.state.isPending }
     }
 
     private var title: String {

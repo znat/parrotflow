@@ -652,7 +652,13 @@ enum PanelsCommand {
             ticker = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
                 percent += 1
                 if percent > 100 {
+                    // Parakeet lands first and Silero VAD follows it, which is
+                    // the moment the title has to name the second row rather
+                    // than the first.
                     downloads.update(Transcriber.speechDownload.id, to: .installed)
+                    downloads.update(
+                        Transcriber.voiceDownload.id, to: .downloading(percent: nil)
+                    )
                     downloads.update(SentenceModel.download.id, to: .downloading(percent: nil))
                     return
                 }

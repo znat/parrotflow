@@ -67,6 +67,15 @@ struct ModelDownload: Identifiable, Equatable {
             if case .failed(let why) = self { return why }
             return nil
         }
+
+        /// Still to come. A row that failed is not pending: it has stopped,
+        /// and the screen says so in its own sentence.
+        var isPending: Bool {
+            switch self {
+            case .waiting, .downloading: return true
+            case .installed, .off, .failed: return false
+            }
+        }
     }
 
     /// What a row says when a setting means it is never fetched. Not a failure
