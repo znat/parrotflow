@@ -2318,9 +2318,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of
             // a launch keep the periods a pause put in. Not fetched at all when
-            // the pipeline has no `interpret` step — nothing else reads them.
-            if #available(macOS 14, *),
-               Pipeline.resolved(config: config).stages.contains(.interpret) {
+            // nothing will read them — nothing else does.
+            if #available(macOS 14, *), config.readsBoundaries {
                 Task.detached(priority: .background) {
                     await SentenceReadings.shared.warm()
                 }

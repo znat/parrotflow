@@ -338,12 +338,13 @@ actor SentenceJoin {
     /// the text as it is being rebuilt. A join only removes a mark, so the
     /// window a later boundary reads is the same words either way.
     ///
-    /// Nothing here waits for the model. A dictation that arrives before the
-    /// weights are in memory keeps its boundaries and starts the load, so the
-    /// first dictation after a launch pays nothing and the second is repaired.
-    /// The load is only ever started for weights already on disk: this runs
-    /// from `--pipeline` and from the check scripts now, and none of those has
-    /// any business fetching 320 MB.
+    /// Nothing here waits for the model, and nothing here loads it. A
+    /// dictation that arrives before the weights are in memory keeps its
+    /// boundaries; the transcriber started the load before the pipeline ran,
+    /// so the first dictation after a launch pays nothing and the second is
+    /// repaired. Loading from here would mean every `--pipeline` run and every
+    /// check script paying 1.3s, or fetching 320 MB it has no business
+    /// fetching.
     ///
     /// `marks`, `capitals` and `pause` are the `interpret` step's options.
     /// `words` are the decoder's own, for the pause gate. Without them every
@@ -369,7 +370,6 @@ actor SentenceJoin {
         ).sorted { $0.next.lowerBound < $1.next.lowerBound }
         guard !found.isEmpty else { return .unchanged(text) }
         guard await SentenceReadings.shared.isLoaded else {
-            if SentenceReadings.isCached { await SentenceReadings.shared.warm() }
             Log.write("sentences: \(found.count) boundary(s) left as decoded;"
                 + " the model is not in memory yet")
             return .unchanged(text)

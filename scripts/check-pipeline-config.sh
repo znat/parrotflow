@@ -166,6 +166,10 @@ run_config legacy_off_listed 'transcription:
 check "sentences: false beside the step loads" "$code" "0"
 check "and says the key is what still turns it off" \
   "$(printf '%s\n' "$out" | grep -c 'this key is what still turns it off')" "1"
+# The same predicate decides whether the 320 MB model is fetched, so a step
+# reported as off is also a step nothing is downloaded for.
+check "and the step is reported off, not merely configured" \
+  "$(marks)" ". , ?  (off — \`transcription.sentences: false\`)"
 
 run_config legacy_marks 'transcription:
   languages: [en]

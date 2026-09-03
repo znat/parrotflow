@@ -508,9 +508,9 @@ actor Transcriber {
         // every other language itself.
         if Pipeline.language(of: text, config: config) == "en" {
             // 320 MB and a 1.3s load, and a dictation never waits for either.
-            // Fetched for a pipeline that holds the step and for no other, so
-            // deleting the line stops the download.
-            if Pipeline.resolved(config: config).stages.contains(.interpret) {
+            // Fetched only where the step will read a boundary, so deleting
+            // the line stops the download — and so does the legacy switch.
+            if config.readsBoundaries {
                 Task { await SentenceReadings.shared.warm() }
             }
             // The set the sound pass actually reads, not the shorter one the

@@ -2924,8 +2924,8 @@ struct Config: Decodable, Equatable {
         if !transcription.sentences.enabled {
             said.append("sentences: `transcription.sentences: false` is legacy; remove the"
                 + " `interpret` step from the pipeline instead."
-                + (interpret == nil ? "" : " Yours lists the step and this key is what"
-                    + " still turns it off"))
+                + (interpret == nil ? "" : " The step is in your pipeline and this key"
+                    + " is what still turns it off"))
         }
         // The marks moved twice — out of `sentences:` into `per_language`, and
         // now onto the step. Both older homes still answer for English.
@@ -2950,6 +2950,17 @@ struct Config: Decodable, Equatable {
                 + " `- interpret` to the front of `transcription.pipeline`")
         }
         return said
+    }
+
+    /// Whether the `interpret` step will actually read a boundary: it is in
+    /// the pipeline, and the legacy switch has not turned it off.
+    ///
+    /// One predicate, because two places warm the 320 MB sentence model and a
+    /// warm that disagrees with `Pipeline.skipReason` fetches weights nothing
+    /// will read.
+    var readsBoundaries: Bool {
+        transcription.sentences.enabled
+            && Pipeline.resolved(config: self).stages.contains(.interpret)
     }
 
     var resolvedOutputDir: URL {

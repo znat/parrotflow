@@ -111,11 +111,17 @@ enum CheckConfigCommand {
             // about the order and not about a setting any more.
             let pipeline = Pipeline.resolved(config: config)
             // The set the step actually runs with, whichever of its three homes
-            // it came from. Silent when nothing reads it.
+            // it came from. Silent when the pipeline holds no step at all.
+            //
+            // `readsBoundaries` is the same predicate that decides whether the
+            // 320 MB model is fetched, so a line saying the step is off is
+            // also saying nothing will be downloaded for it.
             if let step = pipeline.steps.first(where: { $0.stage == .interpret }) {
                 let marks = step.marks ?? transcription.marks(for: "en")
                 emit("  · sentence marks    \(marks.joined(separator: " "))"
-                    + (step.capitals == false ? "  (bare capitals off)" : ""))
+                    + (step.capitals == false ? "  (bare capitals off)" : "")
+                    + (config.readsBoundaries
+                        ? "" : "  (off — `transcription.sentences: false`)"))
             }
             // An empty pipeline is a choice, not a blank: printing nothing
             // there reads as a display fault rather than as the answer to "why
