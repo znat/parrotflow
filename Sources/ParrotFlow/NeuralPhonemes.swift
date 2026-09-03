@@ -90,6 +90,20 @@ enum NeuralPhonemes {
         }
     }
 
+    /// Deletes the two G2P bundles, so the next `download` fetches them again.
+    ///
+    /// Only those two. They sit in FluidAudio's Kokoro cache beside the voices
+    /// and the lexicons, which this app never fetched and must not remove.
+    static func discardCache() {
+        guard let root = try? TtsCacheDirectory.ensure()
+            .appendingPathComponent("Models")
+            .appendingPathComponent(Repo.kokoro.folderName)
+        else { return }
+        for name in ModelNames.MultilingualG2P.requiredModels {
+            try? FileManager.default.removeItem(at: root.appendingPathComponent(name))
+        }
+    }
+
     // MARK: - what the model has already said
 
     /// The answers so far, by language and then by word, kept between launches.
