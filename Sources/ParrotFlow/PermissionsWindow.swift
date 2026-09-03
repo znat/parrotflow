@@ -467,7 +467,9 @@ final class PermissionsWindowController {
         guard let window, let content = window.contentViewController?.view else { return }
         let fitting = content.fittingSize
         guard fitting.height > 0 else { return }
-        let wanted = NSSize(width: PermissionMetrics.width, height: fitting.height)
+        let wanted = NSSize(
+            width: PermissionMetrics.width(for: model.current), height: fitting.height
+        )
         guard abs(window.contentLayoutRect.height - wanted.height) > 0.5 else { return }
 
         let top = window.frame.maxY
@@ -509,6 +511,25 @@ final class PermissionsWindowController {
 
 enum PermissionMetrics {
     static let width: CGFloat = 460
+
+    /// The setup screen is drawn a quarter larger than the permission screens
+    /// — every size on it, including this one. See `SetupMetrics.scale`.
+    static var setupWidth: CGFloat { SetupMetrics.at(width) }
+
+    static func width(for step: SetupStep) -> CGFloat {
+        switch step {
+        case .permission: return width
+        case .setup: return setupWidth
+        }
+    }
+
+    /// The margin around the pane, on the same scale as what it holds.
+    static func padding(for step: SetupStep) -> CGFloat {
+        switch step {
+        case .permission: return 28
+        case .setup: return SetupMetrics.at(28)
+        }
+    }
     static let height: CGFloat = 328
 
     /// The permission screens are one instrument and one paragraph, and that
@@ -535,10 +556,16 @@ struct PermissionsView: View {
     var onRetry: () -> Void = {}
     var onInstallEspeak: () -> Void = {}
 
+    /// The header belongs to whichever screen is under it, so it is drawn on
+    /// that screen's scale.
+    private func header(_ points: CGFloat) -> CGFloat {
+        model.current == .setup ? SetupMetrics.at(points) : points
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 8) {
-                PlumageMark()
+            HStack(spacing: header(8)) {
+                PlumageMark(size: header(13))
                 Text(AppVariant.displayName.uppercased())
                     .foregroundStyle(Parrot.action)
                 Spacer()
@@ -548,8 +575,8 @@ struct PermissionsView: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            .font(.system(size: 9, weight: .semibold, design: .rounded))
-            .kerning(0.9)
+            .font(.system(size: header(9), weight: .semibold, design: .rounded))
+            .kerning(header(0.9))
 
             switch model.current {
             case .permission(let step):
@@ -574,8 +601,8 @@ struct PermissionsView: View {
                 )
             }
         }
-        .padding(28)
-        .frame(width: PermissionMetrics.width)
+        .padding(PermissionMetrics.padding(for: model.current))
+        .frame(width: PermissionMetrics.width(for: model.current))
         .frame(height: PermissionMetrics.height(for: model.current))
         // Stated rather than inherited. In the app this is the window's own
         // background and setting it changes nothing; drawn on `--panel-sheet`
@@ -811,12 +838,26 @@ private struct StepPane: View {
 
 // MARK: - The setup screen
 
-/// Where the glyph column ends and the text column begins, so a note under a
-/// line and the bar under it both start where the name does.
+/// Every size on the setup screen, on one scale.
+///
+/// The screen was drawn at the width of the permission screens and reads a
+/// quarter larger than it did there — a list of eleven lines is not a paragraph
+/// and a paragraph's type size is too small for it. One factor rather than a
+/// second set of numbers, so the whole screen stays in proportion and there is
+/// one thing to change.
 enum SetupMetrics {
-    static let glyph: CGFloat = 14
-    static let gap: CGFloat = 9
+    static let scale: CGFloat = 1.25
+
+    static func at(_ points: CGFloat) -> CGFloat { points * scale }
+
+    /// Where the glyph column ends and the text column begins, so a note under
+    /// a line and the bar under it both start where the name does.
+    static var glyph: CGFloat { at(14) }
+    static var gap: CGFloat { at(9) }
     static var indent: CGFloat { glyph + gap }
+    /// The corner the card and the code field are cut with.
+    static var radius: CGFloat { at(9) }
+    static var fieldRadius: CGFloat { at(Parrot.fieldRadius) }
 }
 
 /// One screen: what was granted, what is being fetched, and what is on this
@@ -843,12 +884,14 @@ private struct SetupPane: View {
 
     @EnvironmentObject private var downloads: ModelDownloads
 
+    private func at(_ points: CGFloat) -> CGFloat { SetupMetrics.at(points) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(.system(size: 19, weight: .semibold, design: .rounded))
-                .padding(.top, 20)
-                .padding(.bottom, 7)
+                .font(.system(size: at(19), weight: .semibold, design: .rounded))
+                .padding(.top, at(20))
+                .padding(.bottom, at(7))
 
             invitation
 
@@ -873,22 +916,23 @@ private struct SetupPane: View {
 
             group("Other") { espeakLines }
 
-            Spacer(minLength: 12)
+            Spacer(minLength: at(12))
 
-            HStack(spacing: 10) {
+            HStack(spacing: at(10)) {
                 // It means what it says: during setup this quits the app.
                 // Revisiting, there is no installation left to cancel.
                 if context == .installing {
                     Button(context.declineTitle, action: onDecline)
                         .buttonStyle(.plain)
                         .foregroundStyle(.tertiary)
-                        .font(.system(size: 12))
+                        .font(.system(size: at(12)))
                 }
 
                 Spacer()
 
                 Button(primaryTitle, action: primaryAction)
                     .keyboardShortcut(.defaultAction)
+                    .controlSize(.large)
             }
         }
     }
@@ -923,14 +967,6 @@ private struct SetupPane: View {
         return nil
     }
 
-    /// The model still being waited for, which is the one the title is about.
-    ///
-    /// Not the first blocking row: Parakeet lands before Silero VAD starts, and
-    /// naming it then would say an installed model is still coming down.
-    private var awaited: ModelDownload? {
-        downloads.rows.first { $0.blocking && $0.state.isPending }
-    }
-
     private var title: String {
         switch moment {
         // A setting that is off is a setting that was switched off, whether
@@ -949,24 +985,24 @@ private struct SetupPane: View {
     /// it. It breaks where the key starts instead.
     @ViewBuilder
     private var invitation: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: at(6)) {
             if let lead {
                 Text(lead)
-                    .font(.system(size: 12))
+                    .font(.system(size: at(12)))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let (before, after) = keySentence, hotkeyRegistered {
-                HStack(spacing: 5) {
+                HStack(spacing: at(5)) {
                     Text(before)
                     HotkeyBadge(text: hotkeyDisplay)
                     Text(after)
                 }
-                .font(.system(size: 12))
+                .font(.system(size: at(12)))
                 .foregroundStyle(.secondary)
             }
         }
-        .padding(.bottom, 4)
+        .padding(.bottom, at(4))
     }
 
     private var lead: String? {
@@ -988,9 +1024,9 @@ private struct SetupPane: View {
             // key line, and it would end on "or".
             return hotkeyRegistered ? "\(opening) Try again, or" : "\(opening) Try again"
         case .almostReady:
-            guard hotkeyRegistered else { return unregisteredHotkey }
-            guard let row = awaited else { return nil }
-            return "\(row.name) is still coming down. Once it is here,"
+            // Nothing under the title. The line for the model that is still
+            // coming down is a few lines below, with its own percentage.
+            return hotkeyRegistered ? nil : unregisteredHotkey
         case .ready:
             return hotkeyRegistered ? nil : unregisteredHotkey
         }
@@ -1006,9 +1042,8 @@ private struct SetupPane: View {
 
     private var keySentence: (String, String)? {
         switch moment {
-        case .permissionLost, .dictationOff: return nil
+        case .permissionLost, .dictationOff, .almostReady: return nil
         case .somethingDidNotArrive: return ("hold", "later and it tries again on its own.")
-        case .almostReady: return ("hold", "and start dictating.")
         case .ready: return ("Hold", "and start dictating.")
         }
     }
@@ -1037,22 +1072,22 @@ private struct SetupPane: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(name.uppercased())
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
-                .kerning(0.9)
+                .font(.system(size: at(9), weight: .semibold, design: .rounded))
+                .kerning(at(0.9))
                 .foregroundStyle(.tertiary)
-                .padding(.bottom, 4)
+                .padding(.bottom, at(4))
             // The group carries the explanation, so the lines are bare: a
             // glyph, a name, a size.
             if let blurb {
                 Text(blurb)
-                    .font(.system(size: 11))
+                    .font(.system(size: at(11)))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 5)
+                    .padding(.bottom, at(5))
             }
             lines()
         }
-        .padding(.top, 14)
+        .padding(.top, at(14))
     }
 
     @ViewBuilder
@@ -1153,33 +1188,35 @@ private struct EspeakCard: View {
     @State private var copied = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: SetupMetrics.at(5)) {
             Text("Not installed. Some of your names will be missed without it.")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: SetupMetrics.at(12), weight: .semibold))
                 .foregroundStyle(Parrot.amber)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(what)
-                .font(.system(size: 11))
+                .font(.system(size: SetupMetrics.at(11)))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             // The chained one-liner is 140 characters. Inside a sentence it is
             // unreadable and unselectable, so it gets a field of its own.
             Text(EspeakInstall.command)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: SetupMetrics.at(10), design: .monospaced))
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
+                .padding(.horizontal, SetupMetrics.at(8))
+                .padding(.vertical, SetupMetrics.at(6))
                 .background(
                     Color.primary.opacity(0.08),
-                    in: RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
+                    in: RoundedRectangle(
+                        cornerRadius: SetupMetrics.fieldRadius, style: .continuous
+                    )
                 )
-                .padding(.vertical, 1)
+                .padding(.vertical, SetupMetrics.at(1))
 
-            HStack(spacing: 10) {
+            HStack(spacing: SetupMetrics.at(10)) {
                 Button("Run in Terminal", action: onInstall)
                     .buttonStyle(.borderedProminent)
                 Button(copied ? "Copied" : "Copy the command") {
@@ -1187,22 +1224,21 @@ private struct EspeakCard: View {
                     copied = true
                 }
             }
-            .controlSize(.small)
-            .padding(.top, 2)
+            .padding(.top, SetupMetrics.at(2))
         }
-        .padding(.horizontal, 10)
-        .padding(.top, 8)
-        .padding(.bottom, 9)
+        .padding(.horizontal, SetupMetrics.at(10))
+        .padding(.top, SetupMetrics.at(8))
+        .padding(.bottom, SetupMetrics.at(9))
         .background(
             Parrot.amber.opacity(0.11),
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            in: RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(Parrot.amber.opacity(0.38), lineWidth: 1)
+            RoundedRectangle(cornerRadius: SetupMetrics.radius, style: .continuous)
+                .strokeBorder(Parrot.amber.opacity(0.38), lineWidth: SetupMetrics.at(1))
         }
         .padding(.leading, SetupMetrics.indent)
-        .padding(.top, 2)
+        .padding(.top, SetupMetrics.at(2))
     }
 
     private var what: String {
@@ -1231,14 +1267,19 @@ private struct SetupLine: View {
     var body: some View {
         HStack(spacing: SetupMetrics.gap) {
             GlyphView(glyph: glyph)
-            Text(title).font(.system(size: 12))
+            Text(title).font(.system(size: SetupMetrics.at(12)))
             if let detail {
-                Text(detail).font(.system(size: 11)).foregroundStyle(.tertiary)
+                Text(detail)
+                    .font(.system(size: SetupMetrics.at(11)))
+                    .foregroundStyle(.tertiary)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: SetupMetrics.at(8))
             if let note {
                 Text(note)
-                    .font(.system(size: 11, weight: noteIsPercent ? .semibold : .regular))
+                    .font(.system(
+                        size: SetupMetrics.at(11),
+                        weight: noteIsPercent ? .semibold : .regular
+                    ))
                     .monospacedDigit()
                     .foregroundStyle(
                         noteIsPercent
@@ -1246,10 +1287,10 @@ private struct SetupLine: View {
                     )
             }
             if let button {
-                Button(button.title, action: button.action).controlSize(.small)
+                Button(button.title, action: button.action)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, SetupMetrics.at(4))
         .overlay(alignment: .bottomLeading) { bar }
     }
 
@@ -1260,7 +1301,7 @@ private struct SetupLine: View {
                 let room = max(0, geometry.size.width - SetupMetrics.indent)
                 Rectangle()
                     .fill(Parrot.action)
-                    .frame(width: room * CGFloat(percent) / 100, height: 2)
+                    .frame(width: room * CGFloat(percent) / 100, height: SetupMetrics.at(2))
                     .offset(x: SetupMetrics.indent)
                     .frame(maxHeight: .infinity, alignment: .bottom)
             }
@@ -1275,11 +1316,11 @@ private struct SetupNote: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11))
+            .font(.system(size: SetupMetrics.at(11)))
             .foregroundStyle(tone)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.leading, SetupMetrics.indent)
-            .padding(.bottom, 4)
+            .padding(.bottom, SetupMetrics.at(4))
     }
 }
 
@@ -1309,8 +1350,11 @@ private struct GlyphView: View {
             case .downloading:
                 Circle()
                     .trim(from: 0, to: 0.72)
-                    .stroke(Parrot.action, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-                    .frame(width: 10, height: 10)
+                    .stroke(
+                        Parrot.action,
+                        style: StrokeStyle(lineWidth: SetupMetrics.at(1.6), lineCap: .round)
+                    )
+                    .frame(width: SetupMetrics.at(10), height: SetupMetrics.at(10))
                     .rotationEffect(.degrees(spinning ? 360 : 0))
                     .onAppear {
                         withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
@@ -1321,16 +1365,19 @@ private struct GlyphView: View {
                 Circle()
                     .stroke(
                         Color.secondary.opacity(0.6),
-                        style: StrokeStyle(lineWidth: 1.2, dash: [2.2, 2.2])
+                        style: StrokeStyle(
+                            lineWidth: SetupMetrics.at(1.2),
+                            dash: [SetupMetrics.at(2.2), SetupMetrics.at(2.2)]
+                        )
                     )
-                    .frame(width: 10, height: 10)
+                    .frame(width: SetupMetrics.at(10), height: SetupMetrics.at(10))
             case .absent:
                 Circle()
-                    .stroke(Parrot.amber, lineWidth: 1.5)
-                    .frame(width: 10, height: 10)
+                    .stroke(Parrot.amber, lineWidth: SetupMetrics.at(1.5))
+                    .frame(width: SetupMetrics.at(10), height: SetupMetrics.at(10))
             }
         }
-        .font(.system(size: 10, weight: .bold))
+        .font(.system(size: SetupMetrics.at(10), weight: .bold))
         .frame(width: SetupMetrics.glyph, height: SetupMetrics.glyph)
     }
 }
@@ -1342,17 +1389,17 @@ private struct HotkeyBadge: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 12, weight: .medium, design: .rounded))
+            .font(.system(size: SetupMetrics.at(12), weight: .medium, design: .rounded))
             .foregroundStyle(.primary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
+            .padding(.horizontal, SetupMetrics.at(8))
+            .padding(.vertical, SetupMetrics.at(2))
             .background(
                 Color.primary.opacity(0.07),
-                in: RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
+                in: RoundedRectangle(cornerRadius: SetupMetrics.fieldRadius, style: .continuous)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
-                    .strokeBorder(Parrot.action.opacity(0.55), lineWidth: 1.5)
+                RoundedRectangle(cornerRadius: SetupMetrics.fieldRadius, style: .continuous)
+                    .strokeBorder(Parrot.action.opacity(0.55), lineWidth: SetupMetrics.at(1.5))
             }
     }
 }
