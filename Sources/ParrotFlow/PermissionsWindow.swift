@@ -81,24 +81,18 @@ enum PermissionStep: CaseIterable {
     }
 }
 
-/// A screen in the walk. The permissions are asked for one at a time; the
-/// downloads are one screen that reports on all of them.
+/// A screen in the walk. The permissions are asked for one at a time, and then
+/// there is one screen for everything: what was granted, what is downloading,
+/// and what is on this Mac already.
 enum SetupStep: Equatable {
     case permission(PermissionStep)
-    case downloads
+    case setup
 }
 
 final class PermissionsModel: ObservableObject {
     @Published var micStatus: Permissions.Status = .notDetermined
     @Published var axStatus: Permissions.Status = .notGranted
     @Published var axBlocker: String?
-    /// Pushed from AppDelegate.handleTranscriberStatus, not polled — nothing
-    /// in this file can ask the transcriber actor anything, and this window
-    /// is not the one place that needs to know. Defaults to `.ready` rather
-    /// than an "unknown" third case: a launch that never touches the
-    /// transcriber (transcription disabled) should not sit on a
-    /// "downloading" message forever for a download that will never start.
-    @Published var speechModel: SpeechModelProgress = .ready
     /// Pushed from AppDelegate.updateUI, but only the name of a hotkey that
     /// actually registered — the menu bar's own fallback text (the
     /// *configured* key, shown even when registration failed) would tell
@@ -127,11 +121,6 @@ final class PermissionsModel: ObservableObject {
         case found
     }
 
-    enum SpeechModelProgress: Equatable {
-        case ready
-        case preparing(percent: Int?)
-    }
-
     /// What is left to ask for, fixed when the window opens.
     ///
     /// Fixed rather than recomputed so "1 of 2" does not become "1 of 1" under
@@ -143,7 +132,7 @@ final class PermissionsModel: ObservableObject {
     @Published private(set) var asked = false
     @Published private(set) var context: PermissionsContext = .installing
 
-    var current: SetupStep? { steps.indices.contains(index) ? steps[index] : nil }
+    var current: SetupStep { steps.indices.contains(index) ? steps[index] : .setup }
 
     func status(of step: PermissionStep) -> Permissions.Status {
         switch step {
@@ -161,10 +150,9 @@ final class PermissionsModel: ObservableObject {
     /// Start the walk. Anything already granted is not a screen — nobody needs
     /// to be told about a permission they have given.
     ///
-    /// The Downloads step is always the last one, granted permissions or not.
-    /// It reports fetches that started at launch rather than starting them, so
-    /// there is nothing to skip past — except on a launch that fetches nothing
-    /// at all, where the registry is empty and the step would be blank.
+    /// The setup screen is always the last step, and it is where the walk ends.
+    /// It reports the fetches that started at launch rather than starting them,
+    /// so there is nothing to wait for on it and nothing after it.
     func begin(context: PermissionsContext) {
         self.context = context
         refresh()
@@ -172,17 +160,18 @@ final class PermissionsModel: ObservableObject {
         steps = PermissionStep.allCases
             .filter { status(of: $0) != .granted }
             .map(SetupStep.permission)
-        if !downloads.rows.isEmpty { steps.append(.downloads) }
+        steps.append(.setup)
         index = 0
         asked = false
     }
 
     func markAsked() { asked = true }
 
-    /// The way forward from a step that is not asking for anything: the
-    /// Downloads step's Continue, and the skip a revisit offers.
+    /// The skip a revisit offers on a permission screen. It cannot walk past
+    /// the setup screen: that is the end of the walk, and its button closes
+    /// the window rather than advancing.
     func skip() {
-        guard index < steps.count else { return }
+        guard index + 1 < steps.count else { return }
         index += 1
         asked = false
     }
@@ -194,39 +183,24 @@ final class PermissionsModel: ObservableObject {
     ) -> PermissionsModel {
         let model = PermissionsModel()
         model.context = context
-        model.steps = PermissionStep.allCases.map(SetupStep.permission) + [.downloads]
+        model.steps = PermissionStep.allCases.map(SetupStep.permission) + [.setup]
         model.index = PermissionStep.allCases.firstIndex(of: step) ?? 0
         model.asked = asked
         return model
     }
 
-    /// Parked on the Downloads step, for `--panel-sheet` and `--panels setup`.
-    static func showingDownloads(
+    /// Parked on the setup screen, for `--panel-sheet` and `--panels setup`.
+    static func showingSetup(
         _ downloads: ModelDownloads, context: PermissionsContext = .installing,
-        espeak: EspeakPresence = .missing
+        axStatus: Permissions.Status = .granted, hotkeyDisplay: String = "Right ⌥",
+        hotkeyRegistered: Bool = true, espeak: EspeakPresence = .missing
     ) -> PermissionsModel {
         let model = PermissionsModel(downloads: downloads)
         model.context = context
-        model.steps = PermissionStep.allCases.map(SetupStep.permission) + [.downloads]
-        model.index = PermissionStep.allCases.count
-        model.espeak = espeak
-        return model
-    }
-
-    /// Past every step, for `--panel-sheet` — `showing(_:)` always parks on
-    /// one, and DonePane is only ever reached by walking off the end of
-    /// `steps`, which nothing outside this file can set directly.
-    static func done(
-        speechModel: SpeechModelProgress = .ready, hotkeyDisplay: String = "Right ⌥",
-        hotkeyRegistered: Bool = true, axStatus: Permissions.Status = .granted,
-        downloads: ModelDownloads = ModelDownloads(), espeak: EspeakPresence = .found
-    ) -> PermissionsModel {
-        let model = PermissionsModel(downloads: downloads)
         model.micStatus = .granted
         model.axStatus = axStatus
-        model.steps = PermissionStep.allCases.map(SetupStep.permission) + [.downloads]
-        model.index = model.steps.count
-        model.speechModel = speechModel
+        model.steps = PermissionStep.allCases.map(SetupStep.permission) + [.setup]
+        model.index = PermissionStep.allCases.count
         model.hotkeyDisplay = hotkeyDisplay
         model.hotkeyRegistered = hotkeyRegistered
         model.espeak = espeak
@@ -237,17 +211,11 @@ final class PermissionsModel: ObservableObject {
     /// the poll, so the screen advances itself the moment the box is ticked
     /// rather than waiting to be dismissed.
     func advancePastGranted() {
-        while case .permission(let step)? = current, status(of: step) == .granted {
+        while case .permission(let step) = current, status(of: step) == .granted,
+              index + 1 < steps.count {
             index += 1
             asked = false
         }
-    }
-
-    /// The size the window needs for the screen it is on. The permission
-    /// screens are one instrument and one paragraph; the other two are lists
-    /// that outgrew them.
-    var contentSize: NSSize {
-        NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height(for: current))
     }
 }
 
@@ -269,6 +237,9 @@ final class PermissionsWindowController {
     private var window: NSWindow?
     private var timer: Timer?
     private var sizeWatch: AnyCancellable?
+    /// Set once the window has been centred, so a later resize can keep the
+    /// title bar where it is instead of jumping back to the middle.
+    private var centred = false
     /// When Terminal was opened on the espeak install, so the row can stop
     /// saying so.
     private var openedTerminalAt: Date?
@@ -311,7 +282,9 @@ final class PermissionsWindowController {
         window?.styleMask = context == .installing ? [.titled] : [.titled, .closable]
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        resizeToContent()
         window?.center()
+        centred = true
         fronting = nil
         succeededIndex = model.index
 
@@ -382,7 +355,6 @@ final class PermissionsWindowController {
             onAsk: { [weak self] step in self?.ask(step) },
             onDecline: { [weak self] in self?.decline() },
             onClose: { [weak self] in self?.window?.close() },
-            onContinue: { [weak self] in self?.model.skip() },
             onRetry: { [weak self] in self?.onRetryDownloads?() },
             onInstallEspeak: { [weak self] in
                 guard let self else { return }
@@ -404,15 +376,21 @@ final class PermissionsWindowController {
         window.title = "\(AppVariant.displayName) Setup"
         window.styleMask = [.titled]
         window.isReleasedWhenClosed = false
-        window.setContentSize(model.contentSize)
         self.window = window
+        resizeToContent()
 
-        // The screens are three different heights, and the window is sized to
-        // its content rather than to the tallest of them. `objectWillChange`
-        // fires before the change lands, so the size is read on the next turn.
-        sizeWatch = model.objectWillChange.sink { [weak self] _ in
-            DispatchQueue.main.async { self?.resizeToStep() }
-        }
+        // Two screens of different shapes, and the setup screen's own height
+        // moves as rows settle, a failure appears, or eSpeak NG turns up. Both
+        // publishers fire before the change lands, so the size is read on the
+        // next turn of the run loop.
+        //
+        // Debounced rather than hopped to the next turn: the poll writes to the
+        // model once a second and a download reports every percent, and each
+        // one of those would otherwise cost a layout pass to find out the
+        // height has not changed.
+        sizeWatch = Publishers.Merge(model.objectWillChange, model.downloads.objectWillChange)
+            .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.resizeToContent() }
 
         NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
@@ -428,14 +406,26 @@ final class PermissionsWindowController {
     /// installation" that quietly moved to the next screen would be the kind of
     /// wording nobody trusts twice. Revisiting, it is a skip, and the walk ends
     /// on the screen that says what is still missing.
-    /// Only when it actually changed: `setContentSize` on every published
-    /// change would fight a window somebody is looking at.
-    private func resizeToStep() {
-        guard let window else { return }
-        let wanted = model.contentSize
-        guard window.contentLayoutRect.size.height != wanted.height else { return }
+    /// The window takes the height its content asks for.
+    ///
+    /// Only when it actually changed: setting the size on every published
+    /// change would fight a window somebody is looking at. The top edge is put
+    /// back afterwards, because `setContentSize` keeps the bottom-left corner
+    /// and a window that grows upward moves its own title bar out from under
+    /// the pointer.
+    private func resizeToContent() {
+        guard let window, let content = window.contentViewController?.view else { return }
+        let fitting = content.fittingSize
+        guard fitting.height > 0 else { return }
+        let wanted = NSSize(width: PermissionMetrics.width, height: fitting.height)
+        guard abs(window.contentLayoutRect.height - wanted.height) > 0.5 else { return }
+
+        let top = window.frame.maxY
         window.setContentSize(wanted)
-        window.center()
+        guard centred else { return }
+        var frame = window.frame
+        frame.origin.y = top - frame.height
+        window.setFrame(frame, display: true)
     }
 
     private func decline() {
@@ -471,16 +461,17 @@ enum PermissionMetrics {
     static let width: CGFloat = 460
     static let height: CGFloat = 328
 
-    /// The other two screens are lists, and they outgrew the permission
-    /// screens rather than fitting inside them.
-    static let downloadsHeight: CGFloat = 700
-    static let doneHeight: CGFloat = 470
+    /// The permission screens are one instrument and one paragraph, and that
+    /// is a fixed shape. The setup screen is four lists whose length depends on
+    /// what is installed, what failed and whether eSpeak NG is here, so it is
+    /// measured rather than declared — see `resizeToContent`. This is the size
+    /// the sheet draws it at when it has no window to ask.
+    static let setupHeight: CGFloat = 740
 
-    static func height(for step: SetupStep?) -> CGFloat {
+    static func height(for step: SetupStep) -> CGFloat? {
         switch step {
         case .permission: return height
-        case .downloads: return downloadsHeight
-        case nil: return doneHeight
+        case .setup: return nil
         }
     }
 }
@@ -491,7 +482,6 @@ struct PermissionsView: View {
     var onAsk: (PermissionStep) -> Void = { _ in }
     var onDecline: () -> Void = {}
     var onClose: () -> Void = {}
-    var onContinue: () -> Void = {}
     var onRetry: () -> Void = {}
     var onInstallEspeak: () -> Void = {}
 
@@ -502,8 +492,8 @@ struct PermissionsView: View {
                 Text(AppVariant.displayName.uppercased())
                     .foregroundStyle(Parrot.action)
                 Spacer()
-                if model.steps.count > 1, let step = model.current,
-                   let position = model.steps.firstIndex(of: step) {
+                if model.steps.count > 1,
+                   let position = model.steps.firstIndex(of: model.current) {
                     Text("\(position + 1) of \(model.steps.count)".uppercased())
                         .foregroundStyle(.tertiary)
                 }
@@ -522,29 +512,20 @@ struct PermissionsView: View {
                     onAsk: { onAsk(step) },
                     onDecline: onDecline
                 )
-            case .downloads:
-                DownloadsPane(
-                    context: model.context,
-                    espeak: model.espeak,
-                    onDecline: onDecline,
-                    onContinue: onContinue,
-                    onRetry: onRetry,
-                    onInstallEspeak: onInstallEspeak
-                )
-            case nil:
-                DonePane(
+            case .setup:
+                SetupPane(
                     micStatus: model.micStatus, axStatus: model.axStatus,
-                    speechModel: model.speechModel, hotkeyDisplay: model.hotkeyDisplay,
-                    hotkeyRegistered: model.hotkeyRegistered, espeak: model.espeak,
-                    onClose: onClose
+                    hotkeyDisplay: model.hotkeyDisplay,
+                    hotkeyRegistered: model.hotkeyRegistered,
+                    context: model.context, espeak: model.espeak,
+                    onDecline: onDecline, onClose: onClose, onRetry: onRetry,
+                    onInstallEspeak: onInstallEspeak
                 )
             }
         }
         .padding(28)
-        .frame(
-            width: PermissionMetrics.width,
-            height: PermissionMetrics.height(for: model.current)
-        )
+        .frame(width: PermissionMetrics.width)
+        .frame(height: PermissionMetrics.height(for: model.current))
         // Stated rather than inherited. In the app this is the window's own
         // background and setting it changes nothing; drawn on `--panel-sheet`
         // there is no window to inherit from, and without this the pane came
@@ -777,69 +758,211 @@ private struct StepPane: View {
     }
 }
 
-private struct DonePane: View {
+// MARK: - The setup screen
+
+/// Where the glyph column ends and the text column begins, so a note under a
+/// line and the bar under it both start where the name does.
+enum SetupMetrics {
+    static let glyph: CGFloat = 14
+    static let gap: CGFloat = 9
+    static var indent: CGFloat { glyph + gap }
+}
+
+/// One screen: what was granted, what is being fetched, and what is on this
+/// Mac already.
+///
+/// The title is the state and the glyphs are the detail. Only the permissions
+/// and the models a dictation waits on can change the title. The other three
+/// arrive in their own time and say so on their own line.
+///
+/// Nothing here starts a download. They start at launch in `warmModels` and
+/// carry on with the window closed, which is why Done never waits.
+private struct SetupPane: View {
     let micStatus: Permissions.Status
     let axStatus: Permissions.Status
-    let speechModel: PermissionsModel.SpeechModelProgress
     let hotkeyDisplay: String
     let hotkeyRegistered: Bool
+    let context: PermissionsContext
     let espeak: PermissionsModel.EspeakPresence
+    let onDecline: () -> Void
     let onClose: () -> Void
+    let onRetry: () -> Void
+    let onInstallEspeak: () -> Void
 
     @EnvironmentObject private var downloads: ModelDownloads
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Spacer(minLength: 16)
-
             Text(title)
                 .font(.system(size: 19, weight: .semibold, design: .rounded))
+                .padding(.top, 20)
                 .padding(.bottom, 7)
 
             invitation
-                .padding(.bottom, 12)
 
-            // Three groups rather than one run of lines, because each is
-            // answered somewhere else: a permission in System Settings, a
-            // download by waiting, and espeak-ng in Terminal.
             group("Permissions") {
-                SetupLine(glyph: micStatus.glyph, title: "Microphone", trailing: micStatus.note)
-                SetupLine(
-                    glyph: axStatus.glyph, title: "Accessibility", trailing: axStatus.note
-                )
+                SetupLine(glyph: micStatus.glyph, title: "Microphone", note: micStatus.note)
+                SetupLine(glyph: axStatus.glyph, title: "Accessibility", note: axStatus.note)
             }
 
-            if !downloads.rows.isEmpty {
-                group("Downloads") {
-                    ForEach(downloads.rows) { row in
-                        SetupLine(
-                            glyph: row.glyph, title: row.name, trailing: row.doneNote,
-                            trailingIsPercent: row.percent != nil
-                        )
-                    }
-                }
-            }
+            models(
+                "Speech and sound",
+                "These audio models process your voice, transform it into text and provide"
+                    + " additional cues to correct transcription artifacts.",
+                in: .sound
+            )
 
-            group("On your Mac") {
-                SetupLine(
-                    glyph: espeak == .found ? .granted : .absent,
-                    title: "eSpeak NG",
-                    trailing: espeak == .found ? nil : "not found"
-                )
-            }
+            models(
+                "Language",
+                "These language models help ParrotFlow apply your vocabulary and correct"
+                    + " transcription artifacts by understanding what you mean.",
+                in: .language
+            )
+
+            group("Other") { espeakLines }
 
             Spacer(minLength: 12)
 
-            HStack {
+            HStack(spacing: 10) {
+                // It means what it says: during setup this quits the app.
+                // Revisiting, there is no installation left to cancel.
+                if context == .installing {
+                    Button(context.declineTitle, action: onDecline)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 12))
+                }
+
                 Spacer()
-                Button("Done", action: onClose).keyboardShortcut(.defaultAction)
+
+                Button(primaryTitle, action: primaryAction)
+                    .keyboardShortcut(.defaultAction)
             }
         }
     }
 
+    // MARK: What the screen is saying
+
+    private enum Moment {
+        case almostReady
+        case ready
+        case permissionLost
+        case somethingDidNotArrive
+    }
+
+    /// A permission first: it is the only one of the four that cannot be fixed
+    /// by waiting, and it is fixed somewhere else.
+    private var moment: Moment {
+        if lostPermission != nil { return .permissionLost }
+        if downloads.blockingFailure != nil { return .somethingDidNotArrive }
+        return downloads.speechIsIn ? .ready : .almostReady
+    }
+
+    private var lostPermission: PermissionStep? {
+        if micStatus != .granted { return .microphone }
+        if axStatus != .granted { return .accessibility }
+        return nil
+    }
+
+    /// The model the title is about — the first one a dictation waits on, which
+    /// is the speech model.
+    private var speechName: String {
+        downloads.rows.first { $0.blocking }?.name ?? "The speech model"
+    }
+
+    private var title: String {
+        switch moment {
+        case .permissionLost: return "Something was switched off"
+        case .somethingDidNotArrive: return "Something did not arrive"
+        case .almostReady: return "Almost ready"
+        case .ready: return hotkeyRegistered ? "Ready" : "Almost ready"
+        }
+    }
+
+    /// The sentence under the title, and the key it ends on.
+    ///
+    /// The key is a bordered field rather than a word, so it cannot be read
+    /// past — which means the sentence cannot be one `Text` that wraps around
+    /// it. It breaks where the key starts instead.
+    @ViewBuilder
+    private var invitation: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let lead {
+                Text(lead)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let (before, after) = keySentence, hotkeyRegistered {
+                HStack(spacing: 5) {
+                    Text(before)
+                    HotkeyBadge(text: hotkeyDisplay)
+                    Text(after)
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.bottom, 4)
+    }
+
+    private var lead: String? {
+        switch moment {
+        case .permissionLost:
+            guard let step = lostPermission else { return nil }
+            return "\(step.title) is switched off. Turn it back on in System Settings,"
+                + " and this window updates itself."
+        case .somethingDidNotArrive:
+            let opening = "\(speechName) could not be downloaded, and nothing transcribes"
+                + " without it."
+            // The key line finishes this sentence. Without a hotkey there is no
+            // key line, and it would end on "or".
+            return hotkeyRegistered ? "\(opening) Try again, or" : "\(opening) Try again"
+        case .almostReady:
+            guard hotkeyRegistered else { return unregisteredHotkey }
+            return "\(speechName) is still coming down. Once it is here,"
+        case .ready:
+            return hotkeyRegistered ? nil : unregisteredHotkey
+        }
+    }
+
+    /// Both permissions are granted and the model is in, but the configured key
+    /// never bound — another app already holds it, most likely. Naming the key
+    /// it wanted would tell someone to press a key that does nothing.
+    private var unregisteredHotkey: String {
+        "ParrotFlow's hotkey isn't registered. Check hotkey.key in config.yaml, "
+            + "then reopen this window from the menu bar."
+    }
+
+    private var keySentence: (String, String)? {
+        switch moment {
+        case .permissionLost: return nil
+        case .somethingDidNotArrive: return ("hold", "later and it tries again on its own.")
+        case .almostReady: return ("hold", "and start dictating.")
+        case .ready: return ("Hold", "and start dictating.")
+        }
+    }
+
+    /// A failure nobody is waiting on stays on its own line. Only a model a
+    /// dictation waits for reaches the foot.
+    private var primaryTitle: String {
+        guard moment == .somethingDidNotArrive else { return "Done" }
+        return downloads.blockingFailure?.retryTitle ?? "Done"
+    }
+
+    private func primaryAction() {
+        if moment == .somethingDidNotArrive, downloads.blockingFailure?.retryTitle != nil {
+            onRetry()
+        } else {
+            onClose()
+        }
+    }
+
+    // MARK: The groups
+
     @ViewBuilder
     private func group<Content: View>(
-        _ name: String, @ViewBuilder lines: () -> Content
+        _ name: String, blurb: String? = nil, @ViewBuilder lines: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(name.uppercased())
@@ -847,109 +970,167 @@ private struct DonePane: View {
                 .kerning(0.9)
                 .foregroundStyle(.tertiary)
                 .padding(.bottom, 4)
+            // The group carries the explanation, so the lines are bare: a
+            // glyph, a name, a size.
+            if let blurb {
+                Text(blurb)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, 5)
+            }
             lines()
         }
-        .padding(.bottom, 12)
+        .padding(.top, 14)
     }
 
-    private var everything: Bool { micStatus == .granted && axStatus == .granted }
-
-    /// "Ready" oversold it while the model was still on its way in — someone
-    /// reads that word, holds the hotkey, and dictates into a download that
-    /// has not finished. Only true once both permissions and the model are
-    /// all the way there.
-    ///
-    /// Only the speech model counts. The other four can still be coming down
-    /// while you dictate: the stages that read them stand aside.
-    private var title: String {
-        guard everything else { return "Something was switched off" }
-        if case .preparing = speechModel { return "Almost ready" }
-        if !hotkeyRegistered { return "Almost ready" }
-        return "Ready"
-    }
-
-    /// Both permissions granted is the gate for reaching this screen at all
-    /// (see `PermissionsModel.begin`'s step filter) — what is still open past
-    /// that is only ever the speech model, and only ever a matter of time,
-    /// not a decision to make. So the two states get their own sentence
-    /// rather than a status line read in silence: one says dictate now, the
-    /// other says what to wait for and then dictate.
-    ///
-    /// The hotkey is a key someone presses, not a word in a sentence — plain
-    /// prose let it blend into "Hold Right Option and start dictating." and
-    /// read past. Its own line, in the same bordered mark this window
-    /// already uses for a key combination, is what makes it the one thing to
-    /// notice here.
     @ViewBuilder
-    private var invitation: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            switch speechModel {
-            case .ready:
-                EmptyView()
-            case .preparing:
-                Text("The speech model is still downloading.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-
-            if everything, hotkeyRegistered {
-                HStack(spacing: 6) {
-                    Text(holdVerb)
-                    HotkeyBadge(text: hotkeyDisplay)
-                    Text("and start dictating.")
+    private func models(
+        _ name: String, _ blurb: String, in group: ModelDownload.Group
+    ) -> some View {
+        let rows = downloads.rows(in: group)
+        if !rows.isEmpty {
+            self.group(name, blurb: blurb) {
+                ForEach(rows) { row in
+                    SetupLine(
+                        glyph: row.glyph, title: row.name, detail: row.sizeLabel,
+                        note: row.note, noteIsPercent: row.percent != nil,
+                        percent: row.percent
+                    )
+                    if let why = row.why {
+                        SetupNote(text: why, tone: row.blocking ? Parrot.scarlet : Parrot.amber)
+                    }
                 }
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            } else if everything {
-                // hotkeyRegistered is false here: both permissions are
-                // granted, but the configured key never bound — another app
-                // already holds it, most likely. Naming the key it wanted
-                // would tell someone to press a key that does nothing.
-                Text("ParrotFlow's hotkey isn't registered. Check hotkey.key in config.yaml, "
-                    + "then reopen this window from the menu bar.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text("ParrotFlow needs both. Reopen this window from the menu bar when you want to "
-                    + "finish, or check what is missing below.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    private var holdVerb: String {
-        if case .preparing = speechModel { return "Once it's done, hold" }
-        return "Hold"
+    /// The one line the app cannot fetch, so the one line with a button.
+    ///
+    /// Amber, not scarlet: CharsiuG2P covers the base case, so an absent eSpeak
+    /// NG costs some names rather than the feature.
+    @ViewBuilder
+    private var espeakLines: some View {
+        SetupLine(
+            glyph: espeak == .found ? .granted : (espeak == .opening ? .downloading : .absent),
+            title: "eSpeak NG",
+            detail: "GPL-3 · a separate program",
+            note: espeak == .opening ? "Terminal open" : nil,
+            button: espeak == .missing ? ("Run in Terminal", onInstallEspeak) : nil
+        )
+        if espeak != .found {
+            SetupNote(text: espeakHow, tone: Parrot.amber)
+            CommandField()
+        }
+    }
+
+    private var espeakHow: String {
+        if espeak == .opening {
+            return "Terminal is running it now. This line notices on its own when it lands."
+        }
+        let backs = "Backs up CharsiuG2P on names it misses."
+        if EspeakInstall.brew != nil {
+            return "\(backs) Not installed. This runs it in Terminal, where you can watch it."
+        }
+        return "\(backs) Not installed, and neither is Homebrew. This installs Homebrew first,"
+            + " then eSpeak NG."
     }
 }
 
-/// One line of the last screen: a glyph in a fixed column, a name, and a word
-/// at the right edge only where the glyph cannot say it.
+/// One line: a glyph in a fixed column, a name, what it costs, and a word at
+/// the right edge only where the glyph cannot say it.
 private struct SetupLine: View {
     let glyph: SetupGlyph
     let title: String
-    var trailing: String?
-    var trailingIsPercent: Bool = false
+    var detail: String?
+    var note: String?
+    var noteIsPercent = false
+    /// Draws a 2 px bar under this line and no other.
+    var percent: Int?
+    var button: (title: String, action: () -> Void)?
 
     var body: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: SetupMetrics.gap) {
             GlyphView(glyph: glyph)
             Text(title).font(.system(size: 12))
+            if let detail {
+                Text(detail).font(.system(size: 11)).foregroundStyle(.tertiary)
+            }
             Spacer(minLength: 8)
-            if let trailing {
-                Text(trailing)
-                    .font(.system(size: 11, weight: trailingIsPercent ? .semibold : .regular))
+            if let note {
+                Text(note)
+                    .font(.system(size: 11, weight: noteIsPercent ? .semibold : .regular))
                     .monospacedDigit()
                     .foregroundStyle(
-                        trailingIsPercent
+                        noteIsPercent
                             ? AnyShapeStyle(Parrot.action) : AnyShapeStyle(.tertiary)
                     )
             }
+            if let button {
+                Button(button.title, action: button.action).controlSize(.small)
+            }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
+        .overlay(alignment: .bottomLeading) { bar }
+    }
+
+    @ViewBuilder
+    private var bar: some View {
+        if let percent {
+            GeometryReader { geometry in
+                let room = max(0, geometry.size.width - SetupMetrics.indent)
+                Rectangle()
+                    .fill(Parrot.action)
+                    .frame(width: room * CGFloat(percent) / 100, height: 2)
+                    .offset(x: SetupMetrics.indent)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+            }
+        }
+    }
+}
+
+/// The one line under a name that says why it failed, or what to do about it.
+private struct SetupNote: View {
+    let text: String
+    let tone: Color
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(tone)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.leading, SetupMetrics.indent)
+            .padding(.bottom, 4)
+    }
+}
+
+/// The chained one-liner is 140 characters. Inside a sentence it is unreadable
+/// and unselectable, so it gets a field and a way to copy.
+private struct CommandField: View {
+    @State private var copied = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(EspeakInstall.command)
+                .font(.system(size: 10, design: .monospaced))
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(copied ? "Copied" : "Copy") {
+                EspeakInstall.copyCommand()
+                copied = true
+            }
+            .controlSize(.small)
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
+        .padding(.vertical, 6)
+        .background(
+            Color.primary.opacity(0.08),
+            in: RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
+        )
+        .padding(.leading, SetupMetrics.indent)
+        .padding(.bottom, 2)
     }
 }
 
@@ -1001,7 +1182,7 @@ private struct GlyphView: View {
             }
         }
         .font(.system(size: 10, weight: .bold))
-        .frame(width: 14, height: 14)
+        .frame(width: SetupMetrics.glyph, height: SetupMetrics.glyph)
     }
 }
 
@@ -1015,7 +1196,7 @@ private struct HotkeyBadge: View {
             .font(.system(size: 12, weight: .medium, design: .rounded))
             .foregroundStyle(.primary)
             .padding(.horizontal, 8)
-            .padding(.vertical, 3)
+            .padding(.vertical, 2)
             .background(
                 Color.primary.opacity(0.07),
                 in: RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
@@ -1056,314 +1237,21 @@ private extension ModelDownload {
         return nil
     }
 
-    /// The word at the right edge of the last screen's line, where a glyph
-    /// cannot carry it.
-    var doneNote: String? {
+    /// The word at the right edge, where a glyph cannot carry it.
+    var note: String? {
         switch state {
         case .downloading(let percent): return percent.map { "\($0)%" }
         case .off(let reason): return reason
-        case .failed: return "did not arrive"
-        case .installed, .waiting: return nil
-        }
-    }
-}
-
-// MARK: - Downloads
-
-/// What the app is fetching, and the one thing it looks for instead.
-///
-/// Nothing here starts a download. They start at launch, in `warmModels`, and
-/// they carry on whether or not this window is open. The rows report.
-private struct DownloadsPane: View {
-    let context: PermissionsContext
-    let espeak: PermissionsModel.EspeakPresence
-    let onDecline: () -> Void
-    let onContinue: () -> Void
-    let onRetry: () -> Void
-    let onInstallEspeak: () -> Void
-
-    @EnvironmentObject private var downloads: ModelDownloads
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(downloads.summary.uppercased())
-                .font(.system(size: 9, weight: .semibold, design: .rounded))
-                .kerning(0.9)
-                .foregroundStyle(eyebrowColour)
-                .padding(.top, 20)
-                .padding(.bottom, 6)
-
-            Text("Downloads")
-                .font(.system(size: 19, weight: .semibold, design: .rounded))
-                .padding(.bottom, 7)
-
-            Text("ParrotFlow needs the following models to process your dictation on this Mac.")
-                .font(.system(size: 14))
-                .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            group(
-                "Speech and sound",
-                "These audio models process your voice, transform it into text and provide"
-                    + " additional cues to correct transcription artifacts.",
-                rows: downloads.rows(in: .sound)
-            )
-
-            group(
-                "Language",
-                "These language models help ParrotFlow apply your vocabulary and correct"
-                    + " transcription artifacts by understanding what you mean.",
-                rows: downloads.rows(in: .language)
-            )
-
-            groupKey("Already on your Mac, or not")
-                .padding(.top, 16)
-                .padding(.bottom, 7)
-            EspeakRow(presence: espeak, onInstall: onInstallEspeak)
-
-            Spacer(minLength: 14)
-
-            HStack(spacing: 10) {
-                // Offered here and not on the permission screens, and it means
-                // what it says: this quits the app. Only while installing —
-                // revisiting, it would say "Not now" beside a Continue that
-                // does the same thing.
-                if context == .installing {
-                    Button(context.declineTitle, action: onDecline)
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.tertiary)
-                        .font(.system(size: 12))
-                }
-
-                Spacer()
-
-                // Never disabled. Nothing on this screen is a condition of
-                // going on: the speech model is the only one a dictation waits
-                // for, and it says so on the screen after this one.
-                Button(primaryTitle, action: primaryAction)
-                    .keyboardShortcut(.defaultAction)
-            }
+        case .installed, .waiting, .failed: return nil
         }
     }
 
-    @ViewBuilder
-    private func group(_ name: String, _ what: String, rows: [ModelDownload]) -> some View {
-        if !rows.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                groupKey(name).padding(.bottom, 3)
-                // The group carries the explanation, so the rows are bare: a
-                // name, a size, a state.
-                Text(what)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 7)
-                VStack(spacing: 6) {
-                    ForEach(rows) { DownloadRow(row: $0) }
-                }
-            }
-            .padding(.top, 16)
-        }
-    }
-
-    private func groupKey(_ name: String) -> some View {
-        Text(name.uppercased())
-            .font(.system(size: 9, weight: .semibold, design: .rounded))
-            .kerning(0.9)
-            .foregroundStyle(.tertiary)
-    }
-
-    /// A failure nobody is waiting on stays inside its own row. Only a model a
-    /// dictation waits for reaches the foot.
-    private var primaryTitle: String {
-        downloads.blockingFailure?.retryTitle ?? "Continue"
-    }
-
-    private func primaryAction() {
-        if downloads.blockingFailure?.retryTitle != nil { onRetry() } else { onContinue() }
-    }
-
-    private var eyebrowColour: Color {
-        if downloads.rows.contains(where: { $0.state.hasFailed }) { return Parrot.scarlet }
-        if downloads.anyDownloading { return Parrot.action }
-        if downloads.rows.allSatisfy({ $0.state == .installed }) { return Parrot.leaf }
-        return Parrot.amber
-    }
-}
-
-private struct DownloadRow: View {
-    let row: ModelDownload
-
-    var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 7) {
-                    Text(row.name).font(.system(size: 13, weight: .semibold))
-                    Text(row.sizeLabel).font(.system(size: 11)).foregroundStyle(.tertiary)
-                }
-                // The second line exists only to say why a row failed.
-                if let why = row.state.failure {
-                    Text(sentence(for: why))
-                        .font(.system(size: 11))
-                        .foregroundStyle(row.blocking ? Parrot.scarlet : Parrot.amber)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Spacer(minLength: 8)
-            state
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.primary.opacity(0.06))
-        .overlay(alignment: .bottomLeading) { bar }
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-    }
-
-    /// A model nothing waits on clears its own failed fetch, so the row says
-    /// what happens next rather than asking for a decision.
-    private func sentence(for why: ModelDownload.Failure) -> String {
-        guard !row.blocking else { return why.message }
-        return why.message + " The next dictation that needs it tries again."
-    }
-
-    @ViewBuilder
-    private var state: some View {
-        switch row.state {
-        case .downloading(let percent):
-            if let percent {
-                Text("\(percent)%")
-                    .font(.system(size: 12, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(Parrot.action)
-            } else {
-                // No number rather than an invented one: this fetch reports no
-                // fraction.
-                GlyphView(glyph: .downloading)
-            }
-        case .waiting:
-            SetupBadge(text: "Waiting", color: .secondary)
-        case .installed:
-            SetupBadge(text: "Installed", color: Parrot.leaf)
-        case .off(let reason):
-            SetupBadge(text: reason, color: .secondary)
-        case .failed:
-            SetupBadge(
-                text: row.blocking ? "Failed" : "Will retry",
-                color: row.blocking ? Parrot.scarlet : Parrot.amber
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var bar: some View {
-        if let percent = row.percent {
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(Parrot.action)
-                    .frame(width: geometry.size.width * CGFloat(percent) / 100, height: 2)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
-            }
-        }
-    }
-}
-
-/// The one row no button can fetch, so the one row with controls.
-///
-/// Amber, not scarlet: CharsiuG2P covers the base case, so an absent eSpeak NG
-/// costs some names rather than the feature.
-private struct EspeakRow: View {
-    let presence: PermissionsModel.EspeakPresence
-    let onInstall: () -> Void
-
-    @State private var copied = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 7) {
-                        Text("eSpeak NG").font(.system(size: 13, weight: .semibold))
-                        Text("GPL-3 · a separate program")
-                            .font(.system(size: 10))
-                            .foregroundStyle(.tertiary)
-                    }
-                    Text("Backs up CharsiuG2P on names it misses.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    if presence != .found {
-                        Text(how)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Parrot.amber)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Spacer(minLength: 8)
-                switch presence {
-                case .missing:
-                    Button("Run in Terminal", action: onInstall).controlSize(.small)
-                case .opening:
-                    SetupBadge(text: "Terminal open", color: .secondary)
-                case .found:
-                    SetupBadge(text: "Found", color: Parrot.leaf)
-                }
-            }
-
-            // The chained one-liner is 130 characters. Inside a sentence it is
-            // unreadable and unselectable, so it gets a field and a way to copy.
-            if presence != .found {
-                HStack(alignment: .top, spacing: 8) {
-                    Text(EspeakInstall.command)
-                        .font(.system(size: 10, design: .monospaced))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Button(copied ? "Copied" : "Copy") {
-                        EspeakInstall.copyCommand()
-                        copied = true
-                    }
-                    .controlSize(.small)
-                }
-                .padding(.leading, 10)
-                .padding(.trailing, 8)
-                .padding(.vertical, 7)
-                .background(
-                    Color.primary.opacity(0.09),
-                    in: RoundedRectangle(cornerRadius: Parrot.fieldRadius, style: .continuous)
-                )
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .background(
-            Color.primary.opacity(0.06),
-            in: RoundedRectangle(cornerRadius: 9, style: .continuous)
-        )
-    }
-
-    private var how: String {
-        if presence == .opening {
-            return "Terminal is running it now. This row notices on its own when it lands."
-        }
-        if EspeakInstall.brew != nil {
-            return "Not installed. This runs it in Terminal, where you can watch it."
-        }
-        return "Not installed, and neither is Homebrew. This installs Homebrew first,"
-            + " then eSpeak NG."
-    }
-}
-
-private struct SetupBadge: View {
-    let text: String
-    let color: Color
-
-    var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 10, weight: .bold))
-            .kerning(0.3)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 2)
-            .background(color.opacity(0.18), in: Capsule())
-            .foregroundStyle(color)
-            .fixedSize()
+    /// The one line under the name, only on a failure. A model nothing waits
+    /// on clears its own failed fetch, so its line says what happens next
+    /// rather than asking for a decision.
+    var why: String? {
+        guard let failure = state.failure else { return nil }
+        guard !blocking else { return failure.message }
+        return failure.message + " The next dictation that needs it tries again."
     }
 }

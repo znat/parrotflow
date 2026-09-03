@@ -134,11 +134,13 @@ grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
-**The Downloads step.** After the two permissions the setup window shows what
-the app is fetching: five models, about 1.2 GB, started at launch. Nothing on
-that screen has to be waited for — *Continue* is always live, and only the
-speech model decides whether the last screen says "Ready". The one row with a
-button is eSpeak NG, which the app looks for rather than downloads.
+**The last screen.** After the two permissions the setup window shows one
+screen: both permissions, the five models it is fetching (about 1.2 GB, started
+at launch), and eSpeak NG. Nothing there has to be waited for — *Done* closes
+the window and the downloads carry on. The title says the state, and only the
+permissions and the speech model change it: "Almost ready" until Parakeet is
+in, then "Ready". The one line with a button is eSpeak NG, which the app looks
+for rather than downloads.
 
 ## Step 3 — Prove transcription works with no voice
 

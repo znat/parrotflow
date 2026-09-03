@@ -170,20 +170,15 @@ final class ModelDownloads: ObservableObject {
         Set(rows.filter { $0.state.failure == .damaged }.map(\.id))
     }
 
-    var anyDownloading: Bool {
-        rows.contains { if case .downloading = $0.state { return true } else { return false } }
-    }
-
-    /// What the eyebrow says: the size of the set, then what is happening to it.
-    var summary: String {
-        if rows.contains(where: { $0.state.hasFailed }) { return "One did not arrive" }
-        if anyDownloading { return "Downloading" }
-        let wanted = rows.filter { if case .off = $0.state { return false } else { return true } }
-        if !wanted.isEmpty, wanted.allSatisfy({ $0.state == .installed }) {
-            return "Everything is here"
+    /// True when nothing a dictation waits on is still coming. A row a setting
+    /// switched off is not coming and nothing waits for it either.
+    var speechIsIn: Bool {
+        rows.filter(\.blocking).allSatisfy {
+            switch $0.state {
+            case .installed, .off: return true
+            case .waiting, .downloading, .failed: return false
+            }
         }
-        let total = wanted.reduce(0) { $0 + $1.megabytes }
-        return "\(wanted.count) files, \(Self.size(megabytes: total))"
     }
 
     /// A failure turned into the one sentence that says what happened.
