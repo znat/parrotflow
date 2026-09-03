@@ -132,6 +132,18 @@ actor Transcriber {
         }
     }
 
+    /// The same, for the voice detector. Its own folder in the same cache.
+    static func discardVoiceDetector() {
+        let cache = MLModelConfigurationUtils.defaultModelsDirectory(for: .vad)
+        do {
+            try FileManager.default.removeItem(at: cache)
+            Log.write("voice detector: deleted the damaged copy at \(cache.path)")
+        } catch {
+            Log.write("voice detector: could not delete \(cache.path)"
+                + " — \(error.localizedDescription)")
+        }
+    }
+
     private func loadVad() async throws -> VadManager? {
         if let loadingVad { return try await loadingVad.value }
         let row = Self.voiceDownload

@@ -2399,6 +2399,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if damaged.contains(Transcriber.speechDownload.id) {
                 Transcriber.discardSpeechModel()
             }
+            if damaged.contains(Transcriber.voiceDownload.id) {
+                Transcriber.discardVoiceDetector()
+            }
+            if damaged.contains(NeuralPhonemes.soundDownload.id) {
+                NeuralPhonemes.discardCache()
+            }
             if damaged.contains(SlotModel.download.id) { SlotModel.discardCache() }
             if damaged.contains(SentenceReadings.download.id) { SentenceReadings.discardCache() }
             if damaged.contains(WordVectors.download.id) { WordVectors.discardCache() }
