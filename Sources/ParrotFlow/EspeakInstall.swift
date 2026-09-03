@@ -17,11 +17,16 @@ enum EspeakInstall {
 
     /// The line to run. Without Homebrew its own installer is chained in front,
     /// because `brew install` on a Mac with no brew is an error message.
+    ///
+    /// The second half names the binary by path. Installing Homebrew does not
+    /// put `/opt/homebrew/bin` on the PATH of the shell that just ran the
+    /// installer, so a bare `brew` there exits 127 with Homebrew installed and
+    /// eSpeak NG not.
     static var command: String {
-        guard brew == nil else { return "brew install espeak-ng" }
+        if let brew { return "\(brew) install espeak-ng" }
         return "/bin/bash -c \"$(curl -fsSL"
             + " https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-            + " && brew install espeak-ng"
+            + " && /opt/homebrew/bin/brew install espeak-ng"
     }
 
     static func copyCommand() {
@@ -35,8 +40,12 @@ enum EspeakInstall {
     /// A script rather than AppleScript's `do script`: telling Terminal what to
     /// run is an Apple Event, and that puts an Automation permission prompt in
     /// front of someone who is still granting the first two.
+    ///
+    /// Returns false when there is nothing to open. `opened` comes later, on
+    /// the main queue, and is false when the launch itself was refused — the
+    /// row has to go back to offering the button, not sit on "Terminal open".
     @discardableResult
-    static func runInTerminal() -> Bool {
+    static func runInTerminal(opened: @escaping (Bool) -> Void = { _ in }) -> Bool {
         guard let terminal = NSWorkspace.shared.urlForApplication(
             withBundleIdentifier: "com.apple.Terminal"
         ) else {
@@ -66,6 +75,7 @@ enum EspeakInstall {
             if let error {
                 Log.write("espeak: Terminal did not open — \(error.localizedDescription)")
             }
+            DispatchQueue.main.async { opened(error == nil) }
         }
         return true
     }

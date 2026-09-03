@@ -252,6 +252,13 @@ actor SentenceReadings {
         }
     }
 
+    /// Deletes the cache, so the next `prepare` fetches it again. `build`
+    /// skips the fetch whenever `isCached` is true, weights that load as the
+    /// wrong model included.
+    static func discardCache() {
+        try? FileManager.default.removeItem(at: cache.directory)
+    }
+
     private static func build(
         progress: (@Sendable (String) -> Void)?
     ) async throws -> ModelContext {

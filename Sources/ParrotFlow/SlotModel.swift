@@ -186,6 +186,14 @@ actor SlotModel {
         try await body()
     }
 
+    /// Deletes the cache, so the next `prepare` fetches it again.
+    ///
+    /// `build` already re-fetches a cache that will not load, once. This is for
+    /// the retry after that one failed too.
+    static func discardCache() {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
     /// **`.cpuAndGPU`, not the default.** On the Neural Engine this model is not
     /// approximately right, it is wrong: 0 of 238 filler lists match PyTorch and
     /// the correlation at the mask falls to 0.156. Here it is 0.99999 and up.

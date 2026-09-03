@@ -111,6 +111,24 @@ actor Transcriber {
         }
     }
 
+    /// Deletes the speech model, so the next `prepare` fetches it again.
+    ///
+    /// `AsrModels.downloadAndLoad` skips the download when the files are there,
+    /// so a copy that will not load is handed back to the loader for ever
+    /// unless the bytes go first. FluidAudio's cache is shared with the other
+    /// build of this app; a copy that will not load is broken for both, so
+    /// throwing it away repairs both.
+    static func discardSpeechModel() {
+        let cache = AsrModels.defaultCacheDirectory()
+        do {
+            try FileManager.default.removeItem(at: cache)
+            Log.write("speech model: deleted the damaged copy at \(cache.path)")
+        } catch {
+            Log.write("speech model: could not delete \(cache.path)"
+                + " — \(error.localizedDescription)")
+        }
+    }
+
     private func loadVad() async throws -> VadManager? {
         if let loadingVad { return try await loadingVad.value }
         let row = Self.voiceDownload
