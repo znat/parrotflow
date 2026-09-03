@@ -601,7 +601,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         // After the preview flags return. Those launches draw a panel and
-        // quit; nothing there transcribes, and fetching 1.16 GB for them
+        // quit; nothing there transcribes, and fetching 1.47 GB for them
         // is what `warmUpTranscriber` avoided by sitting below this point.
         warmModels()
 
@@ -2264,9 +2264,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Every model the app will use, fetched at launch rather than on the
-    /// dictation that first wants one. About 1.16 GB on a default install:
-    /// Parakeet 461 MB, ModernBERT 288 MB, the word vectors 335 MB, the sound
-    /// model 81 MB.
+    /// dictation that first wants one. About 1.47 GB on a default install:
+    /// Parakeet 461 MB, mmBERT-small 269 MB, the word vectors 335 MB, the
+    /// boundary readings 320 MB, the sound model 81 MB.
     ///
     /// Each of these used to arrive on first use, and each of them therefore
     /// had a window where the thing it powers was switched on and silently
@@ -2311,7 +2311,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The rest together, once speech is in. None of them blocks a
             // dictation: the stages that read them stand aside until they are
             // in memory.
-            await transcriber.warmSentenceModel()
             await transcriber.warmSlotModel()
             // The boundary readings. 320 MB and a 1.3s load, and a dictation
             // never waits for either: without this the first few dictations of

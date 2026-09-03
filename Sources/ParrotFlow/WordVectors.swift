@@ -18,7 +18,7 @@ import MLXLMCommon
 /// correctly from a word's own sub-token states, 4 of 8 from a one-word window,
 /// 2 of 8 from one vector per sentence.
 ///
-/// Qwen and not the shipped ModernBERT. Eight models were scored on the same 59
+/// Qwen and not ModernBERT. Eight models were scored on the same 59
 /// proposals; Qwen is the only one that never wrote a name over an ordinary
 /// word, at any threshold. ModernBERT's own vectors veto half the correct
 /// writes. 4-bit keeps the property and is 4.6x faster than fp32.

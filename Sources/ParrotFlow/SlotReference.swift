@@ -16,8 +16,8 @@ import Foundation
 /// the reason this whole gate is English-only. mmBERT-small covers 1,800
 /// languages and ties it here: 192 of the 238 bench cases each at the shipped
 /// floor, AUC 0.888 against 0.887, eight decisions flipped. It is not cheaper —
-/// see `SlotModel` for what it costs, and for why mmBERT was not given
-/// ModernBERT's other job as well.
+/// see `SlotModel` for what it costs, and for why mmBERT was not given the
+/// boundary job as well.
 ///
 /// **It only ever refuses.** Across every measurement it never authorised a
 /// rewrite the stage had not already made, and its widest write is +0.7 of the

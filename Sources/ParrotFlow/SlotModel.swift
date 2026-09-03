@@ -21,16 +21,12 @@ import Foundation
 /// **It was not given the boundary job.** mmBERT loses that one badly — 59% of
 /// spurious breaks repaired against ModernBERT's 83%, three quarters of the loss
 /// in the `P(".")` term alone. It does not know where an English sentence ends.
-/// That stage reads Qwen now. With this change no pipeline stage reads
-/// ModernBERT, and `SentenceModel`, `SentenceProbe` and `BPETokenizer` go in a
-/// follow-up of their own.
+/// That stage reads Qwen now, and ModernBERT has left the app.
 ///
 /// The weights are fp16, which is what `ct.convert` writes for an ML program by
 /// default. Against the fp32 PyTorch model on the 238-case bench it changes no
 /// decision, and the gaps agree to 0.031.
 ///
-/// **A copy of `SentenceModel`, deliberately.** That one is ModernBERT's loader
-/// and leaves with it, so a base class the two shared would leave too.
 @available(macOS 14, *)
 actor SlotModel {
 

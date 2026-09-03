@@ -9,10 +9,9 @@ import Foundation
 /// readings against. `SlotGate` reads it as a part of speech. Neither needs a
 /// probability, so this returns words and stops there.
 ///
-/// **Why this is not `SentenceProbe` with another model.** That one reads
-/// ModernBERT, which mmBERT cannot replace: it does not know where an English
-/// sentence ends. Nothing in the pipeline reads it any more, and it leaves in a
-/// follow-up, so anything the two probes were factored into would leave too.
+/// The boundary stage is not this probe with another model. mmBERT does not
+/// know where an English sentence ends, so that stage reads Qwen through
+/// `SentenceReadings` instead.
 @available(macOS 14, *)
 struct SlotProbe {
 
@@ -71,8 +70,9 @@ struct SlotProbe {
         }
 
         // `attention_mask` is a real input, and it has to be. Built as
-        // ones_like(input_ids) inside the graph — the shape the ModernBERT
-        // conversion uses — the padding is read as text, and this model minds:
+        // ones_like(input_ids) inside the graph — the shape the earlier
+        // ModernBERT conversion used — the padding is read as text, and this
+        // model minds:
         // on the 238-case bench it costs 12 decisions and 0.046 of AUC, and no
         // filler list of the 238 survives it.
         let output = try model.prediction(
@@ -160,8 +160,7 @@ struct SlotProbe {
 
 /// mmBERT-small's tokenizer, through `swift-transformers`.
 ///
-/// Not `BPETokenizer`, which is hand-written GPT-2 byte-level BPE and cannot
-/// read this file: mmBERT's is Gemma-shaped — byte-fallback BPE, a `Metaspace`
+/// mmBERT's file is Gemma-shaped — byte-fallback BPE, a `Metaspace`
 /// pre-tokenizer that writes a space as `▁`, and `<bos> <eos> <mask> <pad>` for
 /// special tokens. `AutoTokenizer` already reads all of that, and
 /// `WordVectors` already depends on it.

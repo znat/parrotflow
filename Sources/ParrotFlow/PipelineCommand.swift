@@ -193,9 +193,6 @@ enum PipelineCommand {
                 do { try await WordVectors.shared.prepare() } catch {
                     found.append("word vectors — \(error.localizedDescription)")
                 }
-                do { _ = try await SentenceModel.shared.prepare() } catch {
-                    found.append("sentence model — \(error.localizedDescription)")
-                }
                 do { _ = try await SlotModel.shared.prepare() } catch {
                     found.append("slot model — \(error.localizedDescription)")
                 }

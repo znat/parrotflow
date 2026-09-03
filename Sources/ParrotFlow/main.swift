@@ -157,9 +157,6 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
         print("✗ the sentence probe needs macOS 14 or later")
         exit(1)
     }
-    if let encode = arguments.firstIndex(of: "--encode"), arguments.indices.contains(encode + 1) {
-        exit(SentenceProbeCommand.encode(arguments[encode + 1]))
-    }
     if let bench = arguments.firstIndex(of: "--bench"), arguments.indices.contains(bench + 1) {
         let out = arguments.firstIndex(of: "--out").flatMap {
             arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
@@ -170,7 +167,6 @@ if let at = arguments.firstIndex(of: "--sentence-probe") {
     }
     guard arguments.indices.contains(at + 2) else {
         print("usage: ParrotFlow --sentence-probe \"<left half>\" \"<right half>\"")
-        print("       ParrotFlow --sentence-probe --encode \"<text>\"")
         print("       ParrotFlow --sentence-probe --bench <cases.json>"
               + " [--out <scores.json>] [--vectors]")
         exit(2)
