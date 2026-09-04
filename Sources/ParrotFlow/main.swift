@@ -260,6 +260,20 @@ if let index = arguments.firstIndex(of: "--word-gate") {
     exit(WordGateCommand.run(word: arguments[index + 1], term: term, sentence: sentence))
 }
 
+if let index = arguments.firstIndex(of: "--lowercase-refused") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --lowercase-refused \"<span>\" \"<text>\" [--terms \"a,b\"]")
+        exit(2)
+    }
+    let terms = arguments.firstIndex(of: "--terms").flatMap {
+        arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+    }
+    exit(LowercaseRefusedCommand.run(
+        span: arguments[index + 1], text: arguments[index + 2],
+        terms: terms?.split(separator: ",").map(String.init) ?? []
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--suggest") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --suggest \"<sentence>\" [--lang fr]")

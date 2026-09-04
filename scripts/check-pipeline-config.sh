@@ -235,6 +235,23 @@ check "and each names its own floor and its own gates" \
   "$(steps)" \
   "slot floor en 0.25  fr 0.25  slot on, portrait on|in /term/  slot floor en 0.45  fr 0.45  slot on, portrait off|"
 
+run_config lowercase_default 'transcription:
+  languages: [en]
+  pipeline:
+    - vocabulary'
+
+check "a bare - vocabulary line writes a refused glued span in lowercase" \
+  "$(steps)" "slot floor en 0.20  slot on, portrait on|"
+
+run_config lowercase_off 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: vocabulary, lowercase_refused: false}'
+
+check "lowercase_refused: false loads" "$code" "0"
+check "and is named on the step's line" \
+  "$(steps)" "slot floor en 0.20  slot on, portrait on  (lowercase refused off)|"
+
 # --- an option on the wrong stage ---------------------------------------------
 #
 # Refused, not dropped. A switch that loads and does nothing is somebody
@@ -252,6 +269,15 @@ check "and each message names the stage that does read it" \
   "$(printf '%s\n' "$out" | grep -c 'option on the `vocabulary` stage')" "1"
 check "and the stage it was written on" \
   "$(printf '%s\n' "$out" | grep -c '`numbers`: `slot_gate:`')" "1"
+
+run_config lowercase_wrong_stage 'transcription:
+  languages: [en]
+  pipeline:
+    - {stage: numbers, lowercase_refused: false}
+    - vocabulary'
+
+check "lowercase_refused: on another stage is refused too" \
+  "$(printf '%s\n' "$out" | grep -c '`numbers`: `lowercase_refused:`')" "1"
 
 run_config option_right_stage 'transcription:
   languages: [en]

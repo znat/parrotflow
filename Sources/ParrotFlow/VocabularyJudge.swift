@@ -944,6 +944,86 @@ enum VocabularyJudge {
         return out + text[cursor...]
     }
 
+    /// The heard span written in lowercase, or `nil` when it must stay exactly
+    /// as heard.
+    ///
+    /// A span that glues to a term — `Better Stack` for `BetterStack` — and
+    /// that the sentence then refused is the ordinary phrase, and the portrait
+    /// has just said so. Putting back what the decoder wrote puts back its
+    /// capitals too, and those are there because it thought it was writing a
+    /// name.
+    ///
+    /// Each word is asked of `SentenceJoin.written`, which keeps a capital for
+    /// `I`, for a word in capitals throughout, for a vocabulary term, for a
+    /// name `NLTagger` knows, and for a word the lexicon gives no lemma for. A
+    /// capital that survives any of those refuses the whole span: one word the
+    /// lexicon has never seen makes the span a name rather than a phrase.
+    /// Measured on `nameTypeOrLexicalClass` — `Better` and `Stack` are both
+    /// `Noun` with a lemma, `Mont` and `Blanc` are both `PersonalName` with
+    /// none, and `API` is in capitals throughout.
+    ///
+    /// `text` must already hold the span as heard, and `offset` is where the
+    /// span starts in it. A rule has written its term into the transcript, and
+    /// the term is a different length, so the caller rebuilds the text the way
+    /// `SentenceGate` does.
+    static func lowercased(
+        _ span: String, in text: String, at offset: Int, terms: [String]
+    ) -> String? {
+        let opens = opensSentence(text, at: offset)
+        var out = "", index = span.startIndex, isFirst = true
+        while index < span.endIndex {
+            guard !span[index].isWhitespace else {
+                out.append(span[index])
+                index = span.index(after: index)
+                continue
+            }
+            var end = index
+            while end < span.endIndex, !span[end].isWhitespace {
+                end = span.index(after: end)
+            }
+            let word = String(span[index..<end])
+            let at = offset + span.distance(from: span.startIndex, to: index)
+            let now = SentenceJoin.written(word, in: text, at: at, terms: terms)
+            if now == word, word.first?.isUppercase == true { return nil }
+            out += isFirst && opens ? word : now
+            isFirst = false
+            index = end
+        }
+        return out == span ? nil : out
+    }
+
+    /// Whether the span at `offset` opens a sentence, so its first capital is
+    /// there for the sentence and not for a name.
+    ///
+    /// A quote in front of the span counts on its own, whichever way it faces.
+    /// `"` opens the sentence in `He said "Better Stack is down."` and closes
+    /// the one before it in `He said "it is down." Better Stack is fine.`, and
+    /// looking further back does not separate the two: the opening one has an
+    /// ordinary word behind it. Both keep the capital, so the ambiguity costs
+    /// nothing.
+    ///
+    /// A bracket does not. It is skipped and the scan carries on behind it, so
+    /// `We migrated last year. (Better Stack is down.)` opens a sentence and
+    /// `We use (Better Stack) today` does not.
+    private static func opensSentence(_ text: String, at offset: Int) -> Bool {
+        guard let start = text.index(
+            text.startIndex, offsetBy: offset, limitedBy: text.endIndex
+        ) else { return false }
+        var cursor = start
+        while cursor > text.startIndex {
+            let before = text.index(before: cursor)
+            let character = text[before]
+            cursor = before
+            if character.isWhitespace || Self.brackets.contains(character) { continue }
+            return Self.enders.contains(character) || Self.quotes.contains(character)
+        }
+        return true
+    }
+
+    private static let quotes: Set<Character> = ["\"", "'", "“", "”", "‘", "’", "«", "»"]
+    private static let brackets: Set<Character> = ["(", ")", "[", "]", "{", "}"]
+    private static let enders: Set<Character> = [".", "?", "!"]
+
     /// How far a source may be settled without a model.
     enum Gating {
         /// The two word lists, and nothing else. They can only say "keep what
