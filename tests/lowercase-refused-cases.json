@@ -24,6 +24,12 @@
     "why": "a closing quote between the period and the span is still a sentence start"
   },
   {
+    "span": "Better Stack",
+    "text": "He said \"Better Stack is down.\"",
+    "want": "Better stack",
+    "why": "an opening quote in front of the span is a sentence start too"
+  },
+  {
     "span": "Better Stack's",
     "text": "The Better Stack's dashboard is down.",
     "want": "better stack's",

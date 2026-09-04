@@ -994,6 +994,12 @@ enum VocabularyJudge {
 
     /// Whether the span at `offset` opens a sentence, so its first capital is
     /// there for the sentence and not for a name.
+    ///
+    /// A quote or a bracket in front of the span counts, whichever way it
+    /// faces. `"` opens the sentence in `He said "Better Stack is down."` and
+    /// closes the one before it in `He said "it is down." Better Stack is
+    /// fine.`, and looking further back does not separate the two reliably.
+    /// Both keep the capital, so the ambiguity costs nothing.
     private static func opensSentence(_ text: String, at offset: Int) -> Bool {
         guard let start = text.index(
             text.startIndex, offsetBy: offset, limitedBy: text.endIndex
@@ -1002,17 +1008,17 @@ enum VocabularyJudge {
         while cursor > text.startIndex {
             let before = text.index(before: cursor)
             let character = text[before]
-            guard character.isWhitespace || Self.closers.contains(character) else {
-                return Self.enders.contains(character)
+            guard character.isWhitespace else {
+                return Self.enders.contains(character) || Self.quotes.contains(character)
             }
             cursor = before
         }
         return true
     }
 
-    /// What may stand between a sentence ender and the span. A quoted sentence
-    /// ends `…said."` and the next one still opens a sentence.
-    private static let closers: Set<Character> = ["\"", "'", "”", "’", ")", "]", "}", "»"]
+    private static let quotes: Set<Character> = [
+        "\"", "'", "“", "”", "‘", "’", "«", "»", "(", ")", "[", "]", "{", "}",
+    ]
     private static let enders: Set<Character> = [".", "?", "!"]
 
     /// How far a source may be settled without a model.

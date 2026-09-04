@@ -15,6 +15,22 @@
 #
 # A case may name `terms`, which is the vocabulary the span is asked against.
 # A word the vocabulary already knows refuses the whole span.
+#
+# **This scores the rewrite, not the stage.** The rule only fires where a
+# sentence test refused a place, and both of those read a model, so no
+# deterministic run can reach it — `make test` must not need a download. The
+# stage end to end is two fixtures and a by-hand run, the way
+# scripts/check-portrait.sh is:
+#
+#   W=$(mktemp -d) && cp tests/fixtures/vocabulary-uses-portrait.yaml \
+#     "$W/vocabulary-uses.yaml"
+#   PARROTFLOW_CONFIG_DIR=$W .build/release/ParrotFlow --warm --quiet \
+#     --pipeline tests/pipelines/vocabulary-lowercase.yaml \
+#     "We have now we now have a much Better Stack than before we migrated
+#      to the Better Stack platform."
+#
+# writes `a much better stack`, and vocabulary-lowercase-off.yaml, which is the
+# same fixture with `lowercase_refused: false`, writes `a much Better Stack`.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/.build/release/ParrotFlow"
