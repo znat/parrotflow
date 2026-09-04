@@ -80,22 +80,18 @@ transcription:
   # entry turns off language detection.
   languages: [en, fr]
 
-  # A pause mid-sentence makes the transcriber write a period and capitalise
-  # the next word. English dictations are checked for that and the period is
-  # taken out again. On by default, and only where the sentence model is
-  # already on disk. `sentences: false` turns it off.
-  #
-  # sentences:
-  #   join_below: -4.0   # remove the period and say nothing
-  #   offer_below: -2.0  # offer the join, do not write it
-
   # What a transcript runs through, in order. Remove a line to skip that
   # stage. One list for every language: a step that should only run in one
   # takes `when: language == "fr"`. See docs/pipelines.md.
   pipeline:
+    # What you meant, where the decoder wrote what it heard. A pause makes it
+    # write a period or a question mark mid-sentence and capitalise the next
+    # word; this reads each boundary and takes the mark out again. English
+    # only, and only where the model is already on disk. See docs/pipelines.md
+    # for `marks:`, `capitals:` and `pause:`.
+    - interpret
     # Matches vocabulary.yaml renderings and settles each match against the
-    # sentence it stands in. No model. Runs first, before anything else edits
-    # the text.
+    # sentence it stands in. No model. Above everything that edits the text.
     #   near_misses: false   match exactly, never one edit away
     #   by_sound: false      match spelling only, never how a word sounds
     - vocabulary

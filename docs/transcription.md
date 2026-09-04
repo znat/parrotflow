@@ -414,11 +414,11 @@ every place open. `--word-gate <word>` prints both verdicts and the
 decision, and `--word-gate <word> <term>` prints the possessive verdict and the
 decision for that pair; `scripts/check-word-gate.sh` scores them.
 
-**What the lists cannot settle, the sentence model can.** The word lists are
-about one word. A second tier reads the slot the word sits in, using the
-masked language model `SentenceModel` already fetches. Mask the word, take the
-ten most likely fillers, put each one back and tag it: the modal tag is what
-the slot wants. A name goes in a `Noun`, `Adjective` or `Pronoun` slot and
+**What the lists cannot settle, the slot model can.** The word lists are about
+one word. A second tier reads the slot the word sits in, using mmBERT-small —
+the masked language model `SlotModel` fetches. Mask the word, take the ten most
+likely fillers, put each one back and tag it: the modal tag is what the slot
+wants. A name goes in a `Noun`, `Adjective` or `Pronoun` slot and
 never in a `Verb`, `Adverb` or `Preposition` one, so `merge` -> `Vercel` and
 `ready` -> `Arexvy` are refused. This tier only refuses. It never writes a
 term, and everything it does not refuse it leaves open, `Determiner` slots
@@ -426,13 +426,16 @@ included: those are modifier positions and names do sit in them (`cloud code`,
 `bedrock principles`).
 
 Measured over the 50 English cases of `tests/judge-cases.yaml`: 12 written by
-the word lists, 14 refused by the slot, 24 left open, and no error either way.
+the word lists, 15 refused by the slot, 23 left open, and no error either way.
 `scripts/check-slot-gate.sh` is the run. See `SlotGate`. The route label for
-"left open" is still `judge`, from when a model answered those.
+"left open" is still `judge`, from when a model answered those. ModernBERT
+refused 14 and left 24 on the same set, also with no error; mmBERT-small
+replaced it because it covers French, at no cost in English.
 
-The model is never waited for. Until it is on disk — and on a language it was
-not trained for — every place this tier would judge is simply left open, which
-is the behaviour before this tier.
+The model is never waited for. Until it is on disk, every place this tier would
+judge is simply left open, which is the behaviour before this tier. This tier is
+reached only from the sound pass, and that pass is English only, so it was
+measured in English only and runs nowhere else.
 
 **What the slot cannot settle, the term itself can.** Every sentence you
 confirm a term in is kept in `vocabulary-uses.yaml`, and from three of them the
@@ -482,25 +485,117 @@ said     "you should see a parrot at the top right of your screen"
 written  "You should see a parrot. At the top right of your screen."
 ```
 
-After the vocabulary pass, every `word. Capital` boundary in an English
-transcript is scored by the same masked language model the slot gate uses:
-`score = log P(".") − log P(" <next word>")` at one masked position, ±12
-words. Two thresholds decide, both under `transcription.sentences`:
+The `interpret` step reads every such boundary in an English transcript three
+ways and scores each with a small causal language model
+(`mlx-community/Qwen3-0.6B-Base-4bit`, 320 MB):
 
-| score | what happens |
-|---|---|
-| below `join_below`, default −4 | the period is removed and nothing is said |
-| below `offer_below`, default −2 | the join is offered, not written |
-| above it | left alone |
+```
+". The vocabulary is slower"     the period is real
+" the vocabulary is slower"      a pause cut one sentence in two
+", the vocabulary is slower"     it is really a comma
+```
 
-Measured over 194 real periods and 130 synthetic cuts of one speaker's
-dictation, −4 repaired 32% of the cuts and joined no real period; −2 repaired
-55% and joined 1.2 per 100. A silent rewrite that is wrong costs the words
-themselves, so the writing tier sits where nothing was joined by mistake.
+Each reading is the log-probability of its continuation divided by its token
+count, and the highest wins. Nothing is compared to a threshold, so there is
+nothing to calibrate. The marks are `marks:` on the step, default
+`[".", ",", "?"]`; `;` and `:` were measured and never changed a decision in
+English.
 
-Joining removes the period and lowercases the word after it. Not every capital
+This is a pipeline step, and it runs at the position the list gives it — see
+[The interpret stage](pipelines.md#the-interpret-stage) for the three options
+and why it belongs first. A pipeline with no `- interpret` line in it does not
+read boundaries at all, and nothing is downloaded for them.
+
+The list does two jobs. `.` and `?` are where a boundary is looked for; the
+comma is a reading tried at one. The first reading is always the mark the
+transcriber wrote, so a `word? Capital` boundary is read `"? Word"`, `", word"`
+and `" word"`. Reading every ender at every boundary was measured too and is
+worse: 259 of 325 question cuts repaired against 265, for a fourth forward pass.
+
+A question mark counts even when the next word is lowercase. Of 19 such lines
+in one speaker's dictation, 7 hold a mark that should go and 12 a real
+question, so the reading has to decide. A period followed by a lowercase word is
+left alone: the transcriber did not start a sentence there and the shape has
+never been measured.
+
+### A capital with no mark in front of it
+
+A pause does not always make the transcriber write the mark. It writes
+`imports name definitions And all the things`, and that shape is about a third
+as common as `word. Capital`. It is scanned too, with a **fourth reading**: the
+text exactly as it was decoded.
+
+```
+". A before section B"     the sentence really ended
+" A before section B"      as decoded, a capital that belongs
+" a before section B"      a pause cut one sentence in two
+", a before section B"     it is really a comma
+```
+
+The fourth reading exists because there is no mark to take out. Everywhere else
+"leave it alone" is what happens when a mark wins; here it is a candidate of its
+own, and it is the one that saves `paste it into Outlook and the other apps`.
+Only the third writes anything. The period is never inserted — where a mark
+wins, the text is left as it was decoded and the decision is logged.
+
+Half of these capitals are correct and must not be touched: `Slack`, `English`,
+`Friday`, `TypeScript`, `Google Cloud`. Four rules refuse a candidate before any
+reading, on top of the ones that decide the word after a joined period:
+
+- a **run of two or more** capitals is never a candidate. Over 621 candidates
+  from one speaker it is 53% names — `Better Stack`, `Hugging Face` — and 13%
+  boundaries, so it is a different question and is left for one.
+- a **capital inside the word**: `WhatsApp`, `TypeScript`, `OpenAI`.
+- the **part of speech**, from the tag the lowercasing rule already asks for.
+  Only a conjunction, determiner, pronoun, adverb, preposition, particle,
+  interjection or verb goes on. A noun or an adjective here is a name, a
+  product or a title.
+- a **pause shorter than a second** in front of the capital, when the decoder's
+  word timings are there. This one is for latency, not safety: it removes 13%
+  of the candidates that reach the model. `--sentence-join` has no audio and
+  applies no gate.
+
+Measured over 7659 English dictations from one speaker. 2433 bare capitals,
+1645 refused by the lowercasing rules, and 236 of the rest reach the readings —
+**3.1 per 100 dictations, 2.7 after the pause gate**. On 110 hand-labelled
+candidates: **64% of the spurious capitals lowercased, no correct capital
+touched, and none of 15 real sentence starts joined.** The fourth reading is
+what makes the second number hold; without it four correct capitals are
+lowercased and not one repair is gained.
+
+#256 measured this shape at AUC 0.750 and dropped it. That was the threshold
+probe on ModernBERT, which has since been replaced.
+
+Three things are load-bearing. Per token, not summed: on summed
+log-probability the joined reading wins by being shortest, which repairs 97% of
+the cuts and destroys 33 real endings. The comma is a reading and not a term in
+a subtraction: 26% of real endings pick it, and that is why none of them picks
+the join. And the three readings go into one padded forward pass, which costs
+50 ms against 70 ms for three passes; a shared KV cache for the prefix is
+slower still.
+
+Measured over one speaker's dictation. Periods: 81% of 140 cuts repaired, none
+of 172 real periods joined. Question marks: 82% of 325 cuts repaired, and **one
+wrong join in 111 real questions**. The two thresholds this stage used to carry
+repaired 26% of the period cuts, and the higher one could not be raised — it was
+set by the single lowest-scoring real ending.
+
+The question shape is not silent-safe the way the period shape is. One wrong
+join in 111 bounds the true rate at 4.9 per 100 with 95% confidence, against 1.7
+for the period shape. The wrong join is a real question ending, and it loses to
+the join by 0.045 of a log-probability:
+
+```
+said     ... what's the best grammatical model we can use? For now part flow
+         is open source so doesn't make a big issue.
+written  ... what's the best grammatical model we can use for now part flow
+         is open source so doesn't make a big issue.
+```
+
+Joining removes the mark and lowercases the word after it. Not every capital
 there is because of the period: "I will ask him. Nathan knows the answer" must
 not become "ask him nathan knows". So the rule asks for a reason to lowercase.
+A word that was already lowercase is left as it is.
 `I` and its contractions keep the capital, so does a word in capitals
 throughout, so does a `PersonalName`, `PlaceName` or `OrganizationName` from
 `NLTagger`, and so does a word `NLTagger` gives no lemma for — the lexicon has
@@ -508,14 +603,136 @@ never seen it, which is what a name it has not been told about looks like. A
 term in your `vocabulary.yaml` is asked first, because a name that is also an
 English word is the one case the lemma rule cannot see.
 
-English only. The model is English-only, and the same probe measured on
-`cservan/french-modernbert-large` and `-base` scores near chance. Nothing is
-waited for: with no cached model, a probe that throws or a boundary it cannot
-read, the text arrives as it was.
+English only, and the stage refuses the rest itself, so `when: language == "en"`
+on the step is not needed. The readings are scored by an English base model, and
+the mark set is English: French uses `:` where English does not. Nothing is
+waited for:
+with no cached model, a load that threw or a boundary it cannot read, the text
+arrives as it was. A dictation that arrives before the weights are in memory
+keeps its boundaries and starts the load.
 
-`scripts/check-sentence-join.sh` scores the two tiers and needs the model.
-`scripts/check-sentence-case.sh` scores the lowercasing and needs none, so it
-runs in CI. See `SentenceJoin`.
+`scripts/check-sentence-join.sh` scores the decisions and needs the model.
+`scripts/check-sentence-case.sh` scores the lowercasing and
+`scripts/check-sentence-window.sh` the window a boundary is read over; neither
+needs a model, so both run in CI. See `SentenceJoin` and `SentenceReadings`.
+
+## Measured and rejected
+
+Nine approaches to sentence repair and word correction were measured on
+2026-09-02 and rejected. Each one looked reasonable, and each will look
+reasonable again. This records what was tried, the number it produced, and the
+mechanism behind the failure.
+
+### Sentence boundary — five
+
+**mmBERT in place of ModernBERT on the probe.** 59% of the cuts repaired
+against ModernBERT's 83%, on the contaminated bench and again on the cleaned
+one. 74% of the loss is the `log P(".")` term, not the next-word term: it does
+not know where an English sentence ends. Its medians on real endings are better
+(+5.58 against +5.42), but its tail is a cluster, so forgiving its worst case
+gains nothing while ModernBERT gains 3 points.
+
+**Scoring on `log P(".")` alone.** Same ordering as the shipped subtraction —
+AUC 0.968 against 0.969 — and 56% repaired against 81%. The subtraction
+normalises rather than compares. A real ending at a hard-to-predict position
+has a low `P(".")` and a low `P(next)`, and subtracting cancels the shared
+difficulty.
+
+**Other ways to normalise the same two terms.** Four were measured:
+
+| score | repaired |
+|---|---|
+| `log P(.) − log P(top-1)` | 47% |
+| `log P(.) − log sum P(top-5)` | 48% |
+| `log P(.) + entropy` | 29% |
+| `log P(.) − mean(next, top-1)` | 85% |
+
+The last one is not a win. A 2000-sample bootstrap puts its 90% interval at
+-3.6 to +7.2 points against the shipped score, which is noise.
+
+**Syntactic rules on the left side.** The rule is "the last word before the
+break cannot end a sentence". A closed-class word list gives 10 false joins for
+4 extra catches. `NLTagger` does far better — `Conjunction` covers 10 cuts and
+0 real endings — but the rule fires on 45 cuts of which the probe already
+catches 39. A language model already encodes syntax, so the two instruments
+read the same signal.
+
+**Commas, colons and semicolons as the thing being detected.** AUC 0.443 to
+0.465, below chance.
+
+### Word correction — four
+
+**Deleting a word by asking whether removing it helps.** The score is
+`delta = log P(without) − log P(with)`, for mumbled fragments, repetitions and
+fillers. Naive AUC 0.460, below chance, and 0.123 against recogniser
+substitutions. A vocabulary term looks more like an intrusion than an artifact
+does. A context-aware version reaches 0.707 but flags 51% of vocabulary terms
+at 80% recall.
+
+**A mumbled fragment cannot be deleted on its own.** 7 of 13 score negative:
+the model prefers the sentence with the fragment in it. A mumble is an
+abandoned word-start, so the restart it was abandoned for always follows it —
+`And wa and iterate`, `a rar no a rare noun`, `The inta the install script`.
+Deleting the fragment leaves the restart, so the neighbourhood is disfluent
+either way. The fix needs fragment and restart together, which a single-span
+deletion cannot express.
+
+**Fillers want a word list, not a model.** 13 of 22 phrases are all but never
+fillers for this speaker. He uses them contrastively:
+
+| phrase | filler uses |
+|---|---|
+| `actually` | 0 of 15 |
+| `of course` | 0 of 8 |
+| `right now` | 0 of 9 |
+| `you see` | 0 of 8 |
+| `quoi` | 0 of 12 |
+| `i think` | 1 of 15 |
+
+Three go the other way and need no model either: `en fait` 12 of 12,
+`basically` 7 of 8, `voilà` 2 of 2. Only `you know` and `i mean` are
+genuinely ambiguous, on n=14 and n=11. A word list settles the rest. The model
+is what is rejected, not the step.
+
+**Detecting a real-word mishearing.** The target is a wrong word that is
+itself a real word — `blink slate`, `just prone Claude`. On 40 held-out
+dictation lines, 769 words: 1.04 flags per 100 words, 5 of 8 flags on words
+that were fine, and 0 of 8 proposing the right word. The true pairs barely
+sound alike on the shipped metric — `prone`/`point` 0.20, `drew`/`few` 0.33,
+`pier`/`PR` 0.43, against a vocabulary floor of 0.80 — so no sound gate
+separates them from words that merely fit the context. This entry covers the
+masked-model version of that detector.
+
+### Three findings worth keeping
+
+**AUC and threshold placement keep coming apart, and only the second matters.**
+Three times a method matched the shipped ordering and lost 20 points or more
+in use. AUC is a mean over every pair. The threshold is a minimum over the
+real endings. A mean is robust to outliers; an extremum is defined by them.
+
+**The mined real sentence endings are contaminated.** They were found by
+searching sent messages for `. Capital`, which assumes every period the speaker
+sent was meant. Of the 25 lowest-scoring, 8 were recogniser errors and 4 were
+not dictations at all. One case that was blocking Qwen by 17 points turned out
+not to be a dictation. The hand labels are in
+`~/Documents/parrotflow-scratch/sentence-join/harness/en_real_labels.json` and
+they only transfer to ModernBERT, since they are ModernBERT's worst 25.
+
+**Retrieval works where ranking does not.** In the mishearing work the right
+word was in the candidate list in 3 of 4 wrong proposals and lost on score:
+`clot → click` with `Claude` in the list, said 30 times; `herd → had` with
+`heard` in the list at sound similarity 1.00. Anything worth pursuing in that
+direction is the ranking, not the retrieval.
+
+The benches are not committed. They live under
+`~/Documents/parrotflow-scratch/`, and the boundary bench and its scorers are in
+`sentence-join/harness/`.
+
+One earlier rejection is recorded in code rather than here: the rank rule that
+wrote a name at the weakest-reading span, in `SlotGate`'s header. A second, the
+French ModernBERTs that score near chance on the probe, left the app with
+ModernBERT itself. The boundary reads Qwen now, and is English-only for the
+reason `SentenceJoin`'s header gives.
 
 ## Voice corrections
 

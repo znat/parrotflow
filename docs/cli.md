@@ -135,10 +135,10 @@ Name the sentence too — with the term, which the model tiers are about —
 ten fillers put back and tagged; `route` is where the proposal goes. The slot
 only ever declines: a name goes in a `Noun`, `Adjective` or `Pronoun` slot and
 never in a `Verb`, `Adverb` or `Preposition` one, and every other proposal
-reads `judge` — see `SlotGate`. Nothing is downloaded: with no cached
-sentence model the slot reads `unavailable` and the route is `judge`.
+reads `judge` — see `SlotGate`. Nothing is downloaded: with no cached slot
+model the slot reads `unavailable` and the route is `judge`.
 `scripts/check-slot-gate.sh` scores the whole route against
-`tests/judge-cases.yaml`. It needs the 300 MB model, so it is not in
+`tests/judge-cases.yaml`. It needs the 269 MB model, so it is not in
 `make test`.
 
 `--teaching` asks whether a substitution sits inside a spelling lesson —
@@ -180,11 +180,14 @@ so a case file states the setup it assumes instead of inheriting this machine's.
   result. It is how a stage whose only contribution is a fact gets scored at
   all, and the first thing to reach for when a condition is not deciding what
   you expected. See [pipelines.md](pipelines.md#variables).
-- `--warm` waits for the word vectors and the sentence model before the run.
-  The sentence gate never makes a dictation wait, so in a one-shot run nothing
-  has loaded them and the two tests that read the sentence are skipped every
-  time — this is the only way to see them from the command line. Off by
-  default: it is a 700 MB download, and `make test` must not need one.
+- `--warm` waits for the word vectors and the slot model before the run. The
+  sentence gate never makes a dictation wait, so in a one-shot run nothing has
+  loaded them and the two tests that read the sentence are skipped every time —
+  this is the only way to see them from the command line. Off by default: it is
+  about 600 MB of downloads, and `make test` must not need one. Only what the
+  fixture's own pipeline reads: a fixture with `slot_gate: false` on its
+  `vocabulary` step fetches no slot model, and one with no `vocabulary` step
+  fetches neither.
 - `--lang en,fr` stands in for the configured `languages:`, so a case file does
   not depend on how this Mac is set up.
 
@@ -419,72 +422,170 @@ say -o /tmp/t.wav --data-format=LEI16@16000 --channels=1 "testing one two three"
 $PF --transcribe /tmp/t.wav
 ```
 
-## Is this period real
+## What word does this slot want
 
 ```sh
-$PF --sentence-model                                       # fetch, compile and load ModernBERT
-$PF --sentence-probe "<left half>" "<right half>"          # score one boundary
-$PF --sentence-probe --encode "<text>"                     # the tokenizer alone, no model
+$PF --slot-model                                           # fetch, compile and load mmBERT-small
+$PF --slot-probe "<left half>" "<right half>"              # the ten words the slot expects, and the time
+$PF --slot-probe --encode "<text>"                         # the tokenizer alone, no model
+$PF --slot-gap "<sentence>" <heard> <term> [--lang fr]     # what the slot says about a rewrite
 ```
 
-A pause in the middle of a sentence makes the transcriber write a period. The
-probe asks ModernBERT what belongs where that period is:
-`score = log P(".") − log P(" <next word>")`, both read at one masked position.
-A low score means the period is false and the two halves are one sentence.
-Measured over 194 real periods and 130 synthetic cuts of dictation:
-
-| threshold | cuts repaired | false joins per 100 real periods |
-|---:|---:|---:|
-| −4 | 32% | 0.0 |
-| −2 | 55% | 1.2 |
-| 0 | 82% | 6.1 |
+The vocabulary pass proposes a rewrite from spelling and sound alone. The slot
+reads the sentence instead: mask the word, ask mmBERT-small for the ten words it
+expects there, and measure both readings against them with the word vectors.
 
 ```
-$PF --sentence-probe "we have to do it." "That works well"
-  boundary  "." 15   " ." 964   "That" 2773   " That" 2064  ✓
-  text      we have to do it [MASK] that works well
-  score        1.45
-  period      -4.12   "."
-  next        -5.57   " that"
-  top       " and"   -1.54   ","   -2.36   " something"   -2.93
+$PF --slot-gap "The old house looked ghostly in the fog." ghostly Ghostty
+  expected  grey like deserted good lost beautiful white cool green ugly
+  gap       -0.243   refuse
 ```
 
-The `boundary` line is the tokenizer checking itself against a real
-tokenization. A word after another word carries its leading space, so `" That"`
-is 2064 and `"That"` is 2773 — comparing against the second scores nothing at
-every threshold and raises no error. If that check fails the probe refuses to
-answer.
+`gap` is `cos(term, centre) − cos(heard, centre)`. Below the floor for the
+language the rewrite is refused; above it the slot has no opinion. The floor is
+`slot_floor:` on the `vocabulary` step, 0.20 in English and 0.30 in French, and
+`--lang` picks which one the verdict is read at. The gap itself is
+the same number either way. It only ever refuses — a term is
+unknown to the tokenizer by construction, so it can never win this comparison.
+The ten words are printed because they explain the number: a slot whose ten
+words are pronouns cannot tell two names apart, and the gap comes out near zero.
+`scripts/check-slot-gap.sh` scores the decisions against
+`tests/slot-gap-cases.yaml`; it needs both models, so it is not in `make test`.
 
-`--encode` prints ids and loads no model, which is what
-`scripts/check-tokenizer.sh` compares against HuggingFace's own tokenizer.
-`scripts/check-sentence-probe.sh` goes further and compares the scores;
-it needs the model, so it is not in `make test`.
+`--slot-probe --encode` prints ids and loads no model, which is what
+`scripts/check-slot-tokenizer.sh` compares against HuggingFace's own tokenizer.
 
-## Which periods a pause put there
+mmBERT-small and not ModernBERT, which this stage used to read: the two tie on
+the English bench, and mmBERT-small covers 1,800 languages where ModernBERT is
+English-only. It is not cheaper — the same cache size, and 18 ms per pass
+against 11, because its head is five times wider. Multilingual is the whole
+reason for the swap.
+
+## Is this sentence mark real
 
 ```sh
-$PF --sentence-join "<text>"            # score every boundary, and join what is below
+$PF --sentence-model                                       # fetch the model the readings need
+$PF --sentence-probe "<left half>" "<right half>"          # read one boundary
+$PF --sentence-probe --bare "<left half>" "<right half>"   # a capital with no mark
+$PF --sentence-probe --window "<left half>" "<right half>" # the window alone, no model
+$PF --sentence-probe --bench <cases.json> --out <out.json> # a whole file, one loaded process
+```
+
+A pause in the middle of a sentence makes the transcriber write a period or a
+question mark. The probe builds three readings of the boundary — the mark on
+the left half, the comma, and no mark at all — and scores each with
+`mlx-community/Qwen3-0.6B-Base-4bit`. The score is the log-probability of the
+continuation divided by its token count. The highest wins, and there is no
+threshold.
+
+End the left half with `?` to read a question boundary. With no mark there it
+is read as a period.
+
+`--bare` reads it as a capital the transcriber wrote with nothing in front of
+it. That shape gets a fourth reading, the text exactly as decoded, because
+there is no mark to take out and leaving it alone has to be a candidate of its
+own rather than what happens when a mark wins.
+
+```
+$PF --sentence-probe --bare "…the dot and the word app" "And decide which one is bigger"
+  reading   .           -4.9574  7
+  reading   as-decoded  -5.3883  6
+  reading   ,           -4.2416  7
+  reading   join        -4.3177  6
+  winner    ,
+```
+
+```
+$PF --sentence-probe "…the first usage of the LLM with." "The vocabulary is slower"
+  prefix    the first usage of the LLM with
+  reading   .        -7.2669  5
+  reading   ,        -6.5327  5
+  reading   join     -4.5571  4
+  winner    join
+```
+
+The number after the score is how many tokens it was divided by. `retokenised`
+on a line means the mark merged into the last token of the prefix, so that
+reading is scored from the first token that actually differs — 2 of 972 bench
+sequences do this.
+
+`--bench` reads `[{"left": …, "right": …}]` and writes one row of scores per
+boundary, with the mark it read and the milliseconds each decision took. A row
+may carry `"mark": "?"` where the left half does not end with the mark itself,
+and `"mark": ""` for the bare-capital shape.
+It loads the model once, so it is the only way to get a latency number;
+`--vectors` loads the word vectors as well, so the memory line describes the
+process the app runs.
+
+`--window` builds the prefix and the continuations and stops, as JSON. No model
+is loaded. `--bare` applies to it as well.
+
+```
+$PF --sentence-probe --window "did you see the parrot?" "At the top right"
+{
+  "mark" : "?",
+  "prefix" : "did you see the parrot",
+  "readings" : [
+    {
+      "continuation" : "? At the top right",
+      "key" : "?"
+    },
+    {
+      "continuation" : ", at the top right",
+      "key" : ","
+    },
+    {
+      "continuation" : " at the top right",
+      "key" : "join"
+    }
+  ]
+}
+```
+
+`scripts/check-sentence-window.sh` compares that against
+tests/sentence-window-cases.json, whose expectations were written by hand from
+the rules rather than from a run. It runs in CI.
+
+`scripts/check-sentence-probe.sh` compares the readings against
+tests/sentence-boundary-cases.json; it needs the model, so it is not in
+`make test`.
+
+`--sentence-model` fetches the Qwen base model the readings are scored with.
+The vocabulary slot gate has its own model and its own command, `--slot-model`.
+
+## Which sentence marks a pause put there
+
+```sh
+$PF --sentence-join "<text>"            # read every boundary, and join what wins
 $PF --sentence-join --case "<text>"     # the lowercasing alone, no model
 ```
 
 `--sentence-join` is the pass the app runs, on the text you give it. One block
-per `word. Capital` boundary, then the text it hands on.
+per boundary, then the text it hands on. A boundary is a `.` or a `?` followed
+by a word — a capital after a period, a capital or a lowercase word after a
+question mark.
 
 ```
 $PF --sentence-join "…the first usage of the LLM with. The vocabulary is slower"
   language   en
   boundary   with. The -> with the
-  score      -5.0664
-  tier       join
+  reading    .         -7.2669  5
+  reading    ,         -6.5327  5
+  reading    join      -4.5571  4
+  winner     join
   text       …the first usage of the LLM with the vocabulary is slower
 ```
 
-`tier` is `join` below `join_below`, `offer` below `offer_below`, and `leave`
-above it. Both thresholds are `transcription.sentences` in `config.yaml`.
-`scripts/check-sentence-join.sh` scores the two tiers against
-tests/sentence-boundary-cases.json; it needs the model, so it is run by hand.
+The mark is removed where `join` wins, and left alone otherwise. Which marks are
+scanned, and which are read beside them, is `marks:` on the `interpret` step in
+`config.yaml` — the sentence enders in that list are scanned, the rest are
+readings. This command reads the built-in set unless a legacy `marks:` is set;
+`--pipeline` is what runs the step as the config spells it.
+`scripts/check-sentence-join.sh` scores the decisions against
+tests/sentence-boundary-cases.json, in both shapes; it needs the model, so it is
+run by hand.
 
-`--case` answers only what the capitalised word becomes once the period is
+`--case` answers only what the capitalised word becomes once the mark is
 gone. `NLTagger` and your vocabulary decide that, so no model is loaded and
 `scripts/check-sentence-case.sh` runs in CI. See `SentenceJoin`.
 
@@ -725,12 +826,14 @@ scripts/check-profiles.sh          # which app gets examined, named, or read for
 scripts/check-clipboard.sh         # when a rewrite may go to the clipboard, and stay there
 scripts/check-span-rule.sh         # which range a rewrite is written as, before any app sees it
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
-scripts/check-tokenizer.sh         # the hand-written BPE against HuggingFace's own
-scripts/check-sentence-probe.sh    # the boundary score against coremltools (needs the model)
+scripts/check-slot-tokenizer.sh    # the slot tokenizer against HuggingFace's own
+scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the model)
+scripts/check-sentence-window.sh   # the window a boundary is read over, against hand-written cases
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
-scripts/check-sentence-case.sh     # the capital after a period the join removes
+scripts/check-slot-gap.sh          # what the slot says about a rewrite (needs both models)
+scripts/check-sentence-case.sh     # the capital after a mark the join removes
 scripts/check-invented-tail.sh     # the endings the decoder wrote over silence
-scripts/check-sentence-join.sh     # the two tiers of the sentence join (needs the model)
+scripts/check-sentence-join.sh     # which sentence marks the join removes (needs the model)
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back

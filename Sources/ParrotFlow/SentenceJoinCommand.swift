@@ -5,14 +5,16 @@ import Foundation
 ///     ParrotFlow --sentence-join "You should see a parrot. At the top right."
 ///       language   en
 ///       boundary   parrot. At -> parrot at
-///       score      -5.07
-///       tier       join
+///       reading    .         -7.2669  5
+///       reading    ,         -6.5327  5
+///       reading    join      -4.5571  4
+///       winner     join
 ///       text       You should see a parrot at the top right.
 ///
-/// One `boundary`/`score`/`tier` block per boundary, in order, then the text
-/// the stage hands on. `scripts/check-sentence-join.sh` scores the two tiers
-/// with this. Nothing is downloaded: with no cached model the text comes back
-/// untouched and the run says so, which is what the app does.
+/// One block per boundary, in order, then the text the stage hands on.
+/// `scripts/check-sentence-join.sh` scores the decisions with this. Nothing is
+/// downloaded: with no cached model the text comes back untouched and the run
+/// says so.
 ///
 /// `--case` asks the lowercasing question alone and loads no model, so it runs
 /// on a machine that has never dictated. `scripts/check-sentence-case.sh` is
@@ -27,10 +29,20 @@ enum SentenceJoinCommand {
         let config = (try? ConfigStore.load()) ?? Config()
         if caseOnly {
             let terms = Array(config.vocabulary.terms.keys)
-            for boundary in SentenceJoin.boundaries(in: text) {
+            let scan = SentenceJoin.scanned(config.transcription.marks(for: "en"))
+            let found = (
+                SentenceJoin.boundaries(in: text, scanning: scan)
+                + SentenceJoin.bareBoundaries(in: text)
+            ).sorted { $0.next.lowerBound < $1.next.lowerBound }
+            for boundary in found {
                 let (whole, offset) = SentenceJoin.joining(text, at: boundary)
                 let word = String(text[boundary.next])
-                let now = SentenceJoin.written(word, in: whole, at: offset, terms: terms)
+                var now = SentenceJoin.written(word, in: whole, at: offset, terms: terms)
+                // A bare capital that the filter refuses is never read, so the
+                // word it would be written as is the word itself.
+                if boundary.mark == nil, !SentenceJoin.readable(word, in: whole, at: offset) {
+                    now = word
+                }
                 print("  next       \(word) -> \(now)")
             }
             return 0
@@ -42,8 +54,8 @@ enum SentenceJoinCommand {
             print("  text       \(text)")
             return 0
         }
-        guard SentenceModel.isCached else {
-            print("  probe      not cached")
+        guard SentenceReadings.isCached else {
+            print("  model      not cached")
             print("  text       \(text)")
             return 0
         }
@@ -51,6 +63,9 @@ enum SentenceJoinCommand {
         var outcome = SentenceJoin.Outcome.unchanged(text)
         let done = DispatchSemaphore(value: 0)
         Task {
+            // The app never waits for this load; a run from the shell has to,
+            // or every case comes back untouched.
+            try? await SentenceReadings.shared.prepare()
             outcome = await SentenceJoin.shared.apply(to: text, config: config)
             done.signal()
         }
@@ -58,8 +73,12 @@ enum SentenceJoinCommand {
 
         for reading in outcome.readings {
             print("  boundary   \(reading.change)")
-            print(String(format: "  score      %.4f", reading.score))
-            print("  tier       \(reading.tier.rawValue)")
+            for score in reading.scores {
+                let key = score.key.padding(toLength: 10, withPad: " ", startingAt: 0)
+                print(String(format: "  reading    %@ %8.4f  %d",
+                             key, score.mean, score.tokens))
+            }
+            print("  winner     \(reading.winner)")
         }
         print("  text       \(outcome.text)")
         return 0

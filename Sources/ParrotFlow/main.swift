@@ -135,20 +135,70 @@ if arguments.contains("--sentence-model") {
     exit(SentenceModelCommand.run())
 }
 
+if arguments.contains("--slot-model") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot model needs macOS 14 or later")
+        exit(1)
+    }
+    exit(SlotModelCommand.run())
+}
+
+if let at = arguments.firstIndex(of: "--slot-probe") {
+    guard #available(macOS 14, *) else {
+        print("✗ the slot probe needs macOS 14 or later")
+        exit(1)
+    }
+    if let encode = arguments.firstIndex(of: "--encode"), arguments.indices.contains(encode + 1) {
+        exit(SlotProbeCommand.encode(arguments[encode + 1]))
+    }
+    guard arguments.indices.contains(at + 2) else {
+        print("usage: ParrotFlow --slot-probe \"<left half>\" \"<right half>\"")
+        print("       ParrotFlow --slot-probe --encode \"<text>\"")
+        exit(2)
+    }
+    exit(SlotProbeCommand.run(left: arguments[at + 1], right: arguments[at + 2]))
+}
+
 if let at = arguments.firstIndex(of: "--sentence-probe") {
     guard #available(macOS 14, *) else {
         print("✗ the sentence probe needs macOS 14 or later")
         exit(1)
     }
-    if let encode = arguments.firstIndex(of: "--encode"), arguments.indices.contains(encode + 1) {
-        exit(SentenceProbeCommand.encode(arguments[encode + 1]))
+    if let bench = arguments.firstIndex(of: "--bench"), arguments.indices.contains(bench + 1) {
+        let out = arguments.firstIndex(of: "--out").flatMap {
+            arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
+        }
+        exit(SentenceProbeCommand.bench(
+            cases: arguments[bench + 1], out: out, vectors: arguments.contains("--vectors")
+        ))
     }
-    guard arguments.indices.contains(at + 2) else {
-        print("usage: ParrotFlow --sentence-probe \"<left half>\" \"<right half>\"")
-        print("       ParrotFlow --sentence-probe --encode \"<text>\"")
+    // Only `--bare` and `--window` are taken as options, and only the first of
+    // each. Everything else is transcript, including a half that starts with a
+    // dash.
+    var bare = false
+    var window = false
+    var halves: [String] = []
+    var index = at + 1
+    while index < arguments.count, halves.count < 2 {
+        if arguments[index] == "--bare", !bare {
+            bare = true
+        } else if arguments[index] == "--window", !window {
+            window = true
+        } else {
+            halves.append(arguments[index])
+        }
+        index += 1
+    }
+    guard halves.count == 2 else {
+        print("usage: ParrotFlow --sentence-probe [--bare] [--window] \"<left half>\" \"<right half>\"")
+        print("       ParrotFlow --sentence-probe --bench <cases.json>"
+              + " [--out <scores.json>] [--vectors]")
         exit(2)
     }
-    exit(SentenceProbeCommand.run(left: arguments[at + 1], right: arguments[at + 2]))
+    if window {
+        exit(SentenceProbeCommand.window(left: halves[0], right: halves[1], bare: bare))
+    }
+    exit(SentenceProbeCommand.run(left: halves[0], right: halves[1], bare: bare))
 }
 
 if let at = arguments.firstIndex(of: "--sentence-join") {
@@ -444,14 +494,35 @@ if let index = arguments.firstIndex(of: "--slot-gap") {
         exit(1)
     }
     guard arguments.indices.contains(index + 3) else {
-        print("usage: ParrotFlow --slot-gap \"<sentence>\" <heard> <term>")
+        print("usage: ParrotFlow --slot-gap \"<sentence>\" <heard> <term> [--lang <code>]")
         exit(2)
+    }
+    // Refused rather than defaulted, and one code only. The verdict is read at
+    // that language's floor, so `--lang eng` or `--lang en,fr` would answer
+    // about a language nobody asked about.
+    let slotGapLanguage: String
+    if arguments.contains("--lang") {
+        let listed = languageList(arguments) ?? []
+        // `languageList` reads the first `--lang` and ignores a second one, so
+        // the count is checked here rather than there.
+        guard arguments.filter({ $0 == "--lang" }).count == 1,
+              listed.count == 1, let only = listed.first,
+              DictationLanguage.supported.contains(only) else {
+            print("✗ --lang wants one of"
+                + " \(DictationLanguage.supported.joined(separator: ", "))"
+                + " — the gate knows a floor for those only")
+            exit(2)
+        }
+        slotGapLanguage = only
+    } else {
+        slotGapLanguage = "en"
     }
     exit(
         SlotGapCommand.run(
             sentence: arguments[index + 1],
             heard: arguments[index + 2],
-            term: arguments[index + 3]
+            term: arguments[index + 3],
+            language: slotGapLanguage
         )
     )
 }

@@ -28,9 +28,11 @@ enum Replacements {
     ///
     /// Kept as the entry point everything already calls, so moving the order
     /// out of this function did not move the call sites too.
+    /// `words` are the decoder's own, for the `interpret` step's pause gate.
+    /// Only the transcriber has them.
     static func apply(
         to text: String, config: Config, allowPrompts: Bool = true, app: Pipeline.App? = nil,
-        seed: Scope = Scope(),
+        seed: Scope = Scope(), words: [Trace.Word] = [],
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         let language = Pipeline.language(of: text, config: config)
@@ -41,7 +43,7 @@ enum Replacements {
         seed.set("language", .string(language))
         return await Pipeline.resolved(config: config).run(
             text, config: config, allowPrompts: allowPrompts, app: app,
-            seed: seed, progress: progress
+            seed: seed, words: words, progress: progress
         )
     }
 

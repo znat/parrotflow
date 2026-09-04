@@ -1652,53 +1652,110 @@ struct Config: Decodable, Equatable {
         /// at all.
         var languages: [String] = ["en"]
 
-        /// When a period the transcriber wrote is taken out again — see
-        /// `SentenceJoin`.
-        ///
-        ///     sentences: false        never look at a boundary
-        ///     sentences:
-        ///       join_below: -4.0      remove the period, say nothing
-        ///       offer_below: -2.0     offer the join, do not write it
-        ///
-        /// Two spellings, like `review:` on a pipeline step: a bare `false`
-        /// turns the stage off, anything else says what it runs with.
-        ///
-        /// The defaults are where the score was measured, over 194 real
-        /// periods and 130 synthetic cuts of this speaker's own dictation. -4
-        /// repaired 32% of the cuts and joined no real period; -2 repaired 55%
-        /// and joined 1.2 per 100. So -4 writes and -2 asks.
-        var sentences: Sentences = Sentences()
+        /// The marks the `interpret` step tries beside removing the period,
+        /// where the step names none of its own. English only — that stage has
+        /// never run in another language.
+        func marks(for language: String) -> [String] {
+            Language.builtIn[language]?.marks ?? Language.defaultMarks
+        }
 
-        struct Sentences: Decodable, Equatable {
-            var enabled = true
-            var joinBelow: Double = -4
-            var offerBelow: Double = -2
+        /// How far the heard word must win by before the vocabulary gate
+        /// refuses a rewrite — see `SlotReference`.
+        ///
+        /// `step` is the `vocabulary` step that is running. Its `slot_floor:`
+        /// answers where it names the language, and a language it does not
+        /// name keeps the built-in value.
+        func slotFloor(for language: String, on step: Pipeline.Step? = nil) -> Double {
+            step?.slotFloor?.value(for: language)
+                ?? Language.builtIn[language]?.slotFloor
+                ?? Language.defaultSlotFloor
+        }
 
-            enum CodingKeys: String, CodingKey {
-                case joinBelow = "join_below"
-                case offerBelow = "offer_below"
+        /// What one language gets before a step says otherwise. Both values
+        /// live on a pipeline step now — `marks:` on `interpret`, `slot_floor:`
+        /// on `vocabulary` — so this is the built-in table and the two checks
+        /// those keys are read through, and nothing in the file decodes into it.
+        struct Language: Equatable {
+            var marks: [String]?
+            var slotFloor: Double?
+
+            static let defaultMarks = [".", ",", "?"]
+            /// English's floor. Ordinary words sit at -0.30 to -0.43 and
+            /// correct rewrites at -0.02 to -0.18, and nothing lands between.
+            static let defaultSlotFloor = 0.20
+
+            /// What each language gets with nothing in the file.
+            ///
+            /// French gaps are compressed by about a third. On a 201-case
+            /// French bench the English floor wrongly refuses 7 correct
+            /// rewrites of 84 and 0.30 refuses 2. No single value serves both:
+            /// 0.40 is free in both and costs the English gate 35 of the 55
+            /// wrong rewrites it catches.
+            static let builtIn: [String: Language] = [
+                "en": Language(marks: defaultMarks, slotFloor: defaultSlotFloor),
+                "fr": Language(marks: defaultMarks, slotFloor: 0.30),
+            ]
+
+            init(marks: [String]? = nil, slotFloor: Double? = nil) {
+                self.marks = marks
+                self.slotFloor = slotFloor
             }
 
-            init() {}
-
-            init(from decoder: Decoder) throws {
-                if let on = try? decoder.singleValueContainer().decode(Bool.self) {
-                    enabled = on
-                    return
-                }
-                let c = try decoder.container(keyedBy: CodingKeys.self)
-                joinBelow = try c.decodeIfPresent(Double.self, forKey: .joinBelow) ?? joinBelow
-                offerBelow = try c.decodeIfPresent(Double.self, forKey: .offerBelow) ?? offerBelow
-                // Read in this order, so the two swapped make every offer a
-                // silent join instead of refusing the file.
-                guard joinBelow < offerBelow else {
+            /// The gap is one cosine minus another, so it never goes below -2
+            /// and a floor of 2 refuses nothing. At 0 or less the faintest lean
+            /// against the term refuses it.
+            ///
+            /// `key` names the language the map entry was written under, so a
+            /// bad number in a map says which one.
+            static func checked(slotFloor written: Double, key: String) throws -> Double {
+                guard written > 0, written <= 2 else {
                     throw ConfigError.invalidValue(
-                        key: "transcription.sentences.join_below",
-                        value: "\(joinBelow), against offer_below \(offerBelow)",
-                        expected: "a number below offer_below — joining is the surer tier,"
-                            + " so its threshold is the lower one"
+                        key: key,
+                        value: "\(written)",
+                        expected: "a number above 0 and at most 2 — 0.20 in English,"
+                            + " 0.30 in French"
                     )
                 }
+                return written
+            }
+
+            /// A mark is one punctuation character. Any word here would be
+            /// written into the sentence as if it were punctuation.
+            static func checked(marks written: [String], key: String) throws -> [String] {
+                let kept = written
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                // With no mark the join is the only reading, so it wins every
+                // boundary and every period in the transcript goes.
+                guard !kept.isEmpty else {
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: "an empty list",
+                        expected: "at least one mark — with none, joining is the only"
+                            + " reading and every period would be removed"
+                    )
+                }
+                // The enders in the list are where a boundary is looked for.
+                // With none the stage finds nothing and does nothing, and the
+                // way to say that is to take the step out.
+                guard kept.contains(where: { SentenceReadings.enders.contains($0) }) else {
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: kept.map { "`\($0)`" }.joined(separator: ", "),
+                        expected: "at least one of `.`, `?` or `!` — those are where a"
+                            + " boundary is looked for, so with none the stage never runs."
+                            + " Delete the `interpret` step to turn it off"
+                    )
+                }
+                let wrong = kept.filter { $0.count != 1 || !($0.first?.isPunctuation ?? false) }
+                guard wrong.isEmpty else {
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: wrong.map { "`\($0)`" }.joined(separator: ", "),
+                        expected: "one punctuation character each — `[\".\", \",\", \"?\"]`"
+                    )
+                }
+                return kept
             }
         }
 
@@ -1708,7 +1765,7 @@ struct Config: Decodable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, replacements, pipeline, languages, sentences
+            case enabled, replacements, pipeline, languages
             case insertMode = "insert_mode"
             case activationPhrases = "activation_phrases"
             case activationPhrase = "activation_phrase"
@@ -1767,6 +1824,15 @@ struct Config: Decodable, Equatable {
         /// "grammar is not a stage" is not what went wrong.
         var contradictoryEntries: [String] = []
 
+        /// An option written on a stage that does not read it — `slot_gate:`
+        /// on `numbers`, `marks:` on `vocabulary`. Each entry is already a
+        /// sentence, because the key and the stage it belongs to are both known
+        /// where it is found and neither is known here.
+        ///
+        /// Refused rather than ignored: a switch that loads and does nothing is
+        /// somebody believing a gate is off while it runs.
+        var misplacedOptions: [String] = []
+
         /// `review:` on a `vocabulary` step, which named the model that read
         /// each substitution. There is no model in that stage now, so the key
         /// is read and does nothing — announced through `notices()` the way
@@ -1818,8 +1884,19 @@ struct Config: Decodable, Equatable {
         ///       when: vocabulary.count > 0
         ///       near_misses: false
         ///       by_sound: false
+        ///       slot_gate: false
+        ///       portrait: false
+        ///       slot_floor: {en: 0.20, fr: 0.30}
         ///       review: gpt
         ///       max_slots: 4
+        ///
+        /// `interpret` takes its options the same way:
+        ///
+        ///     - interpret
+        ///     - stage: interpret
+        ///       marks: [".", ",", "?"]
+        ///       capitals: false
+        ///       pause: 0
         struct PipelineEntry: Decodable {
             let name: String
             var transform: String?
@@ -1828,14 +1905,23 @@ struct Config: Decodable, Equatable {
             var nearMisses: Bool?
             var bySound: Bool?
             var gate: Bool?
+            var slotGate: Bool?
+            var portrait: Bool?
+            var slotFloor: Pipeline.Step.SlotFloor?
             /// What `review:` said, for `Transcription.retiredReview`. Read so
             /// it can be reported, never used.
             var review: String?
+            var marks: [String]?
+            var capitals: Bool?
+            var pause: Double?
             var when: String?
             var unless: String?
             var app: String?
             /// `stage:` and `transform:`/`prompt:`/`vocabulary:` on one entry.
             var namesBoth = false
+            /// Options this stage does not read — see
+            /// `Transcription.misplacedOptions`.
+            var misplaced: [String] = []
 
             private enum CodingKeys: String, CodingKey {
                 case stage, transform, prompt, vocabulary, when, unless, app
@@ -1847,6 +1933,10 @@ struct Config: Decodable, Equatable {
                 case maxReadings = "max_readings"
                 case maxPerSlot = "max_per_slot"
                 case maxPerTerm = "max_per_term"
+                case marks, capitals, pause
+                case slotGate = "slot_gate"
+                case portrait
+                case slotFloor = "slot_floor"
             }
 
             init(from decoder: Decoder) throws {
@@ -1894,6 +1984,9 @@ struct Config: Decodable, Equatable {
                     nearMisses = try c.decodeIfPresent(Bool.self, forKey: .nearMisses)
                     bySound = try c.decodeIfPresent(Bool.self, forKey: .bySound)
                     gate = try c.decodeIfPresent(Bool.self, forKey: .gate)
+                    slotGate = try c.decodeIfPresent(Bool.self, forKey: .slotGate)
+                    portrait = try c.decodeIfPresent(Bool.self, forKey: .portrait)
+                    slotFloor = try Self.slotFloor(from: c)
                     // Two spellings, `review: false` and `review: <model>`,
                     // and neither reaches anything now. Read in both shapes so
                     // the message names what was written.
@@ -1903,9 +1996,84 @@ struct Config: Decodable, Equatable {
                         review = try c.decodeIfPresent(String.self, forKey: .review)
                     }
                 }
+                // Each optional and each on its own, as the vocabulary caps
+                // are: turning the capitals off must not restate the marks.
+                if name.caseInsensitiveCompare("interpret") == .orderedSame {
+                    if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
+                        marks = try Language.checked(
+                            marks: written, key: "pipeline.interpret.marks"
+                        )
+                    }
+                    capitals = try c.decodeIfPresent(Bool.self, forKey: .capitals)
+                    pause = try c.decodeIfPresent(Double.self, forKey: .pause)
+                }
+                for (owner, keys) in Self.stageKeys
+                where owner.caseInsensitiveCompare(name) != .orderedSame {
+                    misplaced += keys.filter { c.contains($0) }.map {
+                        "`\($0.stringValue):` is an option on the `\(owner)` stage."
+                            + " It does nothing here"
+                    }
+                }
                 when = try c.decodeIfPresent(String.self, forKey: .when)
                 unless = try c.decodeIfPresent(String.self, forKey: .unless)
                 app = try c.decodeIfPresent(String.self, forKey: .app)
+            }
+
+            /// Which stage reads which option. Only these two stages have any:
+            /// `stage:`, `when:`, `unless:` and `app:` are read on every line.
+            private static let stageKeys: [(String, [CodingKeys])] = [
+                ("vocabulary", [
+                    .nearMisses, .bySound, .gate, .slotGate, .portrait, .slotFloor,
+                    .review, .maxSlots, .maxReadings, .maxPerSlot, .maxPerTerm,
+                ]),
+                ("interpret", [.marks, .capitals, .pause]),
+            ]
+
+            /// `slot_floor:` in either spelling — a number for every language,
+            /// or a map naming them one by one.
+            ///
+            /// Two spellings because a single-language machine should not have
+            /// to write its own language code to move one number, and a
+            /// bilingual one cannot say what it means with a single number:
+            /// the two floors were measured apart.
+            private static func slotFloor(
+                from c: KeyedDecodingContainer<CodingKeys>
+            ) throws -> Pipeline.Step.SlotFloor? {
+                let key = "pipeline.vocabulary.slot_floor"
+                if let every = (try? c.decodeIfPresent(Double.self, forKey: .slotFloor)) ?? nil {
+                    return Pipeline.Step.SlotFloor(
+                        everyLanguage: try Language.checked(slotFloor: every, key: key)
+                    )
+                }
+                guard let written = (try? c.decodeIfPresent(
+                    [String: Double].self, forKey: .slotFloor
+                )) ?? nil else {
+                    guard c.contains(.slotFloor) else { return nil }
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: "neither a number nor a map",
+                        expected: "a number for every language — `slot_floor: 0.20` — or a"
+                            + " map — `slot_floor: {en: 0.20, fr: 0.30}`"
+                    )
+                }
+                // A language nothing dictates in is a floor that never runs.
+                // Refused rather than kept, because a key that loads and does
+                // nothing is the failure `problems()` exists to prevent.
+                let unknown = written.keys.filter { !DictationLanguage.supported.contains($0) }
+                guard unknown.isEmpty else {
+                    throw ConfigError.invalidValue(
+                        key: key,
+                        value: unknown.sorted().map { "`\($0)`" }.joined(separator: ", "),
+                        expected: "one of \(DictationLanguage.supported.joined(separator: ", "))"
+                    )
+                }
+                var floors: [String: Double] = [:]
+                for (language, floor) in written {
+                    floors[language] = try Language.checked(
+                        slotFloor: floor, key: "\(key).\(language)"
+                    )
+                }
+                return Pipeline.Step.SlotFloor(byLanguage: floors)
             }
         }
 
@@ -2013,22 +2181,6 @@ struct Config: Decodable, Equatable {
                 // leaving the correction prompt undefined.
                 languages = known.isEmpty ? ["en"] : known
             }
-            // Not `try?`. Swallowing the error leaves joining on with stock
-            // thresholds, and a stage that rewrites the transcript must not be
-            // reached by a line the file got wrong.
-            do {
-                if let v = try c.decodeIfPresent(Sentences.self, forKey: .sentences) {
-                    sentences = v
-                }
-            } catch let bad as ConfigError {
-                throw bad
-            } catch {
-                throw ConfigError.invalidValue(
-                    key: "transcription.sentences",
-                    value: "not a sentence setting",
-                    expected: "`false`, or `join_below:` and `offer_below:` as numbers"
-                )
-            }
             // Wrapped, as `replacements:` is below and for the same reason.
             // Anything thrown here leaves `ConfigStore.load()` entirely, and at
             // launch `loadConfig(announceErrors: false)` swallows it — so one
@@ -2056,16 +2208,25 @@ struct Config: Decodable, Equatable {
                             .trimmingCharacters(in: .whitespacesAndNewlines), !named.isEmpty {
                             retiredReview.append(named)
                         }
+                        misplacedOptions += entry.misplaced.map { "`\(entry.name)`: \($0)" }
                         return Pipeline.Step(
                             stage: stage, transform: entry.transform,
                             prompt: entry.prompt, caps: entry.caps,
                             nearMisses: entry.nearMisses, bySound: entry.bySound,
-                            gate: entry.gate,
+                            gate: entry.gate, slotGate: entry.slotGate,
+                            portrait: entry.portrait, slotFloor: entry.slotFloor,
+                            marks: entry.marks,
+                            capitals: entry.capitals, pause: entry.pause,
                             when: entry.when, unless: entry.unless, app: entry.app
                         )
                     }
                     pipeline = Pipeline(steps: steps)
                 }
+            } catch let bad as ConfigError {
+                // A step's own key — `pipeline.interpret.marks` — already says
+                // what is wrong and where. Rewriting it as "not a list of
+                // steps" would send the reader to the wrong line.
+                throw bad
             } catch {
                 throw ConfigError.invalidValue(
                     key: "transcription.pipeline",
@@ -2554,6 +2715,9 @@ struct Config: Decodable, Equatable {
             found.append("pipeline: \"\(name)\" is not a stage — have: "
                 + Pipeline.stageNames.joined(separator: ", "))
         }
+        for said in Set(transcription.misplacedOptions).sorted() {
+            found.append("pipeline: \(said)")
+        }
         for name in Set(transcription.contradictoryEntries).sorted() {
             found.append("pipeline: an entry names both `stage:` and `prompt: \(name)`"
                 + " — it can be one or the other")
@@ -2712,7 +2876,63 @@ struct Config: Decodable, Equatable {
         // Said whether or not there are terms: a file can carry the old
         // file-level key and nothing else.
         said += vocabulary.legacy.map { "vocabulary: \($0)" }
+        // A floor for a language `languages:` does not list never runs: the
+        // lookup keys off the language of the transcript, and that list is
+        // what the detector may answer. Said rather than refused — the floor
+        // is a real setting for a real language, and `languages:` is the
+        // narrower list, changed far more often than the floors are.
+        for step in Pipeline.resolved(config: self).steps where step.stage == .vocabulary {
+            let idle = (step.slotFloor?.byLanguage.keys.sorted() ?? [])
+                .filter { !transcription.languages.contains($0) }
+            guard !idle.isEmpty else { continue }
+            said.append("pipeline: `slot_floor:` names"
+                + " \(idle.map { "`\($0)`" }.joined(separator: ", ")), which"
+                + " `transcription.languages` does not — that floor never runs")
+        }
         return said
+    }
+
+    /// Whether the `interpret` step will read a boundary: it is in the
+    /// pipeline.
+    ///
+    /// One predicate, because two places warm the 320 MB sentence model and a
+    /// warm that disagrees with the pipeline fetches weights nothing will read.
+    var readsBoundaries: Bool {
+        Pipeline.resolved(config: self).stages.contains(.interpret)
+    }
+
+    /// The `vocabulary` steps in the pipeline. More than one is legal, so
+    /// every predicate below asks whether *any* of them wants the model.
+    private var vocabularySteps: [Pipeline.Step] {
+        Pipeline.resolved(config: self).steps.filter { $0.stage == .vocabulary }
+    }
+
+    /// The `vocabulary` step the commands report on. The first, because a
+    /// second one is a rerun of the same stage rather than a different
+    /// configuration to describe.
+    var vocabularyStep: Pipeline.Step? { vocabularySteps.first }
+
+    /// Whether anything will read the 269 MB slot model: a `vocabulary` step
+    /// is in the pipeline and has not switched it off.
+    ///
+    /// One predicate for the same reason `readsBoundaries` is one: three
+    /// places warm this model, and a warm that disagrees with the step
+    /// downloads weights nothing will read.
+    var readsSlots: Bool {
+        vocabularySteps.contains { $0.slotGate ?? true }
+    }
+
+    /// Whether anything will read the 400 MB word vectors. Both tests that
+    /// read the sentence need them, so either switch keeps them.
+    var readsSentenceGate: Bool {
+        vocabulary.gateSentence
+            && vocabularySteps.contains { ($0.slotGate ?? true) || ($0.portrait ?? true) }
+    }
+
+    /// Whether a term's portrait is worth building — see
+    /// `AppDelegate.rebuildPortrait`.
+    var readsPortraits: Bool {
+        vocabulary.gateSentence && vocabularySteps.contains { $0.portrait ?? true }
     }
 
     var resolvedOutputDir: URL {

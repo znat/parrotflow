@@ -5,6 +5,7 @@ Everything a finished transcript goes through, in order:
 ```yaml
 transcription:
   pipeline:
+    - interpret
     - vocabulary
     - numbers
     - transform: dotted
@@ -42,6 +43,7 @@ can get wrong.
 
 | Stage | What it does |
 |---|---|
+| `interpret` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The interpret stage](#the-interpret-stage). English only. |
 | `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). |
 | `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
@@ -50,6 +52,74 @@ can get wrong.
 
 `numbers` rewrites transcripts that were already correct, so run `--numbers` on
 a line to see exactly what it would do before leaving it in.
+
+## The interpret stage
+
+`interpret` reads what the transcript says against what the speaker meant. It
+is not called `repunctuate` because punctuation is only the first thing it
+does: the misheard-word and disfluency passes belong here too, and they will be
+further switches on this same line.
+
+```yaml
+- interpret
+```
+
+A pause mid-sentence makes the transcriber write a period or a question mark
+and capitalise the next word, so one sentence becomes two. This stage reads
+every such boundary three ways — the mark that is there, a comma, and no mark
+at all — and writes the reading a small language model scores highest. There is
+no threshold. Where the joined reading wins, the mark is removed and the next
+word is lowercased. See
+[transcription.md](transcription.md#sentences-a-pause-cut-in-two) for what that
+repairs and what it costs.
+
+With anything to say about it, spell the stage out:
+
+```yaml
+- stage: interpret
+  marks: [".", ",", "?"]   # optional; default. What a boundary can be written with
+  capitals: true           # optional; default. false reads marks only
+  pause: 1.0               # optional; default. Seconds of silence before a bare capital
+```
+
+`marks:` is one list doing two jobs. The sentence enders in it — `.` and `?` —
+are **where a boundary is looked for**. Everything else — the comma — is a
+**reading tried at a boundary**. Take `?` out and question marks stop being
+scanned. Each entry is one punctuation character and at least one must end a
+sentence; anything else is refused by name.
+
+`capitals:` covers the fourth shape: a capitalised word with no mark in front
+of it at all, which is about a third as common as `word. Capital`. Half of
+those capitals are correct, so the stage refuses a run of capitals, a capital
+inside the word and every part of speech but the ones that open a clause.
+`capitals: false` scans the marks and nothing else.
+
+`pause:` is the silence a bare capital needs in front of it before it is read.
+A latency cut, not a safety one: the readings answer those boundaries the same
+way with or without it, and a capital with no pause in front of it is rarely
+the shape this repairs. `pause: 0` reads every one.
+
+**English only, and it says so itself.** The readings are scored by an English
+base model and the mark set is English, so the stage refuses every other
+language. `when: language == "en"` on the step would only restate that.
+
+**Put it first.** The pause gate lines the transcript up against the decoder's
+token timings, so a stage above it that rewrites a word breaks the alignment.
+When that happens the gate stands down for that dictation, the log says so, and
+the readings still run. It is the one stage allowed above `vocabulary`: it
+removes a mark rather than rewriting a word, and it ran above the whole
+pipeline before it was a step.
+
+**Nothing waits for the model, and nothing is downloaded for it here.** 320 MB,
+fetched in the background when the pipeline holds this step and never
+otherwise. A dictation that arrives before the weights are in memory keeps its
+boundaries, and the step still publishes `ran: true` with `changed: false` —
+the failure direction every stage here shares.
+
+It publishes `interpret.count`: how many boundaries were joined.
+
+Delete the line to turn the step off. A pipeline without it does not read
+boundaries at all, and nothing is downloaded for it.
 
 ## The name stage
 
@@ -71,6 +141,9 @@ name or a mapping, and it cannot be both:
   near_misses: true   # optional; default. false matches renderings exactly
   by_sound: true      # optional; default. false matches spelling only
   gate: true          # optional; default. false leaves every place open
+  slot_gate: true     # optional; default. false reads no slot model
+  portrait: true      # optional; default. false reads no term portrait
+  slot_floor: 0.20    # optional; or {en: 0.20, fr: 0.30}
   max_per_slot: 2     # optional; readings per place, the decoder's included
   max_per_term: 2     # optional; places in one sentence about the same name
 ```
@@ -79,6 +152,11 @@ name or a mapping, and it cannot be both:
 what the decoder wrote and the term — so a third reading would be built and
 never shown. Refused rather than rounded down, because a number that says one
 thing and does another teaches nobody anything.
+
+**An option on the wrong stage is refused.** `slot_gate:` on `numbers`, or
+`marks:` on `vocabulary`, used to load and do nothing. `--check-config` names
+the key, the stage it was written on and the stage that reads it. A switch that
+loads and does nothing is somebody believing a gate is off while it runs.
 
 **It calls no model.** It used to: every substitution went to a local model,
 one KEEP or REVERT each, at about 900 ms a dictation and an Ollama on the
@@ -91,8 +169,7 @@ machine. What decides now is free and local to the app:
    preposition cannot hold a name. Refuse it.
 3. **The two tests that read the sentence** — whether the term belongs where
    the word was heard, and whether this sentence looks like the ones the term
-   was confirmed in. See `gate_sentence:` in
-   [docs/configuration.md](configuration.md).
+   was confirmed in. `slot_gate:` and `portrait:` below switch them.
 
 **Everything they leave open keeps what arrived.** A `replacements` rule has
 already written its term, so an open place ships the term. A near miss or a
@@ -137,6 +214,53 @@ a place none of them settles keeps the word that was heard — so the looser
 match costs a gate call, not a sentence. `near_misses: false` puts matching
 back to exact and whole-word.
 
+**`slot_gate:` and `portrait:` switch the two tests that read the sentence.**
+Both on by default, and each off is a path the stage already has.
+
+- `slot_gate: false` reads no slot model. That is mmBERT-small, 269 MB, and
+  nothing downloads it: rule 2 above is skipped, and the test that asks whether
+  the term belongs where the word was heard is skipped too. Every place is left
+  to the portrait, or to whatever arrived. It is what the stage does today on a
+  machine the weights are not on.
+- `portrait: false` reads no portrait. A term's own sentences say nothing, so
+  nothing is authorised on that evidence and a rule's substitution is never
+  taken back out. It is what the stage does today for a term with fewer than
+  three confirmed uses.
+
+Both off and neither model is fetched. `--check-config` prints one line per
+`vocabulary` step, carrying the step's floors and its two switches — the same
+switches that decide whether each model is downloaded:
+
+```
+  · languages         en, fr
+      vocabulary            slot floor en 0.20  fr 0.30  slot on, portrait on
+      vocabulary in /term/  slot floor en 0.45  fr 0.45  slot on, portrait off
+```
+
+One line per step and not one for the pipeline, because a pipeline may hold
+more than one `vocabulary` step — one per app is the reason these options are
+on the step — and each names its own.
+
+**`slot_floor:` is how far the heard word must win by** before the slot test
+refuses the rewrite. A number applies to every language; a map names them one
+at a time and a language it leaves out keeps its built-in floor.
+
+```yaml
+- {stage: vocabulary, slot_floor: 0.20}
+- {stage: vocabulary, slot_floor: {en: 0.20, fr: 0.30}}
+```
+
+0.20 in English and 0.30 in French are the built-in values. French gaps are
+about a third narrower, and no single number serves both: on a 201-case French
+bench the English floor wrongly refuses 7 correct rewrites of 84 and 0.30
+refuses 2. It must be above 0 and at most 2, and a map key has to be a language
+the app supports — one that is not is refused rather than silently ignored. A
+key that names a supported language your `languages:` list leaves out loads and
+never runs, and `--check-config` says so.
+
+`--check-config` prints the resolved floor for every language you listed, on
+the step's own line.
+
 **`max_per_term` is the one to move if a name is being missed.** One name
 reaches the list from five directions — a rule that already rewrote the text,
 a fuzzy rendering, the sound-matching pass, the wider spans it builds around a
@@ -150,9 +274,11 @@ text. `--check-config` refuses a pipeline that puts `numbers` or a transform
 above it, because a span that has moved cannot be told from a span that was
 always wrong.
 
-There used to be one exception, `replacements`, because the stage offers a
-rule's substitution back and the rules had to have fired first. That pass is
-inside this stage now, so there is no exception left to state.
+`interpret` is the one exception, and it is where the default puts it. It
+removes a mark rather than rewriting a word, and it ran above the whole
+pipeline before it was a step. `replacements` used to be the exception, because
+the stage offers a rule's substitution back and the rules had to have fired
+first; that pass is inside this stage now.
 
 It publishes `vocabulary.slots` (how many places the sentence offered),
 `vocabulary.reverted` (the substitutions it undid, as `term -> word`) and
@@ -999,7 +1125,8 @@ any of this exists:
 They are **derived, never claimed**. A stage cannot forget to report `changed`,
 and cannot report it about the wrong string.
 
-Stages add their own on top. The built-in ones publish `vocabulary.count`,
+Stages add their own on top. `interpret.count` is how many boundaries it
+joined. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
 ones, and the sentence the stage was handed — `numbers.language`, which grammar
 actually read the numbers and is not the same answer as the pipeline's

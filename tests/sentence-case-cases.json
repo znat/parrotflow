@@ -29,5 +29,13 @@
  { "text": "no but that is not what I wanted. I wanted to go one by one.", "want": "I", "why": "the pronoun I" },
  { "text": "she asked for it. I'll send it tonight.", "want": "I'll", "why": "a contraction of I" },
  { "text": "we changed the endpoint. API keys are in the keychain.", "want": "API", "why": "capitals throughout" },
- { "text": "the model is cached. CI has no business downloading it.", "want": "CI", "why": "capitals throughout" }
+ { "text": "the model is cached. CI has no business downloading it.", "want": "CI", "why": "capitals throughout" },
+ { "text": "imports name definitions And all the things we said", "want": "and", "why": "no mark in front of it, a conjunction" },
+ { "text": "we should think about it So the next step is clear", "want": "so", "why": "no mark in front of it, an adverb" },
+ { "text": "I asked whether the caret moves However the field was empty", "want": "however", "why": "no mark in front of it, a pronoun to the tagger" },
+ { "text": "the sound pass reads it in Slack for the moment", "want": "Slack", "why": "no mark in front of it, a noun is a name here" },
+ { "text": "we are writing it in English for the other reviewers", "want": "English", "why": "no mark in front of it, the lexicon knows this noun" },
+ { "text": "I want to paste it into WhatsApp and the other apps", "want": "WhatsApp", "why": "no mark in front of it, a capital inside the word" },
+ { "text": "the release goes out on Friday if the checks are green", "want": "Friday", "why": "no mark in front of it, a weekday is a noun" },
+ { "text": "we can format the functions in TypeScript for that case", "want": "TypeScript", "why": "no mark in front of it, a capital inside the word" }
 ]

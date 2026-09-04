@@ -48,7 +48,7 @@ defined = names(example)
 
 # The stage kinds this app understands without a name — everything else in a
 # pipeline step must be one of these, or a `transform:` naming a defined one.
-BUILTIN_STAGES = {"replacements", "fuzzy", "numbers", "vocabulary"}
+BUILTIN_STAGES = {"replacements", "fuzzy", "numbers", "vocabulary", "interpret"}
 
 def steps(doc):
     found = []

@@ -65,7 +65,7 @@ actor TermPortrait {
     ///     2          0.824  refuses           0.890  nothing
     ///
     /// 2 is too tight — it drops a correct write on a clean sentence as well.
-    /// `SentenceProbe.radius` is 12 for the other test, which reads a mask and
+    /// `SlotProbe.radius` is 12 for the other test, which reads a mask and
     /// not a topic; this one is narrower because a topic changes inside a
     /// sentence and a mask does not.
     static let radius = 5

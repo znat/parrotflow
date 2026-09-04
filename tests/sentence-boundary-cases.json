@@ -1,362 +1,787 @@
 [
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "if it's because the release notes are not bigger than the height",
   "right": "Another features. If there is more than two fixes then there is",
-  "text": "if it's because the release notes are not bigger than the height [MASK] another features. If there is more than two fixes then there is",
-  "period": -8.129,
-  "next": -10.6172,
-  "score": 2.4883
+  "winner": ",",
+  "mean": {
+   ",": -4.5424,
+   ".": -4.7232,
+   "join": -4.8348
+  }
  },
  {
   "set": "en_real.json",
-  "left": "because it requires resolving that the negation is corrective rather than contrastive",
-  "right": "It's also where you can lose content or gain content that was",
-  "text": "because it requires resolving that the negation is corrective rather than contrastive [MASK] it's also where you can lose content or gain content that was",
-  "period": -0.6836,
-  "next": -8.9492,
-  "score": 8.2656
+  "mark": ".",
+  "left": "what we're doing anymore.I thought we had a success with audio clips",
+  "right": "We had a discussion about whether they make a different Vercel's rules",
+  "winner": ".",
+  "mean": {
+   ",": -4.7733,
+   ".": -4.699,
+   "join": -5.1087
+  }
  },
  {
   "set": "en_real.json",
-  "left": "No but that's not what I wanted",
-  "right": "I wanted to just go one by one. I don't need to",
-  "text": "No but that's not what I wanted [MASK] i wanted to just go one by one. I don't need to",
-  "period": -1.4398,
-  "next": -7.6351,
-  "score": 6.1953
+  "mark": ".",
+  "left": "though is that I didn't actually have the the bar fully filled",
+  "right": "It just there's a little space between the end and the where",
+  "winner": ",",
+  "mean": {
+   ",": -3.4374,
+   ".": -3.4649,
+   "join": -3.6519
+  }
  },
  {
   "set": "en_real.json",
-  "left": "They look great now",
-  "right": "But I still don't see the second permission prompt. The one asking",
-  "text": "They look great now [MASK] but I still don't see the second permission prompt. The one asking",
-  "period": -6.4992,
-  "next": -10.9211,
-  "score": 4.4219
+  "mark": ".",
+  "left": "with E4B? The yes-no?Also, if I understand correctly, the sequential doesn't hurt",
+  "right": "It's the same score. Right? For example, in sentences with only one",
+  "winner": ",",
+  "mean": {
+   ",": -3.8399,
+   ".": -3.9648,
+   "join": -4.1239
+  }
  },
  {
   "set": "en_real.json",
-  "left": "Yeah, that's how that's what I want. I want a tail",
-  "right": "So I want a C L command. So it would be like",
-  "text": "Yeah, that's how that's what I want. I want a tail [MASK] so I want a C L command. So it would be like",
-  "period": -5.6667,
-  "next": -8.8972,
-  "score": 3.2305
+  "mark": ".",
+  "left": "word and every LLM prompt receives the result of the previous one",
+  "right": "So for example, if the first word was resolved. Then it is",
+  "winner": ".",
+  "mean": {
+   ",": -3.3248,
+   ".": -3.2496,
+   "join": -3.6689
+  }
  },
  {
   "set": "en_real.json",
-  "left": "terminal and have the logs or the traces as dictations come in",
-  "right": "And would it be a separate data structure or would it come",
-  "text": "terminal and have the logs or the traces as dictations come in [MASK] and would it be a separate data structure or would it come",
-  "period": -3.9536,
-  "next": -4.5551,
-  "score": 0.6016
+  "mark": ".",
+  "left": "would just use Python for everything. I would drop Ollama in Swift",
+  "right": "It's not necessarily it's not necessary.I would just implement a pipeline runner",
+  "winner": ".",
+  "mean": {
+   ",": -4.4803,
+   ".": -4.2846,
+   "join": -4.8066
+  }
  },
  {
   "set": "en_real.json",
-  "left": "Greptile's remaining objection has moved to overlapping completions and an inline-fallback field",
-  "right": "Not acted on, per the standing constraint. Worth noting only that it",
-  "text": "Greptile's remaining objection has moved to overlapping completions and an inline-fallback field [MASK] not acted on, per the standing constraint. Worth noting only that it",
-  "period": -6.9337,
-  "next": -7.8321,
-  "score": 0.8984
+  "mark": ".",
+  "left": "go to A remote AI provider.Here a feature is it's using parakeet",
+  "right": "Blazing fast. local Transcription. Model.",
+  "winner": ".",
+  "mean": {
+   ",": -6.4425,
+   ".": -5.8092,
+   "join": -7.0589
+  }
  },
  {
   "set": "en_real.json",
-  "left": "So draft me a quick informal plan",
-  "right": "Make it visual and use scratchml",
-  "text": "So draft me a quick informal plan [MASK] make it visual and use scratchml",
-  "period": -5.5445,
-  "next": -10.0679,
-  "score": 4.5234
+  "mark": ".",
+  "left": "They can be selected with arrows left, right, and enter",
+  "right": "And of course, the focus is there. When the hood appears. Show",
+  "winner": ".",
+  "mean": {
+   ",": -4.8708,
+   ".": -4.7668,
+   "join": -5.3261
+  }
  },
  {
   "set": "en_real.json",
-  "left": "The sentence is about cooking",
-  "right": "An accounting system does not go in a sauce.",
-  "text": "The sentence is about cooking [MASK] an accounting system does not go in a sauce.",
-  "period": -5.4783,
-  "next": -8.4158,
-  "score": 2.9375
+  "mark": ".",
+  "left": "hesitations, mumbling, and hesitations and back and forth like For example this",
+  "right": "I was with Peter, not with Peter, with James. And uh we",
+  "winner": ".",
+  "mean": {
+   ",": -4.7378,
+   ".": -4.6674,
+   "join": -4.8519
+  }
  },
  {
   "set": "en_real.json",
-  "left": "one transforms I would like you to create",
-  "right": "So if you say PR followed by a number or PR number",
-  "text": "one transforms I would like you to create [MASK] so if you say PR followed by a number or PR number",
-  "period": -2.834,
-  "next": -5.0762,
-  "score": 2.2422
+  "mark": ".",
+  "left": "recognize. For example, in my case it would be French and English",
+  "right": "And then all the prompts would be localized. So instead of trying",
+  "winner": ",",
+  "mean": {
+   ",": -3.5624,
+   ".": -3.6951,
+   "join": -3.7934
+  }
  },
  {
   "set": "en_real.json",
-  "left": "merci — on the line above",
-  "right": "If it is anything else — a question, a",
-  "text": "merci — on the line above [MASK] if it is anything else — a question, a",
-  "period": -6.0009,
-  "next": -8.6416,
-  "score": 2.6406
+  "mark": ".",
+  "left": "want. I want a tail. So I want a C L command",
+  "right": "So it would be like a Swift script or a Python one.",
+  "winner": ".",
+  "mean": {
+   ",": -3.8735,
+   ".": -3.7349,
+   "join": -4.1465
+  }
  },
  {
   "set": "en_real.json",
-  "left": "that is already punctuated by parakeet.So punctuation need to replace existing punctuation",
-  "right": "For example, if You say to wait exclamation point. This will still",
-  "text": "that is already punctuated by parakeet.So punctuation need to replace existing punctuation [MASK] for example, if You say to wait exclamation point. This will still",
-  "period": -1.1377,
-  "next": -8.8565,
-  "score": 7.7188
+  "mark": ".",
+  "left": "also I want a panel showing up when the appis laucnching",
+  "right": "It seems like when you open the app, the only visible effect",
+  "winner": ".",
+  "mean": {
+   ",": -3.4459,
+   ".": -3.2952,
+   "join": -3.6826
+  }
  },
  {
   "set": "en_real.json",
-  "left": "that we want to sing the substitute First names with Slack handles",
-  "right": "But not systematically. For example, I can write a message in Slack",
-  "text": "that we want to sing the substitute First names with Slack handles [MASK] but not systematically. For example, I can write a message in Slack",
-  "period": -6.7232,
-  "next": -8.8755,
-  "score": 2.1523
+  "mark": ".",
+  "left": "of the seven terms with none — that puts 23 rows back",
+  "right": "Do not ship MFCC + DTW; it was chosen to be cheap,",
+  "winner": ".",
+  "mean": {
+   ",": -5.6053,
+   ".": -5.3177,
+   "join": -6.0445
+  }
  },
  {
   "set": "en_real.json",
-  "left": "a model name. And spelling and the model name.In the example config",
-  "right": "The model name would be ollma, but commented out.",
-  "text": "a model name. And spelling and the model name.In the example config [MASK] the model name would be ollma, but commented out.",
-  "period": -4.8133,
-  "next": -7.6727,
-  "score": 2.8594
+  "mark": ".",
+  "left": "and the one sentence definition. At the beginning it could be mind",
+  "right": "It could be mind from slack. With a good prompt in the",
+  "winner": ".",
+  "mean": {
+   ",": -4.5113,
+   ".": -4.4676,
+   "join": -4.9026
+  }
  },
  {
   "set": "en_real.json",
-  "left": "very marginal improvement, maybe not significant, but at least it seems fine",
-  "right": "So I'd keep it on.",
-  "text": "very marginal improvement, maybe not significant, but at least it seems fine [MASK] so I'd keep it on.",
-  "period": -5.467,
-  "next": -11.3264,
-  "score": 5.8594
+  "mark": ".",
+  "left": "so the point was to ed to iterate on the dictating pill",
+  "right": "So the HUD we see while dictating.Can you make a few suggestions?We",
+  "winner": ",",
+  "mean": {
+   ",": -5.5819,
+   ".": -5.6519,
+   "join": -5.8956
+  }
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "But there can be a replacement",
   "right": "Why can't we count it?",
-  "text": "But there can be a replacement [MASK] why can't we count it?",
-  "period": -6.5019,
-  "next": -10.459,
-  "score": 3.957
+  "winner": ",",
+  "mean": {
+   ",": -4.5357,
+   ".": -4.5907,
+   "join": -4.9913
+  }
  },
  {
   "set": "en_real.json",
+  "mark": ".",
   "left": "So I was prompted but declined before I dictated anything",
   "right": "Then I dictated something, asked to fix grammar. And nothing happened.",
-  "text": "So I was prompted but declined before I dictated anything [MASK] then I dictated something, asked to fix grammar. And nothing happened.",
-  "period": -3.5358,
-  "next": -9.1686,
-  "score": 5.6328
+  "winner": ".",
+  "mean": {
+   ",": -4.4033,
+   ".": -4.3052,
+   "join": -4.8071
+  }
  },
  {
   "set": "en_real.json",
-  "left": "a nice lettering, that would be cool. Use the front-end design skill",
-  "right": "And we don't need more information, we don't need the models, we",
-  "text": "a nice lettering, that would be cool. Use the front-end design skill [MASK] and we don't need more information, we don't need the models, we",
-  "period": -3.6183,
-  "next": -8.6066,
-  "score": 4.9883
+  "mark": ".",
+  "left": "it For claude code for now so we can have an idea",
+  "right": "Make it a system pipeline stage similarly to numbers replacements or fuzzy.",
+  "winner": ".",
+  "mean": {
+   ",": -7.0792,
+   ".": -7.013,
+   "join": -7.5715
+  }
  },
  {
   "set": "en_real.json",
-  "left": "I saw our pop up to ask the permission from the microphone",
-  "right": "I accepted but it was already done so I directly got the",
-  "text": "I saw our pop up to ask the permission from the microphone [MASK] i accepted but it was already done so I directly got the",
-  "period": -4.5669,
-  "next": -10.1138,
-  "score": 5.5469
+  "mark": ".",
+  "left": "use a reject transform and add simple date transformation for the script",
+  "right": "For the pipeline you want to add the grammar check only on",
+  "winner": ".",
+  "mean": {
+   ",": -4.3696,
+   ".": -4.332,
+   "join": -4.7515
+  }
  },
  {
   "set": "en_real.json",
-  "left": "But we can verify that the input is empty",
-  "right": "Or maybe the string length.",
-  "text": "But we can verify that the input is empty [MASK] or maybe the string length.",
-  "period": -3.8985,
-  "next": -6.9845,
-  "score": 3.0859
+  "mark": ".",
+  "left": "Then mention Ollama setup. So if the model is there, fine",
+  "right": "If Ollama is there but not the model, just say you're download",
+  "winner": ".",
+  "mean": {
+   ",": -2.8632,
+   ".": -2.8385,
+   "join": -3.1508
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "alive is not working because the first usage of the LLM with.",
   "right": "The vocabulary is slower",
-  "text": "alive is not working because the first usage of the LLM with [MASK] the vocabulary is slower",
-  "period": -10.2926,
-  "next": -5.2262,
-  "score": -5.0664
+  "winner": "join",
+  "mean": {
+   ",": -6.5327,
+   ".": -7.2669,
+   "join": -4.5571
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "So okay, sure, let's rebase let's get.",
   "right": "In your the scratch pad",
-  "text": "So okay, sure, let's rebase let's get [MASK] in your the scratch pad",
-  "period": -11.2182,
-  "next": -7.0815,
-  "score": -4.1367
+  "winner": "join",
+  "mean": {
+   ",": -6.8226,
+   ".": -7.1884,
+   "join": -6.4815
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "A local, fast and programmable dictation tool shaped around.",
   "right": "Your voice and your work",
-  "text": "A local, fast and programmable dictation tool shaped around [MASK] your voice and your work",
-  "period": -7.9156,
-  "next": -5.8297,
-  "score": -2.0859
+  "winner": "join",
+  "mean": {
+   ",": -5.3496,
+   ".": -5.549,
+   "join": -4.8613
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "I mean, can we use Olama as an.",
   "right": "Interface for commercial models",
-  "text": "I mean, can we use Olama as an [MASK] interface for commercial models",
-  "period": -12.9462,
-  "next": -4.454,
-  "score": -8.4922
+  "winner": "join",
+  "mean": {
+   ",": -7.9847,
+   ".": -9.042,
+   "join": -6.3771
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "I want to do all this in.",
   "right": "Another in a subsequent one",
-  "text": "I want to do all this in [MASK] another in a subsequent one",
-  "period": -8.7312,
-  "next": -3.9109,
-  "score": -4.8203
+  "winner": "join",
+  "mean": {
+   ",": -7.0436,
+   ".": -7.8443,
+   "join": -6.427
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "and btw when pressing Enter to submit the text the hud.",
   "right": "Should also vanish immediatly and stop decaying",
-  "text": "and btw when pressing Enter to submit the text the hud [MASK] should also vanish immediatly and stop decaying",
-  "period": -9.0805,
-  "next": -8.7641,
-  "score": -0.3164
+  "winner": "join",
+  "mean": {
+   ",": -5.1434,
+   ".": -5.7522,
+   "join": -4.6921
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Context could be the dictation before or.",
   "right": "After, or what was on the screen",
-  "text": "Context could be the dictation before or [MASK] after, or what was on the screen",
-  "period": -10.3953,
-  "next": -8.1531,
-  "score": -2.2422
+  "winner": "join",
+  "mean": {
+   ",": -4.0757,
+   ".": -4.927,
+   "join": -3.4596
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "The script has not changed, the permissions were still there, and.",
   "right": "Parakeet was immediately available",
-  "text": "The script has not changed, the permissions were still there, and [MASK] parakeet was immediately available",
-  "period": -10.3499,
-  "next": -12.9476,
-  "score": 2.5977
+  "winner": "join",
+  "mean": {
+   ",": -6.6327,
+   ".": -6.4023,
+   "join": -5.9606
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "before the judge and only let the judge decide between what was.",
   "right": "Heard by the decoder and what the decoder found similar",
-  "text": "before the judge and only let the judge decide between what was [MASK] heard by the decoder and what the decoder found similar",
-  "period": -11.2402,
-  "next": -6.3496,
-  "score": -4.8906
+  "winner": "join",
+  "mean": {
+   ",": -4.9563,
+   ".": -5.7212,
+   "join": -4.1484
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "I've done plenty I've.",
   "right": "Done it plenty of times now",
-  "text": "I've done plenty I've [MASK] done it plenty of times now",
-  "period": -7.4716,
-  "next": -3.1278,
-  "score": -4.3438
+  "winner": "join",
+  "mean": {
+   ",": -4.3004,
+   ".": -4.7469,
+   "join": -3.5804
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Do a grammar check on the selected text.",
   "right": "And also write a section about what's gonna be installed succinctly",
-  "text": "Do a grammar check on the selected text [MASK] and also write a section about what's gonna be installed succinctly",
-  "period": -5.3806,
-  "next": -7.7634,
-  "score": 2.3828
+  "winner": ",",
+  "mean": {
+   ",": -4.5424,
+   ".": -4.7987,
+   "join": -4.9485
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "pinned row could clear a newer.",
   "right": "Prompt after focus advances",
-  "text": "pinned row could clear a newer [MASK] prompt after focus advances",
-  "period": -9.095,
-  "next": -7.509,
-  "score": -1.5859
+  "winner": "join",
+  "mean": {
+   ",": -8.2565,
+   ".": -9.3067,
+   "join": -8.0804
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Mira and Mira were on.",
   "right": "Vacation and have visited Versailles Castle while the app was being deployed",
-  "text": "Mira and Mira were on [MASK] vacation and have visited Versailles Castle while the app was being deployed",
-  "period": -13.1884,
-  "next": -5.5243,
-  "score": -7.6641
+  "winner": "join",
+  "mean": {
+   ",": -6.1118,
+   ".": -6.4798,
+   "join": -5.2982
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "I'd like to use some sort of.",
   "right": "Object programming, interface and implementation classes on top",
-  "text": "I'd like to use some sort of [MASK] object programming, interface and implementation classes on top",
-  "period": -9.6188,
-  "next": -7.0211,
-  "score": -2.5977
+  "winner": "join",
+  "mean": {
+   ",": -6.0146,
+   ".": -6.7599,
+   "join": -5.713
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "So how would you.",
   "right": "Use in practice a negative example",
-  "text": "So how would you [MASK] use in practice a negative example",
-  "period": -9.0791,
-  "next": -4.9854,
-  "score": -4.0938
+  "winner": "join",
+  "mean": {
+   ",": -6.1502,
+   ".": -7.1025,
+   "join": -5.6097
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Can you give me an.",
   "right": "Example so that I understand visually",
-  "text": "Can you give me an [MASK] example so that I understand visually",
-  "period": -12.5818,
-  "next": -2.5701,
-  "score": -10.0117
+  "winner": "join",
+  "mean": {
+   ",": -6.1552,
+   ".": -6.9377,
+   "join": -4.7663
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "ordinary word, however much.",
   "right": "It looks like one of them",
-  "text": "ordinary word, however much [MASK] it looks like one of them",
-  "period": -6.7032,
-  "next": -6.8438,
-  "score": 0.1406
+  "winner": "join",
+  "mean": {
+   ",": -4.1409,
+   ".": -4.384,
+   "join": -3.7565
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Can you make the.",
   "right": "Type menu more visible because it seems like it's very small compared",
-  "text": "Can you make the [MASK] type menu more visible because it seems like it's very small compared",
-  "period": -11.899,
-  "next": -5.9771,
-  "score": -5.9219
+  "winner": "join",
+  "mean": {
+   ",": -5.1884,
+   ".": -5.3842,
+   "join": -4.183
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "Okay, the same happened but there was another still window.",
   "right": "From a maybe a previous process still open",
-  "text": "Okay, the same happened but there was another still window [MASK] from a maybe a previous process still open",
-  "period": -7.2939,
-  "next": -7.7392,
-  "score": 0.4453
+  "winner": "join",
+  "mean": {
+   ",": -6.0344,
+   ".": -6.4879,
+   "join": -5.8647
+  }
  },
  {
   "set": "en_cuts.json",
+  "mark": ".",
   "left": "As usual, check Greptile reviews, address comments, and continue.",
   "right": "Until Greptile is happy",
-  "text": "As usual, check Greptile reviews, address comments, and continue [MASK] until Greptile is happy",
-  "period": -8.0153,
-  "next": -8.4684,
-  "score": 0.4531
+  "winner": "join",
+  "mean": {
+   ",": -3.2308,
+   ".": -4.3363,
+   "join": -2.7409
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "But that is not the evaluation format. Right",
+  "right": "We have a markdown format generated with a script from the thermal",
+  "winner": "?",
+  "mean": {
+   ",": -5.0898,
+   "?": -5.0011,
+   "join": -5.4792
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "What is enabled for?Can we just enable them by default",
+  "right": "What would it change?Also is there a better place to put router",
+  "winner": ",",
+  "mean": {
+   ",": -3.9177,
+   "?": -3.9834,
+   "join": -4.1526
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "we don't have audio calibration, can you simplify the Claude onboarding procedure",
+  "right": "Give me the main steps that the Claude onboarding procedure will do.",
+  "winner": "?",
+  "mean": {
+   ",": -3.294,
+   "?": -3.2426,
+   "join": -3.6342
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "Again about ordering. Where is the ordering there",
+  "right": "And I don't understand where the 25000 pairs come from so you",
+  "winner": "?",
+  "mean": {
+   ",": -3.1406,
+   "?": -3.0329,
+   "join": -3.2182
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "So what happened here",
+  "right": "How many times did the prompt run?",
+  "winner": "?",
+  "mean": {
+   ",": -4.2509,
+   "?": -4.1002,
+   "join": -4.9657
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "we land this to prod? What is the magnitude of the change",
+  "right": "How many PRs would we have to ship?",
+  "winner": "?",
+  "mean": {
+   ",": -4.2028,
+   "?": -4.0261,
+   "join": -4.6543
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "things we have tried. where does spelling candidate come from? text rules",
+  "right": "And btw how do accoustic similarity is measured.",
+  "winner": ",",
+  "mean": {
+   ",": -5.9919,
+   "?": -6.2055,
+   "join": -6.3905
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "So audio clips are still in",
+  "right": "I thought all the experiments we made were in f favor of",
+  "winner": ",",
+  "mean": {
+   ",": -6.2287,
+   "?": -6.3328,
+   "join": -6.5318
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "So if we could combine transforms into transforms, wouldn't it be easier",
+  "right": "We could have groups. Use the AI to identify the first name",
+  "winner": "?",
+  "mean": {
+   ",": -4.9373,
+   "?": -4.7363,
+   "join": -5.4272
+  }
+ },
+ {
+  "set": "enq_real.json",
+  "mark": "?",
+  "left": "Can you implement some basic formatting rules",
+  "right": "Again a Python transform, I suppose, but for example if I dictate",
+  "winner": "?",
+  "mean": {
+   ",": -5.2356,
+   "?": -4.9798,
+   "join": -5.6493
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "Does the latest release include the changes?",
+  "right": "In the config example",
+  "winner": "join",
+  "mean": {
+   ",": -6.5446,
+   "?": -6.7433,
+   "join": -5.504
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "Are you testing against that?",
+  "right": "Same plant we use in GPT Luna that does pretty much everything",
+  "winner": "join",
+  "mean": {
+   ",": -5.9797,
+   "?": -6.1438,
+   "join": -5.9056
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "But what is a rule?",
+  "right": "If it's not a substitution",
+  "winner": ",",
+  "mean": {
+   ",": -3.7699,
+   "?": -4.0366,
+   "join": -4.1886
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "And what if you?",
+  "right": "Have several words in a sentence",
+  "winner": "join",
+  "mean": {
+   ",": -4.6872,
+   "?": -5.1829,
+   "join": -3.5982
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "So if we could combine?",
+  "right": "Transforms into transforms, wouldn't it be easier",
+  "winner": "join",
+  "mean": {
+   ",": -4.3884,
+   "?": -4.7321,
+   "join": -3.7069
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "what is the command for the llm?",
+  "right": "Vocab judge in the config",
+  "winner": "?",
+  "mean": {
+   ",": -7.0322,
+   "?": -6.7963,
+   "join": -7.2856
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "How does a prompt work when several vocabulary terms?",
+  "right": "Are in the same transcription",
+  "winner": "join",
+  "mean": {
+   ",": -5.7768,
+   "?": -6.9,
+   "join": -3.7899
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "When I open the post-dictation?",
+  "right": "Menu with the buttons, hotkeys won't work",
+  "winner": "join",
+  "mean": {
+   ",": -4.7084,
+   "?": -5.444,
+   "join": -4.1
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "have the probability of the dot lower than the next word that?",
+  "right": "Don't make sense as a new sentence",
+  "winner": "join",
+  "mean": {
+   ",": -4.7908,
+   "?": -5.395,
+   "join": -3.7754
+  }
+ },
+ {
+  "set": "enq_cuts_hard.json",
+  "mark": "?",
+  "left": "I mean if we had someone speak for longer, would?",
+  "right": "It give better results",
+  "winner": "join",
+  "mean": {
+   ",": -5.9299,
+   "?": -6.9357,
+   "join": -3.8142
+  }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "This one does not rely on um the harness we can construct",
+  "right": "A test set inspired from a couple of crawl files of HCP",
+  "winner": "join",
+  "mean": {
+   ",": -6.2126,
+   ".": -6.2656,
+   "as-decoded": -6.5784,
+   "join": -5.9801
+  }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "name of the people they interact with and all the jargon from",
+  "right": "The main channels they communicate into We feed it and then from",
+  "winner": "join",
+  "mean": {
+   ",": -6.2038,
+   ".": -6.4045,
+   "as-decoded": -6.5457,
+   "join": -6.0074
+  }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "with and all the jargon from The main channels they communicate into",
+  "right": "We feed it and then from that we identify the terms that",
+  "winner": ",",
+  "mean": {
+   ",": -4.5055,
+   ".": -4.5627,
+   "as-decoded": -5.1056,
+   "join": -4.6273
+  }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "technical terms and acronyms from the code base and from Slack conversations",
+  "right": "And the people I interacted with the last thirty days so a",
+  "winner": ",",
+  "mean": {
+   ",": -4.0813,
+   ".": -4.2839,
+   "as-decoded": -4.5694,
+   "join": -4.1349
+  }
+ },
+ {
+  "set": "bare-capitals",
+  "mark": "",
+  "left": "example if it heard a dot b then it substitution would be",
+  "right": "A dot B and A dot B would be part of the",
+  "winner": "as-decoded",
+  "mean": {
+   ",": -2.8468,
+   ".": -3.1882,
+   "as-decoded": -2.3563,
+   "join": -2.4674
+  }
  }
 ]

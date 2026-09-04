@@ -1,19 +1,19 @@
-import CoreML
 import Foundation
 
-/// `--sentence-model` — fetches, compiles and loads ModernBERT, then says what
-/// it got and how long it took.
+/// `--sentence-model` — fetches the model the boundary readings are scored
+/// with, then says what it got and how long it took.
 ///
 ///     ParrotFlow --sentence-model
-///       sentence model 43%…
-///     ✓ sentence model ready in 41.2s
-///       cache   ~/Library/Application Support/ParrotFlow/models/modernbert-base-64
-///       inputs  input_ids [1, 64]
-///       outputs logits [1, 64, 50368]
+///       sentence readings 43%…
+///     ✓ sentence readings ready in 22.4s (downloaded)
+///       cache   ~/Library/Application Support/ParrotFlow/models/qwen3-0.6b-base-4bit
 ///
 /// The same call the first English dictation makes, without a microphone. Run
-/// it twice: the second run skips the download and the 7s compile, which is
-/// the only proof the cache is being used.
+/// it twice: the second run skips the download, which is the only proof the
+/// cache is being used.
+///
+/// The vocabulary slot gate has its own model and its own command,
+/// `--slot-model`.
 @available(macOS 14, *)
 enum SentenceModelCommand {
 
@@ -22,21 +22,19 @@ enum SentenceModelCommand {
         let done = DispatchSemaphore(value: 0)
 
         Task {
-            let started = Date()
-            let cached = SentenceModel.isCached
+            let readingsStarted = Date()
+            let readingsCached = SentenceReadings.isCached
             do {
-                let model = try await SentenceModel.shared.prepare { label in
+                try await SentenceReadings.shared.prepare { label in
                     print("\r  \(label)…", terminator: "")
                     fflush(stdout)
                 }
-                let seconds = Date().timeIntervalSince(started)
                 print(String(
-                    format: "\r\u{1B}[K✓ sentence model ready in %.1fs (%@)",
-                    seconds, cached ? "cached" : "downloaded and compiled"
+                    format: "\r\u{1B}[K✓ sentence readings ready in %.1fs (%@)",
+                    Date().timeIntervalSince(readingsStarted),
+                    readingsCached ? "cached" : "downloaded"
                 ))
-                print("  cache   \(tilde(SentenceModel.directory.path))")
-                describe("inputs ", model.modelDescription.inputDescriptionsByName)
-                describe("outputs", model.modelDescription.outputDescriptionsByName)
+                print("  cache   \(tilde(SentenceReadings.directory.path))")
             } catch {
                 print("\r\u{1B}[K✗ \(error.localizedDescription)")
                 exitCode = 1
@@ -46,16 +44,6 @@ enum SentenceModelCommand {
 
         done.wait()
         return exitCode
-    }
-
-    private static func describe(
-        _ title: String, _ features: [String: MLFeatureDescription]
-    ) {
-        for name in features.keys.sorted() {
-            let shape = features[name]?.multiArrayConstraint?.shape.map(\.stringValue)
-                .joined(separator: ", ")
-            print("  \(title) \(name)\(shape.map { " [\($0)]" } ?? "")")
-        }
     }
 
     private static func tilde(_ path: String) -> String {

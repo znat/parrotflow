@@ -247,11 +247,12 @@ jobs:
       - name: No speaker audio in the repository
         run: scripts/check-no-voice.sh
 
-      # The BPE tokenizer is hand-written and its mistakes are silent: a wrong
-      # id scores nothing at every threshold and raises no error. This runs on
-      # tokenizer.json alone, 2 MB, never the 300 MB model.
-      - name: The tokenizer against HuggingFace's own
-        run: scripts/check-tokenizer.sh
+      # The slot tokenizer is swift-transformers over mmBERT-small's Gemma-style
+      # file, and its mistakes are just as quiet: a lost prefix space or a
+      # dropped accent changes the ten words the gate reads and raises nothing.
+      # Also the tokenizer files alone — 18 MB — never the 269 MB model.
+      - name: The slot tokenizer against HuggingFace's own
+        run: scripts/check-slot-tokenizer.sh
 
       # Joining two sentences lowercases the word after the period. Getting
       # that wrong writes "ask him nathan knows". NLTagger and the vocabulary
@@ -259,6 +260,14 @@ jobs:
       # scripts/check-sentence-join.sh, is run by hand.
       - name: The capital after a period the join removes
         run: scripts/check-sentence-case.sh
+
+      # The window a boundary is read over: the mark off the left half, twelve
+      # words each side, the capital, and one continuation per reading. The
+      # expectations are written by hand, so a mistake here cannot be
+      # regenerated into the scored fixture. No model: the window is built and
+      # nothing is scored.
+      - name: The window the readings are scored over
+        run: scripts/check-sentence-window.sh
 
       # Endings Parakeet writes over silence. Word arrays out of trace.jsonl,
       # so no audio and no model — and the half that can go wrong quietly is

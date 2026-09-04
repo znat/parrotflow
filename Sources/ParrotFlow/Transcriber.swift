@@ -140,42 +140,54 @@ actor Transcriber {
         setStatus(.downloading("\(label) \(percent)%", blocking: true))
     }
 
-    /// The sentence model fetch, once per process. Cleared when it fails, so
-    /// the next English dictation tries again.
-    private var sentenceModelFetch: Task<Void, Never>?
+    /// The slot model fetch, once per process. Cleared when it fails, so the
+    /// next English dictation tries again.
+    private var slotModelFetch: Task<Void, Never>?
 
     /// True while that fetch is running. Its progress callback reaches this
     /// actor through an unstructured task, so a percentage can arrive after
     /// the fetch has already put the real status back — and the menu bar then
     /// keeps a finished download's number until something else writes to it.
-    private var sentenceModelRunning = false
+    private var slotModelRunning = false
 
-    /// Starts the sentence model download and does not wait for it.
+    /// Starts the slot model download and does not wait for it.
     ///
-    /// Nothing reads the model yet, so awaiting it would park the first
-    /// English dictation behind 300 MB for no gain. It reports progress but
-    /// never `.failed`: a model no stage consumes must not put "Model error"
-    /// in the menu bar.
-    func warmSentenceModel() {
-        guard sentenceModelFetch == nil else { return }
-        sentenceModelRunning = true
-        sentenceModelFetch = Task { [weak self] in
+    /// mmBERT-small, 269 MB, read by the vocabulary gate. The gate stands
+    /// aside until it is on disk — `SlotModel.isCached` — so no dictation waits
+    /// here. It reports progress but never `.failed`: a gate that is not there
+    /// yet is a gate that asks the judge, not a model error.
+    func warmSlotModel() {
+        guard slotModelFetch == nil else { return }
+        slotModelRunning = true
+        slotModelFetch = Task { [weak self] in
             guard let self else { return }
             var failed = false
             do {
-                try await SentenceModel.shared.prepare { label in
-                    Task { await self.reportSentenceModel(label) }
+                try await SlotModel.shared.prepare { label in
+                    Task { await self.reportSlotModel(label) }
                 }
             } catch {
-                Log.write("sentence model: \(error.localizedDescription); nothing reads it yet")
+                Log.write("slot model: \(error.localizedDescription);"
+                    + " the vocabulary gate asks the judge until it arrives")
                 failed = true
             }
-            await self.finishSentenceModel(failed: failed)
+            await self.finishSlotModel(failed: failed)
         }
     }
 
+    private func reportSlotModel(_ label: String) {
+        guard slotModelRunning else { return }
+        onStatusChange(.downloading(label, blocking: false))
+    }
+
+    private func finishSlotModel(failed: Bool) {
+        slotModelRunning = false
+        if failed { slotModelFetch = nil }
+        restoreStatusIfIdle()
+    }
+
     /// The sound model fetch, once per process. Same shape and same reasons
-    /// as the sentence model above.
+    /// as the slot model above.
     private var soundModelFetch: Task<Void, Never>?
     private var soundModelRunning = false
 
@@ -217,31 +229,14 @@ actor Transcriber {
 
     /// Puts the ordinary status back, but only when no fetch is still running.
     ///
-    /// Two downloads can be in flight at once, and each used to restore the
+    /// Several downloads can be in flight at once, and each used to restore the
     /// status on its own. The first to finish then wiped the other's
     /// percentage out of the menu bar, and the one somebody was watching
     /// appeared to stall.
     private func restoreStatusIfIdle() {
-        guard !sentenceModelRunning, !soundModelRunning else { return }
+        guard !slotModelRunning, !soundModelRunning else { return }
         onStatusChange(status)
     }
-
-    private func reportSentenceModel(_ label: String) {
-        guard sentenceModelRunning else { return }
-        // Reported, not recorded. `status` says whether the transcriber can
-        // transcribe, and during this fetch it can.
-        onStatusChange(.downloading(label, blocking: false))
-    }
-
-    private func finishSentenceModel(failed: Bool) {
-        sentenceModelRunning = false
-        if failed { sentenceModelFetch = nil }
-        // Whatever was true before this started is true again. Usually
-        // `.ready`, which is what clears the label the fetch put up — unless
-        // the other fetch is still going, and then its label stays.
-        restoreStatusIfIdle()
-    }
-
 
     // MARK: - Transcription
 
@@ -496,10 +491,11 @@ actor Transcriber {
         }
         Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
-        // Before the pipeline, because this is the last point where the words
-        // still line up with the audio they came from. Every text stage after
-        // it — numbers especially — rewrites words the token timings index.
-        var text = result.text
+        // Nothing rewrites the transcript here any more. The last pass that
+        // did — the boundary readings — is the `interpret` step, and it is
+        // handed the token timings so it can still line the words up against
+        // the audio they came from.
+        let text = result.text
         var vocabularyCount = 0
         var vocabularyChanges = ""
         // What the pass proposed and did not write, with the text it measured
@@ -514,17 +510,26 @@ actor Transcriber {
         // downloads at once halve the bandwidth of the one somebody is
         // watching.
         //
-        // English only, and the sentence pass below shares that gate: the
-        // masked model is English-only and scores near chance on French.
-        var joinedSentences = 0
-        var offeredSentences = 0
+        // The vocabulary gate's two models, in any language: mmBERT-small
+        // answers in French and so do the word vectors.
+        //
+        // Fetched at launch too. This is the retry: a fetch that failed clears
+        // itself, and the next dictation tries again.
+        if config.readsSlots { warmSlotModel() }
+        if config.readsSentenceGate, #available(macOS 14, *) {
+            Task { await WordVectors.shared.warm() }
+        }
+
+        // The sound pass is English only — espeak's letter-to-sound answers for
+        // French words and the answer is noise. So is the boundary reading,
+        // which runs in the pipeline now as the `interpret` step and refuses
+        // every other language itself.
         if Pipeline.language(of: text, config: config) == "en" {
-            // Both are fetched at launch now. These are the retry: a fetch
-            // that failed clears itself, and the next English dictation is the
-            // next chance to try again.
-            warmSentenceModel()
-            if config.vocabulary.gateSentence, #available(macOS 14, *) {
-                Task { await WordVectors.shared.warm() }
+            // 320 MB and a 1.3s load, and a dictation never waits for either.
+            // Fetched only where the step will read a boundary, so deleting
+            // the line stops the download — and so does the legacy switch.
+            if config.readsBoundaries {
+                Task { await SentenceReadings.shared.warm() }
             }
             // The set the sound pass actually reads, not the shorter one the
             // audio search needed. `vocabularyTerms` drops anything under five
@@ -532,12 +537,6 @@ actor Transcriber {
             // and `crawl file` alone would never fetch the model that is the
             // only thing able to match them.
             if !config.vocabularySounds.isEmpty { warmSoundModel() }
-            if #available(macOS 14, *) {
-                let joins = await SentenceJoin.shared.apply(to: text, config: config)
-                text = joins.text
-                joinedSentences = joins.count(.join)
-                offeredSentences = joins.count(.offer)
-            }
         }
 
         // After the vocabulary pass rather than before it, though the words
@@ -573,17 +572,16 @@ actor Transcriber {
                 // pipeline can read rather than an error about a missing path.
                 "vocabulary.count": .int(vocabularyCount),
                 "vocabulary.changes": .string(vocabularyChanges),
-                // The periods a pause put in and this run took out, and the
-                // ones it would only offer to take out. Nothing shows the
-                // offer yet — see `SentenceJoin.Outcome`.
-                "sentences.joined": .int(joinedSentences),
-                "sentences.offered": .int(offeredSentences),
         ])
         // Only when there is one. Absent says "no press", which is the honest
         // answer off the hotkey path and the one `input` declines on.
         if let press { seed.set("press.run", .int(press)) }
+        // The decoder's own words, for the `interpret` step's pause gate. This
+        // is the only caller that has them; every other way into the pipeline
+        // has no audio, and the gate stands down there.
         return await Self.applyReplacements(
             to: text, config: config, app: app, seed: seed,
+            words: Trace.words(from: result.tokenTimings ?? []),
             progress: progress
         )
     }
@@ -1245,11 +1243,12 @@ actor Transcriber {
     /// How names get fixed — see `Replacements`.
     nonisolated static func applyReplacements(
         to text: String, config: Config, app: Pipeline.App? = nil,
-        seed: Scope = Scope(),
+        seed: Scope = Scope(), words: [Trace.Word] = [],
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await Replacements.apply(
-            to: text, config: config, app: app, seed: seed, progress: progress
+            to: text, config: config, app: app, seed: seed, words: words,
+            progress: progress
         )
     }
 }

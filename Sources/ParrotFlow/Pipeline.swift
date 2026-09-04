@@ -30,6 +30,17 @@ struct Pipeline: Equatable, Codable {
     /// drift apart — a stage that cannot be spelled is a stage nobody can ask
     /// for.
     enum Stage: String, Equatable, Codable, CaseIterable {
+        /// What the speaker meant, where the decoder wrote what it heard.
+        ///
+        /// Today that is the marks a pause put in: a period or a question mark
+        /// mid-sentence, and the capital after it — see `SentenceJoin`.
+        /// `marks:`, `capitals:` and `pause:` on the step say how far it
+        /// reaches. English only, and it refuses every other language itself.
+        ///
+        /// First in the list, because it reads the decoder's own words: the
+        /// pause gate lines the text up against the token timings, and a stage
+        /// above it that rewrites a word breaks that alignment.
+        case interpret
         /// Names: matched from `vocabulary.yaml`, then each match settled
         /// against the sentence it stands in. `near_misses:`, `by_sound:` and
         /// `gate:` on the step say how far it reaches — see `Step`.
@@ -62,9 +73,8 @@ struct Pipeline: Equatable, Codable {
         ///
         /// Only used to say where `vocabulary` belongs: it reads spans the
         /// acoustic pass measured before the pipeline started, and every stage
-        /// that edits text moves them (F10). `replacements` is the exception it
-        /// has to live with — the judge offers a rule's substitution back, so
-        /// the rules must already have fired.
+        /// that edits text moves them (F10). `interpret` is the exception, and
+        /// `vocabularyOrderProblems` is where that is written down.
         var editsText: Bool { self != .context && self != .input && self != .vocabulary }
 
         /// Whether it can be in a default nobody wrote.
@@ -164,6 +174,48 @@ struct Pipeline: Equatable, Codable {
         /// whatever arrived, which is what the gate was measured against and
         /// the only way to measure it again.
         var gate: Bool?
+        /// Written `slot_gate:`. Whether anything reads the mmBERT slot — the
+        /// part of speech the spot wants, in `SlotGate`, and the ten words it
+        /// expects there, in `SlotReference`. Absent means true.
+        ///
+        /// One switch for both because they are one model, and the promise the
+        /// switch makes is that `false` downloads nothing. Each half takes the
+        /// path it already has on a machine the 269 MB is not on: the lexical
+        /// gate settles what the word lists settle and asks nothing more, and
+        /// the sentence gate is left to the portrait alone.
+        var slotGate: Bool?
+        /// Written `portrait:`. Whether a term's own sentences and its
+        /// counter-examples may settle a proposal — see `TermPortrait`. Absent
+        /// means true.
+        ///
+        /// `false` takes the path a term with too few uses already has: the
+        /// portrait says nothing, and the slot's refusal is all that can speak.
+        var portrait: Bool?
+        /// Written `slot_floor:`. How far the heard word must win by before
+        /// `SlotReference` refuses the rewrite. A language it does not name
+        /// keeps the built-in value for that language — see
+        /// `Transcription.slotFloor(for:on:)`.
+        var slotFloor: SlotFloor?
+        /// `marks:` on an `interpret` step. What a boundary can be written
+        /// with. Absent takes the built-in set for the language.
+        ///
+        /// One list, two jobs. The sentence enders in it — `.` and `?` — are
+        /// where a boundary is looked for. Everything else in it — the comma —
+        /// is a reading tried at every boundary. So a boundary is read three
+        /// ways: the mark it carries, the comma, and no mark at all. Drop `?`
+        /// from the list and question marks stop being scanned.
+        ///
+        /// There is no threshold; the reading the model scores highest is the
+        /// one that is written. `;` and `:` were measured and never changed a
+        /// decision in English, so they are not in the default.
+        var marks: [String]?
+        /// `capitals:` on an `interpret` step. Whether a capital with no mark
+        /// in front of it is read as a boundary too. Absent means true.
+        var capitals: Bool?
+        /// `pause:` on an `interpret` step. Seconds of silence a bare capital
+        /// needs in front of it before it is read. Zero or less reads every
+        /// one. Absent means `SentenceJoin.paused`.
+        var pause: Double?
         /// Run only when this matches the text as it stands *at this point* —
         /// after the stages before it, not on the original. That ordering is
         /// what lets a cheap deterministic stage make an expensive one
@@ -180,6 +232,21 @@ struct Pipeline: Equatable, Codable {
         /// the cost of an anchor people forget — which `validate` refuses
         /// rather than leaving to run everywhere in silence.
         var app: String?
+
+        /// What `slot_floor:` said, in either spelling.
+        ///
+        ///     slot_floor: 0.20                 every language
+        ///     slot_floor: {en: 0.20, fr: 0.30} one at a time
+        ///
+        /// A language the map does not name keeps its built-in floor.
+        struct SlotFloor: Equatable, Codable {
+            var everyLanguage: Double?
+            var byLanguage: [String: Double] = [:]
+
+            func value(for language: String) -> Double? {
+                byLanguage[language] ?? everyLanguage
+            }
+        }
 
         /// Whether a condition is a pattern rather than an expression.
         ///
@@ -404,17 +471,21 @@ struct Pipeline: Equatable, Codable {
     /// the stage then has to re-anchor by searching for the words — which is
     /// the mechanism that put the menu on the wrong `Versailles` (F3, F10).
     ///
-    /// Nothing that rewrites the transcript may run above it.
+    /// Nothing that rewrites the transcript may run above it, except
+    /// `interpret` — see below.
     ///
     /// The stage reads spans the acoustic pass measured before the pipeline
     /// started, and any edit above it moves them (F10). The exact pass used to
-    /// be the one exception, because it ran as a separate `replacements` stage
+    /// be an exception too, because it ran as a separate `replacements` stage
     /// and the judge needs the rules to have fired; it is inside this stage
-    /// now, so there is no exception left to state.
+    /// now.
     private func vocabularyOrderProblems() -> [String] {
         guard let judge = stages.firstIndex(of: .vocabulary) else { return [] }
+        // `interpret` is the exception. It ran above the whole pipeline until
+        // it became a step, so it has always been above this one, and it takes
+        // a mark out rather than rewriting a word.
         let above = steps[..<judge]
-            .filter { $0.stage.editsText }
+            .filter { $0.stage.editsText && $0.stage != .interpret }
             .map { Pipeline.namespace(of: $0) }
         guard !above.isEmpty else { return [] }
         return ["vocabulary runs after \(above.joined(separator: ", ")), which rewrite the"
@@ -645,12 +716,12 @@ struct Pipeline: Equatable, Codable {
     ///   the way to a transcript would say less than one that never moved.
     func run(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(),
+        seed: Scope = Scope(), words: [Trace.Word] = [],
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> String {
         await runCollectingScope(
             text, config: config, allowPrompts: allowPrompts, app: app,
-            seed: seed, progress: progress
+            seed: seed, words: words, progress: progress
         ).text
     }
 
@@ -661,9 +732,12 @@ struct Pipeline: Equatable, Codable {
     /// have to say `.text` to get it. `--pipeline` and the case sets want both,
     /// and they are the reason the scope is reachable at all: a variable nothing
     /// can print is a variable nobody can debug.
+    /// `words` are the decoder's own, for the `interpret` step's pause gate.
+    /// Every other way in has no audio and hands over none, and the gate then
+    /// stands down rather than guessing.
     func runCollectingScope(
         _ text: String, config: Config, allowPrompts: Bool = true, app: App? = nil,
-        seed: Scope = Scope(),
+        seed: Scope = Scope(), words: [Trace.Word] = [],
         progress: (@Sendable (String) -> Void)? = nil
     ) async -> (text: String, scope: Scope) {
         var output = text
@@ -735,7 +809,7 @@ struct Pipeline: Equatable, Codable {
             let before = output
             let started = CFAbsoluteTimeGetCurrent()
             let result = await apply(
-                step, to: output, config: config, app: app, scope: scope
+                step, to: output, config: config, app: app, scope: scope, words: words
             )
             let seconds = CFAbsoluteTimeGetCurrent() - started
             output = result.text
@@ -782,9 +856,11 @@ struct Pipeline: Equatable, Codable {
 
     private func apply(
         _ step: Step, to text: String, config: Config, app: App?, scope: Scope,
-
+        words: [Trace.Word]
     ) async -> StageResult {
         switch step.stage {
+        case .interpret:
+            return await interpret(step, on: text, config: config, words: words)
         case .numbers:
             let done = Numbers.read(text, languages: config.transcription.languages)
             return StageResult(text: done.text, vars: ["language": .string(done.language)])
@@ -930,6 +1006,29 @@ struct Pipeline: Equatable, Codable {
         }
     }
 
+    /// The marks a pause put in, taken out again — see `SentenceJoin`.
+    ///
+    /// Fails open. No model on disk, a model not in memory yet, a language
+    /// that is not English: the transcript arrives as it was, and the step
+    /// still publishes `ran: true` with `count: 0`. A boundary left as decoded
+    /// is a worse transcript; an error here would cost the sentence.
+    private func interpret(
+        _ step: Step, on text: String, config: Config, words: [Trace.Word]
+    ) async -> StageResult {
+        guard #available(macOS 14, *) else {
+            return StageResult(text: text, vars: ["count": .int(0)])
+        }
+        let language = Pipeline.language(of: text, config: config)
+        let outcome = await SentenceJoin.shared.apply(
+            to: text, config: config,
+            marks: step.marks ?? config.transcription.marks(for: language),
+            capitals: step.capitals ?? true,
+            pause: step.pause ?? SentenceJoin.paused,
+            words: words
+        )
+        return StageResult(text: outcome.text, vars: ["count": .int(outcome.count(.join))])
+    }
+
     /// Every substitution the vocabulary pass made, settled where it stands.
     ///
     /// Fails closed at every step. The transcript that arrives here is what
@@ -1053,7 +1152,14 @@ struct Pipeline: Equatable, Codable {
         // spells names into it on runs where nothing was even offered.
         var census = "vocabulary: \(slots.count) slot(s) from \(parts.count) proposal(s)"
         if bySound > 0 { census += " (\(bySound) by sound)" }
-        if config.vocabulary.gateSentence { census += ", sentence gate on" }
+        // Which of the two halves is on, not just that the gate is: a place
+        // decided by the portrait alone reads nothing like one both tests saw.
+        let reading = [
+            (step.slotGate ?? true) ? "slot" : nil, (step.portrait ?? true) ? "portrait" : nil,
+        ].compactMap { $0 }
+        if config.vocabulary.gateSentence, !reading.isEmpty {
+            census += ", sentence gate on (\(reading.joined(separator: " + ")))"
+        }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
             census += " — " + slots.map {
                 "\"\(text[$0.range])\" (\($0.terms.joined(separator: "/")))"
@@ -1076,17 +1182,30 @@ struct Pipeline: Equatable, Codable {
         // `taught` wins over the gate, because a spelling lesson is settled by
         // a rule that is 4/4 where the models measured were 0/4.
         let gatedAt = Date()
-        let settled = (step.gate ?? true)
-            ? VocabularyJudge.settle(
-                changes, in: text, by: [.sound: .full, .rule: .lists],
-                gate: await Vocabulary.shared.slotGate())
-            : [Bool?](repeating: nil, count: changes.count)
+        let settled: [Bool?]
+        if step.gate ?? true {
+            // `slot_gate: false` passes no gate at all, which is the path a
+            // machine without the 269 MB model already takes: the word lists
+            // settle what they settle and the slot is never asked. Read inside
+            // the branch so `gate: false` does not load it either.
+            let slot = (step.slotGate ?? true) ? await Vocabulary.shared.slotGate() : nil
+            settled = VocabularyJudge.settle(
+                changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
+        } else {
+            settled = [Bool?](repeating: nil, count: changes.count)
+        }
         var decided: [Bool?] = changes.indices.map { index in
             index < taught.count && taught[index] ? false : settled[index]
         }
         // The two tests that read the sentence, on whatever is still open.
         if config.vocabulary.gateSentence, #available(macOS 14, *) {
-            decided = await SentenceGate.settle(changes, in: text, given: decided)
+            decided = await SentenceGate.settle(
+                changes, in: text, given: decided,
+                floor: config.transcription.slotFloor(
+                    for: Pipeline.language(of: text, config: config), on: step
+                ),
+                slot: step.slotGate ?? true, portrait: step.portrait ?? true
+            )
         }
         gateSeconds = Date().timeIntervalSince(gatedAt)
 

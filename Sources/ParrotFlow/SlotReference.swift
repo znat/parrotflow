@@ -8,9 +8,16 @@ import Foundation
 /// Claude Code in Ghostly all day". Same heard word, same term, opposite right
 /// answers. Only the sentence separates them.
 ///
-/// This asks ModernBERT for the ten words it expects in the slot, then measures
-/// both readings against them with `WordVectors`. Negative means the heard word
-/// fits better.
+/// This asks mmBERT-small for the ten words it expects in the slot, then
+/// measures both readings against them with `WordVectors`. Negative means the
+/// heard word fits better.
+///
+/// **mmBERT-small and not ModernBERT.** ModernBERT is English-only, which is
+/// the reason this whole gate is English-only. mmBERT-small covers 1,800
+/// languages and ties it here: 192 of the 238 bench cases each at the shipped
+/// floor, AUC 0.888 against 0.887, eight decisions flipped. It is not cheaper —
+/// see `SlotModel` for what it costs, and for why mmBERT was not given the
+/// boundary job as well.
 ///
 /// **It only ever refuses.** Across every measurement it never authorised a
 /// rewrite the stage had not already made, and its widest write is +0.7 of the
@@ -20,22 +27,18 @@ import Foundation
 /// to write. `TermPortrait` is the half that authorises.
 ///
 /// Measured on 59 hand-labelled proposals and on 35 more from fresh dictation,
-/// at `floor`: no correct rewrite refused, no ordinary word overwritten.
+/// at the English floor: no correct rewrite refused, no ordinary word
+/// overwritten.
+///
+/// **The floor is per language and it lives in the config**, as `slot_floor:`
+/// on the `vocabulary` step — 0.20 in English, 0.30 in French. It is the raw
+/// difference of two cosines, not divided by anything.
+/// Dividing by the spread of the ten words looks like it should help and does
+/// the opposite: a sentence holding a rare name makes the ten words collapse
+/// together, the spread goes to 0.002, and the ratio explodes on exactly the
+/// cases that should be written.
 @available(macOS 14, *)
 enum SlotReference {
-
-    /// How far the heard word must win by before the rewrite is refused.
-    ///
-    /// The raw difference of two cosines, not divided by anything. Dividing by
-    /// the spread of the ten words looks like it should help and does the
-    /// opposite: a sentence holding a rare name makes the ten words collapse
-    /// together, the spread goes to 0.002, and the ratio explodes on exactly
-    /// the cases that should be written.
-    ///
-    /// 0.20 holds on three sets, two of them chosen after it was fixed.
-    /// Ordinary words sit at -0.30 to -0.43 and correct rewrites at -0.02 to
-    /// -0.18, and nothing lands between.
-    static let floor = 0.20
 
     /// How many words the reference is built from, and how deep to look for
     /// them. Ten is what every measurement used.
@@ -54,16 +57,19 @@ enum SlotReference {
 
     /// The ten words the mask expects, in order.
     ///
-    /// Alphabetic only, and one per spelling: ModernBERT offers `GitHub` and
+    /// Alphabetic only, and one per spelling: the model offers `GitHub` and
     /// `github` for the same slot, and counting both narrows the reference to
     /// one word wearing two hats.
+    ///
+    /// `isLetter` and not A-Z. A French slot answers with `château` and `déjà`,
+    /// and an ASCII filter drops them.
     static func expected(left: String, right: String) async throws -> [String] {
-        let probe = try await SentenceProbe.load()
+        let probe = try await SlotProbe.load()
         let slot = try probe.at(left: left, right: right)
         var words: [String] = []
         var seen = Set<String>()
-        for prediction in slot.top(depth) {
-            let word = prediction.word.trimmingCharacters(in: .whitespaces)
+        for filler in slot.top(depth) {
+            let word = filler.trimmingCharacters(in: .whitespaces)
             guard word.allSatisfy({ $0.isLetter }), !word.isEmpty else { continue }
             guard seen.insert(word.lowercased()).inserted else { continue }
             words.append(word)
@@ -98,7 +104,7 @@ enum SlotReference {
     }
 
     /// `left` ends on a word with no trailing space, `right` carries its own
-    /// leading space — the shape `SentenceProbe` reads.
+    /// leading space — the shape `SlotProbe` reads.
     static func gap(
         term: String, heard: String, left: String, right: String
     ) async throws -> Double {

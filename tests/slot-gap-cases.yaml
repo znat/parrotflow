@@ -1,11 +1,17 @@
 # What the slot says about a rewrite, on cases from tests/judge-cases.yaml.
 #
-# expect: refuse      the heard word wins by more than SlotReference.floor
+# expect: refuse      the heard word wins by more than the floor
 # expect: no opinion  the two readings are too close to settle
+# lang:               which floor to read the gap at; en when it is missing
 #
-# The numbers move with the Core ML conversion of ModernBERT, so this scores
+# The numbers move with the model and with its Core ML conversion, so this scores
 # the decision and not the number. Cases were picked well clear of the line:
-# a refusal here sits below -0.30 and a no-opinion above -0.05.
+# in English a refusal sits below -0.30 and a no-opinion above -0.05, against a
+# floor of 0.20; in French below -0.42 and above -0.12, against 0.30.
+#
+# The French cases come in pairs on the same two words, because that is the
+# whole claim of this stage: `vers celle` is Vercel in one sentence and two
+# ordinary words in the next, and only the sentence separates them.
 
 cases:
 - said: The team deserves praise for how quickly they shipped a Ruxby.
@@ -44,3 +50,47 @@ cases:
   heard: Tasmin
   term: Tasmeen
   expect: no opinion
+
+# French, from the 201-case bench in issue #262. Five terms of the same
+# vocabulary, against the French words they collide with.
+- said: On se dirige vers celle qui parle le plus fort.
+  heard: vers celle
+  term: Vercel
+  expect: refuse
+  lang: fr
+- said: J'ai une erreur sur vers celle en ce moment.
+  heard: vers celle
+  term: Vercel
+  expect: no opinion
+  lang: fr
+- said: Le but de la réunion est centré sur les chiffres.
+  heard: centré
+  term: Sentry
+  expect: refuse
+  lang: fr
+- said: On a configuré centré pour le monitoring.
+  heard: centré
+  term: Sentry
+  expect: no opinion
+  lang: fr
+- said: J'aime quand ta mine est détendue et sereine.
+  heard: ta mine
+  term: Tasmeen
+  expect: refuse
+  lang: fr
+- said: Nous recherchons un terme précis pour ce cas.
+  heard: précis
+  term: Praisy
+  expect: refuse
+  lang: fr
+- said: Un nouveau service de stockage sera implémenté via super base.
+  heard: super base
+  term: Supabase
+  expect: no opinion
+  lang: fr
+- said: Mais donc pour revenir à Versal, ce nom n'est dans aucun dictionnaire, ça devrait être
+    remplacé sans juge.
+  heard: Versal
+  term: Vercel
+  expect: no opinion
+  lang: fr

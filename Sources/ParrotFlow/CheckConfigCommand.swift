@@ -101,6 +101,41 @@ enum CheckConfigCommand {
             // The pipeline, because "why was this not converted" is a question
             // about the order and not about a setting any more.
             let pipeline = Pipeline.resolved(config: config)
+            let vocabularySteps = pipeline.steps.filter { $0.stage == .vocabulary }
+            // The floor is not the same in two languages, so it is printed per
+            // language rather than once. The marks are not: they belong to the
+            // `interpret` step, which is English only, and they are printed
+            // with it below.
+            emit("  · languages         \(transcription.languages.joined(separator: ", "))")
+            // One line per `vocabulary` step, whether there is one or five. A
+            // pipeline may hold several — one per app is the reason these
+            // options live on the step — and each names its own floor and its
+            // own gates, so there is no step whose numbers can stand for the
+            // rest. Silent when the pipeline holds none, which is also what
+            // says nothing is downloaded for them: the switches on these lines
+            // are the ones that decide whether each model is fetched.
+            let width = vocabularySteps.map { described($0).count }.max() ?? 0
+            for step in vocabularySteps {
+                let floors = transcription.languages.map { language in
+                    let floor = transcription.slotFloor(for: language, on: step)
+                    return "\(language) \(String(format: "%.2f", floor))"
+                }.joined(separator: "  ")
+                let name = described(step)
+                    .padding(toLength: width, withPad: " ", startingAt: 0)
+                emit("      \(name)  slot floor \(floors)"
+                    + "  \(gates(of: step, config: config))")
+            }
+            if !vocabularySteps.isEmpty, !config.vocabulary.gateSentence {
+                emit("      the sentence tests are off —"
+                    + " `vocabulary.gate_sentence: false`")
+            }
+            // The set the step runs with. Silent when the pipeline holds no
+            // step at all, which is also what says nothing is downloaded for it.
+            if let step = pipeline.steps.first(where: { $0.stage == .interpret }) {
+                let marks = step.marks ?? transcription.marks(for: "en")
+                emit("  · sentence marks    \(marks.joined(separator: " "))"
+                    + (step.capitals == false ? "  (bare capitals off)" : ""))
+            }
             // An empty pipeline is a choice, not a blank: printing nothing
             // there reads as a display fault rather than as the answer to "why
             // did none of this run".
@@ -109,14 +144,7 @@ enum CheckConfigCommand {
             // pipeline that explains nothing.
             let stages = pipeline.steps.isEmpty
                 ? "nothing — the list is empty"
-                : pipeline.steps.map { step -> String in
-                    var described = step.stage.name
-                    if let transform = step.transform { described += " \(transform)" }
-                    if let when = step.when { described += " when \(when)" }
-                    if let unless = step.unless { described += " unless \(unless)" }
-                    if let app = step.app { described += " in \(app)" }
-                    return described
-                }.joined(separator: " → ")
+                : pipeline.steps.map(described).joined(separator: " → ")
             let source = transcription.pipeline == nil
                 ? "  (nothing configured, so every stage)" : ""
             emit("  · pipeline          \(stages)\(source)")
@@ -396,6 +424,27 @@ enum CheckConfigCommand {
     /// failures and our validation errors as `DecodingError.dataCorrupted`, and
     /// the default `localizedDescription` for either is useless ("Yams.YamlError
     /// error 2"). `YamlError`'s own description carries the line and column.
+    /// A step as the pipeline line names it: the stage, what it runs, and the
+    /// conditions on it. Shared so a step described twice is described once.
+    private static func described(_ step: Pipeline.Step) -> String {
+        var out = step.stage.name
+        if let transform = step.transform { out += " \(transform)" }
+        if let when = step.when { out += " when \(when)" }
+        if let unless = step.unless { out += " unless \(unless)" }
+        if let app = step.app { out += " in \(app)" }
+        return out
+    }
+
+    /// Which of the two tests that read the sentence this step will run.
+    ///
+    /// The slot half is not gated by `gate_sentence:`, because the slot is also
+    /// read by the lexical gate, which that key has never touched.
+    private static func gates(of step: Pipeline.Step, config: Config) -> String {
+        let slot = step.slotGate ?? true
+        let portrait = (step.portrait ?? true) && config.vocabulary.gateSentence
+        return "slot \(slot ? "on" : "off"), portrait \(portrait ? "on" : "off")"
+    }
+
     static func describe(_ error: Error) -> String {
         switch error {
         case let configError as ConfigError:

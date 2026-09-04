@@ -534,6 +534,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildStatusItem()
+        // Before anything asks for a model, and whatever the config says: a
+        // cache nothing reads is 300 MB whether transcription is on or not.
+        RetiredModels.prune(in: AppVariant.supportDirectory)
         loadConfig(announceErrors: false)
         watchConfig()
 
@@ -601,7 +604,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         // After the preview flags return. Those launches draw a panel and
-        // quit; nothing there transcribes, and fetching 1.16 GB for them
+        // quit; nothing there transcribes, and fetching 1.47 GB for them
         // is what `warmUpTranscriber` avoided by sitting below this point.
         warmModels()
 
@@ -2264,9 +2267,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Every model the app will use, fetched at launch rather than on the
-    /// dictation that first wants one. About 1.16 GB on a default install:
-    /// Parakeet 461 MB, ModernBERT 288 MB, the word vectors 335 MB, the sound
-    /// model 81 MB.
+    /// dictation that first wants one. About 1.47 GB on a default install:
+    /// Parakeet 461 MB, mmBERT-small 269 MB, the word vectors 335 MB, the
+    /// boundary readings 320 MB, the sound model 81 MB.
     ///
     /// Each of these used to arrive on first use, and each of them therefore
     /// had a window where the thing it powers was switched on and silently
@@ -2311,7 +2314,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // The rest together, once speech is in. None of them blocks a
             // dictation: the stages that read them stand aside until they are
             // in memory.
-            await transcriber.warmSentenceModel()
+            if config.readsSlots { await transcriber.warmSlotModel() }
+            // The boundary readings. 320 MB and a 1.3s load, and a dictation
+            // never waits for either: without this the first few dictations of
+            // a launch keep the periods a pause put in. Not fetched at all when
+            // nothing will read them — nothing else does.
+            if #available(macOS 14, *), config.readsBoundaries {
+                Task.detached(priority: .background) {
+                    await SentenceReadings.shared.warm()
+                }
+            }
             // 81 MB, and the sound pass is on by default.
             Task.detached(priority: .background) {
                 if await !NeuralPhonemes.isReady() {
@@ -2328,9 +2340,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // on the one launch that installed them.
                 NeuralPhonemes.warmCache()
             }
-            // 335 MB, and only the sentence gate reads them. Someone who turns
-            // the gate off should not pay for it.
-            if #available(macOS 14, *), config.vocabulary.gateSentence {
+            // 335 MB, and only the two tests that read the sentence read
+            // them. Someone who switches both off should not pay for it.
+            if #available(macOS 14, *), config.readsSentenceGate {
                 Task.detached(priority: .background) { await WordVectors.shared.warm() }
             }
         }
@@ -3860,11 +3872,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// like a session of corrections, which is the reason to think this
     /// matters, and `gate_ms` on a running app is what would settle it.
     ///
-    /// Only with the sentence gate on. `SentenceGate` is the only thing that
-    /// reads a portrait, and with it off this would fetch 335 MB of word
-    /// vectors to answer a question nobody asks.
+    /// Only where a portrait will be read. `SentenceGate` is the only thing
+    /// that reads one, so with `portrait: false` on the step — or the legacy
+    /// `gate_sentence: false` — this would fetch 335 MB of word vectors to
+    /// answer a question nobody asks.
     private func rebuildPortrait(for term: String) {
-        guard config.vocabulary.gateSentence else { return }
+        guard config.readsPortraits else { return }
         guard #available(macOS 14, *) else { return }
         Task.detached(priority: .background) {
             let started = Date()

@@ -3,19 +3,22 @@ import Foundation
 /// `--slot-gap "<sentence>" <heard> <term>` — what the slot says about a rewrite.
 ///
 ///     ParrotFlow --slot-gap "The old house looked ghostly in the fog." ghostly Ghostty
-///     expected  Windsor White Prague Royal Edinburgh old National Scottish Vatican Danish
-///     gap       -0.264   refuse
+///     expected  grey like deserted good lost beautiful white cool green ugly
+///     gap       -0.243   refuse
 ///
 /// The ten words are the reference the two readings are measured against, and
 /// they are printed because they explain the number: a slot whose ten words are
 /// pronouns cannot tell two names apart, and the gap comes out near zero.
+///
+/// `--lang fr` reads the verdict at the French floor. The gap itself is the
+/// same number in every language; only the line it is compared against moves.
 ///
 /// This is what `scripts/check-slot-gap.sh` scores, so a case set runs against
 /// the shipped path rather than a copy of it.
 @available(macOS 14, *)
 enum SlotGapCommand {
 
-    static func run(sentence: String, heard: String, term: String) -> Int32 {
+    static func run(sentence: String, heard: String, term: String, language: String) -> Int32 {
         let outcome = Blocking.run { () async -> Result<(Double, [String]), Error> in
             do {
                 guard let found = sentence.range(of: heard) else {
@@ -39,7 +42,11 @@ enum SlotGapCommand {
             return 1
         case .success(let (gap, words)):
             print("expected  \(words.joined(separator: " "))")
-            let verdict = gap < -SlotReference.floor ? "refuse" : "no opinion"
+            let config = (try? ConfigStore.load()) ?? Config()
+            let floor = config.transcription.slotFloor(
+                for: language, on: config.vocabularyStep
+            )
+            let verdict = gap < -floor ? "refuse" : "no opinion"
             print("gap       \(String(format: "%+.3f", gap))   \(verdict)")
             return 0
         }
