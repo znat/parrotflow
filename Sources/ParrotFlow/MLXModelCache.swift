@@ -19,6 +19,9 @@ struct MLXModelCache: Sendable {
 
     /// The Hugging Face repository, `owner/name`.
     let repository: String
+    /// The commit the files come from. `main` moves; the numbers in the check
+    /// scripts were measured against this one.
+    let revision: String
     /// Every file that has to be on disk before the model loads.
     let files: [String]
     /// Where they end up.
@@ -93,7 +96,7 @@ struct MLXModelCache: Sendable {
 
         let reported = Reported()
         let label = label
-        try await HubDownload.fetch(repo: repository, paths: files, into: staging) { fraction in
+        try await HubDownload.fetch(repo: repository, revision: revision, paths: files, into: staging) { fraction in
             guard let progress else { return }
             let percent = Int((fraction * 100).rounded())
             guard reported.advanced(to: percent) else { return }

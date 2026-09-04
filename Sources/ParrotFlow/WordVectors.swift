@@ -32,6 +32,7 @@ actor WordVectors {
     /// that is not there fails the fetch on `unlisted`.
     static let cache = MLXModelCache(
         repository: "mlx-community/Qwen3-Embedding-0.6B-4bit-DWQ",
+        revision: "6c3ae70858513f1a78e9cdca3cae330d9075cd2a",
         files: [
             "config.json",
             "model.safetensors",

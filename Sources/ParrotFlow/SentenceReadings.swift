@@ -46,6 +46,7 @@ actor SentenceReadings {
     /// weights are one file — and listing it would fail the fetch.
     static let cache = MLXModelCache(
         repository: "mlx-community/Qwen3-0.6B-Base-4bit",
+        revision: "f493c65c2f0ff5a5fe37cc435cf8e2f1b6e72cf7",
         files: [
             "config.json",
             "model.safetensors",
