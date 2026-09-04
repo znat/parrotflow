@@ -8,12 +8,13 @@ import Foundation
 ///   - `centre`, the mean of the context vectors — every token of a sentence
 ///     except the term's own, so it describes the sentence and not the word;
 ///   - `tightness`, how close those sentences sit to that centre;
-///   - `floor`, what a genuine use of this term scores against it.
+///   - `floor`, what a genuine use of this term scores against it, from
+///     `floorMinimum` uses up.
 ///
 /// A new sentence is scored against the centre and divided by the tightness.
 /// Above the floor, the rewrite is authorised.
 ///
-/// A term that has been corrected out of enough sentences gets a second centre
+/// A term that has been corrected out of one sentence gets a second centre
 /// built the same way from those. Then there is no floor: the sentence is
 /// written when it is closer to the first centre than to the second, and
 /// refused when it is closer to the second. See `band`.
@@ -37,10 +38,18 @@ actor TermPortrait {
 
     static let shared = TermPortrait()
 
-    /// Fewer than this and the numbers mean nothing: at two uses the floor came
-    /// out below every ordinary word, at three it holds. Under it, a term has
-    /// no portrait and the stage decides as it does today.
-    static let minimum = 3
+    /// How many confirmed uses a term needs before it has a centre at all.
+    ///
+    /// One. A single sentence is enough to compare against a counter-example.
+    static let minimum = 1
+
+    /// How many uses the floor path needs.
+    ///
+    /// The floor is a leave-one-out quantile, so it needs uses to leave out: at
+    /// two the floor came out below every ordinary word, at three it holds. A
+    /// term with no counter-example and fewer than this has no portrait, and
+    /// the stage decides as it does today.
+    static let floorMinimum = 3
 
     /// Where the floor is read off the leave-one-out scores.
     static let quantile = 0.10
@@ -141,11 +150,10 @@ actor TermPortrait {
     /// How many counter-examples a term needs before the comparison replaces
     /// the floor.
     ///
-    /// Below this the counter centre is untestable, and the one term measured
-    /// with two counters got both of its own cases wrong. 3 costs nothing on
-    /// either bench set and is `minimum` again, so there is one number here and
-    /// not two.
-    static let counterMinimum = 3
+    /// One. The three that stood here was measured on the floor path, before
+    /// counter-examples existed; the comparison was never measured at a low
+    /// count.
+    static let counterMinimum = 1
 
     /// How far apart the two scores have to be before either side wins.
     ///
@@ -158,7 +166,8 @@ actor TermPortrait {
     struct Summary: Codable, Equatable {
         let centre: [Float]
         let tightness: Double
-        let floor: Double
+        /// nil below `floorMinimum` uses, where there is nothing to leave out.
+        let floor: Double?
         /// The sentences this was built from, so a portrait is recomputed when
         /// they change and not otherwise.
         let fingerprint: String
@@ -219,7 +228,7 @@ actor TermPortrait {
         /// Against its counter-examples, the same way, or nil when it has too
         /// few for a centre.
         let against: Double?
-        let floor: Double
+        let floor: Double?
     }
 
     /// How this sentence reads, or nil if the term has no portrait yet.
@@ -231,15 +240,16 @@ actor TermPortrait {
         guard let centre = summary.counterCentre, let tightness = summary.counterTightness,
               tightness > 0
         else {
+            guard let floor = summary.floor else { return nil }
             let verdict: Verdict
-            if own > summary.floor {
+            if own > floor {
                 verdict = .authorises
-            } else if own < summary.floor - Self.refusal {
+            } else if own < floor - Self.refusal {
                 verdict = .refuses
             } else {
                 verdict = .nothing
             }
-            return Reading(verdict: verdict, own: own, against: nil, floor: summary.floor)
+            return Reading(verdict: verdict, own: own, against: nil, floor: floor)
         }
 
         // Both sides divided by their own tightness. Mixing the scales was
@@ -268,10 +278,10 @@ actor TermPortrait {
                         + " and %.3f like its counters — %@",
                     term, span, reading.own, against, "\(reading.verdict)"
                 ))
-            } else {
+            } else if let floor = reading.floor {
                 Log.write(String(
                     format: "portrait: %@ at \"%@\" scores %.3f against a floor of %.3f — %@",
-                    term, span, reading.own, reading.floor, "\(reading.verdict)"
+                    term, span, reading.own, floor, "\(reading.verdict)"
                 ))
             }
             return reading.verdict
@@ -292,6 +302,9 @@ actor TermPortrait {
         let uses = all.filter { !$0.counter }
         let counters = all.filter(\.counter)
         guard uses.count >= Self.minimum else { return nil }
+        // A term with no counter needs the floor, and the floor needs uses.
+        guard counters.count >= Self.counterMinimum || uses.count >= Self.floorMinimum
+        else { return nil }
         let mark = Self.fingerprint(of: all)
 
         if !loadedFromDisk { cache = Self.readCache(); loadedFromDisk = true }
@@ -361,18 +374,22 @@ actor TermPortrait {
 
         // What a genuine use scores, each one measured against a portrait that
         // does not contain it. Anything else compares a sentence with itself.
-        var selves: [Double] = []
-        for index in vectors.indices {
-            let rest = vectors.enumerated().filter { $0.offset != index }.map(\.element)
-            guard rest.count > 1 else { continue }
-            let (restCentre, restTightness) = middle(of: rest)
-            guard restTightness > 0 else { continue }
-            selves.append(cosine(vectors[index], restCentre) / restTightness)
+        var floor: Double?
+        if uses.count >= floorMinimum {
+            var selves: [Double] = []
+            for index in vectors.indices {
+                let rest = vectors.enumerated().filter { $0.offset != index }.map(\.element)
+                guard rest.count > 1 else { continue }
+                let (restCentre, restTightness) = middle(of: rest)
+                guard restTightness > 0 else { continue }
+                selves.append(cosine(vectors[index], restCentre) / restTightness)
+            }
+            if !selves.isEmpty { floor = quantileOf(selves, at: quantile) }
         }
         return Summary(
             centre: centre,
             tightness: tightness,
-            floor: quantileOf(selves, at: quantile),
+            floor: floor,
             fingerprint: mark,
             uses: uses.count,
             counterCentre: counterCentre,
@@ -414,11 +431,15 @@ actor TermPortrait {
 
     private static func fingerprint(of uses: [TermUses.Use]) -> String {
         // The polarity is in the mark, so a counter added to a term rebuilds
-        // its portrait even though it never enters one.
+        // its portrait even though it never enters one. The three minimums are
+        // in it too: changing one changes what a stored summary means, and the
+        // sentences it was built from do not move.
+        let rule = "\(minimum)/\(counterMinimum)/\(floorMinimum)"
         let joined = uses
             .map { "\($0.counter ? "-" : "+")\($0.span)\u{1}\($0.said)" }
             .joined(separator: "\u{2}")
-        let digest = SHA256.hash(data: Data(joined.utf8))
+        let mark = rule + "\u{3}" + joined
+        let digest = SHA256.hash(data: Data(mark.utf8))
         return digest.compactMap { String(format: "%02x", $0) }.joined()
     }
 
