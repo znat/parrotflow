@@ -1,0 +1,63 @@
+[
+  {
+    "span": "Better Stack",
+    "text": "We have now we now have a much Better Stack than before we migrated to the BetterStack platform.",
+    "want": "better stack",
+    "why": "the dictation this rule was built for; the portrait refused this place"
+  },
+  {
+    "span": "Better Stack",
+    "text": "Clearly we have now a much Better Stack than before starting using the BetterStack monitoring platform.",
+    "want": "better stack",
+    "why": "the second dictation, same phrase, same refusal"
+  },
+  {
+    "span": "Better Stack",
+    "text": "Better Stack is down again.",
+    "want": "Better stack",
+    "why": "the span starts the text, so its first capital is the sentence's"
+  },
+  {
+    "span": "Better Stack",
+    "text": "He said \"it is down.\" Better Stack is fine.",
+    "want": "Better stack",
+    "why": "a closing quote between the period and the span is still a sentence start"
+  },
+  {
+    "span": "Better Stack's",
+    "text": "The Better Stack's dashboard is down.",
+    "want": "better stack's",
+    "why": "the possessive suffix survives the lowercasing"
+  },
+  {
+    "span": "Better Stack's",
+    "text": "Better Stack's dashboard is down.",
+    "want": "Better stack's",
+    "why": "sentence start and a possessive at once"
+  },
+  {
+    "span": "Mont Blanc",
+    "text": "We climbed Mont Blanc last year.",
+    "want": "AS HEARD",
+    "why": "NLTagger calls both words PersonalName and gives neither a lemma"
+  },
+  {
+    "span": "API Key",
+    "text": "The API Key is wrong.",
+    "want": "AS HEARD",
+    "why": "a word in capitals throughout is never lowercased, and it refuses the span"
+  },
+  {
+    "span": "Better Stack",
+    "text": "a much Better Stack than before",
+    "want": "AS HEARD",
+    "terms": "Stack",
+    "why": "a word the vocabulary knows as a term refuses the span"
+  },
+  {
+    "span": "better stack",
+    "text": "a much better stack than before",
+    "want": "AS HEARD",
+    "why": "nothing to lowercase, so the span is left exactly as it arrived"
+  }
+]

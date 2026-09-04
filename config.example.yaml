@@ -94,6 +94,7 @@ transcription:
     # sentence it stands in. No model. Above everything that edits the text.
     #   near_misses: false   match exactly, never one edit away
     #   by_sound: false      match spelling only, never how a word sounds
+    #   lowercase_refused: false   revert a refused glued span as heard
     - vocabulary
     - numbers                            # "two hundred forty-three" -> 243
     - transform: punctuation             # "is that true question mark" -> is that true?

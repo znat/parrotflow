@@ -442,7 +442,10 @@ enum CheckConfigCommand {
     private static func gates(of step: Pipeline.Step, config: Config) -> String {
         let slot = step.slotGate ?? true
         let portrait = (step.portrait ?? true) && config.vocabulary.gateSentence
-        return "slot \(slot ? "on" : "off"), portrait \(portrait ? "on" : "off")"
+        // Named only when it is off, as `(bare capitals off)` is on the
+        // `interpret` line. On is the default and the line is long already.
+        let lowercase = step.lowercaseRefused == false ? "  (lowercase refused off)" : ""
+        return "slot \(slot ? "on" : "off"), portrait \(portrait ? "on" : "off")\(lowercase)"
     }
 
     static func describe(_ error: Error) -> String {

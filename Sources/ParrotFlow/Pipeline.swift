@@ -191,6 +191,13 @@ struct Pipeline: Equatable, Codable {
         /// `false` takes the path a term with too few uses already has: the
         /// portrait says nothing, and the slot's refusal is all that can speak.
         var portrait: Bool?
+        /// Written `lowercase_refused:`. Whether a glued span the sentence
+        /// refuses is written back in lowercase instead of as heard. Absent
+        /// means true.
+        ///
+        /// `false` puts the span back exactly as the decoder wrote it, which
+        /// is what every other refusal in this stage does.
+        var lowercaseRefused: Bool?
         /// Written `slot_floor:`. How far the heard word must win by before
         /// `SlotReference` refuses the rewrite. A language it does not name
         /// keeps the built-in value for that language — see
@@ -1229,14 +1236,40 @@ struct Pipeline: Equatable, Codable {
                 + lessons.joined(separator: "; "))
         }
 
+        // A refused span that glues to the term is the ordinary phrase, so its
+        // capitals go with it — see `VocabularyJudge.lowercased`. A spelling
+        // lesson is exempt: it writes back exactly what was typed.
+        var writing = changes
+        if step.lowercaseRefused ?? true {
+            let terms = Array(config.vocabulary.terms.keys)
+            for index in changes.indices where decided[index] == false {
+                guard !(index < taught.count && taught[index]) else { continue }
+                let change = changes[index]
+                guard Vocabulary.glues(heard: change.was, term: change.now) else { continue }
+                // The span as heard, because a rule has written its term over
+                // it and the term is a different length.
+                let heard = text.replacingCharacters(in: change.range, with: change.was)
+                let at = text.distance(from: text.startIndex, to: change.range.lowerBound)
+                guard let lower = VocabularyJudge.lowercased(
+                    change.was, in: heard, at: at, terms: terms
+                ) else { continue }
+                writing[index] = VocabularyJudge.Change(
+                    range: change.range, was: lower, now: change.now,
+                    terms: change.terms, standing: change.standing
+                )
+                Log.write("vocabulary: \"\(change.was)\" refused as \(change.now)"
+                    + " — written in lowercase")
+            }
+        }
+
         // Each place written the way it was settled, and a place nothing
         // settled left exactly as it already stands: a rule substitution keeps
         // the term it wrote, a sound proposal keeps the word that was heard.
-        let chosen = VocabularyJudge.settling(decided, in: text, changes: changes)
+        let chosen = VocabularyJudge.settling(decided, in: text, changes: writing)
         // What the stage undid, in the words it put back. Named `reverted`
         // rather than `kept_as_decoded`: every place on this list is a
         // substitution somebody has to answer for.
-        let reverted = zip(changes, decided).filter { $0.1 == false }.map {
+        let reverted = zip(writing, decided).filter { $0.1 == false }.map {
             "\($0.0.now) -> \($0.0.was)"
         }
         if chosen != text {
