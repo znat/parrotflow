@@ -260,3 +260,10 @@ jobs:
       # scripts/check-sentence-join.sh, is run by hand.
       - name: The capital after a period the join removes
         run: scripts/check-sentence-case.sh
+
+      # Endings Parakeet writes over silence. Word arrays out of trace.jsonl,
+      # so no audio and no model — and the half that can go wrong quietly is
+      # scored too: the text is a separate string from the token timings, and
+      # a run dropped from one and not the other is invisible.
+      - name: Endings the decoder invented
+        run: scripts/check-invented-tail.sh

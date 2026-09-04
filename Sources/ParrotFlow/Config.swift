@@ -2350,8 +2350,9 @@ struct Config: Decodable, Equatable {
         /// swallows something real.
         var speechGate: Bool = true
         /// Decode the clip a second time beside the first, with silence at
-        /// both ends, and keep that decode when it reaches further. Off by
-        /// default: it recovers a rare failure and costs a second decode.
+        /// both ends, and keep that decode when it reaches further. On by
+        /// default: the arms decode beside the first pass rather than after
+        /// it, so the dictation waits on the slowest one, not on all three.
         ///
         /// The failure is Parakeet skipping frames it never looks at. It
         /// predicts a token and a skip of up to 4 frames of 80ms together, so

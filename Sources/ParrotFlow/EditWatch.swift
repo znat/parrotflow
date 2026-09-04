@@ -366,16 +366,53 @@ final class EditWatch {
             // of it was meant.
             guard left >= 1, right >= 1, left <= 2, right <= 2, left + right <= 3
             else { continue }
-            let pair = Self.trimmed(
-                was: old[fromI ..< i].joined(separator: " "),
-                now: new[fromJ ..< j].joined(separator: " ")
-            )
+            let wasRun = old[fromI ..< i].joined(separator: " ")
+            let nowRun = new[fromJ ..< j].joined(separator: " ")
+            // Words added beside a word are not a correction of it. Asked
+            // before the trim, which cuts a shared next sentence off the tail
+            // and would make an insertion look like an append.
+            guard !Self.added(was: wasRun, now: nowRun) else { continue }
+            let pair = Self.trimmed(was: wasRun, now: nowRun)
             found.append(Change(
                 was: pair.was, now: pair.now, sentence: now, at: fromI, nowAt: fromJ,
                 written: before, span: i - fromI
             ))
         }
         return found
+    }
+
+    /// Whether one reading is the other with more words added beside it.
+    ///
+    /// Typing a name after a word, or pasting into the line, is not a
+    /// correction of anything. `morning` became `morning Tasmeen` and
+    /// `dictation.` became `dictation.[Image #17]`, and both were offered as
+    /// vocabulary rules.
+    ///
+    /// The test is a whole word, not a prefix. `Ghost` to `Ghostty` extends the
+    /// word itself and is a real correction; `Praisy` to `Praisy's` likewise.
+    /// What is refused is one reading standing whole at the start or end of the
+    /// other with a separate word beside it, so the rest has to hold a space
+    /// for this to fire at all.
+    ///
+    /// Takes the two runs as they stood, not what `trimmed` returns. Only the
+    /// punctuation both end on comes off here. `prone.maybe` became
+    /// `prone point.maybe`, and the word went *inside* the run: cutting the
+    /// shared `.maybe` first would leave `prone -> prone point`, which reads
+    /// like a word appended and is a correction the panel has to keep.
+    static func added(was: String, now: String) -> Bool {
+        var a = Substring(was), b = Substring(now)
+        while let last = a.last, last == b.last, !(last.isLetter || last.isNumber) {
+            a = a.dropLast()
+            b = b.dropLast()
+        }
+        let (short, long) = a.count < b.count ? (a, b) : (b, a)
+        guard short != long, long.contains(where: \.isWhitespace) else { return false }
+        guard long.hasPrefix(short) || long.hasSuffix(short) else { return false }
+        // A whole word has to have appeared, or `Ghost` growing into `Ghostty`
+        // would read as `Ghost` with something added.
+        let rest = long.hasPrefix(short)
+            ? long.dropFirst(short.count) : long.dropLast(short.count)
+        return rest.contains(where: \.isWhitespace)
     }
 
     /// The two readings with the punctuation they share taken off both.

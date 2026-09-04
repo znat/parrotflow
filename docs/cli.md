@@ -801,6 +801,7 @@ scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
 scripts/check-slot-gap.sh          # what the slot says about a rewrite (needs both models)
 scripts/check-sentence-case.sh     # the capital after a mark the join removes
+scripts/check-invented-tail.sh     # the endings the decoder wrote over silence
 scripts/check-sentence-join.sh     # which sentence marks the join removes (needs the model)
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
