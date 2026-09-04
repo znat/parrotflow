@@ -4,18 +4,18 @@
 #   scripts/check-counter-portrait.sh
 #
 # A term's portrait is built from the sentences it was confirmed in. A term
-# with `TermPortrait.counterMinimum` counter-examples gets a second centre
-# built from those, and the verdict is which one the sentence is closer to.
-# This scores both rules on the same cases:
+# with a counter-example gets a second centre built from those, and the verdict
+# is which one the sentence is closer to. This scores both rules on the same
+# cases:
 #
 #   floor        the counters are stripped from the fixture, so every term
 #                falls back to the floor and the refusal band
 #   comparison   the fixture as it stands
 #
 # The fixture is tests/fixtures/vocabulary-uses-portrait.yaml, a snapshot of
-# one speaker's own uses file. Four terms reach the three-use minimum. A case
-# with a fifth column names a stored row to remove before scoring it, so a
-# sentence is never compared with itself.
+# one speaker's own uses file. Four terms, each with uses and counter-examples.
+# A case with a fifth column names a stored row to remove before scoring it, so
+# a sentence is never compared with itself.
 #
 # Not in `make test`: it needs the 400 MB word-vector model, which CI has no
 # business downloading. Run it by hand after touching TermPortrait. Same note
@@ -104,7 +104,10 @@ echo
 arm no || exit 1
 
 # Measured 2026-09-02: no error on the 20 held-out cases, where the floor rule
-# makes two. That is the property, so an error here fails the run.
+# makes two. That is the property, so an error here fails the run. Re-measured
+# 2026-09-04 with the minimums at one: the same numbers in both arms. Qwen has
+# two counters and is now read by the comparison rather than by the floor, with
+# the same verdict on all four of its cases.
 echo
 if [ "$(cat "$WORK/wrong")" = 0 ]; then
   echo "Every check passed."

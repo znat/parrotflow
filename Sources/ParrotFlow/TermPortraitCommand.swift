@@ -9,8 +9,9 @@ import Foundation
 ///     uses 3   tightness 0.874   floor 0.821
 ///     score 0.795   no opinion
 ///
-/// A term with enough counter-examples is read against those instead of against
-/// the floor, and both scores are printed:
+/// A term with a counter-example is read against those instead of against the
+/// floor, and both scores are printed. A term with fewer than
+/// `TermPortrait.floorMinimum` uses has no floor, and the column reads `—`:
 ///
 ///     ParrotFlow --portrait BetterStack "…a better stack for us." "better stack"
 ///     uses 5   against 4   tightness 0.882   floor 0.858
@@ -78,17 +79,21 @@ enum TermPortraitCommand {
             return 1
         case .success(let (summary, reading)):
             guard let summary else {
-                let held = TermUses.load()[term]?.filter { !$0.counter }.count ?? 0
-                print("no portrait: \(held) confirmed use(s), \(TermPortrait.minimum) needed")
+                let all = TermUses.load()[term] ?? []
+                let held = all.filter { !$0.counter }.count
+                print("no portrait: \(held) confirmed use(s),"
+                    + " \(all.count - held) counter-example(s)"
+                    + " — needs a use and a counter, or \(TermPortrait.floorMinimum) uses")
                 return 0
             }
             // `against` only when there is one, so a term with no counters
             // prints the line it has always printed.
             let against = summary.counters > 0 ? "against \(summary.counters)   " : ""
+            let floor = summary.floor.map { String(format: "%.3f", $0) } ?? "—"
             print(
                 "uses \(summary.uses)   \(against)"
                     + "tightness \(String(format: "%.3f", summary.tightness))"
-                    + "   floor \(String(format: "%.3f", summary.floor))"
+                    + "   floor \(floor)"
             )
             if sentence == nil {
                 for use in TermUses.load()[term] ?? [] {

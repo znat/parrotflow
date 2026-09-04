@@ -438,23 +438,26 @@ reached only from the sound pass, and that pass is English only, so it was
 measured in English only and runs nowhere else.
 
 **What the slot cannot settle, the term itself can.** Every sentence you
-confirm a term in is kept in `vocabulary-uses.yaml`, and from three of them the
-term gets a portrait: the average of what those sentences look like, with the
-term itself left out. Every sentence you correct a term *out* of is kept there
-too, as a counter-example, and from three of those the term gets a second
-average. Then a new sentence is written when it sits closer to the first than
-to the second, and refused when it sits closer to the second. There is no
-threshold to set: the two are compared directly, and a difference under 0.01
-says nothing either way.
+confirm a term in is kept in `vocabulary-uses.yaml`, and one of them gives the
+term a portrait: the average of what those sentences look like, with the term
+itself left out. Every sentence you correct a term *out* of is kept there too,
+as a counter-example, and one of those gives the term a second average. Then a
+new sentence is written when it sits closer to the first than to the second,
+and refused when it sits closer to the second. There is no threshold to set:
+the two are compared directly, and a difference under 0.01 says nothing either
+way.
 
 This is what separates "how this is a better stack for us" from "BetterStack
 paged me again at three": both look like sentences BetterStack lives in, and
 only the first also looks like the ones it was taken out of. Measured on 20
 held-out sentences
 over four terms: 20 right, 0 wrong, 0 quiet, where the floor rule that came
-before it scores 17 / 2 / 1. A term with fewer than three counter-examples
-keeps that floor rule. `--portrait <term> "<sentence>" <word>` prints both
-scores and the verdict; `scripts/check-counter-portrait.sh` is the run.
+before it scores 17 / 2 / 1. A term with no counter-example at all keeps that
+floor rule, and the floor needs three uses: it is read off each use scored
+against the others, so there have to be others. So a term with one use and no
+counter says nothing until it gets either a counter or a third use.
+`--portrait <term> "<sentence>" <word>` prints both scores and the verdict;
+`scripts/check-counter-portrait.sh` is the run.
 
 What the stage decided is written to `trace.jsonl` under its variables, so a
 decision can be replayed rather than guessed at.

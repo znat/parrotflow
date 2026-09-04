@@ -224,8 +224,8 @@ Both on by default, and each off is a path the stage already has.
   machine the weights are not on.
 - `portrait: false` reads no portrait. A term's own sentences say nothing, so
   nothing is authorised on that evidence and a rule's substitution is never
-  taken back out. It is what the stage does today for a term with fewer than
-  three confirmed uses.
+  taken back out. It is what the stage does today for a term with no
+  counter-example and fewer than three confirmed uses.
 
 Both off and neither model is fetched. `--check-config` prints one line per
 `vocabulary` step, carrying the step's floors and its two switches — the same

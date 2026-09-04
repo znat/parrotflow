@@ -227,15 +227,17 @@ check "the term standing in its own sentence is not a counter" 1 \
   "$(printf '%s' "$out" | grep -c 'is the term itself')"
 
 # The portrait is built from confirmed uses, so a counter must not make one
-# look ready. Two uses and a counter is still two uses. No model is loaded:
-# under the minimum, nothing is ever scored.
+# look ready. One counter and no use is still no portrait. No model is loaded:
+# with no uses, nothing is ever scored.
+out="$(PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --portrait Vercel 2>/dev/null)"
+check "a counter does not count as a use" 1 \
+  "$(printf '%s' "$out" | grep -c 'no portrait: 0 confirmed use(s), 1 counter-example(s)')"
+
+# Two confirmed uses beside the counter, for the --tidy-uses check at the end.
 PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --for Vercel \
   "We deploy the dashboard on Vercel every Friday." >/dev/null 2>&1
 PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --for Vercel \
   "The build is green on Vercel again." >/dev/null 2>&1
-out="$(PARROTFLOW_CONFIG_DIR="$AGAINST" "$BIN" --portrait Vercel 2>/dev/null)"
-check "a counter does not count toward the portrait minimum" 1 \
-  "$(printf '%s' "$out" | grep -c 'no portrait: 2 confirmed use(s)')"
 
 # One sentence cannot both hold the term and refuse it. The later correction
 # is the one that stands, rather than the first one silently winning.
