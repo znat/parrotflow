@@ -153,6 +153,9 @@ actor SentenceReadings {
     ///
     /// The left side loses its trailing mark, so a caller that kept it and one
     /// that did not build the same window.
+    ///
+    /// Checked against hand-written expectations by
+    /// `scripts/check-sentence-window.sh`. No model, so it runs in CI.
     static func build(
         left: String, right: String, found: String, marks: [String]
     ) -> (prefix: String, continuations: [String])? {

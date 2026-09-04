@@ -11,6 +11,10 @@
 # continuations, the padded batch, the log-softmax and the argmax. Regenerate it
 # with scripts/sentence-probe-reference.py readings.
 #
+# Drift only. The stored values came from an earlier build, so a mistake in the
+# window would be regenerated into them; scripts/check-sentence-window.sh checks
+# the window against expectations written by hand, and runs in CI.
+#
 # One loaded process for all 60, through `--sentence-probe --bench`. A process
 # per case would pay the 1.3s model load sixty times.
 #

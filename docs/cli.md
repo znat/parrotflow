@@ -467,6 +467,7 @@ reason for the swap.
 $PF --sentence-model                                       # fetch the model the readings need
 $PF --sentence-probe "<left half>" "<right half>"          # read one boundary
 $PF --sentence-probe --bare "<left half>" "<right half>"   # a capital with no mark
+$PF --sentence-probe --window "<left half>" "<right half>" # the window alone, no model
 $PF --sentence-probe --bench <cases.json> --out <out.json> # a whole file, one loaded process
 ```
 
@@ -515,6 +516,35 @@ and `"mark": ""` for the bare-capital shape.
 It loads the model once, so it is the only way to get a latency number;
 `--vectors` loads the word vectors as well, so the memory line describes the
 process the app runs.
+
+`--window` builds the prefix and the continuations and stops, as JSON. No model
+is loaded. `--bare` applies to it as well.
+
+```
+$PF --sentence-probe --window "did you see the parrot?" "At the top right"
+{
+  "mark" : "?",
+  "prefix" : "did you see the parrot",
+  "readings" : [
+    {
+      "continuation" : "? At the top right",
+      "key" : "?"
+    },
+    {
+      "continuation" : ", at the top right",
+      "key" : ","
+    },
+    {
+      "continuation" : " at the top right",
+      "key" : "join"
+    }
+  ]
+}
+```
+
+`scripts/check-sentence-window.sh` compares that against
+tests/sentence-window-cases.json, whose expectations were written by hand from
+the rules rather than from a run. It runs in CI.
 
 `scripts/check-sentence-probe.sh` compares the readings against
 tests/sentence-boundary-cases.json; it needs the model, so it is not in
@@ -798,6 +828,7 @@ scripts/check-span-rule.sh         # which range a rewrite is written as, before
 scripts/check-bug-report.sh        # what a bug report carries, and that it carries no home path
 scripts/check-slot-tokenizer.sh    # the slot tokenizer against HuggingFace's own
 scripts/check-sentence-probe.sh    # the three readings of a boundary (needs the model)
+scripts/check-sentence-window.sh   # the window a boundary is read over, against hand-written cases
 scripts/check-slot-gate.sh         # where a name proposal is routed (needs the model)
 scripts/check-slot-gap.sh          # what the slot says about a rewrite (needs both models)
 scripts/check-sentence-case.sh     # the capital after a mark the join removes

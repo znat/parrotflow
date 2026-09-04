@@ -612,8 +612,9 @@ arrives as it was. A dictation that arrives before the weights are in memory
 keeps its boundaries and starts the load.
 
 `scripts/check-sentence-join.sh` scores the decisions and needs the model.
-`scripts/check-sentence-case.sh` scores the lowercasing and needs none, so it
-runs in CI. See `SentenceJoin` and `SentenceReadings`.
+`scripts/check-sentence-case.sh` scores the lowercasing and
+`scripts/check-sentence-window.sh` the window a boundary is read over; neither
+needs a model, so both run in CI. See `SentenceJoin` and `SentenceReadings`.
 
 ## Measured and rejected
 

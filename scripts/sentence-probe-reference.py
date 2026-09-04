@@ -5,9 +5,11 @@
 
 It needs the release binary and the Qwen model on disk. It runs
 `--sentence-probe --bench` over a sample of the boundary bench and stores what
-came back, so the fixture is by construction what the binary produces. Point
---data at the bench directory; its files hold `left` and `right` already
-windowed to +-12 words, which is the window the app builds.
+came back, so the fixture is by construction what the binary produces: a drift
+check, not an oracle. The window itself is checked against hand-written
+expectations by scripts/check-sentence-window.sh. Point --data at the bench
+directory; its files hold `left` and `right` already windowed to +-12 words,
+which is the window the app builds.
 
 Four sets, two marks. --count rows come from the period pair and --questions
 rows from the question pair, so raising one does not resample the other. Each

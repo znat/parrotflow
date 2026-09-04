@@ -1,0 +1,142 @@
+[
+ {
+  "why": "the documented example: the period, the comma, then the join, and the left half loses its mark",
+  "left": "the first usage of the LLM with.",
+  "right": "The vocabulary is slower",
+  "want": {
+   "mark": ".",
+   "prefix": "the first usage of the LLM with",
+   "readings": [
+    {"key": ".", "continuation": ". The vocabulary is slower"},
+    {"key": ",", "continuation": ", the vocabulary is slower"},
+    {"key": "join", "continuation": " the vocabulary is slower"}
+   ]
+  }
+ },
+ {
+  "why": "a left half with no mark is read as a period and builds the same window",
+  "left": "the first usage of the LLM with",
+  "right": "The vocabulary is slower",
+  "want": {
+   "mark": ".",
+   "prefix": "the first usage of the LLM with",
+   "readings": [
+    {"key": ".", "continuation": ". The vocabulary is slower"},
+    {"key": ",", "continuation": ", the vocabulary is slower"},
+    {"key": "join", "continuation": " the vocabulary is slower"}
+   ]
+  }
+ },
+ {
+  "why": "a question mark is the mark found, and the period is not read beside it",
+  "left": "did you see the parrot?",
+  "right": "At the top right of the screen",
+  "want": {
+   "mark": "?",
+   "prefix": "did you see the parrot",
+   "readings": [
+    {"key": "?", "continuation": "? At the top right of the screen"},
+    {"key": ",", "continuation": ", at the top right of the screen"},
+    {"key": "join", "continuation": " at the top right of the screen"}
+   ]
+  }
+ },
+ {
+  "why": "a lowercase word after a question mark is capitalised for the ender reading only",
+  "left": "is it done?",
+  "right": "we still have the tests to run",
+  "want": {
+   "mark": "?",
+   "prefix": "is it done",
+   "readings": [
+    {"key": "?", "continuation": "? We still have the tests to run"},
+    {"key": ",", "continuation": ", we still have the tests to run"},
+    {"key": "join", "continuation": " we still have the tests to run"}
+   ]
+  }
+ },
+ {
+  "why": "seventeen words on the left keep the last twelve",
+  "left": "so what I meant to say is that the release notes are not bigger than the height.",
+  "right": "Another feature",
+  "want": {
+   "mark": ".",
+   "prefix": "say is that the release notes are not bigger than the height",
+   "readings": [
+    {"key": ".", "continuation": ". Another feature"},
+    {"key": ",", "continuation": ", another feature"},
+    {"key": "join", "continuation": " another feature"}
+   ]
+  }
+ },
+ {
+  "why": "fifteen words on the right keep the first twelve, the next word counting as the first",
+  "left": "you can open the app.",
+  "right": "we should see a parrot at the top right of your screen when it starts",
+  "want": {
+   "mark": ".",
+   "prefix": "you can open the app",
+   "readings": [
+    {"key": ".", "continuation": ". We should see a parrot at the top right of your screen"},
+    {"key": ",", "continuation": ", we should see a parrot at the top right of your screen"},
+    {"key": "join", "continuation": " we should see a parrot at the top right of your screen"}
+   ]
+  }
+ },
+ {
+  "why": "a mark inside the left half is not the boundary and stays where it is",
+  "left": "what we're doing anymore.I thought we had a success with audio clips",
+  "right": "We had a discussion",
+  "want": {
+   "mark": ".",
+   "prefix": "what we're doing anymore.I thought we had a success with audio clips",
+   "readings": [
+    {"key": ".", "continuation": ". We had a discussion"},
+    {"key": ",", "continuation": ", we had a discussion"},
+    {"key": "join", "continuation": " we had a discussion"}
+   ]
+  }
+ },
+ {
+  "why": "runs of whitespace either side are one space in the window",
+  "left": "  the first usage of the LLM   with.",
+  "right": "The  vocabulary is slower  ",
+  "want": {
+   "mark": ".",
+   "prefix": "the first usage of the LLM with",
+   "readings": [
+    {"key": ".", "continuation": ". The vocabulary is slower"},
+    {"key": ",", "continuation": ", the vocabulary is slower"},
+    {"key": "join", "continuation": " the vocabulary is slower"}
+   ]
+  }
+ },
+ {
+  "why": "a bare capital has four readings, and only as-decoded keeps the capital with no mark",
+  "left": "imports name definitions ",
+  "right": "And all the things",
+  "bare": true,
+  "want": {
+   "mark": "",
+   "prefix": "imports name definitions",
+   "readings": [
+    {"key": ".", "continuation": ". And all the things"},
+    {"key": "as-decoded", "continuation": " And all the things"},
+    {"key": ",", "continuation": ", and all the things"},
+    {"key": "join", "continuation": " and all the things"}
+   ]
+  }
+ },
+ {
+  "why": "nothing on the right is no window",
+  "left": "hello there.",
+  "right": "   ",
+  "want": null
+ },
+ {
+  "why": "a left half that is only the mark is no window",
+  "left": ".",
+  "right": "Word",
+  "want": null
+ }
+]

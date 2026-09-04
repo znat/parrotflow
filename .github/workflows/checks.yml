@@ -261,6 +261,14 @@ jobs:
       - name: The capital after a period the join removes
         run: scripts/check-sentence-case.sh
 
+      # The window a boundary is read over: the mark off the left half, twelve
+      # words each side, the capital, and one continuation per reading. The
+      # expectations are written by hand, so a mistake here cannot be
+      # regenerated into the scored fixture. No model: the window is built and
+      # nothing is scored.
+      - name: The window the readings are scored over
+        run: scripts/check-sentence-window.sh
+
       # Endings Parakeet writes over silence. Word arrays out of trace.jsonl,
       # so no audio and no model — and the half that can go wrong quietly is
       # scored too: the text is a separate string from the token timings, and
