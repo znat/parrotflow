@@ -30,6 +30,18 @@
     "why": "an opening quote in front of the span is a sentence start too"
   },
   {
+    "span": "Better Stack",
+    "text": "We use (Better Stack) today",
+    "want": "better stack",
+    "why": "a bracket mid-sentence is not a sentence start"
+  },
+  {
+    "span": "Better Stack",
+    "text": "We migrated last year. (Better Stack is down.)",
+    "want": "Better stack",
+    "why": "a bracket is skipped, and the period behind it is the sentence start"
+  },
+  {
     "span": "Better Stack's",
     "text": "The Better Stack's dashboard is down.",
     "want": "better stack's",

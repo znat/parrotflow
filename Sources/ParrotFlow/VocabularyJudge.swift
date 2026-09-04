@@ -995,11 +995,16 @@ enum VocabularyJudge {
     /// Whether the span at `offset` opens a sentence, so its first capital is
     /// there for the sentence and not for a name.
     ///
-    /// A quote or a bracket in front of the span counts, whichever way it
-    /// faces. `"` opens the sentence in `He said "Better Stack is down."` and
-    /// closes the one before it in `He said "it is down." Better Stack is
-    /// fine.`, and looking further back does not separate the two reliably.
-    /// Both keep the capital, so the ambiguity costs nothing.
+    /// A quote in front of the span counts on its own, whichever way it faces.
+    /// `"` opens the sentence in `He said "Better Stack is down."` and closes
+    /// the one before it in `He said "it is down." Better Stack is fine.`, and
+    /// looking further back does not separate the two: the opening one has an
+    /// ordinary word behind it. Both keep the capital, so the ambiguity costs
+    /// nothing.
+    ///
+    /// A bracket does not. It is skipped and the scan carries on behind it, so
+    /// `We migrated last year. (Better Stack is down.)` opens a sentence and
+    /// `We use (Better Stack) today` does not.
     private static func opensSentence(_ text: String, at offset: Int) -> Bool {
         guard let start = text.index(
             text.startIndex, offsetBy: offset, limitedBy: text.endIndex
@@ -1008,17 +1013,15 @@ enum VocabularyJudge {
         while cursor > text.startIndex {
             let before = text.index(before: cursor)
             let character = text[before]
-            guard character.isWhitespace else {
-                return Self.enders.contains(character) || Self.quotes.contains(character)
-            }
             cursor = before
+            if character.isWhitespace || Self.brackets.contains(character) { continue }
+            return Self.enders.contains(character) || Self.quotes.contains(character)
         }
         return true
     }
 
-    private static let quotes: Set<Character> = [
-        "\"", "'", "“", "”", "‘", "’", "«", "»", "(", ")", "[", "]", "{", "}",
-    ]
+    private static let quotes: Set<Character> = ["\"", "'", "“", "”", "‘", "’", "«", "»"]
+    private static let brackets: Set<Character> = ["(", ")", "[", "]", "{", "}"]
     private static let enders: Set<Character> = [".", "?", "!"]
 
     /// How far a source may be settled without a model.
