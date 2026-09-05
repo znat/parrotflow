@@ -234,6 +234,12 @@ jobs:
       - name: --learn writes a pronunciation
         run: scripts/check-learn.sh
 
+      # The menu bar writes the microphone priority list into config.yaml, a
+      # file that is mostly comments — so the write is a text splice, and every
+      # shape the file can be in has to come out valid and keep its comments.
+      - name: The microphone list survives a round trip
+        run: scripts/check-microphones.sh
+
       # Two ways in, one signing identity. A check that is only right in the
       # script or only right in the app is a door that checks less than the
       # other one.

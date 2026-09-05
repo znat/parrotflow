@@ -19,6 +19,7 @@ hotkey:
 
 audio:
   output_dir: ~/Recordings/ParrotFlow
+  microphones: []       # which microphone to record through, best first
   speech_gate: true     # skip clips with no speech in them
   second_opinion: true  # decode each clip twice and keep the longer decode
 
@@ -779,6 +780,54 @@ It was `free_form: true` at the top level. It is here because it is one of the
 router's answers rather than a setting of its own, and because it is the case
 that most deserves its own model — the free-form prompt is where a small local
 one is measured at its ceiling.
+
+## `audio.microphones`
+
+Which microphone to record through, best first. The first entry that is plugged
+in wins.
+
+```yaml
+audio:
+  microphones:
+    - Studio Display Microphone
+    - Nathan's AirPods Pro
+    - MacBook Pro Microphone
+```
+
+**The menu writes the first one.** A config that has never carried this setting
+gets a list the first time the microphone menu is opened: everything attached,
+with the one already being recorded through at the top. Nothing about which
+microphone is used changes — what changes is that it is written down, so moving
+the default in System Settings no longer moves ParrotFlow. Prune it from the
+menu; a virtual device like `ZoomAudioDevice` is a microphone as far as CoreAudio
+is concerned, and it is not one you want to fall back to.
+
+`microphones: []` means the opposite, and is what `Follow the System Setting`
+writes: follow the system, deliberately. It is left alone. The key missing
+altogether is the only thing that seeds.
+
+An entry is what System Settings calls the device, or CoreAudio's UID for it,
+or a fragment of the name: `AirPods` reaches `Nathan's AirPods Pro`. Case is
+ignored. An exact match wins over a fragment, so a device actually called
+`Display Audio` does not lose to one called `Display Audio (2)`. Two microphones
+answering to the same name is what the UID is for — `--microphones` prints both.
+
+**Only this app moves.** ParrotFlow opens the device it wants for itself and
+leaves System Settings alone. Zoom keeps using whatever it was using, and the
+default input device is still whatever you set it to.
+
+**It follows the hardware.** Plug the first microphone in and the next dictation
+is on it; unplug it and the next one is on the second entry. Nothing waits for a
+relaunch, and nothing changes during a dictation — a device arriving mid-sentence
+does not take the microphone away from the sentence.
+
+**From the menu bar.** The `Microphone · …` row unfolds into the list. Each entry
+can be moved up, moved down, removed, or made the one recording right now;
+anything else plugged in is listed underneath and joins the top of the list when
+you pick it. `Follow the System Setting` empties it again. Every one of those
+writes this setting, so the file and the menu never disagree.
+
+Run `--microphones` to see what is attached and the exact names to type.
 
 ## `audio.speech_gate`
 

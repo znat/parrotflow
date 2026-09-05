@@ -2366,12 +2366,26 @@ struct Config: Decodable, Equatable {
         /// Needs `speech_gate`, which is what reads the clip as samples.
         var secondOpinion: Bool = true
 
+        /// Which microphone to record through, best first.
+        ///
+        /// An entry is what System Settings calls the device, or CoreAudio's
+        /// UID for it, or a fragment of the name — "AirPods" reaches "Nathan's
+        /// AirPods Pro". The first entry that is attached wins, and the app
+        /// opens that device whatever System Settings has the default set to.
+        ///
+        /// Empty by default, and empty means the system's choice: the input
+        /// device every other app on this Mac is using. That is what this app
+        /// did before the list existed, so an untouched config records through
+        /// the same microphone it always did.
+        var microphones: [String] = []
+
         enum CodingKeys: String, CodingKey {
             case sampleRate = "sample_rate"
             case outputDir = "output_dir"
             case minDurationSeconds = "min_duration_seconds"
             case speechGate = "speech_gate"
             case secondOpinion = "second_opinion"
+            case microphones
         }
 
         init() {}
@@ -2395,6 +2409,14 @@ struct Config: Decodable, Equatable {
             }
             if let gate = try c.decodeIfPresent(Bool.self, forKey: .speechGate) {
                 self.speechGate = gate
+            }
+            if let mics = try c.decodeIfPresent([String].self, forKey: .microphones) {
+                // Trimmed but not lowercased: these are shown back in the menu
+                // bar, and the device is called "MacBook Pro Microphone".
+                // Matching is what ignores case — see `Recorder.device(named:)`.
+                self.microphones = mics
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
             }
             if let second = try c.decodeIfPresent(Bool.self, forKey: .secondOpinion) {
                 self.secondOpinion = second

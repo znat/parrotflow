@@ -28,6 +28,14 @@ audio:
   # Where recordings and trace.jsonl go.
   output_dir: ~/Recordings/ParrotFlow
 
+  # Which microphone to record through, best first. The first one that is
+  # plugged in wins, whatever System Settings has the default set to, and
+  # nothing else on the Mac is moved. Names come from `--microphones`; the
+  # menu bar writes this list for you.
+  # microphones:
+  #   - Studio Display Microphone
+  #   - MacBook Pro Microphone
+
   # Skip clips with no speech, so a stray keypress does not decode room tone.
   speech_gate: true
 

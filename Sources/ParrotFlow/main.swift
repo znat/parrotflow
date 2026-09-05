@@ -62,6 +62,20 @@ if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
 
+if arguments.contains("--microphones") {
+    if let at = arguments.firstIndex(of: "--set") {
+        // `--set ""` clears the list, and a missing value must not do the same
+        // by accident: a script whose variable came out empty would silently
+        // throw away somebody's microphone order and exit 0.
+        guard arguments.indices.contains(at + 1), !arguments[at + 1].hasPrefix("--") else {
+            print("✗ --set needs a value: a comma-separated list, or \"\" to follow the system")
+            exit(1)
+        }
+        exit(MicrophonesCommand.set(arguments[at + 1]))
+    }
+    exit(MicrophonesCommand.run())
+}
+
 // Everything the bug form asks for, in one paste. `--url` prints the prefilled
 // issue URL instead, which is what the menu item opens.
 //

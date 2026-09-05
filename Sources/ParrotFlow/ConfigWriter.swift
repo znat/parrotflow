@@ -9,6 +9,125 @@ import Foundation
 /// splice a pronunciation into it.
 enum ConfigWriter {
 
+    // MARK: - The microphone order
+
+    /// Writes `audio.microphones` into `config.yaml`, in the order given.
+    ///
+    /// Text-level, for the reason this whole file is: `config.yaml` is mostly
+    /// comments, and a round trip through Yams would return the settings
+    /// without a word of what they mean.
+    ///
+    /// An empty list is written as `microphones: []`, not taken out. The two
+    /// mean the same thing to the recorder — follow the system — and different
+    /// things to the menu: the key absent is a config nobody has decided about,
+    /// which is what `hasMicrophonesKey` answers and what the menu seeds on
+    /// first open. `[]` is somebody deciding, and it is left alone.
+    static func setMicrophones(_ names: [String]) throws {
+        try ConfigStore.createIfMissing()
+        let url = ConfigStore.fileURL
+        let original = try String(contentsOf: url, encoding: .utf8)
+        let updated = setting(microphones: names, in: original)
+        guard updated != original else { return }
+        try updated.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Whether `config.yaml` says anything about microphones at all.
+    ///
+    /// A config with no such key has never been asked the question. That is the
+    /// one time the menu writes a list without being told to — see
+    /// `AppDelegate.microphoneMenu`.
+    static func hasMicrophonesKey() -> Bool {
+        guard let yaml = try? String(contentsOf: ConfigStore.fileURL, encoding: .utf8) else {
+            return false
+        }
+        return microphonesKey(in: yaml.components(separatedBy: "\n")) != nil
+    }
+
+    /// The file with the list replaced. Split out so it can be tested without
+    /// a config on disk.
+    static func setting(microphones names: [String], in yaml: String) -> String {
+        var lines = yaml.components(separatedBy: "\n")
+        // An empty list is the key and nothing under it. The recorder reads the
+        // same nothing either way; what this preserves is that somebody said so.
+        let keyLine = names.isEmpty ? "  microphones: []" : "  microphones:"
+        let block = names.map { "    - \(quoted($0))" }
+
+        guard let audio = lines.firstIndex(where: { $0 == "audio:" }) else {
+            // No `audio:` at all — a hand-trimmed config. Appended whole, after
+            // a blank line, so it does not run into whatever ends the file.
+            var appended = lines
+            if appended.last?.isEmpty == false { appended.append("") }
+            appended.append(contentsOf: ["audio:", keyLine] + block + [""])
+            return appended.joined(separator: "\n")
+        }
+
+        let end = endOfBlock(from: audio, in: lines)
+
+        if let key = microphonesKey(in: lines, within: audio..<end) {
+            lines.replaceSubrange(key..<endOfList(from: key, in: lines, within: end),
+                                  with: [keyLine] + block)
+            return lines.joined(separator: "\n")
+        }
+
+        // Under the last setting in the block rather than under `audio:`, so
+        // the comment above the first setting keeps the setting it describes.
+        var insertAt = end
+        while insertAt > audio + 1, lines[insertAt - 1].isEmpty { insertAt -= 1 }
+        lines.insert(contentsOf: [keyLine] + block, at: insertAt)
+        return lines.joined(separator: "\n")
+    }
+
+    /// Where the `audio:` block stops: the next line at column zero that is
+    /// neither blank nor a comment. A comment between two settings belongs to
+    /// the setting under it, and stopping on one would splice this list above it.
+    private static func endOfBlock(from start: Int, in lines: [String]) -> Int {
+        var end = start + 1
+        while end < lines.count {
+            let line = lines[end]
+            if !line.isEmpty, !line.hasPrefix(" "), !line.hasPrefix("#") { break }
+            end += 1
+        }
+        return end
+    }
+
+    /// Everything the old list occupies: the key line and the item lines under
+    /// it, including a comment or a blank line between two items. A flow list —
+    /// `microphones: [a, b]` — is one line and is covered by the key line alone.
+    ///
+    /// A comment after the last item is left where it is. It belongs to
+    /// whatever comes next, not to the list that ended above it.
+    private static func endOfList(from key: Int, in lines: [String], within end: Int) -> Int {
+        var last = key + 1
+        var cursor = key + 1
+        while cursor < end {
+            let line = lines[cursor].trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("- ") {
+                cursor += 1
+                last = cursor
+            } else if line.isEmpty || line.hasPrefix("#") {
+                cursor += 1
+            } else {
+                break
+            }
+        }
+        return last
+    }
+
+    /// The `microphones:` line inside the `audio:` block, or nil if the file
+    /// does not carry one. A commented-out example is not one — it is what
+    /// `config.example.yaml` ships to explain the setting.
+    private static func microphonesKey(
+        in lines: [String], within range: Range<Int>? = nil
+    ) -> Int? {
+        let range = range ?? {
+            guard let audio = lines.firstIndex(where: { $0 == "audio:" }) else { return 0..<0 }
+            return audio..<endOfBlock(from: audio, in: lines)
+        }()
+        return lines[range].firstIndex {
+            $0.trimmingCharacters(in: .whitespaces).hasPrefix("microphones:")
+        }
+    }
+
     // MARK: - Learning a pronunciation
 
     /// Records that `term` is sometimes heard as `heard`.

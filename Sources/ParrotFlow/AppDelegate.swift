@@ -894,6 +894,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // on any save of config.yaml.
         Trace.directory = config.resolvedOutputDir
 
+        // Re-read on every save, and acted on: a microphone added to the list
+        // is one the next press should already be listening through, not one
+        // that waits for a relaunch. `reevaluateInput` rebinds only when the
+        // list now names a different device.
+        recorder.preferredMicrophones = config.audio.microphones
+        recorder.reevaluateInput()
+
         configProblems = config.problems()
         for problem in configProblems { Log.write("config: \(problem)") }
         // Logged and not flashed. A `command:` transform is announced on every
@@ -5808,6 +5815,232 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - The microphone list
+
+    /// The priority list, and what else is plugged in.
+    ///
+    /// Built when the menu opens, never kept. Both halves move without this app
+    /// hearing about it: the list is a file somebody can edit, and the devices
+    /// are whatever is attached to the Mac this second.
+    private func microphoneMenu() -> NSMenu {
+        let menu = NSMenu()
+        // Every row here is enabled or not for a reason this file knows —
+        // whether the device is attached, whether it is already first. AppKit's
+        // own rule is "does it have a target", which would answer yes to all of
+        // them and turn the greying-out off.
+        menu.autoenablesItems = false
+        let attached = Recorder.inputDevices()
+        let live = recorder.boundDevice?.uid
+        let entries = seededMicrophones(attached: attached, live: live)
+
+        for (index, entry) in entries.enumerated() {
+            let match = Recorder.device(named: entry, among: attached)
+            let item = NSMenuItem(
+                title: "\(index + 1).  \(match?.name ?? entry)"
+                    + (match == nil ? "  ·  not connected" : ""),
+                action: nil,
+                keyEquivalent: ""
+            )
+            // The number is the priority; the tick is which one is actually
+            // being recorded through. They are different facts whenever
+            // something higher up the list is unplugged.
+            item.state = match != nil && match?.uid == live ? .on : .off
+            item.submenu = microphoneActions(
+                at: index, of: entries.count, live: match != nil && match?.uid == live
+            )
+            menu.addItem(item)
+        }
+
+        // Matched the same way the recorder matches, so a device does not
+        // appear twice — once as entry 2 written as "airpods", once here under
+        // its full name. Empty right after a seed, and not empty for long: a
+        // microphone plugged in later lands here.
+        let unlisted = attached.filter { device in
+            !entries.contains { Recorder.device(named: $0, among: [device]) != nil }
+        }
+        if !unlisted.isEmpty {
+            if !entries.isEmpty { menu.addItem(.separator()) }
+            let header = NSMenuItem(
+                title: entries.isEmpty ? "Record through" : "Also attached", action: nil, keyEquivalent: ""
+            )
+            header.isEnabled = false
+            menu.addItem(header)
+            for device in unlisted {
+                // Straight to the top of the list, not the bottom. Picking a
+                // microphone out of this menu is asking to use it now; adding
+                // it below one that is already plugged in would change nothing
+                // and look broken.
+                let item = NSMenuItem(
+                    title: device.name, action: #selector(useMicrophone), keyEquivalent: ""
+                )
+                item.target = self
+                item.representedObject = Self.entry(for: device, among: attached)
+                item.state = device.uid == live ? .on : .off
+                menu.addItem(item)
+            }
+        }
+
+        if !entries.isEmpty {
+            menu.addItem(.separator())
+            let clear = NSMenuItem(
+                title: "Follow the System Setting",
+                action: #selector(clearMicrophones),
+                keyEquivalent: ""
+            )
+            clear.target = self
+            menu.addItem(clear)
+        }
+
+        for item in menu.items {
+            Self.hideAutomaticImage(item)
+            for child in item.submenu?.items ?? [] { Self.hideAutomaticImage(child) }
+        }
+        return menu
+    }
+
+    /// The list to draw, writing one down first if the config has never carried
+    /// one.
+    ///
+    /// A list nobody has made is a menu with nothing in it to move, which is
+    /// how a first look at this feature finds it missing. So the first open
+    /// writes down what is attached — the microphone being recorded through at
+    /// the top, the rest in the order CoreAudio gives them — and from then on
+    /// there is something to reorder.
+    ///
+    /// Nothing about which microphone is used changes: the one at the top is
+    /// the one that was already being used. What changes is that it is now
+    /// written down, so System Settings moving the default no longer moves
+    /// this app.
+    ///
+    /// Once only. `Follow the System Setting` writes `microphones: []`, which
+    /// is a decision and is left alone — otherwise clearing the list would
+    /// refill it the next time the menu opened.
+    private func seededMicrophones(
+        attached: [Recorder.InputDevice], live: String?
+    ) -> [String] {
+        let entries = config.audio.microphones
+        guard entries.isEmpty, !attached.isEmpty, !ConfigWriter.hasMicrophonesKey() else {
+            return entries
+        }
+        let first = live ?? Recorder.defaultInputDeviceID.flatMap { device in
+            attached.first { $0.id == device }?.uid
+        }
+        // Two halves rather than a sort: "is this the one" is not an ordering,
+        // and `sorted` given a predicate that is not one is allowed to return
+        // anything at all.
+        let ordered = attached.filter { $0.uid == first } + attached.filter { $0.uid != first }
+        let seeded = ordered.map { Self.entry(for: $0, among: attached) }
+        writeMicrophones(seeded)
+        return seeded
+    }
+
+    /// What to write in the config for one microphone.
+    ///
+    /// The name, unless a second attached device answers to it — then the UID.
+    /// Two microphones can share a name, and a name is then not enough to pick
+    /// the one somebody clicked: `Recorder.device(named:)` would resolve it to
+    /// whichever CoreAudio lists first.
+    private static func entry(
+        for device: Recorder.InputDevice, among attached: [Recorder.InputDevice]
+    ) -> String {
+        attached.filter { $0.name == device.name }.count > 1 ? device.uid : device.name
+    }
+
+    /// What one entry in the list can be moved to.
+    ///
+    /// A submenu rather than drag: an NSMenu row cannot be dragged onto another
+    /// row, and the two moves plus a delete say the same thing exactly.
+    private func microphoneActions(at index: Int, of count: Int, live: Bool) -> NSMenu {
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let use = NSMenuItem(title: "Record Through This", action: #selector(promoteMicrophone), keyEquivalent: "")
+        use.target = self
+        use.tag = index
+        use.isEnabled = !live
+        menu.addItem(use)
+
+        menu.addItem(.separator())
+
+        let up = NSMenuItem(title: "Move Up", action: #selector(moveMicrophoneUp), keyEquivalent: "")
+        up.target = self
+        up.tag = index
+        up.isEnabled = index > 0
+        menu.addItem(up)
+
+        let down = NSMenuItem(title: "Move Down", action: #selector(moveMicrophoneDown), keyEquivalent: "")
+        down.target = self
+        down.tag = index
+        down.isEnabled = index < count - 1
+        menu.addItem(down)
+
+        menu.addItem(.separator())
+
+        let remove = NSMenuItem(title: "Remove", action: #selector(removeMicrophone), keyEquivalent: "")
+        remove.target = self
+        remove.tag = index
+        menu.addItem(remove)
+
+        return menu
+    }
+
+    @objc private func promoteMicrophone(_ sender: NSMenuItem) {
+        var entries = config.audio.microphones
+        guard entries.indices.contains(sender.tag) else { return }
+        entries.insert(entries.remove(at: sender.tag), at: 0)
+        writeMicrophones(entries)
+    }
+
+    @objc private func moveMicrophoneUp(_ sender: NSMenuItem) {
+        var entries = config.audio.microphones
+        guard entries.indices.contains(sender.tag), sender.tag > 0 else { return }
+        entries.swapAt(sender.tag, sender.tag - 1)
+        writeMicrophones(entries)
+    }
+
+    @objc private func moveMicrophoneDown(_ sender: NSMenuItem) {
+        var entries = config.audio.microphones
+        guard entries.indices.contains(sender.tag), sender.tag < entries.count - 1 else { return }
+        entries.swapAt(sender.tag, sender.tag + 1)
+        writeMicrophones(entries)
+    }
+
+    @objc private func removeMicrophone(_ sender: NSMenuItem) {
+        var entries = config.audio.microphones
+        guard entries.indices.contains(sender.tag) else { return }
+        entries.remove(at: sender.tag)
+        writeMicrophones(entries)
+    }
+
+    @objc private func useMicrophone(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        writeMicrophones([name] + config.audio.microphones)
+    }
+
+    @objc private func clearMicrophones(_ sender: NSMenuItem) {
+        writeMicrophones([])
+    }
+
+    /// Saves the order and starts using it.
+    ///
+    /// The write lands in `config.yaml`, the watcher reloads it, and
+    /// `applyConfig` sets the same list again — but a reload is a file event
+    /// with a debounce on it, and the microphone is expected to have changed by
+    /// the time the menu closes. So the recorder is told here as well.
+    private func writeMicrophones(_ names: [String]) {
+        do {
+            try ConfigWriter.setMicrophones(names)
+        } catch {
+            Log.write("could not write the microphone list: \(error.localizedDescription)")
+            flash("Could not write config.yaml.", tone: .caution)
+            return
+        }
+        config.audio.microphones = names
+        recorder.preferredMicrophones = names
+        recorder.reevaluateInput()
+        Log.write("microphones: \(names.isEmpty ? "following the system" : names.joined(separator: ", "))")
+    }
+
     // MARK: - Menu bar
 
     private func buildStatusItem() {
@@ -5823,8 +6056,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Under the state it qualifies: which microphone the next press will
         // listen through. Worth a row because the answer is chosen elsewhere —
         // a headset connects and silently becomes the input for everything.
+        // It unfolds into the priority list, which is how that gets decided
+        // here instead. Filled in by `menuNeedsUpdate`.
         inputDeviceItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-        inputDeviceItem.isEnabled = false
         menu.addItem(inputDeviceItem)
 
         // Above the separator, so it reads as part of the app's state rather
@@ -6256,9 +6490,10 @@ extension AppDelegate: NSMenuDelegate {
         // recording: the device is picked in System Settings, so the moment the
         // menu opens is both the first time the answer can have changed and the
         // only time anyone can read it.
-        let device = Recorder.inputDeviceName
+        let device = recorder.boundDevice?.name ?? Recorder.inputDeviceName
         inputDeviceItem.isHidden = device == nil
         inputDeviceItem.title = device.map { "Microphone  ·  \($0)" } ?? ""
+        inputDeviceItem.submenu = microphoneMenu()
     }
 
     private var hasPermissionProblem: Bool {

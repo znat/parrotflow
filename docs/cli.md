@@ -366,6 +366,7 @@ $ ParrotFlow --forget Praisy
 ## Proving the microphone and the model work
 
 ```sh
+$PF --microphones        # every microphone attached, and which one wins
 $PF --record 3           # record 3s and verify the file it produced
 $PF --transcribe a.wav   # transcribe a clip
 $PF --watch-modifiers    # print which modifier keys are physically down, live
@@ -373,7 +374,16 @@ $PF --watch-taps         # tap, hold or shortcut — which edge each press comes
 $PF --audio-recovery     # what the recorder does when the microphone changes
 ```
 
-`--record` checks the result, not just that it ran: sample rate, channel count,
+`--microphones` prints what is attached, with the exact name and UID that
+`audio.microphones` matches on, and marks the one the list lands on right now.
+It is where the strings in that setting come from — a name typed from memory is
+a name that matches nothing. `--microphones --set "Studio Display Microphone,
+MacBook Pro Microphone"` writes the list, best first, and `--microphones --set ""`
+clears it; the menu bar does the same thing without the typing. See
+[configuration.md](configuration.md#audiomicrophones).
+
+`--record` records through that same list, and says which microphone it used.
+It checks the result, not just that it ran: sample rate, channel count,
 bit depth, peak level, and whether the file is the right size for its duration.
 A silent clip or a short file gets a non-zero exit.
 
