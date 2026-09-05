@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.12.0](https://github.com/znat/parrotflow/compare/v0.11.0...v0.12.0) (2026-09-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* the vocabulary stage decides without a model ([#246](https://github.com/znat/parrotflow/issues/246))
+
+### Features
+
+* a correction the other way is a counter-example ([#251](https://github.com/znat/parrotflow/issues/251)) ([57d9fa0](https://github.com/znat/parrotflow/commit/57d9fa06f9675d8ee3be4cad1bed41d7db4a70a6))
+* a name corrected by hand opens the vocabulary panel ([#248](https://github.com/znat/parrotflow/issues/248)) ([1256bb8](https://github.com/znat/parrotflow/commit/1256bb80a20666eae5a4afd99c603baebd22f1a6))
+* a name is found by how it sounds, and the free gate decides the easy ones ([#234](https://github.com/znat/parrotflow/issues/234)) ([673ea9e](https://github.com/znat/parrotflow/commit/673ea9e81375b311ab2327545aaa031df4c09d8e))
+* a name is only written where the sentence says it belongs ([#245](https://github.com/znat/parrotflow/issues/245)) ([7398a15](https://github.com/znat/parrotflow/commit/7398a15b901291dfa4190d5c7aad363c481234dd))
+* a pause no longer cuts a sentence in two ([#230](https://github.com/znat/parrotflow/issues/230)) ([6574676](https://github.com/znat/parrotflow/commit/6574676700da1dd9b4392d64193f97d5c4988265))
+* a priority list of microphones, set from the menu bar ([#284](https://github.com/znat/parrotflow/issues/284)) ([e3b148d](https://github.com/znat/parrotflow/commit/e3b148dff194eb21a76aa3a9a52a0f643b9a5d40))
+* a term is refused where it looks more like its counter-examples ([#252](https://github.com/znat/parrotflow/issues/252)) ([d0ccccf](https://github.com/znat/parrotflow/commit/d0ccccfb02dd652ed391027fe2197d6ff271ecce))
+* a term learns where it belongs from its own corrections ([#244](https://github.com/znat/parrotflow/issues/244)) ([5fce520](https://github.com/znat/parrotflow/commit/5fce520bac19bff0d0962f58d5bebfcacb6cabd1))
+* a term's portrait starts from its first use and its first counter-example ([#282](https://github.com/znat/parrotflow/issues/282)) ([d2e1534](https://github.com/znat/parrotflow/commit/d2e15347d45bea9bf15207509f250c23fece0634))
+* hand edits are kept, and the popup opens only on names ([#259](https://github.com/znat/parrotflow/issues/259)) ([9582266](https://github.com/znat/parrotflow/commit/9582266e78a1d1bfc8a0c3792b29e3233e358017))
+* notice when one word of a dictation is changed by hand ([#247](https://github.com/znat/parrotflow/issues/247)) ([c8ae4c7](https://github.com/znat/parrotflow/commit/c8ae4c73f6ce6aa02ee29aa01dbd619ef8c5f3ba))
+* readings repair false sentence breaks, and the vocabulary gate reads French ([#281](https://github.com/znat/parrotflow/issues/281)) ([73b4a36](https://github.com/znat/parrotflow/commit/73b4a369fb1b5e1a1e55121591510e422fa008da))
+* tap the hotkey to edit what you just said, or what you have selected ([#220](https://github.com/znat/parrotflow/issues/220)) ([704589d](https://github.com/znat/parrotflow/commit/704589df3499e5510917932fdcb222affbd12081))
+* the dictation HUD hangs off the words it is about ([#224](https://github.com/znat/parrotflow/issues/224)) ([03956bd](https://github.com/znat/parrotflow/commit/03956bdf441c8708392c483b2d33a392c3378720))
+* the sentence decides whether a name can go where a word stands ([#229](https://github.com/znat/parrotflow/issues/229)) ([a0c1f2f](https://github.com/znat/parrotflow/commit/a0c1f2f5a7195363cdd5cb93dd323dfa64efb735))
+* the sentence model arrives on the first English dictation ([#225](https://github.com/znat/parrotflow/issues/225)) ([d3efed8](https://github.com/znat/parrotflow/commit/d3efed8218930a123f58756b9e7b7bc3bf4f59c0))
+* the sentence model says whether a period is real ([#227](https://github.com/znat/parrotflow/issues/227)) ([76ab662](https://github.com/znat/parrotflow/commit/76ab662a3bdf8490970e13da6f5fe3ade2b1bbd0))
+* the slot says whether a name belongs where it was heard ([#243](https://github.com/znat/parrotflow/issues/243)) ([49f8696](https://github.com/znat/parrotflow/commit/49f8696abcf71bfe7826244d280e1f477f554303))
+* the start chime waits until the microphone is sending ([483bed8](https://github.com/znat/parrotflow/commit/483bed81f26470158ead6968008be6f9b09d2cad))
+* the vocabulary stage decides without a model ([#246](https://github.com/znat/parrotflow/issues/246)) ([1852471](https://github.com/znat/parrotflow/commit/1852471781aba8f9f90bd6ff679cd378ae037971))
+* two ears for one name, and the one that needs no install is the default ([#235](https://github.com/znat/parrotflow/issues/235)) ([161fc20](https://github.com/znat/parrotflow/commit/161fc206c9541204ed07c2694052875fc122db16))
+
+
+### Fixes
+
+* `review: false` stops the model and nothing else ([#237](https://github.com/znat/parrotflow/issues/237)) ([8510797](https://github.com/znat/parrotflow/commit/8510797738ea6acd8c558d6e71241088bce0f392))
+* a capital at the start of a sentence is not a name ([#253](https://github.com/znat/parrotflow/issues/253)) ([b49df60](https://github.com/znat/parrotflow/commit/b49df60bff7e65e87de394084df58a126f39616c))
+* a contraction is not a name to overwrite ([#233](https://github.com/znat/parrotflow/issues/233)) ([954513d](https://github.com/znat/parrotflow/commit/954513dcbea33bd87040c895cddfd24a15890d94))
+* a correction rebuilds the term's portrait, not the next dictation ([#257](https://github.com/znat/parrotflow/issues/257)) ([eb7088f](https://github.com/znat/parrotflow/commit/eb7088f2c4ccb1e3aab0f50966958cc734e0c022))
+* a dictation no longer ends with words nobody said ([#272](https://github.com/znat/parrotflow/issues/272)) ([68774e0](https://github.com/znat/parrotflow/commit/68774e015f0cd8af2cb4a5f7fdccf31a50eafa79))
+* a word added beside another is not a correction of it ([#254](https://github.com/znat/parrotflow/issues/254)) ([53a8739](https://github.com/znat/parrotflow/commit/53a87391b1721b11956996895617f7164cf590f4))
+* a word with a possessive is no longer overwritten without asking ([#223](https://github.com/znat/parrotflow/issues/223)) ([e68b1d8](https://github.com/znat/parrotflow/commit/e68b1d8a7f4c38f691c644c654226080f0c898cb))
+* an ordinary first name is no longer overwritten without asking ([#222](https://github.com/znat/parrotflow/issues/222)) ([adf529f](https://github.com/znat/parrotflow/commit/adf529f44577f8407f87c2d0dadbef348d5d6ecb))
+* **pill:** open where the words are, not at the bottom of the screen ([#217](https://github.com/znat/parrotflow/issues/217)) ([f0eebee](https://github.com/znat/parrotflow/commit/f0eebee8644407ec4365ff570760b11c042db3e1))
+* the in-place check no longer leaks or kills windows it didn't open ([#221](https://github.com/znat/parrotflow/issues/221)) ([3ab201f](https://github.com/znat/parrotflow/commit/3ab201f5c8f7831cecb38cc02ea1d7399e3a6e08))
+* the rank rule goes, it was wrong more often than right ([#241](https://github.com/znat/parrotflow/issues/241)) ([955c072](https://github.com/znat/parrotflow/commit/955c072045313d37942ccb3d52f2e60b26a6dada))
+
+
+### Performance
+
+* speech downloads first, the other three follow ([#250](https://github.com/znat/parrotflow/issues/250)) ([64b0890](https://github.com/znat/parrotflow/commit/64b0890a21adcbd1d7954e3a543897e543c030a5))
+* the sound model's answers are kept between launches ([#255](https://github.com/znat/parrotflow/issues/255)) ([ed542d1](https://github.com/znat/parrotflow/commit/ed542d122c4c11f7fd765a0bc79a4ab2a6918fee))
+* the tokenizer is parsed once per process ([#228](https://github.com/znat/parrotflow/issues/228)) ([87d2f9d](https://github.com/znat/parrotflow/commit/87d2f9d128b64275ff90ec420f95e554f1c9fbd5))
+
 ## [0.11.0](https://github.com/znat/parrotflow/compare/v0.10.0...v0.11.0) (2026-08-26)
 
 
