@@ -391,8 +391,16 @@ final class EditWatch {
     /// The test is a whole word, not a prefix. `Ghost` to `Ghostty` extends the
     /// word itself and is a real correction; `Praisy` to `Praisy's` likewise.
     /// What is refused is one reading standing whole at the start or end of the
-    /// other with a separate word beside it, so the rest has to hold a space
-    /// for this to fire at all.
+    /// other with something separate beside it.
+    ///
+    /// Separate means a space, or a stop the reading already ended on. Typing
+    /// runs straight on from the mark: `removed.` became `removed.x` and was
+    /// offered as a rule, 2026-09-05. A stop only counts when a letter or a
+    /// number follows it, so `options.` to `options.)` stays a change and is
+    /// refused later as punctuation.
+    ///
+    /// The price is that `Node.` typed out to `Node.js` reads the same way and
+    /// is dropped too. Nothing in the two strings tells them apart.
     ///
     /// Takes the two runs as they stood, not what `trimmed` returns. Only the
     /// punctuation both end on comes off here. `prone.maybe` became
@@ -406,13 +414,20 @@ final class EditWatch {
             b = b.dropLast()
         }
         let (short, long) = a.count < b.count ? (a, b) : (b, a)
-        guard short != long, long.contains(where: \.isWhitespace) else { return false }
+        guard short != long else { return false }
         guard long.hasPrefix(short) || long.hasSuffix(short) else { return false }
         // A whole word has to have appeared, or `Ghost` growing into `Ghostty`
         // would read as `Ghost` with something added.
-        let rest = long.hasPrefix(short)
-            ? long.dropFirst(short.count) : long.dropLast(short.count)
-        return rest.contains(where: \.isWhitespace)
+        let opens = long.hasPrefix(short)
+        let rest = opens ? long.dropFirst(short.count) : long.dropLast(short.count)
+        if rest.contains(where: \.isWhitespace) { return true }
+        // Either side of the join. The strip above takes a stop off both
+        // readings when they end on one, so `removed.` to `removed.Hello.`
+        // arrives here with the mark at the head of `rest` instead.
+        let join = opens ? [short.last, rest.first] : [rest.last, short.first]
+        guard join.contains(where: { $0.map { ".!?".contains($0) } == true })
+        else { return false }
+        return rest.contains { $0.isLetter || $0.isNumber }
     }
 
     /// The two readings with the punctuation they share taken off both.
