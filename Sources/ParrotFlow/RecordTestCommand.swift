@@ -22,6 +22,9 @@ enum RecordTestCommand {
         }
 
         let recorder = Recorder()
+        // Before `warmUp`, which is what opens the device. The whole point of
+        // this command is to record through what the app would record through.
+        recorder.preferredMicrophones = config.audio.microphones
         recorder.warmUp()
         var peak: Float = 0
         recorder.onLevel = { peak = max(peak, $0) }
@@ -33,6 +36,9 @@ enum RecordTestCommand {
         do {
             let url = try recorder.start(config: config)
             print("● recording \(seconds)s → \(url.lastPathComponent)")
+            // Which microphone this went through, which is the question when
+            // the clip comes back silent and the list has an entry in it.
+            print("  through    \(recorder.boundDevice?.name ?? "unknown device")")
         } catch {
             print("✗ \(error.localizedDescription)")
             return 1

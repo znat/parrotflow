@@ -74,6 +74,7 @@ enum CheckConfigCommand {
         } else {
             emit("  · second opinion    \(config.audio.secondOpinion ? "on" : "off")")
         }
+        emitMicrophones(config, emit)
         emit("  · feedback          sound=\(config.feedback.sound)"
               + " volume=\(config.feedback.soundVolume) overlay=\(config.feedback.overlay)"
               + " correct_offer=\(config.feedback.correctOffer)"
@@ -391,6 +392,44 @@ enum CheckConfigCommand {
     }
 
     /// Which of the three bodies this is, in one column.
+    /// The priority list, and which microphone it lands on right now.
+    ///
+    /// The list on its own does not answer the question anyone has — an entry
+    /// that matches nothing attached is invisible in the file and decides
+    /// nothing — so every entry says whether it is here, and the winner is
+    /// named.
+    private static func emitMicrophones(_ config: Config, _ emit: (String) -> Void) {
+        let entries = config.audio.microphones
+        guard !entries.isEmpty else {
+            let system = Recorder.inputDeviceName ?? "none attached"
+            emit("  · microphones       none listed — the system's input device (\(system))")
+            return
+        }
+        let attached = Recorder.inputDevices()
+        let winner = Recorder.preferredDevice(from: entries)
+        emit("  · microphones       \(entries.count) listed, best first")
+        for (index, entry) in entries.enumerated() {
+            let match = Recorder.device(named: entry, among: attached)
+            // The name only when the entry is not already it: half these
+            // entries are the device's full name, and "Teams → Teams" is a
+            // line that says nothing twice.
+            let named = match.map { $0.name == entry ? "" : "→ \($0.name), " } ?? ""
+            let state: String
+            if let match, match.id == winner?.id {
+                state = "\(named)recording through this one"
+            } else if match != nil {
+                state = "\(named)attached"
+            } else {
+                state = "not attached"
+            }
+            emit("    \(index + 1). \(entry)  \(state)")
+        }
+        if winner == nil {
+            let system = Recorder.inputDeviceName ?? "none attached"
+            emit("  ! microphones       none of them is attached — falling back to \(system)")
+        }
+    }
+
     private static func kind(of transform: Config.Transform) -> String {
         switch transform.body {
         case .prompt: return "prompt "

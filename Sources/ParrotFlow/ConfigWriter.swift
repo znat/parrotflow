@@ -9,6 +9,75 @@ import Foundation
 /// splice a pronunciation into it.
 enum ConfigWriter {
 
+    // MARK: - The microphone order
+
+    /// Writes `audio.microphones` into `config.yaml`, in the order given.
+    ///
+    /// Text-level, for the reason this whole file is: `config.yaml` is mostly
+    /// comments, and a round trip through Yams would return the settings
+    /// without a word of what they mean.
+    ///
+    /// An empty list takes the key out again, rather than leaving
+    /// `microphones: []` behind. The key absent and the key empty mean the same
+    /// thing — follow the system — and only one of them reads like a decision.
+    static func setMicrophones(_ names: [String]) throws {
+        let url = ConfigStore.fileURL
+        let original = try String(contentsOf: url, encoding: .utf8)
+        let updated = setting(microphones: names, in: original)
+        guard updated != original else { return }
+        try updated.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// The file with the list replaced. Split out so it can be tested without
+    /// a config on disk.
+    static func setting(microphones names: [String], in yaml: String) -> String {
+        var lines = yaml.components(separatedBy: "\n")
+        let block = names.map { "    - \(quoted($0))" }
+
+        guard let audio = lines.firstIndex(where: { $0 == "audio:" }) else {
+            guard !names.isEmpty else { return yaml }
+            // No `audio:` at all — a hand-trimmed config. Appended whole, after
+            // a blank line, so it does not run into whatever ends the file.
+            var appended = lines
+            if appended.last?.isEmpty == false { appended.append("") }
+            appended.append(contentsOf: ["audio:", "  microphones:"] + block + [""])
+            return appended.joined(separator: "\n")
+        }
+
+        // The block runs to the next line at column zero that is not blank and
+        // not a comment. A comment between two settings belongs to the setting
+        // under it, and stopping on one would splice this list above it.
+        var end = audio + 1
+        while end < lines.count {
+            let line = lines[end]
+            if !line.isEmpty, !line.hasPrefix(" "), !line.hasPrefix("#") { break }
+            end += 1
+        }
+
+        if let key = lines[audio..<end].firstIndex(where: {
+            $0.trimmingCharacters(in: .whitespaces).hasPrefix("microphones:")
+        }) {
+            // Everything the old list occupied: the key line, and the item
+            // lines under it. A flow list — `microphones: [a, b]` — is one
+            // line and is covered by the key line alone.
+            var last = key + 1
+            while last < end,
+                  lines[last].trimmingCharacters(in: .whitespaces).hasPrefix("- ") {
+                last += 1
+            }
+            lines.replaceSubrange(key..<last, with: names.isEmpty ? [] : ["  microphones:"] + block)
+            return lines.joined(separator: "\n")
+        }
+
+        guard !names.isEmpty else { return yaml }
+        // Under the last setting in the block rather than under `audio:`, so
+        // the comment above the first setting keeps the setting it describes.
+        var insertAt = end
+        while insertAt > audio + 1, lines[insertAt - 1].isEmpty { insertAt -= 1 }
+        lines.insert(contentsOf: ["  microphones:"] + block, at: insertAt)
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Learning a pronunciation
 
     /// Records that `term` is sometimes heard as `heard`.

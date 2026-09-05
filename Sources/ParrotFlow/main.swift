@@ -62,6 +62,13 @@ if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
 
+if arguments.contains("--microphones") {
+    if let at = arguments.firstIndex(of: "--set") {
+        exit(MicrophonesCommand.set(arguments.indices.contains(at + 1) ? arguments[at + 1] : ""))
+    }
+    exit(MicrophonesCommand.run())
+}
+
 // Everything the bug form asks for, in one paste. `--url` prints the prefilled
 // issue URL instead, which is what the menu item opens.
 //
