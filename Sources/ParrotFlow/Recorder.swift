@@ -287,10 +287,10 @@ final class Recorder {
     /// Kept so `deinit` can take it off again — `AudioObjectRemovePropertyListenerBlock`
     /// matches on the block, not on a token.
     private var deviceListListener: AudioObjectPropertyListenerBlock?
-    /// Devices that were there and would not open. Skipped by the resolution
-    /// until the device list changes, so the priority list falls past one the
-    /// same way it falls past one that is unplugged. Guarded by `stateLock`.
-    private var unopenable: Set<AudioDeviceID> = []
+    /// Devices that were there and would not open, and when they refused.
+    /// Skipped by the resolution, so the priority list falls past one the same
+    /// way it falls past one that is unplugged. Guarded by `stateLock`.
+    private var unopenable: [AudioDeviceID: Date] = [:]
     private let stateLock = NSLock()
 
     /// A format disagreement a rebuild has already been spent on. Main thread
@@ -865,7 +865,7 @@ final class Recorder {
         var address = Self.deviceListAddress
         let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
             guard let self else { return }
-            // A device that refused to open gets another chance whenever the
+            // A device that refused to open gets its chance back early when the
             // hardware moves. The IDs move with it, so keeping the old set
             // would skip a device that never refused anything.
             self.stateLock.lock()
@@ -914,7 +914,12 @@ final class Recorder {
     /// never opened against.
     func desiredInput() -> (binding: InputBinding?, pin: AudioDeviceID?) {
         stateLock.lock()
-        let refused = unopenable
+        // A refusal expires here rather than on a timer. Nothing fires on its
+        // own then: the retry happens on the next press or reload after the
+        // minute is up, which is the moment it is worth anything.
+        let cutoff = Date().addingTimeInterval(-Self.refusalSeconds)
+        unopenable = unopenable.filter { $0.value > cutoff }
+        let refused = Set(unopenable.keys)
         stateLock.unlock()
         guard let device = Self.preferredDevice(
             from: preferredMicrophones, excluding: refused
@@ -1307,6 +1312,15 @@ final class Recorder {
     /// working — as long as it compares against the device we pinned to, which
     /// is what `desiredInput` is for.
     ///
+    /// How long a device that refused to open is skipped for.
+    ///
+    /// A device can refuse for a reason that passes — another app holding it,
+    /// a link still settling — and no device-list change announces it coming
+    /// back. A minute is long enough that a broken microphone is not retried on
+    /// every press, and short enough that one which recovered is picked up
+    /// again without anybody going looking for a setting.
+    private static let refusalSeconds: TimeInterval = 60
+
     /// False when the device would not open. The caller then has to record what
     /// the engine is really on — the system default — rather than the device it
     /// asked for. A binding that names a microphone the engine never opened is
@@ -1322,7 +1336,7 @@ final class Recorder {
             // happens on the wrong microphone rather than not at all.
             Log.write("could not open microphone \(device): \(error.localizedDescription)")
             stateLock.lock()
-            unopenable.insert(device)
+            unopenable[device] = Date()
             stateLock.unlock()
             return false
         }
