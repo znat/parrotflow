@@ -64,15 +64,8 @@ enum ConfigWriter {
         let end = endOfBlock(from: audio, in: lines)
 
         if let key = microphonesKey(in: lines, within: audio..<end) {
-            // Everything the old list occupied: the key line, and the item
-            // lines under it. A flow list — `microphones: [a, b]` — is one
-            // line and is covered by the key line alone.
-            var last = key + 1
-            while last < end,
-                  lines[last].trimmingCharacters(in: .whitespaces).hasPrefix("- ") {
-                last += 1
-            }
-            lines.replaceSubrange(key..<last, with: [keyLine] + block)
+            lines.replaceSubrange(key..<endOfList(from: key, in: lines, within: end),
+                                  with: [keyLine] + block)
             return lines.joined(separator: "\n")
         }
 
@@ -95,6 +88,29 @@ enum ConfigWriter {
             end += 1
         }
         return end
+    }
+
+    /// Everything the old list occupies: the key line and the item lines under
+    /// it, including a comment or a blank line between two items. A flow list —
+    /// `microphones: [a, b]` — is one line and is covered by the key line alone.
+    ///
+    /// A comment after the last item is left where it is. It belongs to
+    /// whatever comes next, not to the list that ended above it.
+    private static func endOfList(from key: Int, in lines: [String], within end: Int) -> Int {
+        var last = key + 1
+        var cursor = key + 1
+        while cursor < end {
+            let line = lines[cursor].trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("- ") {
+                cursor += 1
+                last = cursor
+            } else if line.isEmpty || line.hasPrefix("#") {
+                cursor += 1
+            } else {
+                break
+            }
+        }
+        return last
     }
 
     /// The `microphones:` line inside the `audio:` block, or nil if the file

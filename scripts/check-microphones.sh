@@ -57,6 +57,7 @@ rejects() {
 }
 
 set_mics() { PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --microphones --set "$1" >/dev/null 2>&1; }
+bare_set() { PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --microphones --set 2>&1; }
 config() { cat "$WORK/config.yaml"; }
 check() { PARROTFLOW_CONFIG_DIR="$WORK" "$BIN" --check-config 2>&1; }
 
@@ -127,6 +128,30 @@ set_mics "MacBook Pro Microphone"
 wants "an audio block is added" "$(config)" "audio:"
 wants "with the list under it"  "$(config)" "    - MacBook Pro Microphone"
 wants "and it still parses"     "$(check)"  "1 listed, best first"
+
+# --- a comment between two entries ------------------------------------------
+cat > "$WORK/config.yaml" <<'YAML'
+audio:
+  microphones:
+    - Old One
+    # the one in the meeting room
+    - Other One
+  speech_gate: true
+
+transcription:
+  languages: [en]
+YAML
+set_mics "MacBook Pro Microphone"
+rejects "an entry above the comment goes" "$(config)" "Old One"
+rejects "and the one below it too"        "$(config)" "Other One"
+wants "the setting under the list stays"  "$(config)" "  speech_gate: true"
+
+# --- a missing value is not an empty one ------------------------------------
+fresh
+set_mics "MacBook Pro Microphone"
+bare_set >/dev/null 2>&1
+wants "--set with no value is refused"    "$(bare_set)" "needs a value"
+wants "and the list is left alone"        "$(config)"   "    - MacBook Pro Microphone"
 
 # --- a name that is not a plain word ----------------------------------------
 fresh

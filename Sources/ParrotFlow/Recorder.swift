@@ -287,6 +287,10 @@ final class Recorder {
     /// Kept so `deinit` can take it off again — `AudioObjectRemovePropertyListenerBlock`
     /// matches on the block, not on a token.
     private var deviceListListener: AudioObjectPropertyListenerBlock?
+    /// Devices that were there and would not open. Skipped by the resolution
+    /// until the device list changes, so the priority list falls past one the
+    /// same way it falls past one that is unplugged. Guarded by `stateLock`.
+    private var unopenable: Set<AudioDeviceID> = []
     private let stateLock = NSLock()
 
     /// A format disagreement a rebuild has already been spent on. Main thread
@@ -366,11 +370,12 @@ final class Recorder {
     func warmUp() {
         let engine = currentEngine()
         let desired = desiredInput()
-        if let device = desired.pin { Self.pin(engine, to: device) }
+        var binding = desired.binding
+        if let device = desired.pin, !pin(engine, to: device) { binding = currentInput() }
         _ = engine.inputNode.outputFormat(forBus: 0)
         engine.prepare()
         stateLock.lock()
-        bound = desired.binding
+        bound = binding
         stateLock.unlock()
     }
 
@@ -859,7 +864,14 @@ final class Recorder {
     private func watchDeviceList() {
         var address = Self.deviceListAddress
         let listener: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            self?.reevaluateInput()
+            guard let self else { return }
+            // A device that refused to open gets another chance whenever the
+            // hardware moves. The IDs move with it, so keeping the old set
+            // would skip a device that never refused anything.
+            self.stateLock.lock()
+            self.unopenable.removeAll()
+            self.stateLock.unlock()
+            self.reevaluateInput()
         }
         let status = AudioObjectAddPropertyListenerBlock(
             AudioObjectID(kAudioObjectSystemObject), &address, .main, listener
@@ -901,7 +913,12 @@ final class Recorder {
     /// microphone connecting, and then `bound` names a device the engine was
     /// never opened against.
     func desiredInput() -> (binding: InputBinding?, pin: AudioDeviceID?) {
-        guard let device = Self.preferredDevice(from: preferredMicrophones) else {
+        stateLock.lock()
+        let refused = unopenable
+        stateLock.unlock()
+        guard let device = Self.preferredDevice(
+            from: preferredMicrophones, excluding: refused
+        ) else {
             return (currentInput(), nil)
         }
         return (InputBinding.of(device.id), device.id)
@@ -1065,12 +1082,15 @@ final class Recorder {
             // Before the format is read, not after. The node answers for the
             // device it is on at the moment it is asked, and that answer is what
             // the tap is installed against.
-            if let device = desired.pin { Recorder.pin(fresh, to: device) }
+            var binding = desired.binding
+            if let device = desired.pin, self?.pin(fresh, to: device) == false {
+                binding = self?.currentInput()
+            }
             // The expensive line: instantiating the input node opens the
             // device. Everything after it is cheap.
             _ = fresh.inputNode.outputFormat(forBus: 0)
             fresh.prepare()
-            self?.adopt(fresh, bound: desired.binding, took: Date().timeIntervalSince(started))
+            self?.adopt(fresh, bound: binding, took: Date().timeIntervalSince(started))
         }
     }
 
@@ -1262,9 +1282,11 @@ final class Recorder {
     /// Nil is not a failure. It is the answer that leaves the engine following
     /// the system's default input, which is what an empty list means and what
     /// this app did before the list existed.
-    static func preferredDevice(from entries: [String]) -> InputDevice? {
+    static func preferredDevice(
+        from entries: [String], excluding refused: Set<AudioDeviceID> = []
+    ) -> InputDevice? {
         guard !entries.isEmpty else { return nil }
-        let attached = inputDevices()
+        let attached = inputDevices().filter { !refused.contains($0.id) }
         for entry in entries {
             if let device = device(named: entry, among: attached) { return device }
         }
@@ -1284,13 +1306,25 @@ final class Recorder {
     /// arrives is the pinned device's. So the whole of `formatProblem` keeps
     /// working — as long as it compares against the device we pinned to, which
     /// is what `desiredInput` is for.
-    private static func pin(_ engine: AVAudioEngine, to device: AudioDeviceID) {
+    ///
+    /// False when the device would not open. The caller then has to record what
+    /// the engine is really on — the system default — rather than the device it
+    /// asked for. A binding that names a microphone the engine never opened is
+    /// a mismatch nothing can see afterwards: the comparison in
+    /// `reacquireIfInputMoved` is between the same two answers, so it agrees
+    /// with itself forever while the words come from somewhere else.
+    private func pin(_ engine: AVAudioEngine, to device: AudioDeviceID) -> Bool {
         do {
             try engine.inputNode.auAudioUnit.setDeviceID(device)
+            return true
         } catch {
             // Fail open: the engine keeps the default input, and the dictation
             // happens on the wrong microphone rather than not at all.
             Log.write("could not open microphone \(device): \(error.localizedDescription)")
+            stateLock.lock()
+            unopenable.insert(device)
+            stateLock.unlock()
+            return false
         }
     }
 

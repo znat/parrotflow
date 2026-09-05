@@ -5871,10 +5871,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // it below one that is already plugged in would change nothing
                 // and look broken.
                 let item = NSMenuItem(
-                    title: "\(device.name)", action: #selector(useMicrophone), keyEquivalent: ""
+                    title: device.name, action: #selector(useMicrophone), keyEquivalent: ""
                 )
                 item.target = self
-                item.representedObject = device.name
+                item.representedObject = Self.entry(for: device, among: attached)
                 item.state = device.uid == live ? .on : .off
                 menu.addItem(item)
             }
@@ -5929,15 +5929,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // and `sorted` given a predicate that is not one is allowed to return
         // anything at all.
         let ordered = attached.filter { $0.uid == first } + attached.filter { $0.uid != first }
-        // The name, unless two microphones answer to it — then the UID, which
-        // is the thing that tells them apart. Written once, and read by
-        // everyone afterwards.
-        let names = attached.map(\.name)
-        let seeded = ordered.map { device in
-            names.filter { $0 == device.name }.count > 1 ? device.uid : device.name
-        }
+        let seeded = ordered.map { Self.entry(for: $0, among: attached) }
         writeMicrophones(seeded)
         return seeded
+    }
+
+    /// What to write in the config for one microphone.
+    ///
+    /// The name, unless a second attached device answers to it — then the UID.
+    /// Two microphones can share a name, and a name is then not enough to pick
+    /// the one somebody clicked: `Recorder.device(named:)` would resolve it to
+    /// whichever CoreAudio lists first.
+    private static func entry(
+        for device: Recorder.InputDevice, among attached: [Recorder.InputDevice]
+    ) -> String {
+        attached.filter { $0.name == device.name }.count > 1 ? device.uid : device.name
     }
 
     /// What one entry in the list can be moved to.
