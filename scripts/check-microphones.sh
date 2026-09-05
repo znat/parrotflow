@@ -94,9 +94,16 @@ counts "and holds one entry"       "$(config)" "    - " 1
 
 # --- clearing it ------------------------------------------------------------
 set_mics ""
-rejects "the key is removed, not emptied" "$(config)" "microphones"
+wants "the key stays, emptied"            "$(config)" "  microphones: []"
+counts "with nothing under it"            "$(config)" "    - " 0
 wants "the rest of the audio block stays" "$(config)" "  speech_gate: true"
 wants "an empty list follows the system"  "$(check)"  "none listed"
+
+# An emptied list is a decision — the menu seeds a list only into a config that
+# has never carried the key, and `[]` is how "follow the system" says so.
+set_mics "MacBook Pro Microphone"
+wants "and it can be filled again" "$(config)" "    - MacBook Pro Microphone"
+counts "still written once"        "$(config)" "microphones:" 1
 
 # --- a list a person wrote as a flow sequence -------------------------------
 cat > "$WORK/config.yaml" <<'YAML'

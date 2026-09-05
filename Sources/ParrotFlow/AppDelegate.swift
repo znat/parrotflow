@@ -5829,9 +5829,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // own rule is "does it have a target", which would answer yes to all of
         // them and turn the greying-out off.
         menu.autoenablesItems = false
-        let entries = config.audio.microphones
         let attached = Recorder.inputDevices()
         let live = recorder.boundDevice?.uid
+        let entries = seededMicrophones(attached: attached, live: live)
 
         for (index, entry) in entries.enumerated() {
             let match = Recorder.device(named: entry, among: attached)
@@ -5853,7 +5853,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Matched the same way the recorder matches, so a device does not
         // appear twice — once as entry 2 written as "airpods", once here under
-        // its full name.
+        // its full name. Empty right after a seed, and not empty for long: a
+        // microphone plugged in later lands here.
         let unlisted = attached.filter { device in
             !entries.contains { Recorder.device(named: $0, among: [device]) != nil }
         }
@@ -5895,6 +5896,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for child in item.submenu?.items ?? [] { Self.hideAutomaticImage(child) }
         }
         return menu
+    }
+
+    /// The list to draw, writing one down first if the config has never carried
+    /// one.
+    ///
+    /// A list nobody has made is a menu with nothing in it to move, which is
+    /// how a first look at this feature finds it missing. So the first open
+    /// writes down what is attached — the microphone being recorded through at
+    /// the top, the rest in the order CoreAudio gives them — and from then on
+    /// there is something to reorder.
+    ///
+    /// Nothing about which microphone is used changes: the one at the top is
+    /// the one that was already being used. What changes is that it is now
+    /// written down, so System Settings moving the default no longer moves
+    /// this app.
+    ///
+    /// Once only. `Follow the System Setting` writes `microphones: []`, which
+    /// is a decision and is left alone — otherwise clearing the list would
+    /// refill it the next time the menu opened.
+    private func seededMicrophones(
+        attached: [Recorder.InputDevice], live: String?
+    ) -> [String] {
+        let entries = config.audio.microphones
+        guard entries.isEmpty, !attached.isEmpty, !ConfigWriter.hasMicrophonesKey() else {
+            return entries
+        }
+        let first = live ?? Recorder.defaultInputDeviceID.flatMap { device in
+            attached.first { $0.id == device }?.uid
+        }
+        // Two halves rather than a sort: "is this the one" is not an ordering,
+        // and `sorted` given a predicate that is not one is allowed to return
+        // anything at all.
+        let ordered = attached.filter { $0.uid == first } + attached.filter { $0.uid != first }
+        // The name, unless two microphones answer to it — then the UID, which
+        // is the thing that tells them apart. Written once, and read by
+        // everyone afterwards.
+        let names = attached.map(\.name)
+        let seeded = ordered.map { device in
+            names.filter { $0 == device.name }.count > 1 ? device.uid : device.name
+        }
+        writeMicrophones(seeded)
+        return seeded
     }
 
     /// What one entry in the list can be moved to.

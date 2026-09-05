@@ -794,9 +794,17 @@ audio:
     - MacBook Pro Microphone
 ```
 
-Empty by default, and empty means the system's own choice — the input device
-System Settings picked, which is what every other app on the Mac uses. That is
-what ParrotFlow did before this list existed.
+**The menu writes the first one.** A config that has never carried this setting
+gets a list the first time the microphone menu is opened: everything attached,
+with the one already being recorded through at the top. Nothing about which
+microphone is used changes — what changes is that it is written down, so moving
+the default in System Settings no longer moves ParrotFlow. Prune it from the
+menu; a virtual device like `ZoomAudioDevice` is a microphone as far as CoreAudio
+is concerned, and it is not one you want to fall back to.
+
+`microphones: []` means the opposite, and is what `Follow the System Setting`
+writes: follow the system, deliberately. It is left alone. The key missing
+altogether is the only thing that seeds.
 
 An entry is what System Settings calls the device, or CoreAudio's UID for it,
 or a fragment of the name: `AirPods` reaches `Nathan's AirPods Pro`. Case is
