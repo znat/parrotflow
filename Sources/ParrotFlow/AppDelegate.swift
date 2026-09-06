@@ -2410,6 +2410,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if damaged.contains(WordVectors.download.id) { WordVectors.discardCache() }
         }
         ModelDownloads.shared.retrying()
+        // `SentenceReadings.warm` holds a failed load for five minutes, and
+        // `warmModels` below goes through it. Without this the row would go
+        // back to waiting with nothing fetching it. Pressing the button is
+        // somebody saying try now.
+        if #available(macOS 14, *), config.readsBoundaries {
+            Task { await SentenceReadings.shared.retryNow() }
+        }
         warmModels()
     }
 

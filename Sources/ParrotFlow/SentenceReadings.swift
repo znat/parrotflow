@@ -209,6 +209,18 @@ actor SentenceReadings {
     private var retryAfter: Date?
     private static let backoff: TimeInterval = 300
 
+    /// Forgets the backoff and starts the load, for the setup screen's repair
+    /// button.
+    ///
+    /// The two steps are one call because they are one decision. Clearing the
+    /// deadline and warming from separate tasks races: `warm` can reach the
+    /// actor first, still see the deadline, and return — leaving the row back
+    /// on "waiting" with nothing fetching.
+    func retryNow() {
+        retryAfter = nil
+        warm()
+    }
+
     /// Starts the load if nothing is doing it, and returns at once.
     func warm() {
         guard loaded == nil, loading == nil else { return }
