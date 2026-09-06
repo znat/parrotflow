@@ -75,7 +75,7 @@ The menu bar item shows the current state and offers *Open Recordings
 Folder* — the wavs, if `logging.audio` is on, and `trace.jsonl` — *Settings*,
 which holds *Edit Config…* (`config.yaml`) and *Open Config Folder* —
 everything you own, so `vocabulary.yaml`, `transforms/` and `voice/` too —
-and *Permissions…*. Both open in VS Code if it is installed, and in whatever
+and *Setup…*. Both open in VS Code if it is installed, and in whatever
 the system would otherwise use if it is not. See [`logging`](#logging).
 
 ### A folder per transform

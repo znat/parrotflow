@@ -42,6 +42,13 @@ actor SentenceReadings {
 
     static let shared = SentenceReadings()
 
+    /// The row the setup screen draws for it.
+    static let download = ModelDownload(
+        id: "sentence-readings", name: "Qwen3 0.6B Base", megabytes: 320, peak: 320,
+        group: .language, blocking: false,
+        costOfFailure: "a sentence a pause cut in two is left as it arrived"
+    )
+
     /// `model.safetensors.index.json` is absent from this repository — the
     /// weights are one file — and listing it would fail the fetch.
     static let cache = MLXModelCache(
@@ -61,7 +68,8 @@ actor SentenceReadings {
             .appendingPathComponent("models/qwen3-0.6b-base-4bit", isDirectory: true),
         lockURL: AppVariant.supportDirectory
             .appendingPathComponent("models/qwen3-0.6b-base.lock"),
-        label: "sentence readings"
+        label: "sentence readings",
+        downloadID: download.id
     )
 
     static var directory: URL { cache.directory }
@@ -201,6 +209,18 @@ actor SentenceReadings {
     private var retryAfter: Date?
     private static let backoff: TimeInterval = 300
 
+    /// Forgets the backoff and starts the load, for the setup screen's repair
+    /// button.
+    ///
+    /// The two steps are one call because they are one decision. Clearing the
+    /// deadline and warming from separate tasks races: `warm` can reach the
+    /// actor first, still see the deadline, and return — leaving the row back
+    /// on "waiting" with nothing fetching.
+    func retryNow() {
+        retryAfter = nil
+        warm()
+    }
+
     /// Starts the load if nothing is doing it, and returns at once.
     func warm() {
         guard loaded == nil, loading == nil else { return }
@@ -231,9 +251,25 @@ actor SentenceReadings {
         let task = Task<ModelContext, Error> { try await Self.build(progress: progress) }
         loading = task
         defer { loading = nil }
-        let built = try await task.value
-        loaded = built
-        return built
+        do {
+            let built = try await task.value
+            loaded = built
+            ModelDownloads.report(Self.download.id, .installed)
+            return built
+        } catch {
+            ModelDownloads.report(
+                Self.download.id,
+                .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
+            )
+            throw error
+        }
+    }
+
+    /// Deletes the cache, so the next `prepare` fetches it again. `build`
+    /// skips the fetch whenever `isCached` is true, weights that load as the
+    /// wrong model included.
+    static func discardCache() {
+        try? FileManager.default.removeItem(at: cache.directory)
     }
 
     private static func build(

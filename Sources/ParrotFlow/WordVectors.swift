@@ -27,6 +27,13 @@ actor WordVectors {
 
     static let shared = WordVectors()
 
+    /// The row the setup screen draws for it.
+    static let download = ModelDownload(
+        id: "word-vectors", name: "Qwen3 Embedding 0.6B", megabytes: 335, peak: 335,
+        group: .language, blocking: false,
+        costOfFailure: "the sentence gate stands aside"
+    )
+
     /// The cache and its download. The file list is not the whole repository:
     /// `model.safetensors.index.json` is absent from it, and listing a file
     /// that is not there fails the fetch on `unlisted`.
@@ -47,7 +54,8 @@ actor WordVectors {
             .appendingPathComponent("models/qwen3-embedding-0.6b-4bit", isDirectory: true),
         lockURL: AppVariant.supportDirectory
             .appendingPathComponent("models/qwen3-embedding.lock"),
-        label: "word vectors"
+        label: "word vectors",
+        downloadID: download.id
     )
 
     static var directory: URL { cache.directory }
@@ -110,9 +118,25 @@ actor WordVectors {
         let task = Task<ModelContext, Error> { try await Self.build(progress: progress) }
         loading = task
         defer { loading = nil }
-        let built = try await task.value
-        loaded = built
-        return built
+        do {
+            let built = try await task.value
+            loaded = built
+            ModelDownloads.report(Self.download.id, .installed)
+            return built
+        } catch {
+            ModelDownloads.report(
+                Self.download.id,
+                .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
+            )
+            throw error
+        }
+    }
+
+    /// Deletes the cache, so the next `prepare` fetches it again. `build`
+    /// skips the fetch whenever `isCached` is true, weights that load as the
+    /// wrong model included.
+    static func discardCache() {
+        try? FileManager.default.removeItem(at: directory)
     }
 
     private static func build(

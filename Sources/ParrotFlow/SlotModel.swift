@@ -32,6 +32,15 @@ actor SlotModel {
 
     static let shared = SlotModel()
 
+    /// The row the setup screen draws for it. The peak is not the size on
+    /// disk: the downloaded package and the compile of it both exist until the
+    /// compile finishes.
+    static let download = ModelDownload(
+        id: "slot", name: "mmBERT-small", megabytes: 282, peak: 580,
+        group: .language, blocking: false,
+        costOfFailure: "the vocabulary gate asks the judge instead"
+    )
+
     private static let repository = "znaat/mmbert-small-coreml"
     /// Pinned, not `main`. The tokenizer fixture in `tests/` is the answer for
     /// one `tokenizer.json`, and the gap cases are the answer for one set of
@@ -130,9 +139,18 @@ actor SlotModel {
         }
         loading = task
         defer { loading = nil }
-        let loaded = try await task.value
-        model = loaded
-        return loaded
+        do {
+            let loaded = try await task.value
+            model = loaded
+            ModelDownloads.report(Self.download.id, .installed)
+            return loaded
+        } catch {
+            ModelDownloads.report(
+                Self.download.id,
+                .failed(ModelDownloads.failure(error, needs: Self.download.peakLabel))
+            )
+            throw error
+        }
     }
 
     private static func build(
@@ -167,6 +185,14 @@ actor SlotModel {
         defer { close(handle) }
         guard flock(handle, LOCK_EX | LOCK_NB) == 0 else { throw Failure.busy }
         try await body()
+    }
+
+    /// Deletes the cache, so the next `prepare` fetches it again.
+    ///
+    /// `build` already re-fetches a cache that will not load, once. This is for
+    /// the retry after that one failed too.
+    static func discardCache() {
+        try? FileManager.default.removeItem(at: directory)
     }
 
     /// **`.cpuAndGPU`, not the default.** On the Neural Engine this model is not
@@ -213,13 +239,14 @@ actor SlotModel {
         defer { try? files.removeItem(at: staging) }
 
         let reported = Reported()
+        ModelDownloads.report(download.id, .downloading(percent: nil))
         try await HubDownload.fetch(
             repo: repository, revision: revision, paths: Self.files, into: staging
         ) { fraction in
-            guard let progress else { return }
             let percent = Int((fraction * 100).rounded())
             guard reported.advanced(to: percent) else { return }
-            progress("slot model \(percent)%")
+            ModelDownloads.report(download.id, .downloading(percent: percent))
+            progress?("slot model \(percent)%")
         }
 
         let compiled = try await MLModel.compileModel(

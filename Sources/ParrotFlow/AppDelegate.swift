@@ -606,6 +606,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // After the preview flags return. Those launches draw a panel and
         // quit; nothing there transcribes, and fetching 1.47 GB for them
         // is what `warmUpTranscriber` avoided by sitting below this point.
+        // The one button the setup screen offers for a download that did not
+        // arrive. The window reports the fetches; it does not own them.
+        permissions.onRetryDownloads = { [weak self] in self?.retryDownloads() }
         warmModels()
 
 
@@ -2291,6 +2294,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard config.transcription.enabled else { return }
         let transcriber = transcriber
         let config = config
+
+        // The launch set, declared by the code that fetches it. Each model
+        // describes itself next to its own download; nothing here holds a list
+        // of what those models are. A row switched off by a setting says so
+        // rather than sitting on "waiting" for a fetch that never starts.
+        let downloads = ModelDownloads.shared
+        downloads.expect(Transcriber.speechDownload)
+        downloads.expect(
+            Transcriber.voiceDownload,
+            off: config.audio.speechGate ? nil : ModelDownload.gateOff
+        )
+        downloads.expect(
+            SlotModel.download,
+            off: config.readsSlots ? nil : ModelDownload.gateOff
+        )
+        downloads.expect(
+            SentenceReadings.download,
+            off: config.readsBoundaries ? nil : ModelDownload.gateOff
+        )
+        downloads.expect(NeuralPhonemes.soundDownload)
+        downloads.expect(
+            WordVectors.download,
+            off: config.readsSentenceGate ? nil : ModelDownload.gateOff
+        )
+
         Task.detached(priority: .background) {
             // Speech first, on its own. Nothing can be transcribed until it
             // lands, and it is the only one somebody is waiting for. Started
@@ -2333,12 +2361,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             // 81 MB, and the sound pass is on by default.
             Task.detached(priority: .background) {
-                if await !NeuralPhonemes.isReady() {
-                    do { try await NeuralPhonemes.download() } catch {
-                        Log.write("sound model: \(error.localizedDescription); the next"
-                            + " dictation that needs it tries again")
-                        return
-                    }
+                // `download` returns at once when the models are already there,
+                // and reports the row either way.
+                do { try await NeuralPhonemes.download() } catch {
+                    Log.write("sound model: \(error.localizedDescription); the next"
+                        + " dictation that needs it tries again")
+                    return
                 }
                 // What the model said last time, read here rather than by the
                 // first dictation. After the fetch, not before: the table is
@@ -2353,6 +2381,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Task.detached(priority: .background) { await WordVectors.shared.warm() }
             }
         }
+    }
+
+    /// Runs the launch fetches again, for the button a blocking failure puts
+    /// in the foot of the Downloads step.
+    ///
+    /// Safe: `prepare` converges overlapping callers onto one download, and the
+    /// two background fetches clear themselves when they fail. Rows that
+    /// already installed keep saying so.
+    private func retryDownloads() {
+        // A damaged copy is bytes on disk that will not load. Every fetch here
+        // skips the download when the files are already there, so re-running
+        // the warm-up would hand the loader the same bytes. The cache goes
+        // first, and only for the rows that said "damaged".
+        let damaged = ModelDownloads.shared.damaged
+        if #available(macOS 14, *) {
+            if damaged.contains(Transcriber.speechDownload.id) {
+                Transcriber.discardSpeechModel()
+            }
+            if damaged.contains(Transcriber.voiceDownload.id) {
+                Transcriber.discardVoiceDetector()
+            }
+            if damaged.contains(NeuralPhonemes.soundDownload.id) {
+                NeuralPhonemes.discardCache()
+            }
+            if damaged.contains(SlotModel.download.id) { SlotModel.discardCache() }
+            if damaged.contains(SentenceReadings.download.id) { SentenceReadings.discardCache() }
+            if damaged.contains(WordVectors.download.id) { WordVectors.discardCache() }
+        }
+        ModelDownloads.shared.retrying()
+        // `SentenceReadings.warm` holds a failed load for five minutes, and
+        // `warmModels` below goes through it. Without this the row would go
+        // back to waiting with nothing fetching it. Pressing the button is
+        // somebody saying try now.
+        if #available(macOS 14, *), config.readsBoundaries {
+            Task { await SentenceReadings.shared.retryNow() }
+        }
+        warmModels()
     }
 
     /// Keeps the model warm by running one token a minute through it.
@@ -5771,23 +5836,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // After the pill, which writes the label too: this has to hold the
             // token of the last write, or `.ready` never clears the menu bar.
             transcriberLabelToken = labelToken
-            // `what` reads like "speech model 43%" — the number, if this is
-            // the one download that carries one, is the only part worth a
-            // second field for; the rest is already the sentence above.
-            let percent = what.split(separator: " ").last.flatMap { token -> Int? in
-                token.hasSuffix("%") ? Int(token.dropLast()) : nil
-            }
-            // Only for a download that holds dictation up. This row says
-            // whether you can speak yet, and a background fetch does not
-            // change that answer.
-            if blocking { permissions.model.speechModel = .preparing(percent: percent) }
         case .loading:
             setLabel("Loading speech model…")
             if ownsDownloadPill {
                 updateProgress("Loading speech model…", token: dictationProgressToken)
             }
             transcriberLabelToken = labelToken
-            permissions.model.speechModel = .preparing(percent: nil)
         case .failed(let message):
             setLabel("Model error: \(message)")
             transcriberLabelToken = labelToken
@@ -5796,11 +5850,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // run waiting on the model gets it as a thrown error whose catch
             // already hides the pill and puts up the alert. Two endings on
             // screen for one failure is worse than one.
-            // Not surfaced as "preparing" forever: the permissions window
-            // isn't the place a transcription failure gets diagnosed, and a
-            // stuck "downloading" badge there would outlive the one place
-            // that does explain it — this label, and the log.
-            permissions.model.speechModel = .ready
         case .ready, .idle:
             if transcriberLabelToken == labelToken { setLabel(nil) }
             transcriberLabelToken = nil
@@ -5811,7 +5860,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 updateProgress("Transcribing…", token: dictationProgressToken)
             }
             pillDownloadRun = nil
-            permissions.model.speechModel = .ready
         }
     }
 
@@ -6128,7 +6176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(settingsItem)
 
         permissionsItem = NSMenuItem(
-            title: "Permissions…",
+            title: "Setup…",
             action: #selector(openPermissions),
             keyEquivalent: ""
         )
@@ -6413,7 +6461,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: AppVariant.displayName,
             .applicationVersion: AppVariant.version,
-            .credits: AppVariant.repositoryLink,
+            .credits: AppVariant.credits,
         ])
     }
 

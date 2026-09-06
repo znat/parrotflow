@@ -31,6 +31,14 @@ import FluidAudio
 /// whole feature.
 enum NeuralPhonemes {
 
+    /// The row the setup screen draws for it. Named for the model rather than
+    /// for the job: it is CharsiuG2P, run through FluidAudio's Core ML build.
+    static let soundDownload = ModelDownload(
+        id: "sound", name: "CharsiuG2P", megabytes: 81, peak: 81,
+        group: .sound, blocking: false,
+        costOfFailure: "your terms are matched by spelling until it arrives"
+    )
+
     /// The languages the model has, in the app's own terms. Nil for a
     /// language it does not speak — every other one it would guess at.
     static func language(_ code: String) -> MultilingualG2PLanguage? {
@@ -57,14 +65,43 @@ enum NeuralPhonemes {
     /// that is where `MultilingualG2PModel` looks for them and nothing here
     /// should teach it a second path.
     static func download(progress: (@Sendable (String) -> Void)? = nil) async throws {
-        if await isReady() { return }
+        if await isReady() {
+            ModelDownloads.report(soundDownload.id, .installed)
+            return
+        }
         progress?("sound model")
-        let directory = try TtsCacheDirectory.ensure().appendingPathComponent("Models")
-        try await ModelHub.download(
-            .kokoro, to: directory,
-            additionalModelNames: ModelNames.MultilingualG2P.requiredModels
-        )
-        try await MultilingualG2PModel.shared.ensureModelsAvailable()
+        // No percentage: `ModelHub.download` reports none, and a number nobody
+        // measured is worse than a spinner.
+        ModelDownloads.report(soundDownload.id, .downloading(percent: nil))
+        do {
+            let directory = try TtsCacheDirectory.ensure().appendingPathComponent("Models")
+            try await ModelHub.download(
+                .kokoro, to: directory,
+                additionalModelNames: ModelNames.MultilingualG2P.requiredModels
+            )
+            try await MultilingualG2PModel.shared.ensureModelsAvailable()
+            ModelDownloads.report(soundDownload.id, .installed)
+        } catch {
+            ModelDownloads.report(
+                soundDownload.id,
+                .failed(ModelDownloads.failure(error, needs: soundDownload.peakLabel))
+            )
+            throw error
+        }
+    }
+
+    /// Deletes the two G2P bundles, so the next `download` fetches them again.
+    ///
+    /// Only those two. They sit in FluidAudio's Kokoro cache beside the voices
+    /// and the lexicons, which this app never fetched and must not remove.
+    static func discardCache() {
+        guard let root = try? TtsCacheDirectory.ensure()
+            .appendingPathComponent("Models")
+            .appendingPathComponent(Repo.kokoro.folderName)
+        else { return }
+        for name in ModelNames.MultilingualG2P.requiredModels {
+            try? FileManager.default.removeItem(at: root.appendingPathComponent(name))
+        }
     }
 
     // MARK: - what the model has already said

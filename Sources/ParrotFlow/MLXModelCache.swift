@@ -31,6 +31,10 @@ struct MLXModelCache: Sendable {
     let lockURL: URL
     /// What a progress line calls this model — "word vectors 43%".
     let label: String
+    /// The `ModelDownload` row this fetch reports into, so the setup screen
+    /// shows a percentage for a model whose download lives here rather than in
+    /// the model's own file.
+    let downloadID: String
 
     enum Failure: LocalizedError {
         case busy(String)
@@ -96,11 +100,15 @@ struct MLXModelCache: Sendable {
 
         let reported = Reported()
         let label = label
-        try await HubDownload.fetch(repo: repository, revision: revision, paths: files, into: staging) { fraction in
-            guard let progress else { return }
+        let downloadID = downloadID
+        ModelDownloads.report(downloadID, .downloading(percent: nil))
+        try await HubDownload.fetch(
+            repo: repository, revision: revision, paths: files, into: staging
+        ) { fraction in
             let percent = Int((fraction * 100).rounded())
             guard reported.advanced(to: percent) else { return }
-            progress("\(label) \(percent)%")
+            ModelDownloads.report(downloadID, .downloading(percent: percent))
+            progress?("\(label) \(percent)%")
         }
         for name in files {
             let target = directory.appendingPathComponent(name)
