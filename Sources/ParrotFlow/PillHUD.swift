@@ -447,7 +447,16 @@ final class PillHUD {
     }
 
     /// Whether what is on screen is an offer, and whether it is unfolded.
-    var isOpen: Bool { offerIsOpen }
+    ///
+    /// On screen is half the question and it used to be left out. Nothing
+    /// clears `state` on the way out — a panel taken off by `hide` keeps saying
+    /// `.offer(open: true)` for as long as nothing replaces it — so a surface
+    /// that had been gone for minutes still answered yes. Two things read this
+    /// and both are about the panel a person can see: whether the next hold is
+    /// an edit instruction, which the open panel's last row promises, and
+    /// whether a tap has a tab to unfold. Neither is true of a panel that is
+    /// not there.
+    var isOpen: Bool { offerIsOpen && model.onScreen }
     private var offerIsOpen: Bool {
         if case .offer(_, _, _, let open) = model.state { return open }
         return false

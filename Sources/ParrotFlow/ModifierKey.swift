@@ -331,9 +331,20 @@ final class ModifierKeyMonitor {
         // is somebody who meant to tap-and-hold and let go too early, and
         // summoning twice for it would be answering a gesture nobody made.
         let wasTap = !wasPressed && !isSpent && !afterTap
+        // Read before `endHold`, which clears it.
+        let isSpent = self.isSpent
         endHold()
         guard !wasPressed else { onRelease?(); return }
-        guard wasTap else { return }
+        guard wasTap else {
+            // A key that went down and up and was neither a dictation nor a
+            // tap. Both reasons are ordinary — a shortcut, or the second half
+            // of a tap-and-hold — and both look from outside like a press that
+            // did nothing, so the log has to be able to tell them apart.
+            Log.write(
+                "key: neither press nor tap — \(isSpent ? "another key joined it" : "it followed a tap")"
+            )
+            return
+        }
         tappedAt = Self.physicalEdge()
         let timer = Timer(timeInterval: Self.tapGrace, repeats: false) { [weak self] _ in
             guard let self else { return }
@@ -350,6 +361,7 @@ final class ModifierKeyMonitor {
             // rather than of `isDown`, which is the poll's view and is exactly
             // what has not caught up yet.
             guard self.key?.isPressed != true || !self.pressIsTheTapsSecondHalf() else {
+                Log.write("key: the tap is the first half of a tap-and-hold")
                 return
             }
             self.onTap?()
