@@ -1,0 +1,17 @@
+# The name stage writing a refused glued span in lowercase.
+#
+# `Better Stack` glues to `BetterStack`, so the rule writes the term at every
+# place and only the sentence can refuse one. That needs the portrait, so this
+# fixture is not in `make test` — see the by-hand run at the top of
+# scripts/check-lowercase-refused.sh.
+#
+languages: [en]
+vocabulary:
+  terms:
+    BetterStack:
+      kind: organization
+      pronunciations:
+        - heard: Better Stack
+          from: correction
+pipeline:
+  - vocabulary

@@ -143,6 +143,7 @@ name or a mapping, and it cannot be both:
   gate: true          # optional; default. false leaves every place open
   slot_gate: true     # optional; default. false reads no slot model
   portrait: true      # optional; default. false reads no term portrait
+  lowercase_refused: true  # optional; default. false reverts a refused span as heard
   slot_floor: 0.20    # optional; or {en: 0.20, fr: 0.30}
   max_per_slot: 2     # optional; readings per place, the decoder's included
   max_per_term: 2     # optional; places in one sentence about the same name
@@ -240,6 +241,28 @@ switches that decide whether each model is downloaded:
 One line per step and not one for the pipeline, because a pipeline may hold
 more than one `vocabulary` step — one per app is the reason these options are
 on the step — and each names its own.
+
+**`lowercase_refused:` writes a refused glued span in lowercase.** On by
+default. A span that glues to a term — `Better Stack` for `BetterStack` — is
+matched before any word list is read, so the term is written at every place.
+When a sentence test then refuses one, putting back what the decoder wrote puts
+back its capitals: `a much Better Stack than before`. The decoder wrote those
+capitals because it thought it was writing a name, and the portrait has just
+said this is the ordinary phrase. So the span is written `better stack`.
+
+It fires only on a refused place that glues, and only when every word of the
+span passes the same lexicon test `interpret` uses — `NLTagger` must give the
+word a lemma and must not call it a name. `Mont Blanc` for a term `MontBlanc`
+is left as heard, and so is any word in capitals throughout. A capital that
+starts a sentence is kept, and a possessive survives: `Better Stack's` becomes
+`better stack's`.
+
+**A spelling lesson is exempt.** "urza spells mirza" writes back exactly what
+was typed, capitals included, and this rule never touches it.
+
+`lowercase_refused: false` reverts as heard, which is what every other refusal
+in this stage does. `--check-config` names it on the step's line only when it
+is off.
 
 **`slot_floor:` is how far the heard word must win by** before the slot test
 refuses the rewrite. A number applies to every language; a map names them one

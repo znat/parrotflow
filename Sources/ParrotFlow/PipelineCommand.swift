@@ -126,7 +126,9 @@ enum PipelineCommand {
                 stage: stage, transform: entry.transform, prompt: entry.prompt,
                 caps: entry.caps, nearMisses: entry.nearMisses,
                 bySound: entry.bySound, gate: entry.gate, slotGate: entry.slotGate,
-                portrait: entry.portrait, slotFloor: entry.slotFloor,
+                portrait: entry.portrait,
+                lowercaseRefused: entry.lowercaseRefused,
+                slotFloor: entry.slotFloor,
                 marks: entry.marks,
                 capitals: entry.capitals, pause: entry.pause, when: entry.when,
                 unless: entry.unless, app: entry.app

@@ -1886,6 +1886,7 @@ struct Config: Decodable, Equatable {
         ///       by_sound: false
         ///       slot_gate: false
         ///       portrait: false
+        ///       lowercase_refused: false
         ///       slot_floor: {en: 0.20, fr: 0.30}
         ///       review: gpt
         ///       max_slots: 4
@@ -1907,6 +1908,7 @@ struct Config: Decodable, Equatable {
             var gate: Bool?
             var slotGate: Bool?
             var portrait: Bool?
+            var lowercaseRefused: Bool?
             var slotFloor: Pipeline.Step.SlotFloor?
             /// What `review:` said, for `Transcription.retiredReview`. Read so
             /// it can be reported, never used.
@@ -1936,6 +1938,7 @@ struct Config: Decodable, Equatable {
                 case marks, capitals, pause
                 case slotGate = "slot_gate"
                 case portrait
+                case lowercaseRefused = "lowercase_refused"
                 case slotFloor = "slot_floor"
             }
 
@@ -1986,6 +1989,9 @@ struct Config: Decodable, Equatable {
                     gate = try c.decodeIfPresent(Bool.self, forKey: .gate)
                     slotGate = try c.decodeIfPresent(Bool.self, forKey: .slotGate)
                     portrait = try c.decodeIfPresent(Bool.self, forKey: .portrait)
+                    lowercaseRefused = try c.decodeIfPresent(
+                        Bool.self, forKey: .lowercaseRefused
+                    )
                     slotFloor = try Self.slotFloor(from: c)
                     // Two spellings, `review: false` and `review: <model>`,
                     // and neither reaches anything now. Read in both shapes so
@@ -2023,7 +2029,8 @@ struct Config: Decodable, Equatable {
             /// `stage:`, `when:`, `unless:` and `app:` are read on every line.
             private static let stageKeys: [(String, [CodingKeys])] = [
                 ("vocabulary", [
-                    .nearMisses, .bySound, .gate, .slotGate, .portrait, .slotFloor,
+                    .nearMisses, .bySound, .gate, .slotGate, .portrait,
+                    .lowercaseRefused, .slotFloor,
                     .review, .maxSlots, .maxReadings, .maxPerSlot, .maxPerTerm,
                 ]),
                 ("interpret", [.marks, .capitals, .pause]),
@@ -2214,7 +2221,9 @@ struct Config: Decodable, Equatable {
                             prompt: entry.prompt, caps: entry.caps,
                             nearMisses: entry.nearMisses, bySound: entry.bySound,
                             gate: entry.gate, slotGate: entry.slotGate,
-                            portrait: entry.portrait, slotFloor: entry.slotFloor,
+                            portrait: entry.portrait,
+                            lowercaseRefused: entry.lowercaseRefused,
+                            slotFloor: entry.slotFloor,
                             marks: entry.marks,
                             capitals: entry.capitals, pause: entry.pause,
                             when: entry.when, unless: entry.unless, app: entry.app
