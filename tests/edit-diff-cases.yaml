@@ -217,6 +217,49 @@ cases:
     now:     "a word in the dictation.[Image #17]"
     expect:  none
 
+  # Typing that runs straight on from a stop, with no space to mark it. From
+  # the log, 2026-09-05: one keystroke landed after the dictation and the whole
+  # word was offered as a rule.
+  - written: "❯ I mean the term that is Potentially to be removed."
+    now:     "❯ I mean the term that is Potentially to be removed.x"
+    expect:  none
+
+  # The typed text ends on a stop too, so both readings do and the mark comes
+  # off both before the test. It is then at the head of what was added.
+  - written: "to be removed."
+    now:     "to be removed.Hello."
+    expect:  none
+
+  # The mark changed in the same edit that added the text. From the log,
+  # 2026-09-06: the stop became a colon and a URL was pasted after it. The two
+  # runs no longer end on the same mark, so each end is stripped on its own.
+  - written: "❯ take a look at the rebase."
+    now:     "❯ take a look at the rebase: https://claude.ai/code/session_01WdUvRN"
+    expect:  none
+
+  # The mark alone, with nothing added, is still a change and still refused.
+  - written: "take a look at the rebase."
+    now:     "take a look at the rebase:"
+    expect:  "rebase. -> rebase:"
+    offer:   "no, punctuation, not a name"
+
+  # A word typed after a name that ends on a stop.
+  - written: "we deploy on Vercel."
+    now:     "we deploy on Vercel Cloud."
+    expect:  none
+
+  # The same at the other end: a sentence typed in front of the word.
+  - written: "we run Ghostty"
+    now:     "we run Fine.Ghostty"
+    expect:  none
+
+  # Punctuation added after a stop is still a change, and still refused for
+  # being punctuation. The letters are what make an addition an addition.
+  - written: "keep it small."
+    now:     "keep it small.)"
+    expect:  "small. -> small.)"
+    offer:   "no, punctuation, not a name"
+
   # But a word that grows is still a correction, and so is one that splits.
   - written: "it is Ghost here"
     now:     "it is Ghostty here"
