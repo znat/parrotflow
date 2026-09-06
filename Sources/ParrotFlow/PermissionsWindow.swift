@@ -537,7 +537,7 @@ enum PermissionMetrics {
     /// what is installed, what failed and whether eSpeak NG is here, so it is
     /// measured rather than declared — see `resizeToContent`. This is the size
     /// the sheet draws it at when it has no window to ask.
-    static let setupHeight: CGFloat = 740
+    static let setupHeight: CGFloat = 770
 
     static func height(for step: SetupStep) -> CGFloat? {
         switch step {
@@ -951,7 +951,7 @@ private struct SetupPane: View {
     /// waiting, and it is fixed somewhere else.
     ///
     /// An empty registry means `transcription.enabled` is false. `warmModels`
-    /// declares all five rows before this window opens and returns before
+    /// declares all six rows before this window opens and returns before
     /// declaring any only on that one setting, so there is nothing else it can
     /// mean.
     private var moment: Moment {
