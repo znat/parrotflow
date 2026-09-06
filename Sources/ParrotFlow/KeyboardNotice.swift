@@ -66,14 +66,24 @@ final class KeyboardNotice {
     private var panel: NSPanel?
     private let model = KeyboardNoticeModel()
 
-    /// The holder already spoken about.
+    /// An episode of the keyboard being somebody else's.
+    ///
+    /// Not a bare `pid_t?`: a screen lock holds the keyboard and names nobody,
+    /// so nil would mean "said, about nobody" and "nothing said yet" at once —
+    /// and the two comparing equal ate the one notice that episode gets.
+    private enum Episode: Equatable {
+        case app(pid_t)
+        case unnamed
+    }
+
+    /// The episode already spoken about.
     ///
     /// Cleared the moment secure input goes off, so a second episode is said
     /// again. Not kept across launches, unlike `MicNotice.lastDevice`: that one
     /// remembers a decision you made about your own hardware, and this is a
     /// state some other app is in right now. Remembering it would mean staying
     /// quiet the next time the keyboard died.
-    private var told: pid_t?
+    private var told: Episode?
 
     var isShowing: Bool { panel?.isVisible == true }
 
@@ -87,8 +97,9 @@ final class KeyboardNotice {
             told = nil
             return
         }
-        guard told != holder.pid else { return }
-        told = holder.pid
+        let episode = holder.pid.map(Episode.app) ?? .unnamed
+        guard told != episode else { return }
+        told = episode
         Log.write("keyboard: \(holder.described) has secure input on; said so once")
         show(app: holder.described)
     }
