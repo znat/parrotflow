@@ -556,29 +556,29 @@ enum AudioRecoveryCommand {
     }
 
     /// Turns the run loop until the condition holds or the time is up.
-    /// Let the wall clock past `min_duration_seconds`, which is what `stop`
-    /// measures a clip by.
-    ///
-    /// The buffers below are pushed through in microseconds, so a clip made of
-    /// twenty of them is three seconds of audio and no time at all. `stop`
-    /// reads the clock, calls that shorter than the floor, and returns nil —
-    /// which every check here then reports as "nothing was written". It is the
-    /// harness that has to wait, not the recorder that has to count frames: the
-    /// floor exists to throw away a key pressed and released, and that is a
-    /// question about time.
-    private static func pause(_ seconds: TimeInterval) {
-        settle(untilTrue: { false }, seconds: seconds)
-    }
-
-    /// Comfortably over the 0.3s floor.
-    private static let overTheFloor: TimeInterval = 0.4
-
     private static func settle(untilTrue condition: () -> Bool, seconds: TimeInterval) {
         let deadline = Date().addingTimeInterval(seconds)
         while !condition(), Date() < deadline {
             RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.02))
         }
     }
+
+    /// Let the wall clock past `min_duration_seconds`, which is what `stop`
+    /// measures a clip by.
+    ///
+    /// The buffers in the checks above are pushed through in microseconds, so a
+    /// clip made of twenty of them is three seconds of audio and no time at
+    /// all. `stop` reads the clock, calls that shorter than the floor, and
+    /// returns nil — which every check here then reports as "nothing was
+    /// written". It is the harness that has to wait, not the recorder that has
+    /// to count frames: the floor exists to throw away a key pressed and
+    /// released, and that is a question about time.
+    private static func pause(_ seconds: TimeInterval) {
+        settle(untilTrue: { false }, seconds: seconds)
+    }
+
+    /// Comfortably over the 0.3s floor.
+    private static let overTheFloor: TimeInterval = 0.4
 
     // MARK: - Cases
 

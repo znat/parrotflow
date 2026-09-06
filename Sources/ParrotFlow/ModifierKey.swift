@@ -439,16 +439,6 @@ final class ModifierKeyMonitor {
     /// late in exactly this way.
     ///
     /// It costs no permission: the age of an event is not the event.
-    /// What to call an event in a log line.
-    private static func name(of event: NSEvent) -> String {
-        switch event.type {
-        case .keyDown: return "a key"
-        case .scrollWheel: return "a scroll"
-        case .rightMouseDown: return "a right click"
-        default: return "a click"
-        }
-    }
-
     private static func physicalEdge() -> Date {
         let age = CGEventSource.secondsSinceLastEventType(
             .combinedSessionState, eventType: .flagsChanged
@@ -457,6 +447,16 @@ final class ModifierKeyMonitor {
         // poll's own clock is then the best available.
         guard age.isFinite, age >= 0, age < 1 else { return Date() }
         return Date().addingTimeInterval(-age)
+    }
+
+    /// What to call an event in a log line.
+    private static func name(of event: NSEvent) -> String {
+        switch event.type {
+        case .keyDown: return "a key"
+        case .scrollWheel: return "a scroll"
+        case .rightMouseDown: return "a right click"
+        default: return "a click"
+        }
     }
 
     /// Whether a key or a click landed between the modifier going down and the
