@@ -432,11 +432,8 @@ final class PillHUD {
     /// started again here unless the pointer is on it, which is the one thing
     /// that means you are still deciding.
     func open(_ wanted: Bool, byPointer: Bool = false) {
-        guard case .offer(let commands, let headline, let reading, let was) = model.state
-        else { return }
-        // Off the screen counts as closed — see `isOpen` — so opening it again
-        // has to actually raise it, even though the state already says open.
-        guard was != wanted || (wanted && !model.onScreen) else { return }
+        guard case .offer(let commands, let headline, let reading, let was) = model.state,
+              was != wanted else { return }
         if wanted { openedByPointer = byPointer } else { openedByPointer = false }
         Log.write("pill: the offer \(wanted ? "opened" : "folded")\(byPointer ? ", by the pointer" : "")")
         set(.offer(commands, headline, reading, open: wanted))
@@ -450,16 +447,7 @@ final class PillHUD {
     }
 
     /// Whether what is on screen is an offer, and whether it is unfolded.
-    ///
-    /// On screen is half the question and it used to be left out. Nothing
-    /// clears `state` on the way out — a panel taken off by `hide` keeps saying
-    /// `.offer(open: true)` for as long as nothing replaces it — so a surface
-    /// that had been gone for minutes still answered yes. Two things read this
-    /// and both are about the panel a person can see: whether the next hold is
-    /// an edit instruction, which the open panel's last row promises, and
-    /// whether a tap has a tab to unfold. Neither is true of a panel that is
-    /// not there.
-    var isOpen: Bool { offerIsOpen && model.onScreen }
+    var isOpen: Bool { offerIsOpen }
     private var offerIsOpen: Bool {
         if case .offer(_, _, _, let open) = model.state { return open }
         return false
