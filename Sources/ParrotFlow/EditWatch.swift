@@ -402,17 +402,21 @@ final class EditWatch {
     /// The price is that `Node.` typed out to `Node.js` reads the same way and
     /// is dropped too. Nothing in the two strings tells them apart.
     ///
-    /// Takes the two runs as they stood, not what `trimmed` returns. Only the
-    /// punctuation both end on comes off here. `prone.maybe` became
-    /// `prone point.maybe`, and the word went *inside* the run: cutting the
-    /// shared `.maybe` first would leave `prone -> prone point`, which reads
-    /// like a word appended and is a correction the panel has to keep.
+    /// Each end is stripped on its own, not down to what the two share. The
+    /// mark can be changed by the same edit that adds the text: `rebase.`
+    /// became `rebase: https://claude.ai/…`, 2026-09-06. Sharing kept the `.`
+    /// and the `:`, so the word was not a prefix of the longer run and the
+    /// space beside it was never looked at.
+    ///
+    /// Trailing only, and the runs as they stood rather than what `trimmed`
+    /// returns. `prone.maybe` became `prone point.maybe`, and the word went
+    /// *inside* the run: cutting the shared `.maybe` first would leave
+    /// `prone -> prone point`, which reads like a word appended and is a
+    /// correction the panel has to keep.
     static func added(was: String, now: String) -> Bool {
         var a = Substring(was), b = Substring(now)
-        while let last = a.last, last == b.last, !(last.isLetter || last.isNumber) {
-            a = a.dropLast()
-            b = b.dropLast()
-        }
+        while let last = a.last, !(last.isLetter || last.isNumber) { a = a.dropLast() }
+        while let last = b.last, !(last.isLetter || last.isNumber) { b = b.dropLast() }
         let (short, long) = a.count < b.count ? (a, b) : (b, a)
         guard short != long else { return false }
         guard long.hasPrefix(short) || long.hasSuffix(short) else { return false }

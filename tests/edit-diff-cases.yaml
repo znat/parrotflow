@@ -230,6 +230,24 @@ cases:
     now:     "to be removed.Hello."
     expect:  none
 
+  # The mark changed in the same edit that added the text. From the log,
+  # 2026-09-06: the stop became a colon and a URL was pasted after it. The two
+  # runs no longer end on the same mark, so each end is stripped on its own.
+  - written: "❯ take a look at the rebase."
+    now:     "❯ take a look at the rebase: https://claude.ai/code/session_01WdUvRN"
+    expect:  none
+
+  # The mark alone, with nothing added, is still a change and still refused.
+  - written: "take a look at the rebase."
+    now:     "take a look at the rebase:"
+    expect:  "rebase. -> rebase:"
+    offer:   "no, punctuation, not a name"
+
+  # A word typed after a name that ends on a stop.
+  - written: "we deploy on Vercel."
+    now:     "we deploy on Vercel Cloud."
+    expect:  none
+
   # The same at the other end: a sentence typed in front of the word.
   - written: "we run Ghostty"
     now:     "we run Fine.Ghostty"
