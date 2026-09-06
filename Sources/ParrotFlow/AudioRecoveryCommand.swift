@@ -59,6 +59,8 @@ enum AudioRecoveryCommand {
         print("The engine and its own input")
         var graph = 0
         graph += checkAGraphThatDisagreesWithItselfIsRebuilt() ? 0 : 1
+        graph += checkAMismatchThatSurvivesItsRebuildIsLeftAlone() ? 0 : 1
+        graph += checkTheTapIsInstalledAtTheHardwareFormat() ? 0 : 1
         graph += checkAnExceptionComesBackAsAValue() ? 0 : 1
         graph += checkAReplacedEngineIsNotReleasedOnTheSpot() ? 0 : 1
         failures += graph
@@ -75,7 +77,7 @@ enum AudioRecoveryCommand {
         capture += checkOneLostBufferIsForgiven(config: config) ? 0 : 1
         failures += capture
 
-        let total = cases.count + 7
+        let total = cases.count + 9
         print("")
         print("  \(total - failures)/\(total)")
         return failures == 0 ? 0 : 1
@@ -149,6 +151,76 @@ enum AudioRecoveryCommand {
             return say(false, name, "the device had not moved, so the change was dropped")
         }
         return say(true, name, "rebuilt")
+    }
+
+    /// The same mismatch, over and over, buys one engine and not a hundred.
+    ///
+    /// A rebuild retires the engine it replaced; releasing that one ten seconds
+    /// later posts a configuration change of its own. If the mismatch is still
+    /// there — a machine whose two reads simply never agree — the change finds
+    /// it and rebuilds again, forever. Measured on 2026-09-06: 40 rebuilds in
+    /// fifteen minutes on an idle app, each one opening the microphone.
+    private static func checkAMismatchThatSurvivesItsRebuildIsLeftAlone() -> Bool {
+        let name = "a mismatch that outlives its rebuild is kept"
+        let binding = Recorder.InputBinding(device: 2, sampleRate: 24000, channels: 1)
+        guard let tap = format(24000), let hardware = format(16000) else {
+            return say(false, name, "could not build the formats")
+        }
+
+        let recorder = Recorder()
+        recorder.currentInput = { binding }
+        recorder.warmUp()
+
+        // Every engine this recorder builds comes out mismatched, which is the
+        // machine being reproduced: no rebuild can clear it.
+        recorder.engineFormats = { _ in
+            Recorder.EngineFormats(tap: tap, hardware: hardware)
+        }
+        recorder.simulateConfigurationChange()
+        settle(untilTrue: { recorder.rebuilds > 0 }, seconds: 2)
+        guard recorder.rebuilds == 1 else {
+            return say(false, name, "the first change bought \(recorder.rebuilds) engine(s)")
+        }
+
+        for _ in 0..<3 { recorder.simulateConfigurationChange() }
+        settle(untilTrue: { recorder.rebuilds > 1 }, seconds: 1)
+        guard recorder.rebuilds == 1 else {
+            return say(false, name, "\(recorder.rebuilds) engines for one mismatch")
+        }
+        return say(true, name, "one engine, then left alone")
+    }
+
+    /// The tap goes on at the format `installTap` asserts against.
+    ///
+    /// Its own words: "required condition is false: format.sampleRate ==
+    /// inputHWFormat.sampleRate". So when the node describes its input two
+    /// ways, the hardware one is the only one that can be handed over — and
+    /// handing it the other is what refused the press and asked for another.
+    private static func checkTheTapIsInstalledAtTheHardwareFormat() -> Bool {
+        let name = "the tap is installed at the hardware format"
+        guard let tap = format(24000), let hardware = format(48000) else {
+            return say(false, name, "could not build the formats")
+        }
+        // What an input node answers when it is pointing at nothing: a format
+        // object with no rate in it. `AVAudioFormat` will not build one from a
+        // rate of zero, so it is made the way the node makes one.
+        let empty = AVAudioFormat()
+        let picked = Recorder.captureFormat(
+            Recorder.EngineFormats(tap: tap, hardware: hardware)
+        )
+        guard picked.sampleRate == hardware.sampleRate else {
+            return say(false, name, "picked \(Int(picked.sampleRate)) Hz, not the hardware's 48000")
+        }
+        // A node pointing at nothing is the one case the other half stands in
+        // for: an empty hardware read is not a second description, it is no
+        // description at all.
+        let fallback = Recorder.captureFormat(
+            Recorder.EngineFormats(tap: tap, hardware: empty)
+        )
+        guard fallback.sampleRate == tap.sampleRate else {
+            return say(false, name, "an empty hardware read was taken as a format")
+        }
+        return say(true, name, "48000 Hz, and the tap format when there is none")
     }
 
     /// An NSException raised inside a Swift frame comes back as a value.
@@ -294,6 +366,7 @@ enum AudioRecoveryCommand {
             return false
         }
         for _ in 0..<20 { recorder.process(buffer: tone(format, frames: 4096)) }
+        pause(overTheFloor)
 
         guard let recording = recorder.stop(config: config) else {
             print("  ✗ a tone at the new rate is written  — nothing was written")
@@ -348,6 +421,7 @@ enum AudioRecoveryCommand {
             return false
         }
         for _ in 0..<20 { recorder.process(buffer: tone(live, frames: 4096)) }
+        pause(overTheFloor)
 
         let recording = recorder.stop(config: config)
         settle(untilTrue: { reported != nil }, seconds: 2)
@@ -450,6 +524,7 @@ enum AudioRecoveryCommand {
         }
         for _ in 0..<20 { recorder.process(buffer: tone(live, frames: 4096)) }
         for _ in 0..<buffers { recorder.process(buffer: tone(other, frames: 4096)) }
+        pause(overTheFloor)
 
         let recording = recorder.stop(config: config)
         settle(untilTrue: { reported != nil }, seconds: 1)
@@ -481,6 +556,23 @@ enum AudioRecoveryCommand {
     }
 
     /// Turns the run loop until the condition holds or the time is up.
+    /// Let the wall clock past `min_duration_seconds`, which is what `stop`
+    /// measures a clip by.
+    ///
+    /// The buffers below are pushed through in microseconds, so a clip made of
+    /// twenty of them is three seconds of audio and no time at all. `stop`
+    /// reads the clock, calls that shorter than the floor, and returns nil —
+    /// which every check here then reports as "nothing was written". It is the
+    /// harness that has to wait, not the recorder that has to count frames: the
+    /// floor exists to throw away a key pressed and released, and that is a
+    /// question about time.
+    private static func pause(_ seconds: TimeInterval) {
+        settle(untilTrue: { false }, seconds: seconds)
+    }
+
+    /// Comfortably over the 0.3s floor.
+    private static let overTheFloor: TimeInterval = 0.4
+
     private static func settle(untilTrue condition: () -> Bool, seconds: TimeInterval) {
         let deadline = Date().addingTimeInterval(seconds)
         while !condition(), Date() < deadline {

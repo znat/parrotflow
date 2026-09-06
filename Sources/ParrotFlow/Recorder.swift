@@ -284,6 +284,11 @@ final class Recorder {
     /// True while an engine is being built on `engineQueue`. Guarded by
     /// `stateLock`.
     private var rebuilding = false
+    /// A graph mismatch the last rebuild did not clear, in the words
+    /// `graphProblem` writes it. Nil when the engine agrees with itself.
+    /// Written by `adopt`, read by `reacquireIfInputMoved`, guarded by
+    /// `stateLock`.
+    private var unfixableGraph: String?
     /// Kept so `deinit` can take it off again — `AudioObjectRemovePropertyListenerBlock`
     /// matches on the block, not on a token.
     private var deviceListListener: AudioObjectPropertyListenerBlock?
@@ -394,6 +399,28 @@ final class Recorder {
         reacquireIfInputMoved()
         try waitForRebuild()
 
+        do {
+            return try openTheMicrophone(config: config)
+        } catch RecorderError.inputMovedWhileStarting {
+            // One more attempt, on the engine that failure has just asked for.
+            // The hardware format can move inside the milliseconds between
+            // being read and being installed against, and the answer to that
+            // is the rebuild that has already started — not a message asking
+            // for the press again, which is this same retry with a step in it
+            // for the person who is already talking.
+            Log.write("the tap did not install; trying once more on a fresh engine")
+            try waitForRebuild()
+            return try openTheMicrophone(config: config)
+        }
+    }
+
+    /// One attempt at opening the microphone: agree on a format, make the file,
+    /// install the tap, run the engine.
+    ///
+    /// Split out of `start` so the whole of it can be tried twice. Everything
+    /// that throws `inputMovedWhileStarting` has already asked for a fresh
+    /// engine on its way out, so the second attempt is made against that one.
+    private func openTheMicrophone(config: Config) throws -> URL {
         var engine = currentEngine()
         var formats = engineFormats(engine)
 
@@ -411,48 +438,34 @@ final class Recorder {
             engine = currentEngine()
             formats = engineFormats(engine)
 
-            let remaining = Self.formatProblem(formats, against: desiredInput().binding)
-            if let remaining, Self.graphProblem(formats) == nil {
-                // Fail open. The engine agrees with itself and disagrees with
-                // the device: the tap will install, and whether it hears
-                // anything is what the counters in `process` are for. A
-                // recording that may be wrong beats refusing to record — but
-                // said out loud, because the whole point of #95 is that this
-                // used to be the silent path.
+            if let remaining = Self.formatProblem(formats, against: desiredInput().binding) {
+                // Fail open, for both shapes of it now. A format that
+                // disagrees with the device installs and may hear nothing,
+                // which is what the counters in `process` are for. A node that
+                // describes itself two ways installs too, at the format
+                // `captureFormat` picks. A recording that may be wrong beats
+                // refusing to record — but said out loud, because the whole
+                // point of #95 is that this used to be the silent path.
                 //
-                // Remembered, because a device whose engine and stream never
-                // agree would otherwise buy a rebuild on every single press,
-                // which is a second bug wearing the first one's clothes.
+                // Remembered, because a machine whose two reads never agree
+                // would otherwise buy a rebuild on every single press, which is
+                // a second bug wearing the first one's clothes. That is exactly
+                // what a mismatch that outlives its rebuild used to do: refuse
+                // the press, ask for another one, and refuse that too.
                 acceptedFormatMismatch = remaining
                 Log.write("after the rebuild, \(remaining) — recording anyway")
                 report("The microphone is not answering as expected.")
             } else {
-                // Either it cleared, or the engine still disagrees with itself.
-                // That second one is never remembered: it is not a device to be
-                // lived with, it is a graph a rebuild has always fixed, and the
-                // press after this one has to be allowed to try again.
                 acceptedFormatMismatch = nil
             }
         }
-        guard formats.tap.sampleRate > 0, formats.tap.channelCount > 0 else {
+        let capture = Self.captureFormat(formats)
+        guard capture.sampleRate > 0, capture.channelCount > 0 else {
             throw RecorderError.noInputDevice
         }
         let inputNode = engine.inputNode
 
-        let url = try openCapture(inputFormat: formats.tap, config: config)
-
-        // The last look, at the one number `installTap` is about to assert on.
-        // The hardware format can move between the check above and this line —
-        // that is a few milliseconds, and settling a Bluetooth link lands
-        // inside them. Re-read rather than trusted, because being wrong here
-        // does not return an error.
-        if let problem = Self.graphProblem(engineFormats(engine)) {
-            Log.write("\(problem) — not installing the tap")
-            teardown()
-            try? FileManager.default.removeItem(at: url)
-            rebuildEngine(because: problem)
-            throw RecorderError.inputMovedWhileStarting
-        }
+        let url = try openCapture(inputFormat: capture, config: config)
 
         // Wrapped, because `installTap` reports this by raising an
         // NSException, which unwinds through the hotkey handler and out of the
@@ -461,7 +474,7 @@ final class Recorder {
         // changed" look like "the app died". The engine is thrown away rather
         // than reused — whatever raised it is in whatever state it was in.
         if let raised = runCatchingObjCExceptions({
-            inputNode.installTap(onBus: 0, bufferSize: 4096, format: formats.tap) { [weak self] buffer, _ in
+            inputNode.installTap(onBus: 0, bufferSize: 4096, format: capture) { [weak self] buffer, _ in
                 self?.process(buffer: buffer)
             }
         }) {
@@ -997,6 +1010,17 @@ final class Recorder {
         // costs nothing: an engine that agrees with itself has no problem to
         // find here.
         guard let problem = Self.graphProblem(engineFormats(engine)) else { return }
+
+        // Not the same mismatch a rebuild has already failed to clear. This is
+        // what ran the app in a circle: a rebuild retires an engine, releasing
+        // that engine ten seconds later posts a configuration change, the
+        // change finds the same mismatch, and it rebuilds again. 40 rebuilds
+        // between 19:02 and 19:17 on 2026-09-06, on a machine sitting idle with
+        // AirPods on it, each one opening the microphone to build a node.
+        stateLock.lock()
+        let known = unfixableGraph
+        stateLock.unlock()
+        guard problem != known else { return }
         rebuildEngine(because: problem)
     }
 
@@ -1004,12 +1028,39 @@ final class Recorder {
         binding?.described ?? "no input device"
     }
 
-    /// Why this engine cannot have a tap installed on it, or nil if it can.
+    /// The format a tap on this engine has to be installed with.
     ///
-    /// Asked of the engine alone, so it holds wherever the device is: a graph
-    /// whose two halves disagree is unusable against every device, including
-    /// the one it is pointing at. `installTap` makes the same comparison and
-    /// answers it by raising an exception, so this has to be asked first.
+    /// The hardware one — `inputNode.inputFormat(forBus:)` — because that is
+    /// the number `installTap` compares against, in so many words: "required
+    /// condition is false: format.sampleRate == inputHWFormat.sampleRate". So
+    /// handing it that format cannot raise, whatever the other half says.
+    ///
+    /// The two are the same number whenever the node agrees with itself, which
+    /// is every settled device, so this changes nothing on the ordinary path.
+    /// It is the disagreement that used to end the press: the tap format was
+    /// handed over, `installTap` asserted on the hardware one, and the answer
+    /// was a message asking for the press again.
+    ///
+    /// The tap format stands in whenever the two agree on the rate, so nothing
+    /// moves on a healthy machine — and when the hardware read is empty, which
+    /// is a node pointing at nothing rather than a node describing itself
+    /// twice. The guard in `openTheMicrophone` is what refuses that.
+    ///
+    /// Not private: `--audio-recovery` installs against it.
+    static func captureFormat(_ formats: EngineFormats) -> AVAudioFormat {
+        guard formats.hardware.sampleRate > 0, formats.hardware.channelCount > 0,
+              formats.hardware.sampleRate != formats.tap.sampleRate else {
+            return formats.tap
+        }
+        return formats.hardware
+    }
+
+    /// Why this engine describes its own input two ways, or nil if it does not.
+    ///
+    /// Asked of the engine alone, so it holds wherever the device is. A rebuild
+    /// is what has always cleared it, and it is worth one — but only one. It is
+    /// no longer a reason to refuse a press: `captureFormat` picks the half
+    /// `installTap` asserts on, so the tap installs either way.
     ///
     /// This is #123. The engine was at 24000 Hz, the device was at 24000 Hz,
     /// every check agreed — and the node's own hardware format had moved when
@@ -1130,6 +1181,12 @@ final class Recorder {
         engine = fresh
         bound = binding
         rebuildCount += 1
+        // Whether the rebuild cleared the graph, recorded on the way past. A
+        // mismatch that survives its own replacement is a machine to be lived
+        // with rather than news, and `reacquireIfInputMoved` stops buying
+        // engines for it. Set on every rebuild, so a device that moves and then
+        // settles gets its chance again.
+        unfixableGraph = Self.graphProblem(engineFormats(fresh))
         stateLock.unlock()
 
         NotificationCenter.default.removeObserver(
