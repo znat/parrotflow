@@ -36,7 +36,7 @@ actor SlotModel {
     /// disk: the downloaded package and the compile of it both exist until the
     /// compile finishes.
     static let download = ModelDownload(
-        id: "slot", name: "mmBERT-small", megabytes: 286, peak: 580,
+        id: "slot", name: "mmBERT-small", megabytes: 282, peak: 580,
         group: .language, blocking: false,
         costOfFailure: "the vocabulary gate asks the judge instead"
     )

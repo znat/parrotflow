@@ -175,9 +175,10 @@ enum AppVariant {
                 + " the upstream weights state no licence",
             size: 10, dim: true
         )
-        item("ModernBERT", "sentence boundaries · Apache 2.0")
+        item("mmBERT-small", "reads the slot a word sits in · MIT")
+        item("Qwen3 0.6B Base", "scores sentence boundaries · Apache 2.0")
         item("Qwen3 Embedding 0.6B", "word vectors for the vocabulary gate · Apache 2.0")
-        item("MLX", "runs Qwen3 Embedding · MIT")
+        item("MLX", "runs both Qwen models · MIT")
         item("FluidAudio", "fetching and Core ML plumbing · Apache 2.0")
 
         credits.append(NSAttributedString(string: "\n"))

@@ -135,7 +135,7 @@ Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
 **The last screen.** After the two permissions the setup window shows one
-screen: both permissions, the five models it is fetching (about 1.2 GB, started
+screen: both permissions, the six models it is fetching (about 1.5 GB, started
 at launch), and eSpeak NG. Nothing there has to be waited for — *Done* closes
 the window and the downloads carry on. The title says the state, and only the
 permissions and the speech model change it: "Almost ready" until Parakeet is
