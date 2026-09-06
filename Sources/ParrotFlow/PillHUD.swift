@@ -432,8 +432,11 @@ final class PillHUD {
     /// started again here unless the pointer is on it, which is the one thing
     /// that means you are still deciding.
     func open(_ wanted: Bool, byPointer: Bool = false) {
-        guard case .offer(let commands, let headline, let reading, let was) = model.state,
-              was != wanted else { return }
+        guard case .offer(let commands, let headline, let reading, let was) = model.state
+        else { return }
+        // Off the screen counts as closed — see `isOpen` — so opening it again
+        // has to actually raise it, even though the state already says open.
+        guard was != wanted || (wanted && !model.onScreen) else { return }
         if wanted { openedByPointer = byPointer } else { openedByPointer = false }
         Log.write("pill: the offer \(wanted ? "opened" : "folded")\(byPointer ? ", by the pointer" : "")")
         set(.offer(commands, headline, reading, open: wanted))
