@@ -99,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let previewPanel = PreviewPanel()
     /// Says once per microphone that this one will cost you words.
     private let micNotice = MicNotice()
+    private let keyboardNotice = KeyboardNotice()
     /// The release notes, and the three answers to them.
     private let updatePanel = UpdatePanel()
     private var pendingSelection: SelectionReader.Selection?
@@ -3350,6 +3351,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the decoder is done, and by then the default input can be another
         // device — see `micAtPress`.
         micNotice.showIfNeeded(press.mic)
+        // And the other thing that can be wrong with a dictation nobody has
+        // been told about: another app holding Secure Event Input, which takes
+        // Escape and the offer's letters away. Here for the same reason as the
+        // microphone — this is the moment before those keys matter, and being
+        // told at the moment you press one is being told too late, with the
+        // letter already in your document.
+        //
+        // Never both at once. They are the same panel in the same corner, and
+        // the second one would sit on the first.
+        if !micNotice.isShowing { keyboardNotice.showIfNeeded() }
 
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),

@@ -20,6 +20,10 @@ final class MicNotice {
     private var panel: NSPanel?
     private let model = MicNoticeModel()
 
+    /// Whether it is on screen. Read by whatever would raise a second notice
+    /// into the same corner.
+    var isShowing: Bool { panel?.isVisible == true }
+
     /// The device the last dictation was recorded on, by UID, whether or not
     /// anything was said about it.
     ///

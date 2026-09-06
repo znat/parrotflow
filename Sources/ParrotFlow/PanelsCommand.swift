@@ -33,6 +33,9 @@ enum PanelsCommand {
     /// A Bluetooth headset with a long name, because the notice puts the name
     /// in its first sentence and a short one would not say whether it fits.
     private static let sampleMicName = "Tasmin's AirPods Pro Max"
+    /// A real app that really does this, and a long enough name to show what a
+    /// long one costs the box.
+    private static let sampleKeyboardApp = "Notion Helper (Renderer)"
 
     /// A release body longer than the panel is tall — a heading, two sections,
     /// and two links on every line. Longer on purpose: the pane only scrolls
@@ -258,6 +261,15 @@ enum PanelsCommand {
         micNoticeOpen.mic = sampleMicName
         micNoticeOpen.expanded = true
 
+        // Both states again, and the same argument: the collapsed one is what
+        // you read, the open one is the three questions under it. The app name
+        // is somebody else's and can be any length.
+        let keyboardNotice = KeyboardNoticeModel()
+        keyboardNotice.app = sampleKeyboardApp
+        let keyboardNoticeOpen = KeyboardNoticeModel()
+        keyboardNoticeOpen.app = sampleKeyboardApp
+        keyboardNoticeOpen.expanded = true
+
         let preview = PreviewModel()
         preview.load(
             prompt: "Grammar",
@@ -392,6 +404,14 @@ enum PanelsCommand {
             (AnyView(MicNoticeView().environmentObject(micNoticeOpen)),
              NSSize(width: MicNoticeMetrics.width,
                     height: MicNoticeMetrics.height(expanded: true)), .dark, true),
+            // Beside it, because it is the same object about the other half of
+            // a dictation: the keyboard rather than the microphone.
+            (AnyView(KeyboardNoticeView().environmentObject(keyboardNotice)),
+             NSSize(width: KeyboardNoticeMetrics.width,
+                    height: KeyboardNoticeMetrics.height(expanded: false)), .dark, true),
+            (AnyView(KeyboardNoticeView().environmentObject(keyboardNoticeOpen)),
+             NSSize(width: KeyboardNoticeMetrics.width,
+                    height: KeyboardNoticeMetrics.height(expanded: true)), .dark, true),
             (AnyView(CorrectionView().environmentObject(correction)),
              NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: correction.rows.count)), .dark, false),
             (AnyView(CorrectionView().environmentObject(rule)),
@@ -562,6 +582,7 @@ enum PanelsCommand {
         let correction = CorrectionPanel()
         let preview = PreviewPanel()
         let micNotice = MicNotice()
+        let keyboardNotice = KeyboardNotice()
         let updatePanel = UpdatePanel()
         var ticker: Timer?
         var setupWindow: NSWindow?
@@ -630,6 +651,10 @@ enum PanelsCommand {
         // machine whose microphone is wired.
         case "microphone":
             micNotice.show(mic: sampleMicName)
+        // Raised for a named app rather than for whatever is really holding
+        // the keyboard, which on a healthy machine is nothing at all.
+        case "keyboard":
+            keyboardNotice.show(app: sampleKeyboardApp)
         // The one surface that is a window rather than a floating panel over
         // the words. Sized from the notes it is given, so a long release is
         // what shows whether it scrolls.
@@ -716,7 +741,7 @@ enum PanelsCommand {
             }
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
-                + "|vocabulary|punctuation|rule|dictation|preview|microphone|pill"
+                + "|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill"
                 + "|update|setup|sequence> [seconds]")
             return 2
         }
