@@ -5,7 +5,7 @@
 # `wordpiece` is `WordPieces.knows`: the whole-word half of
 # distilbert-base-uncased's tokenizer vocabulary, in data/wordpiece.txt.
 #
-#   gate: judge       something reads the sentence before the word is replaced
+#   gate: open       something reads the sentence before the word is replaced
 #   gate: auto-apply  the word is replaced, and nothing reads the sentence
 #
 # One `auto-apply` carries a note: a span the term glues to. The lists are
@@ -25,7 +25,7 @@
 # compounds in it. Measured 2026-08-29 against the shipped binary.
 #
 # Scored by `scripts/check-word-gate.sh`. Both verdicts are checked and not
-# only the decision: a word reaches `judge` from either side, and a set that
+# only the decision: a word reaches `open` from either side, and a set that
 # read the decision alone would pass while the half it meant to test was
 # broken.
 
@@ -38,38 +38,38 @@ cases:
   - word: Frederick
     spell: unknown
     wordpiece: known
-    gate: judge
+    gate: open
     why: the name the defect was found on
 
   - word: Sarah
     spell: unknown
     wordpiece: known
-    gate: judge
+    gate: open
 
   - word: Nathan
     spell: unknown
     wordpiece: known
-    gate: judge
+    gate: open
 
   - word: Ahmed
     spell: unknown
     wordpiece: known
-    gate: judge
+    gate: open
 
   - word: Bjorn
     spell: unknown
     wordpiece: known
-    gate: judge
+    gate: open
 
   - word: Xiao
     spell: unknown
     wordpiece: known
-    gate: judge
+    gate: open
 
   - word: Chloé
     spell: unknown
     wordpiece: known
-    gate: judge
+    gate: open
     why: >
       the accent. The tokenizer lowercases and then drops combining marks, and
       folding the query does the same thing, so this is looked up as `chloe`.
@@ -81,32 +81,32 @@ cases:
   - word: subtask
     spell: known
     wordpiece: unknown
-    gate: judge
+    gate: open
 
   - word: repo
     spell: known
     wordpiece: unknown
-    gate: judge
+    gate: open
 
   - word: async
     spell: known
     wordpiece: unknown
-    gate: judge
+    gate: open
 
   - word: rebase
     spell: known
     wordpiece: unknown
-    gate: judge
+    gate: open
 
   - word: tokenizer
     spell: known
     wordpiece: unknown
-    gate: judge
+    gate: open
 
   - word: Mathieu
     spell: known
     wordpiece: unknown
-    gate: judge
+    gate: open
     why: known to the French dictionary, split by an English tokenizer
 
   # --- known to both --------------------------------------------------------
@@ -114,7 +114,7 @@ cases:
   - word: Peter
     spell: known
     wordpiece: known
-    gate: judge
+    gate: open
 
   # --- known to neither, which is what the gate is for ----------------------
   # A word no dictionary and no tokenizer has seen is a mishearing, and the
@@ -162,7 +162,7 @@ cases:
   - word: "Mirza's"
     term: Mirza
     possessive: dropped
-    gate: judge
+    gate: open
     why: >
       "I'm just waiting for Mirza's thoughts about whether it's worth fixing
       the extension" — the case is in tests/judge-cases.yaml as a decline.
@@ -171,13 +171,13 @@ cases:
   - word: "Mirza’s"
     term: Mirza
     possessive: dropped
-    gate: judge
+    gate: open
     why: the typographic apostrophe, which is the one the recogniser writes
 
   - word: "Frederick's"
     term: Redrock
     possessive: dropped
-    gate: judge
+    gate: open
     why: >
       the first block of this file, defeated by one apostrophe. `Frederick`
       goes to the judge because the tokenizer knows it; `Fredericks` is known
@@ -217,10 +217,10 @@ cases:
   - word: "Matthew at"
     term: "Matthieu's"
     possessive: kept
-    gate: judge
+    gate: open
     why: >
       observed live, 2026-08-08. The judge kept "Matthew at" where the speaker
-      said "Matthieu's". `judge` here is the glued-compound branch, which
+      said "Matthieu's". `open` here is the glued-compound branch, which
       decides before the possessive is looked at — so `possessive` is the
       field under test and the decision is not.
 
@@ -251,7 +251,7 @@ cases:
   - word: "wouldn't"
     term: Redcrawl
     possessive: kept
-    gate: judge
+    gate: open
     why: >
       "I wouldn't do that today" — the letters-only form walks past both lists
       the way a possessive does. Writing a name here deletes the negation.
@@ -259,19 +259,19 @@ cases:
   - word: "they're"
     term: Praisy
     possessive: kept
-    gate: judge
+    gate: open
     why: not a possessive, and the apostrophe is doing the same damage
 
   - word: "I've"
     term: Arexvy
     possessive: kept
-    gate: judge
+    gate: open
     why: two letters and an apostrophe, unknown to both lists as `Ive`
 
   - word: "don't"
     term: Redrock
     possessive: kept
-    gate: judge
+    gate: open
     why: >
       one of the five that already reached the judge, because `dont` is a
       word — kept so the fix is not the only thing holding this case
@@ -291,7 +291,7 @@ cases:
   - word: "Sarah's"
     term: "Praisy's"
     possessive: kept
-    gate: judge
+    gate: open
     why: >
       the tokenizer knows `sarah` and nothing knows `sarahs` — an ordinary
       name was being overwritten by the glued form walking past both lists
@@ -299,7 +299,7 @@ cases:
   - word: "Mirza's"
     term: "Praisy's"
     possessive: kept
-    gate: judge
+    gate: open
     why: both lists know `mirza`, neither knows `mirzas`
 
   - word: "Precy's"
@@ -314,7 +314,7 @@ cases:
   - word: "Mirza's"
     term: Mirza
     possessive: dropped
-    gate: judge
+    gate: open
     why: >
       only one side carries it, so nothing is stripped and the possessive rule
       still refuses — "Mirza's thoughts" is not "Mirza thoughts"

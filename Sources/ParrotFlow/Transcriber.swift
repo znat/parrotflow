@@ -227,7 +227,7 @@ actor Transcriber {
     /// mmBERT-small, 269 MB, read by the vocabulary gate. The gate stands
     /// aside until it is on disk — `SlotModel.isCached` — so no dictation waits
     /// here. It reports progress but never `.failed`: a gate that is not there
-    /// yet is a gate that asks the judge, not a model error.
+    /// yet is a gate that leaves the place open, not a model error.
     func warmSlotModel() {
         guard slotModelFetch == nil else { return }
         slotModelRunning = true
@@ -240,7 +240,7 @@ actor Transcriber {
                 }
             } catch {
                 Log.write("slot model: \(error.localizedDescription);"
-                    + " the vocabulary gate asks the judge until it arrives")
+                    + " the vocabulary pass leaves what it cannot settle as heard")
                 failed = true
             }
             await self.finishSlotModel(failed: failed)

@@ -841,7 +841,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// means "not this time" and nothing is remembered.
     ///
     /// Only for what somebody asked for out loud. A `prompt:` stage and the
-    /// vocabulary judge reach the same models on every dictation with nobody
+    /// vocabulary pass reach the same models on every dictation with nobody
     /// asking — see `Pipeline.runPrompt` — and they keep declining in silence.
     private func askForKeyThenRetry(_ error: Error, retry: () -> Void) -> Bool {
         let spec: ModelSpec

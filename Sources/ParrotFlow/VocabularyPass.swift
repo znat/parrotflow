@@ -43,7 +43,7 @@ import Foundation
 /// characters out of the ones that need it, and a config that installed the
 /// script without rebuilding the app left the stage silently off. Nothing
 /// crosses a process boundary now, so nothing can be re-derived wrongly.
-enum VocabularyJudge {
+enum VocabularyPass {
 
     /// How many places one sentence may offer, and how many readings each.
     /// Optional stage params, because they are the numbers a person tuning
@@ -278,7 +278,7 @@ enum VocabularyJudge {
                 // with a `vocabulary:` stage and no `replacements` above it —
                 // where a rule pair can still arrive from a scope seeded
                 // elsewhere. It used to be every path with no audio, and that
-                // cost the judge a reading under `vocabulary.acoustic: false`.
+                // cost the pass a reading under `vocabulary.acoustic: false`.
                 // One occurrence is still decidable without it: the rule is in
                 // `changes`, so it fired at least once, and a pre-existing term
                 // would be a second occurrence. More than one and nothing here
@@ -294,7 +294,7 @@ enum VocabularyJudge {
                     }
                 } else if stands.count > 1 {
                     for source in heard {
-                        Log.write("vocabulary judge: \"\(term)\" stands \(stands.count) time(s)"
+                        Log.write("vocabulary pass: \"\(term)\" stands \(stands.count) time(s)"
                             + " and no acoustic pass ran, so which one \"\(source)\" became"
                             + " cannot be told; that reading is not offered")
                     }
@@ -302,7 +302,7 @@ enum VocabularyJudge {
                 continue
             }
             guard let mine = rewritten(heard, term, in: before, became: stands.count) else {
-                Log.write("vocabulary judge: \"\(term)\" stands \(stands.count) time(s) and"
+                Log.write("vocabulary pass: \"\(term)\" stands \(stands.count) time(s) and"
                     + " the transcript before the rules cannot account for that many;"
                     + " not offering \(heard.map { "\"\($0)\"" }.joined(separator: ", ")) back")
                 continue
@@ -397,7 +397,7 @@ enum VocabularyJudge {
         for index in ranked {
             let slot = slots[index]
             guard slot.terms.contains(where: { used[$0, default: 0] < limit }) else {
-                Log.write("vocabulary judge: \"\(text[slot.range])\" is a"
+                Log.write("vocabulary pass: \"\(text[slot.range])\" is a"
                     + " \(slot.terms.joined(separator: "/")) reading past max_per_term"
                     + " \(limit); not offered")
                 continue
@@ -874,7 +874,7 @@ enum VocabularyJudge {
         for slot in slots.sorted(by: { $0.range.lowerBound < $1.range.lowerBound }) {
             guard slot.options.count > 1, slot.options[0] != slot.options[1] else { continue }
             if let last = built.last, slot.range.lowerBound < last.range.upperBound {
-                Log.write("vocabulary judge: \"\(text[slot.range])\" overlaps the place"
+                Log.write("vocabulary pass: \"\(text[slot.range])\" overlaps the place"
                     + " before it; not offered")
                 continue
             }
@@ -1105,7 +1105,7 @@ enum VocabularyJudge {
                 Log.write("vocabulary gate: \"\(change.was)\" -> \"\(change.now)\""
                     + " — the spot wants \(reading.tag), which cannot hold a name; refused")
                 return false
-            case .judge:
+            case .open:
                 return nil
             }
         }

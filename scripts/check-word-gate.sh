@@ -9,13 +9,13 @@
 # half of a tokenizer vocabulary, which has no rare compounds in it. Either one
 # alone overwrites a whole class of ordinary word.
 #
-# Both verdicts are checked, not only the decision. A word reaches `judge` from
+# Both verdicts are checked, not only the decision. A word reaches `open` from
 # either side, so a set that read the decision alone would pass with one half
 # broken — `Chloé` in particular, where the accent is the thing under test.
 #
 # A case with a `term` asks the whole gate about that pair instead, and checks
 # the `possessive` verdict beside the decision. Same reason: `Matthew at`
-# reaches `judge` from the glued-compound branch whatever the possessive rule
+# reaches `open` from the glued-compound branch whatever the possessive rule
 # says, so the decision alone would not show the rule firing on the wrong side.
 #
 # The last block is the fail-open case, and it is the reason the lookup answers
@@ -147,9 +147,9 @@ while IFS=$'\x1f' read -r word term spell wordpiece possessive gate; do
     continue
   fi
 
-  # An expected `judge` that came back `auto-apply` is the expensive direction:
+  # An expected `open` that came back `auto-apply` is the expensive direction:
   # a word nobody said, written into the transcript, with no menu behind it.
-  if [ "$gate" = "judge" ] && [ "$got_gate" = "auto-apply" ]; then
+  if [ "$gate" = "open" ] && [ "$got_gate" = "auto-apply" ]; then
     overwrote=$((overwrote + 1))
   fi
   printf '  ✗ %-12s got   %s\n' "$word" "$got_line"
@@ -172,13 +172,13 @@ open_ok=1
 out="$(PARROTFLOW_WORDPIECE=/nonexistent/wordpiece.txt verdicts Versal)"
 got_piece="$(field "$out" wordpiece)"
 got_gate="$(field "$out" gate)"
-if [ "$got_piece" = "unavailable" ] && [ "$got_gate" = "judge" ]; then
+if [ "$got_piece" = "unavailable" ] && [ "$got_gate" = "open" ]; then
   printf '  ✓ %-12s wordpiece %-11s %s\n' "Versal" "$got_piece" "$got_gate"
 else
   open_ok=0
-  printf '  ✗ %-12s got wordpiece %s, gate %s; want unavailable, judge\n' \
+  printf '  ✗ %-12s got wordpiece %s, gate %s; want unavailable, open\n' \
     "Versal" "$got_piece" "$got_gate"
-  echo '    a missing list must send the word to the judge, never auto-apply it'
+  echo '    a missing list must leave the word open, never auto-apply it'
 fi
 
 [ "$pass" = "$total" ] && [ "$open_ok" = 1 ]

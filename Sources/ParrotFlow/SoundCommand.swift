@@ -1,7 +1,7 @@
 import Foundation
 
 /// `--sound` — scores the vocabulary's sound path: `Phonemes` and
-/// `VocabularyJudge.phonemeParts`.
+/// `VocabularyPass.phonemeParts`.
 ///
 /// Two things are checked and they fail differently.
 ///
@@ -11,7 +11,7 @@ import Foundation
 /// the floor was chosen for a different function.
 ///
 /// The **proposal** cases are the stage: a sentence goes in, the spans it puts
-/// on the judge's menu come out. They cover what the floor is for — `geler`
+/// among the readings come out. They cover what the floor is for — `geler`
 /// reaches `Gelar`, `praise` does not reach `Praisy` — and the two traps that
 /// cost a measurement each: espeak splitting its output on punctuation, and a
 /// narrow window claiming a span a wider one should have.
@@ -118,7 +118,7 @@ enum SoundCommand {
         }
 
         for one in cases {
-            let parts = await VocabularyJudge.phonemeParts(
+            let parts = await VocabularyPass.phonemeParts(
                 in: one.text, sounds: sounds, voice: "en-us", language: "en",
                 floor: 0.85, claimed: []
             )

@@ -181,7 +181,7 @@ struct Config: Decodable, Equatable {
         var acoustic: Bool = false
 
         /// How far a decoded word's spelling may sit from a term and still be
-        /// worth a line on the judge's menu. FluidAudio's similarity, where
+        /// worth a line among the readings. FluidAudio's similarity, where
         /// 1.0 is the term written out exactly.
         ///
         /// One of the two numbers that replaced the single floor (F1). That
@@ -208,11 +208,11 @@ struct Config: Decodable, Equatable {
         var decideAbove: Float = 3.0
 
         /// How close a run of words must *sound* to a term before it is worth
-        /// a line on the judge's menu.
+        /// a line among the readings.
         ///
         /// The sound twin of `offerBelow`, on the same metric, and a much
         /// tighter number because it buys much more. Measured over 20891 real
-        /// dictations — see `VocabularyJudge.phonemeParts` for the table.
+        /// dictations — see `VocabularyPass.phonemeParts` for the table.
         /// 0.85 fires 147 times in that whole archive, 33 of them a name this
         /// speaker lost; 0.80 fires 826 times and most of the extra is
         /// `and me` reaching `Andrey`.
@@ -271,7 +271,7 @@ struct Config: Decodable, Equatable {
             /// `Silverstein`; as /sɪlvɚstaɪn/ it also reaches `Silberstein`,
             /// which the decoder writes and nobody wrote down. That is the
             /// only reason this field exists — see
-            /// `VocabularyJudge.phonemeParts`.
+            /// `VocabularyPass.phonemeParts`.
             ///
             /// Write it when the spelling misleads: espeak reads `Preci` as
             /// /pɹɛsaɪ/, "pre-sigh", and no floor rescues that.
@@ -1902,7 +1902,7 @@ struct Config: Decodable, Equatable {
             let name: String
             var transform: String?
             var prompt: String?
-            var caps: VocabularyJudge.Caps?
+            var caps: VocabularyPass.Caps?
             var nearMisses: Bool?
             var bySound: Bool?
             var gate: Bool?
@@ -1971,7 +1971,7 @@ struct Config: Decodable, Equatable {
                 // `- stage: vocabulary` is how it is spelled now that there is
                 // no file to name.
                 if name.caseInsensitiveCompare("vocabulary") == .orderedSame {
-                    var caps = VocabularyJudge.Caps.standard
+                    var caps = VocabularyPass.Caps.standard
                     // Each optional and each on its own: a person raising one
                     // ceiling should not have to restate the rest.
                     if let perSlot = try c.decodeIfPresent(Int.self, forKey: .maxPerSlot) {

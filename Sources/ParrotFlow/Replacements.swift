@@ -72,8 +72,8 @@ enum Replacements {
     /// four times did one thing, not four.
     /// - Returns: the rewritten text, how many rules fired, what each one wrote
     ///   — `heard -> written`, joined by `; ` — and the substitutions
-    ///   themselves. The third is for a stage that has to judge the
-    ///   substitutions rather than make them: a judge handed only the finished
+    ///   themselves. The third is for a stage that has to weigh the
+    ///   substitutions rather than make them: a stage handed only the finished
     ///   sentence cannot see what changed in it.
     ///
     ///   The fourth is `protected`: the text this pass actually put in, with
@@ -181,7 +181,7 @@ enum Replacements {
 
     /// Every word in the text, apostrophes included so `Praise's` is one word.
     ///
-    /// Not private: `VocabularyJudge.fuzzyParts` walks the same words, and two
+    /// Not private: `VocabularyPass.fuzzyParts` walks the same words, and two
     /// definitions of "a word" in one transcript is how a span ends up in one
     /// pass and not the other.
     static func wordRanges(in text: String) -> [Range<String.Index>] {
