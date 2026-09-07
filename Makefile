@@ -14,7 +14,7 @@ export VARIANT ?= dev
 V := . scripts/variant.sh &&
 
 .PHONY: app run install uninstall uninstall-dev uninstall-release stop clean \
-        reset-permissions logs dev-certificate release release-certificate \
+        reset-permissions fresh-setup logs dev-certificate release release-certificate \
         try-install which hooks test
 
 ## Build the app bundle into .build/
@@ -136,6 +136,14 @@ try-install: release
 	@rm -rf /tmp/parrotflow-try && mkdir -p /tmp/parrotflow-try
 	@PARROTFLOW_BASE_URL="file://$(PWD)/dist" \
 	 PARROTFLOW_DEST=/tmp/parrotflow-try sh scripts/install.sh
+
+## Put this variant back to a first run and install it again — the setup
+## screen with something to do. Forgets its permissions, deletes its models,
+## removes eSpeak NG, then builds and launches. It does not ask — it prints
+## each thing as it does it. Options are in `scripts/fresh-setup.sh --help`;
+## pass them through with ARGS, as in `make fresh-setup ARGS=--config`.
+fresh-setup:
+	@scripts/fresh-setup.sh $(ARGS)
 
 ## Forget this variant's permission grants so macOS prompts again
 reset-permissions:

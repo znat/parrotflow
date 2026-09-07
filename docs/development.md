@@ -46,6 +46,25 @@ make stop                 # quit dev; the installed app keeps running
 VARIANT=release make logs  # act on the shipped app instead
 ```
 
+## Testing the setup screen
+
+That screen only appears when there is something to do — a permission that has
+never been answered, a model that is not on disk. `make fresh-setup` puts the
+build back there: it forgets the grants, deletes the models, removes eSpeak NG,
+then builds and launches. It does not ask — it prints each thing as it does
+it, so the output is the record of what changed.
+
+```sh
+make fresh-setup                      # dev, like everything else here
+make fresh-setup ARGS=--config        # move ~/.config/parrotflow-dev aside too
+scripts/fresh-setup.sh --help         # the rest of the options
+```
+
+Parakeet, Silero VAD and CharsiuG2P live outside the per-build directory, so
+both builds read the same copies. The script moves those aside rather than
+deleting them, and this run downloads them again. `--purge-old` clears the
+copies once that has finished.
+
 `scripts/variant.sh` is the one place the two identities are defined, and
 `AppVariant.swift` is where the app derives its own paths from the identifier it
 was built with.
