@@ -155,7 +155,17 @@ enum TermUses {
             said: sentence, span: span, from: from, counter: counter, heard: other
         )
         if let already = uses.firstIndex(of: use) {
-            guard uses[already].counter != counter else { return }
+            guard uses[already].counter != counter else {
+                // The same row again. Nothing to write unless this correction
+                // carries the replaced spelling and the stored row predates it
+                // — a row written before `heard` existed never gains one
+                // otherwise, and the cut cannot see what it does not hold.
+                guard uses[already].heard == nil, let other else { return }
+                uses[already].heard = other
+                all[term] = uses
+                try write(all)
+                return
+            }
             uses.remove(at: already)
         }
         uses.append(use)

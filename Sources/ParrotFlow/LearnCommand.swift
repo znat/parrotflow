@@ -71,7 +71,8 @@ enum LearnCommand {
                 }
                 if said != use.said { cut += 1 }
                 let now = TermUses.Use(
-                    said: said, span: use.span, from: use.from, counter: use.counter
+                    said: said, span: use.span, from: use.from, counter: use.counter,
+                    heard: use.heard
                 )
                 // The custom `==` is on the sentence and the span, so two rows
                 // that narrow to the same sentence collapse into one. The last

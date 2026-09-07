@@ -176,7 +176,8 @@ actor TermPortrait {
         /// it has fewer than `counterMinimum` of them.
         var counterCentre: [Float]?
         var counterTightness: Double?
-        /// Counted whether or not there were enough to build a centre.
+        /// How many counters reached that centre. Zero when none was built,
+        /// and short of the stored rows when the cut emptied one.
         var counters: Int
     }
 
@@ -469,6 +470,9 @@ actor TermPortrait {
         // stands at the site rather than from the term.
         var counterCentre: [Float]?
         var counterTightness: Double?
+        // What actually reached the centre. A counter the cut empties is
+        // skipped below, so the stored count would overstate the portrait.
+        var counterRows = 0
         if counters.count >= Self.counterMinimum {
             var against: [[Float]] = []
             for use in counters {
@@ -485,6 +489,7 @@ actor TermPortrait {
             if spread > 0 {
                 counterCentre = middleOf
                 counterTightness = spread
+                counterRows = against.count
             }
         }
 
@@ -510,7 +515,7 @@ actor TermPortrait {
             uses: vectors.count,
             counterCentre: counterCentre,
             counterTightness: counterTightness,
-            counters: counterCentre == nil ? 0 : counters.count
+            counters: counterRows
         )
     }
 
