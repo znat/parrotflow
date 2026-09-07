@@ -29,6 +29,11 @@ final class CorrectionModel: ObservableObject {
     /// them.
     private(set) var sentence = ""
 
+    /// Whether the app proposed these rows or you summoned the panel.
+    /// Summoned it is a form; proposed it is a question, so it says what it
+    /// would learn and where, and answers yes or no.
+    private(set) var proposed = false
+
     var onSubmit: (() -> Void)?
     var onCancel: (() -> Void)?
 
@@ -69,6 +74,7 @@ final class CorrectionModel: ObservableObject {
     /// `VocabularySuggest`.
     func load(sentence: String, language: String? = nil) {
         self.sentence = sentence
+        self.proposed = false
         rows = VocabularySuggest.rows(in: sentence, language: language).map {
             CorrectionRow(heard: $0.heard, suggested: true)
         }
@@ -84,6 +90,7 @@ final class CorrectionModel: ObservableObject {
     /// splitting them across two panels would mean saying it twice.
     func load(rules proposed: [(heard: String, corrected: String)], over sentence: String = "") {
         self.sentence = sentence
+        self.proposed = true
         rows = proposed.map { proposal in
             // The possessive belongs to the sentence, not to the name. Saved as
             // it stands, `Precey's -> Praizy's` teaches a term called `Praizy's`

@@ -24,7 +24,10 @@ struct CorrectionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PanelHeader(title: "Vocabulary", note: "teach a word")
+            PanelHeader(
+                title: "Vocabulary",
+                note: model.proposed ? "learn this word?" : "teach a word"
+            )
             columns
 
             ScrollView {
@@ -38,10 +41,12 @@ struct CorrectionView: View {
 
             addRow
 
+            if model.proposed, !model.sentence.isEmpty { learnedIn }
+
             PanelActions(
                 status: "",
-                cancelTitle: "Cancel",
-                confirmTitle: "Save",
+                cancelTitle: model.proposed ? "No" : "Cancel",
+                confirmTitle: model.proposed ? "Yes" : "Save",
                 confirmKey: "↩",
                 onCancel: { model.onCancel?() },
                 onConfirm: { model.onSubmit?() }
@@ -62,6 +67,25 @@ struct CorrectionView: View {
             if focused != now { focused = now }
         }
         .onExitCommand { model.onCancel?() }
+    }
+
+    /// The sentence the word is learned in. A term is kept with its sentence,
+    /// and showing only the term hides half of what yes does.
+    private var learnedIn: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("LEARNED IN")
+                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                .kerning(0.9)
+                .foregroundStyle(.secondary)
+            Text("“\(model.sentence)”")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 10)
     }
 
     private var columns: some View {

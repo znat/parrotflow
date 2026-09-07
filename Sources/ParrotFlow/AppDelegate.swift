@@ -446,6 +446,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The headline and the reading the offer went up with, so the pill can be
     /// drawn again without rebuilding what it is about. See `holdTheReturn`.
     private var offerHeadline: Headline?
+
+    /// The correction the pill is asking about. Its chips are answers, so
+    /// `runOfferedCommand` must not look up a transform called "Yes".
+    private var pendingLearn: (changes: [EditWatch.Change], sentence: String)?
     private var offerReading = Confidence.Reading()
     /// Until when this offer's Return is held. Set when the offer goes up, so
     /// an offer whose keys arrive late — a second dictation was still running —
@@ -487,6 +491,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// gives it, and a preview with a number of its own is a preview of
     /// something else.
     static let offerSeconds: TimeInterval = PillHUD.offerLife
+
+    /// How long the learn question stays open before it thins to a tab.
+    /// Longer than every other offer — this is a sentence to read and a word to
+    /// decide, and `offerSeconds` was over first. It folds rather than goes.
+    static let learnSeconds: TimeInterval = 30
 
     /// What the offer offers: Correct, then every transform that asked for a
     /// place on it with `offer: true`.
@@ -3863,8 +3872,118 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The counters first. A change that runs the other way is not a rule
         // to weigh, and `teaches` would drop half of them — `BetterStack` put
         // back to `better stack` lands on two ordinary words.
-        let worth = changes.filter { !recordCounter($0, in: sentence) }.filter { teaches($0) }
-        guard !worth.isEmpty else { return }
+        let candidates = changes.filter { !recordCounter($0, in: sentence) }
+        guard !candidates.isEmpty else { return }
+        // The sound test is a model call away. Only the panel waits: the trace
+        // and the counters above are already written.
+        //
+        // The dictation this is about, so an answer arriving late is dropped
+        // rather than asked over whatever is on screen by then.
+        let asked = lastDictated?.run
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var worth: [EditWatch.Change] = []
+            for change in candidates {
+                let sound = await EditWatch.soundsAlike(
+                    change.was, change.now,
+                    language: DictationLanguage.forCorrection(
+                        transcript: change.sentence,
+                        allowed: self.config.transcription.languages
+                    )
+                )
+                if self.teaches(change, sound: sound) { worth.append(change) }
+            }
+            guard !worth.isEmpty else { return }
+            // Same rule as `offerOverReselected`: never over a recording and
+            // never while a decode is in flight. The await above is long
+            // enough for the next dictation to have started under it.
+            guard !self.recorder.isRecording, self.runsInFlight <= 0,
+                  self.lastDictated?.run == asked else {
+                Log.write("correction: the dictation moved on; not asking about "
+                    + worth.map { "\"\($0.was)\" -> \"\($0.now)\"" }.joined(separator: ", "))
+                return
+            }
+            self.askToLearn(worth, over: sentence)
+        }
+    }
+
+    /// Ask, on the pill, before anything is written.
+    ///
+    /// `Edit` opens the panel for the case the question cannot settle: a word
+    /// you typed wrong yourself, which no test tells from one the decoder got
+    /// wrong. No deadline — other offers decay because ignoring them is an
+    /// answer, and ignoring this one is not.
+    private func askToLearn(_ worth: [EditWatch.Change], over sentence: String) {
+        // Our own learn offer is replaceable. Keeping the first would leave
+        // the pill asking about `disfluenci` after you had fixed the typo,
+        // and the corrected pair would be dropped.
+        if pendingLearn != nil {
+            Log.write("correction: a newer correction replaces the learn offer on screen")
+            endTheOffer()
+            pill.hide()
+        }
+        // Before the count, so both surfaces are behind it. Opening the panel
+        // first left the pill up with its keys live, which is two answers to
+        // two different questions on screen at once.
+        guard !correctionPanel.isUp, !offerIsUp else {
+            Log.write("correction: something is already up; not asking about "
+                + worth.map { "\"\($0.was)\" -> \"\($0.now)\"" }.joined(separator: ", "))
+            return
+        }
+        // The pill shows one rule and `Yes` used to write all of them, so a
+        // second correction in the same settle was written without ever being
+        // shown. The panel is the surface that can show several.
+        guard worth.count == 1 else {
+            Log.write("correction: \(worth.count) rules in one edit; the pill shows"
+                + " one, so the panel takes them")
+            offerRules(worth, over: sentence)
+            return
+        }
+        guard let first = worth.first else { return }
+        let commands = [
+            OfferedCommand(title: "Yes", key: "Y"),
+            OfferedCommand(title: "No", key: "N"),
+            OfferedCommand(title: "Edit", key: "E"),
+        ]
+        let headline = Headline.learn(Self.learnPayload(for: first))
+        pendingLearn = (worth, sentence)
+        offerOnScreen = commands
+        offerHeadline = headline
+        offerReading = Confidence.Reading()
+        offerUntil = .distantFuture
+        offerHeld = false
+        Log.write("correction: asking about \(worth.count) rule(s) — "
+            + worth.map { "\"\($0.was)\" -> \"\($0.now)\"" }.joined(separator: ", "))
+        pill.model.onPick = { [weak self] index in
+            guard let self, commands.indices.contains(index) else { return }
+            self.runOfferedCommand(commands[index].title)
+        }
+        pill.offer(commands, headline: headline, open: true, for: Self.learnSeconds)
+        watchTheOfferKeys()
+    }
+
+    /// The sentence split around the word that changed. The two ends are what
+    /// the pill dims.
+    static func learnPayload(for change: EditWatch.Change) -> Learn {
+        let words = change.sentence.split(separator: " ").map(String.init)
+        let span = max(1, change.now.split(separator: " ").count)
+        let start = max(0, min(words.count, change.nowAt))
+        let end = min(words.count, start + span)
+        let head = words.prefix(start).joined(separator: " ")
+        // Not always the term: `EditWatch.trimmed` takes a shared stop off the
+        // pair, so a sentence rebuilt from the term alone lost its full stop.
+        let covered = words[start ..< end].joined(separator: " ")
+        let trailing = covered.hasPrefix(change.now)
+            ? String(covered.dropFirst(change.now.count)) : ""
+        let rest = words.dropFirst(end).joined(separator: " ")
+        return Learn(
+            term: change.now, heard: change.was, before: head,
+            after: trailing + (rest.isEmpty ? "" : " " + rest)
+        )
+    }
+
+    /// Put the rows in front of you, once it is settled which rows they are.
+    private func offerRules(_ worth: [EditWatch.Change], over sentence: String) {
         // Never over a panel already up. `show` replaces the rows and rebinds
         // the save, so a second offer would throw the first away without
         // showing it — and this is the only caller that arrives uninvited, so
@@ -4019,8 +4138,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Is this correction about a name, or about English? The decision is
     /// `EditWatch.refusal`, which has a case set; this only says why in the log.
-    private func teaches(_ change: EditWatch.Change) -> Bool {
-        guard let refusal = EditWatch.refusal(for: change) else { return true }
+    ///
+    /// `sound` is the second way in: a mishearing can land on an ordinary word
+    /// — `borderplay` -> `boilerplate` — which the word lists always refuse.
+    /// Only `.ordinary`, since punctuation scores 1.00 by construction.
+    private func teaches(_ change: EditWatch.Change, sound: Float) -> Bool {
+        guard let refusal = EditWatch.offers(change, sound: sound) else {
+            Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is offered"
+                + " — sound \(String(format: "%.2f", sound))")
+            return true
+        }
         Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is \(refusal);"
             + " not offered")
         return false
@@ -4414,6 +4541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // offer is one more slot that says something true about a surface that
         // is no longer there.
         offerHeadline = nil
+        pendingLearn = nil
         offerKeysExpiry?.cancel()
         offerKeysExpiry = nil
         offerKeys.stop()
@@ -4427,6 +4555,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// first, before anything opens: whatever the command puts on screen
     /// belongs over the words, which is where the pill is sitting.
     private func runOfferedCommand(_ transform: String?) {
+        // A learn offer first: its chips are answers, not transforms.
+        if let pending = pendingLearn {
+            let answer = transform ?? ""
+            endTheOffer()
+            pill.hide()
+            switch answer {
+            case "Yes":
+                Log.write("correction: keeping \(pending.changes.count) rule(s)")
+                _ = learn(
+                    pending.changes.map { TaughtRule(heard: $0.was, corrected: $0.now) },
+                    in: pending.sentence
+                )
+            case "Edit":
+                Log.write("correction: opening the panel to edit the rule(s)")
+                offerRules(pending.changes, over: pending.sentence)
+            default:
+                Log.write("correction: the rules were declined")
+            }
+            return
+        }
         // Read before the offer is ended, which is what clears it.
         let offered = offeredCorrection
         endTheOffer()

@@ -160,6 +160,24 @@ enum PanelsCommand {
             offerChips, .selection("things that turned out not to matter"),
             Confidence.Reading(), open: true
         ), docked: .below)
+        // Two: the pill is as wide as its sentence, and the short one says so.
+        let learnChips = [
+            OfferedCommand(title: "Yes", key: "Y"),
+            OfferedCommand(title: "No", key: "N"),
+            OfferedCommand(title: "Edit", key: "E"),
+        ]
+        let offerLearn = pill(.offer(
+            learnChips,
+            .learn(Learn(term: "disfluency", heard: "this fluency",
+                         before: "I wanna work on", after: ".")),
+            Confidence.Reading(), open: true
+        ), docked: .below)
+        let offerLearnShort = pill(.offer(
+            learnChips,
+            .learn(Learn(term: "Databricks", heard: "data breaks",
+                         before: "we moved it to", after: ".")),
+            Confidence.Reading(), open: true
+        ), docked: .below)
         // Beside the plain one: the two endings must not look the same.
         let offerCopied = pill(.offer(
             offerChips, .landing("Nowhere to type · ⌘V"), Confidence.Reading(),
@@ -250,6 +268,15 @@ enum PanelsCommand {
         // neither.
         let several = CorrectionModel()
         several.load(sentence: "Olama runs polyma for Tasmine")
+
+        // The panel the app opens by itself, which asks rather than collects:
+        // a proposal, the sentence it would be kept in, and yes or no. The
+        // three above are the summoned form and are not asking anything.
+        let asked = CorrectionModel()
+        asked.load(
+            rules: [(heard: "this fluency", corrected: "disfluency")],
+            over: "I wanna work on disfluency."
+        )
 
         // Both states of the microphone notice, because the disclosure is the
         // shape of it: collapsed is what you read, open is the argument. A
@@ -381,6 +408,10 @@ enum PanelsCommand {
              pillSize(offer), .dark, true),
             (AnyView(PillView().environmentObject(offerSelection)),
              pillSize(offerSelection), .dark, true),
+            (AnyView(PillView().environmentObject(offerLearn)),
+             pillSize(offerLearn), .dark, true),
+            (AnyView(PillView().environmentObject(offerLearnShort)),
+             pillSize(offerLearnShort), .dark, true),
             (AnyView(PillView().environmentObject(offerCopied)),
              pillSize(offerCopied), .dark, true),
             // The same offer with `feedback.confidence` on: two rows instead of
@@ -418,6 +449,8 @@ enum PanelsCommand {
              NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: rule.rows.count)), .dark, false),
             (AnyView(CorrectionView().environmentObject(several)),
              NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: several.rows.count)), .dark, false),
+            (AnyView(CorrectionView().environmentObject(asked)),
+             NSSize(width: CorrectionMetrics.width, height: CorrectionMetrics.height(forRows: asked.rows.count) + 44), .dark, false),
             // The dictation panel is deliberately not here. Its field is an
             // `NSTextField` and its background is real Liquid Glass, and this
             // sheet can draw neither — it came out as a white block inside an
@@ -596,6 +629,28 @@ enum PanelsCommand {
             pill.notice("Ollama is not running on localhost:11434", tone: .failure, duration: nil)
         case "thinking":
             pill.working("Thinking…")
+        case "learn":
+            // Open and held: this offer outlives the others in the app too, so
+            // a preview that faded would be a picture of something else.
+            pill.offer(
+                [
+                    OfferedCommand(title: "Yes", key: "Y"),
+                    OfferedCommand(title: "No", key: "N"),
+                    OfferedCommand(title: "Edit", key: "E"),
+                ],
+                headline: .learn(Learn(
+                    term: "disfluency", heard: "this fluency",
+                    before: "I wanna work on", after: "."
+                )),
+                open: true, for: seconds
+            )
+            pill.model.onHover = { inside in
+                if !inside { pill.model.selected = nil }
+                pill.hovering(inside)
+            }
+            // Held as though the pointer were on it: an open panel decays, and
+            // this one is here to be looked at.
+            pill.hovering(true)
         case "offer":
             // The real call rather than a bare `set`. The offer is the one
             // state that holds and then thins out, so a preview that only held
@@ -741,7 +796,7 @@ enum PanelsCommand {
             }
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
-                + "|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill"
+                + "|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|learn"
                 + "|update|setup|sequence> [seconds]")
             return 2
         }
