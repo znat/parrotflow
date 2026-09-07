@@ -234,7 +234,13 @@ actor TermPortrait {
     /// How this sentence reads, or nil if the term has no portrait yet.
     func read(_ span: String, in sentence: String, as term: String) async throws -> Reading? {
         guard let summary = try await summary(for: term) else { return nil }
-        let vector = try await WordVectors.shared.vector(.around, of: span, in: sentence)
+        // The same cut the portrait was built with. Without it a sentence
+        // holding both spellings scores its own term as context — the shape
+        // that made the portrait grade its own write.
+        let near = Self.context(
+            of: span, in: sentence, cutting: Self.rivals(of: term, in: TermUses.load()[term] ?? [])
+        ) ?? sentence
+        let vector = try await WordVectors.shared.vector(.around, of: span, in: near)
         let own = WordVectors.cosine(vector, summary.centre) / summary.tightness
 
         guard let centre = summary.counterCentre, let tightness = summary.counterTightness,
@@ -291,6 +297,94 @@ actor TermPortrait {
         }
     }
 
+
+    /// A term whose rows all but vanish under the cut. Thrown rather than
+    /// built from what is left: `reads` turns it into "no opinion", which is
+    /// what a term with no readable sentences should say.
+    struct Thin: Error, LocalizedError {
+        let term: String
+        let left: Int
+        var errorDescription: String? {
+            "\(term) has \(left) sentence(s) left once the other spelling is cut"
+        }
+    }
+
+    // MARK: - the other spelling
+
+    /// Every spelling of this term that could stand in one of its sentences:
+    /// the term itself, and the word at the site of each row it has. A
+    /// counter's `span` is the ordinary word, so this set is exact — it is the
+    /// spellings the user actually corrected, not words that look close.
+    static func rivals(of term: String, in rows: [TermUses.Use]) -> [String] {
+        var out = [term]
+        for row in rows
+        where !out.contains(where: { $0.caseInsensitiveCompare(row.span) == .orderedSame }) {
+            out.append(row.span)
+        }
+        return out
+    }
+
+    /// Every whole-word occurrence of `needle`, matched without case.
+    ///
+    /// Without case because a rival opening a sentence is capitalised there and
+    /// not in the row that recorded it. Over-cutting costs a few words of
+    /// context; under-cutting puts the other spelling back in the portrait.
+    private static func places(of needle: String, in text: String) -> [Range<String.Index>] {
+        guard !needle.isEmpty else { return [] }
+        func letter(_ c: Character) -> Bool { c.isLetter || c.isNumber }
+        var out: [Range<String.Index>] = []
+        var from = text.startIndex
+        while let found = text.range(
+            of: needle, options: [.caseInsensitive], range: from ..< text.endIndex
+        ) {
+            let before = found.lowerBound == text.startIndex
+                || !letter(text[text.index(before: found.lowerBound)])
+            let after = found.upperBound == text.endIndex || !letter(text[found.upperBound])
+            if before && after { out.append(found) }
+            guard found.lowerBound < text.endIndex else { break }
+            from = text.index(after: found.lowerBound)
+        }
+        return out
+    }
+
+    /// `said` cut back so no other spelling of the term reaches the span.
+    ///
+    /// "I work with Jimmy and my friend is Jimmie." stores a use of `Jimmie`
+    /// whose context holds a correct `Jimmy`, so the term's own portrait learns
+    /// that `Jimmy` nearby is evidence for writing `Jimmie`. Measured on a
+    /// seeded portrait against a clean row: the contaminated row moved two of
+    /// four sentences, both toward writing the term, and cutting here put all
+    /// four back where the clean row has them.
+    ///
+    /// `nil` when nothing but the span survives the cut. `WordVectors` averages
+    /// every token except the span, so it would have nothing to average and
+    /// would throw — inside the build loop, which costs the whole term its
+    /// portrait rather than the one row.
+    static func clipped(
+        _ said: String, at span: Range<String.Index>, cutting rivals: [String]
+    ) -> String? {
+        var lower = said.startIndex, upper = said.endIndex
+        for rival in rivals {
+            for found in places(of: rival, in: said) where !found.overlaps(span) {
+                if found.upperBound <= span.lowerBound { lower = max(lower, found.upperBound) }
+                if found.lowerBound >= span.upperBound { upper = min(upper, found.lowerBound) }
+            }
+        }
+        guard lower <= span.lowerBound, upper >= span.upperBound else { return nil }
+        let before = said[lower ..< span.lowerBound], after = said[span.upperBound ..< upper]
+        guard before.contains(where: \.isLetter) || after.contains(where: \.isLetter)
+        else { return nil }
+        return String(said[lower ..< upper])
+    }
+
+    /// The text a span should be read from: located in its sentence, then
+    /// everything past another spelling of the term cut away. `nil` only when
+    /// the cut leaves no sentence at all.
+    static func context(of span: String, in said: String, cutting rivals: [String]) -> String? {
+        guard let at = TermUses.occurrence(of: span, in: said) else { return said }
+        return clipped(said, at: at, cutting: rivals)
+    }
+
     // MARK: - building it
 
     func summary(for term: String) async throws -> Summary? {
@@ -330,7 +424,7 @@ actor TermPortrait {
             return try await running.task.value
         }
 
-        let task = Task { try await Self.build(uses, against: counters, fingerprint: mark) }
+        let task = Task { try await Self.build(term: term, uses, against: counters, fingerprint: mark) }
         building[term] = (mark: mark, task: task)
         // Only if it is still ours. A correction arriving mid-build starts its
         // own task under this key, and clearing that one would let a third
@@ -344,14 +438,22 @@ actor TermPortrait {
     }
 
     private static func build(
-        _ uses: [TermUses.Use], against counters: [TermUses.Use], fingerprint mark: String
+        term: String, _ uses: [TermUses.Use], against counters: [TermUses.Use],
+        fingerprint mark: String
     ) async throws -> Summary {
+        let rivals = rivals(of: term, in: uses + counters)
         var vectors: [[Float]] = []
         for use in uses {
+            guard let near = context(of: use.span, in: use.said, cutting: rivals) else {
+                Log.write("portrait: \(term) — \"\(use.said)\" is nothing but the term once"
+                    + " the other spelling is cut, so it is not counted")
+                continue
+            }
             vectors.append(
-                try await WordVectors.shared.vector(.around, of: use.span, in: use.said)
+                try await WordVectors.shared.vector(.around, of: use.span, in: near)
             )
         }
+        guard vectors.count >= minimum else { throw Thin(term: term, left: vectors.count) }
         let (centre, tightness) = middle(of: vectors)
 
         // Built exactly as the positives are, from the ordinary word that
@@ -361,8 +463,13 @@ actor TermPortrait {
         if counters.count >= Self.counterMinimum {
             var against: [[Float]] = []
             for use in counters {
+                guard let near = context(of: use.span, in: use.said, cutting: rivals) else {
+                    Log.write("portrait: \(term) — a counter is nothing but the word once"
+                        + " the other spelling is cut, so it is not counted")
+                    continue
+                }
                 against.append(
-                    try await WordVectors.shared.vector(.around, of: use.span, in: use.said)
+                    try await WordVectors.shared.vector(.around, of: use.span, in: near)
                 )
             }
             let (middleOf, spread) = middle(of: against)
@@ -391,10 +498,10 @@ actor TermPortrait {
             tightness: tightness,
             floor: floor,
             fingerprint: mark,
-            uses: uses.count,
+            uses: vectors.count,
             counterCentre: counterCentre,
             counterTightness: counterTightness,
-            counters: counters.count
+            counters: counterCentre == nil ? 0 : counters.count
         )
     }
 
@@ -434,7 +541,7 @@ actor TermPortrait {
         // its portrait even though it never enters one. The three minimums are
         // in it too: changing one changes what a stored summary means, and the
         // sentences it was built from do not move.
-        let rule = "\(minimum)/\(counterMinimum)/\(floorMinimum)"
+        let rule = "\(minimum)/\(counterMinimum)/\(floorMinimum)/cut1"
         let joined = uses
             .map { "\($0.counter ? "-" : "+")\($0.span)\u{1}\($0.said)" }
             .joined(separator: "\u{2}")
