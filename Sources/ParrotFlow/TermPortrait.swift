@@ -317,9 +317,18 @@ actor TermPortrait {
     /// spellings the user actually corrected, not words that look close.
     static func rivals(of term: String, in rows: [TermUses.Use]) -> [String] {
         var out = [term]
-        for row in rows
-        where !out.contains(where: { $0.caseInsensitiveCompare(row.span) == .orderedSame }) {
-            out.append(row.span)
+        func add(_ word: String?) {
+            guard let word, !word.isEmpty,
+                  !out.contains(where: { $0.caseInsensitiveCompare(word) == .orderedSame })
+            else { return }
+            out.append(word)
+        }
+        for row in rows {
+            // The word at the site — a counter's is the ordinary word — and,
+            // on a use, the spelling the correction replaced. The second is
+            // what a term's first correction has, before any counter exists.
+            add(row.span)
+            add(row.heard)
         }
         return out
     }
@@ -543,7 +552,7 @@ actor TermPortrait {
         // sentences it was built from do not move.
         let rule = "\(minimum)/\(counterMinimum)/\(floorMinimum)/cut1"
         let joined = uses
-            .map { "\($0.counter ? "-" : "+")\($0.span)\u{1}\($0.said)" }
+            .map { "\($0.counter ? "-" : "+")\($0.span)\u{1}\($0.said)\u{1}\($0.heard ?? "")" }
             .joined(separator: "\u{2}")
         let mark = rule + "\u{3}" + joined
         let digest = SHA256.hash(data: Data(mark.utf8))

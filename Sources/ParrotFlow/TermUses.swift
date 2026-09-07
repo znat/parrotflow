@@ -40,6 +40,15 @@ enum TermUses {
         /// Three of them under one term and `TermPortrait` builds a second
         /// centre from them, and reads a new sentence against both.
         var counter: Bool = false
+        /// The spelling this correction replaced, when it is known.
+        ///
+        /// A counter's `span` is already the other word, so this is only ever
+        /// set on a use. Without it a term's first correction has no record of
+        /// what was heard anywhere `TermPortrait` can reach — the rendering is
+        /// written to `vocabulary.yaml`, and the portrait has no Config — so a
+        /// sentence holding both spellings could not be cut and taught the term
+        /// backwards. Measured: 0.959 and authorising where the cut gives 0.898.
+        var heard: String?
 
         enum Source: String, Codable {
             /// The correction panel, the spoken command, or `--learn`.
@@ -109,7 +118,8 @@ enum TermUses {
                 let from = (row["from"] as? String).flatMap(Use.Source.init(rawValue:))
                 return Use(
                     said: said, span: span, from: from ?? .correction,
-                    counter: row["counter"] as? Bool ?? false
+                    counter: row["counter"] as? Bool ?? false,
+                    heard: row["heard"] as? String
                 )
             }
             if !uses.isEmpty { out[term] = uses }
@@ -127,7 +137,7 @@ enum TermUses {
     /// the later correction is the one that stands.
     static func record(
         term: String, said: String, span: String, from: Use.Source = .correction,
-        counter: Bool = false
+        counter: Bool = false, heard: String? = nil
     ) throws {
         let sentence = narrowed(said, to: span)
         // A word, not a substring. `contains` alone let `Vercelli` in.
@@ -136,7 +146,14 @@ enum TermUses {
 
         var all = try read()
         var uses = all[term] ?? []
-        let use = Use(said: sentence, span: span, from: from, counter: counter)
+        // Only when it is a different word. `vercel` corrected to `Vercel` is a
+        // capital being fixed and would cut the sentence at the term itself.
+        let other = heard.flatMap {
+            $0.caseInsensitiveCompare(span) == .orderedSame ? nil : $0
+        }
+        let use = Use(
+            said: sentence, span: span, from: from, counter: counter, heard: other
+        )
         if let already = uses.firstIndex(of: use) {
             guard uses[already].counter != counter else { return }
             uses.remove(at: already)
@@ -271,6 +288,9 @@ enum TermUses {
                 lines.append("      span: \(quoted(use.span))")
                 lines.append("      from: \(use.from.rawValue)")
                 if use.counter { lines.append("      counter: true") }
+                if let heard = use.heard, !heard.isEmpty {
+                    lines.append("      heard: \(quoted(heard))")
+                }
             }
         }
         lines.append("")

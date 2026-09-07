@@ -30,7 +30,8 @@ enum LearnCommand {
                 // built out of sentences somebody invented behaves differently
                 // from one built out of real dictation.
                 try TermUses.record(
-                    term: corrected, said: sentence, span: corrected, from: .seeded
+                    term: corrected, said: sentence, span: corrected, from: .seeded,
+                    heard: heard
                 )
             } catch {
                 print("! the sentence was not recorded in"
