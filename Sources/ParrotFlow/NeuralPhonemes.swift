@@ -94,6 +94,19 @@ enum NeuralPhonemes {
     ///
     /// Only those two. They sit in FluidAudio's Kokoro cache beside the voices
     /// and the lexicons, which this app never fetched and must not remove.
+    /// Whether both models are already on disk. `isReady` cannot answer it —
+    /// that calls `ensureModelsAvailable`, which fetches what is missing. The
+    /// same path `discardCache` deletes from: where `MultilingualG2PModel` looks.
+    static var isDownloaded: Bool {
+        guard let root = try? TtsCacheDirectory.ensure()
+            .appendingPathComponent("Models")
+            .appendingPathComponent(Repo.kokoro.folderName)
+        else { return false }
+        return ModelNames.MultilingualG2P.requiredModels.allSatisfy {
+            FileManager.default.fileExists(atPath: root.appendingPathComponent($0).path)
+        }
+    }
+
     static func discardCache() {
         guard let root = try? TtsCacheDirectory.ensure()
             .appendingPathComponent("Models")

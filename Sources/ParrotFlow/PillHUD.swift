@@ -96,6 +96,8 @@ enum Headline: Equatable {
     case landing(String)
     /// The words this offer is about, shown as the field shows them.
     case selection(String)
+    /// A word the app could learn, in the sentence you said it in.
+    case learn(Learn)
 
     /// Whether this is the three-row shape: the words, the chips, and the line
     /// about the key. Read by the metrics and by the view, so the two cannot
@@ -103,6 +105,35 @@ enum Headline: Equatable {
     var isSelection: Bool {
         if case .selection = self { return true }
         return false
+    }
+
+    /// Whether the headline is a row of its own rather than something that
+    /// widens the chip row. Two are, measured and ruled off alike.
+    var ownsARow: Bool {
+        switch self {
+        case .landing: return false
+        case .selection, .learn: return true
+        }
+    }
+}
+
+/// A correction the app could keep, as the pill asks about it.
+///
+/// The sentence and not the pair: a rule is kept with the sentence it was said
+/// in, which later decides whether the term belongs elsewhere. Four pieces and
+/// not a built string, because the pill dims everything that did not change.
+struct Learn: Equatable {
+    /// What it would be learned as, and what replaced `heard` in the sentence.
+    let term: String
+    /// What the decoder wrote there.
+    let heard: String
+    /// The sentence before and after the change, already trimmed.
+    let before: String
+    let after: String
+
+    /// For the log only. The view draws the pieces; they are not one face.
+    var line: String {
+        "\(PillMetrics.learnLead) “\(before) \(heard) \(term)\(after)”"
     }
 }
 
@@ -1462,12 +1493,20 @@ enum PillMetrics {
     /// Here rather than counted in the view, for the reason the rest of this
     /// enum exists: the surface is measured before it is drawn, and
     /// `OfferContent` draws on exactly these two conditions.
+    /// Whether the panel names the hold gesture under its chips. Never under a
+    /// learn question: that row is about transforms, and being a fixed run of
+    /// text it would hold the panel wider than its sentence.
+    static func showsHold(_ headline: Headline?, hotkey: String) -> Bool {
+        if case .learn = headline { return false }
+        return !hotkey.isEmpty
+    }
+
     static func rules(
         headline: Headline?, reading: Confidence.Reading, hotkey: String
     ) -> Int {
         var count = 0
-        if headline?.isSelection == true || !reading.isEmpty { count += 1 }
-        if !hotkey.isEmpty { count += 1 }
+        if headline?.ownsARow == true || !reading.isEmpty { count += 1 }
+        if showsHold(headline, hotkey: hotkey) { count += 1 }
         return count
     }
 
@@ -1477,6 +1516,10 @@ enum PillMetrics {
     /// drawn, and a string measured in one place and set in another is how a
     /// chip ends up hanging over the end of a capsule. The view reads these.
     static let editLead = "Edit"
+
+    /// In front of the answers. On the sentence row it made the sentence the
+    /// second thing on its own line.
+    static let learnLead = "Learn?"
     static let holdLead = "or hold"
     static let holdTail = "and say what to change"
     /// The keycap between the two halves of the hold line, and the gaps either
@@ -1562,17 +1605,25 @@ enum PillMetrics {
         // spacing falls on both sides of it.
         extra += CGFloat(rules(headline: headline, reading: reading, hotkey: hotkey))
             * (rule + blockGap)
-        if headline?.isSelection == true { extra += selectionRow + blockGap }
+        if case .learn = headline {
+            extra += learnRow + blockGap
+        } else if headline?.ownsARow == true {
+            extra += selectionRow + blockGap
+        }
         // The way out the chips do not cover, on every panel that has a key to
         // name. It used to be drawn only over a selection, where it was the one
         // way to reach a transform that had no chip — but that is true of every
         // offer, and the panel is the surface with room to say it.
         // `OfferContent.hold` draws it on this same condition.
-        if !hotkey.isEmpty { extra += selectionRow + blockGap }
+        if showsHold(headline, hotkey: hotkey) { extra += selectionRow + blockGap }
         // Every chip row past the first. The pill's own 42 already holds one,
         // with the slack that centres it.
         let lead: CGFloat
-        if case .landing(let words) = headline { lead = title(words) + gap } else { lead = 0 }
+        switch headline {
+        case .landing(let words): lead = title(words) + gap
+        case .learn: lead = learnLeadWidth + gap
+        default: lead = 0
+        }
         let wrapped = max(0, chipRows(commands, lead: lead).count - 1)
         extra += CGFloat(wrapped) * (chipRowHeight + chipRowGap)
 
@@ -1702,7 +1753,11 @@ enum PillMetrics {
         reading: Confidence.Reading = Confidence.Reading(), hotkey: String = ""
     ) -> CGFloat {
         let lead: CGFloat
-        if case .landing(let words) = headline { lead = title(words) + gap } else { lead = 0 }
+        switch headline {
+        case .landing(let words): lead = title(words) + gap
+        case .learn: lead = learnLeadWidth + gap
+        default: lead = 0
+        }
         // The widest row the chips fall into, which past `chipsWidth` is no
         // longer all of them. See `chipRows`.
         let rows = chipRows(commands, lead: lead)
@@ -1717,10 +1772,16 @@ enum PillMetrics {
                 padding * 2 + title(editLead) + gap + title(words) + selectionFit
             ))
         }
+        // No wider than its sentence: a short correction gets a short pill.
+        if case .learn(let learn) = headline {
+            widest = max(widest, min(
+                sentenceWidth, padding * 2 + learnWidth(learn) + selectionFit
+            ))
+        }
         // Only when there is a key to name. `OfferContent.hold` draws the row
         // on the same condition, so the two agree about whether it is there to
         // be measured.
-        if !hotkey.isEmpty {
+        if showsHold(headline, hotkey: hotkey) {
             widest = max(widest, min(
                 sentenceWidth,
                 padding * 2 + title(holdLead) + holdKeycapWidth(hotkey) + title(holdTail)
@@ -1806,6 +1867,44 @@ enum PillMetrics {
     ///
     /// `chipFit` is the gap between what AppKit measures here and what SwiftUI
     /// draws over there.
+    static let learnMonoFont: NSFont =
+        .monospacedSystemFont(ofSize: 14, weight: .semibold)
+
+    /// Two points up on everything else the pill sets: at 12 this row read as
+    /// the caption to its own chip row rather than the thing being decided.
+    static let learnFont: NSFont = {
+        let plain = NSFont.systemFont(ofSize: 14, weight: .medium)
+        guard let rounded = plain.fontDescriptor.withDesign(.rounded) else { return plain }
+        return NSFont(descriptor: rounded, size: 14) ?? plain
+    }()
+
+    static let learnRow: CGFloat = ceil(
+        NSLayoutManager().defaultLineHeight(for: learnFont)
+    ) + 2
+
+    /// At 13 beside a 14pt sentence it read as the smaller of the two.
+    static let learnLeadFont: NSFont = {
+        let plain = NSFont.systemFont(ofSize: 14, weight: .semibold)
+        guard let rounded = plain.fontDescriptor.withDesign(.rounded) else { return plain }
+        return NSFont(descriptor: rounded, size: 14) ?? plain
+    }()
+
+    /// `title` uses `sentenceFont`, comes up short, and the chips then sit
+    /// on the question.
+    static let learnLeadWidth: CGFloat = ceil(
+        (learnLead as NSString).size(withAttributes: [.font: learnLeadFont]).width
+    ) + chipFit
+
+    /// Measured in both faces it is drawn in. `title` uses `sentenceFont`
+    /// alone, and the two monospaced runs are wider, so a panel sized from it
+    /// wrapped a line built to hold one. These are the view's runs exactly.
+    static func learnWidth(_ it: Learn) -> CGFloat {
+        let rounded = it.before + "  " + it.after
+        let mono = it.heard + it.term
+        return ceil((rounded as NSString).size(withAttributes: [.font: learnFont]).width)
+            + ceil((mono as NSString).size(withAttributes: [.font: learnMonoFont]).width)
+    }
+
     static func title(_ words: String) -> CGFloat {
         ceil((words as NSString).size(withAttributes: [.font: sentenceFont]).width) + chipFit
     }
@@ -2240,12 +2339,13 @@ private struct OfferContent: View {
             if let warning = reading.warning { self.warning(warning) }
             if !reading.words.isEmpty { words }
             selection
+            learn
             // Over the chips when there is anything above them, and over the
             // way out whenever it is drawn. `PillMetrics.rules` counts these
             // two conditions so the surface is measured for what it draws.
-            if headline?.isSelection == true || !reading.isEmpty { rule }
+            if headline?.ownsARow == true || !reading.isEmpty { rule }
             chips
-            if !model.hotkey.isEmpty { rule }
+            if showsHold { rule }
             hold
         }
         // The whole block is centred in the pill's height, so this lands as air
@@ -2347,6 +2447,34 @@ private struct OfferContent: View {
         }
     }
 
+    /// The correction, with everything that did not change pushed back.
+    ///
+    /// One `Text` and not an `HStack`, so it wraps as a sentence rather than
+    /// as boxes that each keep their width.
+    @ViewBuilder private var learn: some View {
+        if case .learn(let it) = headline {
+            let face = Font.system(size: 14, weight: .medium, design: .rounded)
+            let mono = Font.system(size: 14, weight: .semibold, design: .monospaced)
+            // Far enough back that the two words carry the row.
+            let quiet = Color(white: 0.62)
+            (
+                Text(it.before + " ").font(face).foregroundColor(quiet)
+                + Text(it.heard).font(mono.weight(.medium)).foregroundColor(Color(white: 0.52))
+                    .strikethrough(true, color: Self.struck)
+                + Text(" ").font(face)
+                + Text(it.term).font(mono).foregroundColor(.white)
+                + Text(it.after).font(face).foregroundColor(quiet)
+            )
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .padding(.horizontal, PillMetrics.padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// The only warm thing on the surface: the one mark that says "not this".
+    private static let struck = Color(red: 0.64, green: 0.39, blue: 0.35)
+
     /// The other way out, under the chips.
     ///
     /// The chips are a short list; holding the key reaches every transform and
@@ -2362,7 +2490,7 @@ private struct OfferContent: View {
     /// budget for this row, so the surface is never sized for a line it does
     /// not draw.
     @ViewBuilder private var hold: some View {
-        if !model.hotkey.isEmpty {
+        if showsHold {
             HStack(spacing: 6) {
                 Text(PillMetrics.holdLead)
                 keycap(model.hotkey)
@@ -2408,6 +2536,27 @@ private struct OfferContent: View {
     /// Whether this is the three-row shape, which is centred throughout.
     private var centred: Bool { headline?.isSelection == true }
 
+    private var isLearn: Bool {
+        if case .learn = headline { return true }
+        return false
+    }
+
+    /// The same question `PillMetrics` asked when it sized the surface.
+    private var showsHold: Bool {
+        PillMetrics.showsHold(headline, hotkey: model.hotkey)
+    }
+
+    /// Answers belong at the end of the question, not under its first word.
+    private var chipAlignment: Alignment {
+        if case .learn = headline { return .trailing }
+        return centred ? .center : .leading
+    }
+
+    private var chipStack: HorizontalAlignment {
+        if case .learn = headline { return .trailing }
+        return centred ? .center : .leading
+    }
+
     /// The chips, in the rows `PillMetrics.chipRows` laid them into.
     ///
     /// Drawn from that answer rather than laid out again here, because the
@@ -2416,13 +2565,13 @@ private struct OfferContent: View {
     /// the end.
     private var chips: some View {
         let lead: CGFloat
-        if case .landing(let words) = headline {
-            lead = PillMetrics.title(words) + PillMetrics.gap
-        } else {
-            lead = 0
+        switch headline {
+        case .landing(let words): lead = PillMetrics.title(words) + PillMetrics.gap
+        case .learn: lead = PillMetrics.learnLeadWidth + PillMetrics.gap
+        default: lead = 0
         }
         let rows = PillMetrics.chipRows(commands, lead: lead)
-        return VStack(alignment: centred ? .center : .leading, spacing: PillMetrics.chipRowGap) {
+        return VStack(alignment: chipStack, spacing: PillMetrics.chipRowGap) {
             ForEach(Array(rows.enumerated()), id: \.offset) { number, row in
                 HStack(spacing: 4) {
                     if number == 0, case .landing(let words) = headline {
@@ -2433,8 +2582,16 @@ private struct OfferContent: View {
                             .fixedSize()
                             .padding(.trailing, PillMetrics.gap - 4)
                     }
+                    if number == 0, case .learn = headline {
+                        Text(PillMetrics.learnLead)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(Self.restingText)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .padding(.trailing, PillMetrics.gap - 4)
+                    }
 
-                    if centred { Spacer(minLength: 0) }
+                    if centred || isLearn { Spacer(minLength: 0) }
 
                     ForEach(row, id: \.self) { index in
                         // A tap gesture rather than a `Button`. The pill is a
@@ -2453,7 +2610,7 @@ private struct OfferContent: View {
                             .onHover { over in if over { model.selected = index } }
                     }
 
-                    Spacer(minLength: 0)
+                    if !isLearn { Spacer(minLength: 0) }
                 }
             }
         }
@@ -2461,7 +2618,7 @@ private struct OfferContent: View {
         // Centred under the words it is about, left where it is the only row.
         // Three rows want one axis; one row is a thing you aim at, and a row of
         // chips that moves as the pill grows is a row you have to find again.
-        .frame(maxWidth: .infinity, alignment: centred ? .center : .leading)
+        .frame(maxWidth: .infinity, alignment: chipAlignment)
     }
 
     /// Lit carries the same leaf as a changed word and as the confirm button:

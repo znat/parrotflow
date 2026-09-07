@@ -497,10 +497,14 @@ if let index = arguments.firstIndex(of: "--field-dump") {
 
 if let index = arguments.firstIndex(of: "--edit-diff") {
     guard arguments.indices.contains(index + 2) else {
-        print("usage: ParrotFlow --edit-diff \"<before>\" \"<now>\"")
+        print("usage: ParrotFlow --edit-diff \"<before>\" \"<now>\" [--lang fr]")
         exit(2)
     }
-    exit(EditDiffCommand.run(before: arguments[index + 1], now: arguments[index + 2]))
+    let code = await EditDiffCommand.run(
+        before: arguments[index + 1], now: arguments[index + 2],
+        language: languageList(arguments)?.first ?? "en"
+    )
+    exit(code)
 }
 
 if let index = arguments.firstIndex(of: "--portrait") {
@@ -732,7 +736,7 @@ if let index = arguments.firstIndex(of: "--panel-sheet") {
 
 if let index = arguments.firstIndex(of: "--panels") {
     guard arguments.indices.contains(index + 1) else {
-        print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|vocabulary|punctuation|rule|dictation|preview|pill|update|sequence> [seconds]")
+        print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer|learn|vocabulary|punctuation|rule|dictation|preview|pill|update|sequence> [seconds]")
         exit(2)
     }
     let seconds = arguments.indices.contains(index + 2) ? Double(arguments[index + 2]) : nil

@@ -110,6 +110,14 @@ final class EditWatch {
     /// sentence is dictated.
     private static let quiet: TimeInterval = 1.2
 
+    /// How long after the dictation a change can still be a correction of it.
+    ///
+    /// Measured on 86 archived corrections: every mishearing arrived inside 24
+    /// seconds, and the noise runs to 13 hours. Capping takes precision from
+    /// 73% to 94% and loses none of them. The settle runs after this, so the
+    /// real cap is `quiet` longer; the gap it closes is hours wide.
+    private static let window: TimeInterval = 30
+
     var isRunning: Bool { !monitors.isEmpty }
 
     /// When the dictation this watch is about landed. A change two seconds
@@ -185,7 +193,7 @@ final class EditWatch {
         }
         if let snapshot,
            let line = Self.line(holding: dictated, in: snapshot),
-           Self.holds(dictated, line) || attempt >= 40 {
+           Self.settled(dictated, line) || attempt >= 40 {
             before = line
             Log.write("edit watch: watching \"\(line.prefix(60))\"")
             return
@@ -204,15 +212,15 @@ final class EditWatch {
         }
     }
 
-    func stop() {
-        // The read that was waiting for you to stop typing, run before the
-        // watch goes. Correcting a word and reaching straight for the hotkey is
-        // the ordinary way to use this app, and cancelling here threw away
-        // every correction made that way — which was all of them.
+    /// - Parameter reading: whether the read waiting on the settle runs first.
+    ///   It does when you moved on — correcting a word and reaching straight
+    ///   for the hotkey is ordinary, and cancelling here threw away every
+    ///   correction made that way. It does not when the watch has expired.
+    func stop(reading: Bool = true) {
         if settling != nil {
             settling?.cancel()
             settling = nil
-            read()
+            if reading { read() }
         }
         tell()
         for monitor in monitors { NSEvent.removeMonitor(monitor) }
@@ -228,6 +236,15 @@ final class EditWatch {
     /// A key went by. Read once the typing stops, not now — unless the key was
     /// the one that ends the line, which says the typing is over.
     private func look(_ event: NSEvent?) {
+        // Past the window this is somebody using their computer. Asked on a
+        // keystroke and not on a timer, for the reason in the type comment.
+        let age = Date().timeIntervalSince(startedAt)
+        guard age <= Self.window else {
+            Log.write("edit watch: a dictation \(Int(age))s old is not being"
+                + " corrected any more; letting the field go")
+            stop(reading: false)
+            return
+        }
         if keysSeen == 0 { Log.write("edit watch: first key seen") }
         keysSeen += 1
         settling?.cancel()
@@ -529,11 +546,14 @@ final class EditWatch {
         case punctuation
         /// Every word it lands on is one the word lists know.
         case ordinary
+        /// The heard side ends a sentence, so the pair straddles a cut.
+        case ended
 
         var description: String {
             switch self {
             case .punctuation: return "punctuation, not a name"
             case .ordinary: return "ordinary English"
+            case .ended: return "the heard side ends a sentence"
             }
         }
     }
@@ -585,6 +605,57 @@ final class EditWatch {
             }
         }
         return .ordinary
+    }
+
+    /// The floor a correction onto an ordinary word clears to be offered anyway.
+    ///
+    /// 0.65 on the same 86: mishearings found go from 62% to 85%. It buys
+    /// `borderplay` -> `boilerplate` and `this fluency` -> `disfluency`, which
+    /// land on words the dictionaries know and are still the decoder's fault.
+    /// Not the spelling floor `refusal` rejects: that asked spelling to *find*
+    /// the pair, this asks sound to classify one already in hand.
+    static let soundFloor: Float = 0.65
+
+    /// Whether a correction is worth offering as a rule, sound included.
+    ///
+    /// The whole decision, in one place. The sound branch used to be written
+    /// out at both callers and could drift.
+    ///
+    /// A heard side ending a sentence is a cut, not a word: `Q.` -> `cue`
+    /// scores 1.00 because neither ear says the stop, so sound alone lets it
+    /// through. 4 of the 122 recorded corrections, all noise, recall unchanged.
+    static func offers(_ change: Change, sound: Float) -> Refusal? {
+        // Only ever over an accept. Asked first it shadowed `punctuation` on
+        // `rebase.` -> `rebase:`, which was already refused for a better reason.
+        let ended = change.was.trimmingCharacters(in: .whitespaces).last.map {
+            ".?!".contains($0)
+        } == true
+        guard let refusal = refusal(for: change) else { return ended ? .ended : nil }
+        if case .ordinary = refusal, sound >= soundFloor { return ended ? .ended : nil }
+        return refusal
+    }
+
+    /// How alike two words sound, on the better of the two ears.
+    ///
+    /// Never mixed, the same rule as `VocabularyJudge`: espeak's inventory is
+    /// not the model's, so a score compares two readings from one ear. Zero
+    /// when neither answers, and near zero for a term neither can say —
+    /// `when` -> `Qwen` scores 0.30. The word lists catch that one, which is
+    /// why this is an `or` and not a second hurdle.
+    static func soundsAlike(_ was: String, _ now: String, language: String) async -> Float {
+        // Only an ear already here: `NeuralPhonemes.of` would fetch the model,
+        // and this runs behind the panel seconds after a hand correction.
+        let neural = NeuralPhonemes.isDownloaded ? NeuralPhonemes.language(language) : nil
+        guard Phonemes.binary != nil || neural != nil else { return 0 }
+        let asking = [was, now]
+        let rules = Phonemes.of(asking, voice: language == "fr" ? "fr" : "en-us")
+        let model = neural == nil ? [:] : await NeuralPhonemes.of(asking, language: neural!)
+        var best: Float = 0
+        for ear in [rules, model] {
+            guard let a = ear[was], let b = ear[now], !a.isEmpty, !b.isEmpty else { continue }
+            best = max(best, Phonemes.similarity(a, b))
+        }
+        return best
     }
 
     /// The words of a line, punctuation kept: `Vercel.` and `Vercel` are not the
@@ -748,5 +819,23 @@ final class EditWatch {
         let wanted = words(of: dictated)
         guard !wanted.isEmpty else { return true }
         return shared(dictated, line) * 3 >= wanted.count * 2
+    }
+
+    /// Whether the line is this dictation rather than one that resembles it.
+    ///
+    /// `holds` is too loose to *start* on. "Je joue avec Eric au tennis."
+    /// dictated under "…au basket." satisfied it against the sentence already
+    /// there — five of six words — so the watch baselined the previous
+    /// sentence and read the new one arriving as a rewrite. All the words, in
+    /// order, to accept a line early; `holds` stays as the last-attempt
+    /// fallback. Letters and digits only: a prompt is not what says this is
+    /// the sentence.
+    static func settled(_ dictated: String, _ line: String) -> Bool {
+        let bare = { (s: String) in
+            String(s.lowercased().filter { $0.isLetter || $0.isNumber })
+        }
+        let wanted = bare(dictated)
+        guard !wanted.isEmpty else { return true }
+        return bare(line).contains(wanted)
     }
 }
