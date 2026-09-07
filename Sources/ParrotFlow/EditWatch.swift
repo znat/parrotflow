@@ -251,7 +251,15 @@ final class EditWatch {
 
     /// Hand over what was found, once, in the order it was found.
     private func tell() {
-        guard !seen.isEmpty else { return }
+        guard !seen.isEmpty else {
+            // Once per watch, and only after a key went by. A watch nobody
+            // typed into has nothing to say and saying so every time would
+            // bury the times it does.
+            if keysSeen > 0, reported.insert("told nothing").inserted {
+                Log.write("edit watch: \(keysSeen) key(s) and no correction to hand over")
+            }
+            return
+        }
         let changes = seen.values.sorted { $0.at < $1.at }
             .filter { told.insert("\($0.at)\u{1}\($0.now)").inserted }
         seen = [:]
@@ -269,8 +277,20 @@ final class EditWatch {
 
     private func read() {
         // Nothing to compare against until the line has been found.
-        guard let before, let field else { return }
-        guard Date().timeIntervalSince(lastLook) > 0.15 else { return }
+        guard let before, let field else {
+            if reported.insert("no line").inserted {
+                Log.write("edit watch: nothing to compare against; the line was never found")
+            }
+            return
+        }
+        // Two reads inside 150 ms are one read. Said out loud because the
+        // second one is usually Return arriving on top of the settle, and a
+        // Return that reads nothing is the moment the correction is handed
+        // over — or is not.
+        guard Date().timeIntervalSince(lastLook) > 0.15 else {
+            Log.write("edit watch: read again inside 150 ms; keeping the last one")
+            return
+        }
         lastLook = Date()
 
         guard let whole = CaretAnchor.snapshot(of: field) else {
@@ -308,7 +328,17 @@ final class EditWatch {
         // nobody meant — deleting `Prezi` back to `P` before typing `Praisy`
         // reported `Prezi -> P` as a correction — and only the last state is
         // one. Told when the watch ends, which is when you move on.
-        for change in found { seen[change.at] = change }
+        //
+        // Said out loud on the way in, because the gap between finding one and
+        // handing it over is minutes long and nothing used to mark either end.
+        // A correction found and then lost — the app quit, the field went —
+        // looked exactly like one that was never seen.
+        for change in found {
+            if seen[change.at]?.now != change.now {
+                Log.write("edit watch: holding \"\(change.was)\" -> \"\(change.now)\"")
+            }
+            seen[change.at] = change
+        }
     }
 
     // MARK: - the comparison

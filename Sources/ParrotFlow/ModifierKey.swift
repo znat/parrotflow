@@ -205,6 +205,14 @@ final class ModifierKeyMonitor {
     /// this window says what.
     static let tapGrace: TimeInterval = 0.4
 
+    /// How old the modifier's own down edge can be and still be this press.
+    ///
+    /// The poll runs every 25 ms, so a real edge is milliseconds old. Ten poll
+    /// intervals is room for a main thread that stalled and nothing like the
+    /// seconds a frozen reading comes back with. See
+    /// `sawInputBeforeTheMonitors`.
+    static let edgeIsThisPress: TimeInterval = 0.25
+
     private var key: ModifierKey?
     private var pressDelay: TimeInterval = 0
     /// The key is physically down.
@@ -214,6 +222,10 @@ final class ModifierKeyMonitor {
     /// This hold has been ruled out. Stays set until the key comes up, so a
     /// second key in the same shortcut cannot abort twice.
     private var isSpent = false
+    /// Why the hold above was spent, in the words the log writes it. Set by
+    /// `somethingElseHappened`, read once at the release. Nil until something
+    /// spends one.
+    private var spentBecause: String?
 
     var isMonitoring: Bool { timer != nil }
 
@@ -275,8 +287,9 @@ final class ModifierKeyMonitor {
         }
 
         // Held, and another modifier joined it: a chord, not a dictation.
-        if down, !isSpent, flags & ModifierKey.allDeviceMasks & ~key.mask != 0 {
-            somethingElseHappened()
+        let others = flags & ModifierKey.allDeviceMasks & ~key.mask
+        if down, !isSpent, others != 0 {
+            somethingElseHappened("another modifier is down — flags 0x\(String(others, radix: 16))")
         }
     }
 
@@ -303,8 +316,8 @@ final class ModifierKeyMonitor {
         // the key physically went down. A `⌘S` typed faster than that lands in
         // the gap and is never seen, so the delay would expire on silence and
         // open the mic. Ask the event source about the gap instead.
-        if sawInputBeforeTheMonitors() {
-            somethingElseHappened()
+        if let landed = sawInputBeforeTheMonitors() {
+            somethingElseHappened("\(landed) landed before the monitors were on")
             return
         }
         let timer = Timer(timeInterval: pressDelay, repeats: false) { [weak self] _ in
@@ -331,9 +344,21 @@ final class ModifierKeyMonitor {
         // is somebody who meant to tap-and-hold and let go too early, and
         // summoning twice for it would be answering a gesture nobody made.
         let wasTap = !wasPressed && !isSpent && !afterTap
+        // Read before `endHold`, which clears it.
+        let isSpent = self.isSpent
         endHold()
         guard !wasPressed else { onRelease?(); return }
-        guard wasTap else { return }
+        guard wasTap else {
+            // A key that went down and up and was neither a dictation nor a
+            // tap. Both reasons are ordinary — a shortcut, or the second half
+            // of a tap-and-hold — and both look from outside like a press that
+            // did nothing, so the log has to be able to tell them apart.
+            Log.write(
+                "key: neither press nor tap — "
+                + (isSpent ? (spentBecause ?? "something else happened") : "it followed a tap")
+            )
+            return
+        }
         tappedAt = Self.physicalEdge()
         let timer = Timer(timeInterval: Self.tapGrace, repeats: false) { [weak self] _ in
             guard let self else { return }
@@ -350,6 +375,7 @@ final class ModifierKeyMonitor {
             // rather than of `isDown`, which is the poll's view and is exactly
             // what has not caught up yet.
             guard self.key?.isPressed != true || !self.pressIsTheTapsSecondHalf() else {
+                Log.write("key: the tap is the first half of a tap-and-hold")
                 return
             }
             self.onTap?()
@@ -361,8 +387,9 @@ final class ModifierKeyMonitor {
     /// The one path out of a hold that was meant for something else. Delivered
     /// as an abort only if a press went out for it — otherwise the press
     /// simply never happens and there is nothing to tell anyone about.
-    private func somethingElseHappened() {
+    private func somethingElseHappened(_ why: String) {
         guard !isSpent else { return }
+        spentBecause = why
         let wasPressed = pressDelivered
         isSpent = true
         pressDelivered = false
@@ -422,6 +449,16 @@ final class ModifierKeyMonitor {
         return Date().addingTimeInterval(-age)
     }
 
+    /// What to call an event in a log line.
+    private static func name(of event: NSEvent) -> String {
+        switch event.type {
+        case .keyDown: return "a key"
+        case .scrollWheel: return "a scroll"
+        case .rightMouseDown: return "a right click"
+        default: return "a click"
+        }
+    }
+
     /// Whether a key or a click landed between the modifier going down and the
     /// poll noticing it.
     ///
@@ -435,13 +472,41 @@ final class ModifierKeyMonitor {
     /// through this API, and a trackpad flick keeps sending events for about a
     /// second — so asking would abort every dictation started after scrolling a
     /// page. The monitor half still catches scrolls, with the momentum filter.
-    private func sawInputBeforeTheMonitors() -> Bool {
+    ///
+    /// The whole comparison rests on the modifier's own age being this press's
+    /// age, and there is one state where it is not. Secure Event Input — a
+    /// terminal with secure keyboard entry, a password field, an app that
+    /// turned it on and never turned it back off — stops the session source
+    /// recording the keyboard, and the reading freezes. The poll has just seen
+    /// the key go down and this API says the last `flagsChanged` was four
+    /// seconds ago, so every click and keystroke in those four seconds is
+    /// "newer than the modifier" and the press is thrown away as a shortcut.
+    /// Measured on 2026-09-06 with Notion holding secure input: a modifier
+    /// reported 4621 ms old, and roughly every second press refused.
+    ///
+    /// So a stale edge abstains rather than guesses. The poll runs every 25 ms
+    /// and this is called from it, so a real edge is milliseconds old; anything
+    /// past a quarter of a second is the source not talking about this press,
+    /// and the monitors installed a line above are what is left to catch a
+    /// shortcut. `physicalEdge` guards the same reading the same way.
+    private func sawInputBeforeTheMonitors() -> String? {
         func age(_ type: CGEventType) -> CFTimeInterval {
             CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: type)
         }
         let modifierWentDown = age(.flagsChanged)
-        let others: [CGEventType] = [.keyDown, .leftMouseDown, .rightMouseDown, .otherMouseDown]
-        return others.contains { age($0) < modifierWentDown }
+        guard modifierWentDown.isFinite, modifierWentDown >= 0,
+              modifierWentDown < Self.edgeIsThisPress else { return nil }
+        let others: [(CGEventType, String)] = [
+            (.keyDown, "a key"), (.leftMouseDown, "a click"),
+            (.rightMouseDown, "a right click"), (.otherMouseDown, "a click"),
+        ]
+        for (type, name) in others where age(type) < modifierWentDown {
+            return String(
+                format: "%@ %.0f ms old against a modifier %.0f ms old",
+                name, age(type) * 1000, modifierWentDown * 1000
+            )
+        }
+        return nil
     }
 
     private func watchForOtherInput() {
@@ -455,7 +520,7 @@ final class ModifierKeyMonitor {
             // and treating it as one would abort a dictation started right
             // after scrolling a page.
             guard event.type != .scrollWheel || event.momentumPhase.isEmpty else { return }
-            self?.somethingElseHappened()
+            self?.somethingElseHappened("\(Self.name(of: event)) arrived while it was held")
         }
         // The global monitor sees events while another app is in front, which
         // is every ordinary dictation. The local one sees them while a panel of

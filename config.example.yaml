@@ -1,6 +1,11 @@
 # ParrotFlow configuration
 # Edit and save — changes are picked up automatically. Delete any line to
 # get its default back. `--check-config` says what the file adds up to.
+#
+# Agents: the docs are in the repository, github.com/znat/parrotflow.
+# Start at AGENTS.md — it routes to the page for the job. Every key here is
+# in docs/configuration.md. Validate with the binary, not by reading:
+#   /Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --check-config
 
 hotkey:
   # A bare modifier (right_option, right_command, right_control, fn, ...) or

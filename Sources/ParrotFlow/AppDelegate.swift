@@ -99,6 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let previewPanel = PreviewPanel()
     /// Says once per microphone that this one will cost you words.
     private let micNotice = MicNotice()
+    private let keyboardNotice = KeyboardNotice()
     /// The release notes, and the three answers to them.
     private let updatePanel = UpdatePanel()
     private var pendingSelection: SelectionReader.Selection?
@@ -1258,6 +1259,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // and the behaviour cannot come apart again.
         if !recorder.isRecording {
             keyedAtPress = afterTap || (offerIsUp && pill.isOpen)
+            // Only when it is on, and it says which of the two put it there.
+            // This is the one decision at the press you cannot see from
+            // outside: the same key, the same meter, and the words routed
+            // instead of written down. A hold taken as an edit when you meant
+            // to dictate left nothing in the log to name the reason.
+            if keyedAtPress {
+                Log.write(
+                    "hold: an edit instruction — \(afterTap ? "the tap before it" : "the open panel")"
+                )
+            }
         }
         // Read before anything this press does, so an abort later can tell the
         // transcription this press started from one that was already running.
@@ -3340,6 +3351,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the decoder is done, and by then the default input can be another
         // device — see `micAtPress`.
         micNotice.showIfNeeded(press.mic)
+        // And the other thing that can be wrong with a dictation nobody has
+        // been told about: another app holding Secure Event Input, which takes
+        // Escape and the offer's letters away. Here for the same reason as the
+        // microphone — this is the moment before those keys matter, and being
+        // told at the moment you press one is being told too late, with the
+        // letter already in your document.
+        //
+        // Never both at once. They are the same panel in the same corner, and
+        // the second one would sit on the first.
+        if !micNotice.isShowing { keyboardNotice.showIfNeeded() }
 
         guard config.feedback.correctOffer else { return }
         guard let text = lastTranscript?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -3656,7 +3677,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // stops a recording, and a stop that came out short is a stop — the
         // press was simply never delivered. Summoning there would answer a key
         // meant for the microphone, and do it over the *previous* sentence.
-        guard !recorder.isRecording, runsInFlight <= 0 else { return }
+        // Said out loud, all three of them. Every way out of here used to be a
+        // bare `return`, so a tap that did nothing left a log with nothing in
+        // it between the last dictation and the next one — and "nothing
+        // happens" is exactly how this is reported.
+        guard !recorder.isRecording, runsInFlight <= 0 else {
+            Log.write(
+                "summon: not now — recording \(recorder.isRecording),"
+                + " \(runsInFlight) run(s) in flight"
+            )
+            return
+        }
         // A tap while the offer is already open is a tap at nothing. Raising a
         // second one over the first would take the letters again and restart a
         // clock the pointer may be deliberately holding.
@@ -3664,10 +3695,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Closed, it is the opposite gesture rather than none: the tab is on
         // screen so that a tap can open it, and the key it draws is this one.
         if offerIsUp {
-            if !pill.isOpen { openTheOffer() }
+            if !pill.isOpen {
+                openTheOffer()
+            } else {
+                Log.write("summon: the panel is already open")
+            }
             return
         }
-        guard config.feedback.correctOffer else { return }
+        guard config.feedback.correctOffer else {
+            Log.write("summon: the offer is switched off in config.yaml")
+            return
+        }
 
         // The selection wins, and it never goes stale: it is what you are
         // pointing at now. It is also the only target this can have in an app

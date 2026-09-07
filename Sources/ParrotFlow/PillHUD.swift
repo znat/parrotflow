@@ -205,7 +205,9 @@ final class PillModel: ObservableObject {
     /// Published rather than worked out in the view, because only `beside` knows
     /// it: the choice is made from how much room is left under the line, which
     /// is a question about the screen and not about the state.
-    @Published var docked: Dock?
+    /// `.free` until the first placement, never nil: the surface has one form
+    /// and the dock says which edge of it touches the line — see `isDocked`.
+    @Published var docked: Dock? = .free
 
     @Published var level: Float = 0
     @Published var elapsed: TimeInterval = 0
@@ -365,7 +367,6 @@ final class PillHUD {
     // MARK: - The states
 
     func recording(icon: NSImage?, label: String? = nil) {
-        inDictation = true
         model.elapsed = 0
         model.level = 0
         model.appIcon = icon
@@ -850,7 +851,6 @@ final class PillHUD {
     private func fadeOut() {
         pendingHide = nil
         pendingDismiss = nil
-        inDictation = false
         pointerHolds = false
         openedByPointer = false
         pendingOpen?.cancel(); pendingOpen = nil
@@ -1211,48 +1211,31 @@ final class PillHUD {
         }
     }
 
-    /// Whether this is the offer's surface rather than the pill's.
-    ///
-    /// The state alone, and it used to ask for an anchor as well. That was
-    /// wrong and it showed: an app that will not say where its caret is — Slack
-    /// gives none at the press and its composer repaints on insert, so the diff
-    /// finds nothing either — got the old floating lozenge with the plumage rim
-    /// on it, and a 165x131 window around a 61x27 tab. Fifty-two points of
-    /// invisible window on every side, taking the mouse, sitting exactly where
-    /// you are typing. That is where "I cannot click on buttons" came from.
-    ///
-    /// The anchor decides *where* the offer goes, not *what it is*. With one it
-    /// hangs off a line and squares the edge that touches it; without one it
-    /// sits at the bottom of the screen with all four corners rounded — see
-    /// `Dock.free`. Either way it is the offer, so it is tinted, it has no rim,
-    /// and its window is the size of the thing you can see.
     /// Whether this is the docked surface rather than the floating capsule.
     ///
-    /// Everything a dictation puts on screen, and nothing else.
+    /// Always, now. The two forms are not two sizes of the same thing, they are
+    /// two objects: the docked one is part of the line it hangs off, and the
+    /// floating one is a black lozenge with the plumage rim turning on it, in
+    /// the middle of the screen. Anything that picks between them makes one
+    /// message come out as two surfaces, and it did — twice.
     ///
-    /// It used to ask for an anchor as well, and that was the offer's old bug
-    /// made twice: an app that will not say where its caret is got the old
-    /// capsule while it listened and the new tab when the words landed, so one
-    /// dictation was two objects again. The anchor decides *where* the surface
-    /// goes — beside the line, or at the bottom of the screen with all four
-    /// corners rounded, see `Dock.free` — never what it is.
+    /// First it asked for an anchor. An app that will not say where its caret
+    /// is — Slack gives none at the press and its composer repaints on insert,
+    /// so the diff finds nothing either — got the floating lozenge, and a
+    /// 165x131 window around a 61x27 tab. Fifty-two points of invisible window
+    /// on every side, taking the mouse, sitting exactly where you are typing.
+    /// That is where "I cannot click on buttons" came from.
     ///
-    /// A recording is always a dictation: there is no other reason the
-    /// microphone is open. Transcribing and a notice are not, so they follow
-    /// the recording through `inDictation`, which is what keeps a download's
-    /// progress and an update notice in the capsule where a sentence fits.
-    private var isDocked: Bool {
-        switch model.state {
-        case .offer, .recording: return true
-        case .working, .notice: return inDictation
-        }
-    }
-
-    /// Whether what is on screen belongs to a dictation.
+    /// Then it asked whether a dictation was on screen. That left every notice
+    /// raised before a recording starts wearing the old lozenge — including the
+    /// one that says the press failed, which is the message most likely to be
+    /// looked at closely.
     ///
-    /// Set when the microphone opens and cleared when the surface goes, so
-    /// every state between those two is the dictation's and wears its shape.
-    private var inDictation = false
+    /// The anchor decides *where* the surface goes, never what it is: with one
+    /// it hangs off a line and squares the edge that touches it, and without
+    /// one it sits at the bottom of the screen with all four corners rounded.
+    /// See `Dock.free`.
+    private var isDocked: Bool { true }
 }
 
 // MARK: - Metrics

@@ -419,9 +419,11 @@ CoreAudio against the engine: has the input moved. `The engine and its own
 input` is the engine against itself — the two formats it holds for its input
 node, which is the pair `installTap` compares. A microphone can move only that
 pair, and it is the more expensive way to be wrong: a stale binding costs a
-silent clip, while a graph that disagrees with itself makes `installTap` raise
-an exception through the hotkey handler, and the app then answers its menu and
-records nothing until it is restarted. The `This machine` block prints both
+silent clip, while a tap installed at the wrong half of that pair makes
+`installTap` raise an exception through the hotkey handler. The tap now goes on
+at the hardware format, which is the half `installTap` asserts against, so a
+node that describes its input two ways records instead of refusing — it is
+worth one rebuild, and only one. The `This machine` block prints both
 comparisons for whatever is plugged in right now.
 
 You can make a test clip without a microphone at all — `say` writes exactly the
