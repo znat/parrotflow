@@ -4064,7 +4064,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // two things at once, and both are worth keeping: the first does
             // not live here and the second does.
             if let right = existingTerm(named: back) {
-                try TermUses.record(term: right, said: sentence, span: back)
+                // `written` is the spelling this replaced, which is what lets
+                // the portrait cut a sentence holding both of them.
+                try TermUses.record(
+                    term: right, said: sentence, span: back, heard: written
+                )
                 rebuildPortrait(for: right)
             }
             Log.write(
@@ -5178,7 +5182,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // The span stays as typed. It has to be the word standing
                     // in the sentence, and the sentence holds what was written.
                     let term = existingTerm(named: rule.corrected) ?? rule.corrected
-                    try TermUses.record(term: term, said: corrected, span: rule.corrected)
+                    try TermUses.record(
+                        term: term, said: corrected, span: rule.corrected,
+                        heard: rule.heard
+                    )
                     rebuildPortrait(for: term)
                 } catch {
                     // A portrait that missed one sentence is worth less than a
