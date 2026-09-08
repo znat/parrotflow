@@ -308,6 +308,33 @@ cases:
     lang:    fr
     offer:   "no, the same word in another form"
 
+  # Nothing was replaced — a mark was typed beside the word. `mask` ->
+  # `mask (___)` was offered as a rule on 2026-09-08: the whole addition is
+  # punctuation, and `added` strips that off both readings before comparing,
+  # so it saw one word twice and no addition.
+  - written: "What if we mask with a neutral term? Like a mask."
+    now:     "What if we mask with a neutral term? Like a mask (___)."
+    expect:  none
+
+  # A space typed on the end is the same shape and equally not a correction.
+  - written: "he plays the guitar"
+    now:     "he plays the guitar "
+    expect:  none
+
+  # But a mark typed straight onto the word still changes it, and is refused
+  # for being punctuation rather than dropped. No space, nothing beside it.
+  - written: "keep it small"
+    now:     "keep it small."
+    expect:  "small -> small."
+    offer:   "no, punctuation, not a name"
+
+  # And the span the decoder split still reaches the offer. Trimming the ends
+  # must not reach the space in the middle.
+  - written: "we run the red crawl every night"
+    now:     "we run the Redcrawl every night"
+    expect:  "red crawl -> Redcrawl"
+    offer:   "yes"
+
   # The control the rule must not touch: a mishearing onto an ordinary word,
   # which is the whole reason the sound rule exists. Neither word has a lemma,
   # so the two readings cannot share one.

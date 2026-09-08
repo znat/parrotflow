@@ -465,7 +465,13 @@ final class EditWatch {
         while let last = a.last, !(last.isLetter || last.isNumber) { a = a.dropLast() }
         while let last = b.last, !(last.isLetter || last.isNumber) { b = b.dropLast() }
         let (short, long) = a.count < b.count ? (a, b) : (b, a)
-        guard short != long else { return false }
+        // The whole addition can be punctuation, and the strip above has just
+        // taken it off both readings: `mask.` -> `mask (___).` arrives here as
+        // `mask` twice. Nothing was replaced — `(___)` was typed beside the
+        // word — and the space in front of it is what says so. `small.` ->
+        // `small.)` and `Praisy` -> `Praisy's` have no space and stay changes
+        // to the word. Reported 2026-09-08.
+        guard short != long else { return typed(was, now).contains(where: \.isWhitespace) }
         guard long.hasPrefix(short) || long.hasSuffix(short) else { return false }
         // A whole word has to have appeared, or `Ghost` growing into `Ghostty`
         // would read as `Ghost` with something added.
@@ -479,6 +485,28 @@ final class EditWatch {
         guard join.contains(where: { $0.map { ".!?".contains($0) } == true })
         else { return false }
         return rest.contains { $0.isLetter || $0.isNumber }
+    }
+
+    /// The characters one reading has and the other does not.
+    ///
+    /// What is left of the longer once the head and the tail the two share are
+    /// off it. Not `trimmed`, which cuts only at punctuation and keeps whole
+    /// words: this is the raw difference, and it is read for one thing only —
+    /// whether a space was typed with it.
+    static func typed(_ was: String, _ now: String) -> Substring {
+        let (short, long) = was.count < now.count ? (was, now) : (now, was)
+        var head = short.startIndex, from = long.startIndex
+        while head < short.endIndex, from < long.endIndex, short[head] == long[from] {
+            head = short.index(after: head)
+            from = long.index(after: from)
+        }
+        var tail = short.endIndex, to = long.endIndex
+        while tail > head, to > from,
+              short[short.index(before: tail)] == long[long.index(before: to)] {
+            tail = short.index(before: tail)
+            to = long.index(before: to)
+        }
+        return long[from ..< to]
     }
 
     /// The two readings with the punctuation they share taken off both.
@@ -658,7 +686,11 @@ final class EditWatch {
     static func inflected(_ was: String, _ now: String, language: String) -> Bool {
         func lemma(_ word: String) -> String? {
             let bare = word.trimmingCharacters(in: .whitespaces).lowercased()
-            guard !bare.isEmpty else { return nil }
+            // One word, as written. `Tagger` omits punctuation, so
+            // `mask (___)` comes back as the single token `mask` and reads as
+            // `mask` in another form. A span the decoder split — `red crawl`
+            // for `Redcrawl` — must reach the offer for the same reason.
+            guard !bare.isEmpty, !bare.contains(where: \.isWhitespace) else { return nil }
             let tokens = Tagger.tokens(in: bare, language: language)
             guard tokens.count == 1 else { return nil }
             return tokens[0].lemma?.lowercased()
