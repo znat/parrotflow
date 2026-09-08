@@ -190,7 +190,7 @@ cases:
   #
   # The test cannot tell that from an English phrase whose glued form happens
   # to be a term, and `better stack` is one. So a `replacements` rule that has
-  # already written the term is left open by `VocabularyJudge.settle` and the
+  # already written the term is left open by `VocabularyPass.settle` and the
   # two sentence tests decide it. The sound path, which has written nothing
   # yet, still applies the glue. The note on the `gate` line says which.
 

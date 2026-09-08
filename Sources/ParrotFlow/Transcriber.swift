@@ -240,7 +240,7 @@ actor Transcriber {
                 }
             } catch {
                 Log.write("slot model: \(error.localizedDescription);"
-                    + " the vocabulary pass leaves what it cannot settle as heard")
+                    + " the vocabulary pass leaves what it cannot settle as it stands")
                 failed = true
             }
             await self.finishSlotModel(failed: failed)

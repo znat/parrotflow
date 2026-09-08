@@ -20,7 +20,7 @@
 # code rather than by a list here:
 #
 #   five are French. `Pipeline.language` says so, and the model is English.
-#   four are spelling lessons. `VocabularyJudge.teaching` reverts them with no
+#   four are spelling lessons. `VocabularyPass.teaching` reverts them with no
 #   model, so they are not a routing decision — scripts/check-spells-rule.sh
 #   is where that rule is scored.
 #

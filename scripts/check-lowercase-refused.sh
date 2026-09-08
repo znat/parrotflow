@@ -7,7 +7,7 @@
 # `Better Stack` glues to the term `BetterStack`, so the rule writes the term
 # everywhere. When the sentence refuses that place, putting back what the
 # decoder wrote puts back its capitals too — and the decoder wrote them because
-# it thought it was writing a name. `VocabularyJudge.lowercased` is the half
+# it thought it was writing a name. `VocabularyPass.lowercased` is the half
 # that decides, and `AS HEARD` is the half that keeps a real name safe.
 #
 # No model. `NLTagger` and the vocabulary answer this, so it runs in CI and on
