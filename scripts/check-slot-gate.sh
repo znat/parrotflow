@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# Scores the whole route in front of the judge, against tests/judge-cases.yaml.
+# Scores the route the vocabulary pass takes, against tests/judge-cases.yaml.
 #
 #   scripts/check-slot-gate.sh
 #
 # Four numbers, and the last two are the ones that decide: how many proposals
 # were written without asking, how many were refused without asking, how many
-# still cost a judge call, and how many of the first two were wrong.
+# were left open, and how many of the first two were wrong.
 #
-# The judge is a model call of about 900 ms. Every proposal the free lexical
-# gate does not settle goes to it today. `SlotGate` settles some of them with a
+# A place nobody settles keeps whatever is already in the text, so an open
+# route is a decision by default and not a question asked of anything. `SlotGate` settles some of them with a
 # masked language model — see that file for the rules and their order.
 #
 # Not in `make test` and not in CI: it needs the 269 MB slot model, which
 # CI has no business downloading. Run it by hand after touching `SlotGate`,
 # `Vocabulary.autoApplies` or the tag sets. Nothing is downloaded here either —
-# with no cached model every case routes to `judge` and the run says so.
+# with no cached model every case is left open and the run says so.
 #
 # Nine of the 59 cases are not scored, and both exclusions are made by shipped
 # code rather than by a list here:
 #
 #   five are French. `Pipeline.language` says so, and the model is English.
-#   four are spelling lessons. `VocabularyJudge.teaching` reverts them with no
+#   four are spelling lessons. `VocabularyPass.teaching` reverts them with no
 #   model, so they are not a routing decision — scripts/check-spells-rule.sh
 #   is where that rule is scored.
 #
@@ -77,11 +77,11 @@ while IFS=$'\x1f' read -r number said heard term expect; do
   case "$route" in
     apply)   applied=$((applied + 1)) ;;
     decline) declined=$((declined + 1)) ;;
-    judge)   asked=$((asked + 1)) ;;
+    open)    asked=$((asked + 1)) ;;
     *)       echo "  ✗ case $number: the binary printed no route"; exit 1 ;;
   esac
 
-  # A route that decided is checked against the label. `judge` is not an
+  # A route that decided is checked against the label. `open` is not an
   # answer, so it can be neither right nor wrong here.
   mark=" "
   if [ "$route" = apply ] && [ "$expect" = decline ]; then
@@ -100,10 +100,10 @@ if [ "$total" -eq 0 ]; then
 fi
 
 printf '  %d scored, %d not (tests/judge-cases.yaml)\n' "$total" "$skipped"
-printf '  applied %d   declined %d   judge %d\n' "$applied" "$declined" "$asked"
+printf '  applied %d   declined %d   open %d\n' "$applied" "$declined" "$asked"
 printf '  wrong applies %d   wrong declines %d\n' "$wrong_apply" "$wrong_decline"
 
 # A wrong apply writes a word nobody said with no menu behind it. A wrong
 # decline loses a name the speaker did say. Neither may be traded for fewer
-# judge calls, so either one fails the run.
+# open places, so either one fails the run.
 [ "$wrong_apply" -eq 0 ] && [ "$wrong_decline" -eq 0 ]

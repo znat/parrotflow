@@ -45,7 +45,7 @@ enum PipelineCommand {
         /// Its own `models:`. Without one `config.llmEnabled` is false and
         /// every stage that asks a model declines — which is right for a
         /// fixture asserting on what a stage *found*, and is why the verdicts
-        /// of the vocabulary judge were untestable from here at all.
+        /// of the vocabulary pass were untestable from here at all.
         var models: [String: ModelSpec] = [:]
 
         enum CodingKeys: String, CodingKey {

@@ -34,7 +34,7 @@ enum WordPieces {
     /// Three answers, not two, and the third is the point. A missing file that
     /// answered "unknown" would put the gate back exactly where it was — both
     /// lists silent, the proposal written in without asking. `nil` is what
-    /// `Vocabulary.autoApplies` turns into "ask the judge".
+    /// `Vocabulary.autoApplies` turns into "leave it open".
     static func knows(_ word: String) -> Bool? {
         guard let words else { return nil }
         return words.contains(fold(word))

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scores `VocabularyJudge.teaching` against tests/spells-cases.yaml.
+# Scores `VocabularyPass.teaching` against tests/spells-cases.yaml.
 #
 #   scripts/check-spells-rule.sh
 #

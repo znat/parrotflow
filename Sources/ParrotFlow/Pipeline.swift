@@ -47,7 +47,7 @@ struct Pipeline: Equatable, Codable {
         ///
         /// One stage because it was always one algorithm. It was written as
         /// three — `replacements` wrote the exact matches, `fuzzy` caught the
-        /// near ones, `vocabulary` judged them — and the order they had to run
+        /// near ones, `vocabulary` settled them — and the order they had to run
         /// in was enforced by hand, because the three were never independent.
         /// Spoken numbers as digits, in the language its own pass resolves.
         case numbers
@@ -59,7 +59,7 @@ struct Pipeline: Equatable, Codable {
         /// surface, which is why it is not part of `context` — see `InputBox`.
         case input
         /// Every substitution the vocabulary pass made, settled against the
-        /// sentence it stands in — see `VocabularyJudge` and `SentenceGate`.
+        /// sentence it stands in — see `VocabularyPass` and `SentenceGate`.
         /// The pipeline entry is `- vocabulary`. It calls no model.
         case vocabulary
         /// One of the entries in `transforms:`, run over the whole
@@ -134,9 +134,9 @@ struct Pipeline: Equatable, Codable {
         /// Read only so `validate` can refuse it by name. There is no prompt
         /// and no model in that stage, and nothing else looks at this.
         var prompt: String?
-        /// How many places one sentence may offer — see `VocabularyJudge.Caps`.
+        /// How many places one sentence may offer — see `VocabularyPass.Caps`.
         /// Absent on every other stage.
-        var caps: VocabularyJudge.Caps?
+        var caps: VocabularyPass.Caps?
         /// Whether a `heard:` rendering also matches one edit away. Absent
         /// means true.
         ///
@@ -156,7 +156,7 @@ struct Pipeline: Equatable, Codable {
         var nearMisses: Bool?
         /// Written `by_sound:`. Whether words that *sound* like a term are
         /// offered as well as words spelled like one — see
-        /// `VocabularyJudge.phonemeParts`.
+        /// `VocabularyPass.phonemeParts`.
         ///
         /// Its own switch rather than part of `near_misses:`. The two reach
         /// different words (`pressed` by sound, `Praise's` by spelling), they
@@ -168,7 +168,7 @@ struct Pipeline: Equatable, Codable {
         /// false" have to stay tellable apart.
         var bySound: Bool?
         /// Written `gate:`. Whether the two word lists and the slot's part of
-        /// speech may settle a proposal — see `VocabularyJudge.settle`.
+        /// speech may settle a proposal — see `VocabularyPass.settle`.
         ///
         /// `gate: false` leaves every proposal to the sentence gate and to
         /// whatever arrived, which is what the gate was measured against and
@@ -408,7 +408,7 @@ struct Pipeline: Equatable, Codable {
             // The prompt is compiled in. A config still naming a file is
             // refused rather than warned about: a warning leaves a filename in
             // a config doing nothing, and the person who edits that file and
-            // sees the judge behave exactly as before has no way to find out
+            // sees the pass behave exactly as before has no way to find out
             // why. Refusing says it once, at load, where they typed it.
             if let named = step.prompt, !named.isEmpty {
                 problems.append("pipeline: `- vocabulary: \(named)` names a prompt file."
@@ -473,7 +473,7 @@ struct Pipeline: Equatable, Codable {
 
     /// Stages that move the words `vocabulary` is about to talk about.
     ///
-    /// The judge is handed spans the acoustic pass measured on the transcript
+    /// The pass is handed spans the acoustic pass measured on the transcript
     /// as the decoder produced it. A stage that rewrites text moves them, and
     /// the stage then has to re-anchor by searching for the words — which is
     /// the mechanism that put the menu on the wrong `Versailles` (F3, F10).
@@ -484,14 +484,14 @@ struct Pipeline: Equatable, Codable {
     /// The stage reads spans the acoustic pass measured before the pipeline
     /// started, and any edit above it moves them (F10). The exact pass used to
     /// be an exception too, because it ran as a separate `replacements` stage
-    /// and the judge needs the rules to have fired; it is inside this stage
+    /// and the pass needs the rules to have fired; it is inside this stage
     /// now.
     private func vocabularyOrderProblems() -> [String] {
-        guard let judge = stages.firstIndex(of: .vocabulary) else { return [] }
+        guard let pass = stages.firstIndex(of: .vocabulary) else { return [] }
         // `interpret` is the exception. It ran above the whole pipeline until
         // it became a step, so it has always been above this one, and it takes
         // a mark out rather than rewriting a word.
-        let above = steps[..<judge]
+        let above = steps[..<pass]
             .filter { $0.stage.editsText && $0.stage != .interpret }
             .map { Pipeline.namespace(of: $0) }
         guard !above.isEmpty else { return [] }
@@ -1046,10 +1046,10 @@ struct Pipeline: Equatable, Codable {
     /// **Nothing here calls a model.** Every substitution used to be put to a
     /// local model, one KEEP or REVERT each, at about 900 ms a dictation. What
     /// decides now is the two word lists, the slot's part of speech, and the
-    /// two tests that read the sentence — see `VocabularyJudge.settle` and
+    /// two tests that read the sentence — see `VocabularyPass.settle` and
     /// `SentenceGate`. Every place they leave open keeps what arrived.
     ///
-    /// The mechanics are in `VocabularyJudge`. This is the wiring: which
+    /// The mechanics are in `VocabularyPass`. This is the wiring: which
     /// substitutions are gathered, which gates run, and which variables come
     /// back.
     private func settleVocabulary(
@@ -1095,7 +1095,7 @@ struct Pipeline: Equatable, Codable {
             return StageResult(text: text, vars: wrote.merging(vars) { _, new in new })
         }
 
-        let caps = step.caps ?? VocabularyJudge.Caps.standard
+        let caps = step.caps ?? VocabularyPass.Caps.standard
         // Both sources. The acoustic pass proposes with positions; a
         // `replacements` rule publishes none, so its substitutions are found by
         // searching for the term and told apart from the terms the decoder
@@ -1106,7 +1106,7 @@ struct Pipeline: Equatable, Codable {
         // text this stage was handed.
         let rules = exact.changes
         let beforeRules: String? = handed
-        var parts = VocabularyJudge.ruleParts(rules, in: text, before: beforeRules)
+        var parts = VocabularyPass.ruleParts(rules, in: text, before: beforeRules)
 
         // The near misses an exact rule cannot reach. On by default: an exact
         // rule is the narrowest route to a term, and `Praisy`'s list holding
@@ -1116,10 +1116,10 @@ struct Pipeline: Equatable, Codable {
         //
         // Nothing is written here. A near miss becomes one more place for the
         // gates to settle, and a place none of them settles keeps the word
-        // that was heard — see `VocabularyJudge.fuzzyEdits` for what it fires
+        // that was heard — see `VocabularyPass.fuzzyEdits` for what it fires
         // on and what that cost over this speaker's archive.
         if step.nearMisses ?? true {
-            let reached = VocabularyJudge.fuzzyParts(
+            let reached = VocabularyPass.fuzzyParts(
                 in: text, rules: config.vocabularyRules, claimed: parts
             )
             nearMisses = reached.count
@@ -1137,7 +1137,7 @@ struct Pipeline: Equatable, Codable {
         // and what it costs.
         if step.bySound ?? true, Pipeline.language(of: text, config: config) == "en" {
             let askedAt = Date()
-            let heard = await VocabularyJudge.phonemeParts(
+            let heard = await VocabularyPass.phonemeParts(
                 in: text, sounds: config.vocabularySounds, voice: "en-us",
                 language: "en", floor: config.vocabulary.soundBelow, claimed: parts
             )
@@ -1146,7 +1146,7 @@ struct Pipeline: Equatable, Codable {
             parts += heard
         }
 
-        let slots = VocabularyJudge.slots(in: text, from: parts, caps: caps)
+        let slots = VocabularyPass.slots(in: text, from: parts, caps: caps)
         // Two numbers on every run. How many places one sentence offers is the
         // measure of how much this stage is being asked to decide, so it has
         // to be readable before a change that widens what fires, not inferred
@@ -1176,11 +1176,11 @@ struct Pipeline: Equatable, Codable {
         guard !slots.isEmpty else {
             return result(text, ["slots": .int(0)])
         }
-        let changes = VocabularyJudge.changes(in: text, from: slots)
+        let changes = VocabularyPass.changes(in: text, from: slots)
         guard !changes.isEmpty else {
             return result(text, ["slots": .int(slots.count)])
         }
-        let taught = VocabularyJudge.teaching(in: text, changes: changes)
+        let taught = VocabularyPass.teaching(in: text, changes: changes)
 
         // The free gates. A sound proposal gets both rules; a rule
         // substitution gets the two word lists only, and only in the direction
@@ -1196,7 +1196,7 @@ struct Pipeline: Equatable, Codable {
             // settle what they settle and the slot is never asked. Read inside
             // the branch so `gate: false` does not load it either.
             let slot = (step.slotGate ?? true) ? await Vocabulary.shared.slotGate() : nil
-            settled = VocabularyJudge.settle(
+            settled = VocabularyPass.settle(
                 changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
         } else {
             settled = [Bool?](repeating: nil, count: changes.count)
@@ -1237,7 +1237,7 @@ struct Pipeline: Equatable, Codable {
         }
 
         // A refused span that glues to the term is the ordinary phrase, so its
-        // capitals go with it — see `VocabularyJudge.lowercased`. A spelling
+        // capitals go with it — see `VocabularyPass.lowercased`. A spelling
         // lesson is exempt: it writes back exactly what was typed.
         var writing = changes
         if step.lowercaseRefused ?? true {
@@ -1250,10 +1250,10 @@ struct Pipeline: Equatable, Codable {
                 // it and the term is a different length.
                 let heard = text.replacingCharacters(in: change.range, with: change.was)
                 let at = text.distance(from: text.startIndex, to: change.range.lowerBound)
-                guard let lower = VocabularyJudge.lowercased(
+                guard let lower = VocabularyPass.lowercased(
                     change.was, in: heard, at: at, terms: terms
                 ) else { continue }
-                writing[index] = VocabularyJudge.Change(
+                writing[index] = VocabularyPass.Change(
                     range: change.range, was: lower, now: change.now,
                     terms: change.terms, standing: change.standing
                 )
@@ -1265,7 +1265,7 @@ struct Pipeline: Equatable, Codable {
         // Each place written the way it was settled, and a place nothing
         // settled left exactly as it already stands: a rule substitution keeps
         // the term it wrote, a sound proposal keeps the word that was heard.
-        let chosen = VocabularyJudge.settling(decided, in: text, changes: writing)
+        let chosen = VocabularyPass.settling(decided, in: text, changes: writing)
         // What the stage undid, in the words it put back. Named `reverted`
         // rather than `kept_as_decoded`: every place on this list is a
         // substitution somebody has to answer for.

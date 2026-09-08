@@ -105,7 +105,7 @@ enum LearnCommand {
     ///
     /// `--learn` also seeds a use, but only alongside a `heard:` rendering, so
     /// there was no way to record a genuine use on its own. Passing the term as
-    /// its own rendering is not a workaround: `VocabularyJudge.ruleParts` finds
+    /// its own rendering is not a workaround: `VocabularyPass.ruleParts` finds
     /// a rule substitution by searching for the term, so a self-mapping makes
     /// every correctly spelled occurrence look like something a rule wrote.
     ///

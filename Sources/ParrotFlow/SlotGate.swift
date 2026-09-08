@@ -4,8 +4,9 @@ import NaturalLanguage
 /// Can a name stand where this word stands? Asked of the sentence, not of the
 /// word.
 ///
-/// The judge is a model call of about 900 ms and every proposal the lexical
-/// gate does not settle goes to it. This settles some of them with the masked
+/// A proposal the lexical gate does not settle is left open, and an open
+/// place keeps whatever is already in the text. This settles some of them
+/// with the masked
 /// language model `SlotProbe` reads: one forward pass to see what the slot
 /// wants, and one tag per word only when that pass says a name could go there.
 /// A pass is about 15 ms at sequence length 64, read out and ranked.
@@ -13,7 +14,7 @@ import NaturalLanguage
 /// One rule:
 ///
 ///     the slot refuses a name    decline
-///     anything else              judge
+///     anything else              open
 ///
 /// **Slot POS.** Mask the heard word, take the ten most likely fillers, put
 /// each back in the sentence and tag it. The modal tag is what the slot wants.
@@ -42,13 +43,13 @@ import NaturalLanguage
 ///
 /// Measured over the 50 English cases of `tests/judge-cases.yaml` by
 /// `scripts/check-slot-gate.sh`: 12 applied by the lexical gate, 15 declined
-/// here, 23 left for the judge, and no error of either kind. ModernBERT
+/// here, 23 left open, and no error of either kind. ModernBERT
 /// declined 14 and left 24 on the same set, also with no error.
 @available(macOS 14, *)
 struct SlotGate {
 
     enum Route: String {
-        case decline, judge
+        case decline, open
     }
 
     /// Tags a name cannot stand in.
@@ -69,10 +70,10 @@ struct SlotGate {
     func read(in text: String, at range: Range<String.Index>) throws -> Reading {
         let (words, span) = Self.sentence(around: range, in: text)
         guard !span.isEmpty, span.upperBound <= words.count else {
-            return Reading(tag: "", route: .judge)
+            return Reading(tag: "", route: .open)
         }
         let tag = try wants(words, at: span)
-        return Reading(tag: tag, route: Self.blocks.contains(tag) ? .decline : .judge)
+        return Reading(tag: tag, route: Self.blocks.contains(tag) ? .decline : .open)
     }
 
     // MARK: - Rule 4 and rule 6, the slot's part of speech

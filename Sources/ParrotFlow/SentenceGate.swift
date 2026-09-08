@@ -43,7 +43,7 @@ enum SentenceGate {
     /// nothing, the portrait says nothing. The four outcomes above are read the
     /// same way either way, so one half off leaves the other deciding alone.
     static func settle(
-        _ changes: [VocabularyJudge.Change], in text: String, given settled: [Bool?],
+        _ changes: [VocabularyPass.Change], in text: String, given settled: [Bool?],
         floor: Double, slot: Bool = true, portrait: Bool = true
     ) async -> [Bool?] {
         guard slot || portrait else { return settled }

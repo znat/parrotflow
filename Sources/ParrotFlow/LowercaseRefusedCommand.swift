@@ -8,7 +8,7 @@ import Foundation
 ///     ParrotFlow --lowercase-refused "Mont Blanc" "We climbed Mont Blanc."
 ///     AS HEARD
 ///
-/// `VocabularyJudge.lowercased` decides this with no model and no audio behind
+/// `VocabularyPass.lowercased` decides this with no model and no audio behind
 /// it. This is the entry point `scripts/check-lowercase-refused.sh` scores, so
 /// the set runs against the shipped function rather than against a copy of it.
 ///
@@ -21,7 +21,7 @@ enum LowercaseRefusedCommand {
             return 2
         }
         let offset = text.distance(from: text.startIndex, to: range.lowerBound)
-        guard let written = VocabularyJudge.lowercased(
+        guard let written = VocabularyPass.lowercased(
             span, in: text, at: offset, terms: terms
         ) else {
             print("AS HEARD")

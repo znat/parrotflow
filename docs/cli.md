@@ -113,17 +113,17 @@ question it answers is whether a possessive survives a substitution, and
 `scripts/check-possessive.sh` scores it against `tests/possessive-cases.yaml`.
 
 `--word-gate` asks whether a vocabulary term may be written over this word with
-nothing reading the sentence — `--word-gate Frederick` prints `judge`,
+nothing reading the sentence — `--word-gate Frederick` prints `open`,
 `--word-gate Versal` prints `auto-apply`. Two word lists decide and both have
 to say they have never seen the word: `NSSpellChecker`, which has no first
 names in it, and the whole-word half of a tokenizer vocabulary
 (`data/wordpiece.txt`), which has no rare compounds in it. Both verdicts are
-printed, because a word reaches `judge` from either side. `judge` is the route
+printed, because a word reaches `open` from either side. `open` is the route
 label for "this gate does not settle it"; nothing is asked, and a place nothing
 settles keeps what arrived. No model runs — it is a set lookup.
 
 Name the term as well and the whole gate answers about that pair —
-`--word-gate "Mirza's" Mirza` prints `possessive dropped` and `judge`. One
+`--word-gate "Mirza's" Mirza` prints `possessive dropped` and `open`. One
 condition is not about a word at all: a `'s` the heard text carries and the
 term does not would be taken out of the sentence, so this gate leaves it open.
 `scripts/check-word-gate.sh` scores both forms against
@@ -135,8 +135,8 @@ Name the sentence too — with the term, which the model tiers are about —
 ten fillers put back and tagged; `route` is where the proposal goes. The slot
 only ever declines: a name goes in a `Noun`, `Adjective` or `Pronoun` slot and
 never in a `Verb`, `Adverb` or `Preposition` one, and every other proposal
-reads `judge` — see `SlotGate`. Nothing is downloaded: with no cached slot
-model the slot reads `unavailable` and the route is `judge`.
+reads `open` — see `SlotGate`. Nothing is downloaded: with no cached slot
+model the slot reads `unavailable` and the route is `open`.
 `scripts/check-slot-gate.sh` scores the whole route against
 `tests/judge-cases.yaml`. It needs the 269 MB model, so it is not in
 `make test`.

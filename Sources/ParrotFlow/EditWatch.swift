@@ -637,7 +637,7 @@ final class EditWatch {
 
     /// How alike two words sound, on the better of the two ears.
     ///
-    /// Never mixed, the same rule as `VocabularyJudge`: espeak's inventory is
+    /// Never mixed, the same rule as `VocabularyPass`: espeak's inventory is
     /// not the model's, so a score compares two readings from one ear. Zero
     /// when neither answers, and near zero for a term neither can say —
     /// `when` -> `Qwen` scores 0.30. The word lists catch that one, which is

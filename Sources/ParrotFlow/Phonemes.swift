@@ -20,7 +20,7 @@ import Foundation
 ///
 /// Sound wins at every floor. It is still only a proposer: `praise` and
 /// `Praisy` score 0.76, so the homophone stays for the sentence to settle.
-/// See `VocabularyJudge.phonemeParts` for the floor and what it costs.
+/// See `VocabularyPass.phonemeParts` for the floor and what it costs.
 ///
 /// **espeak-ng runs as a separate process, and that is deliberate.** It is
 /// GPL-3. A separate program invoked over stdin and stdout is not part of this
@@ -198,8 +198,8 @@ enum Phonemes {
     /// Normalised Levenshtein over IPA symbols, times the square root of the
     /// length ratio — `Vocabulary.gluedSimilarity`, with sounds in place of
     /// letters. The same metric on purpose: the floors either side of the
-    /// judge are read against each other, and two numbers that mean different
-    /// things cannot be.
+    /// decision are read against each other, and two numbers that mean
+    /// different things cannot be.
     ///
     /// Checked against the Python that measured the tables above:
     /// `Olama`/`Ollama` 1.00, `praise`/`Praisy` 0.76.

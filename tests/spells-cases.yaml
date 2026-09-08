@@ -1,4 +1,4 @@
-# Spelling-lesson cases for `VocabularyJudge.teaching`.
+# Spelling-lesson cases for `VocabularyPass.teaching`.
 #
 # The rule reverts a substitution whose word sits immediately before "spells".
 # "urza spells mirza" teaches a mapping, and writing the term over the source

@@ -5,11 +5,11 @@ import Foundation
 ///     ParrotFlow --word-gate Frederick
 ///     spell      unknown
 ///     wordpiece  known
-///     gate       judge
+///     gate       open
 ///
 /// The two word lists behind `Vocabulary.autoApplies`, and the decision they
 /// reach together. Both verdicts are printed and not just the decision: a word
-/// can reach `judge` from either side, and a set that only read the last line
+/// can reach `open` from either side, and a set that only read the last line
 /// would pass while testing the wrong half. This is the entry point
 /// `scripts/check-word-gate.sh` scores, so the set runs against the shipped
 /// lists rather than a copy of them.
@@ -18,7 +18,7 @@ import Foundation
 ///
 ///     ParrotFlow --word-gate "Mirza's" Mirza
 ///     possessive dropped
-///     gate       judge
+///     gate       open
 ///
 /// One condition of the gate is not about a word at all. A possessive the
 /// heard text carries and the term does not is a question about the sentence,
@@ -28,13 +28,13 @@ import Foundation
 ///
 ///     ParrotFlow --word-gate merge Vercel --in "Go back to main and merge."
 ///     possessive kept
-///     gate       judge
+///     gate       open
 ///     slot       Verb
 ///     route      decline
 ///
 /// `slot` is what the masked slot wants and `route` is where the proposal goes
 /// — see `SlotGate`. Nothing is downloaded: with no cached model the slot reads
-/// `unavailable` and the route is `judge`.
+/// `unavailable` and the route is `open`.
 ///
 /// A span that glues to the term is the one case where the two lines disagree:
 ///
@@ -42,12 +42,12 @@ import Foundation
 ///       "I think Node.js and MongoDB is a much better stack than PHP and MySQL."
 ///     gate       auto-apply (a rule's write is left to the sentence)
 ///     slot       Adverb
-///     route      judge
+///     route      open
 ///
 /// The lists are never asked about a glued span, so the gate really does say
 /// auto-apply. What happens next depends on where the proposal came from, and
 /// that is not something a word and a term can say: a `replacements` rule is
-/// left open by `VocabularyJudge.settle`, and the sound path still writes it.
+/// left open by `VocabularyPass.settle`, and the sound path still writes it.
 /// The route printed is the rule's, since these two arguments carry no audio.
 ///
 /// The slot is still printed and it still decides nothing. `settle` gates a
@@ -64,7 +64,7 @@ enum WordGateCommand {
             guard let sentence, !sentence.isEmpty else { return 0 }
             guard #available(macOS 14, *) else {
                 print("slot       unavailable")
-                print("route      judge")
+                print("route      open")
                 return 0
             }
             printSlot(
@@ -94,7 +94,7 @@ enum WordGateCommand {
         case .some(false): print("wordpiece  unknown")
         case .none:        print("wordpiece  unavailable")
         }
-        print("gate       \(Vocabulary.unseenWord(letters) ? "auto-apply" : "judge")")
+        print("gate       \(Vocabulary.unseenWord(letters) ? "auto-apply" : "open")")
         return 0
     }
 
@@ -112,7 +112,7 @@ enum WordGateCommand {
         let glues = applies && Vocabulary.glues(heard: heard, term: term)
         let verdict = applies
             ? (glues ? "auto-apply (a rule's write is left to the sentence)" : "auto-apply")
-            : "judge"
+            : "open"
         print("gate       \(verdict)")
         // What a rule would do. These arguments carry no audio, so a rule is
         // the proposal this can answer about.
@@ -122,7 +122,7 @@ enum WordGateCommand {
     /// The model tiers, on the proposal the lexical gate did not settle.
     ///
     /// Nothing is downloaded. With no cached model the slot is `unavailable`
-    /// and the route is `judge`, which is what the app does — see
+    /// and the route is `open`, which is what the app does — see
     /// `Vocabulary.slotRoute`.
     @available(macOS 14, *)
     private static func printSlot(
@@ -133,22 +133,22 @@ enum WordGateCommand {
         print("language   \(language)")
         guard language == "en" else {
             print("slot       not english")
-            print("route      judge")
+            print("route      open")
             return
         }
         guard let range = Vocabulary.spans(of: heard, in: sentence).first else {
             print("slot       not found in the sentence")
-            print("route      judge")
+            print("route      open")
             return
         }
         guard let gate = load() else {
             print("slot       unavailable")
-            print("route      judge")
+            print("route      open")
             return
         }
         guard let reading = try? gate.read(in: sentence, at: range) else {
             print("slot       unreadable")
-            print("route      judge")
+            print("route      open")
             return
         }
         print("slot       \(reading.tag.isEmpty ? "untagged" : reading.tag)")
@@ -160,11 +160,11 @@ enum WordGateCommand {
         // above says.
         let route: String
         if glues {
-            route = "judge"
+            route = "open"
         } else if applies {
             route = "apply"
         } else if Vocabulary.dropsPossessive(heard: heard, term: term) {
-            route = "judge"
+            route = "open"
         } else {
             route = reading.route.rawValue
         }

@@ -175,7 +175,7 @@ actor Vocabulary {
     /// not what it does and not where it is used. It gates `acousticSpans`
     /// only, so it never saw the rescorer's own proposals, the wider spans, or
     /// a `replacements` rule — and a term reaches a menu from all four. The
-    /// menu-level cap is `VocabularyJudge.Caps.perTerm`, which is applied where
+    /// menu-level cap is `VocabularyPass.Caps.perTerm`, which is applied where
     /// the four meet.
     ///
     /// Kept where it is because it is cheaper here: a detection refused now
@@ -224,8 +224,9 @@ actor Vocabulary {
     /// That needs a two-letter term, and there is none.
     ///
     /// The auto-apply path reaches this far less often since `dropsPossessive`
-    /// sends that pair to the judge. It is still what writes the reading the
-    /// judge is offered, which is where the possessive now has to survive.
+    /// leaves that pair open. It is still what writes the reading the
+    /// sentence tests are offered, which is where the possessive has to
+    /// survive.
     static func inflected(_ term: String, like heard: String) -> String {
         guard let (stem, suffix) = possessive(in: heard), !stem.isEmpty,
               gluedSimilarity(stem, term) >= gluedSimilarity(stem + suffix, term)
@@ -267,7 +268,7 @@ actor Vocabulary {
     ///
     /// A rule, not a threshold, and the same rule `dropsPossessive` is. Writing
     /// a name over `wouldn't` changes what the sentence says, in every
-    /// sentence. It routes rather than refuses: the judge reads the sentence.
+    /// sentence. It routes rather than refuses: the sentence tests read it.
     static func dropsApostrophe(heard: String, term: String) -> Bool {
         inner(in: heard) && !inner(in: term)
     }
@@ -306,16 +307,16 @@ actor Vocabulary {
     ///
     /// The rest is the spell-check gate, measured at 38/38 on declines
     /// and 0.00s: never overwrite a real word. Used here as a router rather
-    /// than a filter — a real word is not refused, it is passed to the judge,
-    /// which is the only thing that can read the sentence.
+    /// than a filter — a real word is not refused, it is left open for the
+    /// tests that read the sentence, which no word list can.
     ///
     /// Two word lists have to agree, not one. `Replacements.isRealWord` is a
     /// dictionary and has no first names in it, so `Frederick` looked like a
     /// word nobody uses and "Um not Peter, uh Frederick." was rewritten to
     /// `Redrock` with nothing reading the sentence. `WordPieces` covers that
     /// blind spot and has the opposite one, and it answers `nil` when its list
-    /// is missing — so a broken resource sends the proposal to the judge
-    /// rather than writing it in.
+    /// is missing — so a broken resource leaves the proposal open rather
+    /// than writing it in.
     ///
     /// Two cases the checker gets wrong on its own, both from
     /// `scripts/validate-judge.py`. A run of capitals is accepted as an acronym,
@@ -400,7 +401,7 @@ actor Vocabulary {
     /// True whenever the glued form is the term, which is also true when the
     /// glued form is an ordinary English phrase: `better stack` is `BetterStack`
     /// by this test and a stack that is better in every sentence anybody says.
-    /// `VocabularyJudge.settle` is where that costs nothing and where it does.
+    /// `VocabularyPass.settle` is where that costs nothing and where it does.
     static func glues(heard: String, term: String) -> Bool {
         var heard = heard, term = term
         if let left = possessive(in: heard), let right = possessive(in: term),
@@ -421,7 +422,7 @@ actor Vocabulary {
     /// is letters only, so `Mirza's` is looked up as `Mirzas` — a form neither
     /// list has ever seen, where `Mirza` itself is known to one of them. The
     /// apostrophe walks the proposal straight past both lists: measured on the
-    /// shipped binary, `--word-gate Frederick` says `judge` and
+    /// shipped binary, `--word-gate Frederick` says `open` and
     /// `--word-gate "Frederick's"` said `auto-apply`.
     ///
     /// A rule and not a threshold. "Mirza's thoughts" is not "Mirza thoughts";
@@ -434,7 +435,7 @@ actor Vocabulary {
     /// other way round — the term carries the possessive and the decoded span
     /// does not — and that correction is right. Nothing here fires on it.
     ///
-    /// A contraction reaches the judge too, since `it's` also ends in `'s`.
+    /// A contraction is left open too, since `it's` also ends in `'s`.
     /// That is the safe direction and it is nearly free: a contraction is a
     /// real word, so `unseenWord` was already sending it there.
     static func dropsPossessive(heard: String, term: String) -> Bool {
