@@ -212,6 +212,22 @@ same way.
 - Everything else stands: pulsing dot, live meter, destination icon, and the
   narrow no-icon pill that says the words have nowhere to go.
 
+### 2026-09-08: the ring, and its light
+
+The docked surface was near-black with a leaf hairline, which over Slack's
+composer is black on nearly black. The pill now wears the plumage rim in every
+state, docked or free, and the leaf edge is gone. The leaf wash stays.
+
+While the microphone is open — recording and working — the rim turns once every
+1.8s and the bloom is drawn behind it, so the pill is found by the light off its
+edge. At an offer and at a notice the rim stands still and there is no bloom:
+those states are answered, not looked for. The margin follows the same line, 52
+for the blur to fade out in and 12 after, and only the offer takes the mouse, so
+the wide margin swallows no clicks. The docked working shimmer is gone; the
+turning rim says the same thing.
+
+Direction C of <https://claude.ai/code/artifact/edabef77-cd1b-46ee-9c67-077e766b21f9>.
+
 ---
 
 ## 3. The offer

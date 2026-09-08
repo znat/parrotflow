@@ -76,6 +76,19 @@ enum PillState: Equatable {
     /// have to carry the same three values to be able to open into this one,
     /// and every switch in the file would have to handle both.
     case offer([OfferedCommand], Headline?, Confidence.Reading, open: Bool)
+
+    /// Whether the microphone is open, or the words it heard are still being
+    /// worked on. One question, asked in three places: the rim turns while this
+    /// is true, the bloom is drawn behind it, and the window carries the wide
+    /// margin the bloom needs. Three switches over the same cases is how one of
+    /// them ends up disagreeing, and a margin that disagrees with the window is
+    /// a surface drawn at the wrong size.
+    var isListening: Bool {
+        switch self {
+        case .recording, .working: return true
+        case .notice, .offer: return false
+        }
+    }
 }
 
 /// What an offer says above its chips.
@@ -351,9 +364,9 @@ final class PillHUD {
     /// The offer's fade, waiting out the hold. See `decay(over:)`.
     private var pendingDecayFade: DispatchWorkItem?
 
-    /// The margin this surface wants, which is not the same for all of them.
-    /// See `PillMetrics.dockBleed`.
-    private var currentBleed: CGFloat { PillMetrics.bleed(docked: isDocked) }
+    /// The margin this surface wants, which is not the same in every state.
+    /// See `PillMetrics.bleed(for:)`.
+    private var currentBleed: CGFloat { PillMetrics.bleed(for: model.state) }
 
     /// The glass under the capsule, taken out of the window while it is docked.
     ///
@@ -1249,18 +1262,17 @@ final class PillHUD {
 
     /// Whether this is the docked surface rather than the floating capsule.
     ///
-    /// Always, now. The two forms are not two sizes of the same thing, they are
-    /// two objects: the docked one is part of the line it hangs off, and the
-    /// floating one is a black lozenge with the plumage rim turning on it, in
-    /// the middle of the screen. Anything that picks between them makes one
-    /// message come out as two surfaces, and it did — twice.
+    /// Always, now. The two forms were two objects rather than two sizes of one
+    /// thing, and anything that picked between them made one message come out
+    /// as two surfaces. It did — twice.
     ///
     /// First it asked for an anchor. An app that will not say where its caret
     /// is — Slack gives none at the press and its composer repaints on insert,
     /// so the diff finds nothing either — got the floating lozenge, and a
-    /// 165x131 window around a 61x27 tab. Fifty-two points of invisible window
-    /// on every side, taking the mouse, sitting exactly where you are typing.
-    /// That is where "I cannot click on buttons" came from.
+    /// 165x131 window around a 61x27 tab, taking the mouse where you are
+    /// typing. That is where "I cannot click on buttons" came from. The margin
+    /// follows the state now rather than the form, and only the offer takes the
+    /// mouse — see `PillMetrics.bleed(for:)`.
     ///
     /// Then it asked whether a dictation was on screen. That left every notice
     /// raised before a recording starts wearing the old lozenge — including the
@@ -1292,7 +1304,7 @@ enum PillMetrics {
     /// square edge is the one saying which line this is about.
     static let dockRadius: CGFloat = 12
 
-    /// What a docked surface stands on, and the line round it.
+    /// What a docked surface stands on.
     ///
     /// Near-black was right for a surface that floated: it appears over
     /// documents, terminals and dark editors without knowing which, and a dark
@@ -1312,7 +1324,6 @@ enum PillMetrics {
     /// lit chip has to stand out from. `OfferContent.chip` carries the fill at
     /// 28% and the edge at 62% against this 12%, which is what keeps it.
     static let dockedWash = Parrot.leaf.opacity(0.12)
-    static let dockedEdge = Parrot.leaf.opacity(0.34)
 
     // MARK: The tab
 
@@ -1414,8 +1425,9 @@ enum PillMetrics {
     /// spilling outward was cut off square at the window edge — which is the
     /// one artefact that gives a floating surface away as a window.
     ///
-    /// It costs nothing: the margin is fully transparent and the panel ignores
-    /// the mouse, so a wider window is not a bigger target for anything.
+    /// It costs nothing while the microphone is open: the margin is fully
+    /// transparent and the panel ignores the mouse in every state but the
+    /// offer, which is the state that does not take this margin.
     /// `width(for:)` and `height` stay the size of the capsule you can see;
     /// `panelSize` is what the window is set to.
     /// Wide enough for the widest blur's tail to reach zero before the window
@@ -1431,23 +1443,27 @@ enum PillMetrics {
     /// less there is to see.
     static let bleed: CGFloat = 52
 
-    /// The margin a docked surface gets, which is only what its shadow needs.
+    /// The margin once the bloom is gone, which is only what the shadow needs.
     ///
-    /// The 52 above is for a blur to fade out in, and a docked surface has no
-    /// blur. Keeping it would cost something real now that the pointer opens
-    /// the tab: the panel stops ignoring the mouse while an offer is up, so
-    /// every point of transparent window is a point of your document that
-    /// swallows a click — 150x124 of it around a 46x20 tab, sitting exactly
-    /// where you are about to click. Twelve covers the shadow and nothing else.
+    /// The 52 above is for a blur to fade out in, and the offer draws no blur.
+    /// Keeping it would cost something real: the panel stops ignoring the mouse
+    /// while an offer is up, so every point of transparent window is a point of
+    /// your document that swallows a click — 150x124 of it around a 46x20 tab,
+    /// sitting exactly where you are about to click. Twelve covers the shadow
+    /// and nothing else.
     static let dockBleed: CGFloat = 12
 
-    static func bleed(docked: Bool) -> CGFloat { docked ? dockBleed : bleed }
+    /// The margin this state wants. Wide while the bloom is drawn, and small
+    /// once it is not. See `PillState.isListening`.
+    static func bleed(for state: PillState) -> CGFloat {
+        state.isListening ? bleed : dockBleed
+    }
 
     static func panelSize(
         for state: PillState, hasIcon: Bool, hotkey: String = "", docked: Bool = false
     ) -> NSSize {
         let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey, docked: docked)
-        let margin = bleed(docked: docked)
+        let margin = bleed(for: state)
         return NSSize(
             width: width + margin * 2,
             height: height(for: state, width: width, hotkey: hotkey, docked: docked) + margin * 2
@@ -2033,13 +2049,15 @@ struct PillView: View {
         // said. The line says it, but the line is on a pill you have already
         // learned to ignore: the surface changing colour is what gets looked
         // at, and it is the same signal the caution notices use.
-        // The offer turns its rim slowly, on its own: it is the one state with
-        // a deadline, and the only one you are meant to answer. Slow, and with
-        // the glow behind it left still, so it does not read as the busy rim.
+        //
+        // The rim is on every state, docked or free. It is what makes the pill
+        // findable over a dark composer, where a near-black tab with a leaf
+        // hairline is black on nearly black. It turns while the microphone is
+        // open and stands still once the offer arrives, so the movement means
+        // "still listening" and nothing else.
         .parrotSurface(
-            shape, alive: isWorking, turning: isOffer && !isDocked, solid: true,
-            wash: wash, wheel: warning?.wheel ?? Parrot.wheel,
-            rim: !isDocked, edge: edge, edgeShimmer: isWorking && isDocked
+            shape, turning: isListening, turnSeconds: Parrot.busyTurn, solid: true,
+            wash: wash, wheel: warning?.wheel ?? Parrot.wheel
         )
         // Under the capsule, so it is the capsule's shape and not the glow's.
         .shadow(color: .black.opacity(0.22), radius: 7, y: 2)
@@ -2047,24 +2065,21 @@ struct PillView: View {
         // back, which is where the bloom has to be — over the fill it would be
         // a coloured film on the surface rather than light coming off the edge.
         .background {
-            // No bloom on a docked surface, for the reason it has no rim: light
-            // coming off the edge is what a thing floating over your document
-            // does, and this one is sitting on the line.
-            if !isDocked {
-                PlumageBloom(
-                    shape: shape, alive: isWorking,
-                    wheel: warning?.wheel ?? Parrot.wheel
-                )
+            // Only while listening. It is the light that finds the pill on a
+            // dark desktop, and the offer is answered rather than found: it has
+            // your attention already, and it takes the mouse.
+            if isListening {
+                PlumageBloom(shape: shape, wheel: warning?.wheel ?? Parrot.wheel)
             }
         }
-        // The transparent margin the bloom spills into, and the much smaller one
-        // a docked surface needs for its shadow. See `PillMetrics.dockBleed`.
+        // The margin the bloom spills into while listening, and the much
+        // smaller one the shadow needs after. See `PillMetrics.dockBleed`.
         //
         // The same number `PillMetrics.panelSize` added to the window, and it
         // has to be: the window is sized from there and the surface is inset
         // from here, so a disagreement is a surface drawn at the wrong size
         // inside a window of the right one.
-        .padding(PillMetrics.bleed(docked: isDocked))
+        .padding(PillMetrics.bleed(for: model.state))
         // Bound to the state alone. The meter is fed about ten times a second
         // and must not drag a crossfade along behind it.
         .animation(.easeInOut(duration: PillHUD.motion), value: model.state)
@@ -2073,15 +2088,7 @@ struct PillView: View {
         .animation(.easeInOut(duration: PillHUD.motion), value: model.docked)
     }
 
-    private var isWorking: Bool {
-        if case .working = model.state { return true }
-        return false
-    }
-
-    private var isOffer: Bool {
-        if case .offer = model.state { return true }
-        return false
-    }
+    private var isListening: Bool { model.state.isListening }
 
     private var isDocked: Bool { model.docked != nil }
 
@@ -2104,28 +2111,20 @@ struct PillView: View {
     /// Amber for a dictation the app is unsure of, scarlet once it has taken a
     /// Return over it — the same surface one step along, because the second
     /// state is the first one being ignored.
-    private var warning: (wash: Color, wheel: [Color], edge: Color)? {
+    private var warning: (wash: Color, wheel: [Color])? {
         guard case .offer(_, _, let reading, _) = model.state, reading.warning != nil else {
             return nil
         }
         return reading.stopped
-            ? (Parrot.scarlet.opacity(0.26), Parrot.stopped, Parrot.scarlet.opacity(0.45))
-            : (Parrot.amber.opacity(0.24), Parrot.warned, Parrot.amber.opacity(0.40))
+            ? (Parrot.scarlet.opacity(0.26), Parrot.stopped)
+            : (Parrot.amber.opacity(0.24), Parrot.warned)
     }
 
     /// The colour laid over the ground. A warning first, and otherwise the
-    /// docked surface's own lift — see `PillMetrics.dockedWash`. Nothing at all
-    /// while it floats: a floating pill is read against its rim, and the rim is
-    /// still there.
+    /// docked surface's own lift — see `PillMetrics.dockedWash`.
     private var wash: Color? {
         if let warning { return warning.wash }
         return isDocked ? PillMetrics.dockedWash : nil
-    }
-
-    /// The line round it, which only a docked surface draws — everything else
-    /// has the rim. Read by `parrotSurface` under `rim: false`.
-    private var edge: Color {
-        warning?.edge ?? PillMetrics.dockedEdge
     }
 
     /// A fixed radius, not a `Capsule`. At the pill's resting height the
@@ -2690,9 +2689,8 @@ private struct OfferKeyCap: View {
     @State private var angle: Double = -90
 
     /// One trip round the border. Long enough that the light never reads as a
-    /// spinner, short enough to be seen inside the offer's hold. It does not
-    /// divide into the rim's `PlumageRim.slowTurn`, so the two never fall into
-    /// step.
+    /// spinner, short enough to be seen inside the offer's hold. It is the only
+    /// thing moving on an offer: the rim stops turning when the offer arrives.
     private static let turnSeconds: TimeInterval = 3.4
     private static let radius: CGFloat = 4
 

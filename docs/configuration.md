@@ -1069,8 +1069,8 @@ feedback:
     word: 0.50       # and it holds a word this bad
 ```
 
-When both trip, the pill comes up amber — washed ground, amber rim, amber glow
-— and carries one line above the chips: `This may not be what you said`, then
+When both trip, the pill comes up amber — washed ground, amber rim — and
+carries one line above the chips: `This may not be what you said`, then
 the word. The colour is the signal. The line says what it means.
 
 It needs `correct_offer`. It does not need `confidence`: the coloured sentence
