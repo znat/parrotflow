@@ -48,6 +48,9 @@ cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/"
 # an accident.
 cp "$ROOT"/Resources/MenuBarParrot*.png "$APP/Contents/Resources/"
 cp "$ROOT"/Resources/ParrotSolid*.png "$APP/Contents/Resources/"
+# The drawing itself, not a cut of it. AppKit renders SVG, and the launch panel
+# draws the bird at 76 points — three times the largest PNG here.
+cp "$ROOT/Resources/parrot.svg" "$APP/Contents/Resources/"
 
 # The shipped transforms and the default config.yaml are seeded from here —
 # copied, not baked into the binary as strings, so there is one copy of each

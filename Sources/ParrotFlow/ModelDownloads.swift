@@ -52,6 +52,14 @@ struct ModelDownload: Identifiable, Equatable {
         case waiting
         /// Nil percent for a fetch that reports no fraction.
         case downloading(percent: Int?)
+        /// The bytes are on disk and the model is going into memory.
+        ///
+        /// Its own state rather than the tail of `downloading`, because the two
+        /// fail differently and take different times: a fetch is minutes and a
+        /// network, a load is seconds and a chip. The stage that reads the model
+        /// stands aside through both, and until this one ends the model is not
+        /// there — which is what made 100% followed by a tick a lie.
+        case loading
         case installed
         case failed(Failure)
         /// A setting turned it off. The string is what the row says instead of
@@ -72,7 +80,7 @@ struct ModelDownload: Identifiable, Equatable {
         /// and the screen says so in its own sentence.
         var isPending: Bool {
             switch self {
-            case .waiting, .downloading: return true
+            case .waiting, .downloading, .loading: return true
             case .installed, .off, .failed: return false
             }
         }
@@ -197,7 +205,7 @@ final class ModelDownloads: ObservableObject {
         return blocking.allSatisfy {
             switch $0.state {
             case .installed, .off: return true
-            case .waiting, .downloading, .failed: return false
+            case .waiting, .downloading, .loading, .failed: return false
             }
         }
     }

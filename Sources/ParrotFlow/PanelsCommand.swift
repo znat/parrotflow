@@ -648,6 +648,7 @@ enum PanelsCommand {
         let updatePanel = UpdatePanel()
         var ticker: Timer?
         var setupWindow: NSWindow?
+        var launchPanel: LaunchPanel?
 
         switch surface {
         case "notice":
@@ -800,6 +801,51 @@ enum PanelsCommand {
                     Transcriber.speechDownload.id, to: .downloading(percent: percent)
                 )
             }
+        // The launch panel, walked through the three things it says: a
+        // download with a number on it, the load after it, and the end. It has
+        // no still worth looking at — the whole point of it is that it moves —
+        // so the preview runs the sequence on a loop rather than parking on one
+        // state. Same reasoning as `sequence` below.
+        case "launch":
+            // All six, which is what a first install declares. Three of them
+            // are drawn — see `LaunchModel.shown` — and the panel has to be
+            // right at the number it will really be handed, not at the number
+            // that fits.
+            let downloads = ModelDownloads()
+            for row in [
+                Transcriber.speechDownload, Transcriber.voiceDownload,
+                NeuralPhonemes.soundDownload, SlotModel.download,
+                SentenceReadings.download, WordVectors.download
+            ] {
+                downloads.expect(row)
+            }
+            let coming = downloads.rows.map(\.id)
+            let panel = LaunchPanel(downloads: downloads)
+            launchPanel = panel
+            panel.showIfNeeded(hotkey: "Right ⌥")
+            var percent = 0
+            ticker = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: true) { _ in
+                percent += 1
+                if percent > 190 {
+                    percent = 0
+                    for id in coming { downloads.update(id, to: .waiting) }
+                    panel.showIfNeeded(hotkey: "Right ⌥")
+                    return
+                }
+                // Staggered, the way they really arrive: they start together
+                // and the smallest lands first.
+                for (index, id) in coming.enumerated() {
+                    let share = Double(percent) * (1.0 - Double(index) * 0.11)
+                    if share >= 100 {
+                        // Downloaded is not loaded. Every one of them spends a
+                        // moment here, which is the state this panel was built
+                        // to have a word for.
+                        downloads.update(id, to: share >= 118 ? .installed : .loading)
+                    } else {
+                        downloads.update(id, to: .downloading(percent: Int(share)))
+                    }
+                }
+            }
         case "pill":
             pill.recording(icon: sampleIcon())
             // A meter frozen at zero says nothing about how the meter looks.
@@ -841,13 +887,14 @@ enum PanelsCommand {
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
                 + "|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|learn|learn-long"
-                + "|update|setup|sequence> [seconds]")
+                + "|update|setup|launch|sequence> [seconds]")
             return 2
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
             ticker?.invalidate()
             setupWindow?.close()
+            launchPanel?.dismiss()
             exit(0)
         }
         app.run()

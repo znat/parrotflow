@@ -143,6 +143,10 @@ actor WordVectors {
         progress: (@Sendable (String) -> Void)?
     ) async throws -> ModelContext {
         try await cache.ensure(progress: progress)
+        // The bytes are here and the model is not. A 4-bit 0.6B takes a couple
+        // of seconds to come up and the sentence gate stands aside for all of
+        // it — see `SentenceGate.settle`.
+        ModelDownloads.report(download.id, .loading)
         let context = try await loadModel(from: cache.directory, using: FolderTokenizer())
         guard context.model is Qwen3Model else {
             throw Failure.notQwen(String(describing: type(of: context.model)))

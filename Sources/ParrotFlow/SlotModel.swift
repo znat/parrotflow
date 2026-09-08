@@ -157,6 +157,8 @@ actor SlotModel {
         progress: (@Sendable (String) -> Void)?
     ) async throws -> MLModel {
         if isCached {
+            // Compiled and on disk, so this launch only has to open it.
+            ModelDownloads.report(download.id, .loading)
             do { return try load() } catch {
                 Log.write(
                     "slot model: the cached copy will not load"
@@ -165,6 +167,9 @@ actor SlotModel {
             }
         }
         try await underLock { try await fetch(progress: progress) }
+        // The compile is the long half of this one — the .mlpackage is built
+        // and then deleted — and it happens inside `load`.
+        ModelDownloads.report(download.id, .loading)
         return try load()
     }
 

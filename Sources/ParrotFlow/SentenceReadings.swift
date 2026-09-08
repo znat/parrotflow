@@ -276,6 +276,9 @@ actor SentenceReadings {
         progress: (@Sendable (String) -> Void)?
     ) async throws -> ModelContext {
         try await cache.ensure(progress: progress)
+        // 1.3s of load after the download, with the boundary stage standing
+        // aside throughout. Reported, so the wait has a name.
+        ModelDownloads.report(download.id, .loading)
         let context = try await loadModel(from: cache.directory, using: FolderTokenizer())
         guard context.model is Qwen3Model else {
             throw Failure.notQwen(String(describing: type(of: context.model)))
