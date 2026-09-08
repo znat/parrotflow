@@ -3989,38 +3989,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Words kept either side of the change on the pill.
     static let learnWindow = 5
 
-    /// A stop that ends a sentence rather than sitting inside a word.
+    /// Marks that belong to the sentence they close rather than to the next
+    /// one. A stop inside a quotation is still the end of a sentence.
+    private static let closers: Set<Character> = [
+        "\"", "'", "\u{201D}", "\u{2019}", ")", "]", "}", "\u{BB}",
+    ]
+
+    /// Where the sentence ending at `i` stops, or nil if the mark there ends
+    /// no sentence.
     ///
     /// A letter before it and a space, the end, or a capital after it.
     /// `painter.Jon` is two sentences a dictation ran together and `3.5` is
     /// one number; the character alone cannot tell them apart, and the pill
     /// showing half a number is worse than the pill showing one word too many.
-    private static func endsSentence(_ text: [Character], at i: Int) -> Bool {
-        guard ".?!".contains(text[i]), i > 0, text[i - 1].isLetter else { return false }
-        guard i + 1 < text.count else { return true }
-        let next = text[i + 1]
-        return next.isWhitespace || next.isUppercase
+    ///
+    /// The index returned is past any closing quote or bracket, so `he said
+    /// "hello." Jon` cuts after the quotation and not before it. Read as the
+    /// next character, `\u{201D}` is neither a space nor a capital and the whole
+    /// sentence was kept.
+    private static func sentenceEnd(_ text: [Character], at i: Int) -> Int? {
+        guard ".?!".contains(text[i]), i > 0, text[i - 1].isLetter else { return nil }
+        var next = i + 1
+        while next < text.count, closers.contains(text[next]) { next += 1 }
+        guard next < text.count else { return next }
+        guard text[next].isWhitespace || text[next].isUppercase else { return nil }
+        return next
     }
 
     /// Whether a sentence ends anywhere in `text`.
     static func closesSentence(_ text: String) -> Bool {
         let chars = Array(text)
-        return chars.indices.contains { endsSentence(chars, at: $0) }
+        return chars.indices.contains { sentenceEnd(chars, at: $0) != nil }
     }
 
     /// What is left of `text` after the last sentence that ends inside it.
     static func afterLastStop(_ text: String) -> String {
         let chars = Array(text)
         var cut = 0
-        for i in chars.indices where endsSentence(chars, at: i) { cut = i + 1 }
+        for i in chars.indices {
+            if let end = sentenceEnd(chars, at: i) { cut = end }
+        }
         return String(chars[cut...]).trimmingCharacters(in: .whitespaces)
     }
 
     /// `text` up to and including the first stop that ends a sentence.
     static func toFirstStop(_ text: String) -> String {
         let chars = Array(text)
-        for i in chars.indices where endsSentence(chars, at: i) {
-            return String(chars[...i])
+        for i in chars.indices {
+            if let end = sentenceEnd(chars, at: i) { return String(chars[..<end]) }
         }
         return text
     }

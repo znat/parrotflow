@@ -358,6 +358,20 @@ cases:
     expect:  "Ghost -> Ghostty"
     learn:   'Learn? “I use Ghost Ghostty.”'
 
+  # A stop inside a quotation still ends the sentence. Read as the plain next
+  # character, a closing quote is neither a space nor a capital, and the whole
+  # sentence in front was kept.
+  - written: "He said “hello.” John is a painter."
+    now:     "He said “hello.” Jon is a painter."
+    expect:  "John -> Jon"
+    learn:   'Learn? “John Jon is a painter.”'
+
+  # And a closing bracket.
+  - written: "We shipped it (finally.) John is a painter."
+    now:     "We shipped it (finally.) Jon is a painter."
+    expect:  "John -> Jon"
+    learn:   'Learn? “John Jon is a painter.”'
+
   # A stop inside a number is not a sentence, so the window runs past it.
   - written: "the Prezi build took 3.5 seconds to finish"
     now:     "the Praisy build took 3.5 seconds to finish"
