@@ -38,7 +38,10 @@ enum EditDiffCommand {
             print("  words: \(EditWatch.refusal(for: change) == nil ? "yes" : "no")")
             // `offers` alone decides. `refusal` only picks the wording of a
             // yes, so `score-offers.py` can still tell the two ways in apart.
-            switch (EditWatch.offers(change, sound: sound), EditWatch.refusal(for: change)) {
+            switch (
+                EditWatch.offers(change, sound: sound, language: language),
+                EditWatch.refusal(for: change)
+            ) {
             case (.some(let refusal), _):
                 print("  offer: no, \(refusal)")
             case (.none, .none):

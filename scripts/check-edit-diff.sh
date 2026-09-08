@@ -12,7 +12,8 @@
 # A case with `offer:` also checks `EditWatch.refusal`, which says whether the
 # panel opens on the correction. That half asks the spell checker and the
 # word-piece list, so it is this machine's answer. A case with `heard:` checks
-# the window and range `EditWatch.asHeard` writes to the trace.
+# the window and range `EditWatch.asHeard` writes to the trace, and one with
+# `learn:` the line the pill draws.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN=""
@@ -24,9 +25,9 @@ done
 
 failed=0
 seen=0
-while IFS=$'\t' read -r written now want offer heard; do
+while IFS=$'\t' read -r written now want offer heard learn lang; do
   seen=$((seen + 1))
-  out="$("$BIN" --edit-diff "$written" "$now" 2>/dev/null)"
+  out="$("$BIN" --edit-diff "$written" "$now" --lang "$lang" 2>/dev/null)"
   got="$(grep -vE "^  (in|opens|offer|heard|sound|learn|words|pill): " <<<"$out" | paste -sd '|' - | sed 's/|/ | /g')"
   if [ "$heard" != "-" ]; then
     gotHeard="$(grep -E "^  heard: " <<<"$out" | sed 's/^  heard: //' | paste -sd '|' - | sed 's/|/ | /g')"
@@ -42,6 +43,15 @@ while IFS=$'\t' read -r written now want offer heard; do
     printf '  ✗ %s: got "%s", expected "%s"\n' "${written:0:34}" "$got" "$want"
     failed=1
   fi
+  if [ "$learn" != "-" ]; then
+    gotLearn="$(grep -E "^  learn: " <<<"$out" | sed 's/^  learn: //' | paste -sd '|' - | sed 's/|/ | /g')"
+    if [ "$gotLearn" = "$learn" ]; then
+      printf '    learn: %s\n' "$gotLearn"
+    else
+      printf '  ✗ %s: learn "%s", expected "%s"\n' "${written:0:34}" "$gotLearn" "$learn"
+      failed=1
+    fi
+  fi
   [ "$offer" = "-" ] && continue
   gotOffer="$(grep -E "^  offer: " <<<"$out" | sed 's/^  offer: //' | paste -sd '|' - | sed 's/|/ | /g')"
   if [ "$gotOffer" = "$offer" ]; then
@@ -53,7 +63,7 @@ while IFS=$'\t' read -r written now want offer heard; do
 done < <(python3 -c '
 import sys, yaml
 for c in yaml.safe_load(open(sys.argv[1]))["cases"]:
-    print("\t".join([c["written"], c["now"], str(c["expect"]), str(c.get("offer", "-")), str(c.get("heard", "-"))]))
+    print("\t".join([c["written"], c["now"], str(c["expect"]), str(c.get("offer", "-")), str(c.get("heard", "-")), str(c.get("learn", "-")), str(c.get("lang", "en"))]))
 ' "$ROOT/tests/edit-diff-cases.yaml")
 
 if [ "$seen" -eq 0 ]; then echo "Failed: edit-diff — no case was read"; exit 1; fi

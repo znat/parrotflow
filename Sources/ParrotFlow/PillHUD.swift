@@ -131,9 +131,14 @@ struct Learn: Equatable {
     let before: String
     let after: String
 
+    /// The lead and the space after it, which is nothing when the change is
+    /// the first word of its sentence. Most changes are, now that the window
+    /// stops at the sentence.
+    var lead: String { before.isEmpty ? "" : before + " " }
+
     /// For the log only. The view draws the pieces; they are not one face.
     var line: String {
-        "\(PillMetrics.learnLead) “\(before) \(heard) \(term)\(after)”"
+        "\(PillMetrics.learnLead) “\(lead)\(heard) \(term)\(after)”"
     }
 }
 
@@ -2473,7 +2478,7 @@ private struct OfferContent: View {
             // Far enough back that the two words carry the row.
             let quiet = Color(white: 0.62)
             (
-                Text(it.before + " ").font(face).foregroundColor(quiet)
+                Text(it.lead).font(face).foregroundColor(quiet)
                 + Text(it.heard).font(mono.weight(.medium)).foregroundColor(Color(white: 0.52))
                     .strikethrough(true, color: Self.struck)
                 + Text(" ").font(face)
