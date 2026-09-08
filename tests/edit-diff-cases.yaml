@@ -5,6 +5,7 @@
 # offer:  yes | no, <why>    whether the panel opens on it; optional, and one
 #                            per span when there are several
 # heard:  <a>..<b> in "…"    the window and range written to the trace; optional
+# lang:   en | fr            what the pipeline resolved; optional, en by default
 #
 # The strict half matters more than the generous one. A rewrite read as a
 # correction teaches a term a sentence nobody meant, and a portrait built on
@@ -268,6 +269,51 @@ cases:
   - written: "ask Praisy today"
     now:     "ask Praisy's today"
     expect:  "Praisy -> Praisy's"
+
+# One word in another form is not a pronunciation. Two forms of one French
+# verb are homophones, so the sound rule scores them 1.00 and overrules the
+# word lists. `passez` -> `passé` was offered as a rule on 2026-09-08.
+  - written: "Hello, passez un bon week-end."
+    now:     "Hello, passé un bon week-end."
+    expect:  "passez -> passé"
+    lang:    fr
+    offer:   "no, the same word in another form"
+
+  # Number, by the same lemma. The rule is not about verbs — one test covers
+  # tense, gender and number. From the trace, 2026-09-04.
+  - written: "how many user are on the plan"
+    now:     "how many users are on the plan"
+    expect:  "user -> users"
+    offer:   "no, the same word in another form"
+
+  # Gender.
+  - written: "c'est une grand maison"
+    now:     "c'est une grande maison"
+    expect:  "grand -> grande"
+    lang:    fr
+    offer:   "no, the same word in another form"
+
+  # An irregular plural, where no ending rule would reach it.
+  - written: "the mouse are in the trap"
+    now:     "the mice are in the trap"
+    expect:  "mouse -> mice"
+    offer:   "no, the same word in another form"
+
+  # A capitalised form mid-line never reaches the word test, so the refusal has
+  # to be asked over the accept as well.
+  - written: "Je disais. Passez un bon week-end."
+    now:     "Je disais. Passé un bon week-end."
+    expect:  "Passez -> Passé"
+    lang:    fr
+    offer:   "no, the same word in another form"
+
+  # The control the rule must not touch: a mishearing onto an ordinary word,
+  # which is the whole reason the sound rule exists. Neither word has a lemma,
+  # so the two readings cannot share one.
+  - written: "there is a lot of borderplay in this file"
+    now:     "there is a lot of boilerplate in this file"
+    expect:  "borderplay -> boilerplate"
+    offer:   "yes, ordinary English but it sounds like it"
 
 # Not here: the input box between two rules, and a line wrapped onto a second
 # row. Both are several lines of screen, and this set carries one case per line.

@@ -548,12 +548,15 @@ final class EditWatch {
         case ordinary
         /// The heard side ends a sentence, so the pair straddles a cut.
         case ended
+        /// The two readings are one word in two forms.
+        case inflected
 
         var description: String {
             switch self {
             case .punctuation: return "punctuation, not a name"
             case .ordinary: return "ordinary English"
             case .ended: return "the heard side ends a sentence"
+            case .inflected: return "the same word in another form"
             }
         }
     }
@@ -616,6 +619,54 @@ final class EditWatch {
     /// the pair, this asks sound to classify one already in hand.
     static let soundFloor: Float = 0.65
 
+    /// Whether the two readings are one word said two ways.
+    ///
+    /// Inflection is the sound rule's blind spot. Two forms of one French verb
+    /// are homophones — `passez` and `passé` both come out /pase/ — so
+    /// `soundsAlike` scores them 1.00 and the ordinary-English refusal is
+    /// overruled. `passez` -> `passé` was offered as a vocabulary rule on
+    /// 2026-09-08. Writing it would make the app spell one form as another in
+    /// every sentence afterwards.
+    ///
+    /// `NLTagger`'s lemma answers it: both forms return `passer`. It is the
+    /// dictionary form, so one test covers tense, gender and number in any
+    /// language macOS tags, rather than a list of endings per language:
+    ///
+    ///     tense    passez / passé      run / ran      walk / walked
+    ///     gender   grand / grande      le / la        heureux / heureuse
+    ///     number   cheval / chevaux    user / users   mouse / mice
+    ///
+    /// What it does not reach is a pair macOS holds as two words rather than
+    /// two forms: `chien` and `chienne` lemmatise to themselves, and so do
+    /// `acteur` and `actrice`. Both are still offered.
+    ///
+    /// Both sides must have one, which is what keeps the test from reaching a
+    /// name. A word no dictionary knows returns no lemma at all — `Prezi`,
+    /// `borderplay` and `Mik` all do — so the rule can only ever fire on two
+    /// known words, and never on the mishearings the sound rule is there for.
+    ///
+    /// The words alone, not the sentence around them. Measured on the pairs
+    /// this has to separate, a lone form lemmatises the same as one in its
+    /// sentence, and the span a change covers is not always a whole token of
+    /// the line it came from.
+    ///
+    /// Lowercased first, the same reason `Vocabulary.unseenWord` does it: a
+    /// capital changes the analysis. `Passez` and `Passé` at the head of a
+    /// sentence come back as two nouns lemmatised to themselves, where the
+    /// lowercased pair is one verb twice. The cost is a surname that is also a
+    /// conjugation — `Mange` against `mangez` — which stops being offered.
+    static func inflected(_ was: String, _ now: String, language: String) -> Bool {
+        func lemma(_ word: String) -> String? {
+            let bare = word.trimmingCharacters(in: .whitespaces).lowercased()
+            guard !bare.isEmpty else { return nil }
+            let tokens = Tagger.tokens(in: bare, language: language)
+            guard tokens.count == 1 else { return nil }
+            return tokens[0].lemma?.lowercased()
+        }
+        guard let a = lemma(was), let b = lemma(now) else { return false }
+        return a == b
+    }
+
     /// Whether a correction is worth offering as a rule, sound included.
     ///
     /// The whole decision, in one place. The sound branch used to be written
@@ -624,14 +675,31 @@ final class EditWatch {
     /// A heard side ending a sentence is a cut, not a word: `Q.` -> `cue`
     /// scores 1.00 because neither ear says the stop, so sound alone lets it
     /// through. 4 of the 122 recorded corrections, all noise, recall unchanged.
-    static func offers(_ change: Change, sound: Float) -> Refusal? {
+    ///
+    /// `inflected` is the other thing sound cannot see, and it beats the sound
+    /// rule rather than joining it: two forms of one verb score 1.00 on every
+    /// ear there is.
+    static func offers(_ change: Change, sound: Float, language: String) -> Refusal? {
         // Only ever over an accept. Asked first it shadowed `punctuation` on
         // `rebase.` -> `rebase:`, which was already refused for a better reason.
         let ended = change.was.trimmingCharacters(in: .whitespaces).last.map {
             ".?!".contains($0)
         } == true
-        guard let refusal = refusal(for: change) else { return ended ? .ended : nil }
-        if case .ordinary = refusal, sound >= soundFloor { return ended ? .ended : nil }
+        // Over an accept too. `refusal` returns nil for a capitalised word
+        // that does not open its sentence, so `Passez` -> `Passé` mid-line
+        // never reaches the word test at all.
+        let inflected = inflected(change.was, change.now, language: language)
+        guard let refusal = refusal(for: change) else {
+            if inflected { return .inflected }
+            return ended ? .ended : nil
+        }
+        guard case .ordinary = refusal else { return refusal }
+        // Ahead of the sound rule rather than inside it. Both refuse, but the
+        // word lists get there first whenever the two forms do not sound alike
+        // — `grand` -> `grande` — and "ordinary English" is the vaguer of two
+        // true answers. `punctuation` still wins: `refusal` asks it first.
+        if inflected { return .inflected }
+        if sound >= soundFloor { return ended ? .ended : nil }
         return refusal
     }
 

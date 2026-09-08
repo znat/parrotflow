@@ -58,6 +58,15 @@ them and the term stops being written wherever it is proposed: a new sentence
 has to look more like the ones you confirmed than like the ones you took it out
 of — see [Checking the result](transcription.md#checking-the-result).
 
+**One word in another form teaches nothing either.** Correcting `passez` to
+`passé` is a grammar fix, not a pronunciation: both forms sound the same, so
+the rule would spell one tense as the other in every sentence afterwards. Two
+readings that lemmatise to the same word are never offered, which covers tense,
+gender and number in any language macOS tags — `grand`/`grande`,
+`cheval`/`chevaux`, `user`/`users`, `mouse`/`mice`. A pair macOS holds as two
+words is still offered, so `chien` to `chienne` gets through. The edit is
+written to `trace.jsonl` either way.
+
 ## Saying the spelling instead
 
 You can skip the panel entirely and just say the correction:

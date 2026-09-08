@@ -3901,14 +3901,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             var worth: [EditWatch.Change] = []
             for change in candidates {
-                let sound = await EditWatch.soundsAlike(
-                    change.was, change.now,
-                    language: DictationLanguage.forCorrection(
-                        transcript: change.sentence,
-                        allowed: self.config.transcription.languages
-                    )
+                // One answer, read by both tests. The ear and the tagger
+                // disagreeing about which language this is would be a way in
+                // for a rule neither would offer on its own.
+                let language = DictationLanguage.forCorrection(
+                    transcript: change.sentence,
+                    allowed: self.config.transcription.languages
                 )
-                if self.teaches(change, sound: sound) { worth.append(change) }
+                let sound = await EditWatch.soundsAlike(
+                    change.was, change.now, language: language
+                )
+                if self.teaches(change, sound: sound, language: language) {
+                    worth.append(change)
+                }
             }
             guard !worth.isEmpty else { return }
             // Same rule as `offerOverReselected`: never over a recording and
@@ -4175,8 +4180,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `sound` is the second way in: a mishearing can land on an ordinary word
     /// — `borderplay` -> `boilerplate` — which the word lists always refuse.
     /// Only `.ordinary`, since punctuation scores 1.00 by construction.
-    private func teaches(_ change: EditWatch.Change, sound: Float) -> Bool {
-        guard let refusal = EditWatch.offers(change, sound: sound) else {
+    private func teaches(
+        _ change: EditWatch.Change, sound: Float, language: String
+    ) -> Bool {
+        guard let refusal = EditWatch.offers(
+            change, sound: sound, language: language
+        ) else {
             Log.write("correction: \"\(change.was)\" -> \"\(change.now)\" is offered"
                 + " — sound \(String(format: "%.2f", sound))")
             return true
