@@ -80,9 +80,7 @@ enum PillState: Equatable {
     /// Whether the microphone is open, or the words it heard are still being
     /// worked on. One question, asked in three places: the rim turns while this
     /// is true, the bloom is drawn behind it, and the window carries the wide
-    /// margin the bloom needs. Three switches over the same cases is how one of
-    /// them ends up disagreeing, and a margin that disagrees with the window is
-    /// a surface drawn at the wrong size.
+    /// margin the bloom needs.
     var isListening: Bool {
         switch self {
         case .recording, .working: return true
@@ -1209,20 +1207,31 @@ final class PillHUD {
     /// the whole claim this surface makes. The wobble the pane edge was hiding
     /// is still there and is now the price of saying something exact.
     ///
-    /// `bleed` is taken off because it is transparent: what has to line up with
-    /// the words is the surface, not the window the glow spills into.
+    /// Everything here is worked out for the capsule you can see, and the
+    /// margin is taken off once at the end. The margin is transparent and it
+    /// changes with the state — 52 while listening, 12 after — so a position
+    /// clamped as a window would move the capsule 40pt sideways at the offer
+    /// for no reason the user can see.
     private func beside(
         _ target: NSRect, column: CGFloat, size: NSSize, on visible: NSRect
     ) -> (origin: NSPoint, dock: Dock?) {
         let gap = isDocked ? PillMetrics.dockGap : PillMetrics.floatGap
+        let margin = currentBleed
+        let capsule = NSSize(
+            width: size.width - margin * 2, height: size.height - margin * 2
+        )
+        // The room the capsule keeps to, which is the screen less the smallest
+        // margin any state takes. The wider one is allowed off the screen: it
+        // is transparent, a borderless panel keeps an origin outside the
+        // display, and pulling it back in would move the capsule.
+        let room = visible.insetBy(dx: PillMetrics.dockBleed, dy: PillMetrics.dockBleed)
 
         var dock = Dock.below
-        var y = target.minY - gap - size.height + currentBleed
-        if y < visible.minY {
-            y = target.maxY + gap - currentBleed
+        var y = target.minY - gap - capsule.height
+        if y < room.minY {
+            y = target.maxY + gap
             dock = .above
         }
-        let x = column - currentBleed
 
         // Clamped into the screen, which is also what folds the panel back from
         // the right edge: a surface wider than the room left beside the words
@@ -1230,8 +1239,8 @@ final class PillHUD {
         // off the display. The row is untouched by that, so it still names the
         // line it belongs to.
         return (NSPoint(
-            x: min(max(x, visible.minX), visible.maxX - size.width),
-            y: min(max(y, visible.minY), visible.maxY - size.height)
+            x: min(max(column, room.minX), room.maxX - capsule.width) - margin,
+            y: min(max(y, room.minY), room.maxY - capsule.height) - margin
         ), isDocked ? dock : nil)
     }
 
@@ -1262,22 +1271,9 @@ final class PillHUD {
 
     /// Whether this is the docked surface rather than the floating capsule.
     ///
-    /// Always, now. The two forms were two objects rather than two sizes of one
-    /// thing, and anything that picked between them made one message come out
-    /// as two surfaces. It did — twice.
-    ///
-    /// First it asked for an anchor. An app that will not say where its caret
-    /// is — Slack gives none at the press and its composer repaints on insert,
-    /// so the diff finds nothing either — got the floating lozenge, and a
-    /// 165x131 window around a 61x27 tab, taking the mouse where you are
-    /// typing. That is where "I cannot click on buttons" came from. The margin
-    /// follows the state now rather than the form, and only the offer takes the
-    /// mouse — see `PillMetrics.bleed(for:)`.
-    ///
-    /// Then it asked whether a dictation was on screen. That left every notice
-    /// raised before a recording starts wearing the old lozenge — including the
-    /// one that says the press failed, which is the message most likely to be
-    /// looked at closely.
+    /// Always, now. Twice it was asked to pick — first on whether there was an
+    /// anchor, then on whether a dictation was on screen — and both times one
+    /// message came out as two different surfaces.
     ///
     /// The anchor decides *where* the surface goes, never what it is: with one
     /// it hangs off a line and squares the edge that touches it, and without
