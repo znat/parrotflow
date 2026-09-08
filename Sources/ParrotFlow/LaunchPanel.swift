@@ -23,6 +23,9 @@ import SwiftUI
 final class LaunchPanel {
 
     private var panel: NSPanel?
+    private var watch: AnyCancellable?
+    /// Which of the two heights the window is currently built at.
+    private var listing = false
 
     private let downloads: ModelDownloads
 
@@ -51,6 +54,32 @@ final class LaunchPanel {
         // Never key, and never `NSApp.activate`. This opens on its own at
         // login, while somebody is typing into something else.
         panel?.riseIntoView(makeKey: false)
+
+        // The rows come and go, so the panel is two heights and has to be
+        // resized between them. Debounced: a fetch reports every percent, and
+        // a layout pass per percent to find the height has not changed is the
+        // trap `PermissionsWindowController.resizeToContent` fell into first.
+        watch = downloads.objectWillChange
+            .debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.resize() }
+    }
+
+    /// Takes the height this state needs, keeping the panel where it is.
+    ///
+    /// `setContentSize` holds the bottom-left corner, so a panel that grew
+    /// would climb up the screen and one that shrank would sink. Re-centring on
+    /// the old centre keeps it still.
+    private func resize() {
+        guard let panel, panel.isVisible else { return }
+        let wanted = LaunchModel.moment(of: downloads.rows) == .downloading
+        guard wanted != listing else { return }
+        listing = wanted
+        let centre = NSPoint(x: panel.frame.midX, y: panel.frame.midY)
+        let size = LaunchMetrics.windowSize(listing: wanted)
+        panel.setContentSize(size)
+        panel.setFrameOrigin(NSPoint(
+            x: centre.x - size.width / 2, y: centre.y - size.height / 2
+        ))
     }
 
     /// It waits to be dismissed. Nothing takes it down on a timer.
@@ -62,6 +91,7 @@ final class LaunchPanel {
     /// this panel is a person pressing a button, and the button is the receipt
     /// that they read the line above it.
     func dismiss() {
+        watch = nil
         guard let panel, panel.isVisible else { return }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.22
@@ -77,11 +107,8 @@ final class LaunchPanel {
         let hosting = NSHostingView(rootView: LaunchView(onHide: { [weak self] in
             self?.dismiss()
         }).environmentObject(model))
-        hosting.frame = NSRect(
-            x: 0, y: 0,
-            width: LaunchMetrics.width + LaunchMetrics.bleed * 2,
-            height: LaunchMetrics.height + LaunchMetrics.bleed * 2
-        )
+        listing = LaunchModel.moment(of: downloads.rows) == .downloading
+        hosting.frame = NSRect(origin: .zero, size: LaunchMetrics.windowSize(listing: listing))
         hosting.autoresizingMask = [.width, .height]
 
         let panel = NSPanel(
@@ -131,10 +158,25 @@ enum LaunchMetrics {
     /// outside its own window, which drew the edge around the margin rather
     /// than around the glass.
     static let width: CGFloat = 440
-    /// The tallest it gets, which is the downloading state. The content is
-    /// centred in it, so the shorter states do not move the panel.
-    static let height: CGFloat = 400
     static let padding: CGFloat = 30
+
+    /// A list, and a line. The panel is two heights, and the window is resized
+    /// between them.
+    ///
+    /// One fixed height does not work. It was fixed, at what three rows need,
+    /// and a first install declares six: the sentence and the button were
+    /// pushed out of the panel. The list is capped now — see `LaunchModel.shown`
+    /// — and the short states would sit in a mostly empty panel if they were
+    /// held at the tall one.
+    static let listed: CGFloat = 440
+    static let plain: CGFloat = 280
+
+    static func height(listing: Bool) -> CGFloat { listing ? listed : plain }
+
+    /// The window: the surface, plus the margin the material's shadow lands in.
+    static func windowSize(listing: Bool) -> NSSize {
+        NSSize(width: width + bleed * 2, height: height(listing: listing) + bleed * 2)
+    }
     /// Transparent room around the panel. It held the bloom, which has gone;
     /// it is kept because the material casts its own shadow and a window with
     /// no margin clips it square at the edge.
@@ -199,6 +241,17 @@ final class LaunchModel: ObservableObject {
         downloads.rows.filter(\.state.isPending)
     }
 
+    /// At most three rows, in the order the launch declared them.
+    ///
+    /// A first install has six models to fetch and this is a splash, not the
+    /// setup screen's inventory. Three is what the panel is tall enough to
+    /// hold, and the heading above them already carries the total. Declaration
+    /// order rather than most-advanced-first, so a row never overtakes another
+    /// and the list only ever shortens.
+    static let listLimit = 3
+
+    var shown: [ModelDownload] { Array(coming.prefix(Self.listLimit)) }
+
     /// "937 MB", counting only what has not landed.
     var remaining: String? {
         let left = coming.reduce(0.0) { total, row in
@@ -261,7 +314,8 @@ private struct LaunchView: View {
         }
         .frame(
             width: LaunchMetrics.width - LaunchMetrics.padding * 2,
-            height: LaunchMetrics.height - LaunchMetrics.padding * 2
+            height: LaunchMetrics.height(listing: model.moment == .downloading)
+                - LaunchMetrics.padding * 2
         )
         .padding(LaunchMetrics.padding)
         // Nothing is painted over the material: `parrotSurface` skips its own
@@ -345,7 +399,7 @@ private struct LaunchView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 16)
 
-            ForEach(model.coming) { row in
+            ForEach(model.shown) { row in
                 LaunchRow(row: row)
             }
 

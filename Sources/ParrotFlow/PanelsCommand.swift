@@ -807,13 +807,19 @@ enum PanelsCommand {
         // so the preview runs the sequence on a loop rather than parking on one
         // state. Same reasoning as `sequence` below.
         case "launch":
+            // All six, which is what a first install declares. Three of them
+            // are drawn — see `LaunchModel.shown` — and the panel has to be
+            // right at the number it will really be handed, not at the number
+            // that fits.
             let downloads = ModelDownloads()
-            downloads.expect(SlotModel.download)
-            downloads.expect(SentenceReadings.download)
-            downloads.expect(WordVectors.download)
-            let coming = [
-                SlotModel.download.id, SentenceReadings.download.id, WordVectors.download.id
-            ]
+            for row in [
+                Transcriber.speechDownload, Transcriber.voiceDownload,
+                NeuralPhonemes.soundDownload, SlotModel.download,
+                SentenceReadings.download, WordVectors.download
+            ] {
+                downloads.expect(row)
+            }
+            let coming = downloads.rows.map(\.id)
             let panel = LaunchPanel(downloads: downloads)
             launchPanel = panel
             panel.showIfNeeded(hotkey: "Right ⌥")
@@ -829,7 +835,7 @@ enum PanelsCommand {
                 // Staggered, the way they really arrive: they start together
                 // and the smallest lands first.
                 for (index, id) in coming.enumerated() {
-                    let share = Double(percent) * (1.0 - Double(index) * 0.22)
+                    let share = Double(percent) * (1.0 - Double(index) * 0.11)
                     if share >= 100 {
                         // Downloaded is not loaded. Every one of them spends a
                         // moment here, which is the state this panel was built
