@@ -1419,7 +1419,7 @@ private extension ModelDownload {
     var glyph: SetupGlyph {
         switch state {
         case .installed: return .granted
-        case .downloading: return .downloading
+        case .downloading, .loading: return .downloading
         case .waiting: return .queued
         case .off: return .turnedOff
         // Amber for a fetch the app retries by itself, a cross for one that
@@ -1437,6 +1437,7 @@ private extension ModelDownload {
     var note: String? {
         switch state {
         case .downloading(let percent): return percent.map { "\($0)%" }
+        case .loading: return "loading"
         case .off(let reason): return reason
         case .installed, .waiting, .failed: return nil
         }

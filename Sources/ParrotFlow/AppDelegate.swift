@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let recorder = Recorder()
     private let pill = PillHUD()
     private let permissions = PermissionsWindowController()
+    /// The panel that says what this launch is fetching. See `LaunchPanel`.
+    private let launch = LaunchPanel()
     private let bugReport = BugReportWindow()
 
     private var statusItem: NSStatusItem!
@@ -620,6 +622,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // arrive. The window reports the fetches; it does not own them.
         permissions.onRetryDownloads = { [weak self] in self?.retryDownloads() }
         warmModels()
+
+        // After a grace, not with the fetches. `warmModels` declares every row
+        // as `waiting` and the ones already on disk report `installed` a moment
+        // later, so asking immediately would put a panel up on every launch and
+        // take it down again before it could be read. Long enough for a cached
+        // model to say so, short enough that a real download is still announced
+        // before anybody wonders.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.launchPanelGraceSeconds) {
+            [weak self] in
+            guard let self else { return }
+            self.launch.showIfNeeded(hotkey: self.hotKeys.binding?.displayName)
+        }
 
 
         warmUpLLM()
@@ -2310,6 +2324,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// The dictation path still calls both. A fetch that fails clears itself,
     /// and the next English dictation is the next chance.
+    /// How long a launch is given to turn out to have nothing to say.
+    private static let launchPanelGraceSeconds: TimeInterval = 0.8
+
     private func warmModels() {
         guard config.transcription.enabled else { return }
         let transcriber = transcriber
