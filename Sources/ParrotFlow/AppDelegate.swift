@@ -3964,6 +3964,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The sentence split around the word that changed. The two ends are what
     /// the pill dims.
+    /// Words kept either side of the change on the pill.
+    static let learnWindow = 5
+
     static func learnPayload(for change: EditWatch.Change) -> Learn {
         let words = change.sentence.split(separator: " ").map(String.init)
         let span = max(1, change.now.split(separator: " ").count)
@@ -3975,10 +3978,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let covered = words[start ..< end].joined(separator: " ")
         let trailing = covered.hasPrefix(change.now)
             ? String(covered.dropFirst(change.now.count)) : ""
-        let rest = words.dropFirst(end).joined(separator: " ")
+        let rest = words.dropFirst(end)
+        // A window, not the sentence. The pill is measured for one line, and a
+        // long dictation wrapped into a box built for it. Five words either
+        // side is what the portrait cut settled on for the same reason: enough
+        // to place the word, short enough to read at a glance.
+        let kept = head.split(separator: " ").map(String.init)
+        let lead = kept.count > Self.learnWindow
+            ? "… " + kept.suffix(Self.learnWindow).joined(separator: " ") : head
+        let tail = rest.prefix(Self.learnWindow).joined(separator: " ")
+            + (rest.count > Self.learnWindow ? " …" : "")
         return Learn(
-            term: change.now, heard: change.was, before: head,
-            after: trailing + (rest.isEmpty ? "" : " " + rest)
+            term: change.now, heard: change.was, before: lead,
+            after: trailing + (tail.isEmpty ? "" : " " + tail)
         )
     }
 

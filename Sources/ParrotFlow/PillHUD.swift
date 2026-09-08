@@ -1605,8 +1605,8 @@ enum PillMetrics {
         // spacing falls on both sides of it.
         extra += CGFloat(rules(headline: headline, reading: reading, hotkey: hotkey))
             * (rule + blockGap)
-        if case .learn = headline {
-            extra += learnRow + blockGap
+        if case .learn(let it) = headline {
+            extra += learnRows(it) + blockGap
         } else if headline?.ownsARow == true {
             extra += selectionRow + blockGap
         }
@@ -1882,6 +1882,17 @@ enum PillMetrics {
         NSLayoutManager().defaultLineHeight(for: learnFont)
     ) + 2
 
+    /// The row, as tall as the lines it will actually take.
+    ///
+    /// `learnRow` alone measured one line and the view allows two, so a
+    /// windowed sentence that still wrapped was drawn into a box built for
+    /// half of it. Capped at the two the view will draw.
+    static func learnRows(_ it: Learn) -> CGFloat {
+        let room = sentenceWidth - padding * 2
+        let lines = room > 0 ? min(2.0, ceil(learnWidth(it) / room)) : 1
+        return learnRow * max(1, lines)
+    }
+
     /// At 13 beside a 14pt sentence it read as the smaller of the two.
     static let learnLeadFont: NSFont = {
         let plain = NSFont.systemFont(ofSize: 14, weight: .semibold)
@@ -1903,6 +1914,7 @@ enum PillMetrics {
         let mono = it.heard + it.term
         return ceil((rounded as NSString).size(withAttributes: [.font: learnFont]).width)
             + ceil((mono as NSString).size(withAttributes: [.font: learnMonoFont]).width)
+            + learnFit
     }
 
     static func title(_ words: String) -> CGFloat {
@@ -1919,6 +1931,9 @@ enum PillMetrics {
     /// Generous rather than tight, because the chip title is `.fixedSize()`: a
     /// capsule a point short does not shorten a chip, it hangs one over the
     /// end of the pill.
+    /// Slack on the learn row, so a line measured to the pixel does not sit
+    /// flush against the padding and read as clipped.
+    static let learnFit: CGFloat = 8
     static let chipFit: CGFloat = 2
     static let rowFit: CGFloat = 4
 }
