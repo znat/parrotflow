@@ -10,6 +10,25 @@ import SwiftUI
 /// is slow enough that the surfaces drifted apart from each other unnoticed.
 enum PanelsCommand {
 
+    /// The learn headline the app would build, short or long.
+    ///
+    /// Through `learnPayload` rather than a hand-written `Learn`, so the sheet
+    /// shows the window the app applies. Written out, the long one wrapped a
+    /// row measured for one line and nothing on the sheet said so.
+    private static func learnPreview(long: Bool) -> Learn {
+        let sentence = long
+            ? "So what I wanted to say is that we should probably move the whole"
+                + " ingest job over to disfluency before the end of the quarter"
+                + " because the current one keeps falling over."
+            : "I wanna work on disfluency."
+        let words = sentence.split(separator: " ").map(String.init)
+        let at = words.firstIndex(of: "disfluency") ?? 0
+        return AppDelegate.learnPayload(for: EditWatch.Change(
+            was: "this fluency", now: "disfluency", sentence: sentence,
+            at: at, nowAt: at, written: sentence, span: 1
+        ))
+    }
+
     /// What the offer is drawn with here: Correct and one offered transform,
     /// which is what the shipped config puts on the pill. A row of chips is the
     /// shape worth looking at, not one chip on its own.
@@ -176,6 +195,14 @@ enum PanelsCommand {
             learnChips,
             .learn(Learn(term: "Databricks", heard: "data breaks",
                          before: "we moved it to", after: ".")),
+            Confidence.Reading(), open: true
+        ), docked: .below)
+        // The long one, through `learnPayload` rather than written out. The
+        // two above are short enough to look right whatever the window does;
+        // this is the case that wrapped a row measured for one line, and
+        // nothing on the sheet showed it.
+        let offerLearnLong = pill(.offer(
+            learnChips, .learn(learnPreview(long: true)),
             Confidence.Reading(), open: true
         ), docked: .below)
         // Beside the plain one: the two endings must not look the same.
@@ -412,6 +439,8 @@ enum PanelsCommand {
              pillSize(offerLearn), .dark, true),
             (AnyView(PillView().environmentObject(offerLearnShort)),
              pillSize(offerLearnShort), .dark, true),
+            (AnyView(PillView().environmentObject(offerLearnLong)),
+             pillSize(offerLearnLong), .dark, true),
             (AnyView(PillView().environmentObject(offerCopied)),
              pillSize(offerCopied), .dark, true),
             // The same offer with `feedback.confidence` on: two rows instead of
@@ -638,10 +667,7 @@ enum PanelsCommand {
                     OfferedCommand(title: "No", key: "N"),
                     OfferedCommand(title: "Edit", key: "E"),
                 ],
-                headline: .learn(Learn(
-                    term: "disfluency", heard: "this fluency",
-                    before: "I wanna work on", after: "."
-                )),
+                headline: .learn(Self.learnPreview(long: false)),
                 open: true, for: seconds
             )
             pill.model.onHover = { inside in
@@ -650,6 +676,24 @@ enum PanelsCommand {
             }
             // Held as though the pointer were on it: an open panel decays, and
             // this one is here to be looked at.
+            pill.hovering(true)
+        case "learn-long":
+            // The case that wrapped a box measured for one line. Built through
+            // `learnPayload`, so the preview shows the window the app applies
+            // rather than a string typed to look right.
+            pill.offer(
+                [
+                    OfferedCommand(title: "Yes", key: "Y"),
+                    OfferedCommand(title: "No", key: "N"),
+                    OfferedCommand(title: "Edit", key: "E"),
+                ],
+                headline: .learn(Self.learnPreview(long: true)),
+                open: true, for: seconds
+            )
+            pill.model.onHover = { inside in
+                if !inside { pill.model.selected = nil }
+                pill.hovering(inside)
+            }
             pill.hovering(true)
         case "offer":
             // The real call rather than a bare `set`. The offer is the one
@@ -796,7 +840,7 @@ enum PanelsCommand {
             }
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
-                + "|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|learn"
+                + "|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|learn|learn-long"
                 + "|update|setup|sequence> [seconds]")
             return 2
         }

@@ -51,7 +51,14 @@ enum EditDiffCommand {
             let heard = EditWatch.asHeard(change)
             print("  heard: \(heard.range.lowerBound)..<\(heard.range.upperBound) in \"\(heard.text)\"")
             // What the pill would ask. A wrong split is invisible there.
-            print("  learn: \(AppDelegate.learnPayload(for: change).line)")
+            let payload = AppDelegate.learnPayload(for: change)
+            print("  learn: \(payload.line)")
+            // The geometry, because the fault this window fixes was visual and
+            // nothing could see it from here. Two rows means the row measured
+            // for one is being asked to draw two.
+            let rows = Int(PillMetrics.learnRows(payload) / PillMetrics.learnRow)
+            print("  pill: \(Int(PillMetrics.learnWidth(payload)))px wide,"
+                + " \(rows) row(s)")
         }
         print("  in: \(changes[0].sentence)")
         return 0
