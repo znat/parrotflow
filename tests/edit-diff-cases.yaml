@@ -6,6 +6,7 @@
 #                            per span when there are several
 # heard:  <a>..<b> in "…"    the window and range written to the trace; optional
 # lang:   en | fr            what the pipeline resolved; optional, en by default
+# learn:  Learn? “…”         the line the pill draws; optional
 #
 # The strict half matters more than the generous one. A rewrite read as a
 # correction teaches a term a sentence nobody meant, and a portrait built on
@@ -314,6 +315,33 @@ cases:
     now:     "there is a lot of boilerplate in this file"
     expect:  "borderplay -> boilerplate"
     offer:   "yes, ordinary English but it sounds like it"
+
+  # The pill's window stops at the sentence. A field holding several dictations
+  # runs them together with no space after the stop, so counting words alone
+  # drew four sentences. Reported 2026-09-08.
+  - written: "Erik likes individual sports. John is a painter.Jon is a musician."
+    now:     "Erik likes individual sports. Jon is a painter.Jon is a musician."
+    expect:  "John -> Jon"
+    learn:   'Learn? “John Jon is a painter.”'
+
+  # The change is the last word of its sentence, so the stop is on the pair
+  # rather than in the words after it.
+  - written: "I use Ghost. It is good today my friend."
+    now:     "I use Ghostty. It is good today my friend."
+    expect:  "Ghost -> Ghostty"
+    learn:   'Learn? “I use Ghost Ghostty.”'
+
+  # A stop inside a number is not a sentence, so the window runs past it.
+  - written: "the Prezi build took 3.5 seconds to finish"
+    now:     "the Praisy build took 3.5 seconds to finish"
+    expect:  "Prezi -> Praisy"
+    learn:   'Learn? “the Prezi Praisy build took 3.5 seconds to …”'
+
+  # And with no stop anywhere, the word count is still what cuts.
+  - written: "one two three four five six seven Prezi eight nine ten eleven twelve"
+    now:     "one two three four five six seven Praisy eight nine ten eleven twelve"
+    expect:  "Prezi -> Praisy"
+    learn:   'Learn? “… three four five six seven Prezi Praisy eight nine ten eleven twelve”'
 
 # Not here: the input box between two rules, and a line wrapped onto a second
 # row. Both are several lines of screen, and this set carries one case per line.

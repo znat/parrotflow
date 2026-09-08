@@ -3989,6 +3989,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Words kept either side of the change on the pill.
     static let learnWindow = 5
 
+    /// A stop that ends a sentence rather than sitting inside a word.
+    ///
+    /// A letter before it and a space, the end, or a capital after it.
+    /// `painter.Jon` is two sentences a dictation ran together and `3.5` is
+    /// one number; the character alone cannot tell them apart, and the pill
+    /// showing half a number is worse than the pill showing one word too many.
+    private static func endsSentence(_ text: [Character], at i: Int) -> Bool {
+        guard ".?!".contains(text[i]), i > 0, text[i - 1].isLetter else { return false }
+        guard i + 1 < text.count else { return true }
+        let next = text[i + 1]
+        return next.isWhitespace || next.isUppercase
+    }
+
+    /// Whether a sentence ends anywhere in `text`.
+    static func closesSentence(_ text: String) -> Bool {
+        let chars = Array(text)
+        return chars.indices.contains { endsSentence(chars, at: $0) }
+    }
+
+    /// What is left of `text` after the last sentence that ends inside it.
+    static func afterLastStop(_ text: String) -> String {
+        let chars = Array(text)
+        var cut = 0
+        for i in chars.indices where endsSentence(chars, at: i) { cut = i + 1 }
+        return String(chars[cut...]).trimmingCharacters(in: .whitespaces)
+    }
+
+    /// `text` up to and including the first stop that ends a sentence.
+    static func toFirstStop(_ text: String) -> String {
+        let chars = Array(text)
+        for i in chars.indices where endsSentence(chars, at: i) {
+            return String(chars[...i])
+        }
+        return text
+    }
+
     static func learnPayload(for change: EditWatch.Change) -> Learn {
         let words = change.sentence.split(separator: " ").map(String.init)
         let span = max(1, change.now.split(separator: " ").count)
@@ -4001,15 +4037,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trailing = covered.hasPrefix(change.now)
             ? String(covered.dropFirst(change.now.count)) : ""
         let rest = words.dropFirst(end)
+        // The sentence the word is in, before the word count is applied.
+        // Counting words assumes a stop has a space after it, and a field full
+        // of dictations has none: `sports. John is a painter.Jon is a
+        // musician.` is seven words holding three sentences, so five words
+        // either side drew four of them. Reported 2026-09-08.
+        let kept = Self.afterLastStop(head).split(separator: " ").map(String.init)
+        // The stop the pair carried is in `trailing`, not in `rest`: `trimmed`
+        // took it off both readings. Asked over `rest` alone, `Ghost.` ->
+        // `Ghostty.` ran on into the sentence after it.
+        let ahead = Self.closesSentence(change.now + trailing) ? []
+            : Self.toFirstStop(rest.joined(separator: " "))
+                .split(separator: " ").map(String.init)
         // A window, not the sentence. The pill is measured for one line, and a
         // long dictation wrapped into a box built for it. Five words either
         // side is what the portrait cut settled on for the same reason: enough
         // to place the word, short enough to read at a glance.
-        let kept = head.split(separator: " ").map(String.init)
         let lead = kept.count > Self.learnWindow
-            ? "… " + kept.suffix(Self.learnWindow).joined(separator: " ") : head
-        let tail = rest.prefix(Self.learnWindow).joined(separator: " ")
-            + (rest.count > Self.learnWindow ? " …" : "")
+            ? "… " + kept.suffix(Self.learnWindow).joined(separator: " ")
+            : kept.joined(separator: " ")
+        let tail = ahead.prefix(Self.learnWindow).joined(separator: " ")
+            + (ahead.count > Self.learnWindow ? " …" : "")
         return Learn(
             term: change.now, heard: change.was, before: lead,
             after: trailing + (tail.isEmpty ? "" : " " + tail)
