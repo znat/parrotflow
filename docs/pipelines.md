@@ -1678,6 +1678,10 @@ worse — asked to make "the deadline is March 3 2026" ISO it answered
 "2026-03-03", dropping the sentence around the date, which is what a prompt
 written for one subject does when handed a whole sentence.
 
+The deterministic `dates` transform now covers the dictated half of that job:
+it writes the date or the time in the shape it was spoken, with no instruction
+to read and no model to ask.
+
 `grammar` ships for the opposite reason. It has a validation set of its own and
 beats the built-in on it, 5/5 against 4/5, and the case it wins is the one that
 matters most here: leaving alone a sentence that was already right.

@@ -241,6 +241,8 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
   said twice by accident: *"the the prompt"* → *"the prompt"*.
 - [punctuation](examples/transforms/punctuation) — spoken marks as
   punctuation, *"is that true question mark"* → *"is that true?"*.
+- [dates](examples/transforms/dates) — a dictated date or time in the shape it
+  was said, *"at ten fifteen"* → *"at 10:15"*, *"le dix du douze"* → `10/12`.
 - [self_correction](examples/transforms/self_correction) — the prompt above,
   and the 89 cases it is scored on: *"my config my vocabulary"* →
   *"my vocabulary"*.

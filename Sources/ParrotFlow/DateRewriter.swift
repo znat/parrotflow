@@ -20,6 +20,8 @@ import Foundation
 /// the date the way it was spoken", which is closer to what `Numbers.swift`
 /// does for numbers and probably belongs next to it rather than here. Left for
 /// later, deliberately: the numbers it would build on are English-only today.
+/// That is now built, in English and French, as the `dates` command transform
+/// in `examples/transforms/dates/`.
 ///
 /// The division of labour is the point. Finding a date and rendering it in a
 /// named format is arithmetic over a calendar — there is exactly one right
