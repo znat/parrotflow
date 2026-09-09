@@ -1804,11 +1804,11 @@ struct Config: Decodable, Equatable {
 
         /// Keys this config still carries that no longer do anything.
         ///
-        /// `numbers` and `fuzzy_matching` became stages. The decoder ignores
-        /// keys it does not know, so a config still setting them would lose
-        /// two passes without a word — which is the one outcome a rename must
-        /// not have. They are read here purely so `--check-config` can refuse
-        /// them and say what to write instead.
+        /// `fuzzy_matching` became a stage and `numbers` became a shipped
+        /// transform. The decoder ignores keys it does not know, so a config
+        /// still setting them would lose two passes without a word — which is
+        /// the one outcome a rename must not have. They are read here purely
+        /// so `--check-config` can refuse them and say what to write instead.
         var retired: [String] = []
 
         /// Stage names in the pipeline that are not stages. Dropped from the
@@ -1824,8 +1824,8 @@ struct Config: Decodable, Equatable {
         /// "grammar is not a stage" is not what went wrong.
         var contradictoryEntries: [String] = []
 
-        /// An option written on a stage that does not read it — `slot_gate:`
-        /// on `numbers`, `marks:` on `vocabulary`. Each entry is already a
+        /// An option written on a stage that does not read it — `marks:` on
+        /// `vocabulary`, `slot_gate:` on `interpret`. Each entry is already a
         /// sentence, because the key and the stage it belongs to are both known
         /// where it is found and neither is known here.
         ///
@@ -1859,8 +1859,8 @@ struct Config: Decodable, Equatable {
         /// literally on word boundaries.
         /// One line of a pipeline. Written either way:
         ///
-        ///     - numbers
-        ///     - stage: numbers
+        ///     - interpret
+        ///     - stage: interpret
         ///       when: /\\d/
         ///     - prompt: hesitation
         ///       when: /genre/
@@ -2240,7 +2240,7 @@ struct Config: Decodable, Equatable {
                 throw ConfigError.invalidValue(
                     key: "transcription.pipeline",
                     value: "not a list of steps",
-                    expected: "a list of stages — `pipeline: [vocabulary, numbers]`, or one"
+                    expected: "a list of stages — `pipeline: [interpret, vocabulary]`, or one"
                         + " `- ` per line"
                 )
             }
@@ -2728,6 +2728,28 @@ struct Config: Decodable, Equatable {
             + " runs on: `catch_all: gpt`, or `false` to refuse them",
     ]
 
+    /// What to write instead of a pipeline stage that is no longer built in.
+    ///
+    /// A stage name that is not a stage is already refused — see
+    /// `unknownStages` — but "have: interpret, context, …" is the wrong
+    /// answer for a name that used to work. The stage still exists; it is a
+    /// shipped transform now, and the config needs two lines rather than one.
+    static let retiredStages = [
+        "numbers": "is a shipped transform now, not a built-in stage."
+            + " Write `- transform: numbers` in the pipeline, and add it to"
+            + " `transforms:`:  - name: numbers / description: spoken numbers"
+            + " as digits / command: examples/numbers/numbers.py /"
+            + " returns: json.  Its `when:` gate is printed by"
+            + " `examples/numbers/numbers.py --when`",
+    ]
+
+    /// The same sentence, for a `- transform: numbers` that names nothing.
+    /// Half the migration done: the pipeline line was rewritten and the
+    /// `transforms:` entry was not.
+    static func retiredStageAdvice(_ name: String) -> String? {
+        retiredStages[name.lowercased()]
+    }
+
     func problems() -> [String] {
         var found: [String] = []
         for key in retiredKeys.sorted() {
@@ -2739,10 +2761,14 @@ struct Config: Decodable, Equatable {
                     + " `vocabulary` stage reviews it in context; a mechanical rule goes"
                     + " in a transform's `replace:`, which takes regexes, deletions and"
                     + " `{{lists}}` and needs no review"
-                : "it is a pipeline stage now"
+                : Self.retiredStageAdvice(key) ?? "it is a pipeline stage now"
             found.append("transcription.\(key) no longer does anything — \(said)")
         }
         for name in Set(transcription.unknownStages).sorted() {
+            if let advice = Self.retiredStageAdvice(name) {
+                found.append("pipeline: \"\(name)\" \(advice)")
+                continue
+            }
             found.append("pipeline: \"\(name)\" is not a stage — have: "
                 + Pipeline.stageNames.joined(separator: ", "))
         }
@@ -2806,7 +2832,8 @@ struct Config: Decodable, Equatable {
             if transform(named: name) == nil {
                 found.append("pipeline: no transform named \"\(name)\""
                     + (transforms.isEmpty ? " — `transforms:` is empty"
-                        : " — have: \(transforms.map(\.name).joined(separator: ", "))"))
+                        : " — have: \(transforms.map(\.name).joined(separator: ", "))")
+                    + (Self.retiredStageAdvice(name).map { ". It \($0)" } ?? ""))
             }
         }
         return found

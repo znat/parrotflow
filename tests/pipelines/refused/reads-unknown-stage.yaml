@@ -3,5 +3,5 @@
 # the other is "you did not spell it right".
 languages: [en]
 pipeline:
-  - stage: numbers
+  - stage: interpret
     when: cod_identifiers.count == 0

@@ -88,7 +88,7 @@ jobs:
       # Each on its own step, so a red run says which set broke in the summary
       # rather than in the middle of a log.
       - name: Numbers
-        run: scripts/check-numbers.sh
+        run: examples/transforms/numbers/score.py
 
       - name: Replacements
         # The fuzzy half asks NSSpellChecker whether a word is real, and that

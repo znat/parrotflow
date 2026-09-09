@@ -49,11 +49,11 @@ stages() {
 run_config new 'transcription:
   languages: [en, fr]
   pipeline:
-    - vocabulary
-    - numbers'
+    - interpret
+    - vocabulary'
 
 check "a bare pipeline: list loads" "$code" "0"
-check "and it is the pipeline that runs" "$(stages)" "vocabulary → numbers"
+check "and it is the pipeline that runs" "$(stages)" "interpret → vocabulary"
 
 # --- an empty list is a choice ------------------------------------------------
 
@@ -72,7 +72,7 @@ run_config absent 'transcription:
 
 check "a config naming no pipeline loads" "$code" "0"
 check "and gets the built-in default, said out loud" \
-  "$(stages)" "interpret → numbers  (nothing configured, so every stage)"
+  "$(stages)" "interpret  (nothing configured, so every stage)"
 
 # --- the interpret step -------------------------------------------------------
 #
@@ -89,12 +89,11 @@ run_config interpret_bare 'transcription:
   languages: [en]
   pipeline:
     - interpret
-    - vocabulary
-    - numbers'
+    - vocabulary'
 
 check "a bare - interpret line loads" "$code" "0"
 check "and runs above vocabulary without being refused for it" \
-  "$(stages)" "interpret → vocabulary → numbers"
+  "$(stages)" "interpret → vocabulary"
 check "and takes the built-in marks" "$(marks)" ". , ?"
 
 run_config interpret_options 'transcription:
@@ -153,11 +152,10 @@ check "and says where a boundary is looked for" \
 run_config without_step 'transcription:
   languages: [en]
   pipeline:
-    - vocabulary
-    - numbers'
+    - vocabulary'
 
 check "a pipeline with no interpret step loads" "$code" "0"
-check "and nothing is inserted into it" "$(stages)" "vocabulary → numbers"
+check "and nothing is inserted into it" "$(stages)" "vocabulary"
 check "and no marks line is printed for a step that is not there" \
   "$(marks)" ""
 check "and nothing is said about the step being absent" \
@@ -260,7 +258,7 @@ check "and is named on the step's line" \
 run_config option_wrong_stage 'transcription:
   languages: [en]
   pipeline:
-    - {stage: numbers, slot_gate: false}
+    - {stage: interpret, slot_gate: false}
     - {stage: vocabulary, marks: [".", "?"]}'
 
 check "an option on a stage that does not read it is refused" \
@@ -268,16 +266,16 @@ check "an option on a stage that does not read it is refused" \
 check "and each message names the stage that does read it" \
   "$(printf '%s\n' "$out" | grep -c 'option on the `vocabulary` stage')" "1"
 check "and the stage it was written on" \
-  "$(printf '%s\n' "$out" | grep -c '`numbers`: `slot_gate:`')" "1"
+  "$(printf '%s\n' "$out" | grep -c '`interpret`: `slot_gate:`')" "1"
 
 run_config lowercase_wrong_stage 'transcription:
   languages: [en]
   pipeline:
-    - {stage: numbers, lowercase_refused: false}
+    - {stage: interpret, lowercase_refused: false}
     - vocabulary'
 
 check "lowercase_refused: on another stage is refused too" \
-  "$(printf '%s\n' "$out" | grep -c '`numbers`: `lowercase_refused:`')" "1"
+  "$(printf '%s\n' "$out" | grep -c '`interpret`: `lowercase_refused:`')" "1"
 
 run_config option_right_stage 'transcription:
   languages: [en]
@@ -366,6 +364,45 @@ check "a floor that is neither a number nor a map is refused" "$code" "1"
 check "and the message shows both spellings" \
   "$(printf '%s\n' "$out" | grep -c 'slot_floor: {en: 0.20, fr: 0.30}')" "1"
 
+# --- the retired numbers stage ------------------------------------------------
+#
+# `numbers` was a built-in stage and is a shipped transform now. Every config
+# written before that carries `- numbers` as a bare line, and a line that
+# silently does nothing would stop converting numbers without a word. So the
+# name is refused by name, and the message says both halves of the fix: the
+# pipeline line and the `transforms:` entry.
+
+run_config retired_numbers 'transcription:
+  languages: [en, fr]
+  pipeline:
+    - vocabulary
+    - numbers'
+
+check "a bare - numbers line is refused" "$code" "1"
+check "and the message says it is a transform now" \
+  "$(printf '%s\n' "$out" | grep -c 'is a shipped transform now')" "1"
+check "and says what to write in the pipeline" \
+  "$(printf '%s\n' "$out" | grep -c 'transform: numbers')" "1"
+check "and does not offer the list of stages instead" \
+  "$(printf '%s\n' "$out" | grep -c 'is not a stage')" "0"
+check "and the rest of the pipeline still runs" "$(stages)" "vocabulary"
+
+# Half the migration: the pipeline line rewritten, the `transforms:` entry
+# forgotten. The message has to name the missing half rather than only say the
+# transform is unknown.
+
+run_config numbers_undeclared 'transcription:
+  languages: [en, fr]
+  pipeline:
+    - vocabulary
+    - transform: numbers'
+
+check "an undeclared numbers transform is refused" "$code" "1"
+check "and the message says to declare it" \
+  "$(printf '%s\n' "$out" | grep -c 'no transform named "numbers"')" "1"
+check "and says where the script is" \
+  "$(printf '%s\n' "$out" | grep -c 'examples/numbers/numbers.py')" "1"
+
 # --- the retired key ----------------------------------------------------------
 #
 # Refused outright. Nothing under it is read, whatever shape it is in, so the
@@ -375,8 +412,8 @@ check "and the message shows both spellings" \
 run_config retired 'transcription:
   languages: [en, fr]
   pipelines:
-    default: [vocabulary, numbers]
-    fr: [numbers]'
+    default: [interpret, vocabulary]
+    fr: [vocabulary]'
 
 check "pipelines: is refused" "$code" "1"
 check "and the message says nothing under it is read" \
@@ -386,7 +423,7 @@ check "and says what to write instead" \
 check "and says the built-in default is what runs" \
   "$(printf '%s\n' "$out" | grep -c 'no pipeline of yours is running')" "1"
 check "and that is what resolves" \
-  "$(stages)" "interpret → numbers  (nothing configured, so every stage)"
+  "$(stages)" "interpret  (nothing configured, so every stage)"
 
 # --- any shape under the retired key ------------------------------------------
 #
@@ -396,14 +433,14 @@ check "and that is what resolves" \
 run_config retired_list 'transcription:
   languages: [en]
   pipelines:
-    - vocabulary
-    - numbers'
+    - interpret
+    - vocabulary'
 
 check "a bare list under pipelines: is refused the same way" "$code" "1"
 check "with the same one message" \
   "$(printf '%s\n' "$out" | grep -c 'transcription.pipelines: is retired')" "1"
 check "and the built-in default resolves" \
-  "$(stages)" "interpret → numbers  (nothing configured, so every stage)"
+  "$(stages)" "interpret  (nothing configured, so every stage)"
 
 # --- the rest of the config still loads ---------------------------------------
 #
@@ -423,7 +460,7 @@ check "a refused pipelines: does not cost the rest of the config" \
 check "including a setting read after it" \
   "$(printf '%s\n' "$out" | grep -c 'copy to clipboard')" "1"
 check "and the built-in default is still what resolves" \
-  "$(stages)" "interpret → numbers  (nothing configured, so every stage)"
+  "$(stages)" "interpret  (nothing configured, so every stage)"
 
 # --- both keys ----------------------------------------------------------------
 
@@ -432,7 +469,7 @@ run_config both 'transcription:
   pipeline:
     - vocabulary
   pipelines:
-    default: [numbers]'
+    default: [interpret]'
 
 check "pipelines: beside pipeline: is still refused" "$code" "1"
 check "and pipeline: is what runs" "$(stages)" "vocabulary"

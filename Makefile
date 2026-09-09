@@ -88,11 +88,15 @@ release-certificate:
 ## check-routing and check-spelling need Ollama and gemma4:e4b, and
 ## check-inplace needs a real screen, the Accessibility grant and tmux. Run
 ## those by hand and put the numbers in the pull request.
-CHECKS := numbers replacements pipeline pipeline-config wake split dotted dates keyed \
+CHECKS := replacements pipeline pipeline-config wake split dotted dates keyed \
           transform-folders eval audio-recovery possessive word-gate suggest input join \
           profiles span-rule clipboard default-config vocabulary-config learn \
           signing-identity no-voice sound slot-tokenizer sentence-case term-uses \
           edit-diff sentence-open invented-tail sentence-window lowercase-refused
+
+## A shipped transform keeps its case set in its own folder and scores it with
+## a script beside it, not with scripts/check-<name>.sh.
+SCORERS := examples/transforms/numbers/score.py
 
 test:
 	@swift build -c release
@@ -105,6 +109,10 @@ test:
 	for c in $(CHECKS); do \
 	  printf '\n==> %s\n' "$$c"; \
 	  scripts/check-$$c.sh || failed="$$failed $$c"; \
+	done; \
+	for s in $(SCORERS); do \
+	  printf '\n==> %s\n' "$$s"; \
+	  $$s || failed="$$failed $$s"; \
 	done; \
 	if [ -n "$$failed" ]; then printf '\nFailed:%s\n' "$$failed"; exit 1; fi; \
 	printf '\nEvery check passed.\n'

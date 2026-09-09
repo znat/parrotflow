@@ -109,7 +109,12 @@ transcription:
     #   by_sound: false      match spelling only, never how a word sounds
     #   lowercase_refused: false   revert a refused glued span as heard
     - vocabulary
-    - numbers                            # "two hundred forty-three" -> 243
+    # "two hundred forty-three" -> 243, "seventy-five percent" -> 75%.
+    # The gate is every number word of every grammar. It was printed by
+    # `examples/numbers/numbers.py --when`; regenerate it if you edit a word
+    # table, because a gate that misses a word skips the stage in silence.
+    - transform: numbers
+      when: /(?i)\b(?:cinquantieme|cinquantième|huitantieme|huitantième|millionieme|millionième|quarantieme|quarantième|quatorzieme|quatorzième|septantieme|septantième|seventeenth|soixantieme|soixantième|eighteenth|fourteenth|nineteenth|nonantieme|nonantième|octantieme|octantième|seventieth|thirteenth|thousandth|billionth|cinquante|cinquieme|cinquième|eightieth|fifteenth|hundredth|milliards|millionth|ninetieth|quatrieme|quatrième|quinzieme|quinzième|septantes|seventeen|sixteenth|thirtieth|treizieme|treizième|trentieme|trentième|troisieme|troisième|twentieth|vingtieme|vingtième|centieme|centième|deuxieme|deuxième|douzieme|douzième|eighteen|eleventh|fiftieth|fortieth|fourteen|huitante|huitieme|huitième|milliard|millieme|millions|millième|neuvieme|neuvième|nineteen|nonantes|premiere|première|quarante|quatorze|seizieme|seizième|septante|septieme|septième|sixtieth|soixante|thirteen|thousand|trillion|billion|dixieme|dixième|fifteen|hundred|million|nonante|octante|onzieme|onzième|premier|seventh|seventy|sixieme|sixième|sixteen|twelfth|eighth|eighty|eleven|fourth|milles|ninety|quatre|quinze|thirty|treize|trente|twelve|twenty|unieme|unième|vingts|cents|douze|eight|fifth|fifty|first|forty|mille|ninth|seize|seven|sixth|sixty|tenth|third|three|trois|vingt|cent|cinq|deux|five|four|huit|neuf|nine|onze|sept|zero|zéro|dix|one|six|ten|two|une|un)\b/
     - transform: punctuation             # "is that true question mark" -> is that true?
     - transform: repetitions             # a word or phrase said twice by accident, taken out
 
@@ -297,6 +302,13 @@ transforms:
   - name: punctuation
     description: spoken marks as punctuation
     command: examples/punctuation/punctuation.py
+    returns: json
+
+  # Spoken numbers as digits, English and French. Its `when:` gate is on the
+  # pipeline step above, printed by `examples/numbers/numbers.py --when`.
+  - name: numbers
+    description: spoken numbers as digits
+    command: examples/numbers/numbers.py
     returns: json
 
   # Cheap: ~0.04s, mostly the python3 start.

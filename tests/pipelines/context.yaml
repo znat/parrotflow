@@ -19,6 +19,12 @@
 languages: [en]
 
 
+transforms:
+  - name: numbers
+    description: spoken numbers as digits
+    command: numbers.py
+    returns: json
+
 vocabulary:
   terms:
     Supabase:
@@ -30,4 +36,4 @@ pipeline:
   # it declines, which from here it always does.
   - vocabulary
   - context
-  - numbers
+  - transform: numbers
