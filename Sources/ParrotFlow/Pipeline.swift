@@ -1308,7 +1308,8 @@ struct Pipeline: Equatable, Codable {
                 ) else { continue }
                 writing[index] = VocabularyPass.Change(
                     range: change.range, was: lower, now: change.now,
-                    terms: change.terms, owner: change.owner, standing: change.standing
+                    terms: change.terms, owner: change.owner, standing: change.standing,
+                    group: change.group
                 )
                 Log.write("vocabulary: \"\(change.was)\" refused as \(change.now)"
                     + " — written in lowercase")
