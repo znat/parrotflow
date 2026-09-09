@@ -29,6 +29,110 @@ enum PanelsCommand {
         ))
     }
 
+    /// Point the live pill at the caret, the way `AppDelegate` does at the
+    /// press. Placement belongs to the pill and not to the state, so a preview
+    /// that never aims draws the panel at the bottom of the screen and says
+    /// nothing about where the real one opens.
+    ///
+    /// The stand-in matters: with no aim the pill falls back to the bottom
+    /// centre, which is the one placement this preview is not about.
+    private static func aimAtCaret(_ pill: PillHUD) {
+        let element = SelectionReader.focusedElement()
+        if let element, case .found(let anchor) = CaretAnchor.read(at: element) {
+            Log.write("panels: aimed at the caret (\(anchor.source.rawValue))")
+            pill.aim(at: anchor)
+            return
+        }
+        if element == nil {
+            Log.write("panels: no focused element (trusted: \(AXIsProcessTrusted()))")
+        } else {
+            Log.write("panels: focused element gave no caret")
+        }
+        // The rung the app falls to for an app that answers nothing. Without it
+        // a click into Slack would draw a line in the middle of nowhere, when
+        // the real pill would sit on that window's bottom edge.
+        if let pid = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+           let anchor = CaretAnchor.window(of: pid) {
+            Log.write("panels: aimed at the front window's bottom edge")
+            pill.aim(at: anchor)
+            return
+        }
+        guard let screen = NSScreen.main?.visibleFrame else { return }
+        let line = NSRect(x: screen.midX - 240, y: screen.midY, width: 480, height: 18)
+        pill.aim(at: CaretAnchor.Found(rect: line, text: line, source: .caret))
+    }
+
+    /// The three selectors the sheet and `--panels` draw.
+    ///
+    /// One place and short, one place in a sentence the window has to cut at
+    /// both ends, and two places in one sentence — which is two questions.
+    private static func selectorRun(_ shape: String) -> ChooseRun {
+        switch shape {
+        case "long":
+            return selector(
+                "so after the standup tomorrow morning when the ingest job has"
+                    + " finished running on the new cluster can you ask mixed bend"
+                    + " to review the pull request before the end of the week so we"
+                    + " can ship it on Monday.",
+                [("mixed bend", "Mick")]
+            )
+        case "two":
+            return selector(
+                "so after the standup tomorrow morning can you ask mixed bend to"
+                    + " review it and then tell the team that we moved everything"
+                    + " off BetterStack in June before the export runs again",
+                [("mixed bend", "Mick"), ("BetterStack", "better stack")]
+            )
+        default:
+            return selector(
+                "can you ask mixed bend to review it.", [("mixed bend", "Mick")]
+            )
+        }
+    }
+
+    /// One step of a run, with the earlier answers already taken.
+    ///
+    /// Through `ChooseRun` rather than a hand-written `Choose`, so the sheet
+    /// shows the window, the shrink and the substitution the app would apply.
+    private static func selectorStep(_ shape: String, answered: [Int] = []) -> Choose {
+        var run = selectorRun(shape)
+        for option in answered { run.answer(option) }
+        guard let step = run.next else {
+            // Unreachable: every run here has more places than answers.
+            return Choose(before: "", heard: run.sentence, other: "",
+                          after: "", step: 1, steps: 1)
+        }
+        return step
+    }
+
+    /// The places named by the words they cover, which is how they read here.
+    private static func selector(
+        _ sentence: String, _ pairs: [(heard: String, other: String)]
+    ) -> ChooseRun {
+        let words = sentence.split(separator: " ").map(String.init)
+        var places: [ChooseRun.Place] = []
+        var from = 0
+        for pair in pairs {
+            let phrase = pair.heard.split(separator: " ").map(String.init)
+            guard let at = firstIndex(of: phrase, in: words, from: from) else { continue }
+            places.append(ChooseRun.Place(at: at, span: phrase.count, other: pair.other))
+            from = at + phrase.count
+        }
+        return ChooseRun(sentence: sentence, places: places)
+    }
+
+    /// Where a phrase starts, counted in words.
+    private static func firstIndex(
+        of phrase: [String], in words: [String], from: Int
+    ) -> Int? {
+        guard !phrase.isEmpty, from <= words.count - phrase.count else { return nil }
+        for start in from ... (words.count - phrase.count)
+        where Array(words[start ..< start + phrase.count]) == phrase {
+            return start
+        }
+        return nil
+    }
+
     /// What the offer is drawn with here: Correct and one offered transform,
     /// which is what the shipped config puts on the pill. A row of chips is the
     /// shape worth looking at, not one chip on its own.
@@ -203,6 +307,22 @@ enum PanelsCommand {
         // nothing on the sheet showed it.
         let offerLearnLong = pill(.offer(
             learnChips, .learn(learnPreview(long: true)),
+            Confidence.Reading(), open: true
+        ), docked: .below)
+        // The pre-write selector, beside the learn pills it is easy to
+        // confuse it with: that one asks about a correction already made,
+        // this one asks before anything is typed.
+        let offerSelector = pill(.offer(
+            [], .choose(selectorStep("")), Confidence.Reading(), open: true
+        ), docked: .below)
+        // The two cases the short one cannot show: a sentence the window has to
+        // cut at both ends, and the second question of a run — the first answer
+        // is already in the words, and the count says one more was asked.
+        let offerSelectorLong = pill(.offer(
+            [], .choose(selectorStep("long")), Confidence.Reading(), open: true
+        ), docked: .below)
+        let offerSelectorTwo = pill(.offer(
+            [], .choose(selectorStep("two", answered: [1])),
             Confidence.Reading(), open: true
         ), docked: .below)
         // Beside the plain one: the two endings must not look the same.
@@ -450,6 +570,12 @@ enum PanelsCommand {
              pillSize(offerLearnShort), .dark, true),
             (AnyView(PillView().environmentObject(offerLearnLong)),
              pillSize(offerLearnLong), .dark, true),
+            (AnyView(PillView().environmentObject(offerSelector)),
+             pillSize(offerSelector), .dark, true),
+            (AnyView(PillView().environmentObject(offerSelectorLong)),
+             pillSize(offerSelectorLong), .dark, true),
+            (AnyView(PillView().environmentObject(offerSelectorTwo)),
+             pillSize(offerSelectorTwo), .dark, true),
             (AnyView(PillView().environmentObject(offerCopied)),
              pillSize(offerCopied), .dark, true),
             // The same offer with `feedback.confidence` on: two rows instead of
@@ -705,6 +831,43 @@ enum PanelsCommand {
                 pill.hovering(inside)
             }
             pill.hovering(true)
+        case "selector", "selector-long", "selector-two":
+            // The surface for a place the vocabulary step could not settle. One
+            // question per pill; `selector-two` asks two, one after the other.
+            // Held open: it is here to be looked at.
+            let shape = surface == "selector-long" ? "long"
+                : surface == "selector-two" ? "two" : ""
+            var run = Self.selectorRun(shape)
+            // Nothing is wired behind the surface yet, so a click has to say so
+            // itself or there is no way to tell the target from the paint.
+            func ask() {
+                guard let step = run.next else { return }
+                pill.offer([], headline: .choose(step), open: true, for: seconds)
+                pill.model.onHover = { inside in
+                    if !inside { pill.model.selected = nil }
+                    pill.hovering(inside)
+                }
+                pill.model.onPick = { index in
+                    Log.write("selector: picked option \(index + 1)")
+                    print("picked option \(index + 1)")
+                    run.answer(index)
+                    guard run.next != nil else {
+                        print("would type: \(run.sentence)")
+                        exit(0)
+                    }
+                    ask()
+                }
+                pill.hovering(true)
+            }
+            // Aimed once, after a pause: the caret at launch is in the terminal
+            // that started this. Aiming again between questions would be a jump
+            // the app never makes — `PillHUD.aim` is set at the press and read
+            // by every state after it.
+            print("click where the words would go — the pill comes up in 6s")
+            Timer.scheduledTimer(withTimeInterval: 6, repeats: false) { _ in
+                aimAtCaret(pill)
+                ask()
+            }
         case "offer":
             // The real call rather than a bare `set`. The offer is the one
             // state that holds and then thins out, so a preview that only held
@@ -895,7 +1058,8 @@ enum PanelsCommand {
             }
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
-                + "|vocabulary|punctuation|rule|dictation|preview|microphone|keyboard|pill|learn|learn-long"
+                + "|confidence|vocabulary|punctuation|rule|dictation|preview|microphone"
+                + "|keyboard|pill|learn|learn-long|selector|selector-long|selector-two"
                 + "|update|setup|launch|sequence> [seconds]")
             return 2
         }

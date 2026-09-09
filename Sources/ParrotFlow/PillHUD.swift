@@ -108,6 +108,9 @@ enum Headline: Equatable {
     case selection(String)
     /// A word the app could learn, in the sentence you said it in.
     case learn(Learn)
+    /// The places in what was just said that the vocabulary step could not
+    /// settle, each with its two options.
+    case choose(Choose)
 
     /// Whether this is the three-row shape: the words, the chips, and the line
     /// about the key. Read by the metrics and by the view, so the two cannot
@@ -122,7 +125,7 @@ enum Headline: Equatable {
     var ownsARow: Bool {
         switch self {
         case .landing: return false
-        case .selection, .learn: return true
+        case .selection, .learn, .choose: return true
         }
     }
 }
@@ -149,6 +152,140 @@ struct Learn: Equatable {
     /// For the log only. The view draws the pieces; they are not one face.
     var line: String {
         "\(PillMetrics.learnLead) “\(lead)\(heard) \(term)\(after)”"
+    }
+}
+
+/// One place the vocabulary step could not settle, in the sentence it is in.
+///
+/// The sentence is written once and only the choice is stacked: the two options
+/// stand one above the other where the words go, and the prose runs through the
+/// middle of the stack. One question, so nothing is marked — the click is the
+/// answer.
+///
+/// One place per pill. A sentence with several open places is several
+/// questions; `ChooseRun` puts them in order.
+struct Choose: Equatable {
+    /// The prose before the place. A leading "…" when the window cut it.
+    let before: String
+    /// What the stage left in the string. Option 0.
+    let heard: String
+    /// The word it could not rule out. Option 1.
+    let other: String
+    /// The prose after the place. A trailing "…" when the window cut it.
+    let after: String
+    /// Which question this is, and how many there are.
+    let step: Int
+    let steps: Int
+
+    /// Beside the lead, and only when the pill is coming back. Nothing else on
+    /// the surface says an answer is not the end of it.
+    var count: String? { steps > 1 ? "\(step) of \(steps)" : nil }
+
+    /// For the log only. The view draws the pieces.
+    var line: String {
+        "\(PillMetrics.chooseLead) “\(before) [\(heard)|\(other)] \(after)”"
+    }
+
+    /// The sentence cut to a window around the place.
+    ///
+    /// `at` and `span` are word indices into `words`. An ellipsis is written
+    /// only where words were dropped.
+    static func windowed(
+        words: [String], at: Int, span: Int, other: String,
+        step: Int = 1, steps: Int = 1, window: Int = AppDelegate.learnWindow
+    ) -> Choose {
+        func run(_ range: Range<Int>) -> [String] {
+            let low = max(0, min(words.count, range.lowerBound))
+            let high = max(low, min(words.count, range.upperBound))
+            return Array(words[low ..< high])
+        }
+        let head = run(0 ..< at)
+        let tail = run((at + span) ..< words.count)
+        return Choose(
+            before: head.count > window
+                ? "… " + head.suffix(window).joined(separator: " ")
+                : head.joined(separator: " "),
+            heard: run(at ..< (at + span)).joined(separator: " "),
+            other: other,
+            after: tail.prefix(window).joined(separator: " ")
+                + (tail.count > window ? " …" : ""),
+            step: step, steps: steps
+        )
+    }
+
+    /// The same, with the window narrowed until the row fits the pill.
+    ///
+    /// The row is drawn on one line at its natural width, so a window too wide
+    /// hangs the end of the sentence over the end of the panel. Down to one word
+    /// either side; past that the place itself is what is too wide, and
+    /// `.lineLimit(1)` truncates.
+    static func fitted(
+        words: [String], at: Int, span: Int, other: String,
+        step: Int = 1, steps: Int = 1, window: Int = AppDelegate.learnWindow
+    ) -> Choose {
+        var size = window
+        var kept = windowed(words: words, at: at, span: span, other: other,
+                            step: step, steps: steps, window: size)
+        while size > 1, !PillMetrics.chooseFits(kept) {
+            size -= 1
+            kept = windowed(words: words, at: at, span: span, other: other,
+                            step: step, steps: steps, window: size)
+        }
+        return kept
+    }
+}
+
+/// The open places of one sentence, asked one at a time.
+///
+/// One question per pill. The answer is written into the words before the next
+/// is asked, so each question shows the sentence as it stands, and the last
+/// answer leaves the sentence to type.
+///
+/// Escape is option 0: it keeps what was heard, for this place and every place
+/// after it. Nothing taps keys for this yet.
+struct ChooseRun {
+    /// Where a place is, in words, and what it could be instead.
+    struct Place: Equatable {
+        /// Moves when an earlier answer writes a different number of words.
+        var at: Int
+        let span: Int
+        let other: String
+    }
+
+    private(set) var words: [String]
+    private(set) var places: [Place]
+    private(set) var answered = 0
+
+    init(sentence: String, places: [Place]) {
+        self.words = sentence.split(separator: " ").map(String.init)
+        self.places = places.sorted { $0.at < $1.at }
+    }
+
+    /// The question to put on the pill, or nil once every place is answered.
+    var next: Choose? {
+        guard answered < places.count else { return nil }
+        let place = places[answered]
+        return .fitted(
+            words: words, at: place.at, span: place.span, other: place.other,
+            step: answered + 1, steps: places.count
+        )
+    }
+
+    /// The sentence as it stands, which after the last answer is what to type.
+    var sentence: String { words.joined(separator: " ") }
+
+    /// Take an answer: 0 keeps what was heard, 1 writes the other word.
+    mutating func answer(_ option: Int) {
+        guard answered < places.count else { return }
+        let place = places[answered]
+        answered += 1
+        guard option == 1, place.at >= 0, place.at + place.span <= words.count
+        else { return }
+        let written = place.other.split(separator: " ").map(String.init)
+        words.replaceSubrange(place.at ..< (place.at + place.span), with: written)
+        let shift = written.count - place.span
+        guard shift != 0 else { return }
+        for index in answered ..< places.count { places[index].at += shift }
     }
 }
 
@@ -302,6 +439,10 @@ final class PillModel: ObservableObject {
     /// Clicking a command, clicking the tab, and the pointer coming and going.
     /// Closures rather than published state: they are messages out of the view,
     /// and nothing about them should redraw it.
+    ///
+    /// On a selector the index is the option: 0 keeps what was heard, 1 takes
+    /// the other word. There is one place on the pill, so a click is the whole
+    /// answer — whoever raised it asks the next question, if there is one.
     var onPick: ((Int) -> Void)?
     var onHover: ((Bool) -> Void)?
     /// The open panel folded back to the tab on its own.
@@ -1528,14 +1669,20 @@ enum PillMetrics {
     /// text it would hold the panel wider than its sentence.
     static func showsHold(_ headline: Headline?, hotkey: String) -> Bool {
         if case .learn = headline { return false }
+        if case .choose = headline { return false }
         return !hotkey.isEmpty
     }
 
     static func rules(
-        headline: Headline?, reading: Confidence.Reading, hotkey: String
+        headline: Headline?, reading: Confidence.Reading, hotkey: String,
+        commands: [OfferedCommand] = []
     ) -> Int {
         var count = 0
-        if headline?.ownsARow == true || !reading.isEmpty { count += 1 }
+        // Over the chips, so only when there are chips to rule off. The
+        // selector draws none and `OfferContent` skips the line there too.
+        if headline?.ownsARow == true || !reading.isEmpty {
+            if !commands.isEmpty { count += 1 }
+        }
         if showsHold(headline, hotkey: hotkey) { count += 1 }
         return count
     }
@@ -1550,6 +1697,8 @@ enum PillMetrics {
     /// In front of the answers. On the sentence row it made the sentence the
     /// second thing on its own line.
     static let learnLead = "Learn?"
+    /// Asked about what was said, not about what is on screen — nothing is.
+    static let chooseLead = "Did you mean?"
     static let holdLead = "or hold"
     static let holdTail = "and say what to change"
     /// The keycap between the two halves of the hold line, and the gaps either
@@ -1633,10 +1782,19 @@ enum PillMetrics {
         var extra: CGFloat = 0
         // A rule costs its own point and one more gap, because the block
         // spacing falls on both sides of it.
-        extra += CGFloat(rules(headline: headline, reading: reading, hotkey: hotkey))
+        extra += CGFloat(rules(
+            headline: headline, reading: reading, hotkey: hotkey, commands: commands
+        ))
             * (rule + blockGap)
         if case .learn(let it) = headline {
             extra += learnRows(it) + blockGap
+        } else if case .choose = headline {
+            // The pill's own 42 is one chip row and the 16 of air that centres
+            // it. The selector draws no chips — each option carries its own key
+            // — so give the row back and keep the air. `OfferContent` skips the
+            // chip block on the same condition, so nothing is left in its place.
+            extra += chooseRows
+            if commands.isEmpty { extra -= chipRowHeight }
         } else if headline?.ownsARow == true {
             extra += selectionRow + blockGap
         }
@@ -1811,6 +1969,14 @@ enum PillMetrics {
                 sentenceWidth, padding * 2 + learnWidth(learn) + selectionFit
             ))
         }
+        // One row, measured in the faces it is drawn in. `Choose.fitted` has
+        // already narrowed the window to this cap, so the cap only bites when
+        // one place is wider than the pill may be.
+        if case .choose(let it) = headline {
+            widest = max(widest, min(
+                sentenceWidth, padding * 2 + chooseWidth(it) + selectionFit
+            ))
+        }
         // Only when there is a key to name. `OfferContent.hold` draws the row
         // on the same condition, so the two agree about whether it is there to
         // be measured.
@@ -1924,6 +2090,70 @@ enum PillMetrics {
         let room = sentenceWidth - padding * 2
         let lines = room > 0 ? min(2.0, ceil(learnWidth(it) / room)) : 1
         return learnRow * max(1, lines)
+    }
+
+    /// One option: a shimmering key and the word, in a capsule padded the way
+    /// a chip is. The mono word is the taller of the two things in it.
+    ///
+    /// The view frames each option to exactly this, so the stack cannot come
+    /// out taller than the panel measured for it.
+    static let chooseChipHeight: CGFloat = max(
+        ceil(NSLayoutManager().defaultLineHeight(for: chooseWordFont)),
+        holdKeycapHeight
+    ) + 8
+    /// The option's word: the prose's size and weight, in the monospaced face.
+    static let chooseWordFont: NSFont =
+        .monospacedSystemFont(ofSize: 14, weight: .medium)
+    /// Between the two options of one place.
+    static let chooseChipGap: CGFloat = 4
+    /// Between the lead and the sentence.
+    static let chooseGap: CGFloat = 6
+    /// About a space in `learnFont`, between a run of prose and the stack
+    /// beside it. The view lays the row out at this spacing.
+    static let chooseWordGap: CGFloat = 5
+
+    /// The lead, then the sentence with the stack standing in it. Two rows
+    /// whatever the sentence is: the row is never allowed to wrap.
+    static let chooseRows: CGFloat =
+        learnRow + chooseGap + chooseChipHeight * 2 + chooseChipGap
+
+    /// One option's capsule, measured in the face the word is set in.
+    static func chooseChipWidth(_ word: String) -> CGFloat {
+        18 + keycap + ceil((word as NSString)
+            .size(withAttributes: [.font: chooseWordFont]).width) + chipFit
+    }
+
+    /// The sentence on one line: the two runs of prose, the wider of the two
+    /// options, and a space either side of the stack. The lead row when a
+    /// short sentence leaves it the wider of the two.
+    static func chooseWidth(_ it: Choose) -> CGFloat {
+        var width = max(chooseChipWidth(it.heard), chooseChipWidth(it.other))
+        var pieces = 1
+        func prose(_ run: String) {
+            guard !run.isEmpty else { return }
+            width += ceil((run as NSString)
+                .size(withAttributes: [.font: learnFont]).width)
+            pieces += 1
+        }
+        prose(it.before)
+        prose(it.after)
+        width += CGFloat(pieces - 1) * chooseWordGap
+        let lead = chooseLeadWidth + (it.count.map { gap + title($0) } ?? 0)
+        return max(width, lead) + learnFit
+    }
+
+    /// The question above the sentence, in the face it is set in.
+    static let chooseLeadWidth: CGFloat = ceil(
+        (chooseLead as NSString).size(withAttributes: [.font: learnLeadFont]).width
+    ) + chipFit
+
+    /// Whether the row fits the panel at its natural width.
+    ///
+    /// The same sum `width(for:)` caps at `sentenceWidth`, asked before the cap
+    /// bites: this row cannot wrap, so a row over the cap is a row with its end
+    /// cut off. `Choose.fitted` drops a word either side until this is true.
+    static func chooseFits(_ it: Choose) -> Bool {
+        padding * 2 + chooseWidth(it) + selectionFit <= sentenceWidth
     }
 
     /// At 13 beside a 14pt sentence it read as the smaller of the two.
@@ -2421,11 +2651,15 @@ private struct OfferContent: View {
             if !reading.words.isEmpty { words }
             selection
             learn
+            choose
             // Over the chips when there is anything above them, and over the
             // way out whenever it is drawn. `PillMetrics.rules` counts these
             // two conditions so the surface is measured for what it draws.
-            if headline?.ownsARow == true || !reading.isEmpty { rule }
-            chips
+            if headline?.ownsARow == true || !reading.isEmpty, !commands.isEmpty { rule }
+            // An empty chip block still takes a `blockGap` from the stack above
+            // it, which nothing budgets for. The selector is the one offer with
+            // no chips, and it is measured for the rows it draws.
+            if !commands.isEmpty { chips }
             if showsHold { rule }
             hold
         }
@@ -2526,6 +2760,90 @@ private struct OfferContent: View {
             .padding(.horizontal, PillMetrics.padding)
             .frame(maxWidth: .infinity, alignment: .center)
         }
+    }
+
+    /// The sentence, written once, with the two options stacked where the
+    /// unsettled words go.
+    ///
+    /// The prose is centred on the stack, not sat on its first row: the sentence
+    /// has to read as one line with the choice standing in it. The prose is dim
+    /// and the options are bright, so the line reads as context around the words
+    /// being asked about.
+    ///
+    /// Nothing is marked. Nothing has been typed yet, so neither option has a
+    /// claim the other lacks, and the click is the answer.
+    @ViewBuilder private var choose: some View {
+        if case .choose(let it) = headline {
+            VStack(alignment: .leading, spacing: PillMetrics.chooseGap) {
+                HStack(spacing: PillMetrics.gap) {
+                    Text(PillMetrics.chooseLead)
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(Color(white: 0.90))
+                    // Only when the pill is coming back with another place.
+                    if let count = it.count {
+                        Text(count)
+                            .font(.system(size: 12, weight: .medium, design: .rounded))
+                            .foregroundStyle(Color(white: 0.5))
+                    }
+                }
+                .lineLimit(1)
+                .fixedSize()
+                // At the width `PillMetrics.chooseWidth` measured, which the
+                // builder already shrank the window to fit. The line limit is
+                // the net under it.
+                HStack(spacing: PillMetrics.chooseWordGap) {
+                    if !it.before.isEmpty { prose(it.before) }
+                    VStack(alignment: .leading, spacing: PillMetrics.chooseChipGap) {
+                        option(it.heard, index: 0)
+                        option(it.other, index: 1)
+                    }
+                    if !it.after.isEmpty { prose(it.after) }
+                }
+                .lineLimit(1)
+                .fixedSize()
+            }
+            .padding(.horizontal, PillMetrics.padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// A run of the sentence either side of the stack. Dim: it is what places
+    /// the words, not what is being asked.
+    private func prose(_ run: String) -> some View {
+        Text(run)
+            .font(.system(size: 14, weight: .medium, design: .rounded))
+            .foregroundStyle(Color(white: 0.62))
+    }
+
+    /// One option, drawn as a chip is: a shimmering key, the word, a capsule.
+    ///
+    /// A tap gesture rather than a `Button`, and `contentShape` over the whole
+    /// capsule, for the reason the chip row gives: the pill is never the key
+    /// window and SwiftUI draws controls in one at reduced emphasis.
+    private func option(_ word: String, index: Int) -> some View {
+        let lit = model.selected == index
+        return HStack(spacing: 6) {
+            OfferKeyCap(key: "\(index + 1)", lit: lit)
+            Text(word)
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .foregroundStyle(lit ? Self.litText : Color(white: 0.97))
+        .padding(.horizontal, 9)
+        .frame(height: PillMetrics.chooseChipHeight)
+        .background {
+            Capsule()
+                .fill(lit ? Parrot.leaf.opacity(0.28) : Color.white.opacity(0.05))
+                .overlay {
+                    Capsule().strokeBorder(
+                        lit ? Parrot.leaf.opacity(0.62) : .clear, lineWidth: 1
+                    )
+                }
+        }
+        .contentShape(Capsule())
+        .onTapGesture { model.onPick?(index) }
+        .onHover { over in if over { model.selected = index } }
     }
 
     /// The correction, with everything that did not change pushed back.
