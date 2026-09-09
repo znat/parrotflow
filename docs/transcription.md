@@ -459,6 +459,32 @@ counter says nothing until it gets either a counter or a third use.
 `--portrait <term> "<sentence>" <word>` prints both scores and the verdict;
 `scripts/check-counter-portrait.sh` is the run.
 
+**What nothing settles is asked.** The pill draws the sentence with the two
+readings stacked where the open place is, and 1 or 2 answers it. The words wait
+for the answer: nothing is typed until the last question is answered, so the
+sentence is only ever written once.
+
+Every way of not answering writes what the gates settled on, which is what an
+open place has always shipped. Escape, a click outside the pill, any other key,
+nine seconds, or starting the next dictation — all of them type the same text
+the stage returned. A pill you do not notice costs you the question, never the
+sentence.
+
+Several open places in one sentence are several questions, asked one at a time,
+and the count on the pill says how many are left.
+
+The answers are the reason to ask. Confirming a term keeps that sentence as a
+use; refusing one keeps it as a counter-example — the half a portrait cannot
+get any other way, because accepting an offer only ever teaches where a term
+*does* live. Three counter-examples and the term stops being read against a
+floor. Each answer also goes to `trace.jsonl` as `kind: chose`, kept apart from
+the hand edits: a place the app said out loud it could not decide is a harder
+label than a mistake somebody fixed.
+
+`asks: false` in `vocabulary.yaml` turns the question off. An open place then
+keeps what arrived in silence, the way it did before there was a surface to ask
+on.
+
 What the stage decided is written to `trace.jsonl` under its variables, so a
 decision can be replayed rather than guessed at.
 

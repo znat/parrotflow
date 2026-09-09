@@ -1,0 +1,110 @@
+[
+  {
+    "text": "can you ask Mick to review it.",
+    "places": ["Mick|mixed bend|3|1"],
+    "want": "can you ask mixed bend to review it.",
+    "why": "one place, the other reading taken"
+  },
+  {
+    "text": "can you ask Mick to review it.",
+    "places": ["Mick|mixed bend|3|0"],
+    "want": "can you ask Mick to review it.",
+    "why": "one place kept: exactly the text the pipeline returned"
+  },
+  {
+    "text": "can you ask Mick to review it.",
+    "places": ["Mick|mixed bend|3|-"],
+    "want": "can you ask Mick to review it.",
+    "why": "unanswered is what an open place has always shipped"
+  },
+  {
+    "text": "Mick asked Mick to review it.",
+    "places": ["Mick|mixed bend|2|1"],
+    "want": "Mick asked mixed bend to review it.",
+    "why": "the word twice: the word index picks the second one"
+  },
+  {
+    "text": "Mick asked Mick to review it.",
+    "places": ["Mick|mixed bend|0|1"],
+    "want": "mixed bend asked Mick to review it.",
+    "why": "and the same place asks for the first one"
+  },
+  {
+    "text": "Mick asked Mick to review it.",
+    "places": ["Mick|mixed bend|0|1", "Mick|Mickey|2|1"],
+    "want": "mixed bend asked Mickey to review it.",
+    "why": "two places about the same word never take the same hit"
+  },
+  {
+    "text": "we moved off BetterStack in June, before the export ran.",
+    "places": ["BetterStack|better stack|3|1"],
+    "want": "we moved off better stack in June, before the export ran.",
+    "why": "a comma glued to a later word is not part of any span"
+  },
+  {
+    "text": "ask Mick, then tell BetterStack about it.",
+    "places": ["Mick|mixed bend|1|1", "BetterStack|better stack|4|0"],
+    "want": "ask mixed bend, then tell BetterStack about it.",
+    "why": "two places, one answered each way"
+  },
+  {
+    "text": "ask Mick, then tell BetterStack about it.",
+    "places": ["BetterStack|better stack|4|1", "Mick|mixed bend|1|1"],
+    "want": "ask mixed bend, then tell better stack about it.",
+    "why": "the places are answered left to right whatever order they arrive in"
+  },
+  {
+    "text": "ask Mick, then tell BetterStack about it.",
+    "places": ["Mick|mixed bend|1|-", "BetterStack|better stack|4|1"],
+    "want": "ask Mick, then tell BetterStack about it.",
+    "why": "a run stops at the first unanswered place; nothing after it was asked"
+  },
+  {
+    "text": "first line\nask Mick about it\n\nlast line",
+    "places": ["Mick|mixed bend|3|1"],
+    "want": "first line\nask mixed bend about it\n\nlast line",
+    "why": "newlines and the blank line between paragraphs survive the write"
+  },
+  {
+    "text": "ask  Mick   about it",
+    "places": ["Mick|mixed bend|1|1"],
+    "want": "ask  mixed bend   about it",
+    "why": "double spaces either side survive too"
+  },
+  {
+    "text": "ask Mick to review the Vercelli report.",
+    "places": ["Vercel|Versailles|4|1"],
+    "want": "NOTHING FOUND",
+    "why": "a word, not a substring: Vercel does not stand in Vercelli"
+  },
+  {
+    "text": "a prompt stage rewrote the sentence and the name went with it.",
+    "places": ["Mick|mixed bend|3|1"],
+    "want": "NOTHING FOUND",
+    "why": "a span a later stage removed is a question nobody can answer"
+  },
+  {
+    "text": "tell mixed bend that we are done.",
+    "places": ["mixed bend|Mick|1|1"],
+    "want": "tell Mick that we are done.",
+    "why": "a two-word span, replaced by one word"
+  },
+  {
+    "text": "tell Mick that we are done.",
+    "places": ["Mick|mixed bend|1|1"],
+    "want": "tell mixed bend that we are done.",
+    "why": "and one word replaced by two"
+  },
+  {
+    "text": "Mick",
+    "places": ["Mick|mixed bend|0|1"],
+    "want": "mixed bend",
+    "why": "the place is the whole text"
+  },
+  {
+    "text": "ask Mick's team about it.",
+    "places": ["Mick|mixed bend|1|1"],
+    "want": "ask mixed bend's team about it.",
+    "why": "a possessive is not part of the span, and survives the write"
+  }
+]

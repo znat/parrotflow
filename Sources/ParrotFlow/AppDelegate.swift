@@ -452,6 +452,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The correction the pill is asking about. Its chips are answers, so
     /// `runOfferedCommand` must not look up a transform called "Yes".
     private var pendingLearn: (changes: [EditWatch.Change], sentence: String)?
+    /// The dictation being held while the pill asks which word you meant.
+    ///
+    /// The words are decoded and not yet written. Every way the question can
+    /// end writes them — see `writeTheChoice` — so this is never a sentence
+    /// that can be lost, only one that lands later than usual.
+    private var pendingChoice: PendingChoice?
     private var offerReading = Confidence.Reading()
     /// Until when this offer's Return is held. Set when the offer goes up, so
     /// an offer whose keys arrive late — a second dictation was still running —
@@ -1281,7 +1287,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so it is visible precisely when the panel is open, and the promise
         // and the behaviour cannot come apart again.
         if !recorder.isRecording {
-            keyedAtPress = afterTap || (offerIsUp && pill.isOpen)
+            // The selector is the one open panel that does not draw that row.
+            // `PillMetrics.showsHold` refuses it, so a panel asking which word
+            // you meant promises nothing about holding and must not take the
+            // next hold as an instruction. The rule is still "whatever the
+            // pill is drawing"; there is now a second thing to ask it.
+            let promisesHold = pill.isOpen
+                && PillMetrics.showsHold(offerHeadline, hotkey: pill.model.hotkey)
+            keyedAtPress = afterTap || (offerIsUp && promisesHold)
             // Only when it is on, and it says which of the two put it there.
             // This is the one decision at the press you cannot see from
             // outside: the same key, the same meter, and the words routed
@@ -4435,9 +4448,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ends the offer, which is the "you have moved on" signal it was
         // already sending. The letters arm when the panel opens, which is the
         // only time they are drawn on screen to be pressed.
-        let letters = pill.isOpen
-            ? Set(commands.map(\.key).filter { !$0.isEmpty })
-            : Set<String>()
+        // A selector claims its two digits instead. It has no chips — each
+        // option carries its own key — and it is never a tab, so there is no
+        // closed state for it to hold a key through.
+        let choosing = pendingChoice != nil
+        let letters = choosing
+            ? Set(["1", "2"])
+            : (pill.isOpen ? Set(commands.map(\.key).filter { !$0.isEmpty }) : Set<String>())
         // The hold is armed only for a dictation that raised the warning, and
         // only until it has been spent. Re-armed from here on every call, so an
         // offer that got its keys late — a dictation was still running — is
@@ -4453,7 +4470,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             switch key {
             case .letter(let typed):
-                guard let index = commands.firstIndex(where: { $0.key == typed }) else { return }
+                // The digit is the option, and the pill draws it on the option
+                // itself: 1 keeps what stands there, 2 takes the other word.
+                let index = choosing
+                    ? Int(typed).map { $0 - 1 }
+                    : commands.firstIndex(where: { $0.key == typed })
+                guard let index else { return }
                 // The highlight moves first, so what runs is what the pill was
                 // showing when it ran.
                 self.pill.model.selected = index
@@ -4549,6 +4571,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// faded itself out by then, on its own clock, and this would fade it a
     /// second time. `offerDeadlinePassed` calls `endTheOffer` directly.
     private func dismissOffer(reason: String) {
+        // A selector dismissed is a question declined, and the words it was
+        // holding are still owed. `writeTheChoice` takes the surface down
+        // itself, so this returns rather than doing it twice.
+        guard pendingChoice == nil else {
+            writeTheChoice(reason: "dismissed by \(reason)")
+            return
+        }
         Log.write("offer: dismissed by \(reason)")
         endTheOffer()
         pill.hide()
@@ -4581,6 +4610,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// and a pointer that has gone without saying so is treated as one that
     /// said so: the offer gets its `offerSeconds` back and runs out normally.
     private func offerDeadlinePassed() {
+        // Nobody answered, and the words have been waiting for it. They go in
+        // as the pipeline settled them — which is what an unanswered place has
+        // always shipped, only now somebody was asked first.
+        if pendingChoice != nil, !offerHeld, !pill.pointerIsOver {
+            writeTheChoice(reason: "nobody answered")
+            return
+        }
         guard offerHeld else {
             // Open, this is the panel's deadline and not the offer's: it folds
             // and the tab stays. `pill.open(false)` calls back through `onFold`
@@ -4633,6 +4669,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// offer, which is most of the time. A caller that still needs the words
     /// the offer was about reads `offeredCorrection` before calling this.
     private func endTheOffer() {
+        // The catch-all for every ending that is not the selector's own — a
+        // new press above all. A question that is over has to write the words
+        // it was holding, whatever ended it. `writeTheChoice` clears
+        // `pendingChoice` before it calls back in here, so this runs once.
+        if pendingChoice != nil { writeTheChoice(reason: "the surface ended") }
         offerUntil = nil
         offerHeld = false
         // Including one on its way back after a message. Escape, a click
@@ -4852,6 +4893,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wroteAtPress.removeValue(forKey: run)
         heardAtPress.removeValue(forKey: run)
         InputBox.forget(run)
+        OpenPlaces.forget(run)
         pressesInFlight.remove(run)
         cancelledPresses.remove(run)
     }
@@ -5607,7 +5649,269 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Log.write("transcribed: \(trimmed)")
         lastTranscript = trimmed
+        // The last thing before the words go in, and the only thing that can
+        // delay them. A place the vocabulary pass could not settle is a
+        // question, and this is where it gets asked — after the command
+        // branches above, because a spoken command is not a sentence and has
+        // no place in it to ask about.
+        if askWhichWord(delivered, destination: destination, focus: focus, for: press) {
+            return
+        }
         insertDictation(delivered, to: destination, for: press)
+    }
+
+    // MARK: - Which word did you mean
+
+    /// A dictation held on the way to the field while the pill asks about it.
+    ///
+    /// Everything `insertDictation` needs is frozen in here. The answer comes
+    /// seconds later and none of it can be read again by then: focus has
+    /// moved, and `destinationAtPress` may already belong to a newer press.
+    private struct PendingChoice {
+        /// The text the pipeline settled on. This is what ships when nobody
+        /// answers, and every option 0 leaves it exactly as it is.
+        let text: String
+        let destination: Destination
+        let focus: SelectionReader.Selection?
+        let press: Press
+        /// The open places, left to right, as they stand in `text`.
+        let places: [OpenPlaces.Placed]
+        /// The same questions in the shape the pill draws them.
+        ///
+        /// Drawing only. The write is done over `text` by range, because
+        /// `ChooseRun` splits on spaces and joins with one — which would eat a
+        /// newline, a double space, and any other whitespace the dictation
+        /// actually has in it.
+        var run: ChooseRun
+        /// What was picked, in order, one per question answered. Shorter than
+        /// `places` while there are questions left.
+        var answers: [Int] = []
+        /// When the question went up, so the trace can say how long it took to
+        /// answer. One clock for the run: the questions come one after another
+        /// and it is the whole interruption that is worth knowing.
+        let asked = Date()
+    }
+
+    /// Ask about the places this dictation left open, and hold the words until
+    /// they are answered. True when it asked, and then nobody else writes.
+    ///
+    /// Refuses quietly in every case it cannot ask well: nothing left open,
+    /// the key switched off, no pill to ask on, or a place that cannot be
+    /// found in the text that actually landed. The stages after `vocabulary`
+    /// may rewrite, so a span is searched for again rather than trusted, and a
+    /// span that is gone is a question nobody can answer.
+    private func askWhichWord(
+        _ text: String, destination: Destination,
+        focus: SelectionReader.Selection?, for press: Press
+    ) -> Bool {
+        let open = OpenPlaces.take(for: press.run)
+        guard !open.isEmpty, config.vocabulary.asks else { return false }
+        // One question at a time, and one pill. A panel already up is somebody
+        // else's — the learn offer, an update — and replacing it would throw
+        // away what it was asking without showing it. Same refusal
+        // `offerToLearn` makes, for the same reason.
+        guard pendingChoice == nil, !offerIsUp else {
+            Log.write("selector: a surface is already up; \(open.count) place(s)"
+                + " keep what the pipeline settled on")
+            return false
+        }
+        let placed = OpenPlaces.located(open, in: text)
+        guard !placed.isEmpty else { return false }
+
+        // The words, as `ChooseRun` counts them. A place's word index is
+        // derived from the range that was just found, so the two views of the
+        // sentence cannot disagree about where the question is.
+        let words = text.split(separator: " ").map(String.init)
+        let questions = placed.map { place in
+            ChooseRun.Place(
+                at: text[..<place.range.lowerBound].split(separator: " ").count,
+                span: place.open.standing.split(separator: " ").count,
+                other: place.open.other
+            )
+        }
+        pendingChoice = PendingChoice(
+            text: text, destination: destination, focus: focus, press: press,
+            places: placed, run: ChooseRun(sentence: words.joined(separator: " "),
+                                           places: questions)
+        )
+        Log.write("selector: holding the words for \(placed.count) question(s) — "
+            + placed.map { "\"\($0.open.standing)\" or \"\($0.open.other)\"" }
+                .joined(separator: ", "))
+        askTheNextWord()
+        return true
+    }
+
+    /// Put the next question on the pill, or write the words if there is none.
+    ///
+    /// The pill is raised again for each question rather than edited, which is
+    /// what restarts the clock and the fade: a second question inheriting the
+    /// two seconds left on the first would be gone before it was read.
+    private func askTheNextWord() {
+        guard let pending = pendingChoice else { return }
+        guard let question = pending.run.next else {
+            writeTheChoice(reason: "every place was answered")
+            return
+        }
+        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        offerHeld = false
+        offerPressRun = pending.press.run
+        offerHeadline = .choose(question)
+        offerReading = Confidence.Reading()
+        offerHoldsReturnUntil = nil
+        // No chips. Each option carries its own key, which is what
+        // `PillMetrics` measures the selector for.
+        offerOnScreen = []
+        Log.write("selector: \(question.line)")
+        pill.offer(
+            [], headline: offerHeadline, reading: offerReading, open: true,
+            for: Self.offerSeconds
+        )
+        pill.model.onPick = { [weak self] option in self?.answer(option) }
+        pill.model.onFold = { [weak self] in
+            // Folded to the tab, which for a selector is not a state it can be
+            // in: there is nothing to come back to, and the words are waiting.
+            self?.writeTheChoice(reason: "the pill folded")
+        }
+        pill.model.onHover = { [weak self] inside in
+            guard let self else { return }
+            if !inside { self.pill.model.selected = nil }
+            self.holdTheOffer(inside)
+        }
+        watchTheOfferKeys()
+        watchForOfferOutsideClick()
+    }
+
+    /// Take one answer: 0 keeps what stands there, 1 takes the other word.
+    private func answer(_ option: Int) {
+        guard var pending = pendingChoice else { return }
+        guard pending.answers.count < pending.places.count, (0...1).contains(option) else {
+            return
+        }
+        let place = pending.places[pending.answers.count]
+        Log.write("selector: \"\(option == 0 ? place.open.standing : place.open.other)\"")
+        pending.answers.append(option)
+        pending.run.answer(option)
+        pendingChoice = pending
+        askTheNextWord()
+    }
+
+    /// Write the words, however the question ended.
+    ///
+    /// Every ending arrives here — the last answer, Escape, a click outside,
+    /// the deadline, a new press — and every one of them writes. A place that
+    /// was never answered keeps what stands there, which is the text the
+    /// pipeline returned and the stage's own contract. So a pill that is
+    /// missed costs the question, never the sentence.
+    private func writeTheChoice(reason: String) {
+        guard let pending = pendingChoice else { return }
+        pendingChoice = nil
+        endTheOffer()
+        pill.hide()
+        let answered = pending.answers.count
+        if answered < pending.places.count {
+            Log.write("selector: \(reason) — \(pending.places.count - answered) of"
+                + " \(pending.places.count) place(s) keep what was already there")
+        }
+
+        let (text, written) = OpenPlaces.written(
+            pending.places, answers: pending.answers, in: pending.text,
+            refusing: { self.refusedSpelling($0, in: pending.text) }
+        )
+        if text != pending.text {
+            Log.write("selector: the answers rewrote the transcript")
+            Log.write("    before: \(pending.text)")
+            Log.write("    after:  \(text)")
+        }
+        // The words go in first. Recording an answer is a file write and a
+        // portrait rebuild, and neither is something the person is waiting on
+        // — what they are waiting on is the sentence.
+        //
+        // Only the places that were answered. A place the deadline defaulted
+        // is not an answer, and a term taught from one would be an opinion
+        // nobody gave.
+        let learned = (0..<answered).map { (pending.places[$0], written[$0]) }
+        lastTranscript = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        insertDictation(text, to: pending.destination, for: pending.press)
+        for (place, word) in learned {
+            teach(place, wrote: word, in: text, of: pending)
+        }
+    }
+
+    /// What to write when the term is refused: the words as they were heard,
+    /// and their capitals dropped if that is all they were.
+    ///
+    /// A span that glues to the term — `Better Stack` for `BetterStack` — and
+    /// that you have just refused is the ordinary phrase, and the decoder's
+    /// capitals are there because it thought it was writing a name. Same rule
+    /// the stage applies to a refusal of its own, and applied here for the same
+    /// reason: without it the phrase ships looking like the name it is not.
+    ///
+    /// Only where the answer changes the string. Keeping what stands there has
+    /// to mean exactly the text the pipeline returned, or answering 0 and
+    /// letting the pill run out would write two different sentences.
+    private func refusedSpelling(
+        _ place: OpenPlaces.Placed, in text: String
+    ) -> String {
+        let open = place.open
+        guard open.other == open.was, Vocabulary.glues(heard: open.was, term: open.now)
+        else { return open.other }
+        // The span as heard, because the rule has written its term over it and
+        // the term is a different length.
+        let heard = text.replacingCharacters(in: place.range, with: open.was)
+        let at = text.distance(from: text.startIndex, to: place.range.lowerBound)
+        guard let lower = VocabularyPass.lowercased(
+            open.was, in: heard, at: at, terms: Array(config.vocabulary.terms.keys)
+        ) else { return open.other }
+        Log.write("selector: \"\(open.was)\" refused as \(open.now) — written in lowercase")
+        return lower
+    }
+
+    /// What one answer teaches the term it was about.
+    ///
+    /// Both ways, and that is the whole point of asking. A term confirmed is a
+    /// sentence it lives in; a term refused is a sentence it does not — and
+    /// nothing else in the app collects the second kind except a correction
+    /// somebody makes by hand. Three of them and `TermPortrait` stops reading
+    /// the term against a floor and reads it against its own counter-examples.
+    ///
+    /// These are also the hardest places there are to label. Every free gate
+    /// looked at this one and none of them could say.
+    private func teach(
+        _ place: OpenPlaces.Placed, wrote word: String, in text: String,
+        of pending: PendingChoice
+    ) {
+        let open = place.open
+        Trace.chose(
+            term: open.term, kept: open.standing, chose: word, text: text,
+            range: 0 ..< text.utf16.count,
+            lang: DictationLanguage.forCorrection(
+                transcript: text, allowed: config.transcription.languages
+            ),
+            app: pending.press.owner?.localizedName,
+            after: Date().timeIntervalSince(pending.asked),
+            beside: clipDirectories[pending.press.run]
+        )
+        // Which side the term is on flips with the source: a rule has already
+        // written its term into the text, so keeping what stands there keeps
+        // the term. The comparison is with the reading, not the canonical term
+        // — `Praisy's` keeps its possessive.
+        let kept = word == open.now
+        do {
+            try TermUses.record(
+                term: open.term, said: text, span: word, from: .chosen, counter: !kept
+            )
+            rebuildPortrait(for: open.term)
+            // One term chosen over another says two things, and both are worth
+            // keeping: the first does not live here and the second does.
+            if !kept, let other = existingTerm(named: word), other != open.term {
+                try TermUses.record(term: other, said: text, span: word, from: .chosen)
+                rebuildPortrait(for: other)
+            }
+            Log.write("selector: \(open.term) \(kept ? "belongs" : "does not belong")"
+                + " in \"\(TermUses.narrowed(text, to: word))\"")
+        } catch {
+            Log.write("selector: could not record the answer: \(error.localizedDescription)")
+        }
     }
 
     /// An instruction found inside a dictation: route it, run it over the words

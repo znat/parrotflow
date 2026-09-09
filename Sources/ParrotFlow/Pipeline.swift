@@ -1225,6 +1225,29 @@ struct Pipeline: Equatable, Codable {
             Log.write("vocabulary: \(open) of \(changes.count) place(s) left open —"
                 + " each keeps what is already there")
         }
+        // Handed to whoever can ask about them. Only off the hotkey: a run
+        // with no press has nobody to put a question to, and `--pipeline`
+        // filling a dictionary that nothing empties is a leak with a name.
+        //
+        // "Keeps what is already there" is still this stage's contract.
+        // Nothing below changes, and a dictation whose pill is never answered
+        // writes exactly the text this returns.
+        if case .int(let run)? = scope["press.run"] {
+            OpenPlaces.record(run: run, changes.indices.compactMap { index in
+                guard decided[index] == nil, !(index < taught.count && taught[index]),
+                      let term = changes[index].terms.first else { return nil }
+                let change = changes[index]
+                return OpenPlaces.Open(
+                    was: change.was, now: change.now,
+                    // What `settling` is about to copy: a rule has already
+                    // written its term over the span, a sound proposal has not.
+                    wrote: String(text[change.range]) == change.now,
+                    term: term,
+                    word: text[..<change.range.lowerBound]
+                        .split(separator: " ").count
+                )
+            })
+        }
 
         // A spelling lesson is reverted by the rule and nothing else looks at
         // it. Both models measured answered all four of the archive's cases

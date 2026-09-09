@@ -288,6 +288,18 @@ if let index = arguments.firstIndex(of: "--lowercase-refused") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--selector") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --selector \"<text>\""
+            + " \"<standing>|<other>|<word>|<answer>\"...")
+        exit(2)
+    }
+    exit(SelectorCommand.run(
+        text: arguments[index + 1],
+        places: Array(arguments[(index + 2)...].prefix { !$0.hasPrefix("--") })
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--suggest") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --suggest \"<sentence>\" [--lang fr]")
