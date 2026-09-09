@@ -1,5 +1,7 @@
-# Both numbers scripts, in the order the shipped pipeline has them, with the
-# gates `en.py --when` and `fr.py --when` print.
+# Both numbers scripts, with the gates `en.py --when` and `fr.py --when`
+# print. `config.example.yaml` ships the English step only and carries the
+# French one commented out; this fixture is the config of someone who
+# uncommented it, which is the only shape where the rules below can be scored.
 #
 # This is where the cross-language rule is scored, because it is not a fact
 # about either script on its own. Three things only a whole pipeline shows:

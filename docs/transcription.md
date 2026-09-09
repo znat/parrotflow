@@ -796,9 +796,10 @@ pass. Not worth it.
 
 `examples/transforms/numbers/` does it instead: no model, no library, a linear
 scan. It is a shipped command transform with one script per language — `en.py`,
-`fr.py`, and `engine.py` holding everything that is not a language — so it is
-on only when the pipeline lists `- transform: numbers_en` and
-`- transform: numbers_fr`. Alone among these passes it rewrites
+`fr.py`, and `engine.py` holding everything that is not a language — so a
+language is on only when the pipeline lists its step. The default config lists
+`- transform: numbers_en` and carries `numbers_fr` commented out beside it.
+Alone among these passes it rewrites
 transcripts that were already correct, and whether "chapter three" wants a 3 is
 a question of house style rather than of accuracy. About seventy words build
 every number in English, so it parses a grammar over that vocabulary rather
@@ -851,8 +852,10 @@ and `--eval numbers_fr` score the copies installed on this machine.
 
 Which script reads a given sentence is a question about the pipeline, not about
 either grammar, so it is scored there: `tests/pipelines/numbers.yaml` and the
-`numbers` cases in `tests/pipeline-cases.yaml`. Both scripts run on every
-transcript. Above four words, a script whose language is not the detected one
+`numbers` cases in `tests/pipeline-cases.yaml`, whose fixture has both steps on
+because that is the only shape where the question exists. Every step the
+pipeline lists runs on every transcript. Above four words, a script whose
+language is not the detected one
 only writes a number whose own words include a unit, a teen or a tens word of
 its grammar — that is what keeps French from reading the `cents` in "I have 99
 cents" as hundreds.

@@ -210,12 +210,12 @@ NUMBERS=~/.config/parrotflow/transforms/examples/numbers
 echo "I need two hundred and forty three of them by nineteen eighty four" | $NUMBERS/en.py
 ```
 
-There is one script per language — `fr.py` beside it. Both are pipeline steps,
-so if they do not want numbers, delete the `- transform: numbers_en` and
-`- transform: numbers_fr` lines from `transcription.pipeline:`; deleting one
-turns off that language only. There is no `numbers:` setting — a config
-carrying one is refused by `--check-config`, and so is the old `- numbers`
-stage line.
+There is one script per language — `fr.py` beside it. English is the pipeline
+step a new install gets. If they dictate in French, uncomment the
+`- transform: numbers_fr` step in `transcription.pipeline:`, gate and all. If
+they do not want numbers at all, delete the `- transform: numbers_en` line.
+There is no `numbers:` setting — a config carrying one is refused by
+`--check-config`, and so is the old `- numbers` stage line.
 
 Check every edit with `--check-config`. It prints each rule and reports a
 pattern it cannot compile.

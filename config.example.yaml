@@ -110,16 +110,23 @@ transcription:
     #   lowercase_refused: false   revert a refused glued span as heard
     - vocabulary
     # "two hundred forty-three" -> 243, "seventy-five percent" -> 75%.
-    # One step per language, and both run on every transcript: the language of
-    # a sentence does not decide which numbers are in it. Each gate is that
-    # language's own number words, printed by `examples/numbers/en.py --when`
-    # and `fr.py --when`. Regenerate a gate if you edit a word table — a gate
-    # that misses a word skips the step in silence. Adding a language is a
-    # third pair of these; see examples/numbers/engine.py.
+    #
+    # One step per language, and English is the only one on by default. Add the
+    # `- transform: numbers_fr` step below to write French numbers too. The
+    # steps are not gated on the detected language: the language of a sentence
+    # does not decide which numbers are in it, so every step added here runs on
+    # every transcript, and code-switching keeps working.
+    #
+    # Each gate is that language's own number words, printed by
+    # `examples/numbers/en.py --when` and `fr.py --when`. Regenerate a gate if
+    # you edit a word table — a gate that misses a word skips the step in
+    # silence. Adding a language is a third pair of these; see
+    # examples/numbers/engine.py.
     - transform: numbers_en
       when: /(?i)\b(?:seventeenth|eighteenth|fourteenth|nineteenth|seventieth|thirteenth|thousandth|billionth|eightieth|fifteenth|hundredth|millionth|ninetieth|seventeen|sixteenth|thirtieth|twentieth|eighteen|eleventh|fiftieth|fortieth|fourteen|nineteen|sixtieth|thirteen|thousand|trillion|billion|fifteen|hundred|million|seventh|seventy|sixteen|twelfth|eighth|eighty|eleven|fourth|ninety|thirty|twelve|twenty|eight|fifth|fifty|first|forty|ninth|seven|sixth|sixty|tenth|third|three|five|four|nine|zero|one|six|ten|two)\b/
-    - transform: numbers_fr
-      when: /(?i)\b(?:cinquantieme|cinquantième|huitantieme|huitantième|millionieme|millionième|quarantieme|quarantième|quatorzieme|quatorzième|septantieme|septantième|soixantieme|soixantième|nonantieme|nonantième|octantieme|octantième|cinquante|cinquieme|cinquième|milliards|quatrieme|quatrième|quinzieme|quinzième|septantes|treizieme|treizième|trentieme|trentième|troisieme|troisième|vingtieme|vingtième|centieme|centième|deuxieme|deuxième|douzieme|douzième|huitante|huitieme|huitième|milliard|millieme|millions|millième|neuvieme|neuvième|nonantes|premiere|première|quarante|quatorze|seizieme|seizième|septante|septieme|septième|soixante|dixieme|dixième|million|nonante|octante|onzieme|onzième|premier|sixieme|sixième|milles|quatre|quinze|treize|trente|unieme|unième|vingts|cents|douze|mille|seize|trois|vingt|cent|cinq|deux|huit|neuf|onze|sept|zero|zéro|dix|six|une|un)\b/
+    # French too, if you dictate in it. The gate is `fr.py --when`.
+    #- transform: numbers_fr
+    #  when: /(?i)\b(?:cinquantieme|cinquantième|huitantieme|huitantième|millionieme|millionième|quarantieme|quarantième|quatorzieme|quatorzième|septantieme|septantième|soixantieme|soixantième|nonantieme|nonantième|octantieme|octantième|cinquante|cinquieme|cinquième|milliards|quatrieme|quatrième|quinzieme|quinzième|septantes|treizieme|treizième|trentieme|trentième|troisieme|troisième|vingtieme|vingtième|centieme|centième|deuxieme|deuxième|douzieme|douzième|huitante|huitieme|huitième|milliard|millieme|millions|millième|neuvieme|neuvième|nonantes|premiere|première|quarante|quatorze|seizieme|seizième|septante|septieme|septième|soixante|dixieme|dixième|million|nonante|octante|onzieme|onzième|premier|sixieme|sixième|milles|quatre|quinze|treize|trente|unieme|unième|vingts|cents|douze|mille|seize|trois|vingt|cent|cinq|deux|huit|neuf|onze|sept|zero|zéro|dix|six|une|un)\b/
     - transform: punctuation             # "is that true question mark" -> is that true?
     - transform: repetitions             # a word or phrase said twice by accident, taken out
 
@@ -309,8 +316,10 @@ transforms:
     command: examples/punctuation/punctuation.py
     returns: json
 
-  # Spoken numbers as digits, one script per language. Both run on every
-  # transcript; their `when:` gates are on the pipeline steps above.
+  # Spoken numbers as digits, one script per language. Both are defined; only
+  # `numbers_en` is a pipeline step above, and the French one is a commented
+  # line there to uncomment. A step added here runs on every transcript, and
+  # its `when:` gate is on the step, not on this entry.
   - name: numbers_en
     description: spoken numbers as digits
     command: examples/numbers/en.py

@@ -52,10 +52,12 @@ can get wrong.
 
 `numbers` used to be a stage here. It is a shipped transform now, and there is
 one script per language — `examples/transforms/numbers/en.py` and `fr.py`,
-listed as `- transform: numbers_en` and `- transform: numbers_fr`. Both run on
-every transcript: the language of a sentence does not decide which numbers are
-in it, and code-switching depends on every grammar getting a turn. A config
-still saying `- numbers` is refused by name, with both halves of the fix.
+listed as `- transform: numbers_en` and `- transform: numbers_fr`. The default
+config ships the English step and carries the French one commented out, ready
+to uncomment. A step is not gated on the detected language: the language of a
+sentence does not decide which numbers are in it, so every step listed runs on
+every transcript and code-switching keeps working. A config still saying
+`- numbers` is refused by name, with both halves of the fix.
 
 It rewrites transcripts that were already correct, so run
 `examples/transforms/numbers/score.py --text "<line>"` to see what it would do
