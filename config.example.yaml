@@ -38,6 +38,11 @@ audio:
   second_opinion: true
 
 logging:
+  # One timeline per dictation in spans.jsonl, beside the recordings: every
+  # step, every decode, what each cost. Rotates at 64 MB. `--trace-view` draws
+  # one, and `--bug-report` carries a wordless copy of the last. See docs/cli.md.
+  spans: true
+
   # Saves each dictation's recording to ~/.config/parrotflow/recordings, for
   # --transcribe, calibration, or hearing what the app heard.
   audio: false

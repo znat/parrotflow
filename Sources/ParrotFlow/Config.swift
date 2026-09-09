@@ -825,6 +825,13 @@ struct Config: Decodable, Equatable {
         var offer = false
         /// `key: f` — the letter shown on its chip.
         var offerKey = ""
+        /// `done: Trace opened` — what the pill says when this transform
+        /// returns the text unchanged.
+        ///
+        /// For a transform that acts instead of rewriting. One that opens a
+        /// trace leaves the sentence alone by design, and the pill's honest
+        /// "nothing to change" then reads as a failure.
+        var done = ""
         /// `say: [slack handles, handles]` — what to call it out loud.
         var say: [String] = []
         /// `model: gpt`, or `model: { use: gpt, reasoning: low }`.
@@ -832,7 +839,7 @@ struct Config: Decodable, Equatable {
 
         enum CodingKeys: String, CodingKey {
             case name, description, display, confirm, prompt, content, replace, command
-            case tests, returns, offer, model, say
+            case tests, returns, offer, model, say, done
             case offerKey = "key"
             case timeout = "timeout_seconds"
         }
@@ -909,6 +916,7 @@ struct Config: Decodable, Equatable {
             // keycap holds one character; a key is printed in capitals whatever
             // the config wrote it as.
             offerKey = String(try trimmed(.offerKey).prefix(1)).uppercased()
+            done = try trimmed(.done)
             // One string or a list, because most transforms want one alias and
             // writing `say: bullets` should not be an error.
             //
@@ -1098,7 +1106,8 @@ struct Config: Decodable, Equatable {
                 display: entry.display,
                 folder: entry.folder, timeout: entry.timeout,
                 confirm: entry.confirm, returnsJSON: entry.returnsJSON,
-                offer: entry.offer, offerKey: entry.offerKey, say: entry.say,
+                offer: entry.offer, offerKey: entry.offerKey, done: entry.done,
+                say: entry.say,
                 body: body, source: entry.source,
                 tests: entry.tests, model: entry.model
             ))
@@ -1182,6 +1191,10 @@ struct Config: Decodable, Equatable {
         /// The letter shown on that chip. Empty when the config named none; the
         /// chip is still there and still clickable.
         var offerKey: String = ""
+        /// `done:` — what the pill says when this transform leaves the text
+        /// alone on purpose. Empty for one that rewrites, which is all of them
+        /// but the ones that act.
+        var done: String = ""
         /// What to call this out loud, besides its name.
         ///
         /// A name is written for a config file — `slack_handles`, `code_identifiers` — and nobody says an underscore. An alias is what you would actually
@@ -2776,8 +2789,16 @@ struct Config: Decodable, Equatable {
         /// Keep each dictation's recording on disk, in `audio.output_dir`.
         /// Off by default: nothing written, nothing left behind.
         var audio: Bool = false
+        /// One timeline per dictation in `spans.jsonl`, beside `trace.jsonl` —
+        /// see `Trace.Span` and `--trace-view`.
+        ///
+        /// On, and rotating at 64 MB. It is on for people who will never open
+        /// one because a bug report needs a trace that already exists: you
+        /// cannot turn a flight recorder on after the thing you are reporting.
+        /// `--trace-view --redacted` is what makes one safe to send.
+        var spans: Bool = true
 
-        enum CodingKeys: String, CodingKey { case text, audio }
+        enum CodingKeys: String, CodingKey { case text, audio, spans }
 
         init() {}
 
@@ -2786,6 +2807,7 @@ struct Config: Decodable, Equatable {
             self.init()
             if let v = try c.decodeIfPresent(Bool.self, forKey: .text) { text = v }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .audio) { audio = v }
+            if let v = try c.decodeIfPresent(Bool.self, forKey: .spans) { spans = v }
         }
     }
 
@@ -3591,6 +3613,7 @@ enum ConfigStore {
         // on every save, and each CLI command once — so this is the one place
         // that has to set it.
         Log.textEnabled = config.logging.text
+        Trace.spansEnabled = config.logging.spans
         return config
     }
 

@@ -93,7 +93,7 @@ CHECKS := replacements pipeline pipeline-config wake split dotted dates keyed \
           profiles span-rule clipboard default-config vocabulary-config learn \
           signing-identity no-voice sound slot-tokenizer sentence-case term-uses \
           edit-diff sentence-open invented-tail sentence-window lowercase-refused \
-          selector sound-group
+          selector sound-group trace-edits
 
 ## A shipped transform keeps its case set in its own folder and scores it with
 ## a script beside it, not with scripts/check-<name>.sh.

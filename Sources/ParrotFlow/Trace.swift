@@ -30,7 +30,13 @@ enum Trace {
     /// One field, and the only moment it is free is before there is anything to
     /// migrate. A reader three months from now needs to know which shape it is
     /// holding without inferring it from which keys happen to be present.
-    static let version = 2
+    ///
+    /// 3 replaced a stage's `before` and `after` with `edits`, and added the
+    /// numbers a timeline needs: the press, the gate's own cost, the model
+    /// load, and one row per decode arm. Older lines are never converted —
+    /// nothing in 3 is derivable from 2 except `edits`, and a line claiming a
+    /// shape it does not have is exactly what this field exists to prevent.
+    static let version = 3
 
     /// The dictation being traced right now, if any. Nil on every path that
     /// did not ask for a trace — nothing here runs unless a collector is bound.
@@ -94,10 +100,71 @@ enum Trace {
         private var stages: [Stage] = []
         private var final: String?
         private var lang: String?
+        private var spans: [Span] = []
+        private var nextID = 1
+        private var prepare: Double?
+        /// Which decode the transcript came from. The first pass until an arm
+        /// beats it — a dictation always has a taken arm, and leaving this nil
+        /// would report every clean decode as one nobody used.
+        private var takenArm = "decode pass 1"
+        /// Zero on the timeline. The press for a live dictation, so the span
+        /// covering the recording itself starts at 0 rather than at a negative
+        /// number; the moment the collector was made for a replay, which was
+        /// never pressed for.
+        ///
+        /// Set here rather than by a later `record*` call, so a span opened
+        /// before anything else has the same zero as one opened after.
+        private let origin: Date
 
-        init(wav: String, source: Source) {
+        init(wav: String, source: Source, origin: Date) {
             self.wav = wav
             self.source = source
+            self.origin = origin
+        }
+
+        /// What a span opened right now hangs under. A stage sets it while it
+        /// runs, so a part opened deep inside `SentenceJoin` is filed under the
+        /// stage that called it without anyone threading an id through.
+        private var openParent: Int?
+
+        /// Opens a span and returns what closes it.
+        ///
+        /// The close is the write, so that is where the lock is taken — an
+        /// arm's span is closed from its own task and several arms run at once.
+        /// - Parameter nests: whether spans opened while this one is open
+        ///   belong to it. True for a stage, false for everything else.
+        func open(_ name: String, kind: Span.Kind, nests: Bool = false) -> OpenSpan {
+            lock.lock()
+            let id = nextID
+            nextID += 1
+            let parent = openParent
+            if nests { openParent = id }
+            lock.unlock()
+            return OpenSpan(id: id, name: name, kind: kind, parent: parent, nests: nests,
+                            at: Date().timeIntervalSince(origin), collector: self)
+        }
+
+        /// Seconds since the origin. No lock: `origin` never changes.
+        fileprivate func elapsed() -> Double { Date().timeIntervalSince(origin) }
+
+        fileprivate func close(_ span: Span, restoring: Bool) {
+            lock.lock(); defer { lock.unlock() }
+            if restoring { openParent = span.parent }
+            // A dictation cannot need more than this, and a runaway one must
+            // not grow without end for the sake of a debug artefact.
+            guard spans.count < Trace.spanLimit else { return }
+            spans.append(span)
+        }
+
+        fileprivate func timeline(app: App?) -> Timeline? {
+            lock.lock(); defer { lock.unlock() }
+            guard !spans.isEmpty else { return nil }
+            return Timeline(
+                v: Trace.spansVersion, kind: Kind.dictation.rawValue,
+                t0: Trace.stamp(origin, fractional: true), wav: wav,
+                source: source.rawValue, app: app, lang: lang,
+                spans: spans.sorted { $0.at < $1.at }, final: final
+            )
         }
 
         /// Which language the transcript was judged to be in.
@@ -116,6 +183,7 @@ enum Trace {
             lock.lock(); defer { lock.unlock() }
             asr = ASR(
                 model: model,
+                arm: spans.contains { $0.kind == .decode } ? takenArm : nil,
                 text: result.text,
                 confidence: result.confidence,
                 duration: result.duration,
@@ -124,12 +192,26 @@ enum Trace {
             )
         }
 
-        func recordVAD(speech: Double, total: Double, segments: [(Double, Double)]) {
+        func recordVAD(
+            speech: Double, total: Double, segments: [(Double, Double)], seconds: Double? = nil
+        ) {
             lock.lock(); defer { lock.unlock() }
             vad = VAD(
-                speech: speech, total: total,
+                seconds: seconds, speech: speech, total: total,
                 segments: segments.map { [$0.0, $0.1] }
             )
+        }
+
+        /// What loading the models cost, when they were not already up.
+        func recordPrepare(_ seconds: Double) {
+            lock.lock(); defer { lock.unlock() }
+            prepare = seconds
+        }
+
+        /// Which decode the transcript came from, named as its span is.
+        func recordArm(_ arm: String) {
+            lock.lock(); defer { lock.unlock() }
+            takenArm = arm
         }
 
         /// How long the press waited, in seconds, before the engine was running
@@ -140,9 +222,14 @@ enum Trace {
         /// said into a microphone that was not yet recording — the clips that
         /// begin mid-word have no other explanation, and until this field there
         /// was nothing on disk that could size it.
-        func recordCapture(engine: Double?, firstSample: Double?) {
+        func recordCapture(
+            engine: Double?, firstSample: Double?, at: Date? = nil, stopped: Double? = nil
+        ) {
             lock.lock(); defer { lock.unlock() }
-            capture = Capture(engine: engine, firstSample: firstSample)
+            capture = Capture(
+                at: at.map { Trace.stamp($0, fractional: true) },
+                engine: engine, firstSample: firstSample, stopped: stopped
+            )
         }
 
         /// - Parameter code: the category, for grouping. The prose beside it
@@ -191,10 +278,33 @@ enum Trace {
 
         fileprivate func record(at: String, app: App?) -> Record {
             lock.lock(); defer { lock.unlock() }
+            // Read off the timeline rather than gathered twice. A part is a
+            // span whose parent is a stage's span, and a decode is a span of
+            // that kind — so the two files cannot disagree about what a step
+            // cost, which is the whole reason they were built from one source.
+            let byID = Dictionary(uniqueKeysWithValues: spans.map { ($0.id, $0) })
+            var parts: [String: [Part]] = [:]
+            for span in spans where span.kind == .part || span.kind == .model {
+                guard let parent = span.parent.flatMap({ byID[$0] }),
+                      parent.kind == .stage else { continue }
+                parts[parent.name, default: []]
+                    .append(Part(name: span.name, seconds: span.dur, note: span.note))
+            }
+            let decodes = spans.filter { $0.kind == .decode }.map {
+                Decode(arm: $0.name, seconds: $0.dur,
+                       reached: Trace.reached($0.note), taken: $0.name == takenArm)
+            }
             return Record(
                 v: Trace.version, kind: Kind.dictation.rawValue,
                 at: at, wav: wav, source: source.rawValue, app: app, lang: lang,
-                asr: asr, vad: vad, capture: capture, stages: stages, final: final
+                asr: asr, vad: vad, capture: capture, prepare: prepare,
+                decodes: decodes.isEmpty ? nil : decodes,
+                stages: stages.map { stage in
+                    var stage = stage
+                    stage.parts = parts[stage.name]
+                    return stage
+                },
+                final: final
             )
         }
     }
@@ -208,11 +318,14 @@ enum Trace {
     /// - Parameter beside: the directory to write the line into. Pass the one
     ///   holding the clip; the global is only a fallback for callers that have
     ///   no clip on disk to point at.
+    /// - Parameter origin: zero on the timeline. The press, for a live
+    ///   dictation: this runs after the recording has stopped, so a collector
+    ///   that stamped its own start would put the recording at negative time.
     static func record<T>(
         wav: String, source: Source, app: App? = nil, beside: URL? = nil,
-        body: () async throws -> T
+        origin: Date = Date(), body: () async throws -> T
     ) async rethrows -> T {
-        let collector = Collector(wav: wav, source: source)
+        let collector = Collector(wav: wav, source: source, origin: origin)
         // Taken from where the clip actually is, not from the global, and not
         // snapshotted at a moment chosen for being early.
         //
@@ -229,7 +342,17 @@ enum Trace {
         // The clip's own URL has no such instant: it is where the file went,
         // whatever the config said at the time or says now.
         let directory = beside ?? Self.directory
-        defer { append(collector.record(at: stamp(), app: app), to: directory) }
+        defer {
+            append(collector.record(at: stamp(), app: app), to: directory)
+            // Its own file, and only when asked for. The corpus answers
+            // questions across every dictation ever given and so may never be
+            // deleted; a timeline answers one question about one dictation and
+            // is only ever wanted for a recent one. Splitting them is what lets
+            // this one be thrown away.
+            if spansEnabled, let timeline = collector.timeline(app: app) {
+                append(timeline, to: directory, named: spansFile)
+            }
+        }
         return try await $current.withValue(collector) { try await body() }
     }
 
@@ -296,6 +419,33 @@ enum Trace {
         )
     }
 
+    /// What it cost to put the words where they were going.
+    ///
+    /// Its own line rather than a span on the dictation: `record` appends in a
+    /// `defer`, and delivery happens after that — held open, a dictation that
+    /// threw would stop writing the numbers explaining why. So the contract
+    /// stays "append on exit, even if it threw", and this joins by `wav`.
+    static func deliver(wav: String, seconds: Double, route: String, app: String?, beside: URL?) {
+        guard spansEnabled else { return }
+        append(
+            Delivery(
+                v: spansVersion, kind: "deliver", at: stamp(fractional: true),
+                wav: wav, seconds: seconds, route: route, app: app
+            ),
+            to: beside ?? directory, named: spansFile
+        )
+    }
+
+    fileprivate struct Delivery: Encodable {
+        let v: Int
+        let kind: String
+        let at: String
+        let wav: String
+        let seconds: Double
+        let route: String
+        let app: String?
+    }
+
     private static let queue = DispatchQueue(label: "com.parrotflow.trace")
 
     /// Waits for queued writes to reach the file. Same reason as `Log.flush` —
@@ -327,9 +477,35 @@ enum Trace {
     /// Deliberately no size cap. This is the corpus, not a debug buffer: a year
     /// of heavy use is a few megabytes, and the whole point is being able to
     /// ask a question of every dictation you have ever given.
-    private static func append<Line: Encodable>(_ record: Line, to directory: URL?) {
+    /// How large `spans.jsonl` may get before the current one is set aside.
+    ///
+    /// The corpus has no cap and must not have one — it is what you ask
+    /// questions of years later. A timeline is the opposite: only ever wanted
+    /// for something recent, and about ten times the size. So this one rotates,
+    /// which is what lets it be on for everybody.
+    static let spansLimit = 64 * 1024 * 1024
+
+    /// Renames the file aside and starts a new one, keeping one generation.
+    ///
+    /// A rename rather than `Log`'s truncate-to-zero: truncating throws away
+    /// the timeline you were about to look at. Another process holding the old
+    /// descriptor keeps writing to the renamed file, which costs a line and
+    /// cannot corrupt one.
+    private static func rotateIfLarge(_ url: URL) {
+        let fm = FileManager.default
+        let attributes = try? fm.attributesOfItem(atPath: url.path)
+        guard let size = attributes?[.size] as? Int, size > spansLimit else { return }
+        let aside = url.deletingLastPathComponent()
+            .appendingPathComponent("spans.1.jsonl")
+        try? fm.removeItem(at: aside)
+        try? fm.moveItem(at: url, to: aside)
+    }
+
+    private static func append<Line: Encodable>(
+        _ record: Line, to directory: URL?, named file: String = "trace.jsonl"
+    ) {
         guard let directory else { return }
-        let url = directory.appendingPathComponent("trace.jsonl")
+        let url = directory.appendingPathComponent(file)
 
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.withoutEscapingSlashes]
@@ -340,6 +516,7 @@ enum Trace {
             try? FileManager.default.createDirectory(
                 at: directory, withIntermediateDirectories: true
             )
+            if file == spansFile { rotateIfLarge(url) }
             let fd = open(url.path, O_WRONLY | O_APPEND | O_CREAT, 0o644)
             guard fd >= 0 else { return }
             defer { close(fd) }
@@ -351,6 +528,113 @@ enum Trace {
                 _ = write(fd, base, buffer.count)
             }
         }
+    }
+
+    /// The `reached 3.52s` a decode span writes, as a number.
+    ///
+    /// Parsed back rather than carried twice: the note is what a person reads
+    /// on the timeline, and a second field holding the same figure is a second
+    /// field to keep in step.
+    fileprivate static func reached(_ note: String?) -> Double? {
+        guard let note, note.hasPrefix("reached "), note.hasSuffix("s") else { return nil }
+        return Double(note.dropFirst("reached ".count).dropLast())
+    }
+
+    // MARK: - What a stage changed
+
+    /// The changes between two versions of a sentence, in the first one's
+    /// coordinates.
+    ///
+    /// This replaces keeping both strings. Stage `before`/`after` was a quarter
+    /// of the corpus and 93.6% of it was one sentence written twice to say
+    /// nothing had happened, which `changed` already said.
+    ///
+    /// **No `String.Index` anywhere.** Swift traps on an out-of-range index,
+    /// and this runs on every stage of every dictation — a debug artefact must
+    /// not be able to stop a transcript. Character arrays and integer offsets
+    /// cannot trap, and a hunk that cannot be built is dropped rather than
+    /// guessed at.
+    static func edits(from before: String, to after: String) -> [Change] {
+        guard before != after else { return [] }
+        let old = Array(before)
+        let new = Array(after)
+        // Bounded: a pathological pair must not cost a dictation. Above this
+        // the change is stated as one hunk, which stays true and stays cheap.
+        guard old.count + new.count <= 20_000 else {
+            return [Change(at: 0, was: before, now: after)]
+        }
+
+        var removed = Set<Int>()
+        var inserted = Set<Int>()
+        for change in new.difference(from: old) {
+            switch change {
+            case .remove(let offset, _, _): removed.insert(offset)
+            case .insert(let offset, _, _): inserted.insert(offset)
+            }
+        }
+
+        var edits: [Change] = []
+        var i = 0
+        var j = 0
+        while i < old.count || j < new.count {
+            let cut = (i < old.count && removed.contains(i))
+                || (j < new.count && inserted.contains(j))
+            guard cut else {
+                i += 1
+                j += 1
+                continue
+            }
+            let at = i
+            var was = ""
+            var now = ""
+            while i < old.count, removed.contains(i) {
+                was.append(old[i])
+                i += 1
+            }
+            while j < new.count, inserted.contains(j) {
+                now.append(new[j])
+                j += 1
+            }
+            // Neither side moved, so the walk would not either. Cannot happen
+            // with a difference this loop built its sets from; stopping beats
+            // spinning if it ever does.
+            if was.isEmpty, now.isEmpty { break }
+            edits.append(Change(at: at, was: was, now: now))
+        }
+        return edits
+    }
+
+    /// Applies edits to the text they were measured against.
+    ///
+    /// The inverse of `edits`, and the only reason either is worth keeping: a
+    /// stage's input and output are no longer both on disk, so replaying is how
+    /// anyone gets the output back. Nil where an edit does not fit, which is a
+    /// corpus that has gone wrong and must read as one rather than as a
+    /// plausible sentence — see `--trace-edits`.
+    static func replay(_ edits: [Change], over text: String) -> String? {
+        var chars = Array(text)
+        var delta = 0
+        for edit in edits {
+            let start = edit.at + delta
+            let was = Array(edit.was)
+            guard start >= 0, start + was.count <= chars.count else { return nil }
+            guard Array(chars[start..<(start + was.count)]) == was else { return nil }
+            chars.replaceSubrange(start..<(start + was.count), with: Array(edit.now))
+            delta += edit.now.count - was.count
+        }
+        return String(chars)
+    }
+
+    /// One change a stage made. `at` is a character offset into the text that
+    /// stage was handed, so a list of these applies left to right with a
+    /// running delta, or right to left with none.
+    ///
+    /// Not `Edit`: that is a whole line of the file, written when somebody
+    /// corrects a word by hand. This is a field on a stage.
+    struct Change: Encodable, Sendable {
+        let at: Int
+        let was: String
+        let now: String
     }
 
     // MARK: - Words
@@ -414,10 +698,15 @@ enum Trace {
 
     // MARK: - Shape on disk
 
-    private static func stamp() -> String {
+    /// - Parameter fractional: milliseconds as well as seconds. A timeline
+    ///   measured to the millisecond cannot be joined to a zero stated to the
+    ///   second, and `NSLog` timestamps are sub-second too.
+    static func stamp(_ date: Date = Date(), fractional: Bool = false) -> String {
         let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime]
-        return formatter.string(from: Date())
+        formatter.formatOptions = fractional
+            ? [.withInternetDateTime, .withFractionalSeconds]
+            : [.withInternetDateTime]
+        return formatter.string(from: date)
     }
 
     /// What a `returns: json` transform is handed as `trace`.
@@ -449,6 +738,10 @@ enum Trace {
         let asr: ASR?
         let vad: VAD?
         let capture: Capture?
+        /// Seconds spent loading models before this dictation could start.
+        /// Absent when they were already warm, which is almost always.
+        let prepare: Double?
+        let decodes: [Decode]?
         let stages: [Stage]
         let final: String?
     }
@@ -533,6 +826,9 @@ enum Trace {
         /// The repository id is all FluidAudio exposes — there is no revision
         /// to log, so none is invented.
         let model: String
+        /// Which decode this came from — `first pass`, or the arm that beat
+        /// it. `decodes` says what the others cost.
+        let arm: String?
         let text: String
         let confidence: Float
         let duration: Double
@@ -540,7 +836,21 @@ enum Trace {
         let words: [Word]
     }
 
+    /// One decode of the clip. Several run on a dictation that looks short, and
+    /// until this only the winner was kept — so a dictation that paid for four
+    /// decodes reported one number, and an arm that failed every time was
+    /// invisible rather than losing.
+    fileprivate struct Decode: Encodable {
+        let arm: String
+        let seconds: Double
+        let reached: Double?
+        let taken: Bool
+    }
+
     fileprivate struct VAD: Encodable {
+        /// What the gate cost. Not `total`, which is how long the clip is:
+        /// one is wall clock and the other is audio.
+        let seconds: Double?
         let speech: Double
         let total: Double
         let segments: [[Double]]
@@ -549,13 +859,104 @@ enum Trace {
     /// Seconds from the hotkey press. Written by a live dictation only: a clip
     /// replayed from disk was never pressed for.
     fileprivate struct Capture: Encodable {
+        /// The press itself, in wall clock and to the millisecond. `at` on the
+        /// record is written when the pipeline ended and only to the second,
+        /// so without this there is no zero to measure anything from.
+        let at: String?
         let engine: Double?
         let firstSample: Double?
+        /// Key up, seconds from the press.
+        let stopped: Double?
 
         enum CodingKeys: String, CodingKey {
-            case engine
+            case at, engine, stopped
             case firstSample = "first_sample"
         }
+    }
+
+    // MARK: - The timeline
+
+    /// `logging.spans` — whether `spans.jsonl` is written.
+    ///
+    /// Only the file. Spans are always collected: they cost an array of about
+    /// thirty small structs, and the corpus reads its `parts` and `decodes`
+    /// straight off them, so a build with this off still gets the numbers in
+    /// `trace.jsonl`.
+    nonisolated(unsafe) static var spansEnabled = false
+
+    static let spansFile = "spans.jsonl"
+
+    /// Its own number. `spans.jsonl` is a new file, not a new shape of
+    /// `trace.jsonl`, and borrowing that file's version would say the corpus
+    /// had changed when it has not.
+    static let spansVersion = 1
+
+    /// Enough for any real dictation — about 30 — with room for a clip that
+    /// puts a boundary reading on every other word.
+    static let spanLimit = 400
+
+    /// One thing the app spent wall-clock time doing.
+    ///
+    /// Flat, with a `parent`, rather than nested. The decode arms overlap, so
+    /// they have no single place in a tree; a span finishes at a different time
+    /// from its parent, so appending is simpler than reaching into a nested
+    /// object; and one flat array is one query away from every question.
+    ///
+    /// **A span is wall-clock, never audio.** Word timings and speech segments
+    /// are positions in the recording. They look the same and mean nothing
+    /// alike, so they stay payload on the span that produced them — 19 word
+    /// "spans" on a timeline would draw a picture that is false.
+    struct Span: Encodable, Sendable {
+        enum Kind: String, Encodable, Sendable {
+            case load, gate, decode, stage, part, model
+        }
+
+        let id: Int
+        let parent: Int?
+        let name: String
+        let kind: Kind
+        /// Seconds from the collector's origin, and how long it took.
+        let at: Double
+        let dur: Double
+        /// Whatever this kind of span has to say about itself. Small, and never
+        /// the transcript again — a stage already writes its text to the
+        /// corpus, and repeating it here doubles the file for nothing.
+        let note: String?
+
+        enum CodingKeys: String, CodingKey { case id, parent, name, kind, at, dur, note }
+    }
+
+    /// A span that has started. Closing it is what records it.
+    struct OpenSpan {
+        let id: Int
+        fileprivate let name: String
+        fileprivate let kind: Span.Kind
+        fileprivate let parent: Int?
+        fileprivate let nests: Bool
+        fileprivate let at: Double
+        fileprivate let collector: Collector
+
+        /// - Parameter note: what the span found out while it ran, which is
+        ///   usually only knowable at the end.
+        func close(_ note: String? = nil) {
+            collector.close(Span(
+                id: id, parent: parent, name: name, kind: kind,
+                at: at, dur: max(0, collector.elapsed() - at), note: note
+            ), restoring: nests)
+        }
+    }
+
+    /// One dictation's timeline, one line of `spans.jsonl`.
+    fileprivate struct Timeline: Encodable {
+        let v: Int
+        let kind: String
+        let t0: String
+        let wav: String
+        let source: String
+        let app: App?
+        let lang: String?
+        let spans: [Span]
+        let final: String?
     }
 
     struct Word: Encodable, Sendable {
@@ -569,8 +970,15 @@ enum Trace {
         let name: String
         var skipCode: String?
         var skipped: String?
-        var before: String?
-        var after: String?
+        /// What this stage changed, in the coordinates of the text it was
+        /// handed — see `Trace.edits`. Absent when it changed nothing, which
+        /// is 93.6% of the time and which `vars.changed` already says.
+        var edits: [Change]?
+        /// The sub-steps, taken from the timeline this stage's span parents.
+        /// `vocabulary` was one number covering an exact pass, a near-miss
+        /// pass, a phoneme pass and two gates; on one measured dictation 817ms
+        /// of its 822 was the phoneme pass, matching nothing.
+        var parts: [Part]?
         var seconds: Double?
         /// What the stage published about itself — `count`, `language`, and the
         /// `ran`/`ok`/`changed`/`ms` the pipeline derives for every stage.
@@ -584,7 +992,7 @@ enum Trace {
         enum CodingKeys: String, CodingKey {
             case name
             case skipCode = "skip_reason"
-            case skipped, before, after, seconds, vars
+            case skipped, edits, parts, seconds, vars
         }
 
         init(name: String, skipCode: String, skipped: String) {
@@ -598,10 +1006,19 @@ enum Trace {
             vars: [String: Scope.Value]
         ) {
             self.name = name
-            self.before = before
-            self.after = after
+            let changed = Trace.edits(from: before, to: after)
+            self.edits = changed.isEmpty ? nil : changed
             self.seconds = seconds
             self.vars = vars.isEmpty ? nil : vars
         }
+    }
+
+    /// A sub-step of a stage, as it reaches the corpus. The same thing the
+    /// timeline calls a `part`, flattened next to the stage it belongs to so a
+    /// sweep can ask what one costs without reading the other file.
+    fileprivate struct Part: Encodable {
+        let name: String
+        let seconds: Double
+        let note: String?
     }
 }

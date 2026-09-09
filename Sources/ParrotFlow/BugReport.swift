@@ -70,6 +70,7 @@ enum BugReport {
         sections.append(permissions(fromTerminal: fromTerminal))
         sections.append("--check-config\n\(CheckConfigCommand.report().text)")
         sections.append("Log — last \(logLines) lines of \(Log.fileURL.path)\n\(logTail())")
+        if let timeline = lastTimeline() { sections.append(timeline) }
 
         return redacted(sections.joined(separator: "\n\n"))
     }
@@ -92,6 +93,36 @@ enum BugReport {
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// The last dictation's timeline, in durations and step names.
+    ///
+    /// "It got slow" is the report this app cannot act on: the log is
+    /// second-resolution prose and the numbers that would answer it sit in a
+    /// file nobody attaches. This is those numbers.
+    ///
+    /// **No words.** `notes: false` drops the transcript and everything a step
+    /// said about itself, because a note can quote what you dictated. The
+    /// span names that remain are the app's own vocabulary. The full one is
+    /// `--trace-view`, and it is yours to send or not.
+    private static func lastTimeline() -> String? {
+        guard let directory = (try? ConfigStore.load())?.resolvedOutputDir,
+              let contents = try? String(
+                  contentsOf: directory.appendingPathComponent(Trace.spansFile), encoding: .utf8
+              )
+        else { return nil }
+
+        var latest: [String: Any]?
+        for line in contents.split(separator: "\n") {
+            guard let data = line.data(using: .utf8),
+                  let record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  record["source"] as? String == "live",
+                  record["spans"] != nil
+            else { continue }
+            latest = record
+        }
+        guard let latest, let drawn = TraceText.render(latest, notes: false) else { return nil }
+        return "Timeline — the last dictation, in seconds. No transcript.\n" + drawn
     }
 
     private static func logTail() -> String {

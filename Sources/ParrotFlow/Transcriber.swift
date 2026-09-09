@@ -348,11 +348,29 @@ actor Transcriber {
         progress: (@Sendable (String) -> Void)? = nil,
         heard: (@Sendable (Decode) -> Void)? = nil
     ) async throws -> String {
+        // A span, not only a number. This is the largest thing on a cold
+        // dictation — 29.9s measured on the first one after a launch — and
+        // recorded as a field it left the timeline with a half-minute hole in
+        // it where the whole wait was, which reads as nothing having happened.
+        let loading = Date()
+        let span = Trace.current?.open("load models", kind: .load)
         try await prepare(config: config)
+        let loaded = Date().timeIntervalSince(loading)
+        // Only when it actually loaded. A stage timed against a cold start is
+        // not comparable with one timed against a warm process, and the two
+        // look identical without this.
+        if loaded > 0.05 {
+            Trace.current?.recordPrepare(loaded)
+            span?.close(String(format: "%.1fs cold", loaded))
+        } else {
+            span?.close("warm")
+        }
 
         var gated: SpeechGate?
         if config.audio.speechGate {
+            let span = Trace.current?.open("gate", kind: .gate)
             gated = try await runSpeechGate(url: url)
+            span?.close(gated.map { String(format: "%.2fs of speech", Self.speechSeconds($0)) })
             if let gated, gated.segments.isEmpty {
                 Log.write("speech gate: no speech detected; not transcribing")
                 return ""
@@ -403,7 +421,9 @@ actor Transcriber {
         // 13.9s, where windows 1 and 2 alone returned exactly the text that
         // was delivered and window 3 — the one holding "view transforms" —
         // returned empty.
+        let firstPass = Trace.current?.open("decode pass 1", kind: .decode)
         var result = try await asr.transcribe(url, decoderState: &decoderState)
+        firstPass?.close(String(format: "reached %.2fs", Self.lastWordEnd(result)))
 
         // Here rather than after the retries below, because an invented ending
         // is clamped to the end of the clip and every check downstream reads
@@ -423,7 +443,9 @@ actor Transcriber {
         // Every clip that decoded to the end is left exactly as it was.
         if let gated, Self.droppedTail(result, gate: gated), let closed = Self.closeLongPauses(gated) {
             var retryState = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
+            let span = Trace.current?.open("long-pause retry", kind: .decode)
             let raw = try await asr.transcribe(closed.samples, decoderState: &retryState)
+            span?.close(String(format: "reached %.2fs", Self.lastWordEnd(raw)))
             let retried = Self.withoutInventedTail(
                 Self.restoreTimings(raw, closed: closed, seconds: gated.seconds),
                 speechEnd: speechEnd,
@@ -436,6 +458,7 @@ actor Transcriber {
                     Self.lastSpeechEnd(gated) - Self.lastWordEnd(result),
                     closed.pauses, spliced.words, spliced.from, spliced.to
                 ))
+                Trace.current?.recordArm("long-pause retry")
                 result = spliced.result
             } else if Self.lastWordEnd(retried) > Self.lastWordEnd(result) {
                 Log.write(String(
@@ -508,6 +531,7 @@ actor Transcriber {
                         + "%.0fms of silence either side recovered it",
                     wrote, speech, recovered.pad * 1000
                 ))
+                Trace.current?.recordArm(Self.silenceArm(recovered.pad))
                 result = recovered.result
             } else {
                 Log.write(String(
@@ -555,6 +579,7 @@ actor Transcriber {
                         + "%.0fms of silence either side reached %.2fs; taking it",
                     Self.lastWordEnd(result), best.pad * 1000, Self.lastWordEnd(best.result)
                 ))
+                Trace.current?.recordArm(Self.silenceArm(best.pad))
                 result = best.result
             } else if let rejected = mostRecovered(
                 further.filter { !Self.extends(result, by: $0.result) }
@@ -565,6 +590,13 @@ actor Transcriber {
                     rejected.pad * 1000, Self.lastWordEnd(rejected.result)
                 ))
             }
+        }
+        // FluidAudio's chunked path leaves `duration` at 0, which is every
+        // clip over one window: measured at 167 of 637 recent traces, all of
+        // them 15.1s or longer, against 1 of 470 under it. The gate already
+        // knows how long the clip is, so a real-time factor stays computable.
+        if result.duration == 0, let gated {
+            result = Self.withDuration(result, seconds: gated.seconds)
         }
         Trace.current?.recordASR(result, model: Repo.parakeetV3.rawValue)
 
@@ -669,22 +701,59 @@ actor Transcriber {
     /// A fresh `TdtDecoderState` per pass: the state is per-clip, and handing
     /// the first pass's state to the second would decode the padded copy as a
     /// continuation of the clip it is a copy of.
+    /// The same result, saying how long the clip was.
+    private nonisolated static func withDuration(
+        _ result: ASRResult, seconds: Double
+    ) -> ASRResult {
+        ASRResult(
+            text: result.text,
+            confidence: result.confidence,
+            duration: seconds,
+            processingTime: result.processingTime,
+            tokenTimings: result.tokenTimings,
+            ctcDetectedTerms: result.ctcDetectedTerms,
+            ctcAppliedTerms: result.ctcAppliedTerms
+        )
+    }
+
+    /// What an arm is called, on the timeline and in `asr.arm`. One function,
+    /// so the two cannot drift into naming the same decode differently.
+    ///
+    /// Numbered rather than named after its padding. What a reader wants from
+    /// the timeline is how many decodes this dictation paid for and which one
+    /// was taken; how far the silence was moved is a detail of the third one,
+    /// and it stays in the note. The rungs are a fixed list, so the numbers are
+    /// stable across dictations and a query can group on them.
+    nonisolated static func silenceArm(_ pad: Double) -> String {
+        "decode pass \((silenceRetryPads.firstIndex(of: pad) ?? 0) + 2)"
+    }
+
     private nonisolated static func decodePadded(
         _ gate: SpeechGate, pad: Double, asr: AsrManager
     ) async throws -> ASRResult? {
         guard let padded = paddedWithSilence(gate, pad: pad) else { return nil }
         var state = await TdtDecoderState.make(decoderLayers: asr.decoderLayerCount)
+        let span = Trace.current?.open(silenceArm(pad), kind: .decode)
         let raw = try await asr.transcribe(padded, decoderState: &state)
         // Before the arm is compared with anything. An arm whose only addition
         // is an invented run then adds nothing, and loses on the guards that
         // are already there. Unpadding clamps a word running past the end of
         // the clip back to the clip's length, so those words land on one point
         // on the clock and the burst rule sees them.
-        return withoutInventedTail(
+        let decoded = withoutInventedTail(
             unpadTimings(raw, by: pad, seconds: gate.seconds),
             speechEnd: lastSpeechEnd(gate),
             note: String(format: "second opinion at %.0fms: ", pad * 1000)
         )
+        // Measured after unpadding, not before. The padded clip's clock starts
+        // `pad` seconds early, so a raw reading is that much further along than
+        // the arm really got — and read beside the first pass, which has no
+        // pad, it makes every arm look like it found seconds that are not
+        // there.
+        span?.close(String(
+            format: "%.0fms pad, reached %.2fs", pad * 1000, lastWordEnd(decoded)
+        ))
+        return decoded
     }
 
     /// Starts one padded decode per rung of `silenceRetryPads`, running now.
@@ -772,6 +841,9 @@ actor Transcriber {
     private func runSpeechGate(url: URL) async throws -> SpeechGate? {
         guard let vad else { return nil }
 
+        // Reading the whole clip off disk is part of what the gate costs, so
+        // the clock starts here rather than at the model call.
+        let started = Date()
         guard let clip = Self.read(url) else { return nil }
         let samples = clip.samples
         guard !samples.isEmpty else {
@@ -791,7 +863,8 @@ actor Transcriber {
         // stop, and the log line above cannot tell you either.
         Trace.current?.recordVAD(
             speech: speech, total: total,
-            segments: segments.map { ($0.startTime, $0.endTime) }
+            segments: segments.map { ($0.startTime, $0.endTime) },
+            seconds: Date().timeIntervalSince(started)
         )
         return SpeechGate(
             samples: samples,

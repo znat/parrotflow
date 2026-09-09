@@ -62,6 +62,18 @@ if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
 
+if arguments.contains("--trace-spans") {
+    exit(TraceViewCommand.checkSpans())
+}
+
+if arguments.contains("--trace-edits") {
+    exit(TraceViewCommand.checkEdits())
+}
+
+if arguments.contains("--trace-view") {
+    exit(TraceViewCommand.run(arguments))
+}
+
 // Above the config, like the two around it: this reports on an install and has
 // to answer while one is half-finished.
 if arguments.contains("--setup-parsing") {

@@ -1011,9 +1011,15 @@ tail -1 ~/.config/parrotflow/recordings/trace.jsonl | jq .
 One JSON object per line, appended and never rotated, beside the clips it
 describes. It holds what the decoder actually returned before anything touched
 it — the raw text, its confidence, and **every word with its start, end and
-confidence** — plus the speech gate's segment boundaries, then each pipeline
-stage with its before, its after and what it cost in seconds, and finally the
-text that was delivered. `wav` joins a line to its recording; `source` is
+confidence** — plus the speech gate's segment boundaries and its own cost, one
+row per decode arm, then each pipeline stage with its sub-steps, what it
+changed and what it cost in seconds, and finally the text that was delivered.
+
+`v: 3` replaced a stage's `before` and `after` with `edits` — what it changed,
+in the coordinates of the text it was handed. Applying every stage's edits in
+order to `asr.text` gives `final`, which is the one thing that ties the stage
+list to the two ends. Older lines are `v: 2` and were never converted: nothing
+in 3 is derivable from 2 except the edits themselves. `wav` joins a line to its recording; `source` is
 `live` for something you spoke and `cli` for a `--transcribe` re-run, so a
 sweep over the archive does not read as a day of dictation.
 
@@ -1078,6 +1084,24 @@ jq -r 'select(((.asr.text // "") | length) == 0 and (.vad.segments|length > 0)) 
 jq -r 'select(.capture.first_sample) |
        [.wav, .capture.engine, .capture.first_sample] | @tsv' trace.jsonl
 
+# Which arm decoded what you heard, and what the losers cost.
+jq -r 'select(.decodes) | .decodes[] | [.arm, .seconds, .reached, .taken] | @tsv' trace.jsonl
+
+# Where a stage's time really goes. `vocabulary` is one number covering an
+# exact pass, a near-miss pass, a phoneme pass and two gates.
+jq -r '.stages[]? | .name as $s | (.parts // [])[] |
+       [$s, .name, .seconds, .note] | @tsv' trace.jsonl | sort -k3 -rn | head
+
+# Every word a stage changed, and to what.
+jq -r '.stages[]? | .name as $s | (.edits // [])[] |
+       [$s, .was, .now] | @tsv' trace.jsonl
+
+# Press to text, end to end. `capture.at` is the key going down, to the
+# millisecond; `at` is when the pipeline finished and only to the second.
+jq -r 'select(.capture.at) |
+       [.capture.stopped, .vad.seconds, .asr.processing,
+        ([.stages[].seconds // 0] | add)] | @tsv' trace.jsonl
+
 # What each stage really costs on your own sentences.
 jq -r '.stages[]? | select(.seconds) | [.name, .seconds] | @tsv' trace.jsonl |
   awk '{n[$1]++; s[$1]+=$2} END {for (k in n) printf "%-28s %6.3fs  ×%d\n", k, s[k]/n[k], n[k]}' |
@@ -1104,6 +1128,151 @@ jq -r '.stages[]? | select(.skip_reason) | .skip_reason' trace.jsonl |
 # Every rule you have ever taught, and from where.
 jq -r 'select(.kind == "correction") | [.via, .heard, .corrected] | @tsv' trace.jsonl
 ```
+
+## The timeline
+
+`trace.jsonl` says what each stage cost. It cannot say what the *decoder* cost,
+because only the winning arm is recorded, and it has no zero — `at` is written
+when the pipeline ended, to the second. A timeline has both.
+
+On by default, and rotating at 64 MB — `logging.spans: false` turns it off.
+
+One line per dictation in `spans.jsonl`, beside `trace.jsonl`. Each line is a
+flat list of spans threaded by `parent`, measured in seconds from `t0` — the
+key coming *up* for something you spoke, and the start of the run for a
+`--transcribe` replay.
+
+Zero is the key going up, not going down. Holding a key for fifteen seconds is
+not work the app did, and drawn to scale it squashes the second that is. What
+the press cost — the wait for the engine, the wait for the first sample, how
+long you held it — is in `capture` on the `trace.jsonl` line, which is where a
+number belongs when it is not a span.
+
+```sh
+# what the last dictation spent its time on, longest first
+jq -r '.spans[] | [.dur, .kind, .name, .note] | @tsv' spans.jsonl |
+  tail -40 | sort -rn | head
+
+# every decode of the same clip, including the arms that lost
+jq -r 'select(.source=="live") | .spans[] | select(.kind=="decode") |
+       [.name, .dur, .note] | @tsv' spans.jsonl
+```
+
+A span is wall-clock time the app spent. Word timings and speech segments are
+positions *in the audio* — they look the same and mean nothing alike, so they
+stay in `trace.jsonl` and never become spans.
+
+### Reading it
+
+```sh
+ParrotFlow --trace-view              # the last live dictation, on stdout
+ParrotFlow --trace-view clip.wav     # a particular one
+ParrotFlow --trace-view --redacted   # nothing anybody said in it
+ParrotFlow --trace-view --perfetto   # a file to drag onto ui.perfetto.dev
+```
+
+```
+2026-09-07T14:19:23.206Z   Ghostty   0.797s
+
+  gate                            0.037s  ██                              2.50s of speech
+  first pass                      0.190s    ██████████                    reached 6.08s
+  500ms of silence either side    0.292s    ████████████████              reached 8.40s
+  1000ms of silence either side   0.241s    █████████████                 reached 9.36s
+  vocabulary                      0.245s                    █████████████
+    sound                         0.243s                    █████████████ 0 of 80 over the floor
+  transform punctuation           0.072s                                  ███
+```
+
+Three decodes of the same clip inside a fifth of a second, and a phoneme pass
+that took more than the decode and matched nothing. Both are invisible in
+`trace.jsonl`, which keeps one figure for the winning arm and one for the whole
+stage.
+
+From a terminal it goes to stdout, so it pipes and it **diffs** — two of these
+through `diff` answer "did that change make it slower", which no chart does.
+
+Run from a transform, where there is no terminal, it writes a file and opens it.
+The file goes to the temporary directory, named after the clip:
+`trace-2026-09-07T16-36-41-18F52ACD.txt`. Named, so a second press opens a new
+document instead of rewriting one your editor already holds — an editor shows
+you the buffer it loaded, so a fixed name means reading the previous dictation
+and believing it is this one. Temporary, because this is a view and not a
+record: `spans.jsonl` keeps the timeline, and the system clears these out.
+
+Each decode arm is a row of its own because they overlap: they are three decodes
+of one clip running at once, and anything that stacked them would be drawing
+something that did not happen.
+
+**`--redacted` is what makes one safe to send.** Timings survive redaction
+perfectly and text does not, so it drops the transcript, the app name and every
+note, and keeps the shape: a timeline with no words in it still shows that the
+phoneme pass took 817 ms. `--bug-report` carries a wordless one already.
+
+**`--perfetto`** writes Chrome Trace Event JSON, beside the text one and named
+the same way, to drag onto
+<https://ui.perfetto.dev>, for a long dictation where you want to zoom.
+Perfetto parses it in the browser and uploads nothing — but the page itself
+loads from Google, and the file holds what you said unless you passed
+`--redacted`. There is no deep link: `?url=` is HTTPS-only, an `https` page
+will not fetch from `http://127.0.0.1` whatever the localhost exemption does
+elsewhere, and the alternative is putting your dictations on a public host to
+look at a chart.
+
+### A chip that opens it
+
+Not shipped, because a chip claims its letter from every dictation for the nine
+seconds the offer is up. Paste it into your own config if you want it:
+
+```yaml
+transforms:
+  - name: trace
+    description: open this dictation's trace
+    display: Opening the trace
+    offer: true
+    key: t
+    done: Trace opened
+    command: /Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow --trace-view
+```
+
+The full path, because `ParrotFlow` is not on `PATH` — and the dev build's is
+`/Applications/ParrotFlowDev.app/...`, which is also the one whose `spans.jsonl`
+it will read.
+
+**Whatever a `command:` transform prints becomes the new transcript.** That is
+why `--trace-view` writes everything a person reads to stderr and hands stdin
+straight back on stdout: the sentence returns unchanged, so
+`finishOfferedTransform` writes nothing to the field and `done:` is what the
+pill says. A version before 2026-09-07 printed to stdout instead, and pressing
+the chip on one of those replaces the dictation with a file path. This form is
+right against either:
+
+```yaml
+    command: sh -c 'said=$(cat); "/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow"
+      --trace-view >/dev/null; printf %s "$said"'
+```
+
+`t` collides with "the", "this", "that" — so a dictation starting with one of
+those, within the offer window, opens a trace. That is the whole cost: the
+command only reads, and the window it opens is a text file. A chip that changed anything would want `x` or `z`, which
+nothing starts with.
+
+`done:` is what the pill says afterwards. Without it a transform that leaves
+the text alone reports "nothing to change" — true about the sentence, and it
+reads as a failure for a transform whose whole job is not to touch it.
+
+### Checking the trace itself
+
+```sh
+ParrotFlow --trace-edits    # what a stage recorded replays to what it produced
+ParrotFlow --trace-spans    # spans survive being closed from many tasks at once
+```
+
+Both are in `make test`, as `check-trace-edits`. The first is the one that
+matters: a stage stores what it changed rather than both versions of the
+sentence, so the corpus is only worth anything if applying the edits in order
+to `asr.text` gives `final`. It is checked on written cases and several
+thousand fuzzed pairs, because the pairs that break a diff are never the ones
+anybody thinks to write down.
 
 ### Watching it live
 
