@@ -166,5 +166,15 @@
     "want": "Mick@4-8 better stack@20-32",
     "ranges": true,
     "why": "a place kept moves nothing, and the range is still the span"
+  },
+  {
+    "text": "ask Mick, then tell BetterStack about it.",
+    "places": [
+      "Mick|mixed bend|1|1",
+      "BetterStack|better stack|4|-"
+    ],
+    "want": "mixed bend@4-14",
+    "ranges": true,
+    "why": "only the answered places have ranges; the unanswered one was never asked"
   }
 ]

@@ -118,9 +118,9 @@ enum OpenPlaces {
             // Where it ended up, not where it was asked about. A place after
             // one that got longer or shorter has moved, and the trace's whole
             // job is to say which occurrence this was.
-            let from = out.utf16.count
+            let from = out.count
             out += word
-            written.append(Written(word: word, range: from ..< out.utf16.count))
+            written.append(Written(word: word, range: from ..< out.count))
             cursor = place.range.upperBound
         }
         return (out + text[cursor...], written)
@@ -129,7 +129,9 @@ enum OpenPlaces {
     /// A word as it was written, and where it sits in the text that shipped.
     struct Written: Equatable {
         let word: String
-        /// UTF-16 offsets, which is what the trace's other records use.
+        /// Character offsets, the unit `Trace.edit` already writes — see
+        /// `EditWatch.asHeard`. Two `range` fields in one trace file measuring
+        /// in different units is a trap for whatever reads them together.
         let range: Range<Int>
     }
 
@@ -137,10 +139,14 @@ enum OpenPlaces {
     nonisolated(unsafe) private static var byRun: [Int: [Open]] = [:]
 
     /// Keep this run's open places. Called off the main thread, from the stage.
+    ///
+    /// An empty list clears the run rather than leaving what was there. A
+    /// config may list `vocabulary` twice, and then the last stage to run is
+    /// the one that says what is still open — a stage that settles everything
+    /// has to be able to take the question away.
     static func record(run: Int, _ places: [Open]) {
-        guard !places.isEmpty else { return }
         lock.lock()
-        byRun[run] = places
+        if places.isEmpty { byRun.removeValue(forKey: run) } else { byRun[run] = places }
         lock.unlock()
     }
 

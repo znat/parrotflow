@@ -517,6 +517,9 @@ enum Trace {
         let chose: String
         /// The sentence as it stood when the question was asked.
         let text: String
+        /// Where `chose` stands in `text`, in character offsets — the same
+        /// unit `Edit.range` uses, so a script reading both kinds of line does
+        /// not have to know which record it is holding.
         let range: [Int]
         let lang: String
         let app: String?

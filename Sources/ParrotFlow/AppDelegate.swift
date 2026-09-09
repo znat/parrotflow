@@ -5770,7 +5770,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             writeTheChoice(reason: "every place was answered")
             return
         }
-        offerUntil = Date().addingTimeInterval(Self.offerSeconds)
+        // The learn question's clock, not the offer's. `offerSeconds` is six —
+        // four at full strength and two fading — which is right for a tab you
+        // may ignore and wrong for a question holding your sentence. This is
+        // the same shape the learn offer gets thirty seconds for: a sentence to
+        // read and a word to decide.
+        offerUntil = Date().addingTimeInterval(Self.learnSeconds)
         offerHeld = false
         offerPressRun = pending.press.run
         offerHeadline = .choose(question)
@@ -5782,7 +5787,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Log.write("selector: \(question.line)")
         pill.offer(
             [], headline: offerHeadline, reading: offerReading, open: true,
-            for: Self.offerSeconds
+            for: Self.learnSeconds
         )
         pill.model.onPick = { [weak self] option in self?.answer(option) }
         pill.model.onFold = { [weak self] in

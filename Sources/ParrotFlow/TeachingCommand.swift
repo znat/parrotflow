@@ -19,7 +19,7 @@ enum TeachingCommand {
             return 2
         }
         let change = VocabularyPass.Change(
-            range: range, was: word, now: word, terms: [], standing: .rule
+            range: range, was: word, now: word, terms: [], owner: nil, standing: .rule
         )
         let taught = VocabularyPass.teaching(in: text, changes: [change])
         print(taught[0] ? "REVERT" : "ASK")

@@ -34,7 +34,14 @@ trap 'rm -rf "$WORK"' EXIT
 export PARROTFLOW_CONFIG_DIR="$WORK"
 
 # Base64, one line per field, and an empty last field for a case that wants the
-# text rather than the ranges. A case holds newlines and double spaces on
+# text rather than the ranges.
+#
+# A case cannot check a trailing newline, and does not need to: the comparison
+# below goes through `$(...)`, which strips them, and `print` adds one of its
+# own that could not be told apart from the text's. Nothing reaches the selector
+# with a newline at either end anyway — `finishTranscription` trims those off
+# before it asks. Newlines *inside* the text are what matter here, and those a
+# case does check. A case holds newlines and double spaces on
 # purpose — those are what it is checking survive — and neither goes through a
 # line-per-field file as itself.
 if ! python3 -c '

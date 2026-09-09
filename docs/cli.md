@@ -464,7 +464,7 @@ glued to the next word all survive it.
 `--ranges` prints where each answered word ended up instead of the text, which
 is what the trace records: a place after one the answer made longer has moved.
 
-`scripts/check-selector.sh` scores both halves, 20 cases. The lowercasing of a
+`scripts/check-selector.sh` scores both halves, 21 cases. The lowercasing of a
 refused glued span is `--lowercase-refused`.
 
 ## What word does this slot want

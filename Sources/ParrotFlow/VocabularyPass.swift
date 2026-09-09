@@ -176,7 +176,18 @@ enum VocabularyPass {
         /// which reads as confidence and is worth eight points of damage.
         var options: [String]
         /// The vocabulary terms this slot is about, carried into `Change`.
+        ///
+        /// Every term of every part that overlaps this span, as a sorted set.
+        /// So the first of them is alphabetical and says nothing about which
+        /// reading is on offer — see `owner`.
         let terms: [String]
+        /// The term that produced `options[1]`, when one did.
+        ///
+        /// Several parts can overlap one span, and only one of them wins the
+        /// reading. `terms.first` is then a different term, and anything that
+        /// records what a person answered about this place would record it
+        /// against the wrong name. Nil when the reading is the untouched span.
+        let owner: String?
         /// The best-evidenced of the readings in it, for `Caps.perTerm`.
         let standing: Standing
     }
@@ -457,12 +468,16 @@ enum VocabularyPass {
             }
 
             var widths: [String: Int] = [:]
+            // And whose reading each one is. First part wins, the same as
+            // `widths`, so the two tables always describe the same part.
+            var owners: [String: String] = [:]
             for part in group.parts {
                 let reading = written(part, part.other)
                 guard widths[reading] == nil else { continue }
                 widths[reading] = text.distance(
                     from: part.range.lowerBound, to: part.range.upperBound
                 )
+                owners[reading] = part.term
             }
             var rest: [String] = []
             for part in group.parts.sorted(by: { left, right in
@@ -499,6 +514,7 @@ enum VocabularyPass {
             built.append(Slot(
                 range: span, options: kept,
                 terms: Array(Set(group.parts.map(\.term))).sorted(),
+                owner: kept.count > 1 ? owners[kept[1]] : nil,
                 standing: group.parts.map(\.standing).min() ?? .wide
             ))
         }
@@ -845,8 +861,16 @@ enum VocabularyPass {
         /// needs it.
         let now: String
         /// The vocabulary terms this place is about, for anything reporting
-        /// what the stage decided.
+        /// what the stage decided. A sorted set, so its first entry is
+        /// alphabetical — `owner` is the one that offered `now`.
         let terms: [String]
+        /// The term that offered `now`, when one did. See `Slot.owner`.
+        ///
+        /// `SentenceGate` still reads `terms.first` for the portrait it asks,
+        /// which has the same fault. Left alone here: which portrait that gate
+        /// reads is a measured decision, and moving it belongs in a change
+        /// that re-runs the bench.
+        let owner: String?
         /// Where the reading came from, carried through from the slot. Read by
         /// `settle`, which gates one source and not the others.
         let standing: Standing
@@ -880,7 +904,7 @@ enum VocabularyPass {
             }
             built.append(Change(range: slot.range, was: slot.options[0],
                                 now: slot.options[1], terms: slot.terms,
-                                standing: slot.standing))
+                                owner: slot.owner, standing: slot.standing))
         }
         return built
     }

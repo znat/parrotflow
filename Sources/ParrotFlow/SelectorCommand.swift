@@ -77,7 +77,11 @@ enum SelectorCommand {
         // place after one the answer made longer or shorter has moved, and
         // nothing else prints that.
         guard !ranges else {
-            print(done.words.map { "\($0.word)@\($0.range.lowerBound)-\($0.range.upperBound)" }
+            // The answered ones only. `written` returns a row per located
+            // place, and the rows past the last answer are what stands there
+            // rather than anything anybody picked.
+            print(done.words.prefix(taken.count)
+                .map { "\($0.word)@\($0.range.lowerBound)-\($0.range.upperBound)" }
                 .joined(separator: " "))
             return 0
         }

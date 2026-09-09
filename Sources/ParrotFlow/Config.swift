@@ -236,7 +236,7 @@ struct Config: Decodable, Equatable {
         /// Whether a place none of the gates settles is put to you on the pill.
         ///
         /// The words wait for the answer, and that is the whole of what this
-        /// costs: a pill you do not notice holds the dictation for nine
+        /// costs: a pill you do not notice holds the dictation for thirty
         /// seconds and then types what it would have typed anyway. Off, the
         /// stage keeps what arrived and says nothing, the way it did before
         /// there was a surface to ask on.

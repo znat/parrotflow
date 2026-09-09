@@ -466,7 +466,7 @@ sentence is only ever written once.
 
 Every way of not answering writes what the gates settled on, which is what an
 open place has always shipped. Escape, a click outside the pill, any other key,
-nine seconds, or starting the next dictation — all of them type the same text
+thirty seconds, or starting the next dictation — all of them type the same text
 the stage returned. A pill you do not notice costs you the question, never the
 sentence.
 
