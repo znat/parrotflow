@@ -1,34 +1,37 @@
 #!/usr/bin/env python3
-"""Score and audit the `dates` transform without building the app.
+"""Score and audit the `dates_*` transforms without building the app.
 
-    examples/transforms/dates/score.py            # score the case set
-    examples/transforms/dates/score.py --verbose  # and show the rules
+    examples/transforms/dates/score.py             # every language
+    examples/transforms/dates/score.py --lang fr   # one of them
+    examples/transforms/dates/score.py --verbose   # and show the rules
     examples/transforms/dates/score.py --text "at ten fifteen" --lang en
-    examples/transforms/dates/score.py --corpus   # every edit it would make
-                                                  # to the archive
+    examples/transforms/dates/score.py --corpus    # every edit it would make
+                                                   # to the archive
 
-`ParrotFlow --eval examples/transforms/dates/cases.yaml` answers a different
-question. It runs the copy the app resolves from the config, through the real
-command runner; this runs the copy in the repo, beside it. Use this for the
-loop where you are editing a guard and do not want to rebuild Swift between
-tries, and for `--corpus`, which `--eval` cannot do.
+Every `<lang>.py` beside this file is a language, and `<lang>-cases.yaml` is
+its set. Adding a language adds nothing here.
 
-The transform is loaded from `dates.py` beside this file rather than
-reimplemented here. A runner that reimplements the thing it scores drifts from
-it, and the number then describes code nobody ships. `dates.py` in turn loads
-`../numbers/numbers.py` for its number words, so this needs both folders.
+`ParrotFlow --eval dates_en` answers a different question. It runs the copy the
+app resolves from the config, through the real command runner; this runs the
+copy in the repo, beside it. Use this for the loop where you are editing a
+guard and do not want to rebuild Swift between tries, and for `--corpus`, which
+`--eval` cannot do.
+
+The language modules are loaded from their own files rather than reimplemented
+here. A runner that reimplements the thing it scores drifts from it, and the
+number then describes code nobody ships.
 
 Three checks beyond the cases:
 
-- **Every `change` case must match `dates.py --when`.** A case the gate rejects
-  never reaches the script in the app, so it would pass here and do nothing in
-  a real dictation.
+- **Every `change` case must match that language's `--when`.** A case the gate
+  rejects never reaches the script in the app, so it would pass here and do
+  nothing in a real dictation.
 - **How many `keep` cases the gate lets through** is printed too. A keep case
   the gate rejects tests the script and not the pipeline, which is safe but
   worth knowing.
-- **The `when:` line in config.example.yaml must be the one `--when` prints.**
-  It is generated from the numbers transform's word tables, so it goes stale
-  when a word moves there and nothing else would say so.
+- **The `when:` lines in config.example.yaml must be the ones `--when`
+  prints.** They are generated, so they go stale when a cue word moves and
+  nothing else would say so.
 
 **No model call anywhere in this file.**
 """
@@ -45,39 +48,51 @@ except ImportError:
     sys.exit("pip install pyyaml")
 
 HERE = Path(__file__).resolve().parent
-TRANSFORM = HERE / "dates.py"
-CASES = HERE / "cases.yaml"
 TRACE = Path.home() / "Recordings/ParrotFlow/trace.jsonl"
-
-_spec = importlib.util.spec_from_file_location("dates", TRANSFORM)
-dates = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(dates)
-
-if dates.numbers is None:
-    sys.exit(dates.MISSING)
+sys.path.insert(0, str(HERE))
+import engine  # noqa: E402 — the path above is what makes it importable
 
 
-def written(text, language):
-    """The transform's own entry point, and the rules it named itself into."""
+def load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def languages():
+    """Every `<lang>.py` beside this file, by its two-letter code.
+
+    A language is a file, so this is a directory listing. `engine.py` and this
+    script are the two that are not languages.
+    """
+    found = {}
+    for path in sorted(HERE.glob("*.py")):
+        if path.stem in ("engine", "score") or len(path.stem) != 2:
+            continue
+        found[path.stem] = load(path.stem, path)
+    return found
+
+
+def written(module, text):
+    """The rewrite, and the rules the module named itself into."""
     applied = []
-    return dates.rewrite(text, language, applied), applied
+    return engine.rewrite(text, module.RULES, applied), applied
 
 
-def gate():
-    """The `when:` regex, without its slashes, compiled."""
-    pattern = dates.when().strip("/")
-    return re.compile(pattern, re.I)
+def gate(module):
+    """That language's `when:` regex, without its slashes, compiled."""
+    return re.compile(engine.when(module).strip("/"), re.I)
 
 
-def score(verbose):
+def score_language(lang, module, verbose):
     """The two failure kinds counted apart, because they cost differently."""
-    cases = yaml.safe_load(CASES.read_text())["cases"]
-    opens = gate()
-    passed = missed = damaged = wrong = ungated = 0
-    keeps_gated = 0
+    cases = yaml.safe_load((HERE / f"{lang}-cases.yaml").read_text())["cases"]
+    opens = gate(module)
+    passed = missed = damaged = wrong = ungated = keeps_gated = 0
 
     for case in cases:
-        got, applied = written(case["input"], case.get("lang"))
+        got, applied = written(module, case["input"])
         # No `expect` means "comes back exactly as it went in" — the --eval
         # contract, in docs/cli.md.
         keep = "expect" not in case
@@ -110,17 +125,13 @@ def score(verbose):
         print(f"  ✗ {case['input']}\n      got   {got}\n      want  {want}\n"
               f"      ({mark})")
 
-    stale = wired_when_is_stale()
-    if stale:
-        print(f"  ✗ {stale}")
-
     total = len(cases)
     keeps = sum(1 for c in cases if "expect" not in c)
     changes = total - keeps
-    print(f"\n  {passed}/{total}   change {changes - missed - wrong}/{changes}"
-          f"   keep {keeps - damaged}/{keeps}")
-    print(f"  when: lets through {changes - ungated}/{changes} change"
-          f" and {keeps_gated}/{keeps} keep cases")
+    print(f"  {lang}   {passed}/{total}   change {changes - missed - wrong}/{changes}"
+          f"   keep {keeps - damaged}/{keeps}"
+          f"   when: {changes - ungated}/{changes} change"
+          f" and {keeps_gated}/{keeps} keep through the gate")
     if missed:
         print(f"    {missed} left the date or the time in words")
     if wrong:
@@ -131,52 +142,53 @@ def score(verbose):
     if ungated:
         print(f"    {ungated} change case(s) the when: regex rejects"
               "  ← the script never runs on them")
-    return passed == total and ungated == 0 and not stale
+    return passed == total and ungated == 0
 
 
-def wired_when_is_stale():
-    """What is wrong with the `when:` line in config.example.yaml, or None.
+def wired_when_is_stale(modules):
+    """The languages whose `when:` line in config.example.yaml is out of date.
 
-    Only in a checkout — the folder is copied to `~/.config/parrotflow/` on
-    its own, and there is no config.example.yaml above it there. The line has
-    to be regenerated whenever a number word moves in the numbers transform,
-    and nothing else would say it had gone stale.
+    Only in a checkout — the folder is copied to `~/.config/parrotflow/` on its
+    own, and there is no config.example.yaml above it there.
     """
     example = HERE.parents[2] / "config.example.yaml"
     if not example.exists():
-        return None
-    if dates.when() in example.read_text():
-        return None
-    return ("config.example.yaml carries a different when: line —"
-            " paste `dates.py --when` over it")
+        return []
+    written_config = example.read_text()
+    return [lang for lang, module in modules.items()
+            if engine.when(module) not in written_config]
 
 
-def corpus():
-    """Every edit this stage would make to the archive, for reading by eye.
+def corpus(modules):
+    """Every edit these stages would make to the archive, for reading by eye.
 
-    The case set says it is right on the cases someone thought of. This says
-    what it does to real dictations, which is the only place an unguarded rule
-    shows itself. The gate is applied first, so the count of opened clips is
-    what the `when:` line actually costs.
+    The case sets say they are right on the cases someone thought of. This says
+    what they do to real dictations, which is the only place an unguarded rule
+    shows itself. Each language's gate is applied first, so the count of opened
+    clips is what the `when:` lines actually cost.
     """
     if not TRACE.exists():
         sys.exit(f"no trace at {TRACE}")
 
-    opens = gate()
     seen = {}
     for line in TRACE.read_text().splitlines():
         if not line.strip():
             continue
         record = json.loads(line)
         if (record.get("asr") or {}).get("text"):
-            seen[record["wav"]] = (record["asr"]["text"], record.get("lang"))
+            seen[record["wav"]] = record["asr"]["text"]
 
-    through = changed = 0
-    for wav, (text, language) in sorted(seen.items()):
-        if not opens.search(text):
-            continue
-        through += 1
-        out, applied = written(text, language)
+    gates = {lang: gate(module) for lang, module in modules.items()}
+    through = {lang: 0 for lang in modules}
+    changed = 0
+    for wav, text in sorted(seen.items()):
+        out, applied = text, []
+        for lang, module in modules.items():
+            if not gates[lang].search(out):
+                continue
+            through[lang] += 1
+            out, fired = written(module, out)
+            applied += [f"{lang}: {name}" for name in fired]
         if out == text:
             continue
         changed += 1
@@ -185,33 +197,52 @@ def corpus():
             if before != after:
                 print(f"  -  {before}")
                 print(f"  +  {after}")
-    print(f"\n  {through} of {len(seen)} clips opened the gate,"
-          f" {changed} were changed")
+    opened = "; ".join(f"{lang} {n}" for lang, n in sorted(through.items()))
+    print(f"\n  {len(seen)} clips: gate opened on {opened}."
+          f" {changed} clip(s) changed")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--text", help="run the stage on one string")
-    parser.add_argument("--lang", help="en or fr; both grammars when absent")
+    parser.add_argument("--lang", help="one language; every one by default")
+    parser.add_argument("--text", help="run one language on one string")
     parser.add_argument("--corpus", action="store_true",
                         help="every edit to the archive")
     parser.add_argument("--when", action="store_true",
-                        help="print the when: regex and stop")
+                        help="print the when: regex per language and stop")
     parser.add_argument("--verbose", action="store_true",
                         help="show passing cases")
     args = parser.parse_args()
 
+    modules = languages()
+    if args.lang:
+        if args.lang not in modules:
+            sys.exit(f"no {args.lang}.py beside score.py — have: "
+                     + ", ".join(sorted(modules)))
+        modules = {args.lang: modules[args.lang]}
+
     if args.when:
-        print(dates.when())
+        for lang, module in sorted(modules.items()):
+            print(f"{lang}: {engine.when(module)}")
     elif args.text:
-        out, applied = written(args.text, args.lang)
-        print(out)
-        if applied:
-            print("  " + ", ".join(dict.fromkeys(applied)), file=sys.stderr)
+        text = args.text
+        for lang, module in sorted(modules.items()):
+            text, applied = written(module, text)
+            if applied:
+                print(f"  {lang}: " + ", ".join(dict.fromkeys(applied)),
+                      file=sys.stderr)
+        print(text)
     elif args.corpus:
-        corpus()
+        corpus(modules)
     else:
-        sys.exit(0 if score(args.verbose) else 1)
+        ok = all([score_language(lang, module, args.verbose)
+                  for lang, module in sorted(modules.items())])
+        stale = wired_when_is_stale(modules)
+        if stale:
+            print("  ✗ config.example.yaml carries a different when: line for "
+                  + ", ".join(sorted(stale))
+                  + " — paste `<lang>.py --when` over it")
+        sys.exit(0 if ok and not stale else 1)
 
 
 if __name__ == "__main__":

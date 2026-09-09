@@ -1,0 +1,130 @@
+# Validation set for `dates_fr`. Scored with `score.py --lang fr` beside
+# this file, or with `ParrotFlow --eval dates_fr`, which runs the deployed
+# command rather than a reimplementation of it. The `tests:` key on the
+# transform is what points `--eval` at this file rather than at the other
+# language's.
+#
+# `change`: a date or a clock time was dictated — write it the way it was said.
+# `keep` (no `expect`): must come back byte for byte.
+#
+# The keep half is 11 of 26 cases and it is the half that decides. This
+# stage runs on every transcript with no output of its own, so a wrong rewrite
+# is text nobody watched change. Every keep here is a shape that looks like a
+# date or a time and is not: a count, a duration, a range, a chapter number, a
+# year.
+#
+# What is deliberately out of scope:
+#   - the calendar. "next Tuesday" and "tomorrow" are not resolved, and a date
+#     said without a year does not get one.
+#   - a lone ordinal and a lone year. Both are the `numbers` stage's job, which
+#     runs after this one.
+#   - a target format. The speaker's shape is the output's shape.
+#
+# `lang:` is on every case even though the file is one language. `--eval` hands
+# it to the pipeline, and detection is unreliable at the length a case is.
+#
+# The set carries no `transforms:` block of its own. It would only work with an
+# absolute `command:` path: a bare name resolves in `transforms/<name>/` under
+# the file's own directory and nowhere else, and an unresolved one kills
+# `--eval` with SIGPIPE rather than reporting it.
+
+cases:
+
+  # --- time_fr ---
+  - probe: time_fr
+    lang: fr
+    input: "on commence à dix heures quinze"
+    expect: "on commence à 10h15"
+  - probe: time_fr
+    lang: fr
+    input: "la réunion est à trois heures et demie"
+    expect: "la réunion est à 3h30"
+  - probe: time_fr
+    lang: fr
+    input: "on déjeune à midi et demi"
+    expect: "on déjeune à 12h30"
+  - probe: time_fr
+    lang: fr
+    input: "le train part à huit heures moins le quart"
+    expect: "le train part à 7h45"
+  - probe: time_fr
+    lang: fr
+    input: "la séance commence à vingt heures"
+    expect: "la séance commence à 20h"
+  - probe: time_fr
+    lang: fr
+    input: "rendez-vous à dix-sept heures trente"
+    expect: "rendez-vous à 17h30"
+  - probe: time_fr
+    lang: fr
+    input: "il arrive à neuf heures et quart"
+    expect: "il arrive à 9h15"
+  - probe: time_fr
+    lang: fr
+    input: "on se voit à trois heures moins dix"
+    expect: "on se voit à 2h50"
+  - probe: time_fr
+    lang: fr
+    input: "il est rentré à minuit et demi"
+    expect: "il est rentré à 0h30"
+  - probe: time_fr
+    lang: fr
+    input: "le vol décolle à vingt et une heures"
+    expect: "le vol décolle à 21h"
+  # --- date_fr ---
+  - probe: date_fr
+    lang: fr
+    input: "la livraison est le trois décembre"
+    expect: "la livraison est le 3 décembre"
+  - probe: date_fr
+    lang: fr
+    input: "le contrat commence le premier mai"
+    expect: "le contrat commence le 1er mai"
+  - probe: date_fr
+    lang: fr
+    input: "la facture est datée le dix du douze"
+    expect: "la facture est datée le 10/12"
+  - probe: date_fr
+    lang: fr
+    input: "l'échéance est le trois décembre deux mille vingt-six"
+    expect: "l'échéance est le 3 décembre 2026"
+  - probe: date_fr
+    lang: fr
+    input: "il a signé le vingt-cinq janvier"
+    expect: "il a signé le 25 janvier"
+  # --- not_a_time_fr ---
+  - probe: not_a_time_fr
+    lang: fr
+    input: "il y a trois heures que j'attends"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "on a roulé pendant deux heures"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "c'est à trois heures de route"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "le service tourne vingt-quatre heures sur vingt-quatre"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "on part dans deux heures"
+  # --- not_a_date_fr ---
+  - probe: not_a_date_fr
+    lang: fr
+    input: "le chapitre trois parle du parseur"
+  - probe: not_a_date_fr
+    lang: fr
+    input: "mars est chargé pour tout le monde"
+  - probe: not_a_date_fr
+    lang: fr
+    input: "on en a vingt et un"
+  # --- not_a_time_fr ---
+  - probe: not_a_time_fr
+    lang: fr
+    input: "il a trois heures d'avance"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "c'est à trois heures d'ici"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "elle a deux heures devant elle"

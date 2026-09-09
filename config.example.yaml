@@ -111,9 +111,13 @@ transcription:
     - vocabulary
     # A dictated date or clock time, written the shape it was said:
     # "March third" -> March 3, "à dix heures quinze" -> à 10h15. No model.
-    # Above `numbers`, which reads the same words and gets to them first.
-    - transform: dates
-      when: /(?i)\b(?:heures?|midi|minuit|o\s?['’]?\s?clock|[ap]\.m\.|pm)\b|\b(?:a\s+)?(?:half|quarter)\s+(?:past|to)\b|\b(?:at|around|about|by|vers|à|du|le|past|to|of|September|December|February|November|January|October|August|April|March|July|June|May|septembre|decembre|décembre|novembre|fevrier|février|janvier|juillet|octobre|avril|aout|août|juin|mars|mai)\s+(?:the\s+)?(?:seventeenth|eighteenth|fourteenth|nineteenth|seventieth|thirteenth|cinquante|eightieth|fifteenth|ninetieth|septantes|seventeen|sixteenth|thirtieth|twentieth|eighteen|eleventh|fiftieth|fortieth|fourteen|huitante|nineteen|nonantes|premiere|première|quarante|quatorze|septante|sixtieth|soixante|thirteen|fifteen|nonante|octante|premier|seventh|seventy|sixteen|twelfth|eighth|eighty|eleven|fourth|ninety|quatre|quinze|second|thirty|treize|trente|twelve|twenty|vingts|douze|eight|fifth|fifty|first|forty|ninth|seize|seven|sixth|sixty|tenth|third|three|trois|vingt|cinq|deux|five|four|huit|neuf|nine|onze|sept|zero|zéro|dix|one|six|ten|two|une|oh|un|September|December|February|November|January|October|August|April|March|July|June|May|septembre|decembre|décembre|novembre|fevrier|février|janvier|juillet|octobre|avril|aout|août|juin|mars|mai|\d{1,2}(?:st|nd|rd|th)?)\b/
+    # One step per language — adding one is copying a file, see
+    # examples/transforms/dates/engine.py. Both above `numbers`, which reads
+    # the same words and gets to them first.
+    - transform: dates_en
+      when: /(?i)\b(?:o\s?['’]?\s?clock|[ap]\.m\.|pm)\b|\b(?:a\s+)?(?:half|quarter)\s+(?:past|to)\b|\b(?:September|December|February|November|January|October|August|around|April|March|about|July|June|past|May|at|by|of|to)\s+(?:the\s+)?(?:seventeenth|eighteenth|fourteenth|nineteenth|thirteenth|September|fifteenth|seventeen|sixteenth|thirtieth|twentieth|December|February|November|eighteen|eleventh|fourteen|nineteen|thirteen|January|October|fifteen|seventh|seventy|sixteen|twelfth|August|eighth|eighty|eleven|fourth|fourty|ninety|second|thirty|twelve|twenty|April|March|eight|fifth|fifty|first|forty|ninth|seven|sixth|sixty|tenth|third|three|July|June|five|four|nine|zero|May|one|six|ten|two|oh|\d{1,2}(?:st|nd|rd|th)?)\b/
+    - transform: dates_fr
+      when: /(?i)\b(?:heures?|midi|minuit)\b|\b(?:septembre|decembre|décembre|novembre|fevrier|février|janvier|juillet|octobre|avril|aout|août|juin|mars|vers|dès|mai|du|le|à)\s+(?:cinquante|septembre|decembre|décembre|huitante|novembre|premiere|première|quarante|quatorze|septante|soixante|fevrier|février|janvier|juillet|nonante|octante|octobre|premier|quatre|quinze|treize|trente|vingts|avril|douze|seize|trois|vingt|aout|août|cinq|deux|huit|juin|mars|neuf|onze|sept|zero|zéro|1er|dix|mai|six|une|un|\d{1,2})\b/
     - numbers                            # "two hundred forty-three" -> 243
     - transform: punctuation             # "is that true question mark" -> is that true?
     - transform: repetitions             # a word or phrase said twice by accident, taken out
@@ -304,12 +308,20 @@ transforms:
     command: examples/punctuation/punctuation.py
     returns: json
 
-  # "at ten fifteen" -> at 10:15. Reads its number words from
-  # examples/numbers/, so that folder has to be there too.
-  - name: dates
+  # "at ten fifteen" -> at 10:15, "le trois décembre" -> le 3 décembre.
+  # One script per language, both reading examples/dates/engine.py beside
+  # them. `tests:` is what sends --eval to the right case file.
+  - name: dates_en
     description: dictated dates and clock times as digits
-    command: examples/dates/dates.py
+    command: examples/dates/en.py
     returns: json
+    tests: examples/dates/en-cases.yaml
+
+  - name: dates_fr
+    description: dictated dates and clock times as digits
+    command: examples/dates/fr.py
+    returns: json
+    tests: examples/dates/fr-cases.yaml
 
   # Cheap: ~0.04s, mostly the python3 start.
   - name: repetitions
