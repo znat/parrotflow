@@ -249,19 +249,24 @@ struct PlumageRim<S: InsettableShape>: View {
     @State private var angle: Double = -90
     @State private var breath = false
 
+    private var pulses: Bool { pulsing && !reduceMotion }
+
     var body: some View {
         shape
             .strokeBorder(
                 AngularGradient(colors: wheel, center: .center, angle: .degrees(angle)),
                 lineWidth: alive ? 2 : 1.4
             )
-            .opacity(alive ? 1 : (breath ? 1 : 0.9))
+            // The swing is downward: 0.35 at the trough against 0.9 standing
+            // still. A light that only brightens reads as a sheen; one that
+            // nearly goes out reads as a breath.
+            .opacity(alive ? 1 : (pulses ? (breath ? 1 : 0.35) : 0.9))
             // The way down is a plain ease. A repeating animation attached to
             // the change that stops the pulse goes on repeating, so the rim
             // would still be breathing at the offer.
             .animation(Parrot.pulse(breath), value: breath)
-            .onChange(of: pulsing, initial: true) { _, _ in breath = pulsing && !reduceMotion }
-            .onChange(of: reduceMotion) { _, _ in breath = pulsing && !reduceMotion }
+            .onChange(of: pulsing, initial: true) { _, _ in breath = pulses }
+            .onChange(of: reduceMotion) { _, _ in breath = pulses }
             // A white hairline just inside keeps the edge glassy in light mode,
             // where saturated colour alone reads as a sticker.
             //
@@ -554,9 +559,9 @@ enum ParrotGlass {
 struct PlumageBloom<S: InsettableShape>: View {
     let shape: S
     var alive: Bool = false
-    /// Breathe between the resting glow and the bright one, standing still.
-    /// The colours do not move: the light gets stronger and weaker, which is
-    /// what a microphone that is open and hearing nothing yet looks like.
+    /// Breathe, standing still. The colours do not move: the light goes almost
+    /// out and comes back, which is what a microphone that is open and hearing
+    /// nothing yet looks like. See `trough`.
     var pulsing: Bool = false
     /// The colours the glow is made of. See `PlumageRim.wheel`.
     var wheel: [Color] = Parrot.wheel
@@ -598,19 +603,30 @@ struct PlumageBloom<S: InsettableShape>: View {
             // what keeps the glow from reading as a decal.
             bloom(width: 22, blur: 22, opacity: strength(0.10, 0.19), angle: inner)
         }
+        // The whole halo, dimmed as one. The layers hold the bright values
+        // while it pulses and this is what swings, so the beat is a light
+        // going out rather than four opacities drifting apart.
+        .opacity(pulses ? (breath ? 1 : Self.trough) : 1)
         .animation(.easeInOut(duration: 0.4), value: alive)
         .animation(Parrot.pulse(breath), value: breath)
         .onChange(of: alive) { _, _ in spin() }
         .onAppear { spin() }
-        .onChange(of: pulsing, initial: true) { _, _ in breath = pulsing && !reduceMotion }
-        .onChange(of: reduceMotion) { _, _ in breath = pulsing && !reduceMotion }
+        .onChange(of: pulsing, initial: true) { _, _ in breath = pulses }
+        .onChange(of: reduceMotion) { _, _ in breath = pulses }
     }
+
+    private var pulses: Bool { pulsing && !reduceMotion }
+
+    /// How little is left at the bottom of a breath. Near dark on purpose: the
+    /// pulse has to be readable in the corner of an eye, and the top of the
+    /// swing is already the brightest this surface ever gets.
+    private static var trough: Double { 0.15 }
 
     /// The busy strength while the app is busy, and at the top of every breath.
     /// Nothing is brighter than `alive` was: the pulse borrows its values, so
     /// the surface has one bright and one resting look, not three.
     private func strength(_ rest: Double, _ bright: Double) -> Double {
-        (alive || breath ? bright : rest) * intensity
+        (alive || pulses ? bright : rest) * intensity
     }
 
     private func bloom(width: CGFloat, blur: CGFloat, opacity: Double, angle: Double) -> some View {

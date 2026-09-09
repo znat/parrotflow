@@ -399,9 +399,18 @@ final class PillHUD {
     private var wantedSize: NSSize {
         PillMetrics.panelSize(
             for: model.state, hasIcon: model.appIcon != nil, hotkey: model.shownHotkey,
-            docked: isDocked
+            dock: wantedDock
         )
     }
+
+    /// Which way the surface will hang, known before it is placed.
+    ///
+    /// The size is worked out first and `anchor` decides the dock after, so
+    /// this has to answer the same question early. It can: the anchor is read
+    /// at the press, and a dictation with none is the one that lands free.
+    /// Below and above are the same width, so the two attached cases are one
+    /// answer here.
+    private var wantedDock: Dock? { near == nil ? .free : .below }
 
     /// One number for the whole surface: the rise, the morph and the fade.
     ///
@@ -1389,12 +1398,17 @@ enum PillMetrics {
         return "\(initial) \(parts[1])"
     }
 
-    /// The tab while the microphone is open: the bird, and whatever the hold is
-    /// for when it is not dictation.
-    static func tabWidth(label: String?) -> CGFloat {
-        let mark = tabPadding * 2 + tabMark
-        guard let label else { return mark }
-        return mark + tabGap + min(title(label), editWidth) + selectionFit
+    /// The app icon on a tab that hangs off nothing. See `tabWidth`.
+    static let tabIcon: CGFloat = 20
+
+    /// The tab while the microphone is open: the bird, the icon when there is
+    /// no line to say where the words are going, and whatever the hold is for
+    /// when it is not dictation.
+    static func tabWidth(label: String?, icon: Bool = false) -> CGFloat {
+        var width = tabPadding * 2 + tabMark
+        if icon { width += tabGap + tabIcon }
+        guard let label else { return width }
+        return width + tabGap + min(title(label), editWidth) + selectionFit
     }
 
     /// Past this the words being edited are truncated rather than the tab
@@ -1455,13 +1469,13 @@ enum PillMetrics {
     }
 
     static func panelSize(
-        for state: PillState, hasIcon: Bool, hotkey: String = "", docked: Bool = false
+        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock? = nil
     ) -> NSSize {
-        let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey, docked: docked)
+        let width = width(for: state, hasIcon: hasIcon, hotkey: hotkey, dock: dock)
         let margin = bleed(for: state)
         return NSSize(
             width: width + margin * 2,
-            height: height(for: state, width: width, hotkey: hotkey, docked: docked) + margin * 2
+            height: height(for: state, width: width, hotkey: hotkey, dock: dock) + margin * 2
         )
     }
 
@@ -1599,7 +1613,7 @@ enum PillMetrics {
     /// An offer with nothing to say about the decode is the height the pill has
     /// always been, so a dictation that went fine changes nothing.
     static func height(
-        for state: PillState, width: CGFloat, hotkey: String = "", docked: Bool = false
+        for state: PillState, width: CGFloat, hotkey: String = "", dock: Dock? = nil
     ) -> CGFloat {
         guard case .offer(let commands, let headline, let reading, let open) = state else {
             // Docked, the recording and the transcribing are the bird's own tab
@@ -1607,7 +1621,7 @@ enum PillMetrics {
             // sentence needs the height it has always had whether it is hanging
             // off a line or floating at the bottom of the screen.
             if case .notice = state { return height }
-            return docked ? tabHeight : height
+            return dock == nil ? height : tabHeight
         }
         guard open else { return tabHeight }
         // A selection offer is three rows: the words, the chips, and the line
@@ -1701,20 +1715,23 @@ enum PillMetrics {
     static let meter: CGFloat = 66
 
     static func width(
-        for state: PillState, hasIcon: Bool, hotkey: String = "", docked: Bool = false
+        for state: PillState, hasIcon: Bool, hotkey: String = "", dock: Dock? = nil
     ) -> CGFloat {
+        // The icon says where the words are going, and a tab hanging off a line
+        // has already said it by hanging there. Free, nothing else says it.
+        let icon = hasIcon && dock == .free
         switch state {
         case .recording(let label):
-            // Docked, the whole recording state is the bird — no dot, no bars,
-            // no icon. A label still widens it, because tap-then-hold has to
-            // say what the hold is for before you speak.
-            guard docked else { return recording(hasIcon: hasIcon, label: label) }
-            return tabWidth(label: label)
+            // Docked, the whole recording state is the bird — no dot, no bars.
+            // A label still widens it, because tap-then-hold has to say what
+            // the hold is for before you speak.
+            guard dock != nil else { return recording(hasIcon: hasIcon, label: label) }
+            return tabWidth(label: label, icon: icon)
         case .working(let message):
             // Docked, the plumage travels through the bird while it thinks. The
             // message is what the undocked one is for — a download has no line
             // to hang from.
-            return docked ? tabWidth(label: nil) : text(message)
+            return dock == nil ? text(message) : tabWidth(label: nil, icon: icon)
         case .notice(let message, _): return text(message)
         case .offer(let commands, let headline, let reading, let open):
             guard open else { return tabWidth(hotkey: hotkey) }
@@ -2014,12 +2031,16 @@ struct PillView: View {
                 switch model.state {
                 case .recording(let label):
                     RecordingContent(
-                        level: model.level, icon: model.appIcon, label: label, docked: isDocked
+                        level: model.level, icon: model.appIcon, label: label,
+                        dock: model.docked
                     )
                     .transition(.opacity)
                 case .working(let message):
-                    MessageContent(message: message, tone: .thinking, docked: isDocked)
-                        .transition(.opacity)
+                    MessageContent(
+                        message: message, tone: .thinking, dock: model.docked,
+                        icon: model.appIcon
+                    )
+                    .transition(.opacity)
                 case .notice(let message, let tone):
                     MessageContent(message: message, tone: tone)
                         .transition(.opacity)
@@ -2217,9 +2238,9 @@ private struct RecordingContent: View {
     let icon: NSImage?
     /// What this recording is for, when it is not dictation.
     var label: String?
-    /// Hanging off the line the words are going into, which is the ordinary
-    /// case. See `body`.
-    var docked = false
+    /// Which way the surface hangs. Nil is the floating capsule; `.free` is
+    /// the tab with no line under it. See `body`.
+    var dock: Dock?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
@@ -2229,7 +2250,7 @@ private struct RecordingContent: View {
     private static let editedText = Color(red: 0.875, green: 0.941, blue: 0.906)
 
     var body: some View {
-        if docked { tab } else { capsule }
+        if dock == nil { capsule } else { tab }
     }
 
     /// The whole recording state, in the shape it ends in.
@@ -2244,6 +2265,12 @@ private struct RecordingContent: View {
             PlumageMeter(
                 level: Double(level), size: PillMetrics.tabMark, blind: icon == nil
             )
+            // Attached to a line, the line says where the words are going. Free
+            // it says nothing, so the icon comes back — the same job it did on
+            // the old floating capsule.
+            if dock == .free, let icon {
+                AppIconMark(icon: icon)
+            }
             if let label {
                 // In the highlight the offer uses for the same job, because it
                 // is the same claim: these words, the ones sitting in that
@@ -2303,21 +2330,44 @@ private struct RecordingContent: View {
     }
 }
 
+/// Where the words are going, on a tab with no line under it.
+///
+/// Smaller than the 22 the floating capsule drew it at: this sits in a 27pt tab
+/// beside an 18pt bird, and 22 filled it edge to edge.
+private struct AppIconMark: View {
+    let icon: NSImage
+
+    var body: some View {
+        Image(nsImage: icon)
+            .resizable()
+            .interpolation(.high)
+            .frame(width: PillMetrics.tabIcon, height: PillMetrics.tabIcon)
+    }
+}
+
 private struct MessageContent: View {
     let message: String
     let tone: NoticeTone
     /// Hanging off the line, where there is no room for a sentence and none
     /// needed: the bird standing full says the words are in and something is
     /// being done with them, which is the whole of what "Thinking…" said.
-    var docked = false
+    var dock: Dock?
+    /// Where the words are going, shown only on a tab that hangs off nothing.
+    /// See `RecordingContent.tab`.
+    var icon: NSImage?
 
     var body: some View {
-        if docked {
-            PlumageMeter(level: 1, size: PillMetrics.tabMark, working: true)
-                .padding(.horizontal, PillMetrics.tabPadding)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        } else {
+        if dock == nil {
             capsule
+        } else {
+            HStack(spacing: PillMetrics.tabGap) {
+                PlumageMeter(level: 1, size: PillMetrics.tabMark, working: true)
+                if dock == .free, let icon {
+                    AppIconMark(icon: icon)
+                }
+            }
+            .padding(.horizontal, PillMetrics.tabPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
     }
 
