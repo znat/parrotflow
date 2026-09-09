@@ -1,0 +1,35 @@
+# Both numbers scripts, in the order the shipped pipeline has them, with the
+# gates `en.py --when` and `fr.py --when` print.
+#
+# This is where the cross-language rule is scored, because it is not a fact
+# about either script on its own. Three things only a whole pipeline shows:
+#
+#   - **Detection.** `NLLanguageRecognizer` needs four words to answer and
+#     returns the first configured language below that, so "cent euros" and
+#     "vingt et un" arrive as English.
+#   - **The guard.** Above four words, a script whose language is not the
+#     detected one only writes a number whose own words include a unit, a teen
+#     or a tens word of its grammar. That is what keeps French from reading the
+#     `cents` in "I have 99 cents" as hundreds.
+#   - **The order.** `numbers_fr` runs on what `numbers_en` left.
+#
+# The steps are deliberately not gated on `language ==`. The language of a
+# transcript does not decide which numbers are in it: "on a mergé la pull
+# request avec vingt et un commits" is French with English in it.
+#
+# The grammars themselves are scored by examples/transforms/numbers/score.py.
+languages: [en, fr]
+transforms:
+  - name: numbers_en
+    description: spoken numbers as digits
+    command: en.py
+    returns: json
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: fr.py
+    returns: json
+pipeline:
+  - transform: numbers_en
+    when: /(?i)\b(?:seventeenth|eighteenth|fourteenth|nineteenth|seventieth|thirteenth|thousandth|billionth|eightieth|fifteenth|hundredth|millionth|ninetieth|seventeen|sixteenth|thirtieth|twentieth|eighteen|eleventh|fiftieth|fortieth|fourteen|nineteen|sixtieth|thirteen|thousand|trillion|billion|fifteen|hundred|million|seventh|seventy|sixteen|twelfth|eighth|eighty|eleven|fourth|ninety|thirty|twelve|twenty|eight|fifth|fifty|first|forty|ninth|seven|sixth|sixty|tenth|third|three|five|four|nine|zero|one|six|ten|two)\b/
+  - transform: numbers_fr
+    when: /(?i)\b(?:cinquantieme|cinquantième|huitantieme|huitantième|millionieme|millionième|quarantieme|quarantième|quatorzieme|quatorzième|septantieme|septantième|soixantieme|soixantième|nonantieme|nonantième|octantieme|octantième|cinquante|cinquieme|cinquième|milliards|quatrieme|quatrième|quinzieme|quinzième|septantes|treizieme|treizième|trentieme|trentième|troisieme|troisième|vingtieme|vingtième|centieme|centième|deuxieme|deuxième|douzieme|douzième|huitante|huitieme|huitième|milliard|millieme|millions|millième|neuvieme|neuvième|nonantes|premiere|première|quarante|quatorze|seizieme|seizième|septante|septieme|septième|soixante|dixieme|dixième|million|nonante|octante|onzieme|onzième|premier|sixieme|sixième|milles|quatre|quinze|treize|trente|unieme|unième|vingts|cents|douze|mille|seize|trois|vingt|cent|cinq|deux|huit|neuf|onze|sept|zero|zéro|dix|six|une|un)\b/

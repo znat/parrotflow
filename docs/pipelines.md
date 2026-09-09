@@ -7,7 +7,8 @@ transcription:
   pipeline:
     - interpret
     - vocabulary
-    - transform: numbers
+    - transform: numbers_en
+    - transform: numbers_fr
     - transform: dotted
       app: /term|ghostty|iterm|warp/
 ```
@@ -49,12 +50,17 @@ can get wrong.
 | `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
-`numbers` used to be a stage here. It is a shipped transform now —
-`examples/transforms/numbers/numbers.py`, listed as `- transform: numbers` —
-and a config still saying `- numbers` is refused by name, with both halves of
-the fix. It rewrites transcripts that were already correct, so run
+`numbers` used to be a stage here. It is a shipped transform now, and there is
+one script per language — `examples/transforms/numbers/en.py` and `fr.py`,
+listed as `- transform: numbers_en` and `- transform: numbers_fr`. Both run on
+every transcript: the language of a sentence does not decide which numbers are
+in it, and code-switching depends on every grammar getting a turn. A config
+still saying `- numbers` is refused by name, with both halves of the fix.
+
+It rewrites transcripts that were already correct, so run
 `examples/transforms/numbers/score.py --text "<line>"` to see what it would do
-before leaving it in.
+before leaving it in. Adding a language is a copy of one file — see the
+"Adding a language" note in `examples/transforms/numbers/engine.py`.
 
 ## The interpret stage
 
@@ -662,7 +668,7 @@ under two conditions. Named ones can:
 pipeline:
   - vocabulary
   - fuzzy
-  - transform: numbers
+  - transform: numbers_en
   - transform: dotted
     app: /term|ghostty|iterm|warp/
   - transform: prose
@@ -1057,9 +1063,9 @@ and see whether it turns blue.
 
 ### Order matters, and only one set notices
 
-`numbers` runs before `dotted`, because English says "three point one four" for
-a decimal and it is `numbers` that consumes that word. Swap the two and `dotted`
-gets there first: "three one.four". The `DECIMAL` cases in the set exist to fail
+`numbers_en` runs before `dotted`, because English says "three point one four"
+for a decimal and it is `numbers_en` that consumes that word. Swap the two and
+`dotted` gets there first: "three one.four". The `DECIMAL` cases in the set exist to fail
 if anyone reorders them.
 
 Transforms are also what the activation phrase reaches: "hey parrot, tidy that
@@ -1098,7 +1104,7 @@ A stage can carry a condition, which is what makes an expensive one affordable
 ```yaml
 pipeline:
   - vocabulary
-  - transform: numbers
+  - transform: numbers_fr
     when: /\b(vingt|cent|mille)\b/     # only if a number word is left
 ```
 
@@ -1154,12 +1160,11 @@ Stages add their own on top. `interpret.count` is how many boundaries it
 joined. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
 ones, and the sentence the stage was handed — and, for a prompt stage, `model`.
-The shipped `numbers` transform publishes `numbers.count` and
-`numbers.language`, the grammar that actually read the numbers, which is not
-the same answer as the pipeline's language. It carries a `when:` gate, so on
-a transcript with no number word in it the only thing under that name is
-`numbers.ran = false` — a later condition has to ask
-`numbers.ran && numbers.count == 0`, not `numbers.count == 0`. The name stage reads all three of
+Each shipped `numbers` script publishes `count` under its own name, so
+`numbers_en.count` and `numbers_fr.count`. Each carries a `when:` gate, so on a
+transcript with no number word in it the only thing under that name is
+`numbers_en.ran = false` — a later condition has to ask
+`numbers_en.ran && numbers_en.count == 0`, not `numbers_en.count == 0`. The name stage reads all three of
 the `vocabulary` ones: `changes` says which rules fired and `before` says
 *where*, because the rules leave no positions behind. A `command:` transform
 publishes whatever it likes; see
@@ -1259,7 +1264,7 @@ for any library: if the pipeline is ever rewritten in another language, the
 configs people have written keep meaning what they meant.
 
 ```
-paths          text, numbers.count, asr.confidence
+paths          text, numbers_en.count, asr.confidence
 literals       "a string", 12, 1.5, true, false
 operators      &&  ||  !  ==  !=  <  <=  >  >=
 methods        matches(re)  contains(s)  startsWith(s)  endsWith(s)
@@ -1523,7 +1528,7 @@ terminal and nowhere near an email:
 ```yaml
 pipeline:
   - vocabulary
-  - transform: numbers
+  - transform: numbers_en
     app: /term|ghostty|iterm|warp/
   - prompt: prose
     app: /^(?!.*(term|ghostty|iterm|warp))/
@@ -1627,7 +1632,7 @@ transforms:
       Use it to spell names and paths. Never quote it back.
 ```
 
-`{{context.text}}`, `{{numbers.count}}`, `{{language}}`, `{{app}}` — the same
+`{{context.text}}`, `{{numbers_en.count}}`, `{{language}}`, `{{app}}` — the same
 names `when:` reads, so there is one vocabulary rather than two.
 
 **A name with nothing behind it takes its paragraph with it.** Most variables

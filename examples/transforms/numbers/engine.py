@@ -1,26 +1,18 @@
-#!/usr/bin/env python3
-"""Spoken numbers as digits: "two hundred forty-three" -> 243. English and
-French, no model, no network.
+"""Reading spoken numbers, minus the language. Imported by `en.py` and `fr.py`.
 
-    - name: numbers
-      description: spoken numbers as digits
-      command: examples/numbers/numbers.py
-      returns: json
+Nothing here names a language. What a language brings is a `Grammar`: the word
+tables, how a tens word combines with what follows it, whether a bare scale
+word counts as one of itself, the article that stands in for one, how a decimal
+point and an ordinal are written, and the words that mark a percentage.
 
-    pipeline:
-      - transform: numbers
-        when: <the regex printed by `numbers.py --when`>
+Not a substitution table — there are infinitely many numbers, and "forty" means
+40 in "forty-three" and 40,000 in "forty thousand". About seventy words build
+every number in a language, so this parses a grammar over that vocabulary
+instead of enumerating results.
 
-Not a substitution table — there are infinitely many numbers, and "forty"
-means 40 in "forty-three" and 40,000 in "forty thousand". About seventy words
-build every number in a language, so this parses a grammar over that
-vocabulary instead of enumerating results.
-
-The grammar is `ENGLISH` and `FRENCH` below: the vocabulary and the three
-rules that differ. Everything else is the same in both. What is *not* in the
-grammar is the judgement that matters most: a lone number word below
-`DIGITS_FROM` stays a word, compounds convert whatever their size. That is why
-"à deux, on a dépensé deux cents euros" keeps its `deux` and writes 200, in
+What is *not* in the grammar is the judgement that matters most: a lone number
+word below `DIGITS_FROM` stays a word, compounds convert whatever their size.
+That is why "on a dépensé deux cents euros" keeps its `deux` and writes 200, in
 exactly the way "just the two of us" already did.
 
 The arithmetic is the easy half. The hard half is knowing where a number
@@ -35,41 +27,71 @@ descend. Anything else ends the number and begins the next one, which makes a
 fabricated value impossible: "ten fifteen" is two numbers, and comes out as
 "10 15".
 
-**Percent.** A number followed by "percent", "per cent" or "pour cent" is
+**Percent.** A number followed by one of the grammar's percent markers is
 written `75%`, and the marker is taken with it. Percent also lifts the
-below-ten floor: `five%` is never right, so "five percent" is 5%. No space
-before the sign in either language. French typography wants a narrow no-break
-space there; this writes `75%` in both, deliberately, because that is what was
-asked for and because the transcript is pasted into terminals and code fields
-as often as into prose.
+below-ten floor: `five%` is never right, so "five percent" is 5%. Never on an
+ordinal. The reverse is left alone: a scale word right after one of
+`bare_scale_blockers` is never read as a number, so "pour cent" with no number
+in front stays as heard.
 
-The reverse is left alone. "pour cent" with no number in front is the
-preposition and a hundred — "il paie pour cent euros" — and no number grammar
-can tell which was meant, so a scale word right after `pour` (or `per`) is
-never read as a number at all. That rule predates percent: it is what kept
-"soixante-quinze pour cent" from becoming "75 pour 100".
+**One script per language, all of them on every transcript.** The steps are not
+gated on `language ==`, because the language of a transcript does not decide
+which numbers are in it: "on a mergé la pull request avec vingt et un commits"
+is French with English in it, and "I have 99 cents" is English with a French
+word in it.
 
-**Which grammar.** `ctx.language` is the detected one and is tried first, then
-the rest of `ctx.languages` — the configured list, comma separated. Detection
-alone is not enough: the recogniser needs four words to answer and returns the
-fallback below that, so "cent euros" and "vingt et un" would be handed the
-English grammar and come back untouched.
+So each script runs, and each carries the guard that keeps the second one
+honest. When the transcript is four words or more — the length below which
+language detection is a coin toss — and `ctx.language` is not this script's
+language, a number is only written if its own words include a unit, a teen or a
+tens word of this grammar. A bare scale word is not enough. That is the "99
+cents" rule: English finds nothing to do, French reads `cents` as its word for
+hundreds, and a correct sentence came back as "I have 99 100".
 
-That fallback needs a guard, and the case that proved it was "I have 99
-cents": English finds nothing to do, French reads `cents` as its word for
-hundreds, and a correct sentence came back as "I have 99 100". So a language
-the recogniser did not choose has to bring more evidence than a bare scale
-word — a unit, a teen or a tens word — whenever the text was long enough to
-identify. Below four words nothing can be identified, so the bar comes down
-and every configured grammar gets a turn.
+Below four words the bar comes down and every grammar tries, because otherwise
+"cent euros" and "vingt et un" — two of the commonest things anyone dictates —
+would come back untouched.
 
-Publishes `numbers.language`, the grammar that actually read the numbers (the
-detected one when nothing changed — that is the grammar that was asked and
-declined, which is the useful answer to "why did this not become a digit"),
-and `numbers.count`, how many numbers it wrote.
+Each script publishes `count`, how many numbers it wrote, under its own
+transform name.
 
-Run bare and it reads stdin as plain text in English. Score it with `score.py`
-beside this file.
+## Adding a language
+
+Copy a language file and edit its tables. That is the whole job.
+
+    cd examples/transforms/numbers
+    cp fr.py es.py                    # then edit GRAMMAR: the word tables,
+                                      # two_digit, bare_scale_is_one,
+                                      # article_one, percent, the suffixes
+    cp cases-fr.yaml cases-es.yaml    # `transform: numbers_es` at the top
+    ./es.py --when                    # the regex for the pipeline step
+    ./score.py                        # scores every language file it finds
+
+Then two entries in `config.yaml`:
+
+    transforms:
+      - name: numbers_es
+        description: spoken numbers as digits
+        command: examples/numbers/es.py
+        returns: json
+        tests: { path: examples/numbers/cases-es.yaml }
+
+    pipeline:
+      - transform: numbers_es
+        when: /<what `es.py --when` printed>/
+
+Nothing in this file changes. If a language needs a rule that is not here —
+German fuses `einundzwanzig` into one token in reversed order, which breaks
+tokenising before a grammar is ever consulted — that is a change to the engine
+and it needs its own cases.
+
+## Scoring
+
+    ./score.py                                  # every language, from the tree
+    ./score.py --text "cent euros" --lang fr    # one line
+    ParrotFlow --eval numbers_en                # the installed copy, per language
+    ParrotFlow --eval numbers_fr
+    scripts/check-pipeline.sh                   # detection, the guard and the order
 """
 import json
 import os
@@ -88,28 +110,26 @@ DIGITS_FROM = 10
 DIGIT_RUN_LENGTH = 2
 
 # `DictationLanguage.minimumWords`: below four words the recogniser's answer is
-# a coin toss, so every configured grammar gets a turn instead.
+# a coin toss, so no grammar is held to the cross-language guard.
 MINIMUM_WORDS = 4
 
-# The Swift pass tokenises on `[\p{L}\p{N}']+`. `[^\W_]` is the same set here —
-# letters and digits, no underscore — and the apostrophe is the ASCII one only,
-# as it is there.
+# The Swift pass this replaces tokenised on `[\p{L}\p{N}']+`. `[^\W_]` is the
+# same set here — letters and digits, no underscore — and the apostrophe is the
+# ASCII one only, as it was there.
 WORD = re.compile(r"(?:[^\W_]|')+")
 
-
-def english_suffix(value):
-    if value % 100 in (11, 12, 13):
-        return "th"
-    return {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
+HYPHENS = ("-", "‑")
 
 
 class Grammar:
-    """The part of reading a spoken number that changes with the language.
+    """Everything about reading a number that changes with the language.
 
-    Everything else in this file is machinery, and none of it is English. What
-    is English is the vocabulary, how a tens word combines with what follows
-    it, whether a bare scale word counts as one of itself, and how a decimal
-    point and an ordinal are written.
+    `two_digit` is "additive" (a tens word takes at most one unit) or
+    "vigesimal" (see `parse_vigesimal`). `bare_scale_is_one` says whether a
+    scale word standing alone means one of itself. `article_one` is the word
+    that stands in for one before a scale word, or None. `percent` is a tuple
+    of word tuples. `bare_scale_blockers` are the words after which a scale
+    word is never a number.
     """
 
     def __init__(self, code, units, teens, tens, scales, hundred,
@@ -168,168 +188,14 @@ class Grammar:
         return (kind, 0) if kind else None
 
     @property
-    def word_tables(self):
-        return (self.units, self.teens, self.tens, self.scales,
-                self.ordinal_units, self.ordinal_teens, self.ordinal_tens,
-                self.ordinal_scales)
-
-
-ENGLISH = Grammar(
-    code="en",
-    units={
-        "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4,
-        "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
-    },
-    teens={
-        "ten": 10, "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
-        "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-        "nineteen": 19,
-    },
-    tens={
-        "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
-        "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
-    },
-    scales={
-        "thousand": 1000, "million": 1000000,
-        "billion": 1000000000, "trillion": 1000000000000,
-    },
-    hundred={"hundred"},
-    # "second" is deliberately missing. It is a unit of time far more often
-    # than an ordinal here, and the collision is not decidable without context:
-    # "a thirty second timeout" would become "a 32nd timeout". Leaving it out
-    # costs "the twenty second of March" and buys back every spoken duration.
-    ordinal_units={
-        "first": 1, "third": 3, "fourth": 4, "fifth": 5,
-        "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9,
-    },
-    ordinal_teens={
-        "tenth": 10, "eleventh": 11, "twelfth": 12, "thirteenth": 13,
-        "fourteenth": 14, "fifteenth": 15, "sixteenth": 16, "seventeenth": 17,
-        "eighteenth": 18, "nineteenth": 19,
-    },
-    ordinal_tens={
-        "twentieth": 20, "thirtieth": 30, "fortieth": 40, "fiftieth": 50,
-        "sixtieth": 60, "seventieth": 70, "eightieth": 80, "ninetieth": 90,
-    },
-    ordinal_scales={"thousandth": 1000, "millionth": 1000000,
-                    "billionth": 1000000000},
-    ordinal_hundred={"hundredth"},
-    connectors={"and": "and", "point": "point", "oh": "oh"},
-    two_digit="additive",
-    # "hundreds of people" is not 100 of people.
-    bare_scale_is_one=False,
-    # "a hundred and fifty" is a number said aloud; "a" anywhere else is an
-    # article. Not extended past thousand: "a million reasons" is a figure of
-    # speech, not a figure.
-    article_one="a",
-    bare_scale_blockers={"per"},
-    percent=(("percent",), ("per", "cent")),
-    decimal_separator=".",
-    ordinal_suffix=english_suffix,
-)
-
-# French. The three rules that differ, in the order they hurt:
-#
-#   - **70, 80, 90 are arithmetic.** `soixante-dix` is 60 + 10,
-#     `quatre-vingts` is 4 × 20, `quatre-vingt-dix-sept` is 4 × 20 + 10 + 7.
-#     English's rule — a tens word takes at most one unit — is what stops "ten
-#     fifteen" being 25, so French gets its own, `vigesimal`.
-#   - **`et` joins.** `vingt et un`, `soixante et onze`. It is a connector
-#     rather than vocabulary, so it only ever binds with a number on both
-#     sides and cannot fire on ordinary French.
-#   - **Bare scales count.** `cent cinquante` is 150 and `mille` is 1000,
-#     where English "hundred" alone is not 100.
-#
-# Hyphens are not in these tables on purpose. The tokeniser splits on them, so
-# `quatre-vingt-dix-sept` arrives as four tokens and is read by the same path
-# as the same words spoken with spaces — which is what the decoder actually
-# writes, and it varies between the two.
-#
-# `seconde` is left out for the reason `second` is left out of English: it is a
-# unit of time more often than an ordinal, and "trente secondes" must not
-# become "30 2èmes".
-FRENCH = Grammar(
-    code="fr",
-    units={
-        "zéro": 0, "zero": 0,
-        # "une" is the same number and a very common article. It is safe here
-        # only because a lone unit below ten stays a word — see `DIGITS_FROM` —
-        # so "une question" is never touched.
-        "un": 1, "une": 1,
-        "deux": 2, "trois": 3, "quatre": 4, "cinq": 5,
-        "six": 6, "sept": 7, "huit": 8, "neuf": 9,
-    },
-    teens={
-        "dix": 10, "onze": 11, "douze": 12, "treize": 13,
-        "quatorze": 14, "quinze": 15, "seize": 16,
-    },
-    tens={
-        "vingt": 20, "vingts": 20,
-        "trente": 30, "quarante": 40, "cinquante": 50, "soixante": 60,
-        # Belgium and Switzerland, where the vigesimal detour does not exist.
-        # They live in the same grammar rather than a `fr_BE` of their own
-        # because the two vocabularies are disjoint — nobody says both
-        # "septante" and "soixante-dix" — so a table holding both reads either
-        # speaker without having to know which one is talking. Which is just as
-        # well, since nothing upstream knows.
-        "septante": 70, "septantes": 70,
-        "octante": 80, "huitante": 80,
-        "nonante": 90, "nonantes": 90,
-    },
-    scales={
-        "mille": 1000, "milles": 1000,
-        "million": 1000000, "millions": 1000000,
-        "milliard": 1000000000, "milliards": 1000000000,
-    },
-    hundred={"cent", "cents"},
-    ordinal_units={
-        "premier": 1, "première": 1, "premiere": 1,
-        # The form "premier" takes only when it follows a tens word: "vingt et
-        # unième" is 21st, and without this it came back as "20 et unième".
-        "unième": 1, "unieme": 1,
-        "deuxième": 2, "deuxieme": 2,
-        "troisième": 3, "troisieme": 3, "quatrième": 4, "quatrieme": 4,
-        "cinquième": 5, "cinquieme": 5, "sixième": 6, "sixieme": 6,
-        "septième": 7, "septieme": 7, "huitième": 8, "huitieme": 8,
-        "neuvième": 9, "neuvieme": 9,
-    },
-    ordinal_teens={
-        "dixième": 10, "dixieme": 10, "onzième": 11, "onzieme": 11,
-        "douzième": 12, "douzieme": 12, "treizième": 13, "treizieme": 13,
-        "quatorzième": 14, "quatorzieme": 14, "quinzième": 15,
-        "quinzieme": 15, "seizième": 16, "seizieme": 16,
-    },
-    ordinal_tens={
-        "vingtième": 20, "vingtieme": 20, "trentième": 30, "trentieme": 30,
-        "quarantième": 40, "quarantieme": 40, "cinquantième": 50,
-        "cinquantieme": 50, "soixantième": 60, "soixantieme": 60,
-        "septantième": 70, "septantieme": 70,
-        "octantième": 80, "octantieme": 80, "huitantième": 80,
-        "huitantieme": 80, "nonantième": 90, "nonantieme": 90,
-    },
-    ordinal_scales={"millième": 1000, "millieme": 1000,
-                    "millionième": 1000000, "millionieme": 1000000},
-    ordinal_hundred={"centième", "centieme"},
-    connectors={"et": "and", "virgule": "point"},
-    two_digit="vigesimal",
-    bare_scale_is_one=True,
-    # None. French says "cent", not "un cent", and `un` is already the unit —
-    # an article rule here would fire on every "un" in the language.
-    article_one=None,
-    # "pour cent" and "pour mille" are the percent and per-mille signs.
-    bare_scale_blockers={"pour"},
-    percent=(("pour", "cent"),),
-    decimal_separator=",",
-    # 1er, then 2e, 3e. The feminine "1re" cannot be known from the number, and
-    # the masculine is the form that reads acceptably either way.
-    ordinal_suffix=lambda value: "er" if value == 1 else "e",
-)
-
-GRAMMARS = {"en": ENGLISH, "fr": FRENCH}
-
-
-def grammar_named(code):
-    return GRAMMARS.get(code, ENGLISH)
+    def every_word(self):
+        """Every word this grammar reads as a number, for `--when`."""
+        words = set(self.hundred) | set(self.ordinal_hundred)
+        for table in (self.units, self.teens, self.tens, self.scales,
+                      self.ordinal_units, self.ordinal_teens,
+                      self.ordinal_tens, self.ordinal_scales):
+            words |= set(table)
+        return words
 
 
 class Token:
@@ -384,9 +250,6 @@ class Number:
         return self.end - self.begin
 
 
-HYPHENS = ("-", "‑")
-
-
 def tokenize(text):
     matches = list(WORD.finditer(text))
     tokens = []
@@ -431,7 +294,7 @@ def runs(tokens, g):
             item = Item(("unit", 1), False, index)
         elif (g.connector(token.text) and continues and token.joined_to_next
                 and following is not None and g.classify(following.text)):
-            # Number words on both sides, or it is just English: "one and two
+            # Number words on both sides, or it is just prose: "one and two
             # came back", "the point five people missed".
             item = Item(g.connector(token.text), False, index)
 
@@ -471,17 +334,17 @@ def parse_two_digit(run, start, g):
 def parse_vigesimal(run, start, g):
     """Below 100 in a language that counts in twenties.
 
-    Three shapes English does not have, and they compose:
+    Three shapes the additive rule does not have, and they compose:
 
-        soixante-dix            60 + 10          a tens word taking a teen
-        quatre-vingts           4 × 20           a unit multiplying a tens
-        quatre-vingt-dix-sept   4 × 20 + 10 + 7  both, and a teen taking a unit
+        a tens word taking a teen           60 + 10
+        four multiplying a twenty          4 × 20
+        both at once, and a teen plus one  4 × 20 + 10 + 7
 
     The multiplication is deliberately narrow — only four, only twenty. A
     general "unit times tens" rule would read "deux vingt" as 40, which is not
     French and would fabricate a number out of two ordinary words. Every
-    widening here has to be paid for in cases.yaml, because this is the
-    function where a wrong answer looks like a right one.
+    widening here has to be paid for in the language's case file, because this
+    is the function where a wrong answer looks like a right one.
     """
     item = run[start]
     kind, value = item.word
@@ -574,7 +437,7 @@ def parse_number(run, start, g):
     """One number, ending the moment the words stop describing one."""
     index = start
     total = 0
-    last_scale = None            # None means "no scale yet", i.e. Int.max
+    last_scale = None            # None means "no scale yet"
     ordinal = False
     scaled = False
     seen = False
@@ -772,7 +635,20 @@ def written(number, g):
     return str(number.value)
 
 
-def convert(run, tokens, g):
+def has_plain_word(run, number):
+    """Whether the number's own words include a unit, a teen or a tens word.
+
+    The cross-language guard. A bare scale word is not enough evidence that
+    this grammar is the right one to read the sentence: `cents` is French for
+    hundreds and English for money, and "I have 99 cents" came back as "I have
+    99 100". Asked of the number's own span rather than of the whole text, so
+    an unrelated number word elsewhere in the sentence cannot vouch for it.
+    """
+    return any(run[position].word[0] in ("unit", "teen", "tens")
+               for position in range(number.begin, number.end))
+
+
+def convert(run, tokens, g, guarded):
     """The replacements one run asks for: (start, end, text) in `tokens`' string."""
     numbers = []
     index = 0
@@ -791,6 +667,8 @@ def convert(run, tokens, g):
 
     replacements = []
     for number in pair_groups(numbers):
+        if guarded and not has_plain_word(run, number):
+            continue
         marker = None
         # Not on an ordinal: "the fifth percent" is not a percentage, and
         # "5th%" is not a thing anyone would type.
@@ -809,7 +687,7 @@ def convert(run, tokens, g):
     return replacements
 
 
-def apply_grammar(text, g):
+def apply_grammar(text, g, guarded=False):
     """`(text, count)` — the rewrite and how many numbers it wrote."""
     tokens = tokenize(text)
     if not tokens:
@@ -817,7 +695,7 @@ def apply_grammar(text, g):
 
     replacements = []
     for run in runs(tokens, g):
-        replacements += convert(run, tokens, g)
+        replacements += convert(run, tokens, g, guarded)
     if not replacements:
         return text, 0
 
@@ -827,80 +705,45 @@ def apply_grammar(text, g):
     return out, len(replacements)
 
 
-def has_plain_number_word(text, g):
-    """Whether the text contains a word this grammar reads as a unit, a teen or
-    a tens word — as opposed to only a scale word, which is where the two
-    languages collide."""
-    for token in tokenize(text):
-        classified = g.classify(token.text)
-        if classified and classified[0][0] in ("unit", "teen", "tens"):
-            return True
-    return False
+def read(text, g, language=None):
+    """`(text, count)`, with the cross-language guard applied when it applies.
 
-
-def read(text, language="en", languages=None):
-    """`(text, language, count)` — the rewrite, the grammar that read it, and
-    how many numbers it wrote.
-
-    The detected language is tried first and the rest of the configured list
-    after it, stopping at the one that changes something. When nothing changed
-    there is no winner and the detected language is reported.
+    `language` is `ctx.language`, the language the pipeline detected. Below
+    `MINIMUM_WORDS` it decides nothing and the guard is off.
     """
-    languages = [code for code in (languages or []) if code] or [language or "en"]
-    fallback = languages[0]
-    detected = language if language in languages else fallback
-
-    out, count = apply_grammar(text, grammar_named(detected))
-    if out != text:
-        return out, detected, count
-
-    identifiable = len(text.split()) >= MINIMUM_WORDS and len(languages) > 1
-    for code in languages:
-        if code == detected:
-            continue
-        g = grammar_named(code)
-        out, count = apply_grammar(text, g)
-        if out == text:
-            continue
-        if identifiable and not has_plain_number_word(text, g):
-            continue
-        return out, code, count
-    return text, detected, 0
+    guarded = ((language or g.code) != g.code
+               and len(text.split()) >= MINIMUM_WORDS)
+    return apply_grammar(text, g, guarded=guarded)
 
 
-def gate():
-    """A regex matching every word any grammar here reads as a number.
+def gate(g):
+    """A regex matching every word this grammar reads as a number.
 
     Printed by `--when` and written onto the pipeline step, so the python3
     start is paid only on a transcript that could contain a number. Generated
     rather than typed: a gate that misses a word is a silent miss, and nothing
     would show it happening. `score.py` fails if a case that must change does
-    not match this.
+    not match it.
 
-    Connectors ("and", "point", "et", "virgule") and the article "a" are left
-    out. None of them makes a number without one of these words beside it.
-    Percent markers are left out for the same reason: "percent" alone writes
-    nothing. `(?i)` is stated rather than assumed — the pipeline compiles a
-    `when:` pattern case-insensitively already, but the regex is also read by
-    `score.py` and by whoever pastes it somewhere else.
+    Connectors and the article are left out. Neither makes a number without one
+    of these words beside it. Percent markers are left out for the same reason:
+    "percent" alone writes nothing. `(?i)` is stated rather than assumed — the
+    pipeline compiles a `when:` pattern case-insensitively already, but the
+    regex is also read by `score.py` and by whoever pastes it somewhere else.
     """
-    words = set()
-    for g in GRAMMARS.values():
-        for table in g.word_tables:
-            words |= set(table)
-        words |= g.hundred | g.ordinal_hundred
-    ordered = sorted(words, key=lambda word: (-len(word), word))
+    ordered = sorted(g.every_word, key=lambda word: (-len(word), word))
     return r"(?i)\b(?:" + "|".join(ordered) + r")\b"
 
 
-def main():
+def main(g):
+    """The whole entry point. A language file is a `Grammar` and this call."""
     if "--when" in sys.argv[1:]:
-        print(gate())
+        print(gate(g))
         return
 
     # ParrotFlow sets PARROTFLOW_PROTOCOL=json when the transform declares
     # `returns: json`, and then stdin is the envelope. Unset is the plain path,
-    # which is what a bare `echo … | numbers.py` gets.
+    # which is what a bare `echo … | en.py` gets.
     structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
     raw = sys.stdin.read()
     envelope = json.loads(raw) if structured else {"text": raw}
@@ -908,22 +751,12 @@ def main():
     ctx = envelope.get("ctx") or {}
 
     try:
-        language = ctx.get("language") or "en"
-        # The configured list, comma separated — the scope holds scalars. It is
-        # what the multi-language rule needs and detection cannot give.
-        configured = [code.strip().lower()
-                      for code in (ctx.get("languages") or "").split(",")
-                      if code.strip()]
-        out, read_by, count = read(text, language, configured or [language])
+        out, count = read(text, g, ctx.get("language"))
     except Exception:
         # Fail open — never drop the whole transcript because a guard threw.
-        out, read_by, count = text, ctx.get("language") or "en", 0
+        out, count = text, 0
 
     if not structured:
         sys.stdout.write(out)
         return
-    print(json.dumps({"text": out, "vars": {"language": read_by, "count": count}}))
-
-
-if __name__ == "__main__":
-    main()
+    print(json.dumps({"text": out, "vars": {"count": count}}))

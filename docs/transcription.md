@@ -794,9 +794,11 @@ which is the reason that command prints the linkage rather than assuming it.
 Getting the real thing means vendoring and notarising a native blob for one
 pass. Not worth it.
 
-`examples/transforms/numbers/numbers.py` does it instead: no model, no library,
-a linear scan. It is a shipped command transform, so it is on only when the
-pipeline lists `- transform: numbers` — alone among these passes it rewrites
+`examples/transforms/numbers/` does it instead: no model, no library, a linear
+scan. It is a shipped command transform with one script per language — `en.py`,
+`fr.py`, and `engine.py` holding everything that is not a language — so it is
+on only when the pipeline lists `- transform: numbers_en` and
+`- transform: numbers_fr`. Alone among these passes it rewrites
 transcripts that were already correct, and whether "chapter three" wants a 3 is
 a question of house style rather than of accuracy. About seventy words build
 every number in English, so it parses a grammar over that vocabulary rather
@@ -843,7 +845,14 @@ either language, and percent lifts the below-ten floor because `five%` is never
 right. The other direction is left alone: "pour cent" with no number in front is
 the preposition and a hundred, so "il paie pour cent euros" is untouched.
 
-`examples/transforms/numbers/score.py` scores the set, and `--text "<line>"`
-runs a single line. `ParrotFlow --eval numbers` scores the copy installed on
-this machine, through the real pipeline, which is where language detection is
-exercised.
+`examples/transforms/numbers/score.py` scores every language, and
+`--text "<line>" --lang fr` runs a single line. `ParrotFlow --eval numbers_en`
+and `--eval numbers_fr` score the copies installed on this machine.
+
+Which script reads a given sentence is a question about the pipeline, not about
+either grammar, so it is scored there: `tests/pipelines/numbers.yaml` and the
+`numbers` cases in `tests/pipeline-cases.yaml`. Both scripts run on every
+transcript. Above four words, a script whose language is not the detected one
+only writes a number whose own words include a unit, a teen or a tens word of
+its grammar — that is what keeps French from reading the `cents` in "I have 99
+cents" as hundreds.

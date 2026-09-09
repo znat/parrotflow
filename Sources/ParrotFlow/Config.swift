@@ -2735,19 +2735,24 @@ struct Config: Decodable, Equatable {
     /// answer for a name that used to work. The stage still exists; it is a
     /// shipped transform now, and the config needs two lines rather than one.
     static let retiredStages = [
-        "numbers": "is a shipped transform now, not a built-in stage."
-            + " Write `- transform: numbers` in the pipeline, and add it to"
-            + " `transforms:`:  - name: numbers / description: spoken numbers"
-            + " as digits / command: examples/numbers/numbers.py /"
-            + " returns: json.  Its `when:` gate is printed by"
-            + " `examples/numbers/numbers.py --when`",
+        "numbers": "is two shipped transforms now, one per language, not a"
+            + " built-in stage. Add both to `transforms:` —"
+            + " `name: numbers_en`, `command: examples/numbers/en.py`,"
+            + " `returns: json`, and the same with `_fr` and `fr.py` — then"
+            + " write `- transform: numbers_en` and `- transform: numbers_fr`"
+            + " in the pipeline, in that order. Each step takes the `when:`"
+            + " gate its own script prints:"
+            + " `examples/numbers/en.py --when`",
     ]
 
-    /// The same sentence, for a `- transform: numbers` that names nothing.
+    /// The same sentence, for a `- transform: numbers…` that names nothing.
     /// Half the migration done: the pipeline line was rewritten and the
-    /// `transforms:` entry was not.
+    /// `transforms:` entry was not. A per-language name is answered by the
+    /// entry for the stage it came from.
     static func retiredStageAdvice(_ name: String) -> String? {
-        retiredStages[name.lowercased()]
+        let lowered = name.lowercased()
+        if let exact = retiredStages[lowered] { return exact }
+        return retiredStages.first { lowered.hasPrefix($0.key + "_") }?.value
     }
 
     func problems() -> [String] {

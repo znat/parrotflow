@@ -20,9 +20,9 @@ languages: [en]
 
 
 transforms:
-  - name: numbers
+  - name: numbers_en
     description: spoken numbers as digits
-    command: numbers.py
+    command: en.py
     returns: json
 
 vocabulary:
@@ -36,4 +36,4 @@ pipeline:
   # it declines, which from here it always does.
   - vocabulary
   - context
-  - transform: numbers
+  - transform: numbers_en

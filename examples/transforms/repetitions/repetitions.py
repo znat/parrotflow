@@ -16,8 +16,8 @@ what is already there, so it can run on every transcript — no model, no
 network.
 
 Must run after `fillers` (a filler between the copies hides the repeat, "It's
-the uh the summary") and after the `numbers` transform ("two two three" is 223,
-not 23 with "two" collapsed first).
+the uh the summary") and after the `numbers` transforms ("two two three" is
+223, not 23 with "two" collapsed first).
 
 Timing is not used to tell a stutter from an intentional repeat. Measured over
 281 clips and 9014 words: the first copy of a disfluent repeat is not drawled,

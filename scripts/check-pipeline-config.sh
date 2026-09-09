@@ -366,11 +366,11 @@ check "and the message shows both spellings" \
 
 # --- the retired numbers stage ------------------------------------------------
 #
-# `numbers` was a built-in stage and is a shipped transform now. Every config
-# written before that carries `- numbers` as a bare line, and a line that
-# silently does nothing would stop converting numbers without a word. So the
-# name is refused by name, and the message says both halves of the fix: the
-# pipeline line and the `transforms:` entry.
+# `numbers` was a built-in stage and is two shipped transforms now, one per
+# language. Every config written before that carries `- numbers` as a bare
+# line, and a line that silently does nothing would stop converting numbers
+# without a word. So the name is refused by name, and the message says both
+# halves of the fix: the two `transforms:` entries and the two pipeline lines.
 
 run_config retired_numbers 'transcription:
   languages: [en, fr]
@@ -380,28 +380,31 @@ run_config retired_numbers 'transcription:
 
 check "a bare - numbers line is refused" "$code" "1"
 check "and the message says it is a transform now" \
-  "$(printf '%s\n' "$out" | grep -c 'is a shipped transform now')" "1"
+  "$(printf '%s\n' "$out" | grep -c 'is two shipped transforms now')" "1"
 check "and says what to write in the pipeline" \
-  "$(printf '%s\n' "$out" | grep -c 'transform: numbers')" "1"
+  "$(printf '%s\n' "$out" | grep -c 'transform: numbers_en')" "1"
+check "and names the other language too" \
+  "$(printf '%s\n' "$out" | grep -c 'transform: numbers_fr')" "1"
 check "and does not offer the list of stages instead" \
   "$(printf '%s\n' "$out" | grep -c 'is not a stage')" "0"
 check "and the rest of the pipeline still runs" "$(stages)" "vocabulary"
 
 # Half the migration: the pipeline line rewritten, the `transforms:` entry
 # forgotten. The message has to name the missing half rather than only say the
-# transform is unknown.
+# transform is unknown — and it answers a per-language name, which is what
+# somebody who read the first message will have typed.
 
 run_config numbers_undeclared 'transcription:
   languages: [en, fr]
   pipeline:
     - vocabulary
-    - transform: numbers'
+    - transform: numbers_en'
 
 check "an undeclared numbers transform is refused" "$code" "1"
 check "and the message says to declare it" \
-  "$(printf '%s\n' "$out" | grep -c 'no transform named "numbers"')" "1"
+  "$(printf '%s\n' "$out" | grep -c 'no transform named "numbers_en"')" "1"
 check "and says where the script is" \
-  "$(printf '%s\n' "$out" | grep -c 'examples/numbers/numbers.py')" "1"
+  "$(printf '%s\n' "$out" | grep -c 'examples/numbers/en.py')" "1"
 
 # --- the retired key ----------------------------------------------------------
 #

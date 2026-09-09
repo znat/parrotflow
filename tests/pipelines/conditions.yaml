@@ -3,9 +3,9 @@
 # tested is that a condition gates a step, not what that step does.
 languages: [en, fr]
 transforms:
-  - name: numbers
+  - name: numbers_fr
     description: spoken numbers as digits
-    command: numbers.py
+    command: fr.py
     returns: json
 
 vocabulary:
@@ -15,5 +15,5 @@ vocabulary:
 pipeline:
   - vocabulary
   # Never rewrite inside a code fence.
-  - transform: numbers
+  - transform: numbers_fr
     unless: /```/

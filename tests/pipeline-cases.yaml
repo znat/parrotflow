@@ -46,7 +46,7 @@ cases:
 
   # --- a condition reads the text as it stands, not as it arrived ---------
   # The whole reason conditions are evaluated per stage rather than once up
-  # front. `replacements` deletes the filler word, so by the time `numbers` is
+  # front. The filler transform deletes the word, so by the time `numbers_fr` is
   # asked whether "genre" is present, it is not — and the stage does not run,
   # even though the sentence arrived containing it.
   #
@@ -267,8 +267,8 @@ cases:
     expect_vars:
       vocabulary.count: 1
       vocabulary.changed: true
-      numbers.language: fr
-      numbers.changed: true
+      numbers_fr.count: 1
+      numbers_fr.changed: true
       first.count: 2
       second.count: 7
       second.label: kept
@@ -499,7 +499,7 @@ cases:
       context.chars: 0
       context.declined: nothing was captured when the hotkey went down
 
-  # The stage sits between `replacements` and `numbers` in the fixture, so this
+  # The stage sits between `vocabulary` and `numbers_en` in the fixture, so this
   # case is also the answer to "does a stage that publishes variables disturb
   # the ones either side of it". Both still fire.
   - name: a declining context leaves the stages around it alone
@@ -510,7 +510,7 @@ cases:
     expect_vars:
       context.changed: false
       vocabulary.count: 1
-      numbers.ran: true
+      numbers_en.ran: true
 
   # A non-terminal used to decline here for its own reason. It cannot any more:
   # the terminal check moved to the press, so from `--pipeline` every app gets
@@ -632,7 +632,7 @@ cases:
       input.ok: false
       input.changed: false
       vocabulary.count: 1
-      numbers.ran: true
+      numbers_en.ran: true
 
   # --- the name judge, on what a `replacements` rule did -----------------------
   #
@@ -856,6 +856,60 @@ cases:
 # transcript, and what is being checked is that `--check-config` says the useful
 # thing rather than that some stage did something. `expect_problem` is a
 # substring — the whole message is prose and would tie a case to its wording.
+  # --- the numbers scripts, and the language rule between them ------------
+  #
+  # These were `lang: auto` cases in the old single-script set. They are not
+  # about either grammar: they are about detection, the cross-language guard
+  # and the order of the two steps, which only a pipeline has. The fixture says
+  # what each of the three is for.
+
+  # Below four words nothing can be identified, so every grammar tries. Without
+  # that, "cent euros" and "vingt et un" — two of the commonest things anyone
+  # dictates — arrive as English and come back untouched.
+  - { name: "too short to detect: cent euros", pipeline: numbers, input: cent euros, expect: 100 euros }
+  - { name: "too short to detect: vingt et un", pipeline: numbers, input: vingt et un, expect: '21' }
+  - { name: "too short to detect: quatre-vingts", pipeline: numbers, input: quatre-vingts, expect: '80' }
+  - { name: "too short to detect: two hundred euros", pipeline: numbers, input: two hundred euros, expect: 200 euros }
+  - { name: "too short to detect: twenty one", pipeline: numbers, input: twenty one, expect: '21' }
+
+  # Code-switching, which is the reason the steps are not gated on `language`.
+  # A French number word carries enough evidence for the French script to act
+  # inside an English sentence, and the other way round.
+  - name: a French number inside a sentence of English vocabulary
+    pipeline: numbers
+    input: on a mergé la pull request avec vingt et un commits
+    expect: on a mergé la pull request avec 21 commits
+  - name: an English number, read by the English script
+    pipeline: numbers
+    input: I ate two of the twenty one fishes
+    expect: I ate two of the 21 fishes
+
+  # And both scripts still leave alone what they should.
+  - { name: "two grammars, still below the floor", pipeline: numbers, input: on est deux sur le projet, expect: unchanged }
+  - { name: "two grammars, one question", pipeline: numbers, input: I have one question, expect: unchanged }
+  - { name: "two grammars, chapitre trois", pipeline: numbers, input: chapitre trois du livre, expect: unchanged }
+
+  # Where the two vocabularies collide. "cents" is French for hundreds and
+  # English for money, and the fallback that makes short French work turned "I
+  # have 99 cents" into "I have 99 100". A script whose language is not the
+  # detected one now has to find a unit, a teen or a tens word inside the
+  # number it is about to write. A bare scale word is not enough.
+  - { name: "the cents collision", pipeline: numbers, input: I have 99 cents, expect: unchanged }
+  - { name: "the cents collision, mid-sentence", pipeline: numbers, input: it costs 50 cents each, expect: unchanged }
+  # The guard is asked about the number's own words, not about the sentence, so
+  # an unrelated French-looking word elsewhere cannot vouch for `cents`.
+  - { name: "an unrelated number word does not vouch for cents", pipeline: numbers, input: we made two hundred cents on six, expect: we made 200 cents on six }
+  # Same word, but the English script reads the number, so nothing falls through.
+  - { name: "cents after a number English itself read", pipeline: numbers, input: we made two hundred cents, expect: we made 200 cents }
+  # And the guard must not cost the French it was built for.
+  - { name: "the guard does not cost real French", pipeline: numbers, input: j'ai payé deux cents euros hier, expect: j'ai payé 200 euros hier }
+  - { name: "the guard does not cost Belgian French", pipeline: numbers, input: j'en ai quatre cent septante-huit, expect: j'en ai 478 }
+
+  # Already digits, or below the floor in both languages.
+  - { name: "already digits", pipeline: numbers, input: I was born in 1975, expect: unchanged }
+  - { name: "just the two of us", pipeline: numbers, input: Just the two of us, expect: unchanged }
+  - { name: "seulement nous deux", pipeline: numbers, input: Seulement nous deux, expect: unchanged }
+
 refused:
   - name: a condition reading a stage that runs later is refused
     pipeline: reads-later-stage

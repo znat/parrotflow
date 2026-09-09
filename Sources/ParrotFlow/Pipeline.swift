@@ -15,11 +15,10 @@ import Foundation
 /// from outside the code.
 ///
 /// The language a transcript is in is seeded into the scope here, so a step
-/// can say `when: language == "fr"`. The whole configured list is seeded too,
-/// as `languages`. A stage that reads numbers cannot work from the detected
-/// language alone: its rule is "try the detected one, then the others, and let
-/// a candidate win only on real evidence" — the guard that stops French
-/// reading the "cents" in "I have 99 cents" as hundreds.
+/// can say `when: language == "fr"`. It is what a `command:` transform reads
+/// as `ctx.language`, and a step is free to ignore it: the numbers scripts all
+/// run on every transcript, because the language of a sentence does not decide
+/// which numbers are in it.
 struct Pipeline: Equatable, Codable {
 
     /// One step. Deliberately not a closure: a stage has to be nameable in a
@@ -752,13 +751,6 @@ struct Pipeline: Equatable, Codable {
         if scope["language"] == nil {
             scope.set("language", .string(Pipeline.language(of: output, config: config)))
         }
-        // The configured list beside the detected one, comma separated because
-        // the scope holds scalars. `numbers` needs it: detection needs four
-        // words to answer, so "cent euros" arrives as English and only the
-        // rest of the list can read it.
-        scope.set(
-            "languages", .string(config.transcription.languages.joined(separator: ","))
-        )
         // Same reason, for the acoustic pass. It runs inside transcription and
         // seeds these itself; every other way in — `--replace`, `--pipeline`,
         // a case set — has no audio and so seeds nothing, and a condition
