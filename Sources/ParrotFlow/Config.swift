@@ -723,12 +723,30 @@ struct Config: Decodable, Equatable {
     /// spotter fires where the audio agrees — and dropping the rules would
     /// change what the pipeline sees on every clip. It is a measurement of its
     /// own, not a side effect of adding the sound.
+    ///
+    /// **A rendering that opens a sound group is not a rule.** `Mik` writing
+    /// down `heard: Mick` while `Mick` is a term of its own does not mean
+    /// every "Mick" is Mik — it means the two share a sound. A rule there
+    /// rewrites the sentence before anything can read it. The same holds for a
+    /// rendering two terms both claim: one of them would win by sort order.
+    /// Those words open the group instead, and `SoundGroup` decides. See
+    /// `docs/proposals/sound-groups.md`.
+    ///
+    /// One rule per source. Two rules with the same left side are a rewrite
+    /// that depends on which one the pass reads first.
     var vocabularyRules: [Transcription.Rule] {
-        vocabulary.terms
+        let opens = SoundGroup.openings(in: vocabulary.terms)
+        var written = Set<String>()
+        return vocabulary.terms
             .flatMap { term, entry in
-                entry.heard.map { Transcription.Rule(source: $0, replacement: term) }
+                entry.heard.map { (source: $0, term: term) }
             }
-            .sorted { $0.source < $1.source }
+            .sorted { ($0.source, $0.term) < ($1.source, $1.term) }
+            .compactMap { pair in
+                guard !opens.contains(pair.source.lowercased()) else { return nil }
+                guard written.insert(pair.source).inserted else { return nil }
+                return Transcription.Rule(source: pair.source, replacement: pair.term)
+            }
     }
 
     /// The pronunciations that will be searched for in the audio, with the
