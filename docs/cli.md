@@ -764,8 +764,9 @@ $PF --panel-sheet s.png   # draw every surface into one PNG, light beside dark
 ```
 
 `--panels` takes `pill`, `notice`, `caution`, `failure`, `thinking`, `offer`,
-`confidence`, `vocabulary`, `punctuation`, `rule`, `dictation`, `preview`,
-`microphone`, `update`, `setup` or `sequence`.
+`confidence`, `learn`, `learn-long`, `selector`, `selector-long`,
+`selector-two`, `vocabulary`, `punctuation`, `rule`, `dictation`, `preview`,
+`microphone`, `keyboard`, `update`, `setup`, `launch` or `sequence`.
 `--panel-sheet` draws all of
 them at once, which is where drift between them shows up.
 
@@ -784,6 +785,24 @@ is a thing you can only see side by side. See
 `microphone` is the Bluetooth notice, with a made-up device name. It is the one
 surface with something to click besides the offer: *Why* opens the reasons and
 resizes the panel, *Got it* dismisses it. The sheet draws it both ways.
+
+`selector` is the pill for a place the vocabulary step could not settle. The
+sentence is written once and the two options stand one above the other, with the
+prose running through the middle of the stack. Nothing is marked: a click on
+either option is the answer. `selector-long` is the same one place in a sentence
+the window has to cut at both ends.
+
+`selector-two` is a sentence with two open places, which is two questions. The
+pill asks about the first; the answer is written into the words, and the pill
+comes back with the second, counted "2 of 2" beside the question. The last
+answer prints the sentence it would type. Nothing triggers any of this in the
+app yet — these three and the sheet are the only ways to see it.
+
+All three wait six seconds before the pill comes up, then read the caret and
+hang the panel off it, the way the app aims at the press. Click into a document
+during those six seconds. When the app in front gives no caret the preview falls
+to its window's bottom edge, and with no window either to a line drawn in the
+middle of the screen; the log says which rung answered.
 
 `offer` is the one state that takes the mouse — hover a chip to light it, click
 one to print which was chosen. Every other state lets clicks through, so the
