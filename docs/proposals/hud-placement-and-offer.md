@@ -218,13 +218,22 @@ The docked surface was near-black with a leaf hairline, which over Slack's
 composer is black on nearly black. The pill now wears the plumage rim in every
 state, docked or free, and the leaf edge is gone. The leaf wash stays.
 
-While the microphone is open — recording and working — the rim turns once every
-1.8s and the bloom is drawn behind it, so the pill is found by the light off its
-edge. At an offer and at a notice the rim stands still and there is no bloom:
-those states are answered, not looked for. The margin follows the same line, 52
-for the blur to fade out in and 12 after, and only the offer takes the mouse, so
-the wide margin swallows no clicks. The docked working shimmer is gone; the
-turning rim says the same thing.
+The bloom is drawn while the microphone is open and while the app works on what
+it heard, so the pill is found by the light off its edge. The light says which
+of the two is happening. While recording, the rim stands still and the light
+pulses, 0.7s each way, on the clock the old scarlet dot used. While working, the
+rim turns, once every 1.7s, which is what the docked edge shimmered at. At an
+offer and at a notice the rim stands still and there is no bloom: those states
+are answered, not looked for.
+
+The margin follows the same line, 52 for the blur to fade out in and 12 after,
+and only the offer takes the mouse, so the wide margin swallows no clicks.
+
+Cost, measured with `--panels` as CPU seconds over a 12s window: 6-12% of a core
+recording, 8% working, 0% on a still notice. The pulse is not what that buys —
+the same surface with the pulse taken out measured 9.3% and 9.7%, so the cost is
+the meter being fed twenty times a second. The drifting bloom that was rejected
+earlier measured 40%.
 
 Direction C of <https://claude.ai/code/artifact/edabef77-cd1b-46ee-9c67-077e766b21f9>.
 

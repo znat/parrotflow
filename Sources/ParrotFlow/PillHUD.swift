@@ -78,9 +78,8 @@ enum PillState: Equatable {
     case offer([OfferedCommand], Headline?, Confidence.Reading, open: Bool)
 
     /// Whether the microphone is open, or the words it heard are still being
-    /// worked on. One question, asked in three places: the rim turns while this
-    /// is true, the bloom is drawn behind it, and the window carries the wide
-    /// margin the bloom needs.
+    /// worked on. One question, asked twice: the bloom is drawn while this is
+    /// true, and the window carries the wide margin the bloom needs.
     var isListening: Bool {
         switch self {
         case .recording, .working: return true
@@ -2048,11 +2047,15 @@ struct PillView: View {
         //
         // The rim is on every state, docked or free. It is what makes the pill
         // findable over a dark composer, where a near-black tab with a leaf
-        // hairline is black on nearly black. It turns while the microphone is
-        // open and stands still once the offer arrives, so the movement means
-        // "still listening" and nothing else.
+        // hairline is black on nearly black.
+        //
+        // It pulses while the microphone is open and turns while the app is
+        // working on what it heard. Two different things are happening and they
+        // read as two: a light that breathes is a thing waiting for you, and a
+        // ring going round is a thing doing something.
         .parrotSurface(
-            shape, turning: isListening, turnSeconds: Parrot.busyTurn, solid: true,
+            shape, turning: isWorking, turnSeconds: Parrot.workingTurn,
+            pulsing: isRecording, solid: true,
             wash: wash, wheel: warning?.wheel ?? Parrot.wheel
         )
         // Under the capsule, so it is the capsule's shape and not the glow's.
@@ -2065,7 +2068,10 @@ struct PillView: View {
             // dark desktop, and the offer is answered rather than found: it has
             // your attention already, and it takes the mouse.
             if isListening {
-                PlumageBloom(shape: shape, wheel: warning?.wheel ?? Parrot.wheel)
+                PlumageBloom(
+                    shape: shape, pulsing: isRecording,
+                    wheel: warning?.wheel ?? Parrot.wheel
+                )
             }
         }
         // The margin the bloom spills into while listening, and the much
@@ -2085,6 +2091,16 @@ struct PillView: View {
     }
 
     private var isListening: Bool { model.state.isListening }
+
+    private var isRecording: Bool {
+        if case .recording = model.state { return true }
+        return false
+    }
+
+    private var isWorking: Bool {
+        if case .working = model.state { return true }
+        return false
+    }
 
     private var isDocked: Bool { model.docked != nil }
 
@@ -2257,7 +2273,7 @@ private struct RecordingContent: View {
                 .frame(width: PillMetrics.dot, height: PillMetrics.dot)
                 .shadow(color: Parrot.scarlet.opacity(0.7), radius: 4)
                 .opacity(pulse ? 0.35 : 1)
-                .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: pulse)
+                .animation(Parrot.pulse(pulse), value: pulse)
 
             Meter(level: level)
                 .frame(width: PillMetrics.meter, height: 14)

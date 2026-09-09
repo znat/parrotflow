@@ -74,6 +74,21 @@ enum Parrot {
     /// without one. See `PlumageRim.spin`.
     static let busyTurn: TimeInterval = 1.8
     static let slowTurn: TimeInterval = 6
+    /// The rim while the app is working on what it heard. It does not divide
+    /// into the bird's 1.5s sweep, so the two never fall into step.
+    static let workingTurn: TimeInterval = 1.7
+
+    /// One way of the breath, for anything that pulses. The clock the recording
+    /// dot has always used.
+    static let breath: TimeInterval = 0.7
+
+    /// The breath, going or stopping. `repeatForever` only on the way up: the
+    /// same animation on the change that ends the pulse repeats that change
+    /// instead, and the light never settles.
+    static func pulse(_ going: Bool) -> Animation {
+        let ease = Animation.easeInOut(duration: breath)
+        return going ? ease.repeatForever(autoreverses: true) : ease
+    }
 }
 
 // MARK: - Surface
@@ -94,10 +109,14 @@ extension View {
     ///
     /// `turning` is the rim alone, at its resting weight, and `turnSeconds` is
     /// how long one trip round takes. It is not the busy signal: the weight,
-    /// the brightness and the drifting glow are what make that one. The
-    /// listening pill turns at the busy speed and keeps the resting weight —
-    /// the microphone being open is worth saying, and is not the app being
-    /// busy. See `PlumageRim.spin`.
+    /// the brightness and the drifting glow are what make that one. See
+    /// `PlumageRim.spin`.
+    ///
+    /// `pulsing` is the rim standing still and breathing instead, with the
+    /// bloom behind it. A ring going round says the app is doing something; a
+    /// light that breathes says it is waiting for you. The pill takes the first
+    /// while it works on a dictation and the second while the microphone is
+    /// open.
     ///
     /// `glass` gives the surface a thickness: a lighter scrim, a sheen down the
     /// face, and the rim's inner hairline weighted to the top so the edge reads
@@ -130,7 +149,7 @@ extension View {
     /// them, and a wash on top of that is paint on a window.
     func parrotSurface<S: InsettableShape>(
         _ shape: S, alive: Bool = false, turning: Bool = false,
-        turnSeconds: TimeInterval? = nil, glass: Bool = false,
+        turnSeconds: TimeInterval? = nil, pulsing: Bool = false, glass: Bool = false,
         solid: Bool = false, scrim: Double? = nil, wash: Color? = nil,
         wheel: [Color] = Parrot.wheel, rim: Bool = true,
         edge: Color = Color.white.opacity(0.09)
@@ -199,7 +218,7 @@ extension View {
             if rim {
                 PlumageRim(
                     shape: shape, alive: alive, turning: turning, turnSeconds: turnSeconds,
-                    glass: glass, wheel: wheel
+                    pulsing: pulsing, glass: glass, wheel: wheel
                 )
             } else {
                 shape.strokeBorder(edge, lineWidth: 1)
@@ -216,6 +235,9 @@ struct PlumageRim<S: InsettableShape>: View {
     var turning: Bool = false
     /// One trip round while `turning`, in seconds. Nil is `Parrot.slowTurn`.
     var turnSeconds: TimeInterval?
+    /// Breathe rather than turn. The rim brightens and dims with the bloom
+    /// behind it, so the edge and the halo read as one light. See `PlumageBloom`.
+    var pulsing: Bool = false
     /// Weight the inner hairline toward the top, so it reads as light on the
     /// edge. See the hairline below.
     var glass: Bool = false
@@ -225,6 +247,7 @@ struct PlumageRim<S: InsettableShape>: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var angle: Double = -90
+    @State private var breath = false
 
     var body: some View {
         shape
@@ -232,7 +255,13 @@ struct PlumageRim<S: InsettableShape>: View {
                 AngularGradient(colors: wheel, center: .center, angle: .degrees(angle)),
                 lineWidth: alive ? 2 : 1.4
             )
-            .opacity(alive ? 1 : 0.9)
+            .opacity(alive ? 1 : (breath ? 1 : 0.9))
+            // The way down is a plain ease. A repeating animation attached to
+            // the change that stops the pulse goes on repeating, so the rim
+            // would still be breathing at the offer.
+            .animation(Parrot.pulse(breath), value: breath)
+            .onChange(of: pulsing, initial: true) { _, _ in breath = pulsing && !reduceMotion }
+            .onChange(of: reduceMotion) { _, _ in breath = pulsing && !reduceMotion }
             // A white hairline just inside keeps the edge glassy in light mode,
             // where saturated colour alone reads as a sticker.
             //
@@ -267,9 +296,10 @@ struct PlumageRim<S: InsettableShape>: View {
     /// One turn of the feathers, at the speed the surface asked for.
     ///
     /// Busy is `Parrot.busyTurn`, and it is the weight and the drifting glow
-    /// that say so rather than the speed — the listening pill borrows this
-    /// clock at the resting weight. `turning` on its own is `Parrot.slowTurn`,
-    /// slow enough that you see the colours move rather than a rim spinning.
+    /// that say so rather than the speed. `turning` on its own takes
+    /// `turnSeconds`, and nil is `Parrot.slowTurn` — slow enough that you see
+    /// the colours move rather than a rim spinning. The pill asks for
+    /// `Parrot.workingTurn` while it works on a dictation.
     ///
     /// The bloom behind it stays still whatever the rim does, which is what
     /// keeps this affordable: a drifting bloom is four Gaussian blurs
@@ -524,6 +554,10 @@ enum ParrotGlass {
 struct PlumageBloom<S: InsettableShape>: View {
     let shape: S
     var alive: Bool = false
+    /// Breathe between the resting glow and the bright one, standing still.
+    /// The colours do not move: the light gets stronger and weaker, which is
+    /// what a microphone that is open and hearing nothing yet looks like.
+    var pulsing: Bool = false
     /// The colours the glow is made of. See `PlumageRim.wheel`.
     var wheel: [Color] = Parrot.wheel
     /// How much of it there is. The same absolute spill reads as far less
@@ -534,6 +568,7 @@ struct PlumageBloom<S: InsettableShape>: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var outer: Double = -90
     @State private var inner: Double = 90
+    @State private var breath = false
 
     var body: some View {
         ZStack {
@@ -553,19 +588,29 @@ struct PlumageBloom<S: InsettableShape>: View {
             // coloured borders drawn on top of each other, which is exactly
             // what it looked like. A blur spreads one source; a shadow repeats
             // it.
-            bloom(width: 9, blur: 24, opacity: (alive ? 0.22 : 0.13) * intensity, angle: outer)
-            bloom(width: 9, blur: 13, opacity: (alive ? 0.28 : 0.18) * intensity, angle: outer)
-            bloom(width: 9, blur: 5, opacity: (alive ? 0.42 : 0.28) * intensity, angle: outer)
+            bloom(width: 9, blur: 24, opacity: strength(0.13, 0.22), angle: outer)
+            bloom(width: 9, blur: 13, opacity: strength(0.18, 0.28), angle: outer)
+            bloom(width: 9, blur: 5, opacity: strength(0.28, 0.42), angle: outer)
 
             // The unevenness, and the only layer that disagrees about where the
             // colours are. Wide and heavily blurred so it has no edge of its
             // own: it brightens one side of the halo and then another, which is
             // what keeps the glow from reading as a decal.
-            bloom(width: 22, blur: 22, opacity: (alive ? 0.19 : 0.10) * intensity, angle: inner)
+            bloom(width: 22, blur: 22, opacity: strength(0.10, 0.19), angle: inner)
         }
         .animation(.easeInOut(duration: 0.4), value: alive)
+        .animation(Parrot.pulse(breath), value: breath)
         .onChange(of: alive) { _, _ in spin() }
         .onAppear { spin() }
+        .onChange(of: pulsing, initial: true) { _, _ in breath = pulsing && !reduceMotion }
+        .onChange(of: reduceMotion) { _, _ in breath = pulsing && !reduceMotion }
+    }
+
+    /// The busy strength while the app is busy, and at the top of every breath.
+    /// Nothing is brighter than `alive` was: the pulse borrows its values, so
+    /// the surface has one bright and one resting look, not three.
+    private func strength(_ rest: Double, _ bright: Double) -> Double {
+        (alive || breath ? bright : rest) * intensity
     }
 
     private func bloom(width: CGFloat, blur: CGFloat, opacity: Double, angle: Double) -> some View {
@@ -588,8 +633,8 @@ struct PlumageBloom<S: InsettableShape>: View {
     /// Still, the reason to stop it is the rule that was already written on
     /// `PlumageRim`: a glow that drifts while nothing is happening says
     /// something is happening. At rest the bloom is simply there — lit,
-    /// uneven, and still. The listening pill turns its rim and the bloom stays
-    /// out of it, which is what keeps "busy" a signal of its own.
+    /// uneven, and still. `pulsing` brightens and dims it without moving the
+    /// colours, which is a much cheaper thing to ask for than the drift.
     private func spin() {
         guard alive, !reduceMotion else {
             withAnimation(.easeInOut(duration: 0.4)) { outer = -90; inner = 90 }
