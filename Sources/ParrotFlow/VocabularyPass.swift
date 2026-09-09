@@ -187,6 +187,13 @@ enum VocabularyPass {
         /// reading. `terms.first` is then a different term, and anything that
         /// records what a person answered about this place would record it
         /// against the wrong name. Nil when the reading is the untouched span.
+        ///
+        /// Two parts that write the *same* reading share one entry, and the
+        /// first by position takes it — which is no better an answer than
+        /// alphabetical was. That needs two terms whose renderings over one
+        /// span come out identical, and nothing in this speaker's vocabulary
+        /// does it. What this fixes is the ordinary case: two different
+        /// readings, one of them offered.
         let owner: String?
         /// The best-evidenced of the readings in it, for `Caps.perTerm`.
         let standing: Standing
