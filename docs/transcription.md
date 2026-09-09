@@ -459,10 +459,36 @@ counter says nothing until it gets either a counter or a third use.
 `--portrait <term> "<sentence>" <word>` prints both scores and the verdict;
 `scripts/check-counter-portrait.sh` is the run.
 
-**What nothing settles is asked.** The pill draws the sentence with the two
-readings stacked where the open place is, and 1 or 2 answers it. The words wait
-for the answer: nothing is typed until the last question is answered, so the
-sentence is only ever written once.
+**Two names with one sound are a group.** `Mik` and `Mick` are two people and
+the decoder writes "Mick" for both. A group is derived, never declared: two
+terms are in one when one term's spelling is a `heard:` rendering of the other,
+when they share a rendering, or when a counter row under one has a span that is
+the other's spelling. The links are transitive, and almost every term is a
+group of one, which behaves exactly as above.
+
+A rendering that opens a group is no longer a substitution rule. The word opens
+the place instead, and every member is a reading of it. Each is scored against
+its own portrait, and one more member has no name — **plain**, the ordinary
+word that sounds like this, whose portrait is the counter rows of the whole
+group pooled. A member below its own floor is out; the best of the rest wins if
+it leads the second by more than 0.01. A named member winning writes its
+spelling, plain winning keeps what was heard, and nobody standing keeps it too.
+Two standing and no lead is an open place, and the pill asks.
+
+`--portrait <heard> "<sentence>"` prints the group a word opens, every member's
+score and floor, plain's score and the verdict.
+`scripts/check-sound-group.sh` scores the derivation, the decision rule and
+what a correction records; the portraits behind them have no bench of their own.
+See `docs/proposals/sound-groups.md`.
+
+**What nothing settles is asked.** The pill draws the sentence with the
+readings stacked where the open place is, and a digit answers it. Two readings
+almost always — what was heard and the one word that could not be ruled out —
+and one row per member where several names share the sound, four at most. The
+last row of every question is "something else": it writes what was heard and
+records nothing, so the correction you then make by hand goes through the panel
+as any other does. The words wait for the answer: nothing is typed until the
+last question is answered, so the sentence is only ever written once.
 
 Every way of not answering writes what the gates settled on, which is what an
 open place has always shipped. Escape, a click outside the pill, any other key,
@@ -473,11 +499,14 @@ sentence.
 Several open places in one sentence are several questions, asked one at a time,
 and the count on the pill says how many are left.
 
-The answers are the reason to ask. Confirming a term keeps that sentence as a
-use; refusing one keeps it as a counter-example — the half a portrait cannot
+The answers are the reason to ask. What is recorded depends on the word that
+was written, not on which row it sat in: a word that is a term is a **use** of
+that term, with `heard:` set to the spelling it replaced, and an ordinary word
+is a **counter** under the term that was proposed — the half a portrait cannot
 get any other way, because accepting an offer only ever teaches where a term
-*does* live. Three counter-examples and the term stops being read against a
-floor. Each answer also goes to `trace.jsonl` as `kind: chose`, kept apart from
+*does* live. One correction never writes both: putting `Mick` back over `Mik`
+is a use of Mick and says nothing about Mik. "Something else" writes no row at
+all. A counter-example and the term stops being read against a floor. Each answer also goes to `trace.jsonl` as `kind: chose`, kept apart from
 the hand edits: a place the app said out loud it could not decide is a harder
 label than a mistake somebody fixed.
 

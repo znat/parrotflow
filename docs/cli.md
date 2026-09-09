@@ -281,6 +281,9 @@ $PF --command "hey parrot, Tasmin spells T A S M E E N" "<last transcript>" \
 $PF --learn <heard> <corrected>
 $PF --for <term> "<sentence>" [word]
 $PF --against <term> "<sentence>" <word>
+$PF --correction <wrote> <put> --in "<sentence>" [--dry]
+$PF --sound-group <word>
+$PF --group-decide <term>:<score>:<floor>... [--plain <score>]
 ```
 
 `--route` shows which transform an instruction reaches and why — the router
@@ -314,6 +317,36 @@ closer to the sentences the term belongs in than to these.
 $ ParrotFlow --against Vercel "I love visiting the Versailles Castle." Versailles
 ✓ Vercel does not belong at "Versailles"
 ```
+
+`--correction` is what a correction the app watched you make writes, and it
+writes it. A term put back over another term is a use of the one you typed,
+carrying the spelling it replaced; an ordinary word put back is a counter under
+the term that was proposed. Never both. `--dry` prints the rows without
+touching the file.
+
+```
+$ ParrotFlow --correction Mik Mick --in "Mick is adjusting the piano."
+use Mick "Mick" heard Mik
+```
+
+`--sound-group` prints the terms that share a word's sound, every word that
+opens that group, and whether the word is still a substitution rule — one that
+opens a group of two or more is not. `--group-decide` runs the decision rule on
+scores you write down: a member is `<term>:<score>:<floor>`, a floor of `-` is
+a member with too few uses to have one, and `--plain` is the score against the
+group's pooled counter rows. The last line is the verdict.
+
+```
+$ ParrotFlow --group-decide Mik:0.90:0.80 Mick:0.86:- --plain 0.70
+Mik         0.900  floor 0.800  stands
+Mick        0.860  floor —      stands
+plain       0.700
+write Mik
+```
+
+The same decision with the real portraits behind it is
+`--portrait <heard> "<sentence>"`, which prints the group the word opens, each
+member's score and floor, plain's score and the verdict.
 
 ## Giving a model its API key
 
@@ -452,10 +485,14 @@ $PF --selector "can you ask Mick to review it." "Mick|mixed bend|3|1"
 
 A place is `standing|other|word|answer` — what stands in the text, the reading
 nobody took, where the stage saw it counted in words, and then `0` to keep what
-stands there, `1` to take the other reading, `-` for a question nobody
-answered. Several places are several arguments. `NOTHING FOUND` means no span
-was still there: the stages after `vocabulary` may rewrite, and a span that is
-gone is a question nobody can answer.
+stands there, `1` to take the other reading, `2` for "something else", `-` for
+a question nobody answered. Several places are several arguments.
+`NOTHING FOUND` means no span was still there: the stages after `vocabulary`
+may rewrite, and a span that is gone is a question nobody can answer.
+
+A place where several names share the heard word has one row per member, so the
+answer can go past `1`. The row after the last reading is always "something
+else": it writes what was heard and records nothing.
 
 The word index is what separates two mentions of the same word, and the write
 touches nothing between the places — a newline, a double space and a comma
@@ -463,6 +500,8 @@ glued to the next word all survive it.
 
 `--ranges` prints where each answered word ended up instead of the text, which
 is what the trace records: a place after one the answer made longer has moved.
+`--taught` prints what each answer records instead: the word, and `teaches` or
+`nothing`.
 
 `scripts/check-selector.sh` scores both halves, 21 cases. The lowercasing of a
 refused glued span is `--lowercase-refused`.
