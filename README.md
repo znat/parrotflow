@@ -84,7 +84,7 @@ ship"*, where #123 links straight to the pull request.
 
 The rule writes a Markdown link and the paste turns it into a real one — see
 [bullets, bold and links](docs/configuration.md#bullets-bold-and-links). The
-spoken digits are already `123` by then: the built-in `numbers` stage turned
+spoken digits are already `123` by then: the shipped `numbers` transform turned
 "one two three" into it first.
 
 ![Dictating "merged P R one two three, ready to ship" and the github_refs rule
@@ -124,7 +124,7 @@ the names into "@ada.lovelace and @mark.reyes"](Resources/handles.gif)
 ```yaml
 transcription:
   pipeline:
-    - numbers                 # "one two three" -> 123, so github_refs has digits
+    - transform: numbers      # "one two three" -> 123, so github_refs has digits
     - transform: github_refs
     - transform: slack_handles
 ```
@@ -227,7 +227,7 @@ the sentence with the ones the term was confirmed in.
 transcription:
   pipeline:
     - vocabulary
-    - numbers
+    - transform: numbers
 ```
 
 ### More examples
@@ -237,6 +237,9 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
 - [code_identifiers](examples/transforms/code_identifiers) — spoken names
   cased for the language, *"a python function called max retries"* →
   `max_retries`.
+- [numbers](examples/transforms/numbers) — spoken numbers as digits, English
+  and French: *"two hundred forty-three"* → `243`, *"seventy-five percent"* →
+  `75%`.
 - [repetitions](examples/transforms/repetitions) — drops disfluencies, a word
   said twice by accident: *"the the prompt"* → *"the prompt"*.
 - [punctuation](examples/transforms/punctuation) — spoken marks as

@@ -7,7 +7,7 @@ transcription:
   pipeline:
     - interpret
     - vocabulary
-    - numbers
+    - transform: numbers
     - transform: dotted
       app: /term|ghostty|iterm|warp/
 ```
@@ -29,8 +29,8 @@ you get every stage back — a missing section is silence, not a choice. Write
 `pipelines:`, the map keyed by language, is retired. Nothing under it is read.
 `--check-config` exits non-zero and says to write one `pipeline:` list, and the
 app says the same at launch, in the log and in the menu bar. Until you rewrite
-it none of your steps run — the built-in default does, which is `numbers` and
-nothing else. Move the lists into `pipeline:` and put
+it none of your steps run — the built-in default does, which is `interpret`
+and nothing else. Move the lists into `pipeline:` and put
 `when: language == "fr"` on the steps that only belong to one language.
 
 It was three stages until the shapes were counted: `replacements` wrote the
@@ -45,13 +45,16 @@ can get wrong.
 |---|---|
 | `interpret` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The interpret stage](#the-interpret-stage). English only. |
 | `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). |
-| `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
 | `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
-`numbers` rewrites transcripts that were already correct, so run `--numbers` on
-a line to see exactly what it would do before leaving it in.
+`numbers` used to be a stage here. It is a shipped transform now —
+`examples/transforms/numbers/numbers.py`, listed as `- transform: numbers` —
+and a config still saying `- numbers` is refused by name, with both halves of
+the fix. It rewrites transcripts that were already correct, so run
+`examples/transforms/numbers/score.py --text "<line>"` to see what it would do
+before leaving it in.
 
 ## The interpret stage
 
@@ -154,7 +157,7 @@ what the decoder wrote and the term — so a third reading would be built and
 never shown. Refused rather than rounded down, because a number that says one
 thing and does another teaches nobody anything.
 
-**An option on the wrong stage is refused.** `slot_gate:` on `numbers`, or
+**An option on the wrong stage is refused.** `slot_gate:` on `interpret`, or
 `marks:` on `vocabulary`, used to load and do nothing. `--check-config` names
 the key, the stage it was written on and the stage that reads it. A switch that
 loads and does nothing is somebody believing a gate is off while it runs.
@@ -293,8 +296,7 @@ dropped. Raise it when a name really does appear three times in one sentence.
 
 **Order matters, and the app refuses the wrong one.** The stage is given spans
 measured on the text the decoder produced. Put it above everything that edits
-text. `--check-config` refuses a pipeline that puts `numbers` or a transform
-above it, because a span that has moved cannot be told from a span that was
+text. `--check-config` refuses a pipeline that puts a transform above it, because a span that has moved cannot be told from a span that was
 always wrong.
 
 `interpret` is the one exception, and it is where the default puts it. It
@@ -660,7 +662,7 @@ under two conditions. Named ones can:
 pipeline:
   - vocabulary
   - fuzzy
-  - numbers
+  - transform: numbers
   - transform: dotted
     app: /term|ghostty|iterm|warp/
   - transform: prose
@@ -1096,7 +1098,7 @@ A stage can carry a condition, which is what makes an expensive one affordable
 ```yaml
 pipeline:
   - vocabulary
-  - stage: numbers
+  - transform: numbers
     when: /\b(vingt|cent|mille)\b/     # only if a number word is left
 ```
 
@@ -1151,9 +1153,13 @@ and cannot report it about the wrong string.
 Stages add their own on top. `interpret.count` is how many boundaries it
 joined. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
-ones, and the sentence the stage was handed — `numbers.language`, which grammar
-actually read the numbers and is not the same answer as the pipeline's
-language, and, for a prompt stage, `model`. The name stage reads all three of
+ones, and the sentence the stage was handed — and, for a prompt stage, `model`.
+The shipped `numbers` transform publishes `numbers.count` and
+`numbers.language`, the grammar that actually read the numbers, which is not
+the same answer as the pipeline's language. It carries a `when:` gate, so on
+a transcript with no number word in it the only thing under that name is
+`numbers.ran = false` — a later condition has to ask
+`numbers.ran && numbers.count == 0`, not `numbers.count == 0`. The name stage reads all three of
 the `vocabulary` ones: `changes` says which rules fired and `before` says
 *where*, because the rules leave no positions behind. A `command:` transform
 publishes whatever it likes; see
@@ -1517,7 +1523,7 @@ terminal and nowhere near an email:
 ```yaml
 pipeline:
   - vocabulary
-  - stage: numbers
+  - transform: numbers
     app: /term|ghostty|iterm|warp/
   - prompt: prose
     app: /^(?!.*(term|ghostty|iterm|warp))/

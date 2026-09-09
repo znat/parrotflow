@@ -1,5 +1,5 @@
-# App conditions, on a stage cheap enough to score deterministically. What is
-# tested is that `app:` decides, not what the stage does — `numbers` stands in
+# App conditions, on a step cheap enough to score deterministically. What is
+# tested is that `app:` decides, not what the step does — `numbers` stands in
 # for whatever you would really scope to a terminal.
 #
 # Both directions from one key: inclusion is a plain pattern, exclusion is a

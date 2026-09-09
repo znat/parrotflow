@@ -1,6 +1,6 @@
-# The conditions, on stages cheap enough to score deterministically. `numbers`
+# The conditions, on steps cheap enough to score deterministically. `numbers`
 # stands in for the expensive stage a condition really exists for: what is being
-# tested is that a condition gates a stage, not what that stage does.
+# tested is that a condition gates a step, not what that step does.
 languages: [en, fr]
 transforms:
   - name: numbers

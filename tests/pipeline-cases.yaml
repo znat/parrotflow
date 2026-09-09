@@ -1,7 +1,7 @@
 # Pipeline validation set. Run with scripts/check-pipeline.sh.
 #
 # What is scored here is the *assembly*, not the stages. Each stage already has
-# a set of its own — replacement-cases.txt, numbers-cases.yaml — and repeating
+# a set of its own — replacement-cases.txt, the numbers transform's — and repeating
 # them through a pipeline would measure the same thing twice and fail in two
 # places for one reason. These cases ask a different question: does a stage run
 # when the config says it should, in the order it says, and does a condition
@@ -26,7 +26,7 @@ cases:
     input: "um, super base has vingt et un users"
     expect: Supabase has 21 users
 
-  # The guard from numbers-cases.yaml, seen through a pipeline: the stage keeps
+  # The guard from the numbers case set, seen through a pipeline: the stage keeps
   # its own language resolution, so assembling it here must not flatten that.
   - name: the cents collision survives assembly
     pipeline: everything

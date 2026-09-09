@@ -794,14 +794,14 @@ which is the reason that command prints the linkage rather than assuming it.
 Getting the real thing means vendoring and notarising a native blob for one
 pass. Not worth it.
 
-`Numbers.swift` does it instead: no model, no library, a linear scan measured in
-microseconds against the seconds an LLM pass would cost. It is off unless
-`transcription.numbers` asks for it — alone among these passes it rewrites
+`examples/transforms/numbers/numbers.py` does it instead: no model, no library,
+a linear scan. It is a shipped command transform, so it is on only when the
+pipeline lists `- transform: numbers` — alone among these passes it rewrites
 transcripts that were already correct, and whether "chapter three" wants a 3 is
-a question of house style rather than of accuracy. About seventy words
-build every number in English, so it parses a grammar over that vocabulary
-rather than enumerating results — a substitution table cannot work when "forty"
-means 40 in "forty-three" and 40,000 in "forty thousand".
+a question of house style rather than of accuracy. About seventy words build
+every number in English, so it parses a grammar over that vocabulary rather
+than enumerating results — a substitution table cannot work when "forty" means
+40 in "forty-three" and 40,000 in "forty thousand".
 
 | | | |
 | --- | --- | --- |
@@ -810,6 +810,7 @@ means 40 in "forty-three" and 40,000 in "forty thousand".
 | Decimals | `three point one four` | `3.14` |
 | Years | `nineteen eighty-four` | `1984` |
 | Spoken digits | `five five five one two three four` | `5551234` |
+| Percent | `seventy-five percent` | `75%` |
 
 Under ten a lone number word stays a word, which is both ordinary prose style
 and what keeps "one" the pronoun and "a" the article out of reach. Compounds
@@ -836,7 +837,13 @@ The leading group of a year is held to 13–20, covering 1300–2099. That is ev
 year anyone dictates, and stopping short of ten, eleven and twelve is what keeps
 a clock time from becoming one.
 
-`--numbers` runs the set these rules were written against — one line per rule,
-one per guard — and `--numbers "<text>"` runs a single line. Both run the pass
-whatever the setting says, and print the setting first, so what it *would* do
-can be read before it is turned on.
+Percent is the one thing the pass writes that is not a number. "seventy-five
+percent" and "soixante-quinze pour cent" both become `75%`, with no space in
+either language, and percent lifts the below-ten floor because `five%` is never
+right. The other direction is left alone: "pour cent" with no number in front is
+the preposition and a hundred, so "il paie pour cent euros" is untouched.
+
+`examples/transforms/numbers/score.py` scores the set, and `--text "<line>"`
+runs a single line. `ParrotFlow --eval numbers` scores the copy installed on
+this machine, through the real pipeline, which is where language detection is
+exercised.

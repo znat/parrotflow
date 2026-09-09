@@ -1,4 +1,5 @@
-# Every stage, no conditions — the default a new install gets.
+# The shape a new install gets: every automatic stage plus the numbers
+# transform, and no conditions.
 languages: [en, fr]
 transforms:
   - name: numbers

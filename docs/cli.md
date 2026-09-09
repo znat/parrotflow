@@ -97,7 +97,6 @@ URL overflows what GitHub accepts and gives an error page rather than a form.
 ```sh
 $PF --pipeline tests/pipelines/apps.yaml "on en a vingt et un" --app Ghostty
 $PF --replace "we deployed to super base" [--app <name>]
-$PF --numbers "two hundred forty three" [--lang fr]
 $PF --normalize "<text>"
 $PF --dates "<instruction>" "<text>" [--locale FR] [--lang en,fr]
 $PF --inflected <term> <heard>
@@ -824,10 +823,10 @@ made things better or only different.
 
 ```sh
 scripts/check-pipeline.sh          scripts/check-replacements.sh
-scripts/check-dotted.sh            scripts/check-numbers.sh
+scripts/check-dotted.sh            scripts/check-dates.sh
 scripts/check-routing.sh           scripts/check-wake.sh
 scripts/check-split.sh             scripts/check-grammar.sh
-scripts/check-dates.sh             scripts/check-inplace.sh
+scripts/check-inplace.sh           examples/transforms/numbers/score.py
 scripts/check-default-config.sh    scripts/check-transform-folders.sh
 scripts/check-eval.sh              # every case set, scored
 scripts/check-compose.sh           # what a prompt says once the scope is in it

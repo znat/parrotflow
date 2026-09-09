@@ -135,6 +135,10 @@ enum PipelineCommand {
             )
         }
         for name in unknown {
+            if let advice = Config.retiredStageAdvice(name) {
+                print("✗ \"\(name)\" \(advice)")
+                continue
+            }
             print("✗ \"\(name)\" is not a stage — have: \(Pipeline.stageNames.joined(separator: ", "))")
         }
         guard unknown.isEmpty else { return 1 }

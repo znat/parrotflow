@@ -39,13 +39,20 @@ if not any(t["name"] == "dotted" for t in transforms):
     print("  ✗ Config.defaultYAML has no `dotted` transform to score")
     sys.exit(1)
 
-def fixture(steps):
+# `numbers` is a program, not a table, so it is not in the list above. The
+# decimal fixture needs it, and needs an absolute path: the fixture is written
+# to a temporary directory, where `examples/numbers/numbers.py` resolves to
+# nothing.
+numbers = next(t for t in doc["transforms"] if t["name"] == "numbers")
+numbers = dict(numbers, command=str(root / "examples/transforms/numbers/numbers.py"))
+
+def fixture(steps, extra=()):
     return yaml.safe_dump({
         "languages": doc["transcription"]["languages"],
         # The patterns say `{{determiners}}`; without the lists they compile to
         # nothing and every guard silently stops guarding.
         "lists": doc.get("lists") or {},
-        "transforms": transforms,
+        "transforms": transforms + list(extra),
         "pipeline": [{"transform": name} for name in steps],
     }, allow_unicode=True, sort_keys=False)
 
@@ -59,8 +66,7 @@ chat.write_text(fixture(["dotted", "backticks"]))
 # "three point one four" for a decimal, and it is `numbers` that consumes the
 # word — reorder the two and dotted gets there first, turning it into
 # "three one.four". Nothing else would notice.
-decimal.write_text(fixture(["numbers", "dotted"]).replace(
-    "- transform: numbers", "- numbers"))
+decimal.write_text(fixture(["numbers", "dotted"], [numbers]))
 PY
 [ -s "$FIXTURE" ] || exit 1
 
