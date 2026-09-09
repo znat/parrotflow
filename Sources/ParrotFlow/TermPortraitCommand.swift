@@ -52,6 +52,62 @@ enum TermPortraitCommand {
         text.count >= width ? text : text + String(repeating: " ", count: width - text.count)
     }
 
+    /// `--portrait <heard> "<sentence>"` — the group that word opens, and what
+    /// each member says about the sentence.
+    ///
+    ///     ParrotFlow --portrait Mick "Mick is adjusting the piano."
+    ///     group  Mick Mik   opened by "Mick"
+    ///       Mick   uses 3   score 0.912   floor 0.880   stands
+    ///       Mik    uses 5   score 0.874   floor 0.901   out
+    ///       plain  rows 4   score 0.803
+    ///     write Mick
+    ///
+    /// The window is the one the gate reads — `TermPortrait.window` — so this
+    /// scores the shipped path. A word that opens no group of two or more
+    /// falls through to the term form above, which is what it has always
+    /// printed.
+    static func group(heard: String, sentence: String) -> Int32 {
+        let config = (try? ConfigStore.load()) ?? Config()
+        let groups = SoundGroup.groups(terms: config.vocabulary.terms, uses: TermUses.load())
+        guard let group = SoundGroup.opened(by: heard, in: groups) else {
+            return run(term: heard, sentence: sentence, span: nil)
+        }
+        let near = TermUses.occurrence(of: heard, in: sentence).map {
+            TermPortrait.window(around: $0, in: sentence)
+        } ?? sentence
+        let outcome = Blocking.run { () async -> Result<TermPortrait.GroupReading, Error> in
+            do {
+                return .success(
+                    try await TermPortrait.shared.read(group: group.members, heard, in: near)
+                )
+            } catch {
+                return .failure(error)
+            }
+        }
+        switch outcome {
+        case .failure(let error):
+            print("✗ \(error.localizedDescription)")
+            return 1
+        case .success(let reading):
+            print("group  \(group.members.joined(separator: " "))   opened by \"\(heard)\"")
+            for member in reading.members {
+                let score = member.score.map { String(format: "%.3f", $0) } ?? "—"
+                let floor = member.floor.map { String(format: "%.3f", $0) } ?? "—"
+                print("  \(pad(member.term, 14)) uses \(pad(String(member.uses), 4))"
+                    + " score \(pad(score, 7)) floor \(pad(floor, 7))"
+                    + " \(member.stands ? "stands" : "out")")
+            }
+            if let plain = reading.plain {
+                print("  \(pad("plain", 14)) rows \(pad(String(reading.plainRows), 4))"
+                    + " score \(pad(String(format: "%.3f", plain), 7))")
+            } else {
+                print("  \(pad("plain", 14)) no counter row in the group")
+            }
+            print(SoundGroupCommand.said(reading.verdict))
+            return 0
+        }
+    }
+
     static func run(term: String, sentence: String?, span: String?) -> Int32 {
         typealias Answer = (TermPortrait.Summary?, TermPortrait.Reading?)
         let outcome = Blocking.run { () async -> Result<Answer, Error> in

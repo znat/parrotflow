@@ -281,3 +281,10 @@ jobs:
       # a run dropped from one and not the other is invisible.
       - name: Endings the decoder invented
         run: scripts/check-invented-tail.sh
+
+      # Several names with one sound: which terms are derived into one group,
+      # what the decision rule does with scores written by hand, and what a
+      # correction against a term records. No model — the portraits behind it
+      # are scored by scripts/check-counter-portrait.sh, which needs one.
+      - name: Sound groups
+        run: scripts/check-sound-group.sh
