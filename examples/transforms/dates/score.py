@@ -18,13 +18,17 @@ reimplemented here. A runner that reimplements the thing it scores drifts from
 it, and the number then describes code nobody ships. `dates.py` in turn loads
 `../numbers/numbers.py` for its number words, so this needs both folders.
 
-Two checks beyond the cases:
+Three checks beyond the cases:
 
 - **Every `change` case must match `dates.py --when`.** A case the gate rejects
   never reaches the script in the app, so it would pass here and do nothing in
   a real dictation.
-- **How many `keep` cases the gate lets through** is printed too, and should be
-  most of them. A keep case the gate rejects tests no guard.
+- **How many `keep` cases the gate lets through** is printed too. A keep case
+  the gate rejects tests the script and not the pipeline, which is safe but
+  worth knowing.
+- **The `when:` line in config.example.yaml must be the one `--when` prints.**
+  It is generated from the numbers transform's word tables, so it goes stale
+  when a word moves there and nothing else would say so.
 
 **No model call anywhere in this file.**
 """
@@ -106,6 +110,10 @@ def score(verbose):
         print(f"  ✗ {case['input']}\n      got   {got}\n      want  {want}\n"
               f"      ({mark})")
 
+    stale = wired_when_is_stale()
+    if stale:
+        print(f"  ✗ {stale}")
+
     total = len(cases)
     keeps = sum(1 for c in cases if "expect" not in c)
     changes = total - keeps
@@ -123,7 +131,24 @@ def score(verbose):
     if ungated:
         print(f"    {ungated} change case(s) the when: regex rejects"
               "  ← the script never runs on them")
-    return passed == total and ungated == 0
+    return passed == total and ungated == 0 and not stale
+
+
+def wired_when_is_stale():
+    """What is wrong with the `when:` line in config.example.yaml, or None.
+
+    Only in a checkout — the folder is copied to `~/.config/parrotflow/` on
+    its own, and there is no config.example.yaml above it there. The line has
+    to be regenerated whenever a number word moves in the numbers transform,
+    and nothing else would say it had gone stale.
+    """
+    example = HERE.parents[2] / "config.example.yaml"
+    if not example.exists():
+        return None
+    if dates.when() in example.read_text():
+        return None
+    return ("config.example.yaml carries a different when: line —"
+            " paste `dates.py --when` over it")
 
 
 def corpus():

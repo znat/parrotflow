@@ -79,6 +79,14 @@ The judgement calls, each one a case in the set:
 - **French keeps "le".** "le trois décembre" is "le 3 décembre" and "le dix du
   douze" is "le 10/12" — that is how the date is written in French. English
   "the third of March" drops its "the", because "the 3 March" is not.
+- **French "a" is not "à".** The unaccented verb was in the lead list and
+  turned "il a trois heures d'avance" into "il a 3h d'avance". Accented forms
+  only now, and an elided "d'" after the hour declines it — "à trois heures
+  d'ici" is a distance.
+- **"3pm" and "July 3rd" are left alone.** The digits are already there and the
+  only edit left is a space or a suffix, which is typography rather than a date
+  being written down. "July 3rd" was one of four edits this stage made to 925
+  archived clips and the only one that changed text nothing was wrong with.
 - **"premier" is written "1er"**, the one ordinal French keeps in a date.
 - **A lone ordinal and a lone year are left alone.** "the fifteenth" and
   "twenty twenty-six" are the numbers stage's job. A date here needs a month
@@ -139,8 +147,13 @@ MONTHS_FR = [
 
 
 def alt(words):
-    """An alternation, longest first — "quatorze" must beat "quatre"."""
-    return "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True))
+    """An alternation, longest first — "quatorze" must beat "quatre".
+
+    Alphabetical within a length, so a set of words always prints the same
+    regex. Without the tie-break `--when` printed a different line every run,
+    and the one in config.yaml could never be checked against it.
+    """
+    return "|".join(re.escape(w) for w in sorted(words, key=lambda w: (-len(w), w)))
 
 
 # --- reading a number out of one span ---------------------------------------
@@ -258,10 +271,12 @@ FR_DURATION_BEFORE = re.compile(
     r"|plus\s+de|moins\s+de|au\s+bout\s+de|en|après|apres)\s+$", re.I)
 
 # "à dix heures" is a time; "trois heures" on its own before 13:00 is not.
-FR_LEAD_BEFORE = re.compile(r"\b(?:à|a|vers|dès|des)\s+$", re.I)
+# Accents only. Bare "a" is the verb far more often than a mistyped "à", and it
+# turned "il a trois heures d'avance" into "il a 3h d'avance".
+FR_LEAD_BEFORE = re.compile(r"\b(?:à|vers|dès)\s+$", re.I)
 
-# "trois heures de route", "24 heures sur 24".
-FR_NOT_A_CLOCK_AFTER = {"de", "du", "des", "sur", "d'"}
+# "trois heures de route", "24 heures sur 24", "à trois heures d'ici".
+FR_NOT_A_CLOCK_AFTER = {"de", "du", "des", "sur", "devant", "d"}
 
 WORD_BEFORE = re.compile(r"([\w'’-]+)\s*$")
 
@@ -366,8 +381,15 @@ def en_minutes_past(m, text):
 
 
 def en_hour_meridiem(m, _text):
-    """"three pm" -> "3 pm". No minutes were said, so none are written."""
+    """"three pm" -> "3 pm". No minutes were said, so none are written.
+
+    "3pm" is left alone. The hour is already a digit, so the only edit left is
+    inserting a space, and that is typography rather than a time being written
+    down — the same call as "July 3rd" in `en_month_day`.
+    """
     mer = m.group("mer")
+    if m.group("h").isdigit():
+        return None
     if not m.group("lead") and mer.lower() == "am":
         return None  # "one am ready" is a sentence.
     hour = read_en(m.group("h"))
@@ -432,7 +454,9 @@ def fr_hour(m, text):
     before = text[:m.start()]
     if FR_DURATION_BEFORE.search(before):
         return None
-    if word_after(text, m.end()) in FR_NOT_A_CLOCK_AFTER:
+    # `word_after` reads "d'avance" whole, so the elision is split off first.
+    following = word_after(text, m.end()).split("'")[0].split("\u2019")[0]
+    if following in FR_NOT_A_CLOCK_AFTER:
         return None
 
     if m.group("half"):

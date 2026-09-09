@@ -5,7 +5,7 @@
 # `change`: a date or a clock time was dictated — write it the way it was said.
 # `keep` (no `expect`): must come back byte for byte.
 #
-# The keep half is 32 of 72 cases and it is the half that decides. This stage
+# The keep half is 37 of 77 cases and it is the half that decides. This stage
 # runs on every transcript with no output of its own, so a wrong rewrite is
 # text nobody watched change. Every keep here is a shape that looks like a date
 # or a time and is not: a count, a duration, a range, a chapter number, a year.
@@ -299,3 +299,18 @@ cases:
   - probe: not_a_date_en
     lang: en
     input: "the retro was on July 3rd and covered everything"
+  - probe: not_a_time_en
+    lang: en
+    input: "the demo is 3pm and the retro is after it"
+  - probe: not_a_time_en
+    lang: en
+    input: "I am at 10am every day this week"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "il a trois heures d'avance"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "c'est à trois heures d'ici"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "elle a deux heures devant elle"
