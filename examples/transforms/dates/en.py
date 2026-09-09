@@ -6,7 +6,7 @@ stdin, rewrite on stdout.
       description: dictated dates and clock times as digits
       command: examples/dates/en.py
       returns: json
-      tests: examples/dates/en-cases.yaml
+      tests: examples/dates/cases-en.yaml
 
     pipeline:
       - transform: dates_en
@@ -30,7 +30,7 @@ also accepts digits, because the decoder emits them either way ("March 3rd
 **No cue, no rewrite.** "three thirty" on its own is "three thirty-year-olds"
 or "ten fifteen twenty" as often as it is a time, so a rewrite needs a cue:
 at/around/about/by, am/pm, o'clock, past/to, a month name, or the `Nth of the
-Nth` shape. Half of `en-cases.yaml` is text that looks like a date and is not.
+Nth` shape. Half of `cases-en.yaml` is text that looks like a date and is not.
 A transform that rewrites correct text is worse than one that never fires,
 because it runs on every transcript and nobody watches it happen.
 

@@ -112,12 +112,16 @@ transcription:
     # A dictated date or clock time, written the shape it was said:
     # "March third" -> March 3, "à dix heures quinze" -> à 10h15. No model.
     # One step per language — adding one is copying a file, see
-    # examples/transforms/dates/engine.py. Both above `numbers`, which reads
-    # the same words and gets to them first.
+    # examples/transforms/dates/engine.py. Above `numbers`, which reads the
+    # same words and would get to them first.
     - transform: dates_en
       when: /(?i)\b(?:o\s?['’]?\s?clock|[ap]\.m\.|pm)\b|\b(?:a\s+)?(?:half|quarter)\s+(?:past|to)\b|\b(?:September|December|February|November|January|October|August|around|April|March|about|July|June|past|May|at|by|of|to)\s+(?:the\s+)?(?:seventeenth|eighteenth|fourteenth|nineteenth|thirteenth|September|fifteenth|seventeen|sixteenth|thirtieth|twentieth|December|February|November|eighteen|eleventh|fourteen|nineteen|thirteen|January|October|fifteen|seventh|seventy|sixteen|twelfth|August|eighth|eighty|eleven|fourth|fourty|ninety|second|thirty|twelve|twenty|April|March|eight|fifth|fifty|first|forty|ninth|seven|sixth|sixty|tenth|third|three|July|June|five|four|nine|zero|May|one|six|ten|two|oh|\d{1,2}(?:st|nd|rd|th)?)\b/
-    - transform: dates_fr
-      when: /(?i)\b(?:heures?|midi|minuit)\b|\b(?:septembre|decembre|décembre|novembre|fevrier|février|janvier|juillet|octobre|avril|aout|août|juin|mars|vers|dès|mai|du|le|à)\s+(?:cinquante|septembre|decembre|décembre|huitante|novembre|premiere|première|quarante|quatorze|septante|soixante|fevrier|février|janvier|juillet|nonante|octante|octobre|premier|quatre|quinze|treize|trente|vingts|avril|douze|seize|trois|vingt|aout|août|cinq|deux|huit|juin|mars|neuf|onze|sept|zero|zéro|1er|dix|mai|six|une|un|\d{1,2})\b/
+    # English is the step that ships. French is written and scored, it is
+    # just off: uncomment the two lines under this one to turn it on. The
+    # gate is what `examples/transforms/dates/fr.py --when` prints — paste
+    # that over it if you edit the script.
+    #- transform: dates_fr
+    #  when: /(?i)\b(?:heures?|midi|minuit)\b|\b(?:septembre|decembre|décembre|novembre|fevrier|février|janvier|juillet|octobre|avril|aout|août|juin|mars|vers|dès|mai|du|le|à)\s+(?:cinquante|septembre|decembre|décembre|huitante|novembre|premiere|première|quarante|quatorze|septante|soixante|fevrier|février|janvier|juillet|nonante|octante|octobre|premier|quatre|quinze|treize|trente|vingts|avril|douze|seize|trois|vingt|aout|août|cinq|deux|huit|juin|mars|neuf|onze|sept|zero|zéro|1er|dix|mai|six|une|un|\d{1,2})\b/
     - numbers                            # "two hundred forty-three" -> 243
     - transform: punctuation             # "is that true question mark" -> is that true?
     - transform: repetitions             # a word or phrase said twice by accident, taken out
@@ -315,13 +319,14 @@ transforms:
     description: dictated dates and clock times as digits
     command: examples/dates/en.py
     returns: json
-    tests: examples/dates/en-cases.yaml
+    tests: examples/dates/cases-en.yaml
 
+  # Defined, and not in the pipeline above. Uncomment the step there to run it.
   - name: dates_fr
     description: dictated dates and clock times as digits
     command: examples/dates/fr.py
     returns: json
-    tests: examples/dates/fr-cases.yaml
+    tests: examples/dates/cases-fr.yaml
 
   # Cheap: ~0.04s, mostly the python3 start.
   - name: repetitions

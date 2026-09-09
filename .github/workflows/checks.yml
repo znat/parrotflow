@@ -125,6 +125,12 @@ jobs:
       - name: Dates
         run: scripts/check-dates.sh
 
+      # The `dates_en` and `dates_fr` transforms, both languages at once. It
+      # also checks that each `when:` line in config.example.yaml is still the
+      # one the script prints, which nothing else would notice.
+      - name: Dates transform
+        run: examples/transforms/dates/score.py
+
       # Where a transform's files are found, and where its command runs. Builds
       # whole config directories in /tmp and runs the real binary against them
       # with PARROTFLOW_CONFIG_DIR, so it needs no config on the machine and

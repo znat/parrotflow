@@ -6,7 +6,7 @@ stdin, rewrite on stdout.
       description: dictated dates and clock times as digits
       command: examples/dates/fr.py
       returns: json
-      tests: examples/dates/fr-cases.yaml
+      tests: examples/dates/cases-fr.yaml
 
     pipeline:
       - transform: dates_fr
@@ -28,7 +28,7 @@ first, and it also accepts digits.
 
 **No cue, no rewrite.** A rewrite needs `heures`, `midi`, `minuit`, `et
 demie`, `et quart`, `moins`, a month name, or the `le N du N` shape. A third of
-`fr-cases.yaml` is text that looks like a date and is not. A transform that
+`cases-fr.yaml` is text that looks like a date and is not. A transform that
 rewrites correct text is worse than one that never fires, because it runs on
 every transcript and nobody watches it happen.
 

@@ -242,7 +242,8 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
 - [punctuation](examples/transforms/punctuation) — spoken marks as
   punctuation, *"is that true question mark"* → *"is that true?"*.
 - [dates](examples/transforms/dates) — a dictated date or time in the shape it
-  was said, *"at ten fifteen"* → *"at 10:15"*. One script per language.
+  was said, *"at ten fifteen"* → *"at 10:15"*. One script per language;
+  English ships in the pipeline, French is a commented step away.
 - [self_correction](examples/transforms/self_correction) — the prompt above,
   and the 89 cases it is scored on: *"my config my vocabulary"* →
   *"my vocabulary"*.

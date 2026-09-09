@@ -8,7 +8,7 @@
     examples/transforms/dates/score.py --corpus    # every edit it would make
                                                    # to the archive
 
-Every `<lang>.py` beside this file is a language, and `<lang>-cases.yaml` is
+Every `<lang>.py` beside this file is a language, and `cases-<lang>.yaml` is
 its set. Adding a language adds nothing here.
 
 `ParrotFlow --eval dates_en` answers a different question. It runs the copy the
@@ -87,7 +87,7 @@ def gate(module):
 
 def score_language(lang, module, verbose):
     """The two failure kinds counted apart, because they cost differently."""
-    cases = yaml.safe_load((HERE / f"{lang}-cases.yaml").read_text())["cases"]
+    cases = yaml.safe_load((HERE / f"cases-{lang}.yaml").read_text())["cases"]
     opens = gate(module)
     passed = missed = damaged = wrong = ungated = keeps_gated = 0
 

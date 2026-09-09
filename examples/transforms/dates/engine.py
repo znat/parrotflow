@@ -43,7 +43,7 @@ Copy `fr.py` to `es.py` and work through it. Nothing here changes.
          description: dictated dates and clock times as digits
          command: examples/dates/es.py
          returns: json
-         tests: examples/dates/es-cases.yaml
+         tests: examples/dates/cases-es.yaml
 
 5. Add a pipeline step above the numbers steps, with the gate the script
    prints:
@@ -51,7 +51,7 @@ Copy `fr.py` to `es.py` and work through it. Nothing here changes.
        - transform: dates_es
          when: <the regex printed by `es.py --when`>
 
-6. Write `es-cases.yaml` beside the script. A third of it should be text that
+6. Write `cases-es.yaml` beside the script. A third of it should be text that
    looks like a date and is not.
 7. Score it:
 
