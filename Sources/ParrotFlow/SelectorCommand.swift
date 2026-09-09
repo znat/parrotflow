@@ -9,9 +9,14 @@ import Foundation
 ///
 /// A place is `standing|other|word|answer`: what stands in the text, the
 /// reading nobody took, where the stage saw it counted in words, and the
-/// answer — `0` keeps what stands there, `1` takes the other reading, and `-`
-/// is a question nobody answered. Several places are several arguments, and
-/// they may be given in any order.
+/// answer — `0` keeps what stands there, `1` takes the other reading, the row
+/// past the last reading is "something else", and `-` is a question nobody
+/// answered. Several places are several arguments, and they may be given in
+/// any order.
+///
+/// `--taught` prints what each answer teaches instead of the text: the word,
+/// and whether a row is written about it. "Something else" is the one answer
+/// that writes none.
 ///
 /// This is the half of the pill that is not drawing: `OpenPlaces.located`
 /// finds the span again in a text later stages may have rewritten, and
@@ -28,7 +33,9 @@ import Foundation
 /// the vocabulary; `--lowercase-refused` is where that half is scored.
 enum SelectorCommand {
 
-    static func run(text: String, places: [String], ranges: Bool = false) -> Int32 {
+    static func run(
+        text: String, places: [String], ranges: Bool = false, taught: Bool = false
+    ) -> Int32 {
         var open: [OpenPlaces.Open] = []
         var answers: [Int?] = []
         for argument in places {
@@ -40,12 +47,13 @@ enum SelectorCommand {
             }
             let answer: Int?
             switch parts[3] {
-            case "0": answer = 0
-            case "1": answer = 1
             case "-": answer = nil
             default:
-                print("an answer is 0, 1 or -, not \"\(parts[3])\"")
-                return 2
+                guard let picked = Int(parts[3]), picked >= 0 else {
+                    print("an answer is a row number or -, not \"\(parts[3])\"")
+                    return 2
+                }
+                answer = picked
             }
             // `wrote` says which side the term is on, and nothing here needs
             // to know: the two readings are given by name, and the term is
@@ -71,11 +79,17 @@ enum SelectorCommand {
         // either.
         let taken = ordered.prefix { $0 != nil }.compactMap { $0 }
         let done = OpenPlaces.written(
-            located, answers: taken, in: text, refusing: { $0.open.other }
+            located, answers: taken, in: text, refusing: { _, word in word }
         )
         // The word and where it ended up, which is what the trace records. A
         // place after one the answer made longer or shorter has moved, and
         // nothing else prints that.
+        guard !taught else {
+            print(done.words.prefix(taken.count)
+                .map { "\($0.word) \($0.teaches ? "teaches" : "nothing")" }
+                .joined(separator: "; "))
+            return 0
+        }
         guard !ranges else {
             // The answered ones only. `written` returns a row per located
             // place, and the rows past the last answer are what stands there

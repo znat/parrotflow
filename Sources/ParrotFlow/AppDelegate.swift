@@ -4172,12 +4172,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// rule that already exists, and then each word proposes the other for as
     /// long as both stand.
     ///
-    /// So the tell is the left side: a heard word that is already a term. The
-    /// sentence is kept under that term as a counter-example — a place it does
-    /// not live — and no row is offered. Returns true when it took the change.
-    ///
-    /// Three of these and `TermPortrait` stops reading the term against a
-    /// floor and reads it against them.
+    /// So the tell is the left side: a heard word that is already a term. What
+    /// is written depends on what you put back — `CorrectionRecording.rows`
+    /// holds that rule. No row is offered either way. Returns true when it
+    /// took the change.
     private func recordCounter(_ change: EditWatch.Change, in sentence: String) -> Bool {
         recordCounter(wrote: change.was, put: change.now, in: sentence)
     }
@@ -4204,33 +4202,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wrote written: String, put back: String, in sentence: String
     ) -> Bool {
         guard let term = counterTerm(wrote: written, put: back) else { return false }
+        let rows = CorrectionRecording.rows(
+            wrote: written, put: back, terms: Array(config.vocabulary.terms.keys)
+        )
         guard TermUses.occurrence(of: back, in: sentence) != nil else {
             Log.write("correction: \"\(back)\" does not stand in the sentence,"
-                + " so \(term) gets no counter-example")
+                + " so \(term) learns nothing from it")
             return false
         }
         let heard = config.vocabulary.terms[term]?.heard ?? []
         let ours = heard.contains { $0.caseInsensitiveCompare(back) == .orderedSame }
         do {
-            try TermUses.record(term: term, said: sentence, span: back, counter: true)
-            rebuildPortrait(for: term)
-            // One term corrected into another — `Praizy` into `Praisy` — says
-            // two things at once, and both are worth keeping: the first does
-            // not live here and the second does.
-            if let right = existingTerm(named: back) {
-                // `written` is the spelling this replaced, which is what lets
-                // the portrait cut a sentence holding both of them.
-                try TermUses.record(
-                    term: right, said: sentence, span: back, heard: written
-                )
-                rebuildPortrait(for: right)
+            for row in try CorrectionRecording.apply(rows, said: sentence) {
+                rebuildPortrait(for: row.term)
+                switch row {
+                case .use(let right, _, _):
+                    // One term put back over another — `Mik` to `Mick` — is a
+                    // use of the one you typed and nothing at all about the
+                    // one that lost. They share a sound, and this sentence is
+                    // where the winner lives.
+                    Log.write("correction: \"\(written)\" -> \"\(back)\" is a use of"
+                        + " \(right), and \(term) keeps no counter for it")
+                    flash("Saved  \(right) belongs there", tone: .done)
+                case .counter:
+                    Log.write(
+                        "correction: \"\(written)\" -> \"\(back)\" is a counter-example for"
+                            + " \(term)\(ours ? ", written by its own rule" : "")")
+                    flash("Noted  \(term) does not belong there", tone: .done)
+                }
             }
-            Log.write(
-                "correction: \"\(written)\" -> \"\(back)\" is a counter-example for"
-                    + " \(term)\(ours ? ", written by its own rule" : "")")
-            flash("Noted  \(term) does not belong there", tone: .done)
         } catch {
-            Log.write("could not record the counter-example: \(error.localizedDescription)")
+            Log.write("could not record the correction: \(error.localizedDescription)")
             return false
         }
         return true
@@ -4283,15 +4285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The vocabulary term this word is, ignoring case and any possessive.
     private func existingTerm(named word: String) -> String? {
-        var bare = word.trimmingCharacters(in: .whitespaces)
-        if let mine = Vocabulary.possessive(in: bare) {
-            bare = String(bare.dropLast(mine.suffix.count))
-        }
-        bare = bare.trimmingCharacters(in: .punctuationCharacters)
-        guard !bare.isEmpty else { return nil }
-        return config.vocabulary.terms.keys.first {
-            $0.caseInsensitiveCompare(bare) == .orderedSame
-        }
+        CorrectionRecording.term(named: word, in: Array(config.vocabulary.terms.keys))
     }
 
     /// Is this correction about a name, or about English? The decision is
@@ -4491,12 +4485,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ends the offer, which is the "you have moved on" signal it was
         // already sending. The letters arm when the panel opens, which is the
         // only time they are drawn on screen to be pressed.
-        // A selector claims its two digits instead. It has no chips — each
-        // option carries its own key — and it is never a tab, so there is no
-        // closed state for it to hold a key through.
+        // A selector claims one digit per reading instead. It has no chips —
+        // each option carries its own key — and it is never a tab, so there is
+        // no closed state for it to hold a key through. Two readings almost
+        // always; a place where several terms share the sound has one row per
+        // member.
         let choosing = pendingChoice != nil
+        let rows = min(9, max(2, pendingChoice?.run.next?.options.count ?? 3))
         let letters = choosing
-            ? Set(["1", "2"])
+            ? Set((1 ... rows).map(String.init))
             : (pill.isOpen ? Set(commands.map(\.key).filter { !$0.isEmpty }) : Set<String>())
         // The hold is armed only for a dictation that raised the warning, and
         // only until it has been spent. Re-armed from here on every call, so an
@@ -4514,7 +4511,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch key {
             case .letter(let typed):
                 // The digit is the option, and the pill draws it on the option
-                // itself: 1 keeps what stands there, 2 takes the other word.
+                // itself: 1 keeps what stands there, the rest are the readings
+                // under it.
                 let index = choosing
                     ? Int(typed).map { $0 - 1 }
                     : commands.firstIndex(where: { $0.key == typed })
@@ -5786,7 +5784,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ChooseRun.Place(
                 at: text[..<place.range.lowerBound].split(separator: " ").count,
                 span: place.open.standing.split(separator: " ").count,
-                other: place.open.other
+                others: Array(place.open.options.dropFirst())
             )
         }
         pendingChoice = PendingChoice(
@@ -5795,7 +5793,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                            places: questions)
         )
         Log.write("selector: holding the words for \(placed.count) question(s) — "
-            + placed.map { "\"\($0.open.standing)\" or \"\($0.open.other)\"" }
+            + placed.map { $0.open.options.map { "\"\($0)\"" }.joined(separator: " or ") }
                 .joined(separator: ", "))
         askTheNextWord()
         return true
@@ -5846,14 +5844,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watchForOfferOutsideClick()
     }
 
-    /// Take one answer: 0 keeps what stands there, 1 takes the other word.
+    /// Take one answer: 0 keeps what stands there, the rest are the readings
+    /// under it.
     private func answer(_ option: Int) {
         guard var pending = pendingChoice else { return }
-        guard pending.answers.count < pending.places.count, (0...1).contains(option) else {
-            return
-        }
-        let place = pending.places[pending.answers.count]
-        Log.write("selector: \"\(option == 0 ? place.open.standing : place.open.other)\"")
+        let place = pending.places[min(pending.answers.count, pending.places.count - 1)]
+        guard pending.answers.count < pending.places.count,
+              option >= 0, option <= place.open.elsewhere
+        else { return }
+        Log.write("selector: " + (option == place.open.elsewhere
+            ? "something else — \"\(place.open.was)\" stands and nothing is recorded"
+            : "\"\(place.open.options[option])\""))
         pending.answers.append(option)
         pending.run.answer(option)
         pendingChoice = pending
@@ -5880,7 +5881,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let (text, written) = OpenPlaces.written(
             pending.places, answers: pending.answers, in: pending.text,
-            refusing: { self.refusedSpelling($0, in: pending.text) }
+            refusing: { self.refusedSpelling($0, chose: $1, in: pending.text) }
         )
         if text != pending.text {
             Log.write("selector: the answers rewrote the transcript")
@@ -5894,7 +5895,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Only the places that were answered. A place the deadline defaulted
         // is not an answer, and a term taught from one would be an opinion
         // nobody gave.
-        let learned = (0..<answered).map { (pending.places[$0], written[$0]) }
+        // "Something else" is an answer and teaches nothing, so it is not in
+        // here. The word it wrote is what was heard, and the correction that
+        // follows is an ordinary one.
+        let learned = (0..<answered)
+            .filter { written[$0].teaches }
+            .map { (pending.places[$0], written[$0]) }
         lastTranscript = text.trimmingCharacters(in: .whitespacesAndNewlines)
         insertDictation(text, to: pending.destination, for: pending.press)
         for (place, word) in learned {
@@ -5915,18 +5921,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// to mean exactly the text the pipeline returned, or answering 0 and
     /// letting the pill run out would write two different sentences.
     private func refusedSpelling(
-        _ place: OpenPlaces.Placed, in text: String
+        _ place: OpenPlaces.Placed, chose word: String, in text: String
     ) -> String {
         let open = place.open
-        guard open.other == open.was, Vocabulary.glues(heard: open.was, term: open.now)
-        else { return open.other }
+        guard word == open.was, Vocabulary.glues(heard: open.was, term: open.now)
+        else { return word }
         // The span as heard, because the rule has written its term over it and
         // the term is a different length.
         let heard = text.replacingCharacters(in: place.range, with: open.was)
         let at = text.distance(from: text.startIndex, to: place.range.lowerBound)
         guard let lower = VocabularyPass.lowercased(
             open.was, in: heard, at: at, terms: Array(config.vocabulary.terms.keys)
-        ) else { return open.other }
+        ) else { return word }
         Log.write("selector: \"\(open.was)\" refused as \(open.now) — written in lowercase")
         return lower
     }
@@ -5956,24 +5962,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             after: Date().timeIntervalSince(pending.asked),
             beside: clipDirectories[pending.press.run]
         )
-        // Which side the term is on flips with the source: a rule has already
-        // written its term into the text, so keeping what stands there keeps
-        // the term. The comparison is with the reading, not the canonical term
-        // — `Praisy's` keeps its possessive.
-        let kept = word.word == open.now
+        // The word that was written decides what this teaches, the same rule a
+        // correction follows: a term picked is a use of that term, and an
+        // ordinary word picked is a counter under the term that was proposed.
+        // A group place offers several names, and only the one you picked
+        // learns anything.
+        let picked = existingTerm(named: word.word)
+        let replaced = word.word == open.standing ? nil : open.standing
+        let rows: [CorrectionRecording.Row] = picked.map {
+            [.use(term: $0, span: word.word, heard: replaced)]
+        } ?? [.counter(term: open.term, span: word.word)]
         do {
-            try TermUses.record(
-                term: open.term, said: text, span: word.word, from: .chosen, counter: !kept
-            )
-            rebuildPortrait(for: open.term)
-            // One term chosen over another says two things, and both are worth
-            // keeping: the first does not live here and the second does.
-            if !kept, let other = existingTerm(named: word.word), other != open.term {
-                try TermUses.record(term: other, said: text, span: word.word, from: .chosen)
-                rebuildPortrait(for: other)
+            for row in try CorrectionRecording.apply(rows, said: text, from: .chosen) {
+                rebuildPortrait(for: row.term)
             }
-            Log.write("selector: \(open.term) \(kept ? "belongs" : "does not belong")"
-                + " in \"\(TermUses.narrowed(text, to: word.word))\"")
+            let said = TermUses.narrowed(text, to: word.word)
+            if let picked {
+                Log.write("selector: \(picked) belongs in \"\(said)\"")
+            } else {
+                Log.write("selector: \(open.term) does not belong in \"\(said)\"")
+            }
         } catch {
             Log.write("selector: could not record the answer: \(error.localizedDescription)")
         }
