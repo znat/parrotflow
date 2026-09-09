@@ -17,8 +17,8 @@ import Foundation
 /// see it.
 ///
 /// That reframes the job from "reformat a date the detector found" to "write
-/// the date the way it was spoken", which is closer to what `Numbers.swift`
-/// does for numbers and probably belongs next to it rather than here. Left for
+/// the date the way it was spoken", which is closer to what the `numbers`
+/// transform does and probably belongs beside it rather than here. Left for
 /// later, deliberately: the numbers it would build on are English-only today.
 ///
 /// The division of labour is the point. Finding a date and rendering it in a
