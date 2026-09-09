@@ -71,7 +71,9 @@ final class EditWatch {
     /// What was dictated, so the line it went on can be found again while the
     /// field is still catching up.
     private var dictated: String?
-    private var field: AXUIElement?
+    /// Read by `AppDelegate.offerToLearn`, which puts its pill under the
+    /// caret in the field the correction was made in.
+    private(set) var field: AXUIElement?
     private var monitors: [Any] = []
     private var reported: Set<String> = []
     /// What each replaced word has become so far. Only the last state of each

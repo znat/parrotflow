@@ -288,6 +288,26 @@ if let index = arguments.firstIndex(of: "--lowercase-refused") {
     ))
 }
 
+if let index = arguments.firstIndex(of: "--selector") {
+    // The places are counted after the flags are dropped, or
+    // `--selector "text" --ranges` reads as a call with a place in it and
+    // answers "NOTHING FOUND" — which is the answer for a span that is gone,
+    // not for a question nobody asked.
+    let places = arguments.indices.contains(index + 2)
+        ? Array(arguments[(index + 2)...].prefix { !$0.hasPrefix("--") })
+        : []
+    guard !places.isEmpty else {
+        print("usage: ParrotFlow --selector \"<text>\""
+            + " \"<standing>|<other>|<word>|<answer>\"... [--ranges]")
+        exit(2)
+    }
+    exit(SelectorCommand.run(
+        text: arguments[index + 1],
+        places: places,
+        ranges: arguments.contains("--ranges")
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--suggest") {
     guard arguments.indices.contains(index + 1) else {
         print("usage: ParrotFlow --suggest \"<sentence>\" [--lang fr]")

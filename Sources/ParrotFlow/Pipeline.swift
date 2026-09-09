@@ -1225,6 +1225,38 @@ struct Pipeline: Equatable, Codable {
             Log.write("vocabulary: \(open) of \(changes.count) place(s) left open —"
                 + " each keeps what is already there")
         }
+        // Handed to whoever can ask about them. Only off the hotkey: a run
+        // with no press has nobody to put a question to, and `--pipeline`
+        // filling a dictionary that nothing empties is a leak with a name.
+        //
+        // "Keeps what is already there" is still this stage's contract.
+        // Nothing below changes, and a dictation whose pill is never answered
+        // writes exactly the text this returns.
+        // Written on every run, empty included: a config may list `vocabulary`
+        // twice, and the last stage is the one whose places are still open.
+        // Recording only a non-empty list would leave an earlier stage's
+        // question standing after a later one had settled it.
+        if case .int(let run)? = scope["press.run"] {
+            OpenPlaces.record(run: run, changes.indices.compactMap { index in
+                // The term that offered the reading, not the first of the
+                // set: several terms can overlap one span and only one of them
+                // wins the place, and an answer recorded against the other
+                // would teach the wrong name.
+                guard decided[index] == nil, !(index < taught.count && taught[index]),
+                      let term = changes[index].owner ?? changes[index].terms.first
+                else { return nil }
+                let change = changes[index]
+                return OpenPlaces.Open(
+                    was: change.was, now: change.now,
+                    // What `settling` is about to copy: a rule has already
+                    // written its term over the span, a sound proposal has not.
+                    wrote: String(text[change.range]) == change.now,
+                    term: term,
+                    word: text[..<change.range.lowerBound]
+                        .split(separator: " ").count
+                )
+            })
+        }
 
         // A spelling lesson is reverted by the rule and nothing else looks at
         // it. Both models measured answered all four of the archive's cases
@@ -1255,7 +1287,7 @@ struct Pipeline: Equatable, Codable {
                 ) else { continue }
                 writing[index] = VocabularyPass.Change(
                     range: change.range, was: lower, now: change.now,
-                    terms: change.terms, standing: change.standing
+                    terms: change.terms, owner: change.owner, standing: change.standing
                 )
                 Log.write("vocabulary: \"\(change.was)\" refused as \(change.now)"
                     + " — written in lowercase")

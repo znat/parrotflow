@@ -51,6 +51,7 @@ enum Trace {
         case dictation
         case correction
         case edit
+        case chose
     }
 
     /// The app a dictation was spoken into.
@@ -268,6 +269,33 @@ enum Trace {
         )
     }
 
+    /// Writes down a place the app could not settle, and what you said it was.
+    ///
+    /// Its own kind, not an `edit`. An edit is a thing the app got wrong and
+    /// you fixed. This is a place the app said out loud it could not tell, so
+    /// the answer is a label on a case that is known to be hard, whichever way
+    /// it went. Mixed into the edits they would read as mistakes that were
+    /// never made, and the edit corpus is what the misheard-word work reads.
+    ///
+    /// - Parameter kept: what stood there, which is what ships unanswered.
+    /// - Parameter chose: what was picked. The same string as `kept` when the
+    ///   answer was to keep it, and that is the label that costs nothing
+    ///   anywhere else to collect.
+    static func chose(
+        term: String, kept: String, chose: String, text: String, range: Range<Int>,
+        lang: String, app: String?, after: TimeInterval, beside: URL? = nil
+    ) {
+        append(
+            Chose(
+                v: version, kind: Kind.chose.rawValue, at: stamp(),
+                term: term, kept: kept, chose: chose, text: text,
+                range: [range.lowerBound, range.upperBound], lang: lang, app: app,
+                after: (after * 10).rounded() / 10
+            ),
+            to: beside ?? directory
+        )
+    }
+
     private static let queue = DispatchQueue(label: "com.parrotflow.trace")
 
     /// Waits for queued writes to reach the file. Same reason as `Log.flush` —
@@ -474,6 +502,28 @@ enum Trace {
         let lang: String
         let app: String?
         /// Seconds between the dictation landing and the change.
+        let after: Double
+    }
+
+    /// A place the vocabulary pass could not settle, and the answer. See
+    /// `chose`.
+    fileprivate struct Chose: Encodable {
+        let v: Int
+        let kind: String
+        let at: String
+        /// The vocabulary term the place was about.
+        let term: String
+        let kept: String
+        let chose: String
+        /// The sentence as it stood when the question was asked.
+        let text: String
+        /// Where `chose` stands in `text`, in character offsets — the same
+        /// unit `Edit.range` uses, so a script reading both kinds of line does
+        /// not have to know which record it is holding.
+        let range: [Int]
+        let lang: String
+        let app: String?
+        /// Seconds between the question going up and the answer.
         let after: Double
     }
 

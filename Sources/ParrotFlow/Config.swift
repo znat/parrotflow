@@ -233,6 +233,21 @@ struct Config: Decodable, Equatable {
         /// it shipped `Versailles` as `Vercel` inside that window.
         var gateSentence: Bool = true
 
+        /// Whether a place none of the gates settles is put to you on the pill.
+        ///
+        /// The words wait for the answer, and that is the whole of what this
+        /// costs: a pill you do not notice holds the dictation for thirty
+        /// seconds and then types what it would have typed anyway. Off, the
+        /// stage keeps what arrived and says nothing, the way it did before
+        /// there was a surface to ask on.
+        ///
+        /// On. An open place is the one case in the whole pass where the app
+        /// knows that it does not know. It is also the only place a term's
+        /// counter-examples come from without waiting for somebody to correct
+        /// the text by hand, and a portrait needs three of those before it
+        /// stops reading the term against a fixed floor.
+        var asks: Bool = true
+
         /// One way this speaker's mouth turns a term into something else, and
         /// what is known about that.
         ///
@@ -511,7 +526,7 @@ struct Config: Decodable, Equatable {
         var refused: [String] = []
 
         enum CodingKeys: String, CodingKey {
-            case acoustic, terms
+            case acoustic, terms, asks
             case minSimilarity = "min_similarity"
             case offerBelow = "offer_below"
             case decideAbove = "decide_above"
@@ -576,6 +591,9 @@ struct Config: Decodable, Equatable {
             }
             if let on = try c.decodeIfPresent(Bool.self, forKey: .gateSentence) {
                 gateSentence = on
+            }
+            if let on = try c.decodeIfPresent(Bool.self, forKey: .asks) {
+                asks = on
             }
             // `gate_rank` switched a rule that wrote a name when its span read
             // worst in the sentence. The rule is gone — see `SlotGate` — so the

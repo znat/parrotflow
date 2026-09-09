@@ -55,6 +55,14 @@ enum TermUses {
             case correction
             /// Written by hand with `--learn --in`, to fill a portrait early.
             case seeded
+            /// Answered on the pill, before anything was typed.
+            ///
+            /// Its own source and not `correction`, because it is the one kind
+            /// that is not a correction: nothing was written and then fixed.
+            /// The app said it could not tell, and this is the answer — which
+            /// makes it the only use recorded about a place that was hard,
+            /// rather than about a place the app got wrong.
+            case chosen
         }
 
         static func == (a: Use, b: Use) -> Bool { a.said == b.said && a.span == b.span }
@@ -257,19 +265,31 @@ enum TermUses {
     /// genuine uses, and nothing that records one carries the position of the
     /// occurrence that was corrected.
     static func occurrence(of span: String, in text: String) -> Range<String.Index>? {
+        // Nil is nowhere. `Vercel` in `I visited Vercelli last year.` is not a
+        // use of the term, and a caller that only asked `contains` stored it
+        // as one.
+        occurrences(of: span, in: text).first
+    }
+
+    /// Every place `span` stands as a word.
+    ///
+    /// The pill's selector needs all of them. It holds a position taken before
+    /// the stages after `vocabulary` rewrote the transcript, so it cannot
+    /// simply take the first: picking the hit nearest that position is how the
+    /// right one of two mentions is found.
+    static func occurrences(of span: String, in text: String) -> [Range<String.Index>] {
         func word(_ c: Character) -> Bool { c.isLetter || c.isNumber }
+        var found: [Range<String.Index>] = []
         var from = text.startIndex
-        while let found = text.range(of: span, range: from ..< text.endIndex) {
-            let before = found.lowerBound == text.startIndex
-                || !word(text[text.index(before: found.lowerBound)])
-            let after = found.upperBound == text.endIndex || !word(text[found.upperBound])
-            if before && after { return found }
-            guard found.lowerBound < text.endIndex else { break }
-            from = text.index(after: found.lowerBound)
+        while let at = text.range(of: span, range: from ..< text.endIndex) {
+            let before = at.lowerBound == text.startIndex
+                || !word(text[text.index(before: at.lowerBound)])
+            let after = at.upperBound == text.endIndex || !word(text[at.upperBound])
+            if before && after { found.append(at) }
+            guard at.lowerBound < text.endIndex else { break }
+            from = text.index(after: at.lowerBound)
         }
-        // Nowhere. `Vercel` in `I visited Vercelli last year.` is not a use of
-        // the term, and a caller that only asked `contains` stored it as one.
-        return nil
+        return found
     }
 
     /// What terminals and shells draw in front of the line being typed.

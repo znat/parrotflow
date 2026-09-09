@@ -435,6 +435,38 @@ say -o /tmp/t.wav --data-format=LEI16@16000 --channels=1 "testing one two three"
 $PF --transcribe /tmp/t.wav
 ```
 
+## What an answer on the pill writes
+
+```sh
+$PF --selector "<text>" "<standing>|<other>|<word>|<answer>"...
+```
+
+A place none of the gates settle is put to you on the pill, and the words wait
+for the answer. This is that write without the surface: where the span is found
+again in the text that shipped, and what goes back there.
+
+```
+$PF --selector "can you ask Mick to review it." "Mick|mixed bend|3|1"
+  can you ask mixed bend to review it.
+```
+
+A place is `standing|other|word|answer` — what stands in the text, the reading
+nobody took, where the stage saw it counted in words, and then `0` to keep what
+stands there, `1` to take the other reading, `-` for a question nobody
+answered. Several places are several arguments. `NOTHING FOUND` means no span
+was still there: the stages after `vocabulary` may rewrite, and a span that is
+gone is a question nobody can answer.
+
+The word index is what separates two mentions of the same word, and the write
+touches nothing between the places — a newline, a double space and a comma
+glued to the next word all survive it.
+
+`--ranges` prints where each answered word ended up instead of the text, which
+is what the trace records: a place after one the answer made longer has moved.
+
+`scripts/check-selector.sh` scores both halves, 21 cases. The lowercasing of a
+refused glued span is `--lowercase-refused`.
+
 ## What word does this slot want
 
 ```sh
@@ -796,8 +828,11 @@ the window has to cut at both ends.
 `selector-two` is a sentence with two open places, which is two questions. The
 pill asks about the first; the answer is written into the words, and the pill
 comes back with the second, counted "2 of 2" beside the question. The last
-answer prints the sentence it would type. Nothing triggers any of this in the
-app yet — these three and the sheet are the only ways to see it.
+answer prints the sentence it would type.
+
+A real dictation raises the same pill whenever the vocabulary gates leave a
+place open — see [transcription.md](transcription.md). What the answer does to
+the words is `--selector`, below.
 
 All three wait six seconds before the pill comes up, then read the caret and
 hang the panel off it, the way the app aims at the press. Click into a document
@@ -875,6 +910,7 @@ scripts/check-slot-gap.sh          # what the slot says about a rewrite (needs b
 scripts/check-sentence-case.sh     # the capital after a mark the join removes
 scripts/check-invented-tail.sh     # the endings the decoder wrote over silence
 scripts/check-sentence-join.sh     # which sentence marks the join removes (needs the model)
+scripts/check-selector.sh          # where an open place lands, and what an answer writes
 
 PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another terminal
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back
