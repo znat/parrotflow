@@ -19,16 +19,10 @@ let package = Package(
         .package(url: "https://github.com/huggingface/swift-transformers", from: "0.1.24"),
     ],
     targets: [
-        // Three lines of Objective-C, for the one thing Swift cannot do:
-        // catch an NSException. See Sources/ObjCExceptions/include.
-        .target(
-            name: "ObjCExceptions",
-            path: "Sources/ObjCExceptions"
-        ),
         .executableTarget(
             name: "ParrotFlow",
             dependencies: [
-                "Yams", "FluidAudio", "ObjCExceptions",
+                "Yams", "FluidAudio",
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Transformers", package: "swift-transformers"),

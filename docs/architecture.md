@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | Global hotkey | `HotKeyManager.swift` | Carbon `RegisterEventHotKey` — no Accessibility permission needed, and it swallows the keystroke so it doesn't leak into the app you're typing in |
 | Bare modifiers | `ModifierKey.swift` | `RegisterEventHotKey` can't express these, so they poll `CGEventSource.flagsState` for the device-dependent left/right bits — also permission-free |
-| Audio capture | `Recorder.swift` | `AVAudioEngine` tap → `AVAudioConverter` → 16 kHz mono WAV |
+| Audio capture | `Recorder.swift` | `AVCaptureSession` on one named device → 16 kHz mono WAV. Not `AVAudioEngine`: an unpinned engine records through a private aggregate built from the default *output* device, so it runs at the wrong rate |
 | Transcription | `Transcriber.swift` | Parakeet TDT v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio), CoreML on the Neural Engine |
 | The pipeline | `Pipeline.swift` | Stages, conditions, app gating — [pipelines.md](pipelines.md) |
 | Replacements | `Replacements.swift` | Literal, regex and fuzzy substitution |
@@ -166,10 +166,16 @@ hand.
 
 ### Start-up latency
 
-`AVAudioEngine` needs a moment to open the input stream, so the first fraction
-of a second after the hotkey isn't captured. Warming the engine up at launch
-brings that down to roughly 60–70 ms, which a natural pause after pressing the
-key covers.
+The input stream takes a moment to open, so the first fraction of a second
+after the hotkey isn't captured. `Recorder.warmUp` builds the capture session at
+launch — it resolves the device, adds the input and the output, and commits —
+which leaves only `startRunning` to pay for on the press.
+
+Measured here on 2026-09-09, RØDE VideoMic GO II over USB, `--record 3` warm:
+`startRunning` returns after 107–109 ms, and the first sample reaches the file
+122–135 ms after the press. The engine it replaced reached the first sample at
+106 ms, so this costs about 20 ms — and buys a recording that is on the device
+the menu names.
 
 Getting to zero means keeping the mic open continuously and buffering into a
 ring — which also means the orange recording indicator is lit the entire time
