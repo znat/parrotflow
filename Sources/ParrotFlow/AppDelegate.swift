@@ -3990,6 +3990,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerHeld = false
         Log.write("correction: asking about \(worth.count) rule(s) — "
             + worth.map { "\"\($0.was)\" -> \"\($0.now)\"" }.joined(separator: ", "))
+        aimAtTheCorrection()
         pill.model.onPick = { [weak self] index in
             guard let self, commands.indices.contains(index) else { return }
             self.runOfferedCommand(commands[index].title)
@@ -4120,6 +4121,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         correctionPanel.show(
             rules: worth.map { (heard: $0.was, corrected: $0.now) }, over: sentence
         )
+    }
+
+    /// Put the learn question under the caret in the field the correction was
+    /// made in.
+    ///
+    /// This offer never aimed at all, so it drew wherever the pill was last
+    /// put — which is where the *previous dictation* landed. The edit that
+    /// raises it can come minutes later, after scrolling, in another window,
+    /// and the question would then be asked somewhere else entirely.
+    ///
+    /// The caret and nothing else. `EditWatch` fires off key events, so this
+    /// runs while the caret is still sitting at the word that was changed —
+    /// which is the same place the post-dictation pill hangs off. A field that
+    /// answers no caret leaves the pill exactly where it is: it is already
+    /// under the words of the dictation this correction is about, and the
+    /// bottom of the screen would be further from them, not nearer.
+    private func aimAtTheCorrection() {
+        guard let element = edits.field else { return }
+        guard case .found(let anchor) = CaretAnchor.read(at: element) else {
+            Log.write("correction: the field gives no caret; the pill stays where it was")
+            return
+        }
+        pill.aim(at: anchor)
     }
 
     /// A correction that runs the other way, and what to do with it.
