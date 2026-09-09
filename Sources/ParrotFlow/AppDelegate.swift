@@ -1287,13 +1287,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so it is visible precisely when the panel is open, and the promise
         // and the behaviour cannot come apart again.
         if !recorder.isRecording {
-            // The selector is the one open panel that does not draw that row.
-            // `PillMetrics.showsHold` refuses it, so a panel asking which word
-            // you meant promises nothing about holding and must not take the
-            // next hold as an instruction. The rule is still "whatever the
-            // pill is drawing"; there is now a second thing to ask it.
-            let promisesHold = pill.isOpen
-                && PillMetrics.showsHold(offerHeadline, hotkey: pill.model.hotkey)
+            // The selector is the one open panel that does not draw that row
+            // — `PillMetrics.showsHold` refuses it — so a panel asking which
+            // word you meant promises nothing about holding and must not take
+            // the next hold as an instruction. Named here rather than asked of
+            // `showsHold`, which also refuses a pill with no key registered:
+            // that is a different case and not this PR's to change.
+            var promisesHold = pill.isOpen
+            if case .choose = offerHeadline { promisesHold = false }
             keyedAtPress = afterTap || (offerIsUp && promisesHold)
             // Only when it is on, and it says which of the two put it there.
             // This is the one decision at the press you cannot see from
@@ -5706,6 +5707,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     ) -> Bool {
         let open = OpenPlaces.take(for: press.run)
         guard !open.isEmpty, config.vocabulary.asks else { return false }
+        // Not while another dictation is running. Push-to-talk does not wait,
+        // so a second press can be recording or decoding while this one asks —
+        // and then two sentences are in the air with a question between them.
+        // The newer one would land first, its offer would take the pill out
+        // from under the question, and this one's words would paste after it
+        // into whatever was in front by then.
+        //
+        // The same guard `watchTheOfferKeys` makes, for the same reason: with
+        // a dictation still running the keys are refused anyway, so the pill
+        // could only be clicked. A press that starts *after* the question is
+        // up is the safe direction — `handleHotKeyPress` ends the offer, and
+        // that writes these words before the new recording starts.
+        guard !recorder.isRecording, runsInFlight <= 0 else {
+            Log.write("selector: a dictation is still running; \(open.count) place(s)"
+                + " keep what the pipeline settled on")
+            return false
+        }
         // One question at a time, and one pill. A panel already up is somebody
         // else's — the learn offer, an update — and replacing it would throw
         // away what it was asking without showing it. Same refusal
@@ -5877,13 +5895,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// These are also the hardest places there are to label. Every free gate
     /// looked at this one and none of them could say.
     private func teach(
-        _ place: OpenPlaces.Placed, wrote word: String, in text: String,
+        _ place: OpenPlaces.Placed, wrote word: OpenPlaces.Written, in text: String,
         of pending: PendingChoice
     ) {
         let open = place.open
         Trace.chose(
-            term: open.term, kept: open.standing, chose: word, text: text,
-            range: 0 ..< text.utf16.count,
+            term: open.term, kept: open.standing, chose: word.word, text: text,
+            range: word.range,
             lang: DictationLanguage.forCorrection(
                 transcript: text, allowed: config.transcription.languages
             ),
@@ -5895,20 +5913,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // written its term into the text, so keeping what stands there keeps
         // the term. The comparison is with the reading, not the canonical term
         // — `Praisy's` keeps its possessive.
-        let kept = word == open.now
+        let kept = word.word == open.now
         do {
             try TermUses.record(
-                term: open.term, said: text, span: word, from: .chosen, counter: !kept
+                term: open.term, said: text, span: word.word, from: .chosen, counter: !kept
             )
             rebuildPortrait(for: open.term)
             // One term chosen over another says two things, and both are worth
             // keeping: the first does not live here and the second does.
-            if !kept, let other = existingTerm(named: word), other != open.term {
-                try TermUses.record(term: other, said: text, span: word, from: .chosen)
+            if !kept, let other = existingTerm(named: word.word), other != open.term {
+                try TermUses.record(term: other, said: text, span: word.word, from: .chosen)
                 rebuildPortrait(for: other)
             }
             Log.write("selector: \(open.term) \(kept ? "belongs" : "does not belong")"
-                + " in \"\(TermUses.narrowed(text, to: word))\"")
+                + " in \"\(TermUses.narrowed(text, to: word.word))\"")
         } catch {
             Log.write("selector: could not record the answer: \(error.localizedDescription)")
         }

@@ -459,8 +459,13 @@ gone is a question nobody can answer.
 
 The word index is what separates two mentions of the same word, and the write
 touches nothing between the places — a newline, a double space and a comma
-glued to the next word all survive it. `scripts/check-selector.sh` scores both
-halves. The lowercasing of a refused glued span is `--lowercase-refused`.
+glued to the next word all survive it.
+
+`--ranges` prints where each answered word ended up instead of the text, which
+is what the trace records: a place after one the answer made longer has moved.
+
+`scripts/check-selector.sh` scores both halves, 20 cases. The lowercasing of a
+refused glued span is `--lowercase-refused`.
 
 ## What word does this slot want
 

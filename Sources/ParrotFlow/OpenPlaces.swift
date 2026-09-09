@@ -107,19 +107,30 @@ enum OpenPlaces {
     static func written(
         _ places: [Placed], answers: [Int], in text: String,
         refusing: (Placed) -> String
-    ) -> (text: String, words: [String]) {
+    ) -> (text: String, words: [Written]) {
         var out = "", cursor = text.startIndex
-        var written: [String] = []
+        var written: [Written] = []
         for (index, place) in places.enumerated() {
             out += text[cursor..<place.range.lowerBound]
             let word = index < answers.count && answers[index] == 1
                 ? refusing(place)
                 : place.open.standing
-            written.append(word)
+            // Where it ended up, not where it was asked about. A place after
+            // one that got longer or shorter has moved, and the trace's whole
+            // job is to say which occurrence this was.
+            let from = out.utf16.count
             out += word
+            written.append(Written(word: word, range: from ..< out.utf16.count))
             cursor = place.range.upperBound
         }
         return (out + text[cursor...], written)
+    }
+
+    /// A word as it was written, and where it sits in the text that shipped.
+    struct Written: Equatable {
+        let word: String
+        /// UTF-16 offsets, which is what the trace's other records use.
+        let range: Range<Int>
     }
 
     private static let lock = NSLock()

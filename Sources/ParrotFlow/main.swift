@@ -296,7 +296,8 @@ if let index = arguments.firstIndex(of: "--selector") {
     }
     exit(SelectorCommand.run(
         text: arguments[index + 1],
-        places: Array(arguments[(index + 2)...].prefix { !$0.hasPrefix("--") })
+        places: Array(arguments[(index + 2)...].prefix { !$0.hasPrefix("--") }),
+        ranges: arguments.contains("--ranges")
     ))
 }
 

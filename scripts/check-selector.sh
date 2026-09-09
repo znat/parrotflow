@@ -33,7 +33,8 @@ WORK="$(mktemp -d -t parrotflow-selector)"
 trap 'rm -rf "$WORK"' EXIT
 export PARROTFLOW_CONFIG_DIR="$WORK"
 
-# Base64, one line per field. A case holds newlines and double spaces on
+# Base64, one line per field, and an empty last field for a case that wants the
+# text rather than the ranges. A case holds newlines and double spaces on
 # purpose — those are what it is checking survive — and neither goes through a
 # line-per-field file as itself.
 if ! python3 -c '
@@ -44,6 +45,7 @@ for case in json.load(open(sys.argv[1])):
     print(b("\n".join(case["places"])))
     print(b(case["want"]))
     print(b(case["why"]))
+    print(b("--ranges" if case.get("ranges") else ""))
 ' "$ROOT/tests/selector-cases.json" > "$WORK/cases"; then
   echo "  ✗ tests/selector-cases.json could not be read"
   exit 1
@@ -51,7 +53,7 @@ fi
 
 pass=0; total=0
 while IFS= read -r text64 && IFS= read -r places64 && IFS= read -r want64 \
-   && IFS= read -r why64; do
+   && IFS= read -r why64 && IFS= read -r mode64; do
   total=$((total + 1))
   text="$(printf '%s' "$text64" | base64 -d)"
   want="$(printf '%s' "$want64" | base64 -d)"
@@ -62,7 +64,12 @@ while IFS= read -r text64 && IFS= read -r places64 && IFS= read -r want64 \
   places=()
   while IFS= read -r place; do places+=("$place"); done \
     < <(printf '%s' "$places64" | base64 -d; printf '\n')
-  got="$("$BIN" --selector "$text" "${places[@]}" 2>/dev/null)"
+  mode="$(printf '%s' "$mode64" | base64 -d)"
+  if [ -n "$mode" ]; then
+    got="$("$BIN" --selector "$text" "${places[@]}" "$mode" 2>/dev/null)"
+  else
+    got="$("$BIN" --selector "$text" "${places[@]}" 2>/dev/null)"
+  fi
   if [ "$got" = "$want" ]; then
     pass=$((pass + 1))
     printf '  ✓  %s\n' "$why"

@@ -19,12 +19,16 @@ import Foundation
 /// between them. `scripts/check-selector.sh` scores this entry point, so the
 /// set runs against the shipped functions rather than a copy of them.
 ///
+/// `--ranges` prints where each answered word ended up instead of the text,
+/// which is what `Trace.chose` records: a place after one the answer made
+/// longer or shorter has moved, and nothing else shows that.
+///
 /// The refusal is written plainly here — `other` as given. The app also asks
 /// `VocabularyPass.lowercased` about a glued span, which needs a tagger and
 /// the vocabulary; `--lowercase-refused` is where that half is scored.
 enum SelectorCommand {
 
-    static func run(text: String, places: [String]) -> Int32 {
+    static func run(text: String, places: [String], ranges: Bool = false) -> Int32 {
         var open: [OpenPlaces.Open] = []
         var answers: [Int?] = []
         for argument in places {
@@ -66,9 +70,18 @@ enum SelectorCommand {
         // asked one at a time, so nothing after an unanswered one was asked
         // either.
         let taken = ordered.prefix { $0 != nil }.compactMap { $0 }
-        print(OpenPlaces.written(
+        let done = OpenPlaces.written(
             located, answers: taken, in: text, refusing: { $0.open.other }
-        ).text)
+        )
+        // The word and where it ended up, which is what the trace records. A
+        // place after one the answer made longer or shorter has moved, and
+        // nothing else prints that.
+        guard !ranges else {
+            print(done.words.map { "\($0.word)@\($0.range.lowerBound)-\($0.range.upperBound)" }
+                .joined(separator: " "))
+            return 0
+        }
+        print(done.text)
         return 0
     }
 }
