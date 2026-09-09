@@ -1,24 +1,23 @@
 import AVFoundation
 import CoreAudio
 import Foundation
-import ObjCExceptions
 import Yams
 
 /// `--audio-recovery` — drives a device change past the recorder and checks it
 /// comes back, without touching the machine's audio settings.
 ///
 /// The bug in #95 is a microphone that changes underneath a running app: the
-/// engine keeps converting from the format the old device was running at, every
-/// buffer is refused, and the clip is silence that nothing reports. Reproducing
-/// that for real means switching the default input device, which takes the
-/// microphone away from whoever is dictating — so this moves the *binding*
-/// instead. `Recorder.currentInput` is the one place the recorder asks what the
-/// system would hand it; replacing it is enough to make the recorder believe a
-/// headset arrived, and every path below that is the real one.
+/// recorder keeps writing through the device that left, every buffer is
+/// refused, and the clip is silence that nothing reports. Reproducing that for
+/// real means switching the default input device, which takes the microphone
+/// away from whoever is dictating — so this moves the *binding* instead.
+/// `Recorder.currentInput` is the one place the recorder asks what the system
+/// would hand it; replacing it is enough to make the recorder believe a headset
+/// arrived, and every path below that is the real one.
 ///
-/// What it does not cover: the hardware. No input device is opened here, so
-/// "the buffers that arrive are the ones the new device sends" is still a claim
-/// a human has to check. See docs/cli.md.
+/// What it does not cover: the hardware. No session is started here, so "the
+/// buffers that arrive are the ones the new device sends" is a claim `--record`
+/// has to make. See docs/cli.md.
 enum AudioRecoveryCommand {
 
     /// One line of `tests/audio-recovery-cases.yaml`.
@@ -48,253 +47,100 @@ enum AudioRecoveryCommand {
             return 1
         }
 
-        var failures = 0
+        // Every check that ran, so the total below counts what was answered
+        // rather than what was written.
+        var results: [Bool] = []
 
         print("Device changes")
-        for testCase in cases {
-            failures += check(testCase) ? 0 : 1
-        }
+        results += cases.map { check($0) }
 
         print("")
-        print("The engine and its own input")
-        var graph = 0
-        graph += checkAGraphThatDisagreesWithItselfIsRebuilt() ? 0 : 1
-        graph += checkAMismatchThatSurvivesItsRebuildIsLeftAlone() ? 0 : 1
-        graph += checkTheTapIsInstalledAtTheHardwareFormat() ? 0 : 1
-        graph += checkAnExceptionComesBackAsAValue() ? 0 : 1
-        graph += checkAReplacedEngineIsNotReleasedOnTheSpot() ? 0 : 1
-        failures += graph
+        print("The device the list names")
+        if let bound = checkTheSessionIsBoundToTheNamedDevice() { results.append(bound) }
 
         print("")
         thisMachine()
 
         print("")
         print("Capture after a device change")
-        var capture = 0
-        capture += checkCaptureSurvivesTheChange(config: config) ? 0 : 1
-        capture += checkStaleFormatIsReported(config: config) ? 0 : 1
-        capture += checkPartialLossIsRefused(config: config) ? 0 : 1
-        capture += checkOneLostBufferIsForgiven(config: config) ? 0 : 1
-        failures += capture
+        results.append(checkCaptureSurvivesTheChange(config: config))
+        results.append(checkAForeignFormatIsReported(config: config))
+        results.append(checkPartialLossIsRefused(config: config))
+        results.append(checkOneLostBufferIsForgiven(config: config))
 
-        let total = cases.count + 9
+        let passed = results.filter { $0 }.count
         print("")
-        print("  \(total - failures)/\(total)")
-        return failures == 0 ? 0 : 1
+        print("  \(passed)/\(results.count)")
+        return passed == results.count ? 0 : 1
     }
 
-    /// What the two sides of the comparison say about the microphone in front
-    /// of you right now.
+    /// What the recorder is on right now, and what it cost to get there.
     ///
     /// Printed, never scored. A build machine has no microphone and a laptop
-    /// has whatever is plugged into it, so there is no number here to pass or
-    /// fail — but if a device ever makes the engine and the stream disagree
-    /// while everything is healthy, this is the line that says so, and it is
-    /// the first thing to paste into an issue about a silent recording.
+    /// has whatever is plugged into it. `open` is the line to read: warming up
+    /// resolves the device and builds the session, and it must not start it —
+    /// the orange indicator belongs to a recording, not to a launch.
     private static func thisMachine() {
         print("This machine")
         guard let binding = Recorder.InputBinding.system() else {
             print("  no input device")
             return
         }
-        // Held in a local, not asked of a temporary: an input node outlives
-        // nothing, and reading the format off an engine that is already being
-        // released segfaults. No engine is started, so the microphone
-        // indicator stays off — the same promise `Recorder.warmUp` makes.
-        let engine = AVAudioEngine()
-        let formats = Recorder.EngineFormats(
-            tap: engine.inputNode.outputFormat(forBus: 0),
-            hardware: engine.inputNode.inputFormat(forBus: 0)
-        )
+        // Read before as well as after: the property is system-wide, so another
+        // app already holding the microphone would otherwise read as ours.
+        let before = Recorder.isRunningSomewhere(binding.device)
+        let recorder = Recorder()
+        recorder.warmUp()
+        let after = Recorder.isRunningSomewhere(binding.device)
+
         print("  device   \(Recorder.inputDeviceName ?? "unnamed") — \(binding.described)")
-        print("  engine   \(formats.described)")
-        // Both comparisons, in the words the log would use. The engine against
-        // itself is the one that decides whether a tap can be installed at all.
-        if let problem = Recorder.formatProblem(formats, against: binding) {
-            print("  agree    NO — \(problem)")
-            print("           a press would rebuild the engine before recording")
-        } else {
-            print("  agree    yes")
-        }
+        print("  bound    \(recorder.boundDevice?.name ?? "nothing")")
+        print("  capture  \(recorder.captureDeviceID ?? "no AVCaptureDevice resolved")")
+        print("  open     \(after ? "yes" : "no") after warmUp"
+              + " (\(before ? "already open before it" : "closed before it"))")
     }
 
-    // MARK: - The graph
+    // MARK: - The device
 
-    /// The engine's own two formats disagree, and nothing about the device
-    /// does. #123: this is what an AirPods link settling looks like from
-    /// inside, and comparing only the binding drops it.
+    /// The recorder binds to the microphone the device list names.
     ///
-    /// Dropping it is not a missed rebuild, it is a crash. The press after it
-    /// installs a tap at the format the node has left, and `installTap` answers
-    /// that by raising an exception through the hotkey handler.
-    private static func checkAGraphThatDisagreesWithItselfIsRebuilt() -> Bool {
-        let name = "a graph that disagrees with itself is rebuilt"
-        let binding = Recorder.InputBinding(device: 2, sampleRate: 24000, channels: 1)
-        guard let tap = format(24000), let hardware = format(16000) else {
-            return say(false, name, "could not build the formats")
+    /// The binding cases below cannot reach this: their device numbers name
+    /// nothing, so no capture device is ever resolved from them. Here the name
+    /// comes out of CoreAudio and has to come back out of AVFoundation.
+    ///
+    /// Nil when the machine has no input device, which is a skip and not a
+    /// failure.
+    private static func checkTheSessionIsBoundToTheNamedDevice() -> Bool? {
+        let name = "the session is bound to the named device"
+        guard let wanted = Recorder.inputDeviceName else {
+            print("  – \(name.padding(toLength: 46, withPad: " ", startingAt: 0)) no input device here")
+            return nil
         }
 
         let recorder = Recorder()
-        recorder.currentInput = { binding }
+        recorder.preferredMicrophones = [wanted]
         recorder.warmUp()
 
-        // Moved after the binding is settled, so the device is provably not
-        // what fires this: `currentInput` answers the same thing throughout.
-        let before = recorder.rebuilds
-        recorder.engineFormats = { _ in
-            Recorder.EngineFormats(tap: tap, hardware: hardware)
+        guard let bound = recorder.boundDevice?.name else {
+            return say(false, name, "nothing was bound")
         }
-        recorder.simulateConfigurationChange()
-        settle(untilTrue: { recorder.rebuilds > before }, seconds: 2)
-
-        guard recorder.rebuilds > before else {
-            return say(false, name, "the device had not moved, so the change was dropped")
+        guard bound == wanted else {
+            return say(false, name, "bound \"\(bound)\", not \"\(wanted)\"")
         }
-        return say(true, name, "rebuilt")
-    }
-
-    /// The same mismatch, over and over, buys one engine and not a hundred.
-    ///
-    /// A rebuild retires the engine it replaced; releasing that one ten seconds
-    /// later posts a configuration change of its own. If the mismatch is still
-    /// there — a machine whose two reads simply never agree — the change finds
-    /// it and rebuilds again, forever. Measured on 2026-09-06: 40 rebuilds in
-    /// fifteen minutes on an idle app, each one opening the microphone.
-    private static func checkAMismatchThatSurvivesItsRebuildIsLeftAlone() -> Bool {
-        let name = "a mismatch that outlives its rebuild is kept"
-        let binding = Recorder.InputBinding(device: 2, sampleRate: 24000, channels: 1)
-        guard let tap = format(24000), let hardware = format(16000) else {
-            return say(false, name, "could not build the formats")
+        guard let id = recorder.captureDeviceID else {
+            return say(false, name, "no capture device answers to \"\(wanted)\"")
         }
-
-        let recorder = Recorder()
-        recorder.currentInput = { binding }
-        recorder.warmUp()
-
-        // Every engine this recorder builds comes out mismatched, which is the
-        // machine being reproduced: no rebuild can clear it.
-        recorder.engineFormats = { _ in
-            Recorder.EngineFormats(tap: tap, hardware: hardware)
-        }
-        recorder.simulateConfigurationChange()
-        settle(untilTrue: { recorder.rebuilds > 0 }, seconds: 2)
-        guard recorder.rebuilds == 1 else {
-            return say(false, name, "the first change bought \(recorder.rebuilds) engine(s)")
-        }
-
-        for _ in 0..<3 { recorder.simulateConfigurationChange() }
-        settle(untilTrue: { recorder.rebuilds > 1 }, seconds: 1)
-        guard recorder.rebuilds == 1 else {
-            return say(false, name, "\(recorder.rebuilds) engines for one mismatch")
-        }
-        return say(true, name, "one engine, then left alone")
-    }
-
-    /// The tap goes on at the format `installTap` asserts against.
-    ///
-    /// Its own words: "required condition is false: format.sampleRate ==
-    /// inputHWFormat.sampleRate". So when the node describes its input two
-    /// ways, the hardware one is the only one that can be handed over — and
-    /// handing it the other is what refused the press and asked for another.
-    private static func checkTheTapIsInstalledAtTheHardwareFormat() -> Bool {
-        let name = "the tap is installed at the hardware format"
-        guard let tap = format(24000), let hardware = format(48000) else {
-            return say(false, name, "could not build the formats")
-        }
-        // What an input node answers when it is pointing at nothing: a format
-        // object with no rate in it. `AVAudioFormat` will not build one from a
-        // rate of zero, so it is made the way the node makes one.
-        let empty = AVAudioFormat()
-        let picked = Recorder.captureFormat(
-            Recorder.EngineFormats(tap: tap, hardware: hardware)
-        )
-        guard picked.sampleRate == hardware.sampleRate else {
-            return say(false, name, "picked \(Int(picked.sampleRate)) Hz, not the hardware's 48000")
-        }
-        // A node pointing at nothing is the one case the other half stands in
-        // for: an empty hardware read is not a second description, it is no
-        // description at all.
-        let fallback = Recorder.captureFormat(
-            Recorder.EngineFormats(tap: tap, hardware: empty)
-        )
-        guard fallback.sampleRate == tap.sampleRate else {
-            return say(false, name, "an empty hardware read was taken as a format")
-        }
-        return say(true, name, "48000 Hz, and the tap format when there is none")
-    }
-
-    /// An NSException raised inside a Swift frame comes back as a value.
-    ///
-    /// The one thing the shim in `Sources/ObjCExceptions` exists for. Without
-    /// it, this raise would unwind out of the run loop callback that called it
-    /// — past every `catch`, past every log line — and AppKit would swallow it
-    /// at the top of the loop.
-    private static func checkAnExceptionComesBackAsAValue() -> Bool {
-        let name = "an exception comes back as a value"
-        let raised = runCatchingObjCExceptions {
-            NSException(
-                name: .invalidArgumentException,
-                reason: "required condition is false: format.sampleRate == inputHWFormat.sampleRate",
-                userInfo: nil
-            ).raise()
-        }
-        guard let raised else {
-            return say(false, name, "nothing came back, so the exception was not caught")
-        }
-        guard runCatchingObjCExceptions({}) == nil else {
-            return say(false, name, "a block that raised nothing came back with something")
-        }
-        return say(true, name, "\(raised.name.rawValue)")
-    }
-
-    /// The engine a rebuild replaced is held, not released where it stood.
-    ///
-    /// Releasing it there is a crash, not a leak: `dealloc` blocks for seconds
-    /// tearing down a Bluetooth audio unit, and AVFoundation delivers property
-    /// changes to the object throughout. One landed on 2026-08-12 at 18:22:43.
-    ///
-    /// Both halves are checked. Held is the fix; let go afterwards is what
-    /// makes it a delay rather than an engine kept forever, holding a device
-    /// open that nothing is recording through.
-    private static func checkAReplacedEngineIsNotReleasedOnTheSpot() -> Bool {
-        let name = "a replaced engine is held, then let go"
-        let recorder = Recorder()
-        recorder.currentInput = { Recorder.InputBinding(device: 1, sampleRate: 48000, channels: 1) }
-        recorder.warmUp()
-
-        recorder.currentInput = { Recorder.InputBinding(device: 2, sampleRate: 24000, channels: 1) }
-        recorder.simulateConfigurationChange()
-        settle(untilTrue: { recorder.rebuilds > 0 }, seconds: 2)
-
-        guard recorder.rebuilds > 0 else {
-            return say(false, name, "nothing was replaced, so there was nothing to hold")
-        }
-        guard recorder.enginesInRetirement == 1 else {
-            return say(false, name, "the engine was let go where it was replaced")
-        }
-
-        // Longer than the recorder holds one. Nothing waits on this in the app;
-        // it is waited on here so "held" cannot pass by being "kept".
-        settle(untilTrue: { recorder.enginesInRetirement == 0 }, seconds: 15)
-        guard recorder.enginesInRetirement == 0 else {
-            return say(false, name, "it was still being held after 15s")
-        }
-        return say(true, name, "held, then let go")
-    }
-
-    private static func format(_ rate: Double) -> AVAudioFormat? {
-        AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false
-        )
+        return say(true, name, id)
     }
 
     // MARK: - The decision
 
-    /// Moves the binding under an idle recorder and checks whether it rebuilt.
+    /// Moves the binding under an idle recorder and checks whether it rebound.
     ///
-    /// The change is delivered as the notification the engine posts, not as a
-    /// direct call, so the observer has to have been moved onto each new engine
-    /// for the second case in a row to be seen at all.
+    /// The change is delivered the way CoreAudio delivers one — a device-list
+    /// change, through the listener's own body — not as a direct call to the
+    /// comparison. So a change that breaks the path between the two still fails
+    /// the check.
     private static func check(_ testCase: Case) -> Bool {
         let recorder = Recorder()
         recorder.currentInput = { testCase.from }
@@ -302,37 +148,37 @@ enum AudioRecoveryCommand {
 
         let before = recorder.rebuilds
         recorder.currentInput = { testCase.to }
-        recorder.simulateConfigurationChange()
+        recorder.simulateDeviceListChange()
 
-        // The notification hops to the main queue and the rebuild runs on its
-        // own; both need the run loop to turn. Two seconds is well over the
-        // 0.1s a settled device costs and well under the timeout that would
-        // make a red result ambiguous.
+        // The change hops to the main queue, which needs the run loop to turn.
+        // Two seconds is well over what a rebind costs and well under a timeout
+        // that would make a red result ambiguous.
         settle(untilTrue: { recorder.rebuilds > before }, seconds: 2)
 
         let rebuilt = recorder.rebuilds > before
         guard rebuilt == testCase.rebuild else {
             print("  ✗ \(testCase.name)")
-            print("      got   \(rebuilt ? "rebuilt" : "no rebuild")")
-            print("      want  \(testCase.rebuild ? "rebuilt" : "no rebuild") — \(testCase.why)")
+            print("      got   \(rebuilt ? "rebound" : "no rebind")")
+            print("      want  \(testCase.rebuild ? "rebound" : "no rebind") — \(testCase.why)")
             return false
         }
-        print("  ✓ \(testCase.name.padding(toLength: 46, withPad: " ", startingAt: 0)) \(rebuilt ? "rebuilt" : "left alone")")
+        let padded = testCase.name.padding(toLength: 46, withPad: " ", startingAt: 0)
+        print("  ✓ \(padded) \(rebuilt ? "rebound" : "left alone")")
         return true
     }
 
     // MARK: - The capture
 
     /// #95's acceptance criterion, one level under the hardware: after a
-    /// simulated switch, the capture path converts and writes a real signal.
+    /// simulated switch, the capture path writes a real signal.
     ///
     /// The change is the one from #95 — the same device at a new rate, which is
-    /// what a headset does while its link settles — so the rebuild has to fire
+    /// what a headset does while its link settles — so the rebind has to fire
     /// for this to get as far as measuring anything. The buffers are a 440 Hz
     /// tone rather than a microphone, so what is measured after that is the
-    /// conversion and the write: the half that was silently dropping
-    /// everything. It has to come out with non-trivial RMS.
+    /// write. It has to come out with non-trivial RMS.
     private static func checkCaptureSurvivesTheChange(config: Config) -> Bool {
+        let name = "a tone at the new rate is written"
         let settling = Recorder.InputBinding(device: 2, sampleRate: 48000, channels: 1)
         let settled = Recorder.InputBinding(device: 2, sampleRate: 24000, channels: 1)
 
@@ -341,86 +187,68 @@ enum AudioRecoveryCommand {
         recorder.warmUp()
 
         recorder.currentInput = { settled }
-        recorder.simulateConfigurationChange()
+        recorder.simulateDeviceListChange()
         settle(untilTrue: { recorder.rebuilds > 0 }, seconds: 2)
 
         guard recorder.rebuilds > 0 else {
-            print("  ✗ a tone at the new rate is written")
-            print("      got   the format change was ignored, so the engine still holds 48000 Hz")
-            print("      want  a rebuild, then a clip with signal in it")
+            print("  ✗ \(name)")
+            print("      got   the format change was ignored, so the session stayed where it was")
+            print("      want  a rebind, then a clip with signal in it")
             return false
         }
 
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: settled.sampleRate,
-            channels: AVAudioChannelCount(settled.channels), interleaved: false
-        ) else {
-            print("  ✗ a tone at the new rate is written  — could not build the format")
-            return false
+        guard let good = format(config.audio.sampleRate) else {
+            return say(false, name, "could not build the format")
         }
 
         do {
-            try recorder.openCapture(inputFormat: format, config: config, markRecording: true)
+            try recorder.openCapture(config: config, markRecording: true)
         } catch {
-            print("  ✗ a tone at the new rate is written  — \(error.localizedDescription)")
-            return false
+            return say(false, name, error.localizedDescription)
         }
-        for _ in 0..<20 { recorder.process(buffer: tone(format, frames: 4096)) }
+        for _ in 0..<20 { recorder.process(buffer: tone(good, frames: 4096)) }
         pause(overTheFloor)
 
         guard let recording = recorder.stop(config: config) else {
-            print("  ✗ a tone at the new rate is written  — nothing was written")
-            return false
+            return say(false, name, "nothing was written")
         }
         defer { try? FileManager.default.removeItem(at: recording.url) }
 
         guard recording.rms >= Recorder.silenceFloor else {
-            print("  ✗ a tone at the new rate is written")
+            print("  ✗ \(name)")
             print(String(format: "      got   rms %.5f", recording.rms))
             print(String(format: "      want  at least %.5f", Recorder.silenceFloor))
             return false
         }
-        print(String(
-            format: "  ✓ %@ rms %.3f",
-            "a tone at the new rate is written".padding(toLength: 46, withPad: " ", startingAt: 0),
-            recording.rms
-        ))
-        return true
+        return say(true, name, String(format: "rms %.3f", recording.rms))
     }
 
-    /// The bug itself, and the fact that it is no longer silent.
+    /// The safety net from #95, without the converter that used to be it.
     ///
-    /// A converter built from the format the *old* device was running at, handed
-    /// buffers at the new one. `AVAudioConverter` reports an error and still
-    /// hands back the right number of zeroed frames, so a length check cannot
-    /// see it — this is what wrote the empty clips in #95. Nothing must be
-    /// written, and the recorder must say so rather than returning nil in
-    /// silence.
-    private static func checkStaleFormatIsReported(config: Config) -> Bool {
-        guard let stale = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false
-        ), let live = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: 24000, channels: 1, interleaved: false
-        ) else {
-            print("  ✗ a stale format is reported, not swallowed  — could not build the formats")
-            return false
+    /// Buffers at a rate the open file cannot take. AVCapture is asked for one
+    /// format and delivers it, so nothing should reach this in the app — and
+    /// when something does, it is audio that was spoken and is not on disk.
+    /// Nothing must be written, and the recorder must say so rather than
+    /// returning nil in silence.
+    private static func checkAForeignFormatIsReported(config: Config) -> Bool {
+        let name = "a foreign format is reported, not swallowed"
+        guard let foreign = format(24000) else {
+            return say(false, name, "could not build the format")
         }
 
         let recorder = Recorder()
         var reported: String?
         recorder.onCaptureProblem = { reported = $0 }
         // No device at either end, so stopping does not send this recorder off
-        // to rebuild against whatever the machine is really plugged into. What
-        // is under test here is the conversion, not the acquisition.
+        // to bind to whatever the machine is really plugged into.
         recorder.currentInput = { nil }
 
         do {
-            try recorder.openCapture(inputFormat: stale, config: config, markRecording: true)
+            try recorder.openCapture(config: config, markRecording: true)
         } catch {
-            print("  ✗ a stale format is reported, not swallowed  — \(error.localizedDescription)")
-            return false
+            return say(false, name, error.localizedDescription)
         }
-        for _ in 0..<20 { recorder.process(buffer: tone(live, frames: 4096)) }
+        for _ in 0..<20 { recorder.process(buffer: tone(foreign, frames: 4096)) }
         pause(overTheFloor)
 
         let recording = recorder.stop(config: config)
@@ -428,30 +256,30 @@ enum AudioRecoveryCommand {
 
         if let recording {
             try? FileManager.default.removeItem(at: recording.url)
-            print("  ✗ a stale format is reported, not swallowed")
+            print("  ✗ \(name)")
             print(String(format: "      got   a clip at rms %.5f", recording.rms))
-            print("      want  nothing, because the converter refused every buffer")
+            print("      want  nothing, because every buffer was refused")
             return false
         }
         guard let reported else {
-            print("  ✗ a stale format is reported, not swallowed")
+            print("  ✗ \(name)")
             print("      got   nothing said")
             print("      want  a message through onCaptureProblem")
             return false
         }
-        print("  ✓ \("a stale format is reported, not swallowed".padding(toLength: 46, withPad: " ", startingAt: 0)) \"\(reported)\"")
-        return true
+        return say(true, name, "\"\(reported)\"")
     }
 
-    /// How much audio one refused buffer below is worth: 4096 frames at 48 kHz,
-    /// 85 ms. Worked out here from the buffer rather than read off the recorder,
-    /// so the expected number and the measured one come from different places.
-    private static let lostPerBuffer: Double = 4096 / 48000
+    /// How much audio one refused buffer below is worth: 4096 frames at 24 kHz,
+    /// 171 ms, whatever rate it would have been resampled to. Worked out here
+    /// from the buffer rather than read off the recorder, so the expected number
+    /// and the measured one come from different places.
+    private static let lostPerBuffer: Double = 4096 / 24000
 
     /// A recording that lost more than `droppedAudioTolerance` is not handed on.
     ///
-    /// Good buffers first, then buffers at a format the converter cannot use —
-    /// a device that changed halfway through a sentence. What is on disk is the
+    /// Good buffers first, then buffers in a format the file cannot take — a
+    /// device that changed halfway through a sentence. What is on disk is the
     /// first half. Transcribing it would type half a sentence with nothing to
     /// say which half is missing.
     private static func checkPartialLossIsRefused(config: Config) -> Bool {
@@ -479,9 +307,7 @@ enum AudioRecoveryCommand {
     /// so refusing the clip would cost the whole dictation to save nothing.
     ///
     /// Both halves are checked, because passing the clip on *quietly* is its own
-    /// bug: the sentence arrives a syllable short with nothing saying so. The
-    /// tolerance decides whether it is transcribed, never whether it is
-    /// mentioned.
+    /// bug: the sentence arrives a syllable short with nothing saying so.
     private static func checkOneLostBufferIsForgiven(config: Config) -> Bool {
         let name = String(
             format: "a clip that lost %.2fs is transcribed and said", lostPerBuffer
@@ -500,15 +326,11 @@ enum AudioRecoveryCommand {
         return say(true, name, "\"\(reported)\"")
     }
 
-    /// Twenty good buffers, then `buffers` at a format the converter refuses.
+    /// Twenty good buffers, then `buffers` in a format the file refuses.
     private static func recordThenLose(
         buffers: Int, config: Config
     ) -> (recording: Recorder.Recording?, reported: String?) {
-        guard let live = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: 24000, channels: 1, interleaved: false
-        ), let other = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: 48000, channels: 1, interleaved: false
-        ) else {
+        guard let good = format(config.audio.sampleRate), let foreign = format(24000) else {
             return (nil, nil)
         }
 
@@ -517,13 +339,11 @@ enum AudioRecoveryCommand {
         recorder.onCaptureProblem = { reported = $0 }
         recorder.currentInput = { nil }
 
-        guard (try? recorder.openCapture(
-            inputFormat: live, config: config, markRecording: true
-        )) != nil else {
+        guard (try? recorder.openCapture(config: config, markRecording: true)) != nil else {
             return (nil, nil)
         }
-        for _ in 0..<20 { recorder.process(buffer: tone(live, frames: 4096)) }
-        for _ in 0..<buffers { recorder.process(buffer: tone(other, frames: 4096)) }
+        for _ in 0..<20 { recorder.process(buffer: tone(good, frames: 4096)) }
+        for _ in 0..<buffers { recorder.process(buffer: tone(foreign, frames: 4096)) }
         pause(overTheFloor)
 
         let recording = recorder.stop(config: config)
@@ -538,6 +358,12 @@ enum AudioRecoveryCommand {
     }
 
     // MARK: - Helpers
+
+    private static func format(_ rate: Double) -> AVAudioFormat? {
+        AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false
+        )
+    }
 
     /// A 440 Hz tone at a third of full scale — loud enough that no floor in
     /// the app could mistake it for a room.
@@ -567,12 +393,11 @@ enum AudioRecoveryCommand {
     /// measures a clip by.
     ///
     /// The buffers in the checks above are pushed through in microseconds, so a
-    /// clip made of twenty of them is three seconds of audio and no time at
-    /// all. `stop` reads the clock, calls that shorter than the floor, and
-    /// returns nil — which every check here then reports as "nothing was
-    /// written". It is the harness that has to wait, not the recorder that has
-    /// to count frames: the floor exists to throw away a key pressed and
-    /// released, and that is a question about time.
+    /// clip made of twenty of them is seconds of audio and no time at all.
+    /// `stop` reads the clock, calls that shorter than the floor, and returns
+    /// nil. It is the harness that has to wait, not the recorder that has to
+    /// count frames: the floor exists to throw away a key pressed and released,
+    /// and that is a question about time.
     private static func pause(_ seconds: TimeInterval) {
         settle(untilTrue: { false }, seconds: seconds)
     }

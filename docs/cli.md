@@ -408,23 +408,24 @@ nothing at all.
 AirPods connected, a headset came out — and since then dictation records
 silence, or the hotkey starts nothing at all. It moves the input binding inside
 the process instead of switching your real input device, so it is safe to run
-while somebody is dictating and it never opens the microphone. That is also its
-limit: it proves the recorder replaces its engine and that the capture path
-writes a real signal afterwards, and it proves nothing about what the hardware
-then sends. The cases are in `tests/audio-recovery-cases.yaml`;
+while somebody is dictating and it never starts the microphone. That is also its
+limit: it proves the recorder rebinds and that the capture path writes a real
+signal afterwards, and it proves nothing about what the hardware then sends.
+The cases are in `tests/audio-recovery-cases.yaml`;
 `scripts/check-audio-recovery.sh` runs it against a scratch config.
 
-It asks two questions, and the second one is easy to miss. `Device changes` is
-CoreAudio against the engine: has the input moved. `The engine and its own
-input` is the engine against itself — the two formats it holds for its input
-node, which is the pair `installTap` compares. A microphone can move only that
-pair, and it is the more expensive way to be wrong: a stale binding costs a
-silent clip, while a tap installed at the wrong half of that pair makes
-`installTap` raise an exception through the hotkey handler. The tap now goes on
-at the hardware format, which is the half `installTap` asserts against, so a
-node that describes its input two ways records instead of refusing — it is
-worth one rebuild, and only one. The `This machine` block prints both
-comparisons for whatever is plugged in right now.
+Three blocks. `Device changes` moves the binding — device, rate or channel count
+— and checks whether the session was rebuilt; the change is delivered through
+the CoreAudio device-list listener's own body, so a break between the listener
+and the comparison fails it too. `The device the list names` warms a recorder on
+whatever CoreAudio calls the input and checks the same microphone comes back out
+of AVFoundation, by UID. `Capture after a device change` pushes a 440 Hz tone
+through the write path and checks what lands on disk, including what happens to
+a buffer in a format the file cannot take.
+
+The `This machine` block is printed, never scored. Its `open` line is the one to
+read: it reports `kAudioDevicePropertyDeviceIsRunningSomewhere` after `warmUp`,
+which must be `no` — warming up builds the session and must not start it.
 
 You can make a test clip without a microphone at all — `say` writes exactly the
 format the model wants:

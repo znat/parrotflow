@@ -44,7 +44,8 @@ enum RecordTestCommand {
             return 1
         }
 
-        // AVAudioEngine delivers tap buffers on the run loop's behalf.
+        // The buffers arrive on the capture queue; the level and the first-buffer
+        // callbacks come back on the main queue, which needs the run loop to turn.
         RunLoop.current.run(until: Date().addingTimeInterval(seconds))
 
         guard let recording = recorder.stop(config: config) else {
