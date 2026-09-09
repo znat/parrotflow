@@ -57,6 +57,13 @@ enum VocabularyPass {
         /// expressed. It was 3 while the answer was a letter on a menu. A
         /// place that offers `Praisy` and `Praisy's` over "praise" loses the
         /// second of them here, which is the price of the shape.
+        ///
+        /// A sound group is the one place that shape does not hold. Several
+        /// terms share the word that was heard, and each of them is a reading
+        /// of it, so a group place carries up to `SoundGroup.ceiling` members
+        /// beside what was heard. This number does not bound those: it is
+        /// about a span with an alternative, and a group place is a span with
+        /// a list.
         var perSlot = 2
         /// Places in one sentence that may be about the same term.
         ///
@@ -115,7 +122,8 @@ enum VocabularyPass {
                 found.append("vocabulary: max_per_slot is \(perSlot), and a place is one"
                     + " span with one alternative — \(Self.readingCeiling) is the most it"
                     + " can offer. Anything past the second reading would be built and"
-                    + " never shown")
+                    + " never shown. A place where several terms share the heard word is"
+                    + " the exception, and it is not this number: see SoundGroup.ceiling")
             }
             if let readings {
                 found.append("vocabulary: max_readings is \(readings) and nothing reads it."
@@ -197,6 +205,13 @@ enum VocabularyPass {
         let owner: String?
         /// The best-evidenced of the readings in it, for `Caps.perTerm`.
         let standing: Standing
+        /// The terms of the sound group this place opens, when it opens one.
+        ///
+        /// Empty everywhere else, which is every place in a vocabulary where
+        /// no two terms share a sound. A group place carries every member as a
+        /// reading rather than one alternative, and only the portrait decides
+        /// it — see `SoundGroup`.
+        var group: [String] = []
     }
 
     /// One proposal reduced to what the question needs: a span, what stands
@@ -526,6 +541,43 @@ enum VocabularyPass {
             ))
         }
         return capped(built, in: text, to: caps.perTerm)
+    }
+
+    /// Every place a heard word opens a sound group, as one slot each.
+    ///
+    /// A group place is not built from parts. A part carries one alternative,
+    /// and here the alternatives are the other members — several readings of
+    /// one span, all of them equally proposed. The heard spelling comes first,
+    /// as it does everywhere else, and the members follow in their own order,
+    /// capped at `SoundGroup.ceiling`.
+    ///
+    /// The word itself is a member's spelling as often as not: "Mick" opens
+    /// the group Mick and Mik belong to, and Mick is then what is already
+    /// written. It is offered once, as the heard reading.
+    ///
+    /// Nothing is written here. A group place always reaches the portrait —
+    /// the word lists cannot separate two names that are both names.
+    static func groupSlots(in text: String, groups: [SoundGroup.Group]) -> [Slot] {
+        var built: [Slot] = []
+        var taken: [Range<String.Index>] = []
+        for group in groups where group.isGroup {
+            for opening in group.openings.sorted() {
+                for at in TermPortrait.places(of: opening, in: text) {
+                    guard !taken.contains(where: { $0.overlaps(at) }) else { continue }
+                    let heard = String(text[at])
+                    let others = group.members
+                        .filter { $0.caseInsensitiveCompare(heard) != .orderedSame }
+                        .prefix(SoundGroup.ceiling)
+                    guard !others.isEmpty else { continue }
+                    taken.append(at)
+                    built.append(Slot(
+                        range: at, options: [heard] + others, terms: group.members,
+                        owner: others.first, standing: .sound, group: group.members
+                    ))
+                }
+            }
+        }
+        return built.sorted { $0.range.lowerBound < $1.range.lowerBound }
     }
 
     // MARK: - Fuzzy renderings
@@ -881,6 +933,24 @@ enum VocabularyPass {
         /// Where the reading came from, carried through from the slot. Read by
         /// `settle`, which gates one source and not the others.
         let standing: Standing
+        /// The members of the sound group this place is between, or empty.
+        ///
+        /// Written by `groupSlots` and rewritten by `SentenceGate`, which
+        /// leaves the members still standing here when it cannot pick one —
+        /// that list is what the pill offers.
+        var group: [String] = []
+
+        /// The same place, with this member as the reading to write.
+        func writing(_ member: String) -> Change {
+            Change(range: range, was: was, now: member, terms: terms, owner: member,
+                   standing: standing, group: group)
+        }
+
+        /// The same place, cut to the members still standing, best first.
+        func offering(_ members: [String]) -> Change {
+            Change(range: range, was: was, now: members.first ?? now, terms: terms,
+                   owner: members.first ?? owner, standing: standing, group: members)
+        }
     }
 
     /// The substitutions to settle, left to right.
@@ -911,7 +981,8 @@ enum VocabularyPass {
             }
             built.append(Change(range: slot.range, was: slot.options[0],
                                 now: slot.options[1], terms: slot.terms,
-                                owner: slot.owner, standing: slot.standing))
+                                owner: slot.owner, standing: slot.standing,
+                                group: slot.group))
         }
         return built
     }
@@ -1106,6 +1177,15 @@ enum VocabularyPass {
         gate: SlotGate?
     ) -> [Bool?] {
         changes.map { change -> Bool? in
+            // A place where several terms share the heard word is never
+            // settled here. Both readings are names, so the word lists say
+            // "not a word" about either of them, and the spot holds a name
+            // whichever one wins. Only the portraits can separate them.
+            guard change.group.count < 2 else {
+                Log.write("vocabulary gate: \"\(change.was)\" opens"
+                    + " \(change.group.joined(separator: "/")) — left to the portraits")
+                return nil
+            }
             guard let allowed = policy[change.standing] else { return nil }
             // The reading that is actually going in, not the canonical term.
             // `Precy's -> Praisy's` keeps its possessive; asking about
