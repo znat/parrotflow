@@ -4131,19 +4131,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// raises it can come minutes later, after scrolling, in another window,
     /// and the question would then be asked somewhere else entirely.
     ///
-    /// The caret and nothing else. `EditWatch` fires off key events, so this
-    /// runs while the caret is still sitting at the word that was changed —
-    /// which is the same place the post-dictation pill hangs off. A field that
-    /// answers no caret leaves the pill exactly where it is: it is already
-    /// under the words of the dictation this correction is about, and the
-    /// bottom of the screen would be further from them, not nearer.
+    /// `EditWatch` fires off key events, so this runs while the caret is still
+    /// sitting at the word that was changed — the same place the
+    /// post-dictation pill hangs off.
+    ///
+    /// The caret, then the input line. That second rung is `readTheAnchor`'s
+    /// 2.5 and it is not optional: a terminal answers `0+0` for a caret
+    /// always, so the caret rung alone left the question drawn wherever the
+    /// pill had last been. Which is the thing this exists to stop, and what it
+    /// still did in Ghostty — measured on a real correction, not reasoned
+    /// about.
+    ///
+    /// A field that answers neither leaves the pill exactly where it is. It is
+    /// already under the words this correction is about, and the bottom of the
+    /// screen would be further from them, not nearer.
     private func aimAtTheCorrection() {
         guard let element = edits.field else { return }
-        guard case .found(let anchor) = CaretAnchor.read(at: element) else {
-            Log.write("correction: the field gives no caret; the pill stays where it was")
+        if case .found(let anchor) = CaretAnchor.read(at: element) {
+            pill.aim(at: anchor)
             return
         }
-        pill.aim(at: anchor)
+        // The app the dictation went to, not the one in front: the correction
+        // is made in the field those words landed in, and something else may
+        // have been clicked into since.
+        if AppProfile.of(lastDictated?.owner).readsPane,
+           case .found(let box) = CaretAnchor.inputBox(at: element) {
+            Log.write("correction: no caret, so the input line it is")
+            pill.aim(at: box)
+            return
+        }
+        Log.write("correction: the field gives no caret and no input line;"
+            + " the pill stays where it was")
     }
 
     /// A correction that runs the other way, and what to do with it.
