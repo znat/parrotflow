@@ -212,6 +212,38 @@ same way.
 - Everything else stands: pulsing dot, live meter, destination icon, and the
   narrow no-icon pill that says the words have nowhere to go.
 
+### 2026-09-08: the ring, and its light
+
+The docked surface was near-black with a leaf hairline, which over Slack's
+composer is black on nearly black. The pill now wears the plumage rim in every
+state, docked or free, and the leaf edge is gone. The leaf wash stays.
+
+The bloom is drawn while the microphone is open and while the app works on what
+it heard, so the pill is found by the light off its edge. The light says which
+of the two is happening. While recording, the rim stands still and the light
+pulses, 0.7s each way, on the clock the old scarlet dot used. The swing is
+downward: the halo falls to 0.15 of its lit strength and the rim to 0.35, so it
+reads as a light going out and coming back rather than a sheen on the edge.
+While working, the rim turns, once every 1.7s, which is what the docked edge
+shimmered at. At an offer and at a notice the rim stands still and there is no
+bloom: those states are answered, not looked for.
+
+A tab that hangs off nothing carries the target app's icon again, beside the
+bird, at 20pt. `Dock.free` is the case with no anchor, so there is no line under
+the tab to say where the words are going. Attached below or above a line, there
+is, and the tab stays the bird alone.
+
+The margin follows the same line, 52 for the blur to fade out in and 12 after,
+and only the offer takes the mouse, so the wide margin swallows no clicks.
+
+Cost, measured with `--panels` as CPU seconds over a 12s window: 6-12% of a core
+recording, 8% working, 0% on a still notice. The pulse is not what that buys —
+the same surface with the pulse taken out measured 9.3% and 9.7%, so the cost is
+the meter being fed twenty times a second. The drifting bloom that was rejected
+earlier measured 40%.
+
+Direction C of <https://claude.ai/code/artifact/edabef77-cd1b-46ee-9c67-077e766b21f9>.
+
 ---
 
 ## 3. The offer

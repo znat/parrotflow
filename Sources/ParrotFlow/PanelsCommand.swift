@@ -256,6 +256,11 @@ enum PanelsCommand {
             icon: sampleIcon(), level: 0.4, docked: .below
         )
         let thinkingDocked = pill(.working("Thinking…"), docked: .below)
+        // Free: no anchor, so no line under it to say where the words are
+        // going. The icon says it instead, which is the one difference between
+        // this and the tab above it.
+        let listeningFree = pill(.recording(nil), icon: sampleIcon(), level: 0.55, docked: .free)
+        let thinkingFree = pill(.working("Thinking…"), icon: sampleIcon(), docked: .free)
 
         let overlay = pill(.recording(nil), icon: sampleIcon(), level: 0.75)
 
@@ -427,6 +432,10 @@ enum PanelsCommand {
              pillSize(editing), .dark, true),
             (AnyView(PillView().environmentObject(thinkingDocked)),
              pillSize(thinkingDocked), .dark, true),
+            (AnyView(PillView().environmentObject(listeningFree)),
+             pillSize(listeningFree), .dark, true),
+            (AnyView(PillView().environmentObject(thinkingFree)),
+             pillSize(thinkingFree), .dark, true),
             (AnyView(PillView().environmentObject(tab)),
              pillSize(tab), .dark, true),
             (AnyView(PillView().environmentObject(tabWarned)),
@@ -581,7 +590,7 @@ enum PanelsCommand {
     private static func pillSize(_ model: PillModel) -> NSSize {
         PillMetrics.panelSize(
             for: model.state, hasIcon: model.appIcon != nil, hotkey: model.hotkey,
-            docked: model.docked != nil
+            dock: model.docked
         )
     }
 
