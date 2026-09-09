@@ -109,6 +109,11 @@ transcription:
     #   by_sound: false      match spelling only, never how a word sounds
     #   lowercase_refused: false   revert a refused glued span as heard
     - vocabulary
+    # A dictated date or clock time, written the shape it was said:
+    # "March third" -> March 3, "à dix heures quinze" -> à 10h15. No model.
+    # Above `numbers`, which reads the same words and gets to them first.
+    - transform: dates
+      when: /(?i)\b(?:heures?|midi|minuit|o\s?['’]?\s?clock|[ap]\.m\.|pm)\b|\b(?:a\s+)?(?:half|quarter)\s+(?:past|to)\b|\b(?:at|around|about|by|vers|à|du|le|past|to|of|September|February|November|December|January|October|August|March|April|June|July|May|septembre|novembre|décembre|decembre|janvier|février|fevrier|juillet|octobre|avril|mars|juin|août|aout|mai)\s+(?:the\s+)?(?:seventeenth|seventieth|thirteenth|fourteenth|nineteenth|eighteenth|sixteenth|twentieth|septantes|thirtieth|fifteenth|seventeen|ninetieth|eightieth|cinquante|huitante|thirteen|fourteen|eleventh|fortieth|sixtieth|premiere|quatorze|nonantes|nineteen|eighteen|première|septante|soixante|fiftieth|quarante|twelfth|nonante|octante|seventy|fifteen|premier|seventh|sixteen|vingts|eighty|fourth|thirty|quatre|eleven|quinze|twelve|eighth|ninety|twenty|treize|second|trente|forty|fifty|seize|three|third|douze|sixth|fifth|trois|sixty|first|eight|ninth|tenth|seven|vingt|nine|zéro|cinq|neuf|huit|five|deux|zero|sept|onze|four|dix|two|six|une|ten|one|un|oh|September|February|November|December|January|October|August|March|April|June|July|May|septembre|novembre|décembre|decembre|janvier|février|fevrier|juillet|octobre|avril|mars|juin|août|aout|mai|\d{1,2}(?:st|nd|rd|th)?)\b/
     - numbers                            # "two hundred forty-three" -> 243
     - transform: punctuation             # "is that true question mark" -> is that true?
     - transform: repetitions             # a word or phrase said twice by accident, taken out
@@ -297,6 +302,13 @@ transforms:
   - name: punctuation
     description: spoken marks as punctuation
     command: examples/punctuation/punctuation.py
+    returns: json
+
+  # "at ten fifteen" -> at 10:15. Reads its number words from
+  # examples/numbers/, so that folder has to be there too.
+  - name: dates
+    description: dictated dates and clock times as digits
+    command: examples/dates/dates.py
     returns: json
 
   # Cheap: ~0.04s, mostly the python3 start.
