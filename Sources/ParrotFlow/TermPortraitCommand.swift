@@ -97,9 +97,9 @@ enum TermPortraitCommand {
             for member in reading.members {
                 let score = member.score.map { String(format: "%.3f", $0) } ?? "—"
                 let floor = member.floor.map { String(format: "%.3f", $0) } ?? "—"
+                let how = member.unknown ? "unknown" : (member.stands ? "stands" : "out")
                 print("  \(pad(member.term, 14)) uses \(pad(String(member.uses), 4))"
-                    + " score \(pad(score, 7)) floor \(pad(floor, 7))"
-                    + " \(member.stands ? "stands" : "out")")
+                    + " score \(pad(score, 7)) floor \(pad(floor, 7)) \(how)")
             }
             if let plain = reading.plain {
                 print("  \(pad("plain", 14)) rows \(pad(String(reading.plainRows), 4))"

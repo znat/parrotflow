@@ -308,6 +308,9 @@ actor TermPortrait {
         let floor: Double?
         let uses: Int
         let stands: Bool
+        /// No confirmed use at all. Not out — never seen. See
+        /// `SoundGroup.Candidate.unknown`.
+        var unknown: Bool { uses == 0 }
     }
 
     /// How a group of terms reads one place.
@@ -346,15 +349,22 @@ actor TermPortrait {
             // it has never been corrected, so nothing describes where it
             // lives.
             guard let summary = try? await summary(for: member) else {
+                let uses = stored[member]?.filter { !$0.counter }.count ?? 0
                 standing.append(Standing(
-                    term: member, score: nil, floor: nil,
-                    uses: stored[member]?.filter { !$0.counter }.count ?? 0, stands: false
+                    term: member, score: nil, floor: nil, uses: uses, stands: false
+                ))
+                // Zero uses is a member nobody has confirmed. It reaches the
+                // decision as itself rather than being left out of it: a place
+                // between a name with sentences and a name with none is not a
+                // place any score can settle.
+                candidates.append(SoundGroup.Candidate(
+                    name: member, score: nil, floor: nil, uses: uses
                 ))
                 continue
             }
             let score = WordVectors.cosine(vector, summary.centre) / summary.tightness
             let candidate = SoundGroup.Candidate(
-                name: member, score: score, floor: summary.floor
+                name: member, score: score, floor: summary.floor, uses: summary.uses
             )
             candidates.append(candidate)
             standing.append(Standing(
@@ -386,7 +396,8 @@ actor TermPortrait {
             let reading = try await read(group: members, span, in: sentence)
             let said = reading.members.map { member in
                 let score = member.score.map { String(format: "%.3f", $0) } ?? "—"
-                return "\(member.term) \(score)\(member.stands ? "" : " (out)")"
+                let how = member.unknown ? " (unknown)" : (member.stands ? "" : " (out)")
+                return "\(member.term) \(score)\(how)"
             }.joined(separator: ", ")
             let plain = reading.plain.map { String(format: "%.3f", $0) } ?? "—"
             Log.write("portrait: \"\(span)\" opens \(members.joined(separator: "/")) —"

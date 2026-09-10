@@ -33,6 +33,8 @@ enum SoundGroup {
         /// Every word that opens it: each member's spelling and each member's
         /// `heard:` renderings, lowercased.
         let openings: Set<String>
+        /// The renderings each member wrote down, as they are spelled.
+        let renderings: [String: [String]]
 
         var isGroup: Bool { members.count > 1 }
     }
@@ -95,13 +97,15 @@ enum SoundGroup {
         return bundled.keys.sorted().map { root in
             let members = (bundled[root] ?? []).map { names[$0] }.sorted()
             var openings = Set<String>()
+            var written: [String: [String]] = [:]
             for member in members {
                 openings.insert(member.lowercased())
-                for rendering in terms[member]?.heard ?? [] {
+                written[member] = terms[member]?.heard ?? []
+                for rendering in written[member] ?? [] {
                     openings.insert(rendering.lowercased())
                 }
             }
-            return Group(members: members, openings: openings)
+            return Group(members: members, openings: openings, renderings: written)
         }
     }
 
@@ -141,6 +145,36 @@ enum SoundGroup {
         return out
     }
 
+    /// The members of `term`'s group that stand in this sentence, as words.
+    ///
+    /// Each word is charged to one member: the term that spells it that way
+    /// when there is one, and otherwise the term that wrote the rendering
+    /// down. Without that, "Mick is adjusting the piano." would name both Mick
+    /// and Mik — `Mick` is one's spelling and the other's rendering — and
+    /// every correction of it would be refused.
+    ///
+    /// Two members standing in one sentence is a sentence that belongs to
+    /// neither. See `CorrectionRecording`.
+    static func standing(in sentence: String, of term: String, in groups: [Group]) -> [String] {
+        guard let group = groups.first(where: {
+            $0.members.contains { $0.caseInsensitiveCompare(term) == .orderedSame }
+        }) else { return [] }
+        var owner: [String: String] = [:]
+        func stands(_ word: String) -> Bool {
+            !TermPortrait.places(of: word, in: sentence).isEmpty
+        }
+        for member in group.members where stands(member) {
+            owner[member.lowercased()] = member
+        }
+        for member in group.members {
+            for rendering in group.renderings[member] ?? []
+            where owner[rendering.lowercased()] == nil && stands(rendering) {
+                owner[rendering.lowercased()] = member
+            }
+        }
+        return Array(Set(owner.values)).sorted()
+    }
+
     // MARK: - Deciding
 
     /// One candidate at a place: what it scored, and the floor it has to clear.
@@ -149,13 +183,27 @@ enum SoundGroup {
     /// read off a term's own uses.
     struct Candidate: Equatable {
         let name: String
-        let score: Double
+        /// Nil when nothing could be scored: no portrait yet, or none at all.
+        let score: Double?
         let floor: Double?
+        /// How many confirmed uses the term has.
+        var uses: Int = 1
+
+        /// A member nobody has ever confirmed. It cannot lose, because there
+        /// is nothing to lose with: scoring the others against it would settle
+        /// a place on one name's evidence while the other has none. Measured
+        /// on the live app, 2026-09-10: with `Eric` at zero uses, `Erik` won
+        /// "Eric the musician." 0.898 to 0.600 and the name was written
+        /// silently.
+        var unknown: Bool { uses == 0 }
 
         /// Below its own floor is out. A candidate with fewer than
         /// `TermPortrait.floorMinimum` uses has no floor and is never out on
         /// that ground.
-        var stands: Bool { floor.map { score > $0 } ?? true }
+        var stands: Bool {
+            guard let score else { return false }
+            return floor.map { score > $0 } ?? true
+        }
     }
 
     /// What the group says about a place.
@@ -184,12 +232,21 @@ enum SoundGroup {
     static func decide(
         _ members: [Candidate], plain: Double?, band: Double = 0.01
     ) -> Verdict {
+        // A member nobody has ever confirmed decides nothing and loses
+        // nothing. The place is open and the pill lists it with the rest —
+        // which is the only way that member ever gets a first sentence.
+        let unknown = members.filter(\.unknown)
+        if !unknown.isEmpty {
+            let known = members.filter { !$0.unknown && $0.stands }
+                .sorted { ($0.score ?? 0) > ($1.score ?? 0) }
+            return .open(known.map(\.name) + unknown.map(\.name))
+        }
         var standing = members.filter(\.stands)
         // Plain is a member with no name and no floor.
         if let plain { standing.append(Candidate(name: "", score: plain, floor: nil)) }
-        let ranked = standing.sorted { $0.score > $1.score }
+        let ranked = standing.sorted { ($0.score ?? 0) > ($1.score ?? 0) }
         guard let best = ranked.first else { return .keep }
-        if ranked.count > 1, best.score - ranked[1].score <= band {
+        if ranked.count > 1, (best.score ?? 0) - (ranked[1].score ?? 0) <= band {
             return .open(ranked.filter { !$0.name.isEmpty }.map(\.name))
         }
         return best.name.isEmpty ? .keep : .write(best.name)
