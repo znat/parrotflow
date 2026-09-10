@@ -201,16 +201,18 @@ check "a possessive is read as its name" "names" "$(place "Eric's" Erik)"
 # joins dictations with no space after the stop, so one field holds several
 # sentences and the same name more than once. Measured on the live app,
 # 2026-09-10: the second correction wrote nothing at all.
-FIELD='Eric is software engineer.Erik is a musician.Erik plays the piano.'
+FIELD='❯ Eric is software engineer.Erik is a musician.Erik plays the piano.'
 rm -f "$USES"
 "$BIN" --for Erik "$FIELD" Erik >/dev/null 2>&1
 check "with nothing to say which, the first occurrence is stored" \
   "Erik is a musician." "$(stored 0)"
-"$BIN" --for Erik "$FIELD" Erik --near 7 >/dev/null 2>&1
+# 6, the way `EditWatch` counts: the shell prompt in front of the line is not
+# a word, and the periods glue the sentences into single words.
+"$BIN" --for Erik "$FIELD" Erik --near 6 >/dev/null 2>&1
 check "the position picks the sentence that was corrected" \
   "Erik plays the piano." "$(stored 1)"
 check "and both rows are there" 2 "$(said)"
-"$BIN" --for Erik "$FIELD" Erik --near 7 >/dev/null 2>&1
+"$BIN" --for Erik "$FIELD" Erik --near 6 >/dev/null 2>&1
 check "the same row again is still one row" 2 "$(said)"
 
 echo

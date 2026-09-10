@@ -289,8 +289,18 @@ enum TermUses {
     ) -> Range<String.Index>? {
         let hits = occurrences(of: span, in: text)
         guard let word else { return hits.first }
+        // Counted the way `EditWatch.words` counts, which is where the number
+        // comes from: any whitespace splits, and a shell prompt in front of the
+        // line is not a word.
+        var from = text.startIndex
+        while from < text.endIndex, text[from].isWhitespace { from = text.index(after: from) }
+        if from < text.endIndex, prompts.contains(text[from]) {
+            from = text.index(after: from)
+        }
         func at(_ hit: Range<String.Index>) -> Int {
-            text[..<hit.lowerBound].split(separator: " ").count
+            guard hit.lowerBound > from else { return 0 }
+            return text[from ..< hit.lowerBound]
+                .split(whereSeparator: \.isWhitespace).count
         }
         return hits.min { abs(at($0) - word) < abs(at($1) - word) }
     }
