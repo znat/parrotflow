@@ -26,8 +26,8 @@ cases:
     input: "um, super base has vingt et un users"
     expect: Supabase has 21 users
 
-  # The guard from the numbers case set, seen through a pipeline: the stage keeps
-  # its own language resolution, so assembling it here must not flatten that.
+  # The guard from the numbers case set, seen through a pipeline: the script
+  # declines the collision itself, and assembly must not flatten that.
   - name: the cents collision survives assembly
     pipeline: everything
     input: I have 99 cents
@@ -880,7 +880,8 @@ cases:
   - { name: "too short to detect: two hundred euros", pipeline: numbers, input: two hundred euros, expect: 200 euros }
   - { name: "too short to detect: twenty one", pipeline: numbers, input: twenty one, expect: '21' }
 
-  # Long enough to detect, so each sentence gets its own language's script.
+  # Both scripts run on both sentences. Each writes only what its own words
+  # build, so the answer is the same as if the language had decided.
   - name: a French sentence reaches the French script
     pipeline: numbers
     input: on a mergé la pull request avec vingt et un commits

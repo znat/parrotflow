@@ -979,12 +979,12 @@ Which script reads a given sentence is a question about the pipeline, not about
 either grammar, so it is scored there: `tests/pipelines/numbers.yaml` and the
 `numbers` cases in `tests/pipeline-cases.yaml`, whose fixture carries the
 French step as well because that is the only shape where the question exists.
-Each step runs only on a transcript detected as its own language. Below four
-words detection answers with the first configured language, so a short French
-sentence reaches the English script and comes back as words.
+No step carries a language gate, so every configured script reads every
+transcript. That is deliberate: below four words detection answers with the
+first configured language, so a gate cost the short French sentences that are
+the common ones.
 
-Each script also carries a cross-language guard, and no shipped step reaches it
-now. It applies when a script runs on a transcript detected as another
-language: the number is written only if its own words include a unit, a teen or
-a tens word of that grammar. That is what kept French from reading the `cents`
-in "I have 99 cents" as hundreds.
+What keeps one grammar off the other language's sentence is the guard inside
+each script. A number is written only if its own words include a unit, a teen
+or a tens word of that grammar. That is what keeps French from reading the
+`cents` in "I have 99 cents" as hundreds.

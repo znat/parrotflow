@@ -2776,8 +2776,9 @@ struct Config: Decodable, Equatable {
             + " `name: numbers_en`, `command: examples/numbers/en.py`,"
             + " `returns: json`, and the same with `_fr` and `fr.py` — then"
             + " write `- transform: numbers_en` and `- transform: numbers_fr`"
-            + " in the pipeline, in that order. Each step takes its own"
-            + " language: `when: language == \"en\"`, and `\"fr\"` for the other",
+            + " in the pipeline, in that order. Neither takes a `when:`:"
+            + " each grammar declines a number built from words that are not"
+            + " its own",
     ]
 
     /// The same sentence, for a `- transform: numbers…` that names nothing.
