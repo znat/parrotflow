@@ -308,10 +308,9 @@ actor TermPortrait {
         let floor: Double?
         let uses: Int
         let stands: Bool
-        /// No portrait to read: never confirmed, or too few sentences to
-        /// describe itself yet. Not out — nothing is known. See
+        /// No sentence at all. Not out — never seen. See
         /// `SoundGroup.Candidate.unknown`.
-        var unknown: Bool { score == nil }
+        var unknown: Bool { uses == 0 }
     }
 
     /// How a group of terms reads one place.
@@ -345,31 +344,28 @@ actor TermPortrait {
         var standing: [Standing] = []
         var candidates: [SoundGroup.Candidate] = []
         for member in members {
-            // A member with no portrait cannot be scored, so it cannot stand.
-            // That is the ordinary state of the second name in a new group:
-            // it has never been corrected, so nothing describes where it
-            // lives.
-            guard let summary = try? await summary(for: member) else {
+            // A member with no sentence at all cannot be scored. That is the
+            // ordinary state of the second name in a new group: it has never
+            // been corrected, so nothing describes where it lives, and it
+            // reaches the decision as unknown rather than being left out of
+            // it.
+            guard let held = try await centre(of: member, cutting: rivals, in: stored) else {
                 let uses = stored[member]?.filter { !$0.counter }.count ?? 0
                 standing.append(Standing(
                     term: member, score: nil, floor: nil, uses: uses, stands: false
                 ))
-                // Zero uses is a member nobody has confirmed. It reaches the
-                // decision as itself rather than being left out of it: a place
-                // between a name with sentences and a name with none is not a
-                // place any score can settle.
                 candidates.append(SoundGroup.Candidate(
                     name: member, score: nil, floor: nil, uses: uses
                 ))
                 continue
             }
-            let score = WordVectors.cosine(vector, summary.centre) / summary.tightness
+            let score = WordVectors.cosine(vector, held.centre) / held.tightness
             let candidate = SoundGroup.Candidate(
-                name: member, score: score, floor: summary.floor, uses: summary.uses
+                name: member, score: score, floor: held.floor, uses: held.uses
             )
             candidates.append(candidate)
             standing.append(Standing(
-                term: member, score: score, floor: summary.floor, uses: summary.uses,
+                term: member, score: score, floor: held.floor, uses: held.uses,
                 stands: candidate.stands
             ))
         }
@@ -410,6 +406,56 @@ actor TermPortrait {
             return .keep
         }
     }
+
+    /// One member's centre, from whatever sentences it has.
+    ///
+    /// Not `summary(for:)`. That one refuses a term with fewer than
+    /// `floorMinimum` uses and no counter-example, because the single-term
+    /// path has nothing to compare a score against and would write on a guess.
+    /// A group member has the other members to lose to, so one sentence is
+    /// enough to take part: with one use the centre is that sentence and the
+    /// tightness is 1.
+    ///
+    /// The floor is still read off the term's own uses leaving one out, so it
+    /// still needs three of them. Below that a member has no floor and cannot
+    /// be out on one — it can only lose the comparison.
+    ///
+    /// Measured on the live app, 2026-09-10: `Eric` at two uses had no centre
+    /// at all, so a two-member group asked nine times in a row and would have
+    /// gone on asking until both names reached three.
+    ///
+    /// Cut with the *group's* rivals, the same cut the sentence gets, so every
+    /// member is described by the same reading of its own sentences.
+    private func centre(
+        of member: String, cutting rivals: [String], in stored: [String: [TermUses.Use]]
+    ) async throws -> (centre: [Float], tightness: Double, floor: Double?, uses: Int)? {
+        let uses = (stored[member] ?? []).filter { !$0.counter }
+        guard !uses.isEmpty else { return nil }
+        let mark = Self.fingerprint(of: uses) + "\u{4}" + rivals.joined(separator: "\u{1}")
+        if let held = memberCache[mark] { return held }
+
+        var vectors: [[Float]] = []
+        for use in uses {
+            guard let near = Self.context(of: use.span, in: use.said, cutting: rivals) else {
+                continue
+            }
+            vectors.append(try await WordVectors.shared.vector(.around, of: use.span, in: near))
+        }
+        guard !vectors.isEmpty else { return nil }
+        let (middle, tightness) = Self.middle(of: vectors)
+        guard tightness > 0 else { return nil }
+        let built = (
+            centre: middle, tightness: tightness, floor: Self.floor(of: vectors),
+            uses: vectors.count
+        )
+        memberCache[mark] = built
+        return built
+    }
+
+    /// Held for the run only, like `plainCache`: a centre cut with one group's
+    /// rivals means nothing to another group.
+    private var memberCache:
+        [String: (centre: [Float], tightness: Double, floor: Double?, uses: Int)] = [:]
 
     /// The group's plain centre: every member's counter rows, pooled.
     ///
@@ -657,20 +703,7 @@ actor TermPortrait {
             }
         }
 
-        // What a genuine use scores, each one measured against a portrait that
-        // does not contain it. Anything else compares a sentence with itself.
-        var floor: Double?
-        if uses.count >= floorMinimum {
-            var selves: [Double] = []
-            for index in vectors.indices {
-                let rest = vectors.enumerated().filter { $0.offset != index }.map(\.element)
-                guard rest.count > 1 else { continue }
-                let (restCentre, restTightness) = middle(of: rest)
-                guard restTightness > 0 else { continue }
-                selves.append(cosine(vectors[index], restCentre) / restTightness)
-            }
-            if !selves.isEmpty { floor = quantileOf(selves, at: quantile) }
-        }
+        let floor = Self.floor(of: vectors)
         return Summary(
             centre: centre,
             tightness: tightness,
@@ -681,6 +714,24 @@ actor TermPortrait {
             counterTightness: counterTightness,
             counters: counterRows
         )
+    }
+
+    /// What a genuine use scores, each one measured against a portrait that
+    /// does not contain it. Anything else compares a sentence with itself.
+    ///
+    /// Nil below `floorMinimum` vectors: there is nothing to leave out.
+    private static func floor(of vectors: [[Float]]) -> Double? {
+        guard vectors.count >= floorMinimum else { return nil }
+        var selves: [Double] = []
+        for index in vectors.indices {
+            let rest = vectors.enumerated().filter { $0.offset != index }.map(\.element)
+            guard rest.count > 1 else { continue }
+            let (restCentre, restTightness) = middle(of: rest)
+            guard restTightness > 0 else { continue }
+            selves.append(cosine(vectors[index], restCentre) / restTightness)
+        }
+        guard !selves.isEmpty else { return nil }
+        return quantileOf(selves, at: quantile)
     }
 
     /// The unit mean, and how close the members sit to it.

@@ -3,6 +3,10 @@
 #
 #   scripts/check-sound-group.sh
 #
+# The model-backed half — that a member has a centre from its first use — is
+# `--portrait <heard> "<sentence>"`, which needs the 400 MB word vectors. What
+# is scored here is the rule that reads those numbers.
+#
 # Three things, none of them needing a model. Which terms end up in one group
 # (`--sound-group`), what the decision rule does with scores somebody wrote
 # down (`--group-decide`), and what a correction that runs against a term
@@ -225,23 +229,31 @@ check "and both rows are there" 2 "$(said)"
 "$BIN" --for Erik "$FIELD" Erik --near 6 >/dev/null 2>&1
 check "the same row again is still one row" 2 "$(said)"
 
-# A member nobody has ever confirmed is unknown, not out. It cannot lose a
-# comparison it was never in, so the place is open and the pill lists it —
-# which is the only way that member gets a first sentence.
+# A member nobody has ever confirmed — zero uses, and nothing else — is
+# unknown, not out. It cannot lose a comparison it was never in, so the place
+# is open and the pill lists it, which is the only way that member gets a first
+# sentence.
 check "a member with no uses opens the place" \
   "open Erik Eric" "$(verdict Erik:0.898:0.80 Eric:-:-:0 --plain 0.600)"
 check "and it is listed after the ones that stand" \
   "open Erik Eric" "$(verdict Eric:-:-:0 Erik:0.898:0.80 --plain 0.600)"
 check "once every member has a use, the rule runs as before" \
   "write Erik" "$(verdict Erik:0.898:0.80 Eric:0.600:-:1 --plain 0.600)"
-# A use is not a portrait. A term needs a counter or three uses before it has
-# one, and until then nothing can be said about it — which is a question, not a
-# loss. Measured on decoded audio, 2026-09-10: with two members and no portrait
-# between them, reading "nobody stands" as a decision kept the heard word on
-# every sentence and the pill was never asked.
-check "a member with a use but no portrait is unknown too" \
-  "open Erik Eric" "$(verdict Erik:0.898:0.80 Eric:-:-:1 --plain 0.600)"
-check "and a place where nothing can be scored is open, not kept" \
+# One sentence is enough to take part. A group member is scored against the
+# other members, not against a fixed floor, so it has a centre from its first
+# use and can lose the comparison — and a floor, which needs three uses to read
+# off, is the only thing it cannot be out on before then.
+#
+# Measured on the live app, 2026-09-10: `Eric` at two uses had no centre at
+# all, so the pill asked nine times in a row and would have gone on asking
+# until both names reached three.
+check "one use is enough to lose the comparison" \
+  "write Erik" "$(verdict Erik:0.936:0.724 Eric:0.708:-:1)"
+check "and enough to win it" \
+  "write Eric" "$(verdict Erik:0.816:0.724 Eric:0.945:-:2)"
+check "a member with uses but no centre is out, not unknown" \
+  "write Erik" "$(verdict Erik:0.898:0.80 Eric:-:-:1 --plain 0.600)"
+check "and a place where nothing can be scored at all is open, not kept" \
   "open Erik Eric" "$(verdict Erik:-:-:2 Eric:-:-:1)"
 
 # A sentence naming two members of one group belongs to neither. The rival clip

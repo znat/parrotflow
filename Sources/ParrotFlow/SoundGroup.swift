@@ -189,20 +189,17 @@ enum SoundGroup {
         /// How many confirmed uses the term has.
         var uses: Int = 1
 
-        /// A member with no portrait: nobody has confirmed it, or it has too
-        /// few sentences to describe itself yet. It cannot lose, because there
-        /// is nothing to lose with — scoring the others against it would
-        /// settle a place on one name's evidence while the other has none.
+        /// A member nobody has ever confirmed. It cannot lose, because there
+        /// is nothing to lose with: scoring the others against it would settle
+        /// a place on one name's evidence while the other has none. Measured
+        /// on the live app, 2026-09-10: with `Eric` at zero uses, `Erik` won
+        /// "Eric the musician." 0.898 to 0.600 and the name was written
+        /// silently.
         ///
-        /// Measured on the live app, 2026-09-10: with `Eric` at zero uses,
-        /// `Erik` won "Eric the musician." 0.898 to 0.600 and the name was
-        /// written silently. Measured again the same day on decoded audio,
-        /// with `Erik` at two uses and `Eric` at one and neither carrying a
-        /// counter: no member could be scored at all, and reading that as "no
-        /// member stands" kept the word that was heard on every sentence — a
-        /// decision, so the pill was never asked. A place nothing can be said
-        /// about is a question, not an answer.
-        var unknown: Bool { score == nil }
+        /// One sentence is enough to stop being unknown. A group member is
+        /// scored against the others rather than against a fixed floor, so it
+        /// can take part from its first use — see `TermPortrait.centre(of:)`.
+        var unknown: Bool { uses == 0 }
 
         /// Below its own floor is out. A candidate with fewer than
         /// `TermPortrait.floorMinimum` uses has no floor and is never out on
