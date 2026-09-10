@@ -545,6 +545,17 @@ is written as a person only when the term proposed over it says `kind: person`,
 which is the one thing left saying this is a name at all. The group then holds
 both names.
 
+**A correction onto a name with no term creates it.** `Anna` corrected to
+`Annah` where only `Anna` is a term is not an ordinary word being put back: it
+is a third person. The rendering is written, the term is created with
+`kind: person`, and the sentence is a use of it — the ordinary correction path,
+which the counter branch used to intercept. A place or an organization put back
+is still a counter, because a counter is what a portrait is built from:
+`Vercel` corrected to `Versailles` says where Vercel does not live. Measured on
+decoded audio, 2026-09-10: five sentences about a third person had become five
+counters under the second, and the pooled plain centre then scored 0.945 on a
+sentence that was hers.
+
 **A sentence naming two members of one group is recorded nowhere.** It belongs
 to neither, and the rival clip cannot save it: cutting the window at the other
 name leaves the words between them, which are the sentence. "So I tried again

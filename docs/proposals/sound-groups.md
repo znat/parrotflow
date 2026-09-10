@@ -151,6 +151,10 @@ They are part of the model, not fixes around it.
   use of it. A person the recogniser spells right is never corrected, so
   nothing else ever creates their term. Plain stays what it always was: an
   ordinary word.
+- **A correction onto a name with no term creates it**, with the rendering it
+  replaced, so the new name joins the group. Only a person: a place or an
+  organization put back is still a counter, which is what a portrait is built
+  from.
 - **A sentence naming two members of one group is recorded nowhere.** The
   rival clip cuts the window at the other name and the words between the two
   survive, which are the sentence. Corrections and pill answers both refuse it.

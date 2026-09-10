@@ -105,8 +105,35 @@ enum SoundGroupCommand {
     ) -> Int32 {
         let config = (try? ConfigStore.load()) ?? Config()
         let rows = CorrectionRecording.rows(
-            wrote: wrote, put: put, terms: Array(config.vocabulary.terms.keys)
+            wrote: wrote, put: put, terms: Array(config.vocabulary.terms.keys),
+            kinds: config.vocabulary.terms
         )
+        // A name with no term yet: the correction panel offers the rendering
+        // as a rule, and that writes the term and the use. Written here too,
+        // so the command does what the app does.
+        if let new = CorrectionRecording.learns(
+            wrote: wrote, put: put, in: config.vocabulary.terms
+        ) {
+            guard !dry else {
+                print("learn \(new.name) \(new.kind.rawValue) heard \(wrote)")
+                return 0
+            }
+            do {
+                try ConfigWriter.addVocabularyPronunciation(
+                    term: new.name, heard: wrote, kind: new.kind
+                )
+                if let sentence {
+                    try CorrectionRecording.apply(
+                        [.use(term: new.name, span: new.name, heard: wrote)], said: sentence
+                    )
+                }
+            } catch {
+                print("✗ \(error.localizedDescription)")
+                return 1
+            }
+            print("learn \(new.name) \(new.kind.rawValue) heard \(wrote)")
+            return 0
+        }
         guard !rows.isEmpty else {
             print("nothing: \(wrote) is not a term, or the two are the same term")
             return 0

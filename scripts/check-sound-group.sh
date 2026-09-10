@@ -313,6 +313,46 @@ print(len([u for u in d.get("Sarah", []) if not u.get("counter")]))
 check "the blocked sentence is not written from the pill either" \
   "blocked Eric Erik" "$(pick Eric Erik "$BOTH")"
 
+# A correction onto a name the vocabulary has never seen. It is not an ordinary
+# word, so it is not a counter: the rendering is written, the term is created
+# with the kind the tagger read, and the sentence is a use of it. Measured on
+# decoded audio, 2026-09-10 — five sentences about a third person had become
+# five counters under the second, and the pooled plain centre then scored 0.945
+# on a sentence that was hers.
+rm -f "$USES"
+cat > "$WORK/vocabulary.yaml" <<'YAML'
+terms:
+  Ana:
+    kind: person
+    pronunciations:
+      - heard: Anna
+  Anna:
+    kind: person
+  Vercel:
+    pronunciations:
+      - heard: Versal
+YAML
+check "a correction onto a new name learns it" "learn Annah person heard Anna" \
+  "$("$BIN" --correction Anna Annah --in "Annah booked the dentist." 2>/dev/null)"
+check "written with its kind and the rendering it replaced" "person Anna" "$(python3 -c '
+import sys, yaml
+term = yaml.safe_load(open(sys.argv[1]))["terms"]["Annah"] or {}
+heard = [p["heard"] if isinstance(p, dict) else p
+         for p in (term.get("pronunciations") or [])]
+print(term.get("kind", "—"), " ".join(heard))
+' "$WORK/vocabulary.yaml" 2>/dev/null)"
+check "the sentence is a use of the new name" 1 "$(python3 -c '
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))["terms"]
+print(len([u for u in d.get("Annah", []) if not u.get("counter")]))
+' "$USES" 2>/dev/null)"
+check "with no counter anywhere" 0 "$(counters)"
+check "and the new name joins the group" "Ana Anna Annah" "$(members Anna)"
+check "the rendering it was learnt with is not a rule" "none" "$(rule Anna)"
+check "an ordinary word put back is still a counter" \
+  'counter Vercel "Versailles"' \
+  "$("$BIN" --correction Vercel Versailles --in "The Versailles gardens." 2>/dev/null)"
+
 echo
 printf '  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

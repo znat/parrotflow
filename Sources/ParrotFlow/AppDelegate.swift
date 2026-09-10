@@ -4191,6 +4191,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func counterTerm(wrote written: String, put back: String) -> String? {
         guard let term = existingTerm(named: written) else { return nil }
         guard existingTerm(named: back) != term else { return nil }
+        // A name the vocabulary has never seen is not an ordinary word. The
+        // rule offer handles it — the rendering is written, the term is
+        // created, the sentence is a use — so this branch stands aside and
+        // lets it. See `CorrectionRecording.learns`.
+        if let new = CorrectionRecording.learns(
+            wrote: written, put: back, in: config.vocabulary.terms
+        ) {
+            Log.write("correction: \(new.name) is a name and not a term yet —"
+                + " \(term) keeps no counter, the rule is offered instead")
+            return nil
+        }
         return term
     }
 
@@ -5367,8 +5378,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 continue
             }
             do {
+                // The kind as well, when this correction is what creates the
+                // term. `WordKind` is a label a person can read and correct,
+                // and a name written with none says less than the tagger knew.
                 try ConfigWriter.addVocabularyPronunciation(
-                    term: rule.corrected, heard: rule.heard
+                    term: rule.corrected, heard: rule.heard,
+                    kind: CorrectionRecording.learns(
+                        wrote: rule.heard, put: rule.corrected, in: config.vocabulary.terms
+                    )?.kind
                 )
                 // The sentence too, not only the mapping. It is what a term's
                 // portrait is built from, and this is the only moment the app

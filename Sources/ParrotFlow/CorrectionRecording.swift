@@ -42,14 +42,53 @@ enum CorrectionRecording {
     /// The same term on both sides is a capital or a possessive being fixed,
     /// and says nothing about where anything lives.
     static func rows(
-        wrote written: String, put back: String, terms: [String]
+        wrote written: String, put back: String, terms: [String],
+        kinds: [String: Config.Vocabulary.Term] = [:]
     ) -> [Row] {
         guard let lost = term(named: written, in: terms) else { return [] }
         guard let right = term(named: back, in: terms) else {
+            // A name with no term yet is not an ordinary word, and a counter
+            // under the name it replaced is the poisoning this model exists to
+            // end: five sentences about a third person filed as places the
+            // second one does not live. It is a rendering to learn instead —
+            // see `learns`.
+            if learns(wrote: written, put: back, in: kinds) != nil { return [] }
             return [.counter(term: lost, span: back)]
         }
         guard right != lost else { return [] }
         return [.use(term: right, span: back, heard: written)]
+    }
+
+    /// The term a correction onto a new name asks to create, and its kind.
+    ///
+    /// `Anna` corrected to `Annah` where only `Anna` is a term: the word put
+    /// back is a name the vocabulary has never seen. The ordinary correction
+    /// path already knows what to do with that — write the rendering, create
+    /// the term, record the sentence as a use — and it never got the chance,
+    /// because the counter branch took every correction whose left side was a
+    /// term. Measured on decoded audio, 2026-09-10: five sentences about a
+    /// third person became five counters under the second, and the pooled
+    /// plain centre then scored 0.945 on a sentence that was hers.
+    ///
+    /// The rendering it writes — `heard: Anna` under `Annah` — is not a
+    /// substitution rule, because `Anna` is another term's spelling. It opens
+    /// the group, which is the only thing that lets the new name be proposed
+    /// at all.
+    static func learns(
+        wrote written: String, put back: String, in terms: [String: Config.Vocabulary.Term]
+    ) -> (name: String, kind: WordKind)? {
+        guard let lost = term(named: written, in: Array(terms.keys)),
+              term(named: back, in: Array(terms.keys)) == nil
+        else { return nil }
+        guard case .create(let name, let kind) = picked(back, proposedBy: lost, in: terms)
+        else { return nil }
+        // A person only. On the pill you are choosing between names offered
+        // for one sound, and a place or a company picked there is a name you
+        // chose. A correction is the other direction — a term taken back out —
+        // and `Vercel` corrected to `Versailles` is the counter-example the
+        // portrait is built from, not a new member of the group.
+        guard kind == .person else { return nil }
+        return (name, kind)
     }
 
     /// What picking a word on the pill means.
