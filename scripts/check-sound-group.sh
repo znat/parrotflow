@@ -219,6 +219,68 @@ check "and both rows are there" 2 "$(said)"
 "$BIN" --for Erik "$FIELD" Erik --near 6 >/dev/null 2>&1
 check "the same row again is still one row" 2 "$(said)"
 
+# A member nobody has ever confirmed is unknown, not out. It cannot lose a
+# comparison it was never in, so the place is open and the pill lists it —
+# which is the only way that member gets a first sentence.
+check "a member with no uses opens the place" \
+  "open Erik Eric" "$(verdict Erik:0.898:0.80 Eric:-:-:0 --plain 0.600)"
+check "and it is listed after the ones that stand" \
+  "open Erik Eric" "$(verdict Eric:-:-:0 Erik:0.898:0.80 --plain 0.600)"
+check "once every member has a use, the rule runs as before" \
+  "write Erik" "$(verdict Erik:0.898:0.80 Eric:0.600:-:1 --plain 0.600)"
+check "a member with a use but no portrait is out, not unknown" \
+  "write Erik" "$(verdict Erik:0.898:0.80 Eric:-:-:1 --plain 0.600)"
+
+# A sentence naming two members of one group belongs to neither. The rival clip
+# cuts the window at the other name and what is left is still the sentence:
+# "Erik the musician and Eric the software engineer" was kept as a counter
+# under Erik on 2026-09-10, and every later "Eric the musician" was refused.
+cat > "$WORK/vocabulary.yaml" <<'YAML'
+terms:
+  Erik:
+    kind: person
+    pronunciations:
+      - heard: Eric
+  Eric:
+    kind: person
+  Vercel:
+    pronunciations:
+      - heard: Versal
+YAML
+rm -f "$USES"
+BOTH='So I tried again with Erik the musician and Eric the software engineer.'
+check "a sentence naming two members is recorded nowhere" \
+  "blocked Eric Erik" "$("$BIN" --correction Erik Eric --in "$BOTH" 2>/dev/null)"
+check "and no row is written" 0 "$(said)"
+check "one member standing is recorded as before" \
+  'use Eric "Eric" heard Erik' \
+  "$("$BIN" --correction Erik Eric --in "Eric is reviewing my pull request." 2>/dev/null)"
+check "which does write a row" 1 "$(said)"
+
+# Picking a name on the pill. Every person is a term; plain is for ordinary
+# words. A person the recogniser spells right is never corrected, so the pill
+# is the only place their term can be created.
+rm -f "$USES"
+pick () { "$BIN" --picked "$1" "$2" --in "$3" 2>/dev/null; }
+check "a word that is already a term is a use of it" \
+  "use Eric" "$(pick Eric Erik "Eric is a software engineer.")"
+check "an ordinary word is still a counter" \
+  "counter Vercel" "$(pick versus Vercel "It is versus the other one.")"
+check "a name with no term yet is written as a person" \
+  "create Sarah" "$(pick Sarah Erik "Sarah is on the call.")"
+check "with kind: person and no pronunciation" "person none" "$(python3 -c '
+import sys, yaml
+term = yaml.safe_load(open(sys.argv[1]))["terms"]["Sarah"] or {}
+print(term.get("kind", "—"), len(term.get("pronunciations") or []) or "none")
+' "$WORK/vocabulary.yaml" 2>/dev/null)"
+check "and the sentence is a use of the new term" 1 "$(python3 -c '
+import sys, yaml
+d = yaml.safe_load(open(sys.argv[1]))["terms"]
+print(len([u for u in d.get("Sarah", []) if not u.get("counter")]))
+' "$USES" 2>/dev/null)"
+check "the blocked sentence is not written from the pill either" \
+  "blocked Eric Erik" "$(pick Eric Erik "$BOTH")"
+
 echo
 printf '  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

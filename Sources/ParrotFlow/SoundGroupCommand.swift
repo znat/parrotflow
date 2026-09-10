@@ -55,29 +55,31 @@ enum SoundGroupCommand {
         return 0
     }
 
-    /// `--group-decide <term>:<score>:<floor> … [--plain <score>]`
+    /// `--group-decide <term>:<score>:<floor>[:<uses>] … [--plain <score>]`
     ///
     /// A floor of `-` is a member with too few uses to have one, which never
-    /// falls out on that ground.
+    /// falls out on that ground. A score of `-` is a member that could not be
+    /// scored, and `:0` at the end is a member nobody has ever confirmed —
+    /// unknown, which is not the same as out.
     static func decide(_ members: [String], plain: Double?) -> Int32 {
         var candidates: [SoundGroup.Candidate] = []
         for member in members {
             let parts = member.split(separator: ":", omittingEmptySubsequences: false)
                 .map(String.init)
-            guard parts.count == 3, let score = Double(parts[1]) else {
-                print("a member is <term>:<score>:<floor>, not \"\(member)\"")
+            guard parts.count == 3 || parts.count == 4 else {
+                print("a member is <term>:<score>:<floor>[:<uses>], not \"\(member)\"")
                 return 2
             }
             candidates.append(SoundGroup.Candidate(
-                name: parts[0], score: score, floor: Double(parts[2])
+                name: parts[0], score: Double(parts[1]), floor: Double(parts[2]),
+                uses: parts.count == 4 ? (Int(parts[3]) ?? 1) : 1
             ))
         }
         for candidate in candidates {
             let floor = candidate.floor.map { String(format: "%.3f", $0) } ?? "—"
-            print(String(
-                format: "%@  %.3f  floor %@  %@", pad(candidate.name, 10), candidate.score,
-                pad(floor, 5), candidate.stands ? "stands" : "out"
-            ))
+            let score = candidate.score.map { String(format: "%.3f", $0) } ?? "—"
+            let how = candidate.unknown ? "unknown" : (candidate.stands ? "stands" : "out")
+            print("\(pad(candidate.name, 10))  \(pad(score, 5))  floor \(pad(floor, 5))  \(how)")
         }
         if let plain { print(String(format: "%@  %.3f", pad("plain", 10), plain)) }
         print(said(SoundGroup.decide(candidates, plain: plain)))
@@ -109,9 +111,17 @@ enum SoundGroupCommand {
             print("nothing: \(wrote) is not a term, or the two are the same term")
             return 0
         }
+        let groups = SoundGroup.groups(terms: config.vocabulary.terms, uses: TermUses.load())
+        if let sentence, let row = rows.first,
+           let two = CorrectionRecording.blocked(sentence, term: row.term, in: groups) {
+            print("blocked \(two.joined(separator: " "))")
+            return 0
+        }
         if !dry, let sentence {
             do {
-                let written = try CorrectionRecording.apply(rows, said: sentence)
+                let written = try CorrectionRecording.apply(
+                    rows, said: sentence, blocking: groups
+                )
                 guard !written.isEmpty else {
                     print("nothing: \"\(put)\" does not stand in the sentence as a word")
                     return 0
@@ -128,6 +138,57 @@ enum SoundGroupCommand {
             case .counter(let term, let span):
                 print("counter \(term) \"\(span)\"")
             }
+        }
+        return 0
+    }
+
+    /// `--picked <word> <term> --in "<sentence>"` — what an answer on the pill
+    /// records, and it records it.
+    ///
+    /// Prints `use <term>`, `create <name>` — a person written to
+    /// `vocabulary.yaml` and then used — or `counter <term>`, and `blocked` in
+    /// front of any of them when the sentence names two members of one group.
+    static func picked(word: String, term: String, sentence: String?, dry: Bool) -> Int32 {
+        let config = (try? ConfigStore.load()) ?? Config()
+        var answer = CorrectionRecording.picked(
+            word, proposedBy: term, in: config.vocabulary.terms
+        )
+        if case .create(let name) = answer, !dry {
+            do {
+                try ConfigWriter.addVocabularyTerm(name, kind: .person)
+            } catch {
+                print("✗ \(error.localizedDescription)")
+                return 1
+            }
+            answer = .create(name: name)
+        }
+        let row: CorrectionRecording.Row
+        switch answer {
+        case .use(let already): row = .use(term: already, span: word, heard: nil)
+        case .create(let name): row = .use(term: name, span: word, heard: nil)
+        case .counter(let proposed): row = .counter(term: proposed, span: word)
+        }
+        let groups = SoundGroup.groups(
+            terms: (try? ConfigStore.load())?.vocabulary.terms ?? [:], uses: TermUses.load()
+        )
+        if let sentence, let two = CorrectionRecording.blocked(
+            sentence, term: row.term, in: groups
+        ) {
+            print("blocked \(two.joined(separator: " "))")
+            return 0
+        }
+        if let sentence, !dry {
+            do {
+                try CorrectionRecording.apply([row], said: sentence, from: .chosen)
+            } catch {
+                print("✗ \(error.localizedDescription)")
+                return 1
+            }
+        }
+        switch answer {
+        case .use(let already): print("use \(already)")
+        case .create(let name): print("create \(name)")
+        case .counter(let proposed): print("counter \(proposed)")
         }
         return 0
     }

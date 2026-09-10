@@ -135,6 +135,22 @@ print the group it opens and, per member and for plain, the score, the floor,
 whether it stands, then the verdict. This is how the change will be judged by
 hand. The existing `--portrait <term> "<sentence>" <span>` form keeps working.
 
+## What the first live tests changed
+
+Three rules were added after the prototype met real dictation on 2026-09-10.
+They are part of the model, not fixes around it.
+
+- **A member with no use at all is unknown, not out.** It has never been seen,
+  so it cannot lose a comparison it was never in. One unknown member opens the
+  place and the pill lists it. That is how a member gets its first sentence.
+- **A name picked on the pill becomes a term**, with `kind: person` and no
+  pronunciation, and the sentence is a use of it. A person the recogniser
+  spells right is never corrected, so nothing else ever creates their term.
+  Plain stays what it always was: an ordinary word.
+- **A sentence naming two members of one group is recorded nowhere.** The
+  rival clip cuts the window at the other name and the words between the two
+  survive, which are the sentence. Corrections and pill answers both refuse it.
+
 ## What must not move
 
 `scripts/check-counter-portrait.sh` on `tests/portrait-cases.tsv`, and

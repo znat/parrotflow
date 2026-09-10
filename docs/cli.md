@@ -285,6 +285,7 @@ $PF --correction <wrote> <put> --in "<sentence>" [--dry]
 $PF --sound-group <word>
 $PF --group-decide <term>:<score>:<floor>... [--plain <score>]
 $PF --name-place <heard> <term>
+$PF --picked <word> <term> --in "<sentence>" [--dry]
 ```
 
 `--route` shows which transform an instruction reaches and why — the router
@@ -333,9 +334,11 @@ use Mick "Mick" heard Mik
 `--sound-group` prints the terms that share a word's sound, every word that
 opens that group, and whether the word is still a substitution rule — one that
 opens a group of two or more is not. `--group-decide` runs the decision rule on
-scores you write down: a member is `<term>:<score>:<floor>`, a floor of `-` is
-a member with too few uses to have one, and `--plain` is the score against the
-group's pooled counter rows. The last line is the verdict.
+scores you write down: a member is `<term>:<score>:<floor>[:<uses>]`, a floor
+of `-` is a member with too few uses to have one, a score of `-` is one that
+could not be scored, `:0` is a member nobody has ever confirmed — unknown,
+which opens the place rather than losing it — and `--plain` is the score
+against the group's pooled counter rows. The last line is the verdict.
 
 ```
 $ ParrotFlow --group-decide Mik:0.90:0.80 Mick:0.86:- --plain 0.70
@@ -354,6 +357,13 @@ no counter row, nothing decided.
 `--name-place` says whether the slot test stands aside at a place: `names` when
 both sides are names and the slot cannot separate them, `ordinary` when it is
 an ordinary word against a term.
+
+`--picked` is what an answer on the pill records, and it records it: `use
+<term>` for a word that is already a term, `create <name>` for a name that is
+not one yet — written to `vocabulary.yaml` as a person with no pronunciation —
+and `counter <term>` for an ordinary word. `blocked <a> <b>` instead of any of
+them means the sentence names two members of one group, so nothing is written.
+`--correction` answers the same way.
 
 `--for` takes `--near <n>`, the word the correction was at. A terminal joins
 dictations with no space after the stop, so one field holds the same name

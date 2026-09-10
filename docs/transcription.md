@@ -486,6 +486,12 @@ it leads the second by more than 0.01. A named member winning writes its
 spelling, plain winning keeps what was heard, and nobody standing keeps it too.
 Two standing and no lead is an open place, and the pill asks.
 
+A member with no confirmed use at all is **unknown**, which is not the same as
+out: it has never been seen, so it cannot lose a comparison it was never in.
+One unknown member opens the place and the pill lists it, which is the only way
+that member gets a first sentence. Once every member has a use the rule above
+runs as written.
+
 `--portrait <heard> "<sentence>"` prints the group a word opens, every member's
 score and floor, plain's score and the verdict.
 `scripts/check-sound-group.sh` scores the derivation, the decision rule and
@@ -517,7 +523,23 @@ is a **counter** under the term that was proposed — the half a portrait cannot
 get any other way, because accepting an offer only ever teaches where a term
 *does* live. One correction never writes both: putting `Mick` back over `Mik`
 is a use of Mick and says nothing about Mik. "Something else" writes no row at
-all. A counter-example and the term stops being read against a floor. Each answer also goes to `trace.jsonl` as `kind: chose`, kept apart from
+all. A counter-example and the term stops being read against a floor.
+
+**A name picked on the pill becomes a term.** Every person is a term, and plain
+is for ordinary words — but a person the recogniser spells right is never
+corrected, so nothing ever creates their term and every sentence about them
+piles up as a counter under somebody else's name. When the word picked is not a
+term and either the tagger or the proposing term's `kind: person` says it is a
+name, it is written to `vocabulary.yaml` as a person with no pronunciation, and
+the sentence is a use of it. The group then holds both names.
+
+**A sentence naming two members of one group is recorded nowhere.** It belongs
+to neither, and the rival clip cannot save it: cutting the window at the other
+name leaves the words between them, which are the sentence. "So I tried again
+with Erik the musician and Eric the software engineer." was kept as a counter
+under Erik on 2026-09-10, and every later "Eric the musician" was refused,
+0.80 against 0.93 and 0.90 against 0.92. Corrections and pill answers both
+refuse it, and the log names the two. Each answer also goes to `trace.jsonl` as `kind: chose`, kept apart from
 the hand edits: a place the app said out loud it could not decide is a harder
 label than a mistake somebody fixed.
 

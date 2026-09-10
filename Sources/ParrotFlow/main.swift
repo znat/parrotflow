@@ -552,6 +552,20 @@ if let index = arguments.firstIndex(of: "--portrait") {
     exit(TermPortraitCommand.run(term: arguments[index + 1], sentence: sentence, span: span))
 }
 
+if let index = arguments.firstIndex(of: "--picked") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --picked <word> <term> --in \"<sentence>\" [--dry]")
+        exit(2)
+    }
+    let sentence = arguments.firstIndex(of: "--in").flatMap { at in
+        arguments.indices.contains(at + 1) ? arguments[at + 1] : nil
+    }
+    exit(SoundGroupCommand.picked(
+        word: arguments[index + 1], term: arguments[index + 2], sentence: sentence,
+        dry: arguments.contains("--dry")
+    ))
+}
+
 if let index = arguments.firstIndex(of: "--name-place") {
     guard arguments.indices.contains(index + 2) else {
         print("usage: ParrotFlow --name-place <heard> <term>")
