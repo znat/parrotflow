@@ -195,6 +195,10 @@ check "kind: person on the term says so on its own" "names" "$(place zzarq Erik)
 check "a name the tagger knows counts on its own" "names" "$(place Sarah Ghostty)"
 check "an ordinary word against a term is not" "ordinary" "$(place versus Vercel)"
 check "nor is a rare word the lists have never seen" "ordinary" "$(place superbase Ghostty)"
+# A sentence opens with a capital, and the frame the tagger reads must not turn
+# every capitalised word into a name. `Price` and `Match` are surnames as well.
+check "a capital at the start of a sentence is not a name" "ordinary" "$(place Cancel Vercel)"
+check "nor is a word that is also a surname" "ordinary" "$(place Price Ghostty)"
 check "a possessive is read as its name" "names" "$(place "Eric's" Erik)"
 
 # The occurrence that was corrected, not the first copy of the word. A terminal
