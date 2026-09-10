@@ -192,11 +192,12 @@ right whenever the spelling is a word.
 #### Per term
 
 **`kind`** is what the term names: `person`, `place`, `organization` or `word`.
-The correction panel writes it, proposing a value from the macOS word tagger.
-Nothing reads it yet. It is here so the stages that will need it have something
-to read, the way `seen` and `from` were added to a pronunciation before anything
-counted them. A term written before the key existed has no `kind`, and that is
-not the same as `word`.
+The correction panel writes it, proposing a value from the macOS word tagger,
+and so does a term created from an answer on the pill. Two things read it.
+`NamePlace` asks whether the heard word and the term are both names, and the
+slot test stands aside when they are. A word picked on the pill under a term
+that says `kind: person` is written as a person. A term written before the key
+existed has no `kind`, and that is not the same as `word`.
 
 **`pronunciations`** is the ways this term actually comes out of the
 recogniser. Each entry does two jobs. It is an exact rule, which is what

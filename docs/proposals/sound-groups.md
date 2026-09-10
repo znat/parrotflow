@@ -140,9 +140,11 @@ hand. The existing `--portrait <term> "<sentence>" <span>` form keeps working.
 Three rules were added after the prototype met real dictation on 2026-09-10.
 They are part of the model, not fixes around it.
 
-- **A member with no portrait is unknown, not out.** Nothing is known about it,
-  so it cannot lose a comparison it was never in. One unknown member opens the
+- **A member with no use is unknown, not out.** Nothing is known about it, so
+  it cannot lose a comparison it was never in. One unknown member opens the
   place and the pill lists it. That is how a member gets its first sentence.
+  One sentence is enough to stop being unknown: a group member has a centre
+  from its first use.
 - **Nobody standing keeps what was heard only when plain has a centre.** With
   no counter row anywhere in the group there is no ordinary word to win, so
   the place is opened, best first.
