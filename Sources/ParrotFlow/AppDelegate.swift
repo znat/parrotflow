@@ -4216,7 +4216,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let heard = config.vocabulary.terms[term]?.heard ?? []
         let ours = heard.contains { $0.caseInsensitiveCompare(back) == .orderedSame }
         do {
-            for row in try CorrectionRecording.apply(rows, said: sentence, near: word) {
+            for row in try CorrectionRecording.apply(
+                rows, said: sentence, near: word, blocking: soundGroups
+            ) {
                 rebuildPortrait(for: row.term)
                 switch row {
                 case .use(let right, _, _):
@@ -4284,6 +4286,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 term, Date().timeIntervalSince(started)
             ))
         }
+    }
+
+    /// The sound groups of the vocabulary as it stands, derived fresh.
+    ///
+    /// Cheap — a few dozen terms and the uses file — and it has to be fresh:
+    /// a correction a moment ago may have created the term that makes this a
+    /// group of two.
+    private var soundGroups: [SoundGroup.Group] {
+        SoundGroup.groups(terms: config.vocabulary.terms, uses: TermUses.load())
     }
 
     /// The vocabulary term this word is, ignoring case and any possessive.
@@ -5377,9 +5388,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // Which occurrence: a terminal field holds every dictation
                     // since the last Return, and the word that was corrected is
                     // rarely the first copy of it.
-                    try TermUses.record(
-                        term: term, said: corrected, span: rule.corrected,
-                        heard: rule.heard, near: word
+                    try CorrectionRecording.apply(
+                        [.use(term: term, span: rule.corrected, heard: rule.heard)],
+                        said: corrected, near: word, blocking: soundGroups
                     )
                     rebuildPortrait(for: term)
                 } catch {
@@ -5977,7 +5988,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ordinary word picked is a counter under the term that was proposed.
         // A group place offers several names, and only the one you picked
         // learns anything.
-        let picked = existingTerm(named: word.word)
+        var picked: String?
+        switch CorrectionRecording.picked(
+            word.word, proposedBy: open.term, in: config.vocabulary.terms
+        ) {
+        case .use(let term): picked = term
+        case .create(let name): picked = createPerson(named: name)
+        case .counter: picked = nil
+        }
         let replaced = word.word == open.standing ? nil : open.standing
         let rows: [CorrectionRecording.Row] = picked.map {
             [.use(term: $0, span: word.word, heard: replaced)]
@@ -5987,7 +6005,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let at = text.prefix(word.range.lowerBound).split(separator: " ").count
         do {
             for row in try CorrectionRecording.apply(
-                rows, said: text, from: .chosen, near: at
+                rows, said: text, from: .chosen, near: at, blocking: soundGroups
             ) {
                 rebuildPortrait(for: row.term)
             }
@@ -5999,6 +6017,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         } catch {
             Log.write("selector: could not record the answer: \(error.localizedDescription)")
+        }
+    }
+
+    /// Writes a bare term for a person, and returns the name it was written
+    /// under. Nil when the file could not be written.
+    ///
+    /// No pronunciation: nothing was misheard. The recogniser spells this name
+    /// correctly, and the term exists so the name has a portrait of its own and
+    /// joins the group that shares its sound.
+    private func createPerson(named word: String) -> String? {
+        let bare = word.trimmingCharacters(in: .punctuationCharacters)
+        guard !bare.isEmpty else { return nil }
+        do {
+            try ConfigWriter.addVocabularyTerm(bare, kind: .person)
+            Log.write("selector: \(bare) is a name and was not a term — written to"
+                + " vocabulary.yaml as a person, with no pronunciation")
+            flash("Saved  \(bare) is a name", tone: .done)
+            return bare
+        } catch {
+            Log.write("selector: could not write \(bare) to vocabulary.yaml:"
+                + " \(error.localizedDescription)")
+            return nil
         }
     }
 

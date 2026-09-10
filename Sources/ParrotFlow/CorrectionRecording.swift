@@ -52,6 +52,59 @@ enum CorrectionRecording {
         return [.use(term: right, span: back, heard: written)]
     }
 
+    /// What picking a word on the pill means.
+    enum Picked: Equatable {
+        /// A term already: the sentence is a use of it.
+        case use(term: String)
+        /// A name with no term yet. Every person is a term, so it is written
+        /// as one — `kind: person`, no pronunciation, because nothing was
+        /// misheard — and the sentence is a use of it.
+        case create(name: String)
+        /// An ordinary word: a counter under the term that was proposed, which
+        /// is the sentence plain owns.
+        case counter(term: String)
+    }
+
+    /// Which of the three this answer is.
+    ///
+    /// A person the recogniser spells right never gets a term the ordinary
+    /// way: nothing is ever corrected, so nothing ever creates one, and every
+    /// sentence about them piles up as a counter under somebody else's name.
+    /// The pill is the one place that can tell — the word was picked over a
+    /// name, and the tagger or the proposing term says it is a name too.
+    static func picked(
+        _ word: String, proposedBy term: String, in terms: [String: Config.Vocabulary.Term]
+    ) -> Picked {
+        if let already = self.term(named: word, in: Array(terms.keys)) {
+            return .use(term: already)
+        }
+        let bare = word.trimmingCharacters(in: .punctuationCharacters)
+        guard !bare.isEmpty else { return .counter(term: term) }
+        if terms[term]?.kind == .person || NamePlace.isPersonalName(bare) {
+            return .create(name: bare)
+        }
+        return .counter(term: term)
+    }
+
+    /// The two group members standing in this sentence, when there are two.
+    ///
+    /// A sentence naming two members of one group belongs to neither, and
+    /// storing it under either one teaches the wrong thing about both. The
+    /// rival clip cuts the window at the other spelling, and what survives
+    /// between them is still the sentence: "So I tried again with Erik the
+    /// musician and Eric the software engineer." was kept as a counter under
+    /// Erik on 2026-09-10, and every later "Eric the musician" was refused,
+    /// 0.80 against 0.93 and 0.90 against 0.92.
+    ///
+    /// Nil when fewer than two members stand there, which is every ordinary
+    /// correction.
+    static func blocked(
+        _ sentence: String, term: String, in groups: [SoundGroup.Group]
+    ) -> [String]? {
+        let standing = SoundGroup.standing(in: sentence, of: term, in: groups)
+        return standing.count > 1 ? standing : nil
+    }
+
     /// Writes them. One row per call to `TermUses.record`, in order.
     ///
     /// Returns the rows that were written, which is fewer than it was given
@@ -60,10 +113,16 @@ enum CorrectionRecording {
     @discardableResult
     static func apply(
         _ rows: [Row], said sentence: String, from source: TermUses.Use.Source = .correction,
-        near word: Int? = nil
+        near word: Int? = nil, blocking groups: [SoundGroup.Group] = []
     ) throws -> [Row] {
         var written: [Row] = []
         for row in rows {
+            if let two = blocked(sentence, term: row.term, in: groups) {
+                Log.write("uses: \"\(TermUses.narrowed(sentence, to: span(of: row), near: word))\""
+                    + " names both \(two.joined(separator: " and ")) — it says nothing about"
+                    + " either, so nothing is recorded")
+                continue
+            }
             guard TermUses.occurrence(of: span(of: row), in: sentence) != nil else { continue }
             switch row {
             case .use(let term, let span, let heard):
