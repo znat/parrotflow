@@ -432,7 +432,7 @@ actor TermPortrait {
         let uses = (stored[member] ?? []).filter { !$0.counter }
         guard !uses.isEmpty else { return nil }
         let mark = Self.fingerprint(of: uses) + "\u{4}" + rivals.joined(separator: "\u{1}")
-        if let held = memberCache[mark] { return held }
+        if let held = memberCache[member], held.mark == mark { return held.built }
 
         var vectors: [[Float]] = []
         for use in uses {
@@ -448,14 +448,20 @@ actor TermPortrait {
             centre: middle, tightness: tightness, floor: Self.floor(of: vectors),
             uses: vectors.count
         )
-        memberCache[mark] = built
+        memberCache[member] = (mark: mark, built: built)
         return built
     }
 
     /// Held for the run only, like `plainCache`: a centre cut with one group's
     /// rivals means nothing to another group.
-    private var memberCache:
-        [String: (centre: [Float], tightness: Double, floor: Double?, uses: Int)] = [:]
+    ///
+    /// One entry per member, and the mark it was built from sits in the value.
+    /// Keyed by the mark instead, every correction left the centre it
+    /// invalidated behind — 1024 floats each, for as long as the app runs.
+    private var memberCache: [String: (
+        mark: String,
+        built: (centre: [Float], tightness: Double, floor: Double?, uses: Int)
+    )] = [:]
 
     /// The group's plain centre: every member's counter rows, pooled.
     ///
@@ -472,8 +478,9 @@ actor TermPortrait {
         var rows: [TermUses.Use] = []
         for member in members { rows += (stored[member] ?? []).filter(\.counter) }
         guard rows.count >= Self.counterMinimum else { return nil }
+        let group = members.sorted().joined(separator: "\u{1}")
         let mark = Self.fingerprint(of: rows) + "\u{4}" + rivals.joined(separator: "\u{1}")
-        if let held = plainCache[mark] { return held }
+        if let held = plainCache[group], held.mark == mark { return held.built }
 
         var vectors: [[Float]] = []
         for row in rows {
@@ -486,14 +493,20 @@ actor TermPortrait {
         let (centre, tightness) = Self.middle(of: vectors)
         guard tightness > 0 else { return nil }
         let built = (centre: centre, tightness: tightness, rows: vectors.count)
-        plainCache[mark] = built
+        plainCache[group] = (mark: mark, built: built)
         return built
     }
 
     /// Held for the run only. A pooled centre is a few embeddings and it
     /// depends on rows from several terms, so it is not worth the cache file's
     /// invalidation rules.
-    private var plainCache: [String: (centre: [Float], tightness: Double, rows: Int)] = [:]
+    ///
+    /// One entry per group, not per member: the centre is pooled over the
+    /// whole group. The mark is in the value, so a row written anywhere in the
+    /// group replaces the entry instead of adding one.
+    private var plainCache: [String: (
+        mark: String, built: (centre: [Float], tightness: Double, rows: Int)
+    )] = [:]
 
     /// Every spelling that could stand at a group's place: each member's own
     /// rivals, pooled.
