@@ -192,11 +192,12 @@ right whenever the spelling is a word.
 #### Per term
 
 **`kind`** is what the term names: `person`, `place`, `organization` or `word`.
-The correction panel writes it, proposing a value from the macOS word tagger.
-Nothing reads it yet. It is here so the stages that will need it have something
-to read, the way `seen` and `from` were added to a pronunciation before anything
-counted them. A term written before the key existed has no `kind`, and that is
-not the same as `word`.
+The correction panel writes it, proposing a value from the macOS word tagger,
+and so does a term created from an answer on the pill. Two things read it.
+`NamePlace` asks whether the heard word and the term are both names, and the
+slot test stands aside when they are. A word picked on the pill under a term
+that says `kind: person` is written as a person. A term written before the key
+existed has no `kind`, and that is not the same as `word`.
 
 **`pronunciations`** is the ways this term actually comes out of the
 recogniser. Each entry does two jobs. It is an exact rule, which is what
@@ -437,6 +438,17 @@ judge is simply left open, which is the behaviour before this tier. This tier is
 reached only from the sound pass, and that pass is English only, so it was
 measured in English only and runs nowhere else.
 
+**The slot is not asked about one name against another.** It compares the term
+with the word that was heard, and a term is unknown to the tokenizer by
+construction, so a heard word that is itself a name wins every time whatever
+the sentence says: `Eric` against the term `Erik` scored −0.254, −0.253 and
+−0.257 in three different sentences, refusing all three. A place is read as
+name against name when the term says `kind: person`, when `NLTagger` reads the
+heard word as a personal name, or when the heard word is a `heard:` rendering
+somebody wrote down. Those go straight to the portrait, and to the pill when it
+says nothing — which is how a second name starts from nothing. An ordinary word
+against a term — `versus` against `Vercel` — still goes to the slot.
+
 **What the slot cannot settle, the term itself can.** Every sentence you
 confirm a term in is kept in `vocabulary-uses.yaml`, and one of them gives the
 term a portrait: the average of what those sentences look like, with the term
@@ -459,10 +471,51 @@ counter says nothing until it gets either a counter or a third use.
 `--portrait <term> "<sentence>" <word>` prints both scores and the verdict;
 `scripts/check-counter-portrait.sh` is the run.
 
-**What nothing settles is asked.** The pill draws the sentence with the two
-readings stacked where the open place is, and 1 or 2 answers it. The words wait
-for the answer: nothing is typed until the last question is answered, so the
-sentence is only ever written once.
+**Two names with one sound are a group.** `Mik` and `Mick` are two people and
+the decoder writes "Mick" for both. A group is derived, never declared: two
+terms are in one when one term's spelling is a `heard:` rendering of the other,
+when they share a rendering, or when a counter row under one has a span that is
+the other's spelling. The links are transitive, and almost every term is a
+group of one, which behaves exactly as above.
+
+A rendering that opens a group is no longer a substitution rule. The word opens
+the place instead, and every member is a reading of it. Each is scored against
+its own portrait, and one more member has no name — **plain**, the ordinary
+word that sounds like this, whose portrait is the counter rows of the whole
+group pooled. A member below its own floor is out; the best of the rest wins if
+it leads the second by more than 0.01. A named member winning writes its
+spelling, plain winning keeps what was heard, and nobody standing keeps it too.
+Two standing and no lead is an open place, and the pill asks.
+
+A member with no portrait is **unknown**, which is not the same as out: nothing
+is known about it, so it cannot lose a comparison it was never in. One unknown
+member opens the place and the pill lists it, which is the only way that member
+gets a first sentence. And "nobody standing" is the ordinary word winning, so
+it needs an ordinary word to win: with no counter row anywhere in the group
+there is no plain centre, and the place is opened rather than kept — best
+first, so the pill's top row carries the ranking the floors threw away.
+
+Both were measured on decoded audio, 2026-09-10. Two names, three sentences
+each, no counters: every score sat below a floor read off three short
+sentences, and keeping what was heard typed the wrong name and asked nothing.
+Opened instead, the right name is the top row on both held-out sentences —
+Erik 0.791 against Eric 0.649 on "Eric is a musician.", and Eric 0.747 against
+Erik 0.647 on "Eric is a software engineer."
+
+`--portrait <heard> "<sentence>"` prints the group a word opens, every member's
+score and floor, plain's score and the verdict.
+`scripts/check-sound-group.sh` scores the derivation, the decision rule and
+what a correction records; the portraits behind them have no bench of their own.
+See `docs/proposals/sound-groups.md`.
+
+**What nothing settles is asked.** The pill draws the sentence with the
+readings stacked where the open place is, and a digit answers it. Two readings
+almost always — what was heard and the one word that could not be ruled out —
+and one row per member where several names share the sound, four at most. The
+last row of every question is "something else": it writes what was heard and
+records nothing, so the correction you then make by hand goes through the panel
+as any other does. The words wait for the answer: nothing is typed until the
+last question is answered, so the sentence is only ever written once.
 
 Every way of not answering writes what the gates settled on, which is what an
 open place has always shipped. Escape, a click outside the pill, any other key,
@@ -473,11 +526,54 @@ sentence.
 Several open places in one sentence are several questions, asked one at a time,
 and the count on the pill says how many are left.
 
-The answers are the reason to ask. Confirming a term keeps that sentence as a
-use; refusing one keeps it as a counter-example — the half a portrait cannot
+The answers are the reason to ask. What is recorded depends on the word that
+was written, not on which row it sat in: a word that is a term is a **use** of
+that term, with `heard:` set to the spelling it replaced, and an ordinary word
+is a **counter** under the term that was proposed — the half a portrait cannot
 get any other way, because accepting an offer only ever teaches where a term
-*does* live. Three counter-examples and the term stops being read against a
-floor. Each answer also goes to `trace.jsonl` as `kind: chose`, kept apart from
+*does* live. One correction never writes both: putting `Mick` back over `Mik`
+is a use of Mick and says nothing about Mik. "Something else" writes no row at
+all. A counter-example and the term stops being read against a floor.
+
+**A name picked on the pill becomes a term.** Every person is a term, and plain
+is for ordinary words — but a person the recogniser spells right is never
+corrected, so nothing ever creates their term and every sentence about them
+piles up as a counter under somebody else's name. When the word picked is not a
+term and the tagger reads it as a name, it is written to `vocabulary.yaml` with
+no pronunciation, under the kind the tagger read — `person`, `place` or
+`organization` — and the sentence is a use of it. A word the tagger cannot read
+is written as a person only when the term proposed over it says `kind: person`,
+which is the one thing left saying this is a name at all. The group then holds
+both names.
+
+**A correction onto a name with no term creates it.** `Anna` corrected to
+`Annah` where only `Anna` is a term is not an ordinary word being put back: it
+is a third person. The rendering is written, the term is created with
+`kind: person`, and the sentence is a use of it — the ordinary correction path,
+which the counter branch used to intercept. A place or an organization put back
+is still a counter, because a counter is what a portrait is built from:
+`Vercel` corrected to `Versailles` says where Vercel does not live. Measured on
+decoded audio, 2026-09-10: five sentences about a third person had become five
+counters under the second, and the pooled plain centre then scored 0.945 on a
+sentence that was hers.
+
+**A place has one owner.** A sentence recorded under one member is taken off
+every other member of the group, whatever its polarity. The pill records "Eric
+has a new piano." under Eric, you correct it to Erik, and without this both
+names hold the same sentence at the same place and their centres are pulled
+together by the words meant to separate them. A place is the text on either
+side of the term, so the two spellings are the same place. Only a row whose own
+span opens the group goes. The log names the row that moved. The portrait of
+the member that lost it is keyed on a fingerprint of its uses, so it rebuilds
+itself the next time it is read.
+
+**A sentence naming two members of one group is recorded nowhere.** It belongs
+to neither, and the rival clip cannot save it: cutting the window at the other
+name leaves the words between them, which are the sentence. "So I tried again
+with Erik the musician and Eric the software engineer." was kept as a counter
+under Erik on 2026-09-10, and every later "Eric the musician" was refused,
+0.80 against 0.93 and 0.90 against 0.92. Corrections and pill answers both
+refuse it, and the log names the two. Each answer also goes to `trace.jsonl` as `kind: chose`, kept apart from
 the hand edits: a place the app said out loud it could not decide is a harder
 label than a mistake somebody fixed.
 

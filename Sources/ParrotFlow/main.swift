@@ -298,13 +298,14 @@ if let index = arguments.firstIndex(of: "--selector") {
         : []
     guard !places.isEmpty else {
         print("usage: ParrotFlow --selector \"<text>\""
-            + " \"<standing>|<other>|<word>|<answer>\"... [--ranges]")
+            + " \"<standing>|<other>|<word>|<answer>\"... [--ranges|--taught]")
         exit(2)
     }
     exit(SelectorCommand.run(
         text: arguments[index + 1],
         places: places,
-        ranges: arguments.contains("--ranges")
+        ranges: arguments.contains("--ranges"),
+        taught: arguments.contains("--taught")
     ))
 }
 
@@ -449,8 +450,20 @@ if let index = arguments.firstIndex(of: "--for") {
     }
     let span = arguments.indices.contains(index + 3)
         && !arguments[index + 3].hasPrefix("--") ? arguments[index + 3] : nil
+    // Which occurrence, counted in words. A field holds every dictation since
+    // the last Return, so the same name can stand in it more than once.
+    var near: Int?
+    if let at = arguments.firstIndex(of: "--near") {
+        // Ignored, `--near abc` recorded the first occurrence instead, which
+        // can attach the use to the wrong sentence.
+        guard arguments.indices.contains(at + 1), let which = Int(arguments[at + 1]) else {
+            print("usage: --near <word>, counted in words")
+            exit(2)
+        }
+        near = which
+    }
     exit(LearnCommand.supporting(
-        term: arguments[index + 1], sentence: arguments[index + 2], span: span
+        term: arguments[index + 1], sentence: arguments[index + 2], span: span, near: near
     ))
 }
 
@@ -537,7 +550,73 @@ if let index = arguments.firstIndex(of: "--portrait") {
     }
     let sentence = arguments.indices.contains(index + 2) ? arguments[index + 2] : nil
     let span = arguments.indices.contains(index + 3) ? arguments[index + 3] : nil
+    // A word and a sentence with no span is the group form: the word is what
+    // was heard, and every term that shares its sound reads the sentence. It
+    // falls back to the term form when the word opens no group.
+    if let sentence, span == nil {
+        exit(TermPortraitCommand.group(heard: arguments[index + 1], sentence: sentence))
+    }
     exit(TermPortraitCommand.run(term: arguments[index + 1], sentence: sentence, span: span))
+}
+
+if let index = arguments.firstIndex(of: "--picked") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --picked <word> <term> --in \"<sentence>\" [--dry]")
+        exit(2)
+    }
+    let sentence = arguments.firstIndex(of: "--in").flatMap { at in
+        arguments.indices.contains(at + 1) ? arguments[at + 1] : nil
+    }
+    exit(SoundGroupCommand.picked(
+        word: arguments[index + 1], term: arguments[index + 2], sentence: sentence,
+        dry: arguments.contains("--dry")
+    ))
+}
+
+if let index = arguments.firstIndex(of: "--name-place") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --name-place <heard> <term>")
+        exit(2)
+    }
+    exit(SoundGroupCommand.namePlace(heard: arguments[index + 1], term: arguments[index + 2]))
+}
+
+if let index = arguments.firstIndex(of: "--sound-group") {
+    guard arguments.indices.contains(index + 1) else {
+        print("usage: ParrotFlow --sound-group <word>")
+        exit(2)
+    }
+    exit(SoundGroupCommand.group(arguments[index + 1]))
+}
+
+if let index = arguments.firstIndex(of: "--group-decide") {
+    var members: [String] = []
+    for argument in arguments[(index + 1)...] {
+        if argument.hasPrefix("--") { break }
+        members.append(argument)
+    }
+    guard !members.isEmpty else {
+        print("usage: ParrotFlow --group-decide <term>:<score>:<floor> … [--plain <score>]")
+        exit(2)
+    }
+    let plain = arguments.firstIndex(of: "--plain").flatMap { at in
+        arguments.indices.contains(at + 1) ? Double(arguments[at + 1]) : nil
+    }
+    exit(SoundGroupCommand.decide(members, plain: plain))
+}
+
+if let index = arguments.firstIndex(of: "--correction") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --correction <wrote> <put> --in \"<sentence>\" [--dry]")
+        exit(2)
+    }
+    let sentence = arguments.firstIndex(of: "--in").flatMap { at in
+        arguments.indices.contains(at + 1) ? arguments[at + 1] : nil
+    }
+    exit(SoundGroupCommand.correction(
+        wrote: arguments[index + 1], put: arguments[index + 2], sentence: sentence,
+        dry: arguments.contains("--dry")
+    ))
 }
 
 if let index = arguments.firstIndex(of: "--slot-gap") {

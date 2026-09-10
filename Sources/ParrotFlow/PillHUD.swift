@@ -167,10 +167,12 @@ struct Learn: Equatable {
 struct Choose: Equatable {
     /// The prose before the place. A leading "…" when the window cut it.
     let before: String
-    /// What the stage left in the string. Option 0.
-    let heard: String
-    /// The word it could not rule out. Option 1.
-    let other: String
+    /// Every reading of the place, what the stage left in the string first.
+    ///
+    /// Two of them almost always: what was heard and the one word that could
+    /// not be ruled out. A place where several terms share the sound carries
+    /// one row per member — see `SoundGroup`.
+    let options: [String]
     /// The prose after the place. A trailing "…" when the window cut it.
     let after: String
     /// Which question this is, and how many there are.
@@ -181,9 +183,12 @@ struct Choose: Equatable {
     /// the surface says an answer is not the end of it.
     var count: String? { steps > 1 ? "\(step) of \(steps)" : nil }
 
+    /// What stands in the string, which is the row nobody has to click.
+    var heard: String { options.first ?? "" }
+
     /// For the log only. The view draws the pieces.
     var line: String {
-        "\(PillMetrics.chooseLead) “\(before) [\(heard)|\(other)] \(after)”"
+        "\(PillMetrics.chooseLead) “\(before) [\(options.joined(separator: "|"))] \(after)”"
     }
 
     /// The sentence cut to a window around the place.
@@ -191,7 +196,7 @@ struct Choose: Equatable {
     /// `at` and `span` are word indices into `words`. An ellipsis is written
     /// only where words were dropped.
     static func windowed(
-        words: [String], at: Int, span: Int, other: String,
+        words: [String], at: Int, span: Int, others: [String],
         step: Int = 1, steps: Int = 1, window: Int = AppDelegate.learnWindow
     ) -> Choose {
         func run(_ range: Range<Int>) -> [String] {
@@ -205,8 +210,8 @@ struct Choose: Equatable {
             before: head.count > window
                 ? "… " + head.suffix(window).joined(separator: " ")
                 : head.joined(separator: " "),
-            heard: run(at ..< (at + span)).joined(separator: " "),
-            other: other,
+            options: [run(at ..< (at + span)).joined(separator: " ")] + others
+                + [PillMetrics.chooseElsewhere],
             after: tail.prefix(window).joined(separator: " ")
                 + (tail.count > window ? " …" : ""),
             step: step, steps: steps
@@ -220,15 +225,15 @@ struct Choose: Equatable {
     /// either side; past that the place itself is what is too wide, and
     /// `.lineLimit(1)` truncates.
     static func fitted(
-        words: [String], at: Int, span: Int, other: String,
+        words: [String], at: Int, span: Int, others: [String],
         step: Int = 1, steps: Int = 1, window: Int = AppDelegate.learnWindow
     ) -> Choose {
         var size = window
-        var kept = windowed(words: words, at: at, span: span, other: other,
+        var kept = windowed(words: words, at: at, span: span, others: others,
                             step: step, steps: steps, window: size)
         while size > 1, !PillMetrics.chooseFits(kept) {
             size -= 1
-            kept = windowed(words: words, at: at, span: span, other: other,
+            kept = windowed(words: words, at: at, span: span, others: others,
                             step: step, steps: steps, window: size)
         }
         return kept
@@ -249,7 +254,8 @@ struct ChooseRun {
         /// Moves when an earlier answer writes a different number of words.
         var at: Int
         let span: Int
-        let other: String
+        /// The readings beside what was heard, in the order they are offered.
+        let others: [String]
     }
 
     private(set) var words: [String]
@@ -266,7 +272,7 @@ struct ChooseRun {
         guard answered < places.count else { return nil }
         let place = places[answered]
         return .fitted(
-            words: words, at: place.at, span: place.span, other: place.other,
+            words: words, at: place.at, span: place.span, others: place.others,
             step: answered + 1, steps: places.count
         )
     }
@@ -274,14 +280,16 @@ struct ChooseRun {
     /// The sentence as it stands, which after the last answer is what to type.
     var sentence: String { words.joined(separator: " ") }
 
-    /// Take an answer: 0 keeps what was heard, 1 writes the other word.
+    /// Take an answer: 0 keeps what was heard, anything else writes that
+    /// reading.
     mutating func answer(_ option: Int) {
         guard answered < places.count else { return }
         let place = places[answered]
         answered += 1
-        guard option == 1, place.at >= 0, place.at + place.span <= words.count
+        guard option > 0, option <= place.others.count,
+              place.at >= 0, place.at + place.span <= words.count
         else { return }
-        let written = place.other.split(separator: " ").map(String.init)
+        let written = place.others[option - 1].split(separator: " ").map(String.init)
         words.replaceSubrange(place.at ..< (place.at + place.span), with: written)
         let shift = written.count - place.span
         guard shift != 0 else { return }
@@ -440,9 +448,10 @@ final class PillModel: ObservableObject {
     /// Closures rather than published state: they are messages out of the view,
     /// and nothing about them should redraw it.
     ///
-    /// On a selector the index is the option: 0 keeps what was heard, 1 takes
-    /// the other word. There is one place on the pill, so a click is the whole
-    /// answer — whoever raised it asks the next question, if there is one.
+    /// On a selector the index is the option: 0 keeps what was heard, and the
+    /// rest are the readings under it, in the order they are drawn. There is
+    /// one place on the pill, so a click is the whole answer — whoever raised
+    /// it asks the next question, if there is one.
     var onPick: ((Int) -> Void)?
     var onHover: ((Bool) -> Void)?
     /// The open panel folded back to the tab on its own.
@@ -1788,12 +1797,12 @@ enum PillMetrics {
             * (rule + blockGap)
         if case .learn(let it) = headline {
             extra += learnRows(it) + blockGap
-        } else if case .choose = headline {
+        } else if case .choose(let it) = headline {
             // The pill's own 42 is one chip row and the 16 of air that centres
             // it. The selector draws no chips — each option carries its own key
             // — so give the row back and keep the air. `OfferContent` skips the
             // chip block on the same condition, so nothing is left in its place.
-            extra += chooseRows
+            extra += chooseRows(it.options.count)
             if commands.isEmpty { extra -= chipRowHeight }
         } else if headline?.ownsARow == true {
             extra += selectionRow + blockGap
@@ -2104,6 +2113,13 @@ enum PillMetrics {
     /// The option's word: the prose's size and weight, in the monospaced face.
     static let chooseWordFont: NSFont =
         .monospacedSystemFont(ofSize: 14, weight: .medium)
+    /// The last row of every question: none of these.
+    ///
+    /// It writes what was heard and records nothing, so the correction you
+    /// make afterwards is an ordinary one — the panel offers a rule for it the
+    /// way it always has.
+    static let chooseElsewhere = "something else"
+
     /// Between the two options of one place.
     static let chooseChipGap: CGFloat = 4
     /// Between the lead and the sentence.
@@ -2112,10 +2128,12 @@ enum PillMetrics {
     /// beside it. The view lays the row out at this spacing.
     static let chooseWordGap: CGFloat = 5
 
-    /// The lead, then the sentence with the stack standing in it. Two rows
-    /// whatever the sentence is: the row is never allowed to wrap.
-    static let chooseRows: CGFloat =
-        learnRow + chooseGap + chooseChipHeight * 2 + chooseChipGap
+    /// The lead, then the sentence with the stack standing in it. One row per
+    /// reading, and the row itself is never allowed to wrap.
+    static func chooseRows(_ options: Int) -> CGFloat {
+        let rows = CGFloat(max(2, options))
+        return learnRow + chooseGap + chooseChipHeight * rows + chooseChipGap * (rows - 1)
+    }
 
     /// One option's capsule, measured in the face the word is set in.
     static func chooseChipWidth(_ word: String) -> CGFloat {
@@ -2127,7 +2145,7 @@ enum PillMetrics {
     /// options, and a space either side of the stack. The lead row when a
     /// short sentence leaves it the wider of the two.
     static func chooseWidth(_ it: Choose) -> CGFloat {
-        var width = max(chooseChipWidth(it.heard), chooseChipWidth(it.other))
+        var width = it.options.map(chooseChipWidth).max() ?? 0
         var pieces = 1
         func prose(_ run: String) {
             guard !run.isEmpty else { return }
@@ -2794,8 +2812,9 @@ private struct OfferContent: View {
                 HStack(spacing: PillMetrics.chooseWordGap) {
                     if !it.before.isEmpty { prose(it.before) }
                     VStack(alignment: .leading, spacing: PillMetrics.chooseChipGap) {
-                        option(it.heard, index: 0)
-                        option(it.other, index: 1)
+                        ForEach(Array(it.options.enumerated()), id: \.offset) { row in
+                            option(row.element, index: row.offset)
+                        }
                     }
                     if !it.after.isEmpty { prose(it.after) }
                 }

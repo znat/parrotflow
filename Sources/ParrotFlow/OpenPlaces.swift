@@ -40,10 +40,36 @@ enum OpenPlaces {
         /// picked.
         let word: Int
 
+        /// The members of the sound group this place is between, best first.
+        ///
+        /// Empty at every ordinary place, which is one span with one
+        /// alternative. A group place is several names sharing the word that
+        /// was heard, and each of them is a reading — see `SoundGroup`.
+        var group: [String] = []
+
         /// What is written there now, which is the pill's option 0.
         var standing: String { wrote ? now : was }
         /// The reading nobody has taken, which is the pill's option 1.
         var other: String { wrote ? was : now }
+
+        /// Every reading on offer, what stands in the text first.
+        ///
+        /// A group member spelled the way the word was heard is offered once,
+        /// as that first row. Choosing it writes the same characters either
+        /// way, and it is recorded as a use of that member because the word it
+        /// writes is a term.
+        var options: [String] {
+            guard !group.isEmpty else { return [standing, other] }
+            return SoundGroup.offered(standing, of: group)
+        }
+
+        /// The answer that means none of them: "something else".
+        ///
+        /// It writes what was heard and teaches nothing. Every other answer
+        /// says something about a term — this one says the question had no
+        /// right answer, and the correction you make by hand afterwards goes
+        /// through the panel exactly as it does today.
+        var elsewhere: Int { options.count }
     }
 
     /// One place, and where it turned out to be in the text that landed.
@@ -100,27 +126,40 @@ enum OpenPlaces {
     /// before every question was answered. Those places keep what stands
     /// there, which is the text the pipeline returned.
     ///
-    /// - Parameter refusing: what to write when the answer is option 1. It is
-    ///   a closure because refusing a term can change the spelling of the
+    /// - Parameter refusing: what to write when the answer is not option 0. It
+    ///   is a closure because refusing a term can change the spelling of the
     ///   phrase that goes back — see `AppDelegate.refusedSpelling` — and that
     ///   needs the vocabulary and a tagger this type has no business holding.
+    ///   It is handed the reading that was picked.
     static func written(
         _ places: [Placed], answers: [Int], in text: String,
-        refusing: (Placed) -> String
+        refusing: (Placed, String) -> String
     ) -> (text: String, words: [Written]) {
         var out = "", cursor = text.startIndex
         var written: [Written] = []
         for (index, place) in places.enumerated() {
             out += text[cursor..<place.range.lowerBound]
-            let word = index < answers.count && answers[index] == 1
-                ? refusing(place)
-                : place.open.standing
+            let answer = index < answers.count ? answers[index] : 0
+            let options = place.open.options
+            let elsewhere = answer == place.open.elsewhere
+            let word: String
+            if elsewhere {
+                // What was heard, written as it was heard. Nothing has been
+                // decided, so nothing is tidied either.
+                word = place.open.was
+            } else if answer > 0, answer < options.count {
+                word = refusing(place, options[answer])
+            } else {
+                word = place.open.standing
+            }
             // Where it ended up, not where it was asked about. A place after
             // one that got longer or shorter has moved, and the trace's whole
             // job is to say which occurrence this was.
             let from = out.count
             out += word
-            written.append(Written(word: word, range: from ..< out.count))
+            written.append(
+                Written(word: word, range: from ..< out.count, teaches: !elsewhere)
+            )
             cursor = place.range.upperBound
         }
         return (out + text[cursor...], written)
@@ -133,6 +172,8 @@ enum OpenPlaces {
         /// `EditWatch.asHeard`. Two `range` fields in one trace file measuring
         /// in different units is a trap for whatever reads them together.
         let range: Range<Int>
+        /// False for "something else", the one answer that records nothing.
+        var teaches = true
     }
 
     private static let lock = NSLock()

@@ -74,18 +74,18 @@ enum PanelsCommand {
                     + " finished running on the new cluster can you ask mixed bend"
                     + " to review the pull request before the end of the week so we"
                     + " can ship it on Monday.",
-                [("mixed bend", "Mick")]
+                [("mixed bend", ["Mick"])]
             )
         case "two":
             return selector(
                 "so after the standup tomorrow morning can you ask mixed bend to"
                     + " review it and then tell the team that we moved everything"
                     + " off BetterStack in June before the export runs again",
-                [("mixed bend", "Mick"), ("BetterStack", "better stack")]
+                [("mixed bend", ["Mick"]), ("BetterStack", ["better stack"])]
             )
         default:
             return selector(
-                "can you ask mixed bend to review it.", [("mixed bend", "Mick")]
+                "can you ask mixed bend to review it.", [("mixed bend", ["Mick"])]
             )
         }
     }
@@ -99,15 +99,15 @@ enum PanelsCommand {
         for option in answered { run.answer(option) }
         guard let step = run.next else {
             // Unreachable: every run here has more places than answers.
-            return Choose(before: "", heard: run.sentence, other: "",
-                          after: "", step: 1, steps: 1)
+            return Choose(before: "", options: [run.sentence], after: "",
+                          step: 1, steps: 1)
         }
         return step
     }
 
     /// The places named by the words they cover, which is how they read here.
     private static func selector(
-        _ sentence: String, _ pairs: [(heard: String, other: String)]
+        _ sentence: String, _ pairs: [(heard: String, others: [String])]
     ) -> ChooseRun {
         let words = sentence.split(separator: " ").map(String.init)
         var places: [ChooseRun.Place] = []
@@ -115,7 +115,9 @@ enum PanelsCommand {
         for pair in pairs {
             let phrase = pair.heard.split(separator: " ").map(String.init)
             guard let at = firstIndex(of: phrase, in: words, from: from) else { continue }
-            places.append(ChooseRun.Place(at: at, span: phrase.count, other: pair.other))
+            places.append(
+                ChooseRun.Place(at: at, span: phrase.count, others: pair.others)
+            )
             from = at + phrase.count
         }
         return ChooseRun(sentence: sentence, places: places)

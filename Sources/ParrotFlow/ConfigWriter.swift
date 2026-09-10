@@ -147,6 +147,43 @@ enum ConfigWriter {
         try updated.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    /// Writes a term with nothing under it but its kind.
+    ///
+    /// For a name the recogniser already spells right: there is no rendering
+    /// to record, and a term with no pronunciations is still a term — it has a
+    /// portrait, and it shares a sound with whatever else opens its group.
+    static func addVocabularyTerm(_ term: String, kind: WordKind) throws {
+        let url = ConfigStore.vocabularyURL
+        let original = (try? String(contentsOf: url, encoding: .utf8)) ?? "terms: {}\n"
+        var updated = insertBareTerm(term, into: original)
+        updated = setting(kind: kind, of: term, in: updated)
+        try updated.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// The file with `term:` under `terms:`, or unchanged when it is there.
+    ///
+    /// The same three shapes `insertVocabulary` handles: no `terms:` block at
+    /// all, `terms: {}`, and a block to append to.
+    static func insertBareTerm(_ term: String, into yaml: String) -> String {
+        var lines = yaml.components(separatedBy: "\n")
+        let entry = ["  \(quoted(term)):"]
+        guard let termsIndex = lines.firstIndex(where: { $0.hasPrefix("terms:") }) else {
+            var out = lines
+            if let last = out.last, !last.isEmpty { out.append("") }
+            out.append("terms:")
+            out.append(contentsOf: entry)
+            return out.joined(separator: "\n")
+        }
+        if lines[termsIndex].trimmingCharacters(in: .whitespaces).hasSuffix("{}") {
+            lines[termsIndex] = "terms:"
+            lines.insert(contentsOf: entry, at: termsIndex + 1)
+            return lines.joined(separator: "\n")
+        }
+        guard termLine(for: term, in: lines, under: termsIndex) == nil else { return yaml }
+        lines.insert(contentsOf: entry, at: endOfBlock(in: lines, from: termsIndex))
+        return lines.joined(separator: "\n")
+    }
+
     /// Writes `kind:` under the term, replacing whatever it said before.
     ///
     /// Run after `insertVocabulary`, so the term exists and any flow mapping

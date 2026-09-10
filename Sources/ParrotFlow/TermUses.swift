@@ -143,14 +143,24 @@ enum TermUses {
     /// The same sentence and span recorded the other way round replaces what
     /// was there. One sentence cannot both hold the term and refuse it, and
     /// the later correction is the one that stands.
+    /// `near` is which occurrence, counted in words of `said`. A field holds
+    /// every dictation since the last Return, so the word being corrected is
+    /// often the *second* `Erik` in it — and narrowing to the first stored the
+    /// sentence that was already there, which is the same row again, so
+    /// nothing was written and nothing was said. Measured on the live app,
+    /// 2026-09-10.
     static func record(
         term: String, said: String, span: String, from: Use.Source = .correction,
-        counter: Bool = false, heard: String? = nil
+        counter: Bool = false, heard: String? = nil, near word: Int? = nil
     ) throws {
-        let sentence = narrowed(said, to: span)
+        let sentence = narrowed(said, to: span, near: word)
         // A word, not a substring. `contains` alone let `Vercelli` in.
         guard !sentence.isEmpty, !span.isEmpty,
-              occurrence(of: span, in: sentence) != nil else { return }
+              occurrence(of: span, in: sentence) != nil else {
+            Log.write("uses: \(term) learns nothing from \"\(said.prefix(60))\""
+                + " — \"\(span)\" does not stand in it as a word")
+            return
+        }
 
         var all = try read()
         var uses = all[term] ?? []
@@ -168,7 +178,11 @@ enum TermUses {
                 // carries the replaced spelling and the stored row predates it
                 // — a row written before `heard` existed never gains one
                 // otherwise, and the cut cannot see what it does not hold.
-                guard uses[already].heard == nil, let other else { return }
+                guard uses[already].heard == nil, let other else {
+                    Log.write("uses: \(term) already holds \"\(sentence)\";"
+                        + " nothing written")
+                    return
+                }
                 uses[already].heard = other
                 all[term] = uses
                 try write(all)
@@ -192,6 +206,84 @@ enum TermUses {
         }
         all[term] = uses
         try write(all)
+    }
+
+    /// Where a row sits, whatever spelling stands at the span.
+    ///
+    /// The text on either side of the term. "Eric has a new piano." under Eric
+    /// and "Erik has a new piano." under Erik are one place, which is how a
+    /// group can see that two of its members claim the same sentence.
+    struct Place: Hashable {
+        let before: String
+        let after: String
+    }
+
+    /// Every place `span` stands in `said`.
+    static func places(of span: String, in said: String) -> Set<Place> {
+        Set(occurrences(of: span, in: said).map {
+            Place(
+                before: String(said[said.startIndex ..< $0.lowerBound]),
+                after: String(said[$0.upperBound...])
+            )
+        })
+    }
+
+    /// Takes a place away from every term but the one that just claimed it.
+    ///
+    /// A sentence has one owner per place. Two members of a sound group both
+    /// holding it pull their centres toward each other: the pill records "Eric
+    /// has a new piano." under Eric, the correction that follows records "Erik
+    /// has a new piano." under Erik, and the first row stays. Polarity does not
+    /// matter — a counter is a claim on the place too, and the group's plain
+    /// centre is built out of counters.
+    ///
+    /// Only a row whose own span is one of `openings` goes, so a row standing
+    /// at the same place with an unrelated word in it is left alone. Returns
+    /// the terms that lost a row; their portraits are keyed on a fingerprint of
+    /// their uses, so each rebuilds itself the next time it is read.
+    @discardableResult
+    static func release(
+        _ said: String, at span: String, from terms: [String], to owner: String,
+        opening openings: Set<String>
+    ) throws -> [String] {
+        let claimed = places(of: span, in: said)
+        guard !claimed.isEmpty else { return [] }
+        // The same name standing twice in one sentence is two places, and a
+        // row records no occurrence, so a release would take the row written
+        // for the other one. Nothing goes until a row says which occurrence it
+        // is; the cost is a place two members still share.
+        guard claimed.count == 1 else {
+            Log.write("uses: \"\(said)\" names \(span) more than once, and a row does not"
+                + " say which one — no row is released")
+            return []
+        }
+        var all = try read()
+        var moved: [String] = []
+        for term in terms where term.caseInsensitiveCompare(owner) != .orderedSame {
+            guard let rows = all[term] else { continue }
+            let kept = rows.filter { row in
+                guard openings.contains(bare(row.span)) else { return true }
+                return places(of: row.span, in: row.said).isDisjoint(with: claimed)
+            }
+            guard kept.count < rows.count else { continue }
+            all[term] = kept
+            moved.append(term)
+            Log.write("uses: \"\(said)\" is \(owner)'s place now —"
+                + " the row under \(term) is gone")
+        }
+        guard !moved.isEmpty else { return [] }
+        try write(all)
+        return moved
+    }
+
+    /// A span as the group spells its openings: no possessive, no punctuation,
+    /// lower case.
+    private static func bare(_ word: String) -> String {
+        var text = word.trimmingCharacters(in: .whitespaces)
+        if let mine = Vocabulary.possessive(in: text) {
+            text = String(text.dropLast(mine.suffix.count))
+        }
+        return text.trimmingCharacters(in: .punctuationCharacters).lowercased()
     }
 
     /// Drops every use of one term, and says how many went.
@@ -220,9 +312,9 @@ enum TermUses {
     /// A full stop only ends a sentence when what follows is a space, an
     /// upper-case letter, or nothing. Dictation arrives glued — "terminal.I'm
     /// using" has to come apart — while `Node.js` and `3.5` must not.
-    static func narrowed(_ said: String, to span: String) -> String {
+    static func narrowed(_ said: String, to span: String, near word: Int? = nil) -> String {
         let text = said.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let at = occurrence(of: span, in: text) else { return text }
+        guard let at = place(of: span, in: text, near: word) else { return text }
 
         func ends(_ i: String.Index) -> Bool {
             guard ".!?".contains(text[i]) else { return false }
@@ -264,6 +356,33 @@ enum TermUses {
     /// A term that occurs twice as a word still takes the first: both are
     /// genuine uses, and nothing that records one carries the position of the
     /// occurrence that was corrected.
+    /// The occurrence nearest `word`, counted in words, or the first when
+    /// nothing says which.
+    ///
+    /// The same rule `OpenPlaces.located` uses. A field is every dictation
+    /// since the last Return, so one name can stand in it several times and
+    /// only the position tells them apart.
+    static func place(
+        of span: String, in text: String, near word: Int?
+    ) -> Range<String.Index>? {
+        let hits = occurrences(of: span, in: text)
+        guard let word else { return hits.first }
+        // Counted the way `EditWatch.words` counts, which is where the number
+        // comes from: any whitespace splits, and a shell prompt in front of the
+        // line is not a word.
+        var from = text.startIndex
+        while from < text.endIndex, text[from].isWhitespace { from = text.index(after: from) }
+        if from < text.endIndex, prompts.contains(text[from]) {
+            from = text.index(after: from)
+        }
+        func at(_ hit: Range<String.Index>) -> Int {
+            guard hit.lowerBound > from else { return 0 }
+            return text[from ..< hit.lowerBound]
+                .split(whereSeparator: \.isWhitespace).count
+        }
+        return hits.min { abs(at($0) - word) < abs(at($1) - word) }
+    }
+
     static func occurrence(of span: String, in text: String) -> Range<String.Index>? {
         // Nil is nowhere. `Vercel` in `I visited Vercelli last year.` is not a
         // use of the term, and a caller that only asked `contains` stored it

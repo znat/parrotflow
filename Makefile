@@ -93,7 +93,7 @@ CHECKS := numbers replacements pipeline pipeline-config wake split dotted dates 
           profiles span-rule clipboard default-config vocabulary-config learn \
           signing-identity no-voice sound slot-tokenizer sentence-case term-uses \
           edit-diff sentence-open invented-tail sentence-window lowercase-refused \
-          selector
+          selector sound-group
 
 test:
 	@swift build -c release

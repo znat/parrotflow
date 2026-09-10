@@ -28,6 +28,15 @@ import Foundation
 @available(macOS 14, *)
 enum SentenceGate {
 
+    /// The places, and what each one settled to.
+    ///
+    /// The changes come back because a group place can change what it is
+    /// proposing: `now` is one member when it arrives here and the winning
+    /// member when it leaves, and `group` is cut to the members still standing
+    /// — which is the list the pill offers when nobody wins. Nothing else in a
+    /// change moves.
+    typealias Settled = (decided: [Bool?], changes: [VocabularyPass.Change])
+
     /// Fills in the places the earlier rules left open.
     ///
     /// `settled` carries one entry per change: `true` writes the term, `false`
@@ -44,22 +53,30 @@ enum SentenceGate {
     /// same way either way, so one half off leaves the other deciding alone.
     static func settle(
         _ changes: [VocabularyPass.Change], in text: String, given settled: [Bool?],
-        floor: Double, slot: Bool = true, portrait: Bool = true
-    ) async -> [Bool?] {
-        guard slot || portrait else { return settled }
+        floor: Double, slot: Bool = true, portrait: Bool = true,
+        terms: [String: Config.Vocabulary.Term] = [:]
+    ) async -> Settled {
+        var changes = changes
+        guard slot || portrait else { return (settled, changes) }
         // Never on the dictation's time. The word vectors are 400 MB and the
         // first MLX call warms Metal; waiting for that with the pill on screen
         // reads as the app having hung, which is what it did.
         guard await WordVectors.shared.isLoaded else {
             await WordVectors.shared.warm()
             Log.write("sentence gate: the word vectors are not loaded yet; skipped")
-            return settled
+            return (settled, changes)
         }
         // Only the slot half reads it. With that half off the portrait runs on
         // a machine the 269 MB was never fetched to.
+        //
+        // A group place is not one of the places it reads: every reading there
+        // is a name, so the slot has nothing to separate and is never asked.
+        // Those still run.
+        var groupsOnly = false
         if slot, !SlotModel.isCached {
-            Log.write("sentence gate: the slot model is not cached yet; skipped")
-            return settled
+            groupsOnly = true
+            Log.write("sentence gate: the slot model is not cached yet;"
+                + " only group places are read")
         }
 
         var out = settled
@@ -68,6 +85,7 @@ enum SentenceGate {
             guard index < out.count, out[index] != false else { continue }
             guard let term = change.terms.first else { continue }
             guard change.range.upperBound <= text.endIndex else { continue }
+            guard !groupsOnly || change.group.count > 1 else { continue }
 
             // A place an earlier rule already decided to write. The two word
             // lists write a name whenever the heard word is in neither of them,
@@ -105,6 +123,39 @@ enum SentenceGate {
             let upto = heard.index(from, offsetBy: change.was.count)
             let near = TermPortrait.window(around: from ..< upto, in: heard)
 
+            // A place where several terms share the heard word. Every member
+            // is scored against its own portrait and against the group's
+            // pooled counter rows, and the best of them wins by the same band
+            // — see `SoundGroup.decide`. The slot test is not asked: it
+            // compares one term with one heard word, and here every reading is
+            // a name, so it has nothing to separate.
+            //
+            // With the portrait off there is nothing left to decide a group
+            // place with, so it keeps what was heard.
+            if change.group.count > 1 {
+                guard portrait else { continue }
+                looked += 1
+                let verdict = await TermPortrait.shared.reads(
+                    group: change.group, change.was, in: near
+                )
+                switch verdict {
+                case .write(let member):
+                    changes[index] = change.writing(member)
+                    out[index] = true
+                    Log.write("sentence gate: \"\(change.was)\" -> \(member) —"
+                        + " this is where it lives")
+                case .keep:
+                    out[index] = false
+                    Log.write("sentence gate: \"\(change.was)\" kept — no member of"
+                        + " \(change.group.joined(separator: "/")) lives here")
+                case .open(let members):
+                    changes[index] = change.offering(members)
+                    Log.write("sentence gate: \"\(change.was)\" — nothing separates"
+                        + " \(members.joined(separator: "/")); the place is left open")
+                }
+                continue
+            }
+
             if out[index] == true {
                 // Only the portrait may take a rule's write back out. With it
                 // off the write stands, which is what it did before the
@@ -127,8 +178,18 @@ enum SentenceGate {
                 continue
             }
 
+            // One name against another. The slot test cannot read such a
+            // place — the heard word is in the tokenizer and the term never is
+            // — so it refuses every one of them, and refusing settles the
+            // place before the portrait or the pill can see it. See
+            // `NamePlace`.
+            let names = NamePlace.bothNames(heard: change.was, term: change.now, in: terms)
+            if slot, names {
+                Log.write("sentence gate: \"\(change.was)\" and \(change.now) are both"
+                    + " names — the slot cannot separate them, so it is not asked")
+            }
             var refuses = false
-            if slot {
+            if slot, !names {
                 do {
                     let gap = try await SlotReference.gap(
                         term: change.now, heard: change.was, at: change.range, in: text
@@ -163,6 +224,6 @@ enum SentenceGate {
         if looked == 0 {
             Log.write("sentence gate: nothing left to read in \(changes.count) place(s)")
         }
-        return out
+        return (out, changes)
     }
 }

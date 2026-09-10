@@ -1146,7 +1146,21 @@ struct Pipeline: Equatable, Codable {
             parts += heard
         }
 
-        let slots = VocabularyPass.slots(in: text, from: parts, caps: caps)
+        // The places where several terms share the word that was heard. Built
+        // before the others and not from parts: a group place carries every
+        // member as a reading, where a part carries one alternative. A part
+        // that lands on the same span is dropped — the group's reading of it
+        // is the wider question, and a second slot over the same words would
+        // be a question nobody can answer twice.
+        let groups = SoundGroup.groups(terms: config.vocabulary.terms, uses: TermUses.load())
+        let opened = VocabularyPass.groupSlots(in: text, groups: groups)
+        if !opened.isEmpty {
+            parts = parts.filter { part in
+                !opened.contains { $0.range.overlaps(part.range) }
+            }
+        }
+        let slots = (opened + VocabularyPass.slots(in: text, from: parts, caps: caps))
+            .sorted { $0.range.lowerBound < $1.range.lowerBound }
         // Two numbers on every run. How many places one sentence offers is the
         // measure of how much this stage is being asked to decide, so it has
         // to be readable before a change that widens what fires, not inferred
@@ -1176,7 +1190,7 @@ struct Pipeline: Equatable, Codable {
         guard !slots.isEmpty else {
             return result(text, ["slots": .int(0)])
         }
-        let changes = VocabularyPass.changes(in: text, from: slots)
+        var changes = VocabularyPass.changes(in: text, from: slots)
         guard !changes.isEmpty else {
             return result(text, ["slots": .int(slots.count)])
         }
@@ -1206,13 +1220,18 @@ struct Pipeline: Equatable, Codable {
         }
         // The two tests that read the sentence, on whatever is still open.
         if config.vocabulary.gateSentence, #available(macOS 14, *) {
-            decided = await SentenceGate.settle(
+            let settledBySentence = await SentenceGate.settle(
                 changes, in: text, given: decided,
                 floor: config.transcription.slotFloor(
                     for: Pipeline.language(of: text, config: config), on: step
                 ),
-                slot: step.slotGate ?? true, portrait: step.portrait ?? true
+                slot: step.slotGate ?? true, portrait: step.portrait ?? true,
+                terms: config.vocabulary.terms
             )
+            decided = settledBySentence.decided
+            // A group place comes back proposing the member that won, or
+            // carrying the ones still standing. Nothing else in a change moves.
+            changes = settledBySentence.changes
         }
         gateSeconds = Date().timeIntervalSince(gatedAt)
 
@@ -1253,7 +1272,10 @@ struct Pipeline: Equatable, Codable {
                     wrote: String(text[change.range]) == change.now,
                     term: term,
                     word: text[..<change.range.lowerBound]
-                        .split(separator: " ").count
+                        .split(separator: " ").count,
+                    // The members still standing, when several terms share the
+                    // word that was heard. The pill offers one row each.
+                    group: change.group
                 )
             })
         }
@@ -1287,7 +1309,8 @@ struct Pipeline: Equatable, Codable {
                 ) else { continue }
                 writing[index] = VocabularyPass.Change(
                     range: change.range, was: lower, now: change.now,
-                    terms: change.terms, owner: change.owner, standing: change.standing
+                    terms: change.terms, owner: change.owner, standing: change.standing,
+                    group: change.group
                 )
                 Log.write("vocabulary: \"\(change.was)\" refused as \(change.now)"
                     + " — written in lowercase")
