@@ -359,9 +359,9 @@ both sides are names and the slot cannot separate them, `ordinary` when it is
 an ordinary word against a term.
 
 `--picked` is what an answer on the pill records, and it records it: `use
-<term>` for a word that is already a term, `create <name>` for a name that is
-not one yet — written to `vocabulary.yaml` as a person with no pronunciation —
-and `counter <term>` for an ordinary word. `blocked <a> <b>` instead of any of
+<term>` for a word that is already a term, `create <name> <kind>` for a name
+that is not one yet — written to `vocabulary.yaml` with no pronunciation, under
+the kind the tagger read — and `counter <term>` for an ordinary word. `blocked <a> <b>` instead of any of
 them means the sentence names two members of one group, so nothing is written.
 `--correction` answers the same way.
 

@@ -5993,7 +5993,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             word.word, proposedBy: open.term, in: config.vocabulary.terms
         ) {
         case .use(let term): picked = term
-        case .create(let name): picked = createPerson(named: name)
+        case .create(let name, let kind): picked = createTerm(named: name, kind: kind)
         case .counter: picked = nil
         }
         let replaced = word.word == open.standing ? nil : open.standing
@@ -6020,19 +6020,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Writes a bare term for a person, and returns the name it was written
+    /// Writes a bare term for a name, and returns the name it was written
     /// under. Nil when the file could not be written.
     ///
     /// No pronunciation: nothing was misheard. The recogniser spells this name
     /// correctly, and the term exists so the name has a portrait of its own and
     /// joins the group that shares its sound.
-    private func createPerson(named word: String) -> String? {
+    private func createTerm(named word: String, kind: WordKind) -> String? {
         let bare = word.trimmingCharacters(in: .punctuationCharacters)
         guard !bare.isEmpty else { return nil }
         do {
-            try ConfigWriter.addVocabularyTerm(bare, kind: .person)
+            try ConfigWriter.addVocabularyTerm(bare, kind: kind)
             Log.write("selector: \(bare) is a name and was not a term — written to"
-                + " vocabulary.yaml as a person, with no pronunciation")
+                + " vocabulary.yaml as a \(kind.rawValue), with no pronunciation")
             flash("Saved  \(bare) is a name", tone: .done)
             return bare
         } catch {

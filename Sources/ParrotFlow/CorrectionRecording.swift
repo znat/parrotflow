@@ -56,10 +56,10 @@ enum CorrectionRecording {
     enum Picked: Equatable {
         /// A term already: the sentence is a use of it.
         case use(term: String)
-        /// A name with no term yet. Every person is a term, so it is written
-        /// as one — `kind: person`, no pronunciation, because nothing was
-        /// misheard — and the sentence is a use of it.
-        case create(name: String)
+        /// A name with no term yet. Every name is a term, so it is written as
+        /// one — with the kind the tagger read and no pronunciation, because
+        /// nothing was misheard — and the sentence is a use of it.
+        case create(name: String, kind: WordKind)
         /// An ordinary word: a counter under the term that was proposed, which
         /// is the sentence plain owns.
         case counter(term: String)
@@ -80,9 +80,15 @@ enum CorrectionRecording {
         }
         let bare = word.trimmingCharacters(in: .punctuationCharacters)
         guard !bare.isEmpty else { return .counter(term: term) }
-        if terms[term]?.kind == .person || NamePlace.isPersonalName(bare) {
-            return .create(name: bare)
-        }
+        // What the tagger read, when it read a name at all. A place or an
+        // organization picked here is a term too, and labelling it `person`
+        // would put a guess in the file under the name of a fact.
+        let read = NamePlace.kind(of: bare)
+        if read != .word { return .create(name: bare, kind: read) }
+        // The company it keeps: a term that names a person was proposed over
+        // this word, so the word sounds like a person's name. The tagger has
+        // nothing to say about it, so `person` is the only kind on offer.
+        if terms[term]?.kind == .person { return .create(name: bare, kind: .person) }
         return .counter(term: term)
     }
 

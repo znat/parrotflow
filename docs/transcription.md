@@ -529,9 +529,12 @@ all. A counter-example and the term stops being read against a floor.
 is for ordinary words — but a person the recogniser spells right is never
 corrected, so nothing ever creates their term and every sentence about them
 piles up as a counter under somebody else's name. When the word picked is not a
-term and either the tagger or the proposing term's `kind: person` says it is a
-name, it is written to `vocabulary.yaml` as a person with no pronunciation, and
-the sentence is a use of it. The group then holds both names.
+term and the tagger reads it as a name, it is written to `vocabulary.yaml` with
+no pronunciation, under the kind the tagger read — `person`, `place` or
+`organization` — and the sentence is a use of it. A word the tagger cannot read
+is written as a person only when the term proposed over it says `kind: person`,
+which is the one thing left saying this is a name at all. The group then holds
+both names.
 
 **A sentence naming two members of one group is recorded nowhere.** It belongs
 to neither, and the rival clip cannot save it: cutting the window at the other

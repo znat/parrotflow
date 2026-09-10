@@ -145,7 +145,7 @@ enum SoundGroupCommand {
     /// `--picked <word> <term> --in "<sentence>"` — what an answer on the pill
     /// records, and it records it.
     ///
-    /// Prints `use <term>`, `create <name>` — a person written to
+    /// Prints `use <term>`, `create <name> <kind>` — a name written to
     /// `vocabulary.yaml` and then used — or `counter <term>`, and `blocked` in
     /// front of any of them when the sentence names two members of one group.
     static func picked(word: String, term: String, sentence: String?, dry: Bool) -> Int32 {
@@ -153,19 +153,18 @@ enum SoundGroupCommand {
         var answer = CorrectionRecording.picked(
             word, proposedBy: term, in: config.vocabulary.terms
         )
-        if case .create(let name) = answer, !dry {
+        if case .create(let name, let kind) = answer, !dry {
             do {
-                try ConfigWriter.addVocabularyTerm(name, kind: .person)
+                try ConfigWriter.addVocabularyTerm(name, kind: kind)
             } catch {
                 print("✗ \(error.localizedDescription)")
                 return 1
             }
-            answer = .create(name: name)
         }
         let row: CorrectionRecording.Row
         switch answer {
         case .use(let already): row = .use(term: already, span: word, heard: nil)
-        case .create(let name): row = .use(term: name, span: word, heard: nil)
+        case .create(let name, _): row = .use(term: name, span: word, heard: nil)
         case .counter(let proposed): row = .counter(term: proposed, span: word)
         }
         let groups = SoundGroup.groups(
@@ -187,7 +186,7 @@ enum SoundGroupCommand {
         }
         switch answer {
         case .use(let already): print("use \(already)")
-        case .create(let name): print("create \(name)")
+        case .create(let name, let kind): print("create \(name) \(kind.rawValue)")
         case .counter(let proposed): print("counter \(proposed)")
         }
         return 0

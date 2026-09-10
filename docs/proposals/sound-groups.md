@@ -143,10 +143,11 @@ They are part of the model, not fixes around it.
 - **A member with no use at all is unknown, not out.** It has never been seen,
   so it cannot lose a comparison it was never in. One unknown member opens the
   place and the pill lists it. That is how a member gets its first sentence.
-- **A name picked on the pill becomes a term**, with `kind: person` and no
-  pronunciation, and the sentence is a use of it. A person the recogniser
-  spells right is never corrected, so nothing else ever creates their term.
-  Plain stays what it always was: an ordinary word.
+- **A name picked on the pill becomes a term**, with no pronunciation and the
+  kind the tagger read — person, place or organization — and the sentence is a
+  use of it. A person the recogniser spells right is never corrected, so
+  nothing else ever creates their term. Plain stays what it always was: an
+  ordinary word.
 - **A sentence naming two members of one group is recorded nowhere.** The
   rival clip cuts the window at the other name and the words between the two
   survive, which are the sentence. Corrections and pill answers both refuse it.

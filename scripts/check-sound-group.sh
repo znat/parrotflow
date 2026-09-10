@@ -262,17 +262,36 @@ check "which does write a row" 1 "$(said)"
 # is the only place their term can be created.
 rm -f "$USES"
 pick () { "$BIN" --picked "$1" "$2" --in "$3" 2>/dev/null; }
+# What a created term says about itself: its kind, and that it has no
+# pronunciation — nothing was misheard, so there is nothing to record.
+kindOf () { python3 -c '
+import sys, yaml
+term = yaml.safe_load(open(sys.argv[1]))["terms"].get(sys.argv[2]) or {}
+print(term.get("kind", "—"), len(term.get("pronunciations") or []) or "none")
+' "$WORK/vocabulary.yaml" "$1" 2>/dev/null; }
 check "a word that is already a term is a use of it" \
   "use Eric" "$(pick Eric Erik "Eric is a software engineer.")"
 check "an ordinary word is still a counter" \
   "counter Vercel" "$(pick versus Vercel "It is versus the other one.")"
 check "a name with no term yet is written as a person" \
-  "create Sarah" "$(pick Sarah Erik "Sarah is on the call.")"
-check "with kind: person and no pronunciation" "person none" "$(python3 -c '
-import sys, yaml
-term = yaml.safe_load(open(sys.argv[1]))["terms"]["Sarah"] or {}
-print(term.get("kind", "—"), len(term.get("pronunciations") or []) or "none")
-' "$WORK/vocabulary.yaml" 2>/dev/null)"
+  "create Sarah person" "$(pick Sarah Erik "Sarah is on the call.")"
+check "with kind: person and no pronunciation" "person none" "$(kindOf Sarah)"
+# The kind the tagger read, not the kind the branch was reached by. A place or
+# an organization is a term too, and labelling it `person` would put a guess in
+# the file where a fact belongs.
+check "a place is written as a place" \
+  "create Versailles place" "$(pick Versailles Erik "Versailles was closed.")"
+check "with kind: place and no pronunciation" "place none" "$(kindOf Versailles)"
+check "an organization is written as one" \
+  "create Microsoft organization" "$(pick Microsoft Erik "Microsoft shipped it.")"
+check "with kind: organization and no pronunciation" "organization none" \
+  "$(kindOf Microsoft)"
+# The fallback, and only where the tagger says nothing: a term that names a
+# person was proposed over the word, so a person is the only kind on offer.
+check "a word the tagger cannot read is a person under a person's term" \
+  "create Zorbek person" "$(pick Zorbek Erik "Zorbek is on the call.")"
+check "and an ordinary word under an ordinary term is still a counter" \
+  "counter Vercel" "$(pick Kliffax Vercel "Kliffax is on the call.")"
 check "and the sentence is a use of the new term" 1 "$(python3 -c '
 import sys, yaml
 d = yaml.safe_load(open(sys.argv[1]))["terms"]
