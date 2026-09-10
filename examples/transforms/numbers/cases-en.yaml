@@ -1,0 +1,83 @@
+# Validation set for `numbers_en`, the English half of the numbers transform.
+#
+#   ParrotFlow --eval numbers_en
+#   examples/transforms/numbers/score.py          # every language, from the tree
+#
+# `expect`: what must come out. No `expect` means "comes back byte for byte" —
+# the --eval contract, in docs/cli.md.
+#
+# `lang: en` on every case pins the language, so the cross-language guard is
+# off and what is scored here is the grammar. The guard itself is a fact about
+# a whole pipeline, not about one script, and it is scored in
+# tests/pipeline-cases.yaml against tests/pipelines/numbers.yaml.
+#
+# The set is deliberately lopsided toward text that must come back untouched.
+# A number pass runs on every transcript, including the ones that were already
+# right, so a false positive is not one bad case — it is a rewrite of correct
+# text that nobody asked for and nobody sees happen.
+
+transform: numbers_en
+
+cases:
+
+  # --- cardinals and the threshold ----------------------------------------
+  - { probe: cardinals, lang: en, input: two hundred forty-three, expect: '243' }
+  - { probe: cardinals, lang: en, input: two hundred and forty-three, expect: '243' }
+  - { probe: cardinals, lang: en, input: twenty-five people, expect: 25 people }
+  - { probe: cardinals, lang: en, input: about twelve of them, expect: about 12 of them }
+  - { probe: cardinals, lang: en, input: forty two people showed up, expect: 42 people showed up }
+  - { probe: cardinals, lang: en, input: a hundred and fifty bucks, expect: 150 bucks }
+  - { probe: cardinals, lang: en, input: two hundred fifty thousand, expect: '250000' }
+  - { probe: cardinals, lang: en, input: three million dollars, expect: 3000000 dollars }
+
+  # The twin of the French pair in cases-fr.yaml — same sentence, same two
+  # behaviours, and the hyphen makes no difference because the tokeniser
+  # splits it.
+  - { probe: cardinals, lang: en, input: I ate two of the twenty one fishes, expect: I ate two of the 21 fishes }
+  - { probe: cardinals, lang: en, input: I ate two of the twenty-one fishes, expect: I ate two of the 21 fishes }
+
+  # --- decimals, ordinals, years, spoken digits ---------------------------
+  - { probe: extras, lang: en, input: three point one four, expect: '3.14' }
+  - { probe: extras, lang: en, input: the twenty third of June, expect: the 23rd of June }
+  - { probe: extras, lang: en, input: nineteen eighty-four, expect: '1984' }
+  - { probe: extras, lang: en, input: it shipped in twenty twenty five, expect: it shipped in 2025 }
+  - { probe: extras, lang: en, input: call five five five one two three four, expect: call 5551234 }
+  - { probe: extras, lang: en, input: we hired twelve people, expect: we hired 12 people }
+
+  # --- percent -------------------------------------------------------------
+  # Percent lifts the below-ten floor, because `five%` is never right.
+  - { probe: percent, lang: en, input: seventy-five percent, expect: 75% }
+  - { probe: percent, lang: en, input: seventy five percent, expect: 75% }
+  - { probe: percent, lang: en, input: a hundred percent, expect: 100% }
+  - { probe: percent, lang: en, input: five percent, expect: 5% }
+  - { probe: percent, lang: en, input: one percent of the time, expect: 1% of the time }
+  - { probe: percent, lang: en, input: we shipped twenty percent faster, expect: we shipped 20% faster }
+  - { probe: percent, lang: en, input: it grew three point five percent, expect: it grew 3.5% }
+  # "per cent" as two words is the same sign.
+  - { probe: percent, lang: en, input: two per cent of them, expect: 2% of them }
+
+  # No number in front, nothing to sign.
+  - { probe: percent, lang: en, input: percent of the time is what matters }
+  - { probe: percent, lang: en, input: the percent sign is not a number }
+  # Punctuation between the number and the marker means they are two things.
+  - { probe: percent, lang: en, input: "it fell to twelve, percent of nothing", expect: "it fell to 12, percent of nothing" }
+  # An ordinal is not a percentage, and "5th%" is not a thing anyone types.
+  - { probe: percent, lang: en, input: the fifth percent of the sample }
+
+  # --- the guards ----------------------------------------------------------
+  # Each of these broke a rule at some point, which is why they are here rather
+  # than in a comment.
+  - { probe: keep, lang: en, input: I have one question }
+  - { probe: keep, lang: en, input: no one knows }
+  - { probe: keep, lang: en, input: chapter three }
+  - { probe: keep, lang: en, input: the fifth of January }
+  - { probe: keep, lang: en, input: let's meet at eleven thirty }
+  - { probe: keep, lang: en, input: two three-inch bolts }
+  - { probe: keep, lang: en, input: one and two came back }
+  - { probe: keep, lang: en, input: hundreds of people came }
+  # The twin of the French case in cases-fr.yaml, kept so the trade-off is
+  # visibly a design choice rather than one language misbehaving.
+  - { probe: keep, lang: en, input: nine times out of ten, expect: nine times out of 10 }
+  # "second" is out of the ordinal table on purpose: it is a unit of time more
+  # often than an ordinal, and this is the sentence that decides it.
+  - { probe: keep, lang: en, input: a thirty second timeout, expect: a 30 second timeout }

@@ -6,11 +6,17 @@
 # `Pipeline.validate` refuses that shape, and this fixture is what proves the
 # anchored one actually excludes.
 languages: [en, fr]
+transforms:
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: fr.py
+    returns: json
+
 vocabulary:
   terms:
     Supabase:
       heard: [super base]
 pipeline:
   - vocabulary
-  - stage: numbers
+  - transform: numbers_fr
     app: /^(?!.*(term|ghostty|iterm))/

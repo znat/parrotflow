@@ -1,0 +1,128 @@
+# Validation set for `numbers_fr`, the French half of the numbers transform.
+#
+#   ParrotFlow --eval numbers_fr
+#   examples/transforms/numbers/score.py          # every language, from the tree
+#
+# `expect`: what must come out. No `expect` means "comes back byte for byte" —
+# the --eval contract, in docs/cli.md.
+#
+# `lang: fr` on every case pins the language, so the cross-language guard is
+# off and what is scored here is the grammar. The guard itself is a fact about
+# a whole pipeline, not about one script, and it is scored in
+# tests/pipeline-cases.yaml against tests/pipelines/numbers.yaml.
+#
+# The set is deliberately lopsided toward text that must come back untouched.
+# A number pass runs on every transcript, including the ones that were already
+# right, so a false positive is not one bad case — it is a rewrite of correct
+# text that nobody asked for and nobody sees happen. "à deux" and "chapitre
+# trois" are the whole reason the below-ten floor exists.
+
+transform: numbers_fr
+
+cases:
+
+  # --- the case this was built for ----------------------------------------
+  - probe: floor
+    name: à deux, deux cents
+    lang: fr
+    input: à deux, on a dépensé deux cents euros
+    expect: à deux, on a dépensé 200 euros
+
+  # Both halves of the threshold in one sentence, which is why it is worth
+  # more than either alone: the lone "deux" stays a word and the compound
+  # "vingt et un" becomes 21, in the same breath. Its English twin is in
+  # cases-en.yaml.
+  - { probe: floor, lang: fr, input: j'ai mangé deux des vingt et un poissons, expect: j'ai mangé deux des 21 poissons }
+  - { probe: floor, lang: fr, input: j'ai mangé deux des vingt-et-un poissons, expect: j'ai mangé deux des 21 poissons }
+
+  # --- 70, 80, 90: the vigesimal rule -------------------------------------
+  - { probe: vigesimal, lang: fr, input: il y avait soixante-dix personnes, expect: il y avait 70 personnes }
+  - { probe: vigesimal, lang: fr, input: soixante-dix-sept euros, expect: 77 euros }
+  - { probe: vigesimal, lang: fr, input: on en a compté quatre-vingts, expect: on en a compté 80 }
+  - { probe: vigesimal, lang: fr, input: il en reste quatre-vingt-un, expect: il en reste 81 }
+  - { probe: vigesimal, lang: fr, input: quatre-vingt-dix dossiers, expect: 90 dossiers }
+  - { probe: vigesimal, lang: fr, input: quatre-vingt-dix-sept dossiers, expect: 97 dossiers }
+  - { probe: vigesimal, lang: fr, input: quatre vingt dix sept dossiers, expect: 97 dossiers }
+  - { probe: vigesimal, lang: fr, input: soixante et onze euros, expect: 71 euros }
+  - { probe: vigesimal, lang: fr, input: vingt et un jours, expect: 21 jours }
+  - { probe: vigesimal, lang: fr, input: trente-deux personnes, expect: 32 personnes }
+  - { probe: vigesimal, lang: fr, input: quarante-cinq minutes, expect: 45 minutes }
+  - { probe: vigesimal, lang: fr, input: cinquante-neuf secondes, expect: 59 secondes }
+  - { probe: vigesimal, lang: fr, input: dix-sept ans, expect: 17 ans }
+  - { probe: vigesimal, lang: fr, input: dix-huit mois, expect: 18 mois }
+  - { probe: vigesimal, lang: fr, input: dix-neuf euros, expect: 19 euros }
+  - { probe: vigesimal, lang: fr, input: seize personnes, expect: 16 personnes }
+
+  # --- hundreds, thousands, and the bare scale ----------------------------
+  - { probe: scales, lang: fr, input: cent cinquante euros, expect: 150 euros }
+  - { probe: scales, lang: fr, input: cent euros, expect: 100 euros }
+  - { probe: scales, lang: fr, input: mille euros par mois, expect: 1000 euros par mois }
+  - { probe: scales, lang: fr, input: deux mille vingt-six, expect: '2026' }
+  - { probe: scales, lang: fr, input: deux cent cinquante mille, expect: '250000' }
+  - { probe: scales, lang: fr, input: cinq cent mille, expect: '500000' }
+  - { probe: scales, lang: fr, input: trois millions de dollars, expect: 3000000 de dollars }
+  - { probe: scales, lang: fr, input: deux milliards d'euros, expect: 2000000000 d'euros }
+  - { probe: scales, lang: fr, input: mille neuf cent quatre-vingt-quatre, expect: '1984' }
+
+  # --- decimals and ordinals ----------------------------------------------
+  - { probe: extras, lang: fr, input: trois virgule un quatre, expect: "3,14" }
+  - { probe: extras, lang: fr, input: zéro virgule cinq, expect: "0,5" }
+  - { probe: extras, lang: fr, input: le vingtième étage, expect: le 20e étage }
+  - { probe: extras, lang: fr, input: le vingt et unième jour, expect: le 21e jour }
+  - { probe: extras, lang: fr, input: le quinzième essai, expect: le 15e essai }
+
+  # --- Belgium and Switzerland --------------------------------------------
+  # Vocabulary only, no new rule: the vigesimal path already reads a tens word
+  # plus a unit. They share the table with the metropolitan forms because no
+  # speaker uses both, and nothing upstream knows which French this is.
+  - { probe: belgium, lang: fr, input: j'en ai quatre cent septante-huit, expect: j'en ai 478 }
+  - { probe: belgium, lang: fr, input: j'en ai quatre cent septante huit, expect: j'en ai 478 }
+  - { probe: belgium, lang: fr, input: nonante-neuf centimes, expect: 99 centimes }
+  - { probe: belgium, lang: fr, input: il y avait septante personnes, expect: il y avait 70 personnes }
+  - { probe: belgium, lang: fr, input: huitante euros, expect: 80 euros }
+  - { probe: belgium, lang: fr, input: octante-cinq dossiers, expect: 85 dossiers }
+  - { probe: belgium, lang: fr, input: septante et un jours, expect: 71 jours }
+  # The metropolitan forms must be untouched by all of that.
+  - { probe: belgium, lang: fr, input: j'en ai quatre cent soixante-dix-huit, expect: j'en ai 478 }
+  - { probe: belgium, lang: fr, input: quatre-vingt-dix-neuf centimes, expect: 99 centimes }
+
+  # --- percent -------------------------------------------------------------
+  # `75%`, no space, deliberately — see the note in fr.py. Percent also lifts
+  # the below-ten floor, because `cinq%` is never what anyone meant.
+  - { probe: percent, lang: fr, input: soixante-quinze pour cent, expect: 75% }
+  - { probe: percent, lang: fr, input: cent pour cent, expect: 100% }
+  - { probe: percent, lang: fr, input: cinq pour cent des gens, expect: 5% des gens }
+  - { probe: percent, lang: fr, input: quatre-vingt-dix-neuf pour cent des cas, expect: 99% des cas }
+  - { probe: percent, lang: fr, input: trois virgule cinq pour cent, expect: "3,5%" }
+  - { probe: percent, lang: fr, input: zéro pour cent de chances, expect: 0% de chances }
+
+  # The other direction. "pour cent" with no number in front is the
+  # preposition and a hundred, and nothing can tell which was meant — so a
+  # scale word right after "pour" is never read as a number at all.
+  - { probe: percent, lang: fr, input: il paie pour cent euros }
+  - { probe: percent, lang: fr, input: "pour cent euros, il a tout donné" }
+  - { probe: percent, lang: fr, input: le pour cent est un signe }
+
+  # --- must come back untouched -------------------------------------------
+  # Every one of these contains a number word, and none of them is a number
+  # anyone wants written as a digit.
+  - { probe: keep, lang: fr, input: j'ai une question }
+  - { probe: keep, lang: fr, input: chapitre trois du livre }
+  - { probe: keep, lang: fr, input: on est deux sur le projet }
+  - { probe: keep, lang: fr, input: un et deux sont revenus }
+  - { probe: keep, lang: fr, input: il y en a un qui manque }
+  - { probe: keep, lang: fr, input: on se voit à cinq heures }
+  - { probe: keep, lang: fr, input: des centaines de gens }
+  # A bare scale word from a million up is a noun, not a number. This is also
+  # what keeps an English sentence out of the French grammar: the steps carry
+  # no language gate, so this script sees every transcript.
+  - { probe: keep, lang: fr, input: des millions de personnes }
+  - { probe: keep, lang: fr, input: three million dollars }
+  # The threshold's own cost, in both languages, and not a French bug: a lone
+  # "dix" is at the floor so it converts, and "neuf fois sur 10" is not what
+  # anyone would type. The English twin does exactly the same thing. Lowering
+  # the floor is not the fix — it is what keeps "chapitre trois" and "on est
+  # deux" as words, which is the failure that costs more.
+  - { probe: keep, lang: fr, input: neuf fois sur dix, expect: neuf fois sur 10 }
+  - { probe: keep, lang: fr, input: le premier de la liste }
+  - { probe: keep, lang: fr, input: en deux mots }

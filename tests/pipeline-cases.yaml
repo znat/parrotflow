@@ -1,7 +1,7 @@
 # Pipeline validation set. Run with scripts/check-pipeline.sh.
 #
 # What is scored here is the *assembly*, not the stages. Each stage already has
-# a set of its own — replacement-cases.txt, numbers-cases.yaml — and repeating
+# a set of its own — replacement-cases.txt, the numbers transform's — and repeating
 # them through a pipeline would measure the same thing twice and fail in two
 # places for one reason. These cases ask a different question: does a stage run
 # when the config says it should, in the order it says, and does a condition
@@ -26,8 +26,8 @@ cases:
     input: "um, super base has vingt et un users"
     expect: Supabase has 21 users
 
-  # The guard from numbers-cases.yaml, seen through a pipeline: the stage keeps
-  # its own language resolution, so assembling it here must not flatten that.
+  # The guard from the numbers case set, seen through a pipeline: the script
+  # declines the collision itself, and assembly must not flatten that.
   - name: the cents collision survives assembly
     pipeline: everything
     input: I have 99 cents
@@ -46,7 +46,7 @@ cases:
 
   # --- a condition reads the text as it stands, not as it arrived ---------
   # The whole reason conditions are evaluated per stage rather than once up
-  # front. `replacements` deletes the filler word, so by the time `numbers` is
+  # front. The filler transform deletes the word, so by the time `numbers_fr` is
   # asked whether "genre" is present, it is not — and the stage does not run,
   # even though the sentence arrived containing it.
   #
@@ -267,8 +267,8 @@ cases:
     expect_vars:
       vocabulary.count: 1
       vocabulary.changed: true
-      numbers.language: fr
-      numbers.changed: true
+      numbers_fr.count: 1
+      numbers_fr.changed: true
       first.count: 2
       second.count: 7
       second.label: kept
@@ -499,7 +499,7 @@ cases:
       context.chars: 0
       context.declined: nothing was captured when the hotkey went down
 
-  # The stage sits between `replacements` and `numbers` in the fixture, so this
+  # The stage sits between `vocabulary` and `numbers_en` in the fixture, so this
   # case is also the answer to "does a stage that publishes variables disturb
   # the ones either side of it". Both still fire.
   - name: a declining context leaves the stages around it alone
@@ -510,7 +510,7 @@ cases:
     expect_vars:
       context.changed: false
       vocabulary.count: 1
-      numbers.ran: true
+      numbers_en.ran: true
 
   # A non-terminal used to decline here for its own reason. It cannot any more:
   # the terminal check moved to the press, so from `--pipeline` every app gets
@@ -632,7 +632,7 @@ cases:
       input.ok: false
       input.changed: false
       vocabulary.count: 1
-      numbers.ran: true
+      numbers_en.ran: true
 
   # --- the name judge, on what a `replacements` rule did -----------------------
   #
@@ -856,6 +856,63 @@ cases:
 # transcript, and what is being checked is that `--check-config` says the useful
 # thing rather than that some stage did something. `expect_problem` is a
 # substring — the whole message is prose and would tie a case to its wording.
+  # --- the dates and numbers scripts, one after the other -----------------
+  #
+  # These were `lang: auto` cases in the old single-script set. They are not
+  # about either grammar: they are about the order of the steps and the guard
+  # that lets them run ungated, which only a pipeline has. The fixture says
+  # what each of the three steps is for.
+
+  # The order. `numbers_en` alone writes "at 3 30" and "at 10 15"; `dates_en`
+  # reads the same words first and writes a clock time.
+  - { name: "dates runs before numbers", pipeline: numbers, input: "let's meet at three thirty", expect: "let's meet at 3:30" }
+  - { name: "dates runs before numbers, ten fifteen", pipeline: numbers, input: the call is at ten fifteen, expect: "the call is at 10:15" }
+  # Nothing here is a time, so dates declines and numbers writes the number.
+  - { name: "dates declines and numbers writes", pipeline: numbers, input: we shipped two hundred forty-three of them, expect: we shipped 243 of them }
+
+  # Below four words nothing can be identified, so detection answers with the
+  # first configured language — English here, whatever was said. With no gate
+  # on the steps a short French sentence is still read by the French script,
+  # which is why there is none.
+  - { name: "too short to detect: cent euros", pipeline: numbers, input: cent euros, expect: 100 euros }
+  - { name: "too short to detect: vingt et un", pipeline: numbers, input: vingt et un, expect: '21' }
+  - { name: "too short to detect: quatre-vingts", pipeline: numbers, input: quatre-vingts, expect: '80' }
+  - { name: "too short to detect: two hundred euros", pipeline: numbers, input: two hundred euros, expect: 200 euros }
+  - { name: "too short to detect: twenty one", pipeline: numbers, input: twenty one, expect: '21' }
+
+  # Both scripts run on both sentences. Each writes only what its own words
+  # build, so the answer is the same as if the language had decided.
+  - name: a French sentence reaches the French script
+    pipeline: numbers
+    input: on a mergé la pull request avec vingt et un commits
+    expect: on a mergé la pull request avec 21 commits
+  - name: an English number, read by the English script
+    pipeline: numbers
+    input: I ate two of the twenty one fishes
+    expect: I ate two of the 21 fishes
+
+  # And both scripts still leave alone what they should.
+  - { name: "two grammars, still below the floor", pipeline: numbers, input: on est deux sur le projet, expect: unchanged }
+  - { name: "two grammars, one question", pipeline: numbers, input: I have one question, expect: unchanged }
+  - { name: "two grammars, chapitre trois", pipeline: numbers, input: chapitre trois du livre, expect: unchanged }
+
+  # Where the two vocabularies collide. "cents" is French for hundreds and
+  # English for money, and a French step running on English text turned "I have
+  # 99 cents" into "I have 99 100". The guard inside the script is what keeps
+  # it away: a number whose own words are none of this grammar's units, teens
+  # or tens is not written.
+  - { name: "the cents collision", pipeline: numbers, input: I have 99 cents, expect: unchanged }
+  - { name: "the cents collision, mid-sentence", pipeline: numbers, input: it costs 50 cents each, expect: unchanged }
+  - { name: "cents after a number English itself read", pipeline: numbers, input: we made two hundred cents, expect: we made 200 cents }
+  # And the guard must not cost the French the script was built for.
+  - { name: "the guard does not cost real French", pipeline: numbers, input: j'ai payé deux cents euros hier, expect: j'ai payé 200 euros hier }
+  - { name: "the guard does not cost Belgian French", pipeline: numbers, input: j'en ai quatre cent septante-huit, expect: j'en ai 478 }
+
+  # Already digits, or below the floor in both languages.
+  - { name: "already digits", pipeline: numbers, input: I was born in 1975, expect: unchanged }
+  - { name: "just the two of us", pipeline: numbers, input: Just the two of us, expect: unchanged }
+  - { name: "seulement nous deux", pipeline: numbers, input: Seulement nous deux, expect: unchanged }
+
 refused:
   - name: a condition reading a stage that runs later is refused
     pipeline: reads-later-stage

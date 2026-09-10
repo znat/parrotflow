@@ -206,14 +206,17 @@ modifiers — all listed in the config file.
 **3. Numbers.** On by default. Show, do not explain:
 
 ```sh
-PF=/Applications/ParrotFlow.app/Contents/MacOS/ParrotFlow
-$PF --numbers "I need two hundred and forty three of them by nineteen eighty four"
+NUMBERS=~/.config/parrotflow/transforms/examples/numbers
+echo "I need two hundred and forty three of them by nineteen eighty four" | $NUMBERS/en.py
 ```
 
-The grammar used comes from `languages`, so run this after that edit. It is a
-pipeline step, so if they do not want it, delete the `- numbers` line from
-`transcription.pipeline:`. There is no `numbers:` setting — a config carrying
-one is refused by `--check-config`.
+There is one script per language — `fr.py` beside it. English is the pipeline
+step a new install gets, and `dates_en` above it writes a dictated date or
+clock time. If they dictate in French, add a `numbers_fr` transform pointing at
+`fr.py` and a step for it — see [docs/pipelines.md](pipelines.md). If they do not want numbers at all, delete
+the `- transform: numbers_en` line. There is no `numbers:` setting — a config
+carrying one is refused by `--check-config`, and so is the old `- numbers`
+stage line.
 
 Check every edit with `--check-config`. It prints each rule and reports a
 pattern it cannot compile.

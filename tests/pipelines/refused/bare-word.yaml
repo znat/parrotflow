@@ -5,5 +5,5 @@
 # says "no" is a breaking change nobody can act on.
 languages: [en, fr]
 pipeline:
-  - stage: numbers
+  - stage: interpret
     when: genre

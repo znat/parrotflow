@@ -11,7 +11,11 @@ transforms:
     description: delete hesitation sounds
     replace:
       "": ['/[,]?\s*\bgenre\b[,]?/']
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: fr.py
+    returns: json
 pipeline:
   - transform: fillers
-  - stage: numbers
+  - transform: numbers_fr
     when: /genre/

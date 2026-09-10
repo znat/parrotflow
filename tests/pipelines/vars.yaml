@@ -1,8 +1,8 @@
 # Variables carried from one stage to the next.
 #
-# Four stages, none of them interesting. `replacements` and `numbers` publish
-# what the pipeline derives plus one fact of their own; `first` and `second` are
-# the same script under two names, so they get two namespaces. What is scored is
+# Four steps, none of them interesting. `vocabulary` and `numbers_fr` publish what
+# the pipeline derives plus facts of their own; `first` and `second` are the
+# same script under two names, so they get two namespaces. What is scored is
 # that every namespace is still there at the end — a stage contributing nothing
 # erases nothing, and a stage contributing something erases nothing either.
 #
@@ -23,6 +23,10 @@ transforms:
     description: publishes its own count, and reports what first published
     command: counter.py --count 7 --label kept --echo first.count
     returns: json
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: fr.py
+    returns: json
 
 vocabulary:
   terms:
@@ -30,6 +34,6 @@ vocabulary:
       heard: [super base]
 pipeline:
   - vocabulary
-  - numbers
+  - transform: numbers_fr
   - transform: first
   - transform: second

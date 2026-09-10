@@ -84,7 +84,7 @@ ship"*, where #123 links straight to the pull request.
 
 The rule writes a Markdown link and the paste turns it into a real one — see
 [bullets, bold and links](docs/configuration.md#bullets-bold-and-links). The
-spoken digits are already `123` by then: the built-in `numbers` stage turned
+spoken digits are already `123` by then: the shipped `numbers_en` transform turned
 "one two three" into it first.
 
 ![Dictating "merged P R one two three, ready to ship" and the github_refs rule
@@ -124,7 +124,7 @@ the names into "@ada.lovelace and @mark.reyes"](Resources/handles.gif)
 ```yaml
 transcription:
   pipeline:
-    - numbers                 # "one two three" -> 123, so github_refs has digits
+    - transform: numbers_en   # "one two three" -> 123, so github_refs has digits
     - transform: github_refs
     - transform: slack_handles
 ```
@@ -227,7 +227,8 @@ the sentence with the ones the term was confirmed in.
 transcription:
   pipeline:
     - vocabulary
-    - numbers
+    - transform: dates_en
+    - transform: numbers_en
 ```
 
 ### More examples
@@ -237,10 +238,17 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
 - [code_identifiers](examples/transforms/code_identifiers) — spoken names
   cased for the language, *"a python function called max retries"* →
   `max_retries`.
+- [numbers](examples/transforms/numbers) — spoken numbers as digits, one
+  script per language: *"two hundred forty-three"* → `243`,
+  *"soixante-quinze pour cent"* → `75%`.
 - [repetitions](examples/transforms/repetitions) — drops disfluencies, a word
   said twice by accident: *"the the prompt"* → *"the prompt"*.
 - [punctuation](examples/transforms/punctuation) — spoken marks as
   punctuation, *"is that true question mark"* → *"is that true?"*.
+- [dates](examples/transforms/dates) — a dictated date or time in the shape it
+  was said, *"at ten fifteen"* → *"at 10:15"*. One script per language, above
+  the numbers step; English ships in the pipeline and French is two lines of
+  config away.
 - [self_correction](examples/transforms/self_correction) — the prompt above,
   and the 89 cases it is scored on: *"my config my vocabulary"* →
   *"my vocabulary"*.

@@ -29,9 +29,8 @@
 # that arrived unpadded.
 #
 # The detector's limit is the digit, measured: "3 décembre" and "December 3rd"
-# are found, "trois décembre" and "December third" are not. So a fully
-# spelled-out date needs `transcription.numbers` to have run first, and in
-# French that does not exist yet — `Numbers.swift` is English-only.
+# are found, "trois décembre" and "December third" are not. A fully spelled-out
+# date is the `dates_en` and `dates_fr` transforms' job, not this one's.
 
 cases:
   # --- as dictation actually produces them ---------------------------------

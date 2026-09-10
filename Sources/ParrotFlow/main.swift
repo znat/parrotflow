@@ -237,14 +237,6 @@ if let index = arguments.firstIndex(of: "--replace") {
     exit(ReplaceCommand.run(text: arguments[index + 1], app: appArgument))
 }
 
-if let index = arguments.firstIndex(of: "--numbers") {
-    let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
-        ? arguments[index + 1] : nil
-    exit(NumbersCommand.run(
-        text: text, quiet: arguments.contains("--quiet"), languages: languageList(arguments)
-    ))
-}
-
 if let index = arguments.firstIndex(of: "--normalize") {
     let text = arguments.indices.contains(index + 1) && !arguments[index + 1].hasPrefix("--")
         ? arguments[index + 1] : nil

@@ -916,14 +916,20 @@ which is the reason that command prints the linkage rather than assuming it.
 Getting the real thing means vendoring and notarising a native blob for one
 pass. Not worth it.
 
-`Numbers.swift` does it instead: no model, no library, a linear scan measured in
-microseconds against the seconds an LLM pass would cost. It is off unless
-`transcription.numbers` asks for it — alone among these passes it rewrites
+`examples/transforms/numbers/` does it instead: no model, no library, a linear
+scan. It is a shipped command transform with one script per language — `en.py`,
+`fr.py`, and `engine.py` holding everything that is not a language — so a
+language is on only when the pipeline lists its step. The default config lists
+`- transform: numbers_en` and nothing else. The step carries no language gate:
+each script declines a number built from words that are not its own. French
+ships and is scored; adding it is one `transforms:` entry and one step, see
+[docs/pipelines.md](pipelines.md).
+Alone among these passes it rewrites
 transcripts that were already correct, and whether "chapter three" wants a 3 is
-a question of house style rather than of accuracy. About seventy words
-build every number in English, so it parses a grammar over that vocabulary
-rather than enumerating results — a substitution table cannot work when "forty"
-means 40 in "forty-three" and 40,000 in "forty thousand".
+a question of house style rather than of accuracy. About seventy words build
+every number in English, so it parses a grammar over that vocabulary rather
+than enumerating results — a substitution table cannot work when "forty" means
+40 in "forty-three" and 40,000 in "forty thousand".
 
 | | | |
 | --- | --- | --- |
@@ -932,6 +938,7 @@ means 40 in "forty-three" and 40,000 in "forty thousand".
 | Decimals | `three point one four` | `3.14` |
 | Years | `nineteen eighty-four` | `1984` |
 | Spoken digits | `five five five one two three four` | `5551234` |
+| Percent | `seventy-five percent` | `75%` |
 
 Under ten a lone number word stays a word, which is both ordinary prose style
 and what keeps "one" the pronoun and "a" the article out of reach. Compounds
@@ -958,7 +965,26 @@ The leading group of a year is held to 13–20, covering 1300–2099. That is ev
 year anyone dictates, and stopping short of ten, eleven and twelve is what keeps
 a clock time from becoming one.
 
-`--numbers` runs the set these rules were written against — one line per rule,
-one per guard — and `--numbers "<text>"` runs a single line. Both run the pass
-whatever the setting says, and print the setting first, so what it *would* do
-can be read before it is turned on.
+Percent is the one thing the pass writes that is not a number. "seventy-five
+percent" and "soixante-quinze pour cent" both become `75%`, with no space in
+either language, and percent lifts the below-ten floor because `five%` is never
+right. The other direction is left alone: "pour cent" with no number in front is
+the preposition and a hundred, so "il paie pour cent euros" is untouched.
+
+`examples/transforms/numbers/score.py` scores every language, and
+`--text "<line>" --lang fr` runs a single line. `ParrotFlow --eval numbers_en`
+and `--eval numbers_fr` score the copies installed on this machine.
+
+Which script reads a given sentence is a question about the pipeline, not about
+either grammar, so it is scored there: `tests/pipelines/numbers.yaml` and the
+`numbers` cases in `tests/pipeline-cases.yaml`, whose fixture carries the
+French step as well because that is the only shape where the question exists.
+No step carries a language gate, so every configured script reads every
+transcript. That is deliberate: below four words detection answers with the
+first configured language, so a gate cost the short French sentences that are
+the common ones.
+
+What keeps one grammar off the other language's sentence is the guard inside
+each script. A number is written only if its own words include a unit, a teen
+or a tens word of that grammar. That is what keeps French from reading the
+`cents` in "I have 99 cents" as hundreds.

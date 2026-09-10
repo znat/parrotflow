@@ -11,6 +11,12 @@
 languages: [en]
 
 
+transforms:
+  - name: numbers_en
+    description: spoken numbers as digits
+    command: en.py
+    returns: json
+
 vocabulary:
   terms:
     Supabase:
@@ -20,4 +26,4 @@ pipeline:
   # disturb the stages either side of it, including when it declines.
   - vocabulary
   - input
-  - numbers
+  - transform: numbers_en

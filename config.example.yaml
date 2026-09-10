@@ -94,8 +94,8 @@ transcription:
   languages: [en, fr]
 
   # What a transcript runs through, in order. Remove a line to skip that
-  # stage. One list for every language: a step that should only run in one
-  # takes `when: language == "fr"`. See docs/pipelines.md.
+  # stage. One list for every language, and a step can carry a condition of
+  # its own. See docs/pipelines.md.
   pipeline:
     # What you meant, where the decoder wrote what it heard. A pause makes it
     # write a period or a question mark mid-sentence and capitalise the next
@@ -109,7 +109,11 @@ transcription:
     #   by_sound: false      match spelling only, never how a word sounds
     #   lowercase_refused: false   revert a refused glued span as heard
     - vocabulary
-    - numbers                            # "two hundred forty-three" -> 243
+    # Dates, times and numbers as digits: "March third" -> March 3, "at ten
+    # fifteen" -> at 10:15, "two hundred forty-three" -> 243. Dates first, or
+    # numbers eats its words. French ships too, see docs/pipelines.md.
+    - transform: dates_en
+    - transform: numbers_en
     - transform: punctuation             # "is that true question mark" -> is that true?
     - transform: repetitions             # a word or phrase said twice by accident, taken out
 
@@ -298,6 +302,22 @@ transforms:
     description: spoken marks as punctuation
     command: examples/punctuation/punctuation.py
     returns: json
+
+  # "at ten fifteen" -> at 10:15, "March third" -> March 3. One script per
+  # language. `tests:` is what sends --eval to the right case file.
+  - name: dates_en
+    description: dictated dates and clock times as digits
+    command: examples/dates/en.py
+    returns: json
+    tests: examples/dates/cases-en.yaml
+
+  # Spoken numbers as digits, one script per language. Runs after dates, on
+  # what dates left.
+  - name: numbers_en
+    description: spoken numbers as digits
+    command: examples/numbers/en.py
+    returns: json
+    tests: { path: examples/numbers/cases-en.yaml }
 
   # Cheap: ~0.04s, mostly the python3 start.
   - name: repetitions

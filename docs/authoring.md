@@ -310,7 +310,6 @@ to one language says so on its own line:
 languages: [en, fr]
 pipeline:
   - vocabulary
-  - numbers
   - transform: hesitation
     when: language == "fr"
 ```
@@ -384,11 +383,12 @@ to a built-in stage or to the router have nowhere else to be and stay in
 
 | Where | Sets |
 |---|---|
-| `examples/transforms/<name>/` | `code_identifiers` (78), `dotted` (84), `punctuation` (57), `grammar` (17), `email` (26), `repetitions` (60), `self_correction` (89) |
-| `tests/` | `spelling` (62), `french` (45), `numbers` (97), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement`, `word-gate` (25) |
+| `examples/transforms/<name>/` | `code_identifiers` (78), `dotted` (84), `dates` (133, two languages), `numbers` (99, two languages), `punctuation` (57), `grammar` (17), `email` (26), `repetitions` (60), `self_correction` (89) |
+| `tests/` | `spelling` (62), `french` (45), `routing` (45), `wake` (25), `split` (14), `generic`, `dates`, `inplace`, `pipeline`, `replacement`, `word-gate` (25) |
 
-Each has a runner in `scripts/`; the transform sets can also be scored with
-`--eval`. `examples/transforms/` is copied whole into
+Each has a runner in `scripts/`, or a `score.py` beside the set as `dates`
+does; the transform sets can also be scored with `--eval`.
+`examples/transforms/` is copied whole into
 `~/.config/parrotflow/transforms/examples/`, refreshed on every launch — one
 tree, not files kept in sync by hand. See `Config.exampleTransformsDirectory`.
 

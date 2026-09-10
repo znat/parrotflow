@@ -7,8 +7,14 @@
 # prompt has to be survivable at runtime — Ollama absent, a renamed prompt, a
 # fixture like this one — and "survivable" means the text comes back untouched.
 languages: [en, fr]
+transforms:
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: fr.py
+    returns: json
+
 pipeline:
-  - stage: numbers
+  - transform: numbers_fr
     unless: /```/
   - prompt: no-such-prompt
     when: /genre/
