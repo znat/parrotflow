@@ -4207,11 +4207,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Keep the sentence under the term as a place it does not belong.
     ///
-    /// True only when a row was written. `TermUses.record` writes nothing when
-    /// the word does not stand in the sentence as a word, and says so by doing
-    /// nothing at all, so the position is asked for first: a change that is
-    /// neither kept nor offered is a correction the app watched you make and
-    /// threw away.
+    /// True only when a row was written, which is what "taken" means to the
+    /// caller: a change this returns false for goes on to the correction
+    /// panel. `CorrectionRecording.apply` writes nothing when the word does
+    /// not stand in the narrowed sentence, and nothing when the sentence names
+    /// two members of one sound group, and it says so by returning no rows.
+    /// A change that is neither kept nor offered is a correction the app
+    /// watched you make and threw away.
+    ///
+    /// A blocked sentence is therefore offered. `learn` tries the recording
+    /// once more against the panel's own text, and refuses to write a
+    /// pronunciation whose heard side is already a term — between two members
+    /// of one group that rendering opens the group rather than rewriting
+    /// anything, so nothing is lost by not writing it.
     private func recordCounter(
         wrote written: String, put back: String, in sentence: String, near word: Int? = nil
     ) -> Bool {
@@ -4226,10 +4234,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let heard = config.vocabulary.terms[term]?.heard ?? []
         let ours = heard.contains { $0.caseInsensitiveCompare(back) == .orderedSame }
+        var wrote = false
         do {
             for row in try CorrectionRecording.apply(
                 rows, said: sentence, near: word, blocking: soundGroups
             ) {
+                wrote = true
                 rebuildPortrait(for: row.term)
                 switch row {
                 case .use(let right, _, _):
@@ -4251,7 +4261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Log.write("could not record the correction: \(error.localizedDescription)")
             return false
         }
-        return true
+        return wrote
     }
 
     /// Builds a term's portrait now, because its uses just changed.
@@ -4308,8 +4318,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // From the file, not from `config`. A term written a moment ago —
         // by this very correction — reaches `config` through a file watcher,
         // which has not fired yet, and the new member would be in no group.
-        let terms = (try? ConfigStore.load())?.vocabulary.terms ?? config.vocabulary.terms
-        return SoundGroup.groups(terms: terms, uses: TermUses.load())
+        //
+        // `vocabulary.yaml` alone. `ConfigStore.load()` also refreshes the
+        // shipped examples and decodes `config.yaml`, and this is read on
+        // interaction paths. An empty vocabulary is a valid answer, so there
+        // is nothing to fall back to.
+        return SoundGroup.groups(terms: ConfigStore.loadVocabulary().terms, uses: TermUses.load())
     }
 
     /// The vocabulary term this word is, ignoring case and any possessive.
@@ -6014,7 +6028,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             word.word, proposedBy: open.term, in: config.vocabulary.terms
         ) {
         case .use(let term): picked = term
-        case .create(let name, let kind): picked = createTerm(named: name, kind: kind)
+        case .create(let name, let kind):
+            // Nil here is a write that failed, not the counter answer. Filing
+            // it as a counter would store the opposite of what was answered:
+            // you said this is a name, and the term that was proposed would
+            // keep the sentence as a place it does not belong.
+            guard let created = createTerm(named: name, kind: kind) else {
+                Log.write("selector: \(name) could not be written to vocabulary.yaml;"
+                    + " nothing is recorded about \(open.term) either")
+                return
+            }
+            picked = created
         case .counter: picked = nil
         }
         let replaced = word.word == open.standing ? nil : open.standing

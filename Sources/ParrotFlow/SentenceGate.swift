@@ -68,9 +68,15 @@ enum SentenceGate {
         }
         // Only the slot half reads it. With that half off the portrait runs on
         // a machine the 269 MB was never fetched to.
+        //
+        // A group place is not one of the places it reads: every reading there
+        // is a name, so the slot has nothing to separate and is never asked.
+        // Those still run.
+        var groupsOnly = false
         if slot, !SlotModel.isCached {
-            Log.write("sentence gate: the slot model is not cached yet; skipped")
-            return (settled, changes)
+            groupsOnly = true
+            Log.write("sentence gate: the slot model is not cached yet;"
+                + " only group places are read")
         }
 
         var out = settled
@@ -79,6 +85,7 @@ enum SentenceGate {
             guard index < out.count, out[index] != false else { continue }
             guard let term = change.terms.first else { continue }
             guard change.range.upperBound <= text.endIndex else { continue }
+            guard !groupsOnly || change.group.count > 1 else { continue }
 
             // A place an earlier rule already decided to write. The two word
             // lists write a name whenever the heard word is in neither of them,
