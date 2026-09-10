@@ -1,5 +1,17 @@
-# Every stage, no conditions — the default a new install gets.
+# The shape a new install gets: every automatic stage plus both numbers
+# scripts, and no conditions. The cross-language rule between the two has a
+# fixture of its own, tests/pipelines/numbers.yaml.
 languages: [en, fr]
+transforms:
+  - name: numbers_en
+    description: spoken numbers as digits
+    command: en.py
+    returns: json
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: fr.py
+    returns: json
+
 vocabulary:
   terms:
     Supabase:
@@ -10,4 +22,5 @@ vocabulary:
       heard: ['/[,]?\s*\b(?:u+m+|u+h+|erm+)\b[,]?/']
 pipeline:
   - vocabulary
-  - numbers
+  - transform: numbers_en
+  - transform: numbers_fr

@@ -7,7 +7,8 @@ transcription:
   pipeline:
     - interpret
     - vocabulary
-    - numbers
+    - transform: dates_en
+    - transform: numbers_en
     - transform: dotted
       app: /term|ghostty|iterm|warp/
 ```
@@ -29,8 +30,8 @@ you get every stage back — a missing section is silence, not a choice. Write
 `pipelines:`, the map keyed by language, is retired. Nothing under it is read.
 `--check-config` exits non-zero and says to write one `pipeline:` list, and the
 app says the same at launch, in the log and in the menu bar. Until you rewrite
-it none of your steps run — the built-in default does, which is `numbers` and
-nothing else. Move the lists into `pipeline:` and put
+it none of your steps run — the built-in default does, which is `interpret`
+and nothing else. Move the lists into `pipeline:` and put
 `when: language == "fr"` on the steps that only belong to one language.
 
 It was three stages until the shapes were counted: `replacements` wrote the
@@ -45,13 +46,62 @@ can get wrong.
 |---|---|
 | `interpret` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The interpret stage](#the-interpret-stage). English only. |
 | `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). |
-| `numbers` | Spoken numbers as digits: "two hundred forty-three" → 243, plus ordinals, decimals, years and spoken digits. English and French, septante/huitante/nonante included, chosen per transcript. A number word on its own stays a word below ten, so "chapter three" and "on est deux" are left alone. |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
 | `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |
 
-`numbers` rewrites transcripts that were already correct, so run `--numbers` on
-a line to see exactly what it would do before leaving it in.
+`numbers` used to be a stage here. It is a shipped transform now, and there is
+one script per language — `examples/transforms/numbers/en.py` and `fr.py`.
+`dates` is the same shape and runs above it. The default config ships the two
+English steps and nothing else:
+
+```yaml
+    - transform: dates_en
+    - transform: numbers_en
+```
+
+A config still saying `- numbers` is refused by name, with both halves of the
+fix.
+
+**Adding French.** The scripts ship and CI scores them; the config does not
+name them. Add one `transforms:` entry per script and one step per entry:
+
+```yaml
+transforms:
+  - name: dates_fr
+    description: dictated dates and clock times as digits
+    command: examples/dates/fr.py
+    returns: json
+    tests: examples/dates/cases-fr.yaml
+
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: examples/numbers/fr.py
+    returns: json
+    tests: { path: examples/numbers/cases-fr.yaml }
+
+transcription:
+  pipeline:
+    - transform: dates_fr
+    - transform: numbers_fr
+```
+
+Dates goes above numbers, in every language. A date is made of number words,
+and numbers would write them as digits before dates ever saw them.
+
+No step needs a language gate. Each script reads its own words only,
+and declines a number whose words are none of its own — measured over the other
+language's whole case set, every script changed nothing.
+
+`dates_fr` resolves a bare hour to the next time it comes round: at 12:00 "à
+4h" is `16h`. Add `--no-wall-clock` to its `command:` line to write `4h`
+instead. English writes 12-hour times and invents no pm.
+
+Both rewrite transcripts that were already correct, so run
+`examples/transforms/numbers/score.py --text "<line>"` — and the same script in
+`dates/` — to see what they would do before leaving them in. Adding another
+language is a copy of one file per folder; see the "Adding a language" note in
+each `engine.py`.
 
 ## The interpret stage
 
@@ -154,7 +204,7 @@ what the decoder wrote and the term — so a third reading would be built and
 never shown. Refused rather than rounded down, because a number that says one
 thing and does another teaches nobody anything.
 
-**An option on the wrong stage is refused.** `slot_gate:` on `numbers`, or
+**An option on the wrong stage is refused.** `slot_gate:` on `interpret`, or
 `marks:` on `vocabulary`, used to load and do nothing. `--check-config` names
 the key, the stage it was written on and the stage that reads it. A switch that
 loads and does nothing is somebody believing a gate is off while it runs.
@@ -293,8 +343,7 @@ dropped. Raise it when a name really does appear three times in one sentence.
 
 **Order matters, and the app refuses the wrong one.** The stage is given spans
 measured on the text the decoder produced. Put it above everything that edits
-text. `--check-config` refuses a pipeline that puts `numbers` or a transform
-above it, because a span that has moved cannot be told from a span that was
+text. `--check-config` refuses a pipeline that puts a transform above it, because a span that has moved cannot be told from a span that was
 always wrong.
 
 `interpret` is the one exception, and it is where the default puts it. It
@@ -660,7 +709,7 @@ under two conditions. Named ones can:
 pipeline:
   - vocabulary
   - fuzzy
-  - numbers
+  - transform: numbers_en
   - transform: dotted
     app: /term|ghostty|iterm|warp/
   - transform: prose
@@ -1055,9 +1104,9 @@ and see whether it turns blue.
 
 ### Order matters, and only one set notices
 
-`numbers` runs before `dotted`, because English says "three point one four" for
-a decimal and it is `numbers` that consumes that word. Swap the two and `dotted`
-gets there first: "three one.four". The `DECIMAL` cases in the set exist to fail
+`numbers_en` runs before `dotted`, because English says "three point one four"
+for a decimal and it is `numbers_en` that consumes that word. Swap the two and
+`dotted` gets there first: "three one.four". The `DECIMAL` cases in the set exist to fail
 if anyone reorders them.
 
 Transforms are also what the activation phrase reaches: "hey parrot, tidy that
@@ -1096,7 +1145,7 @@ A stage can carry a condition, which is what makes an expensive one affordable
 ```yaml
 pipeline:
   - vocabulary
-  - stage: numbers
+  - transform: numbers_fr
     when: /\b(vingt|cent|mille)\b/     # only if a number word is left
 ```
 
@@ -1151,9 +1200,14 @@ and cannot report it about the wrong string.
 Stages add their own on top. `interpret.count` is how many boundaries it
 joined. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
-ones, and the sentence the stage was handed — `numbers.language`, which grammar
-actually read the numbers and is not the same answer as the pipeline's
-language, and, for a prompt stage, `model`. The name stage reads all three of
+ones, and the sentence the stage was handed — and, for a prompt stage, `model`.
+Each shipped `numbers` script publishes `count` under its own name, so
+`numbers_en.count` and `numbers_fr.count`, and each `dates` script the same.
+No step carries a language gate, so they run on every transcript and always
+publish. A step that a condition *does* skip publishes only
+`<name>.ran = false`, and a later condition then has to ask
+`numbers_en.ran && numbers_en.count == 0`, not `numbers_en.count == 0`. The
+name stage reads all three of
 the `vocabulary` ones: `changes` says which rules fired and `before` says
 *where*, because the rules leave no positions behind. A `command:` transform
 publishes whatever it likes; see
@@ -1253,7 +1307,7 @@ for any library: if the pipeline is ever rewritten in another language, the
 configs people have written keep meaning what they meant.
 
 ```
-paths          text, numbers.count, asr.confidence
+paths          text, numbers_en.count, asr.confidence
 literals       "a string", 12, 1.5, true, false
 operators      &&  ||  !  ==  !=  <  <=  >  >=
 methods        matches(re)  contains(s)  startsWith(s)  endsWith(s)
@@ -1517,7 +1571,7 @@ terminal and nowhere near an email:
 ```yaml
 pipeline:
   - vocabulary
-  - stage: numbers
+  - transform: numbers_en
     app: /term|ghostty|iterm|warp/
   - prompt: prose
     app: /^(?!.*(term|ghostty|iterm|warp))/
@@ -1621,7 +1675,7 @@ transforms:
       Use it to spell names and paths. Never quote it back.
 ```
 
-`{{context.text}}`, `{{numbers.count}}`, `{{language}}`, `{{app}}` — the same
+`{{context.text}}`, `{{numbers_en.count}}`, `{{language}}`, `{{app}}` — the same
 names `when:` reads, so there is one vocabulary rather than two.
 
 **A name with nothing behind it takes its paragraph with it.** Most variables
@@ -1677,6 +1731,10 @@ built-in's 14/16. `digits` was a straight tie, five cases to five. `dates` was
 worse — asked to make "the deadline is March 3 2026" ISO it answered
 "2026-03-03", dropping the sentence around the date, which is what a prompt
 written for one subject does when handed a whole sentence.
+
+The deterministic `dates_en` and `dates_fr` transforms now cover the dictated
+half of that job: they write the date or the time in the shape it was spoken,
+with no instruction to read and no model to ask.
 
 `grammar` ships for the opposite reason. It has a validation set of its own and
 beats the built-in on it, 5/5 against 4/5, and the case it wins is the one that

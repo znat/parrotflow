@@ -28,8 +28,9 @@ disabled_rules:
   - force_cast
 
   # Size and shape, all of which this codebase has answered on purpose:
-  # Numbers.swift is a grammar, AppDelegate is a menu-bar app's front door, and
-  # the parser returns tuples because the fields are one result, not four.
+  # Config.swift is one file because a config is one shape, AppDelegate is a
+  # menu-bar app's front door, and the parser returns tuples because the fields
+  # are one result, not four.
   - function_body_length
   - type_body_length
   - file_length

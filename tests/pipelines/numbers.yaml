@@ -1,0 +1,33 @@
+# The dates and numbers steps of config.example.yaml, plus a French numbers
+# step the default config does not ship. No step carries a language gate, as
+# in the default config, so every script sees every transcript.
+#
+# Two things only a whole pipeline shows:
+#
+#   - **The order.** `dates_en` reads "at three thirty" as a clock time before
+#     `numbers_en` gets to write "at 3 30".
+#   - **The guard.** With no gate, the French script runs on English text, and
+#     `cents` is French for hundreds. It declines a number whose own words are
+#     none of its units, teens or tens — but only above `MINIMUM_WORDS`, since
+#     below that the detected language is a coin toss.
+#
+# The grammars themselves are scored by examples/transforms/dates/score.py and
+# examples/transforms/numbers/score.py.
+languages: [en, fr]
+transforms:
+  - name: dates_en
+    description: dictated dates and clock times as digits
+    command: en.py
+    returns: json
+  - name: numbers_en
+    description: spoken numbers as digits
+    command: en.py
+    returns: json
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: fr.py
+    returns: json
+pipeline:
+  - transform: dates_en
+  - transform: numbers_en
+  - transform: numbers_fr

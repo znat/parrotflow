@@ -10,6 +10,12 @@
 # rule's substitution back and the rules had to have fired first. That pass is
 # inside this stage now, so there is no exception left to state.
 languages: [en]
+transforms:
+  - name: numbers_en
+    description: spoken numbers as digits
+    command: en.py
+    returns: json
+
 pipeline:
-  - numbers
+  - transform: numbers_en
   - vocabulary

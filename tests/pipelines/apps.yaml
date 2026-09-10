@@ -1,5 +1,5 @@
-# App conditions, on a stage cheap enough to score deterministically. What is
-# tested is that `app:` decides, not what the stage does — `numbers` stands in
+# App conditions, on a step cheap enough to score deterministically. What is
+# tested is that `app:` decides, not what the step does — `numbers` stands in
 # for whatever you would really scope to a terminal.
 #
 # Both directions from one key: inclusion is a plain pattern, exclusion is a
@@ -7,11 +7,17 @@
 # case for that decision — if a lookahead cannot express exclusion here, the
 # key was needed after all.
 languages: [en, fr]
+transforms:
+  - name: numbers_fr
+    description: spoken numbers as digits
+    command: fr.py
+    returns: json
+
 vocabulary:
   terms:
     Supabase:
       heard: [super base]
 pipeline:
   - vocabulary
-  - stage: numbers
+  - transform: numbers_fr
     app: /term|ghostty|iterm/

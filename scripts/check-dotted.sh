@@ -39,13 +39,21 @@ if not any(t["name"] == "dotted" for t in transforms):
     print("  ✗ Config.defaultYAML has no `dotted` transform to score")
     sys.exit(1)
 
-def fixture(steps):
+# `numbers_en` is a program, not a table, so it is not in the list above. The
+# decimal fixture needs it, and needs an absolute path: the fixture is written
+# to a temporary directory, where `examples/numbers/en.py` resolves to nothing.
+# `tests:` goes with it — it names a case file that is not there either.
+numbers = next(t for t in doc["transforms"] if t["name"] == "numbers_en")
+numbers = {k: v for k, v in numbers.items() if k != "tests"}
+numbers["command"] = str(root / "examples/transforms/numbers/en.py")
+
+def fixture(steps, extra=()):
     return yaml.safe_dump({
         "languages": doc["transcription"]["languages"],
         # The patterns say `{{determiners}}`; without the lists they compile to
         # nothing and every guard silently stops guarding.
         "lists": doc.get("lists") or {},
-        "transforms": transforms,
+        "transforms": transforms + list(extra),
         "pipeline": [{"transform": name} for name in steps],
     }, allow_unicode=True, sort_keys=False)
 
@@ -55,12 +63,11 @@ out.write_text(fixture(["dotted"]))
 # put anything on the far side of it — which is how the first attempt at this
 # produced `lis `config.`port`.
 chat.write_text(fixture(["dotted", "backticks"]))
-# `numbers` before `dotted`, as the shipped pipeline has them. English says
-# "three point one four" for a decimal, and it is `numbers` that consumes the
-# word — reorder the two and dotted gets there first, turning it into
+# `numbers_en` before `dotted`, as the shipped pipeline has them. English says
+# "three point one four" for a decimal, and it is `numbers_en` that consumes
+# the word — reorder the two and dotted gets there first, turning it into
 # "three one.four". Nothing else would notice.
-decimal.write_text(fixture(["numbers", "dotted"]).replace(
-    "- transform: numbers", "- numbers"))
+decimal.write_text(fixture(["numbers_en", "dotted"], [numbers]))
 PY
 [ -s "$FIXTURE" ] || exit 1
 

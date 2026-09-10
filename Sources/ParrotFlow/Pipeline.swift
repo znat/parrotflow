@@ -15,12 +15,10 @@ import Foundation
 /// from outside the code.
 ///
 /// The language a transcript is in is seeded into the scope here, so a step
-/// can say `when: language == "fr"`. It is *not* handed down to the stages:
-/// `numbers` keeps its own resolution, and has to. Its rule is not "read this
-/// language" but "try the detected one, then the others, and let a candidate
-/// win only on real evidence" — the guard that stops French reading the
-/// "cents" in "I have 99 cents" as hundreds. Collapsing that to one language
-/// here would quietly delete it.
+/// can say `when: language == "fr"`. It is what a `command:` transform reads
+/// as `ctx.language`, and a step is free to ignore it: the numbers scripts all
+/// run on every transcript, because the language of a sentence does not decide
+/// which numbers are in it.
 struct Pipeline: Equatable, Codable {
 
     /// One step. Deliberately not a closure: a stage has to be nameable in a
@@ -41,16 +39,6 @@ struct Pipeline: Equatable, Codable {
         /// pause gate lines the text up against the token timings, and a stage
         /// above it that rewrites a word breaks that alignment.
         case interpret
-        /// Names: matched from `vocabulary.yaml`, then each match settled
-        /// against the sentence it stands in. `near_misses:`, `by_sound:` and
-        /// `gate:` on the step say how far it reaches — see `Step`.
-        ///
-        /// One stage because it was always one algorithm. It was written as
-        /// three — `replacements` wrote the exact matches, `fuzzy` caught the
-        /// near ones, `vocabulary` settled them — and the order they had to run
-        /// in was enforced by hand, because the three were never independent.
-        /// Spoken numbers as digits, in the language its own pass resolves.
-        case numbers
         /// What is on screen around the field, published as `context.*` and
         /// never written into the transcript. Terminals only — see `Context`.
         case context
@@ -340,10 +328,7 @@ struct Pipeline: Equatable, Codable {
 
     var stages: [Stage] { steps.map(\.stage) }
 
-    /// Every stage, in declaration order, which is the canonical order —
-    /// numbers last, always, because both name passes match on words and a
-    /// mishearing that happens to contain a number word has to still look like
-    /// words while they run.
+    /// Every stage, in declaration order, which is the canonical order.
     ///
     /// This is the only default there is. A config that names no pipeline gets
     /// all of it, and a new install is written with the same list spelled out.
@@ -868,9 +853,6 @@ struct Pipeline: Equatable, Codable {
         switch step.stage {
         case .interpret:
             return await interpret(step, on: text, config: config, words: words)
-        case .numbers:
-            let done = Numbers.read(text, languages: config.transcription.languages)
-            return StageResult(text: done.text, vars: ["language": .string(done.language)])
         case .context:
             return await readContext(on: text)
         case .input:

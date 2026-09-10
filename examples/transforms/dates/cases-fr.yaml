@@ -1,0 +1,180 @@
+# Validation set for `dates_fr`. Scored with `score.py --lang fr` beside this
+# file, or with `ParrotFlow --eval dates_fr`, which runs the installed command.
+# The `tests:` key on the transform points `--eval` at this file.
+#
+# `change`: a date or a clock time was dictated — write it the way it was said.
+# `keep` (no `expect`): must come back byte for byte.
+#
+# Every case here is clock-free. The wall-clock rule is scored in
+# `cases-fr-clock.yaml`, which pins a `now:` per case for `score.py`.
+#
+# The keep half is 23 of 54 cases and it is the half that decides. The stage
+# runs on every transcript and shows nothing, so a wrong rewrite is text nobody
+# watched change. Every keep is a shape that looks like a date and is not.
+#
+# Out of scope on purpose: the calendar, a lone ordinal, a lone year (the
+# numbers transform's job) and any target format.
+#
+# `lang:` is on every case because `--eval` hands it to the pipeline. The set
+# carries no `transforms:` block: a bare `command:` resolves under the file's
+# own directory only, and an unresolved one kills `--eval` with SIGPIPE.
+
+cases:
+
+  # --- time_fr ---
+  - probe: time_fr
+    lang: fr
+    input: "on déjeune à midi et demi"
+    expect: "on déjeune à 12h30"
+  - probe: time_fr
+    lang: fr
+    input: "la séance commence à vingt heures"
+    expect: "la séance commence à 20h"
+  - probe: time_fr
+    lang: fr
+    input: "rendez-vous à dix-sept heures trente"
+    expect: "rendez-vous à 17h30"
+  - probe: time_fr
+    lang: fr
+    input: "il est rentré à minuit et demi"
+    expect: "il est rentré à 0h30"
+  - probe: time_fr
+    lang: fr
+    input: "le vol décolle à vingt et une heures"
+    expect: "le vol décolle à 21h"
+  # --- period_fr: the qualifier decides and is not written ---
+  - probe: period_fr
+    lang: fr
+    input: "On se parle à 4h moins le quart de l'après-midi."
+    expect: "On se parle à 15h45."
+  - probe: period_fr
+    lang: fr
+    input: "on dîne à quatre heures du soir"
+    expect: "on dîne à 16h"
+  - probe: period_fr
+    lang: fr
+    input: "le vol part à 4h du matin"
+    expect: "le vol part à 4h"
+  - probe: period_fr
+    lang: fr
+    input: "on y va à six heures de l'aprem"
+    expect: "on y va à 18h"
+  # A qualifier before the time speaks for it and stays where it is.
+  - probe: period_fr
+    lang: fr
+    input: "demain matin à 4h et quart"
+    expect: "demain matin à 4h15"
+  - probe: period_fr
+    lang: fr
+    input: "ce soir à 4h"
+    expect: "ce soir à 16h"
+  # --- digits_fr: the decoder already wrote the hour ---
+  - probe: digits_fr
+    lang: fr
+    input: "on se cale à 4h et demie du matin"
+    expect: "on se cale à 4h30"
+  - probe: digits_fr
+    lang: fr
+    input: "le point est à 8h moins dix du matin"
+    expect: "le point est à 7h50"
+  # Already written, and finished. Nothing to add.
+  - probe: digits_fr
+    lang: fr
+    input: "le train de 15h12 est complet"
+  - probe: digits_fr
+    lang: fr
+    input: "on démarre à 20h30 précises"
+  # A bare hour with no cue is a count, whatever the digits say.
+  - probe: digits_fr
+    lang: fr
+    input: "il a 4h de retard"
+  - probe: digits_fr
+    lang: fr
+    input: "4h de sommeil, pas plus"
+  # --- date_fr ---
+  - probe: date_fr
+    lang: fr
+    input: "la livraison est le trois décembre"
+    expect: "la livraison est le 3 décembre"
+  - probe: date_fr
+    lang: fr
+    input: "le contrat commence le premier mai"
+    expect: "le contrat commence le 1er mai"
+  - probe: date_fr
+    lang: fr
+    input: "la facture est datée le dix du douze"
+    expect: "la facture est datée le 10/12"
+  - probe: date_fr
+    lang: fr
+    input: "l'échéance est le trois décembre deux mille vingt-six"
+    expect: "l'échéance est le 3 décembre 2026"
+  - probe: date_fr
+    lang: fr
+    input: "il a signé le vingt-cinq janvier"
+    expect: "il a signé le 25 janvier"
+  # --- date_prep_fr: every preposition that introduces a date ---
+  # The recogniser writes the digits itself, so the digit form matters as much
+  # as the spoken one.
+  - { probe: date_prep_fr, lang: fr, input: "Le trois du douze", expect: "Le 3/12" }
+  - { probe: date_prep_fr, lang: fr, input: "Le 3 du 12", expect: "Le 3/12" }
+  - { probe: date_prep_fr, lang: fr, input: "on part du 3 du 12", expect: "on part du 3/12" }
+  - { probe: date_prep_fr, lang: fr, input: "C'est daté du 3 du 12", expect: "C'est daté du 3/12" }
+  - { probe: date_prep_fr, lang: fr, input: "La facture est datée du 3 du 12", expect: "La facture est datée du 3/12" }
+  - { probe: date_prep_fr, lang: fr, input: "reporté au 3 du 12", expect: "reporté au 3/12" }
+  - { probe: date_prep_fr, lang: fr, input: "ouvert dès le 3 du 12", expect: "ouvert dès le 3/12" }
+  - { probe: date_prep_fr, lang: fr, input: "valable jusqu'au 3 du 12", expect: "valable jusqu'au 3/12" }
+  - { probe: date_prep_fr, lang: fr, input: "à partir du 3 du 12", expect: "à partir du 3/12" }
+  # A year attaches, in digits or in words.
+  - { probe: date_prep_fr, lang: fr, input: "la facture du 3 du 12 2025", expect: "la facture du 3/12/2025" }
+  - { probe: date_prep_fr, lang: fr, input: "la facture du trois du douze deux mille vingt-cinq", expect: "la facture du 3/12/2025" }
+  # "du N au N" is a range of days, and only that word separates the two.
+  - { probe: date_prep_fr, lang: fr, input: "le bureau est fermé du 3 au 12" }
+  - { probe: date_prep_fr, lang: fr, input: "il en reste 3 des 12 prévus" }
+  - { probe: date_prep_fr, lang: fr, input: "on a fait le tour du 20 du mois" }
+  # --- annee_fr: a slash date carries no century, so these are clock-free.
+  # The month-name form pivots on the clock year and is scored in
+  # cases-fr-clock.yaml. ---
+  - { probe: annee_fr, lang: fr, input: "le 12 mai 2025" }
+  - { probe: annee_fr, lang: fr, input: "le trois du douze vingt-cinq", expect: "le 3/12/25" }
+  - { probe: annee_fr, lang: fr, input: "Le 3/12 25", expect: "Le 3/12/25" }
+  - { probe: annee_fr, lang: fr, input: "le 3/12/2025" }
+  # A noun after the two digits says they were counting.
+  - { probe: annee_fr, lang: fr, input: "le 12 mai 25 personnes sont venues" }
+  - { probe: annee_fr, lang: fr, input: "il a 25 ans" }
+  - { probe: annee_fr, lang: fr, input: "page 12 25" }
+  # --- not_a_time_fr ---
+  - probe: not_a_time_fr
+    lang: fr
+    input: "il y a trois heures que j'attends"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "on a roulé pendant deux heures"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "c'est à trois heures de route"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "le service tourne vingt-quatre heures sur vingt-quatre"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "on part dans deux heures"
+  # --- not_a_date_fr ---
+  - probe: not_a_date_fr
+    lang: fr
+    input: "le chapitre trois parle du parseur"
+  - probe: not_a_date_fr
+    lang: fr
+    input: "mars est chargé pour tout le monde"
+  - probe: not_a_date_fr
+    lang: fr
+    input: "on en a vingt et un"
+  # --- not_a_time_fr ---
+  - probe: not_a_time_fr
+    lang: fr
+    input: "il a trois heures d'avance"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "c'est à trois heures d'ici"
+  - probe: not_a_time_fr
+    lang: fr
+    input: "elle a deux heures devant elle"

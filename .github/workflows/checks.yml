@@ -88,7 +88,7 @@ jobs:
       # Each on its own step, so a red run says which set broke in the summary
       # rather than in the middle of a log.
       - name: Numbers
-        run: scripts/check-numbers.sh
+        run: examples/transforms/numbers/score.py
 
       - name: Replacements
         # The fuzzy half asks NSSpellChecker whether a word is real, and that
@@ -124,6 +124,10 @@ jobs:
 
       - name: Dates
         run: scripts/check-dates.sh
+
+      # The `dates_en` and `dates_fr` transforms, both languages at once.
+      - name: Dates transform
+        run: examples/transforms/dates/score.py
 
       # Where a transform's files are found, and where its command runs. Builds
       # whole config directories in /tmp and runs the real binary against them

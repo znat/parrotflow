@@ -1,0 +1,60 @@
+# The wall-clock rule for `dates_fr`, scored with `score.py --lang fr`.
+#
+# An hour under 12 with no period qualifier is the next time that hour comes
+# round. So the answer depends on what time it is, and every case pins it:
+# `now:` is an ISO local time and `score.py` puts it in `PARROTFLOW_NOW` for
+# that case alone.
+#
+# This file is read by `score.py` and by nothing else. `--eval dates_fr` reads
+# `cases-fr.yaml`, which is clock-free, because `--eval` runs the real command
+# against the real clock and a case that moved with the hour would be a set
+# that fails every afternoon.
+#
+# `change`: the hour was resolved. `keep` (no `expect`): came back byte for
+# byte.
+
+cases:
+
+  # --- the hour the speaker meant ---
+  # Noon, and 4 has not come round yet today.
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T12:00", input: "on se parle à 4h", expect: "on se parle à 16h" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T12:00", input: "on se parle à quatre heures", expect: "on se parle à 16h" }
+  # Past it, so the next 4 o'clock is tomorrow morning.
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T17:00", input: "on se parle à 4h", expect: "on se parle à 4h" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T17:00", input: "on se parle à quatre heures", expect: "on se parle à 4h" }
+
+  # --- the tail is arithmetic on the resolved hour, not on the one said ---
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T12:00", input: "On se parle à 4h moins le quart.", expect: "On se parle à 15h45." }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T03:00", input: "On se parle à 4h moins le quart.", expect: "On se parle à 3h45." }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T12:00", input: "on se cale à 4h dix", expect: "on se cale à 16h10" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T12:00", input: "on se cale à 4h moins dix", expect: "on se cale à 15h50" }
+
+  # --- what never moves ---
+  # 12 and 0 are already the hour they name.
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T20:00", input: "on déjeune à midi et demi", expect: "on déjeune à 12h30" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T08:00", input: "il est rentré à minuit et demi", expect: "il est rentré à 0h30" }
+  # 13 and up were dictated in 24-hour form and say their own half of the day.
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T22:00", input: "la séance commence à vingt heures", expect: "la séance commence à 20h" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T22:00", input: "le train de 15h12 est complet" }
+  # A qualifier decides on its own, whatever the clock says.
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T20:00", input: "le vol part à 4h du matin", expect: "le vol part à 4h" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T03:00", input: "on dîne à quatre heures du soir", expect: "on dîne à 16h" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T12:00", input: "demain matin à 4h", expect: "demain matin à 4h" }
+  # A count is not a time, so the clock never sees it.
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T12:00", input: "il a 4h de retard" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T12:00", input: "on a roulé pendant deux heures" }
+
+  # --- a two-digit year after a month name, pivoted on the clock year ---
+  # This year plus ten and below is 20xx; above it is 19xx.
+  - { probe: annee_fr, lang: fr, now: "2026-09-10T12:00", input: "le douze mai vingt-cinq", expect: "le 12 mai 2025" }
+  - { probe: annee_fr, lang: fr, now: "2026-09-10T12:00", input: "le 12 mai 25", expect: "le 12 mai 2025" }
+  - { probe: annee_fr, lang: fr, now: "2026-09-10T12:00", input: "le 12 mai 99", expect: "le 12 mai 1999" }
+  - { probe: annee_fr, lang: fr, now: "2026-09-10T12:00", input: "le 12 mai 25 personnes sont venues" }
+
+  # --- the five that used to sit in cases-fr.yaml ---
+  # Same sentences, with the hour they resolve to at the time given.
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T09:00", input: "on commence à dix heures quinze", expect: "on commence à 10h15" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T02:00", input: "la réunion est à trois heures et demie", expect: "la réunion est à 3h30" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T06:00", input: "le train part à huit heures moins le quart", expect: "le train part à 7h45" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T08:00", input: "il arrive à neuf heures et quart", expect: "il arrive à 9h15" }
+  - { probe: wall_clock_fr, lang: fr, now: "2026-09-10T01:00", input: "on se voit à trois heures moins dix", expect: "on se voit à 2h50" }

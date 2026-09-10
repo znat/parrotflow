@@ -8,7 +8,6 @@
 | Transcription | `Transcriber.swift` | Parakeet TDT v3 via [FluidAudio](https://github.com/FluidInference/FluidAudio), CoreML on the Neural Engine |
 | The pipeline | `Pipeline.swift` | Stages, conditions, app gating — [pipelines.md](pipelines.md) |
 | Replacements | `Replacements.swift` | Literal, regex and fuzzy substitution |
-| Numbers | `NumberGrammar*.swift` | Spoken numbers as digits, English and French, no model |
 | Transforms | `PromptRunner.swift`, `CommandRunner.swift` | A prompt to the local model, or a program of yours on stdin/stdout |
 | Routing | `Router.swift`, `FreeForm.swift` | Which transform an instruction reaches, and what happens when none does |
 | Spoken commands | `LLM.swift`, `LocalLLM.swift` | One call, three protocols — `ollama`, `openai`, `anthropic`. `ModelSpec.swift` is what a config resolves to; every failure degrades to "unavailable" rather than costing the transcript |
@@ -134,7 +133,7 @@ the text has moved on, because an undo fired against edited text is not an undo.
 | Hotkey down → capture running | ~60–70 ms, warmed at launch |
 | Bare-modifier polling | 25 ms, on top of the above |
 | Transcription of a normal sentence | about a second after you let go |
-| `the vocabulary stage`, `fuzzy`, `numbers`, a `replace:` transform | 0.035 s measured on a line |
+| `the vocabulary stage`, `fuzzy`, a `replace:` transform | 0.035 s measured on a line |
 | A `command:` transform | one process start — ~25 ms for `python3`, ~5 ms for a shell script, ~300 ms if `python3` is a version-manager shim |
 | A `prompt:` transform, model warm | ~1.5 s |
 | A `prompt:` transform, model cold | 6.7 s, which `keep_loaded:` on the model exists to avoid |

@@ -144,4 +144,4 @@ CHAT|il faut modifier config point yaml|il faut modifier `config.yaml`
 DECIMAL|three point one four|3.14
 DECIMAL|twenty one point five|21.5
 DECIMAL|version two point one|version 2.1
-DECIMAL|it costs ninety nine point five percent|it costs 99.5 percent
+DECIMAL|it costs ninety nine point five percent|it costs 99.5%

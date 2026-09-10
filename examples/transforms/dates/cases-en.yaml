@@ -1,0 +1,215 @@
+# Validation set for `dates_en`. Scored with `score.py --lang en` beside this
+# file, or with `ParrotFlow --eval dates_en`, which runs the installed command.
+# The `tests:` key on the transform points `--eval` at this file.
+#
+# `change`: a date or a clock time was dictated — write it the way it was said.
+# `keep` (no `expect`): must come back byte for byte.
+#
+# The keep half is 28 of 53 cases and it is the half that decides. The stage
+# runs on every transcript and shows nothing, so a wrong rewrite is text nobody
+# watched change. Every keep is a shape that looks like a date and is not: a
+# count, a duration, a range, a chapter number, a year.
+#
+# Out of scope on purpose: the calendar ("next Tuesday" is not resolved, a date
+# said without a year does not get one), a lone ordinal and a lone year (the
+# numbers transform's job, after this one), and any target format.
+#
+# `lang:` is on every case because `--eval` hands it to the pipeline, where
+# detection is unreliable at the length of a case. The set carries no
+# `transforms:` block: a bare `command:` resolves under the file's own
+# directory only, and an unresolved one kills `--eval` with SIGPIPE.
+
+cases:
+
+  # --- time_en ---
+  - probe: time_en
+    lang: en
+    input: "let's meet at three thirty"
+    expect: "let's meet at 3:30"
+  - probe: time_en
+    lang: en
+    input: "the call is at ten fifteen"
+    expect: "the call is at 10:15"
+  - probe: time_en
+    lang: en
+    input: "the demo is three thirty pm"
+    expect: "the demo is 3:30 pm"
+  - probe: time_en
+    lang: en
+    input: "the standup moved to around eleven thirty"
+    expect: "the standup moved to around 11:30"
+  - probe: time_en
+    lang: en
+    input: "ship it by eight forty five"
+    expect: "ship it by 8:45"
+  - probe: time_en
+    lang: en
+    input: "the window opens at two oh five"
+    expect: "the window opens at 2:05"
+  - probe: time_en
+    lang: en
+    input: "the review is at three thirty p.m."
+    expect: "the review is at 3:30 p.m."
+  - probe: time_en
+    lang: en
+    input: "the meeting is at seven am"
+    expect: "the meeting is at 7 am"
+  - probe: time_en
+    lang: en
+    input: "we start at 10 15"
+    expect: "we start at 10:15"
+  # --- time_en_fraction ---
+  - probe: time_en_fraction
+    lang: en
+    input: "we start at half past two"
+    expect: "we start at 2:30"
+  - probe: time_en_fraction
+    lang: en
+    input: "the train leaves at quarter to three"
+    expect: "the train leaves at 2:45"
+  - probe: time_en_fraction
+    lang: en
+    input: "he called at quarter past nine"
+    expect: "he called at 9:15"
+  - probe: time_en_fraction
+    lang: en
+    input: "the door opens twenty past four"
+    expect: "the door opens 4:20"
+  - probe: time_en_fraction
+    lang: en
+    input: "be there at ten to six"
+    expect: "be there at 5:50"
+  - probe: time_en_fraction
+    lang: en
+    input: "the alarm goes off at seven o'clock"
+    expect: "the alarm goes off at 7 o'clock"
+  # --- date_en ---
+  - probe: date_en
+    lang: en
+    input: "the deadline is March third"
+    expect: "the deadline is March 3"
+  - probe: date_en
+    lang: en
+    input: "the deadline is March third twenty twenty-six"
+    expect: "the deadline is March 3, 2026"
+  - probe: date_en
+    lang: en
+    input: "we ship on the third of March"
+    expect: "we ship on 3 March"
+  - probe: date_en
+    lang: en
+    input: "the invoice is dated the tenth of the twelfth"
+    expect: "the invoice is dated 10/12"
+  - probe: date_en
+    lang: en
+    input: "the contract runs to March 3rd 2026"
+    expect: "the contract runs to March 3, 2026"
+  - probe: date_en
+    lang: en
+    input: "the deadline is September first"
+    expect: "the deadline is September 1"
+  - probe: date_en
+    lang: en
+    input: "the office closes December twenty-fifth"
+    expect: "the office closes December 25"
+  - probe: date_en
+    lang: en
+    input: "she joined the twenty-first of June nineteen ninety-nine"
+    expect: "she joined 21 June 1999"
+  - probe: date_en
+    lang: en
+    input: "it was filed January second two thousand and six"
+    expect: "it was filed January 2, 2006"
+  - probe: date_en
+    lang: en
+    input: "the release is the fifteenth of August"
+    expect: "the release is 15 August"
+  # --- not_a_time_en ---
+  - probe: not_a_time_en
+    lang: en
+    input: "we took two fifteen minute breaks"
+  - probe: not_a_time_en
+    lang: en
+    input: "one of the three thirty-year-olds answered"
+  - probe: not_a_time_en
+    lang: en
+    input: "ten to fifteen people showed up"
+  - probe: not_a_time_en
+    lang: en
+    input: "the room is booked from ten to twelve"
+  - probe: not_a_time_en
+    lang: en
+    input: "five to ten people will be there"
+  - probe: not_a_time_en
+    lang: en
+    input: "the room is booked from two to four"
+  - probe: not_a_time_en
+    lang: en
+    input: "one am ready and the other is not"
+  - probe: not_a_time_en
+    lang: en
+    input: "the train got in at fifteen thirty"
+  - probe: not_a_time_en
+    lang: en
+    input: "count to ten and try again"
+  - probe: not_a_time_en
+    lang: en
+    input: "look at two three of them and pick one"
+  - probe: not_a_time_en
+    lang: en
+    input: "the numbers were ten fifteen twenty"
+  - probe: not_a_time_en
+    lang: en
+    input: "call me back in ten minutes"
+  - probe: not_a_time_en
+    lang: en
+    input: "at least three quarters of them agreed"
+  - probe: not_a_time_en
+    lang: en
+    input: "a thirty second timeout is plenty"
+  # A two-digit year after a month day is not read: it would take the count
+  # out of a sentence that was already right. See the header.
+  - probe: not_a_date_en
+    lang: en
+    input: "the meeting is May 12 25 people came"
+  - probe: not_a_date_en
+    lang: en
+    input: "he turned 25 in May"
+  # --- not_a_date_en ---
+  - probe: not_a_date_en
+    lang: en
+    input: "chapter three covers the parser"
+  - probe: not_a_date_en
+    lang: en
+    input: "March is busy for everyone"
+  - probe: not_a_date_en
+    lang: en
+    input: "he was born in March"
+  - probe: not_a_date_en
+    lang: en
+    input: "the fifteenth is the one I meant"
+  - probe: not_a_date_en
+    lang: en
+    input: "we shipped it in twenty twenty-five"
+  - probe: not_a_date_en
+    lang: en
+    input: "twenty twenty-six is a long way off"
+  - probe: not_a_date_en
+    lang: en
+    input: "the second of three options is cheaper"
+  - probe: not_a_date_en
+    lang: en
+    input: "section four point two says otherwise"
+  - probe: not_a_date_en
+    lang: en
+    input: "I have two hundred fifteen items left"
+  - probe: not_a_date_en
+    lang: en
+    input: "the retro was on July 3rd and covered everything"
+  # --- not_a_time_en ---
+  - probe: not_a_time_en
+    lang: en
+    input: "the demo is 3pm and the retro is after it"
+  - probe: not_a_time_en
+    lang: en
+    input: "I am at 10am every day this week"
