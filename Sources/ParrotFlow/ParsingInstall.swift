@@ -17,7 +17,14 @@ enum ParsingInstall {
     /// The config and the model cache are split per variant so a half-finished
     /// feature cannot break the install you rely on. This is neither: it is a
     /// third-party interpreter nobody edits, and 170 MB twice buys nothing.
+    ///
+    /// `PARROTFLOW_PARSING_ROOT` points it somewhere else, which is the only
+    /// way to score this against a tree that is not the one on this Mac.
     static var root: URL {
+        let override = ProcessInfo.processInfo.environment["PARROTFLOW_PARSING_ROOT"] ?? ""
+        if !override.isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
+        }
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser
