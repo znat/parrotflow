@@ -1,0 +1,20 @@
+# What `ParrotFlow --setup-parsing` installs, for a `command:` transform that
+# needs a dependency parse. Nothing here ships with the app.
+#
+# The models are named by URL because they are not on PyPI — they are release
+# assets on explosion/spacy-models, which is where `spacy download` fetches them
+# from. The `#sha256=` fragment makes pip verify the artefact without putting it
+# into hash-checking mode, which would demand a hash for every transitive
+# dependency as well.
+#
+# Licences, from each model's own meta.json:
+#   en_core_web_sm   MIT
+#   fr_core_news_sm  LGPL-LR — UD French Sequoia v2.8, WikiNER (CC BY 4.0)
+#
+# Pinned to what the measurements were made on.
+
+spacy==3.8.16
+
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl#sha256=1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85
+
+https://github.com/explosion/spacy-models/releases/download/fr_core_news_sm-3.8.0/fr_core_news_sm-3.8.0-py3-none-any.whl#sha256=7d6ad14cd5078e53147bfbf70fb9d433c6a3865b695fda2657140bbc59a27e29

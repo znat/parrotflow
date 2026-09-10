@@ -65,6 +65,7 @@ cp "$ROOT/config.example.yaml" "$APP/Contents/Resources/config.example.yaml"
 # scripts/calibrate.py on a checkout and have no business in the bundle. See
 # WordPieces.fileURL.
 cp "$ROOT/data/wordpiece.txt" "$APP/Contents/Resources/wordpiece.txt"
+cp "$ROOT/data/parsing-requirements.txt" "$APP/Contents/Resources/parsing-requirements.txt"
 
 # SwiftPM resource bundles, which the binary looks for beside itself.
 #
