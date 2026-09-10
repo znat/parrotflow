@@ -155,6 +155,10 @@ enum CorrectionRecording {
     /// Returns the rows that were written, which is fewer than it was given
     /// when the word does not stand in the sentence as a word — `TermUses`
     /// refuses those, and says so by writing nothing.
+    ///
+    /// `groups` does two jobs. A sentence naming two members of one group is
+    /// recorded nowhere, and a place a member takes is given up by the rest of
+    /// the group — see `release`.
     @discardableResult
     static func apply(
         _ rows: [Row], said sentence: String, from source: TermUses.Use.Source = .correction,
@@ -181,9 +185,32 @@ enum CorrectionRecording {
                     near: word
                 )
             }
+            try release(sentence, of: row, near: word, in: groups)
             written.append(row)
         }
         return written
+    }
+
+    /// The rest of the group gives up the place this row just took.
+    ///
+    /// One sentence, one owner per place. Without this a sentence recorded
+    /// under Eric and then corrected to Erik is held by both, and the two
+    /// centres are pulled toward each other by the sentence that was meant to
+    /// separate them. Polarity does not matter: a counter under a member is a
+    /// claim on the place as well.
+    ///
+    /// A group of one has nothing to give up.
+    private static func release(
+        _ sentence: String, of row: Row, near word: Int?, in groups: [SoundGroup.Group]
+    ) throws {
+        guard let group = groups.first(where: {
+            $0.members.contains { $0.caseInsensitiveCompare(row.term) == .orderedSame }
+        }), group.isGroup else { return }
+        let span = span(of: row)
+        try TermUses.release(
+            TermUses.narrowed(sentence, to: span, near: word), at: span,
+            from: group.members, to: row.term, opening: group.openings
+        )
     }
 
     static func span(of row: Row) -> String {

@@ -556,6 +556,16 @@ decoded audio, 2026-09-10: five sentences about a third person had become five
 counters under the second, and the pooled plain centre then scored 0.945 on a
 sentence that was hers.
 
+**A place has one owner.** A sentence recorded under one member is taken off
+every other member of the group, whatever its polarity. The pill records "Eric
+has a new piano." under Eric, you correct it to Erik, and without this both
+names hold the same sentence at the same place and their centres are pulled
+together by the words meant to separate them. A place is the text on either
+side of the term, so the two spellings are the same place. Only a row whose own
+span opens the group goes. The log names the row that moved. The portrait of
+the member that lost it is keyed on a fingerprint of its uses, so it rebuilds
+itself the next time it is read.
+
 **A sentence naming two members of one group is recorded nowhere.** It belongs
 to neither, and the rival clip cannot save it: cutting the window at the other
 name leaves the words between them, which are the sentence. "So I tried again

@@ -158,6 +158,11 @@ They are part of the model, not fixes around it.
 - **A sentence naming two members of one group is recorded nowhere.** The
   rival clip cuts the window at the other name and the words between the two
   survive, which are the sentence. Corrections and pill answers both refuse it.
+- **A place has one owner.** Recording a sentence under one member takes it
+  off every other member, whatever its polarity. Otherwise the pill's "Eric has
+  a new piano." stays under Eric after you correct it to Erik, and both centres
+  move toward each other. A place is the text on either side of the term, so
+  the two spellings are one place. Only a row whose span opens the group goes.
 
 ## What must not move
 

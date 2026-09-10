@@ -365,6 +365,64 @@ check "an ordinary word put back is still a counter" \
   'counter Vercel "Versailles"' \
   "$("$BIN" --correction Vercel Versailles --in "The Versailles gardens." 2>/dev/null)"
 
+# One sentence, one owner. Two members of a group both holding the same
+# sentence at the same place pull their centres toward each other: the pill
+# records "Eric has a new piano." under Eric, the correction that follows
+# records "Erik has a new piano." under Erik, and the first row stays.
+cat > "$WORK/vocabulary.yaml" <<'YAML'
+terms:
+  Erik:
+    kind: person
+    pronunciations:
+      - heard: Eric
+  Eric:
+    kind: person
+  Vercel:
+    pronunciations:
+      - heard: Versal
+YAML
+# The terms that still hold a row, and how many rows there are in all.
+owners () { python3 -c '
+import sys, yaml
+d = (yaml.safe_load(open(sys.argv[1])) or {}).get("terms") or {}
+print(" ".join(sorted(t for t, rows in d.items() if rows)))
+' "$USES" 2>/dev/null; }
+
+rm -f "$USES"
+"$BIN" --picked Eric Erik --in "Eric has a new piano." >/dev/null 2>&1
+"$BIN" --correction Eric Erik --in "Erik has a new piano." >/dev/null 2>&1
+check "the member you correct to takes the place from the other" "Erik" "$(owners)"
+check "and one row is left" 1 "$(said)"
+
+rm -f "$USES"
+"$BIN" --correction Eric Erik --in "Erik has a new piano." >/dev/null 2>&1
+"$BIN" --picked Eric Erik --in "Eric has a new piano." >/dev/null 2>&1
+check "and it works the other way round" "Eric" "$(owners)"
+check "with one row again" 1 "$(said)"
+
+# Whatever polarity: a counter under one member is a claim on the place too,
+# and the pooled plain centre is built from it.
+rm -f "$USES"
+cat > "$USES" <<'YAML'
+terms:
+  "Erik":
+    - said: "Eric has a new piano."
+      span: "Eric"
+      from: correction
+      counter: true
+YAML
+"$BIN" --picked Eric Erik --in "Eric has a new piano." >/dev/null 2>&1
+check "a counter at the place goes when another member takes it" "Eric" "$(owners)"
+check "leaving one row" 1 "$(said)"
+check "and no counter" 0 "$(counters)"
+
+rm -f "$USES"
+"$BIN" --picked Eric Erik --in "Eric is a software engineer." >/dev/null 2>&1
+"$BIN" --correction Eric Erik --in "Erik has a new piano." >/dev/null 2>&1
+check "a different sentence under the other member is left alone" \
+  "Eric Erik" "$(owners)"
+check "and both rows are kept" 2 "$(said)"
+
 echo
 printf '  %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

@@ -123,8 +123,14 @@ enum SoundGroupCommand {
                     term: new.name, heard: wrote, kind: new.kind
                 )
                 if let sentence {
+                    // Reloaded, because the term was written a line ago and it
+                    // is the one that decides which group this row is in.
+                    let after = (try? ConfigStore.load()) ?? config
                     try CorrectionRecording.apply(
-                        [.use(term: new.name, span: new.name, heard: wrote)], said: sentence
+                        [.use(term: new.name, span: new.name, heard: wrote)], said: sentence,
+                        blocking: SoundGroup.groups(
+                            terms: after.vocabulary.terms, uses: TermUses.load()
+                        )
                     )
                 }
             } catch {
@@ -205,7 +211,9 @@ enum SoundGroupCommand {
         }
         if let sentence, !dry {
             do {
-                try CorrectionRecording.apply([row], said: sentence, from: .chosen)
+                try CorrectionRecording.apply(
+                    [row], said: sentence, from: .chosen, blocking: groups
+                )
             } catch {
                 print("✗ \(error.localizedDescription)")
                 return 1

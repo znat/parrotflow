@@ -4305,7 +4305,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// a correction a moment ago may have created the term that makes this a
     /// group of two.
     private var soundGroups: [SoundGroup.Group] {
-        SoundGroup.groups(terms: config.vocabulary.terms, uses: TermUses.load())
+        // From the file, not from `config`. A term written a moment ago —
+        // by this very correction — reaches `config` through a file watcher,
+        // which has not fired yet, and the new member would be in no group.
+        let terms = (try? ConfigStore.load())?.vocabulary.terms ?? config.vocabulary.terms
+        return SoundGroup.groups(terms: terms, uses: TermUses.load())
     }
 
     /// The vocabulary term this word is, ignoring case and any possessive.

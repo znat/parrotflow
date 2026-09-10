@@ -208,6 +208,75 @@ enum TermUses {
         try write(all)
     }
 
+    /// Where a row sits, whatever spelling stands at the span.
+    ///
+    /// The text on either side of the term. "Eric has a new piano." under Eric
+    /// and "Erik has a new piano." under Erik are one place, which is how a
+    /// group can see that two of its members claim the same sentence.
+    struct Place: Hashable {
+        let before: String
+        let after: String
+    }
+
+    /// Every place `span` stands in `said`.
+    static func places(of span: String, in said: String) -> Set<Place> {
+        Set(occurrences(of: span, in: said).map {
+            Place(
+                before: String(said[said.startIndex ..< $0.lowerBound]),
+                after: String(said[$0.upperBound...])
+            )
+        })
+    }
+
+    /// Takes a place away from every term but the one that just claimed it.
+    ///
+    /// A sentence has one owner per place. Two members of a sound group both
+    /// holding it pull their centres toward each other: the pill records "Eric
+    /// has a new piano." under Eric, the correction that follows records "Erik
+    /// has a new piano." under Erik, and the first row stays. Polarity does not
+    /// matter — a counter is a claim on the place too, and the group's plain
+    /// centre is built out of counters.
+    ///
+    /// Only a row whose own span is one of `openings` goes, so a row standing
+    /// at the same place with an unrelated word in it is left alone. Returns
+    /// the terms that lost a row; their portraits are keyed on a fingerprint of
+    /// their uses, so each rebuilds itself the next time it is read.
+    @discardableResult
+    static func release(
+        _ said: String, at span: String, from terms: [String], to owner: String,
+        opening openings: Set<String>
+    ) throws -> [String] {
+        let claimed = places(of: span, in: said)
+        guard !claimed.isEmpty else { return [] }
+        var all = try read()
+        var moved: [String] = []
+        for term in terms where term.caseInsensitiveCompare(owner) != .orderedSame {
+            guard let rows = all[term] else { continue }
+            let kept = rows.filter { row in
+                guard openings.contains(bare(row.span)) else { return true }
+                return places(of: row.span, in: row.said).isDisjoint(with: claimed)
+            }
+            guard kept.count < rows.count else { continue }
+            all[term] = kept
+            moved.append(term)
+            Log.write("uses: \"\(said)\" is \(owner)'s place now —"
+                + " the row under \(term) is gone")
+        }
+        guard !moved.isEmpty else { return [] }
+        try write(all)
+        return moved
+    }
+
+    /// A span as the group spells its openings: no possessive, no punctuation,
+    /// lower case.
+    private static func bare(_ word: String) -> String {
+        var text = word.trimmingCharacters(in: .whitespaces)
+        if let mine = Vocabulary.possessive(in: text) {
+            text = String(text.dropLast(mine.suffix.count))
+        }
+        return text.trimmingCharacters(in: .punctuationCharacters).lowercased()
+    }
+
     /// Drops every use of one term, and says how many went.
     ///
     /// Case-insensitive, like `--forget` itself: somebody typing `praisy` means
