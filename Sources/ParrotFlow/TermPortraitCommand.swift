@@ -69,7 +69,11 @@ enum TermPortraitCommand {
     static func group(heard: String, sentence: String) -> Int32 {
         let config = (try? ConfigStore.load()) ?? Config()
         let groups = SoundGroup.groups(terms: config.vocabulary.terms, uses: TermUses.load())
-        guard let group = SoundGroup.opened(by: heard, in: groups) else {
+        // Any group, a group of one included: the cold start of a new name is
+        // exactly what this has to show, and that is a member with one use, no
+        // floor and no counter row anywhere.
+        let needle = heard.lowercased()
+        guard let group = groups.first(where: { $0.openings.contains(needle) }) else {
             return run(term: heard, sentence: sentence, span: nil)
         }
         let near = TermUses.occurrence(of: heard, in: sentence).map {
@@ -103,8 +107,33 @@ enum TermPortraitCommand {
             } else {
                 print("  \(pad("plain", 14)) no counter row in the group")
             }
+            // A group of one is read by the term's own portrait, not by the
+            // group rule — that is the regression gate, and printing the group
+            // rule's answer here would describe a path the app does not take.
+            guard group.isGroup else {
+                print(SoundGroupCommand.said(alone(group.members[0], heard, in: near)))
+                return 0
+            }
             print(SoundGroupCommand.said(reading.verdict))
             return 0
+        }
+    }
+
+    /// What the app does at a place where one term shares the word: the term's
+    /// own portrait, read the way `SentenceGate` reads it.
+    ///
+    /// Nothing either way leaves the place open, and an open place is the one
+    /// the pill asks about.
+    private static func alone(
+        _ term: String, _ heard: String, in near: String
+    ) -> SoundGroup.Verdict {
+        let reading = Blocking.run { () async -> TermPortrait.Reading? in
+            try? await TermPortrait.shared.read(heard, in: near, as: term)
+        }
+        switch reading?.verdict {
+        case .authorises: return .write(term)
+        case .refuses: return .keep
+        case .nothing, nil: return .open([term])
         }
     }
 

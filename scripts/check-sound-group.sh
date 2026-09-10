@@ -124,6 +124,12 @@ rows () { "$BIN" --correction "$1" "$2" --in "$3" 2>/dev/null; }
 USES="$WORK/vocabulary-uses.yaml"
 counters () { [ -f "$USES" ] || { echo 0; return; }; grep -c '^      counter: true' "$USES"; }
 said () { [ -f "$USES" ] || { echo 0; return; }; grep -c '^    - said:' "$USES"; }
+# The nth stored sentence of the file, whichever term it is under.
+stored () { python3 -c '
+import sys, yaml
+rows = [r for term in yaml.safe_load(open(sys.argv[1]))["terms"].values() for r in term]
+print(rows[int(sys.argv[2])]["said"])
+' "$USES" "$1" 2>/dev/null; }
 
 check "a term put back over another is a use of the one you typed" \
   'use Mick "Mick" heard Mik' "$(rows Mik Mick "Mick is adjusting the piano.")"
@@ -165,6 +171,47 @@ check "something else writes what was heard" \
 check "and it records nothing" "Mick nothing" "$(pick 2 --taught)"
 check "where taking the other reading records" "mixed bend teaches" "$(pick 1 --taught)"
 check "and keeping what stands there records too" "Mick teaches" "$(pick 0 --taught)"
+
+# One name against another. The slot test cannot read such a place — the heard
+# word is in the tokenizer and the term never is — so it must not be asked.
+# Measured on the live app: `Eric` against `Erik` refused at -0.254, -0.253 and
+# -0.257 in three different sentences.
+cat > "$WORK/vocabulary.yaml" <<'YAML'
+terms:
+  Erik:
+    kind: person
+    pronunciations:
+      - heard: Eric
+  Vercel:
+    pronunciations:
+      - heard: Versal
+  Ghostty:
+    pronunciations:
+      - heard: Ghosty
+YAML
+place () { "$BIN" --name-place "$1" "$2" 2>/dev/null; }
+check "a rendering of a term is a name against a name" "names" "$(place Eric Erik)"
+check "kind: person on the term says so on its own" "names" "$(place zzarq Erik)"
+check "a name the tagger knows counts on its own" "names" "$(place Sarah Ghostty)"
+check "an ordinary word against a term is not" "ordinary" "$(place versus Vercel)"
+check "nor is a rare word the lists have never seen" "ordinary" "$(place superbase Ghostty)"
+check "a possessive is read as its name" "names" "$(place "Eric's" Erik)"
+
+# The occurrence that was corrected, not the first copy of the word. A terminal
+# joins dictations with no space after the stop, so one field holds several
+# sentences and the same name more than once. Measured on the live app,
+# 2026-09-10: the second correction wrote nothing at all.
+FIELD='Eric is software engineer.Erik is a musician.Erik plays the piano.'
+rm -f "$USES"
+"$BIN" --for Erik "$FIELD" Erik >/dev/null 2>&1
+check "with nothing to say which, the first occurrence is stored" \
+  "Erik is a musician." "$(stored 0)"
+"$BIN" --for Erik "$FIELD" Erik --near 7 >/dev/null 2>&1
+check "the position picks the sentence that was corrected" \
+  "Erik plays the piano." "$(stored 1)"
+check "and both rows are there" 2 "$(said)"
+"$BIN" --for Erik "$FIELD" Erik --near 7 >/dev/null 2>&1
+check "the same row again is still one row" 2 "$(said)"
 
 echo
 printf '  %d passed, %d failed\n' "$pass" "$fail"

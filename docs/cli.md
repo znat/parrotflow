@@ -284,6 +284,7 @@ $PF --against <term> "<sentence>" <word>
 $PF --correction <wrote> <put> --in "<sentence>" [--dry]
 $PF --sound-group <word>
 $PF --group-decide <term>:<score>:<floor>... [--plain <score>]
+$PF --name-place <heard> <term>
 ```
 
 `--route` shows which transform an instruction reaches and why — the router
@@ -346,7 +347,17 @@ write Mik
 
 The same decision with the real portraits behind it is
 `--portrait <heard> "<sentence>"`, which prints the group the word opens, each
-member's score and floor, plain's score and the verdict.
+member's score and floor, plain's score and the verdict. A group of one prints
+the same way, so the cold start of a new name is readable: one use, no floor,
+no counter row, nothing decided.
+
+`--name-place` says whether the slot test stands aside at a place: `names` when
+both sides are names and the slot cannot separate them, `ordinary` when it is
+an ordinary word against a term.
+
+`--for` takes `--near <n>`, the word the correction was at. A terminal joins
+dictations with no space after the stop, so one field holds the same name
+several times and the position is what says which sentence to store.
 
 ## Giving a model its API key
 
