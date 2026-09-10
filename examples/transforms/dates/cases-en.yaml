@@ -120,6 +120,11 @@ cases:
     lang: en
     input: "it was filed January second two thousand and six"
     expect: "it was filed January 2, 2006"
+  # "and" is part of the year only when a number follows it.
+  - probe: date_en
+    lang: en
+    input: "March third two thousand and something else"
+    expect: "March 3, 2000 and something else"
   - probe: date_en
     lang: en
     input: "the release is the fifteenth of August"

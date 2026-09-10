@@ -119,7 +119,9 @@ def stated_hour(hour, period, text, start):
     """
     named = period or period_before(text[:start])
     if named:
-        return hour if IS_MORNING.match(named) else (hour + 12) % 24
+        if hour >= 12 or IS_MORNING.match(named):
+            return hour
+        return hour + 12
     if not engine.WALL_CLOCK or hour == 0 or hour >= 12:
         return hour
     current = engine.now().hour

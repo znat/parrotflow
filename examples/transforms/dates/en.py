@@ -73,7 +73,7 @@ ORD = (rf"(?:(?:{engine.alt(ORDINAL_TENS)})"
        rf"|{engine.alt(ORDINAL_ONES)}|\d{{1,2}}(?:st|nd|rd|th))")
 YEAR = (r"(?:\d{4}"
         rf"|(?:nineteen|twenty)[\s-](?:{NUM})"
-        rf"|two\s+thousand(?:\s+and)?(?:\s+(?:{NUM}))?)")
+        rf"|two\s+thousand(?:\s+(?:and\s+)?(?:{NUM}))?)")
 MERIDIEM = r"(?:[ap]\.m\.|[ap]m\b)"
 MONTH = engine.alt(MONTHS)
 

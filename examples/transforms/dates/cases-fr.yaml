@@ -55,6 +55,15 @@ cases:
     lang: fr
     input: "le vol part à 4h du matin"
     expect: "le vol part à 4h"
+  # An hour already past noon is not moved again by its qualifier.
+  - probe: period_fr
+    lang: fr
+    input: "rendez-vous à 18h du soir"
+    expect: "rendez-vous à 18h"
+  - probe: period_fr
+    lang: fr
+    input: "on se voit à dix-huit heures du soir"
+    expect: "on se voit à 18h"
   - probe: period_fr
     lang: fr
     input: "on y va à six heures de l'aprem"
