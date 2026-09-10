@@ -125,8 +125,13 @@ enum SoundGroup {
     /// is another term's spelling, and a rendering two terms share. A rule
     /// there would write one member's name over the other's sound before
     /// anything could read the sentence.
+    ///
+    /// Counted per owning term, not per entry. `Versal` and `versal` under one
+    /// term are two renderings of it, and counting entries made that term's own
+    /// rendering look shared: it stopped being a rule and opened no group,
+    /// because the group is a singleton.
     static func openings(in terms: [String: Config.Vocabulary.Term]) -> Set<String> {
-        var seen: [String: Int] = [:]
+        var owners: [String: Set<String>] = [:]
         var spellings = Set<String>()
         for name in terms.keys { spellings.insert(name.lowercased()) }
         for (name, entry) in terms {
@@ -135,11 +140,11 @@ enum SoundGroup {
                 // Its own spelling is not a link. `vercel` -> `Vercel` is a
                 // capital being fixed, and every term may render itself.
                 guard word != name.lowercased() else { continue }
-                seen[word, default: 0] += 1
+                owners[word, default: []].insert(name.lowercased())
             }
         }
         var out = Set<String>()
-        for (word, count) in seen where count > 1 || spellings.contains(word) {
+        for (word, claimants) in owners where claimants.count > 1 || spellings.contains(word) {
             out.insert(word)
         }
         return out

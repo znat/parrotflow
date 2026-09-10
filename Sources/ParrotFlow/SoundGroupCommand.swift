@@ -146,7 +146,9 @@ enum SoundGroupCommand {
         }
         let groups = SoundGroup.groups(terms: config.vocabulary.terms, uses: TermUses.load())
         if let sentence, let row = rows.first,
-           let two = CorrectionRecording.blocked(sentence, term: row.term, in: groups) {
+           let two = CorrectionRecording.blocked(
+               sentence, term: row.term, span: CorrectionRecording.span(of: row), in: groups
+           ) {
             print("blocked \(two.joined(separator: " "))")
             return 0
         }
@@ -204,7 +206,7 @@ enum SoundGroupCommand {
             terms: (try? ConfigStore.load())?.vocabulary.terms ?? [:], uses: TermUses.load()
         )
         if let sentence, let two = CorrectionRecording.blocked(
-            sentence, term: row.term, in: groups
+            sentence, term: row.term, span: CorrectionRecording.span(of: row), in: groups
         ) {
             print("blocked \(two.joined(separator: " "))")
             return 0

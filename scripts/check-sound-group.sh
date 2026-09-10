@@ -102,6 +102,23 @@ check "a rendering two terms share is no longer a rule" "none" "$(rule meek)"
 check "a rendering nobody else claims is still a rule" "Vercel" "$(rule Versal)"
 check "and so is one whose term is a group of one" "Praisy" "$(rule Prezi)"
 
+# Two spellings of one rendering under one term are two renderings of it, not
+# two terms claiming it. Counted as two owners, the word opened no group — a
+# group of one is not a group — and stopped being a rule as well.
+cat > "$WORK/vocabulary-owners.yaml" <<'YAML'
+terms:
+  Vercel:
+    pronunciations:
+      - heard: Versal
+      - heard: versal
+YAML
+cp "$WORK/vocabulary.yaml" "$WORK/vocabulary-kept.yaml"
+cp "$WORK/vocabulary-owners.yaml" "$WORK/vocabulary.yaml"
+check "one term with two spellings of a rendering keeps its rule" \
+  "Vercel" "$(rule Versal)"
+check "and the rendering opens no group" "Vercel" "$(members Versal)"
+cp "$WORK/vocabulary-kept.yaml" "$WORK/vocabulary.yaml"
+
 # The decision rule, on scores nobody measured. A floor of - is a member with
 # too few uses to have one.
 verdict () { "$BIN" --group-decide "$@" 2>/dev/null | tail -1; }
@@ -277,6 +294,17 @@ BOTH='So I tried again with Erik the musician and Eric the software engineer.'
 check "a sentence naming two members is recorded nowhere" \
   "blocked Eric Erik" "$("$BIN" --correction Erik Eric --in "$BOTH" 2>/dev/null)"
 check "and no row is written" 0 "$(said)"
+# The sentence the row is recorded in, not the whole field. A terminal joins
+# every dictation since the last Return, so a field naming both members can
+# still hold a sentence that names one.
+FIELD_BOTH='Erik presented first. Eric plays cello.'
+rm -f "$USES"
+check "a field of two sentences is blocked only by the one recorded" \
+  'use Eric "Eric" heard Erik' \
+  "$("$BIN" --correction Erik Eric --in "$FIELD_BOTH" 2>/dev/null)"
+check "and the row is the sentence naming one member" "Eric plays cello." "$(stored 0)"
+rm -f "$USES"
+
 check "one member standing is recorded as before" \
   'use Eric "Eric" heard Erik' \
   "$("$BIN" --correction Erik Eric --in "Eric is reviewing my pull request." 2>/dev/null)"

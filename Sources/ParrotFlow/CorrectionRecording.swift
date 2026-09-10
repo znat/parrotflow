@@ -141,12 +141,20 @@ enum CorrectionRecording {
     /// Erik on 2026-09-10, and every later "Eric the musician" was refused,
     /// 0.80 against 0.93 and 0.90 against 0.92.
     ///
+    /// Read on the sentence the row is recorded in, not on the whole field.
+    /// A terminal field holds every dictation since the last Return, so
+    /// "Erik presented first. Eric plays cello." names both members only when
+    /// it is read whole — and the row that correction writes is about the
+    /// second sentence, where only Eric stands.
+    ///
     /// Nil when fewer than two members stand there, which is every ordinary
     /// correction.
     static func blocked(
-        _ sentence: String, term: String, in groups: [SoundGroup.Group]
+        _ sentence: String, term: String, span: String, near word: Int? = nil,
+        in groups: [SoundGroup.Group]
     ) -> [String]? {
-        let standing = SoundGroup.standing(in: sentence, of: term, in: groups)
+        let said = TermUses.narrowed(sentence, to: span, near: word)
+        let standing = SoundGroup.standing(in: said, of: term, in: groups)
         return standing.count > 1 ? standing : nil
     }
 
@@ -166,7 +174,9 @@ enum CorrectionRecording {
     ) throws -> [Row] {
         var written: [Row] = []
         for row in rows {
-            if let two = blocked(sentence, term: row.term, in: groups) {
+            if let two = blocked(
+                sentence, term: row.term, span: span(of: row), near: word, in: groups
+            ) {
                 Log.write("uses: \"\(TermUses.narrowed(sentence, to: span(of: row), near: word))\""
                     + " names both \(two.joined(separator: " and ")) — it says nothing about"
                     + " either, so nothing is recorded")
