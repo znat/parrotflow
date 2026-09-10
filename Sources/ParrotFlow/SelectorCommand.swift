@@ -58,9 +58,17 @@ enum SelectorCommand {
             // `wrote` says which side the term is on, and nothing here needs
             // to know: the two readings are given by name, and the term is
             // only read when a use is being recorded.
-            open.append(OpenPlaces.Open(
+            let place = OpenPlaces.Open(
                 was: parts[0], now: parts[1], wrote: false, term: parts[1], word: word
-            ))
+            )
+            // A row past "something else" was never offered. Taken as given,
+            // `OpenPlaces.written` kept what stands there and called it
+            // teaching.
+            if let picked = answer, picked > place.elsewhere {
+                print("this place offers rows 0 to \(place.elsewhere), not \"\(parts[3])\"")
+                return 2
+            }
+            open.append(place)
             answers.append(answer)
         }
         let located = OpenPlaces.located(open, in: text)

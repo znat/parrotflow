@@ -248,6 +248,15 @@ enum TermUses {
     ) throws -> [String] {
         let claimed = places(of: span, in: said)
         guard !claimed.isEmpty else { return [] }
+        // The same name standing twice in one sentence is two places, and a
+        // row records no occurrence, so a release would take the row written
+        // for the other one. Nothing goes until a row says which occurrence it
+        // is; the cost is a place two members still share.
+        guard claimed.count == 1 else {
+            Log.write("uses: \"\(said)\" names \(span) more than once, and a row does not"
+                + " say which one — no row is released")
+            return []
+        }
         var all = try read()
         var moved: [String] = []
         for term in terms where term.caseInsensitiveCompare(owner) != .orderedSame {

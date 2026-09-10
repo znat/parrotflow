@@ -452,8 +452,15 @@ if let index = arguments.firstIndex(of: "--for") {
         && !arguments[index + 3].hasPrefix("--") ? arguments[index + 3] : nil
     // Which occurrence, counted in words. A field holds every dictation since
     // the last Return, so the same name can stand in it more than once.
-    let near = arguments.firstIndex(of: "--near").flatMap { at in
-        arguments.indices.contains(at + 1) ? Int(arguments[at + 1]) : nil
+    var near: Int?
+    if let at = arguments.firstIndex(of: "--near") {
+        // Ignored, `--near abc` recorded the first occurrence instead, which
+        // can attach the use to the wrong sentence.
+        guard arguments.indices.contains(at + 1), let which = Int(arguments[at + 1]) else {
+            print("usage: --near <word>, counted in words")
+            exit(2)
+        }
+        near = which
     }
     exit(LearnCommand.supporting(
         term: arguments[index + 1], sentence: arguments[index + 2], span: span, near: near

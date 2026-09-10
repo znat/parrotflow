@@ -198,6 +198,10 @@ check "something else writes what was heard" \
 check "and it records nothing" "Mick nothing" "$(pick 2 --taught)"
 check "where taking the other reading records" "mixed bend teaches" "$(pick 1 --taught)"
 check "and keeping what stands there records too" "Mick teaches" "$(pick 0 --taught)"
+# A row past "something else" was never offered. Taken as given, the answer
+# kept what stands there and was recorded as teaching.
+pick 3 >/dev/null 2>&1
+check "a row the place never offered is a usage error" 2 "$?"
 
 # One name against another. The slot test cannot read such a place — the heard
 # word is in the tokenizer and the term never is — so it must not be asked.
@@ -245,6 +249,8 @@ check "the position picks the sentence that was corrected" \
 check "and both rows are there" 2 "$(said)"
 "$BIN" --for Erik "$FIELD" Erik --near 6 >/dev/null 2>&1
 check "the same row again is still one row" 2 "$(said)"
+"$BIN" --for Erik "$FIELD" Erik --near abc >/dev/null 2>&1
+check "--near without a number is a usage error" 2 "$?"
 
 # A member nobody has ever confirmed — zero uses, and nothing else — is
 # unknown, not out. It cannot lose a comparison it was never in, so the place

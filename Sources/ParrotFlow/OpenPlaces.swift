@@ -60,10 +60,7 @@ enum OpenPlaces {
         /// writes is a term.
         var options: [String] {
             guard !group.isEmpty else { return [standing, other] }
-            let heard = standing
-            return [heard] + group.filter {
-                $0.caseInsensitiveCompare(heard) != .orderedSame
-            }.prefix(SoundGroup.ceiling)
+            return SoundGroup.offered(standing, of: group)
         }
 
         /// The answer that means none of them: "something else".

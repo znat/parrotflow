@@ -558,26 +558,38 @@ enum VocabularyPass {
     /// Nothing is written here. A group place always reaches the portrait —
     /// the word lists cannot separate two names that are both names.
     static func groupSlots(in text: String, groups: [SoundGroup.Group]) -> [Slot] {
-        var built: [Slot] = []
-        var taken: [Range<String.Index>] = []
+        var found: [(at: Range<String.Index>, group: SoundGroup.Group, order: Int)] = []
         for group in groups where group.isGroup {
             for opening in group.openings.sorted() {
                 for at in TermPortrait.places(of: opening, in: text) {
-                    guard !taken.contains(where: { $0.overlaps(at) }) else { continue }
-                    let heard = String(text[at])
-                    let others = group.members
-                        .filter { $0.caseInsensitiveCompare(heard) != .orderedSame }
-                        .prefix(SoundGroup.ceiling)
-                    guard !others.isEmpty else { continue }
-                    taken.append(at)
-                    built.append(Slot(
-                        range: at, options: [heard] + others, terms: group.members,
-                        owner: others.first, standing: .sound, group: group.members
-                    ))
+                    found.append((at, group, found.count))
                 }
             }
         }
-        return built.sorted { $0.range.lowerBound < $1.range.lowerBound }
+        // Left to right, and the widest opening first where two start at the
+        // same word. Taken in the order the openings sort in, `Mik` claimed
+        // the span inside `Mik Jagger` and the wider reading was dropped.
+        found.sort { left, right in
+            if left.at.lowerBound != right.at.lowerBound {
+                return left.at.lowerBound < right.at.lowerBound
+            }
+            let a = text.distance(from: left.at.lowerBound, to: left.at.upperBound)
+            let b = text.distance(from: right.at.lowerBound, to: right.at.upperBound)
+            return a != b ? a > b : left.order < right.order
+        }
+        var built: [Slot] = []
+        var taken: [Range<String.Index>] = []
+        for (at, group, _) in found {
+            guard !taken.contains(where: { $0.overlaps(at) }) else { continue }
+            let options = SoundGroup.offered(String(text[at]), of: group.members)
+            guard options.count > 1 else { continue }
+            taken.append(at)
+            built.append(Slot(
+                range: at, options: options, terms: group.members,
+                owner: options.dropFirst().first, standing: .sound, group: group.members
+            ))
+        }
+        return built
     }
 
     // MARK: - Fuzzy renderings

@@ -26,6 +26,17 @@ enum SoundGroup {
     /// alternative — and a group place is the one thing that breaks it.
     static let ceiling = 4
 
+    /// The readings one group place offers: what was heard, then the members.
+    ///
+    /// The heard word is a member's own spelling as often as not, and then it
+    /// is one of the names the cap counts. Counting only the rest, a group of
+    /// five put five names on the pill.
+    static func offered(_ heard: String, of members: [String]) -> [String] {
+        let rest = members.filter { $0.caseInsensitiveCompare(heard) != .orderedSame }
+        let room = rest.count == members.count ? ceiling : ceiling - 1
+        return [heard] + rest.prefix(room)
+    }
+
     /// A set of terms that share a sound.
     struct Group: Equatable {
         /// The terms, sorted, so a group reads the same way twice.
