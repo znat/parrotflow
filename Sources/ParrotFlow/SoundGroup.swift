@@ -189,13 +189,20 @@ enum SoundGroup {
         /// How many confirmed uses the term has.
         var uses: Int = 1
 
-        /// A member nobody has ever confirmed. It cannot lose, because there
-        /// is nothing to lose with: scoring the others against it would settle
-        /// a place on one name's evidence while the other has none. Measured
-        /// on the live app, 2026-09-10: with `Eric` at zero uses, `Erik` won
-        /// "Eric the musician." 0.898 to 0.600 and the name was written
-        /// silently.
-        var unknown: Bool { uses == 0 }
+        /// A member with no portrait: nobody has confirmed it, or it has too
+        /// few sentences to describe itself yet. It cannot lose, because there
+        /// is nothing to lose with — scoring the others against it would
+        /// settle a place on one name's evidence while the other has none.
+        ///
+        /// Measured on the live app, 2026-09-10: with `Eric` at zero uses,
+        /// `Erik` won "Eric the musician." 0.898 to 0.600 and the name was
+        /// written silently. Measured again the same day on decoded audio,
+        /// with `Erik` at two uses and `Eric` at one and neither carrying a
+        /// counter: no member could be scored at all, and reading that as "no
+        /// member stands" kept the word that was heard on every sentence — a
+        /// decision, so the pill was never asked. A place nothing can be said
+        /// about is a question, not an answer.
+        var unknown: Bool { score == nil }
 
         /// Below its own floor is out. A candidate with fewer than
         /// `TermPortrait.floorMinimum` uses has no floor and is never out on
@@ -242,6 +249,21 @@ enum SoundGroup {
             return .open(known.map(\.name) + unknown.map(\.name))
         }
         var standing = members.filter(\.stands)
+        // Nobody standing, and no plain centre to fall back on. "Keep what was
+        // heard" is the ordinary word winning — and with no counter row
+        // anywhere in the group there is no ordinary word to win, so keeping
+        // is an assumption rather than a decision. Measured on decoded audio,
+        // 2026-09-10, three uses each and no counters: `Erik` led 0.791 to
+        // 0.649 on "Eric is a musician." and 0.647 to 0.747 the other way on
+        // "Eric is a software engineer." — the right name first both times,
+        // and both below floors read off three short sentences. Kept, that
+        // types Eric twice and asks nothing.
+        //
+        // Best first, so the pill's top row carries the ranking the floors
+        // threw away.
+        if standing.isEmpty, plain == nil {
+            return .open(members.sorted { ($0.score ?? 0) > ($1.score ?? 0) }.map(\.name))
+        }
         // Plain is a member with no name and no floor.
         if let plain { standing.append(Candidate(name: "", score: plain, floor: nil)) }
         let ranked = standing.sorted { ($0.score ?? 0) > ($1.score ?? 0) }

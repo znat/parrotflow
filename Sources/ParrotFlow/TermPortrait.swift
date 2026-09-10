@@ -308,9 +308,10 @@ actor TermPortrait {
         let floor: Double?
         let uses: Int
         let stands: Bool
-        /// No confirmed use at all. Not out — never seen. See
+        /// No portrait to read: never confirmed, or too few sentences to
+        /// describe itself yet. Not out — nothing is known. See
         /// `SoundGroup.Candidate.unknown`.
-        var unknown: Bool { uses == 0 }
+        var unknown: Bool { score == nil }
     }
 
     /// How a group of terms reads one place.

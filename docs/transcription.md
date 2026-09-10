@@ -486,11 +486,20 @@ it leads the second by more than 0.01. A named member winning writes its
 spelling, plain winning keeps what was heard, and nobody standing keeps it too.
 Two standing and no lead is an open place, and the pill asks.
 
-A member with no confirmed use at all is **unknown**, which is not the same as
-out: it has never been seen, so it cannot lose a comparison it was never in.
-One unknown member opens the place and the pill lists it, which is the only way
-that member gets a first sentence. Once every member has a use the rule above
-runs as written.
+A member with no portrait is **unknown**, which is not the same as out: nothing
+is known about it, so it cannot lose a comparison it was never in. One unknown
+member opens the place and the pill lists it, which is the only way that member
+gets a first sentence. And "nobody standing" is the ordinary word winning, so
+it needs an ordinary word to win: with no counter row anywhere in the group
+there is no plain centre, and the place is opened rather than kept — best
+first, so the pill's top row carries the ranking the floors threw away.
+
+Both were measured on decoded audio, 2026-09-10. Two names, three sentences
+each, no counters: every score sat below a floor read off three short
+sentences, and keeping what was heard typed the wrong name and asked nothing.
+Opened instead, the right name is the top row on both held-out sentences —
+Erik 0.791 against Eric 0.649 on "Eric is a musician.", and Eric 0.747 against
+Erik 0.647 on "Eric is a software engineer."
 
 `--portrait <heard> "<sentence>"` prints the group a word opens, every member's
 score and floor, plain's score and the verdict.

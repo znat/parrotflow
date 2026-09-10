@@ -109,8 +109,14 @@ check "a member with no floor is never out on that ground" \
   "write Mick" "$(verdict Mik:0.10:0.80 Mick:0.20:-)"
 check "plain winning keeps what was heard" \
   "keep" "$(verdict Mik:0.70:0.60 Mick:0.65:- --plain 0.90)"
-check "nobody standing keeps what was heard" \
-  "keep" "$(verdict Mik:0.70:0.80 Mick:0.65:0.90)"
+# Nobody standing is the ordinary word winning, so it needs an ordinary word to
+# win: with a plain centre, keeping is a decision; without one it is a guess,
+# and the place is a question. Measured on decoded audio, 2026-09-10 — see
+# SoundGroup.decide.
+check "nobody standing lets plain keep what was heard" \
+  "keep" "$(verdict Mik:0.70:0.80 Mick:0.65:0.90 --plain 0.50)"
+check "nobody standing and no plain opens the place, best first" \
+  "open Mik Mick" "$(verdict Mik:0.70:0.80 Mick:0.65:0.90)"
 check "two standing and no lead opens the place" \
   "open Mik Mick" "$(verdict Mik:0.900:0.80 Mick:0.895:- --plain 0.70)"
 check "a member tying with plain opens it as well" \
@@ -228,8 +234,15 @@ check "and it is listed after the ones that stand" \
   "open Erik Eric" "$(verdict Eric:-:-:0 Erik:0.898:0.80 --plain 0.600)"
 check "once every member has a use, the rule runs as before" \
   "write Erik" "$(verdict Erik:0.898:0.80 Eric:0.600:-:1 --plain 0.600)"
-check "a member with a use but no portrait is out, not unknown" \
-  "write Erik" "$(verdict Erik:0.898:0.80 Eric:-:-:1 --plain 0.600)"
+# A use is not a portrait. A term needs a counter or three uses before it has
+# one, and until then nothing can be said about it — which is a question, not a
+# loss. Measured on decoded audio, 2026-09-10: with two members and no portrait
+# between them, reading "nobody stands" as a decision kept the heard word on
+# every sentence and the pill was never asked.
+check "a member with a use but no portrait is unknown too" \
+  "open Erik Eric" "$(verdict Erik:0.898:0.80 Eric:-:-:1 --plain 0.600)"
+check "and a place where nothing can be scored is open, not kept" \
+  "open Erik Eric" "$(verdict Erik:-:-:2 Eric:-:-:1)"
 
 # A sentence naming two members of one group belongs to neither. The rival clip
 # cuts the window at the other name and what is left is still the sentence:
