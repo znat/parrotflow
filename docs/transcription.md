@@ -437,6 +437,17 @@ judge is simply left open, which is the behaviour before this tier. This tier is
 reached only from the sound pass, and that pass is English only, so it was
 measured in English only and runs nowhere else.
 
+**The slot is not asked about one name against another.** It compares the term
+with the word that was heard, and a term is unknown to the tokenizer by
+construction, so a heard word that is itself a name wins every time whatever
+the sentence says: `Eric` against the term `Erik` scored −0.254, −0.253 and
+−0.257 in three different sentences, refusing all three. A place is read as
+name against name when the term says `kind: person`, when `NLTagger` reads the
+heard word as a personal name, or when the heard word is a `heard:` rendering
+somebody wrote down. Those go straight to the portrait, and to the pill when it
+says nothing — which is how a second name starts from nothing. An ordinary word
+against a term — `versus` against `Vercel` — still goes to the slot.
+
 **What the slot cannot settle, the term itself can.** Every sentence you
 confirm a term in is kept in `vocabulary-uses.yaml`, and one of them gives the
 term a portrait: the average of what those sentences look like, with the term

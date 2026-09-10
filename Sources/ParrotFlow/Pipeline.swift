@@ -1225,7 +1225,8 @@ struct Pipeline: Equatable, Codable {
                 floor: config.transcription.slotFloor(
                     for: Pipeline.language(of: text, config: config), on: step
                 ),
-                slot: step.slotGate ?? true, portrait: step.portrait ?? true
+                slot: step.slotGate ?? true, portrait: step.portrait ?? true,
+                terms: config.vocabulary.terms
             )
             decided = settledBySentence.decided
             // A group place comes back proposing the member that won, or

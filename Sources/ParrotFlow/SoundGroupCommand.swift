@@ -43,6 +43,18 @@ enum SoundGroupCommand {
         return 0
     }
 
+    /// `--name-place <heard> <term>` — whether the slot test stands aside here.
+    ///
+    /// `names` means both sides are names and the slot cannot separate them;
+    /// `ordinary` means an ordinary word against a term, which is the place the
+    /// slot exists for. See `NamePlace`.
+    static func namePlace(heard: String, term: String) -> Int32 {
+        let config = (try? ConfigStore.load()) ?? Config()
+        let names = NamePlace.bothNames(heard: heard, term: term, in: config.vocabulary.terms)
+        print(names ? "names" : "ordinary")
+        return 0
+    }
+
     /// `--group-decide <term>:<score>:<floor> … [--plain <score>]`
     ///
     /// A floor of `-` is a member with too few uses to have one, which never

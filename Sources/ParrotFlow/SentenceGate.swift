@@ -53,7 +53,8 @@ enum SentenceGate {
     /// same way either way, so one half off leaves the other deciding alone.
     static func settle(
         _ changes: [VocabularyPass.Change], in text: String, given settled: [Bool?],
-        floor: Double, slot: Bool = true, portrait: Bool = true
+        floor: Double, slot: Bool = true, portrait: Bool = true,
+        terms: [String: Config.Vocabulary.Term] = [:]
     ) async -> Settled {
         var changes = changes
         guard slot || portrait else { return (settled, changes) }
@@ -170,8 +171,18 @@ enum SentenceGate {
                 continue
             }
 
+            // One name against another. The slot test cannot read such a
+            // place — the heard word is in the tokenizer and the term never is
+            // — so it refuses every one of them, and refusing settles the
+            // place before the portrait or the pill can see it. See
+            // `NamePlace`.
+            let names = NamePlace.bothNames(heard: change.was, term: change.now, in: terms)
+            if slot, names {
+                Log.write("sentence gate: \"\(change.was)\" and \(change.now) are both"
+                    + " names — the slot cannot separate them, so it is not asked")
+            }
             var refuses = false
-            if slot {
+            if slot, !names {
                 do {
                     let gap = try await SlotReference.gap(
                         term: change.now, heard: change.was, at: change.range, in: text
