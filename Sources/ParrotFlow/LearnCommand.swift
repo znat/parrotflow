@@ -111,14 +111,18 @@ enum LearnCommand {
     ///
     /// `word` is what stands where the term goes, for a sentence that inflects
     /// it — `Praisy's` — and defaults to the term itself.
-    static func supporting(term: String, sentence: String, span: String? = nil) -> Int32 {
+    static func supporting(
+        term: String, sentence: String, span: String? = nil, near word: Int? = nil
+    ) -> Int32 {
         let written = span ?? term
         guard TermUses.occurrence(of: written, in: sentence) != nil else {
             print("✗ \"\(written)\" does not stand as a word in that sentence")
             return 1
         }
         do {
-            try TermUses.record(term: term, said: sentence, span: written, from: .seeded)
+            try TermUses.record(
+                term: term, said: sentence, span: written, from: .seeded, near: word
+            )
             print("✓ \(term) belongs at \"\(written)\"")
             return 0
         } catch {

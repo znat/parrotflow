@@ -59,7 +59,8 @@ enum CorrectionRecording {
     /// refuses those, and says so by writing nothing.
     @discardableResult
     static func apply(
-        _ rows: [Row], said sentence: String, from source: TermUses.Use.Source = .correction
+        _ rows: [Row], said sentence: String, from source: TermUses.Use.Source = .correction,
+        near word: Int? = nil
     ) throws -> [Row] {
         var written: [Row] = []
         for row in rows {
@@ -67,11 +68,13 @@ enum CorrectionRecording {
             switch row {
             case .use(let term, let span, let heard):
                 try TermUses.record(
-                    term: term, said: sentence, span: span, from: source, heard: heard
+                    term: term, said: sentence, span: span, from: source, heard: heard,
+                    near: word
                 )
             case .counter(let term, let span):
                 try TermUses.record(
-                    term: term, said: sentence, span: span, from: source, counter: true
+                    term: term, said: sentence, span: span, from: source, counter: true,
+                    near: word
                 )
             }
             written.append(row)

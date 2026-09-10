@@ -4115,7 +4115,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         correctionPanel.onSave = { [weak self] rules, _ in
             // The field is already right — the person fixed it themselves. Only
             // the rules are new, so `learn` and nothing after it.
-            _ = self?.learn(rules, in: sentence)
+            //
+            // Where the correction was, so the sentence stored is the one that
+            // was corrected and not an earlier copy of the same name.
+            _ = self?.learn(rules, in: sentence, near: worth.first?.nowAt)
         }
         correctionPanel.onCancel = { Log.write("correction: the rules were declined") }
         correctionPanel.show(
@@ -4177,7 +4180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// holds that rule. No row is offered either way. Returns true when it
     /// took the change.
     private func recordCounter(_ change: EditWatch.Change, in sentence: String) -> Bool {
-        recordCounter(wrote: change.was, put: change.now, in: sentence)
+        recordCounter(wrote: change.was, put: change.now, in: sentence, near: change.nowAt)
     }
 
     /// The term a correction runs against, or nil if it runs the usual way.
@@ -4199,7 +4202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// neither kept nor offered is a correction the app watched you make and
     /// threw away.
     private func recordCounter(
-        wrote written: String, put back: String, in sentence: String
+        wrote written: String, put back: String, in sentence: String, near word: Int? = nil
     ) -> Bool {
         guard let term = counterTerm(wrote: written, put: back) else { return false }
         let rows = CorrectionRecording.rows(
@@ -4213,7 +4216,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let heard = config.vocabulary.terms[term]?.heard ?? []
         let ours = heard.contains { $0.caseInsensitiveCompare(back) == .orderedSame }
         do {
-            for row in try CorrectionRecording.apply(rows, said: sentence) {
+            for row in try CorrectionRecording.apply(rows, said: sentence, near: word) {
                 rebuildPortrait(for: row.term)
                 switch row {
                 case .use(let right, _, _):
@@ -4753,7 +4756,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.write("correction: keeping \(pending.changes.count) rule(s)")
                 _ = learn(
                     pending.changes.map { TaughtRule(heard: $0.was, corrected: $0.now) },
-                    in: pending.sentence
+                    in: pending.sentence, near: pending.changes.first?.nowAt
                 )
             case "Edit":
                 Log.write("correction: opening the panel to edit the rule(s)")
@@ -5333,7 +5336,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// False means one could not be written and the user has already been shown
     /// why. Nothing after it should run: a correction that half-saved and then
     /// went on to rewrite the field would leave the two disagreeing.
-    private func learn(_ rules: [TaughtRule], in corrected: String) -> Bool {
+    private func learn(
+        _ rules: [TaughtRule], in corrected: String, near word: Int? = nil
+    ) -> Bool {
         for rule in rules {
             // A rule whose heard side is already a term runs the other way:
             // the app wrote the term where it did not belong and you put the
@@ -5342,7 +5347,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // be the mirror of a rule that stands, and then each word proposes
             // the other for as long as both are there.
             if let term = counterTerm(wrote: rule.heard, put: rule.corrected) {
-                if !recordCounter(wrote: rule.heard, put: rule.corrected, in: corrected) {
+                if !recordCounter(
+                    wrote: rule.heard, put: rule.corrected, in: corrected, near: word
+                ) {
                     Log.write("correction: \(rule.heard) -> \(rule.corrected) runs against"
                         + " \(term); no counter-example was written and no rule either")
                 }
@@ -5367,9 +5374,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // The span stays as typed. It has to be the word standing
                     // in the sentence, and the sentence holds what was written.
                     let term = existingTerm(named: rule.corrected) ?? rule.corrected
+                    // Which occurrence: a terminal field holds every dictation
+                    // since the last Return, and the word that was corrected is
+                    // rarely the first copy of it.
                     try TermUses.record(
                         term: term, said: corrected, span: rule.corrected,
-                        heard: rule.heard
+                        heard: rule.heard, near: word
                     )
                     rebuildPortrait(for: term)
                 } catch {
@@ -5972,8 +5982,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let rows: [CorrectionRecording.Row] = picked.map {
             [.use(term: $0, span: word.word, heard: replaced)]
         } ?? [.counter(term: open.term, span: word.word)]
+        // Which occurrence, in words: the pill can be asked about the second
+        // mention of a name in a field that holds several dictations.
+        let at = text.prefix(word.range.lowerBound).split(separator: " ").count
         do {
-            for row in try CorrectionRecording.apply(rows, said: text, from: .chosen) {
+            for row in try CorrectionRecording.apply(
+                rows, said: text, from: .chosen, near: at
+            ) {
                 rebuildPortrait(for: row.term)
             }
             let said = TermUses.narrowed(text, to: word.word)

@@ -143,14 +143,24 @@ enum TermUses {
     /// The same sentence and span recorded the other way round replaces what
     /// was there. One sentence cannot both hold the term and refuse it, and
     /// the later correction is the one that stands.
+    /// `near` is which occurrence, counted in words of `said`. A field holds
+    /// every dictation since the last Return, so the word being corrected is
+    /// often the *second* `Erik` in it — and narrowing to the first stored the
+    /// sentence that was already there, which is the same row again, so
+    /// nothing was written and nothing was said. Measured on the live app,
+    /// 2026-09-10.
     static func record(
         term: String, said: String, span: String, from: Use.Source = .correction,
-        counter: Bool = false, heard: String? = nil
+        counter: Bool = false, heard: String? = nil, near word: Int? = nil
     ) throws {
-        let sentence = narrowed(said, to: span)
+        let sentence = narrowed(said, to: span, near: word)
         // A word, not a substring. `contains` alone let `Vercelli` in.
         guard !sentence.isEmpty, !span.isEmpty,
-              occurrence(of: span, in: sentence) != nil else { return }
+              occurrence(of: span, in: sentence) != nil else {
+            Log.write("uses: \(term) learns nothing from \"\(said.prefix(60))\""
+                + " — \"\(span)\" does not stand in it as a word")
+            return
+        }
 
         var all = try read()
         var uses = all[term] ?? []
@@ -168,7 +178,11 @@ enum TermUses {
                 // carries the replaced spelling and the stored row predates it
                 // — a row written before `heard` existed never gains one
                 // otherwise, and the cut cannot see what it does not hold.
-                guard uses[already].heard == nil, let other else { return }
+                guard uses[already].heard == nil, let other else {
+                    Log.write("uses: \(term) already holds \"\(sentence)\";"
+                        + " nothing written")
+                    return
+                }
                 uses[already].heard = other
                 all[term] = uses
                 try write(all)
@@ -220,9 +234,9 @@ enum TermUses {
     /// A full stop only ends a sentence when what follows is a space, an
     /// upper-case letter, or nothing. Dictation arrives glued — "terminal.I'm
     /// using" has to come apart — while `Node.js` and `3.5` must not.
-    static func narrowed(_ said: String, to span: String) -> String {
+    static func narrowed(_ said: String, to span: String, near word: Int? = nil) -> String {
         let text = said.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let at = occurrence(of: span, in: text) else { return text }
+        guard let at = place(of: span, in: text, near: word) else { return text }
 
         func ends(_ i: String.Index) -> Bool {
             guard ".!?".contains(text[i]) else { return false }
@@ -264,6 +278,23 @@ enum TermUses {
     /// A term that occurs twice as a word still takes the first: both are
     /// genuine uses, and nothing that records one carries the position of the
     /// occurrence that was corrected.
+    /// The occurrence nearest `word`, counted in words, or the first when
+    /// nothing says which.
+    ///
+    /// The same rule `OpenPlaces.located` uses. A field is every dictation
+    /// since the last Return, so one name can stand in it several times and
+    /// only the position tells them apart.
+    static func place(
+        of span: String, in text: String, near word: Int?
+    ) -> Range<String.Index>? {
+        let hits = occurrences(of: span, in: text)
+        guard let word else { return hits.first }
+        func at(_ hit: Range<String.Index>) -> Int {
+            text[..<hit.lowerBound].split(separator: " ").count
+        }
+        return hits.min { abs(at($0) - word) < abs(at($1) - word) }
+    }
+
     static func occurrence(of span: String, in text: String) -> Range<String.Index>? {
         // Nil is nowhere. `Vercel` in `I visited Vercelli last year.` is not a
         // use of the term, and a caller that only asked `contains` stored it

@@ -450,8 +450,13 @@ if let index = arguments.firstIndex(of: "--for") {
     }
     let span = arguments.indices.contains(index + 3)
         && !arguments[index + 3].hasPrefix("--") ? arguments[index + 3] : nil
+    // Which occurrence, counted in words. A field holds every dictation since
+    // the last Return, so the same name can stand in it more than once.
+    let near = arguments.firstIndex(of: "--near").flatMap { at in
+        arguments.indices.contains(at + 1) ? Int(arguments[at + 1]) : nil
+    }
     exit(LearnCommand.supporting(
-        term: arguments[index + 1], sentence: arguments[index + 2], span: span
+        term: arguments[index + 1], sentence: arguments[index + 2], span: span, near: near
     ))
 }
 
@@ -545,6 +550,14 @@ if let index = arguments.firstIndex(of: "--portrait") {
         exit(TermPortraitCommand.group(heard: arguments[index + 1], sentence: sentence))
     }
     exit(TermPortraitCommand.run(term: arguments[index + 1], sentence: sentence, span: span))
+}
+
+if let index = arguments.firstIndex(of: "--name-place") {
+    guard arguments.indices.contains(index + 2) else {
+        print("usage: ParrotFlow --name-place <heard> <term>")
+        exit(2)
+    }
+    exit(SoundGroupCommand.namePlace(heard: arguments[index + 1], term: arguments[index + 2]))
 }
 
 if let index = arguments.firstIndex(of: "--sound-group") {
