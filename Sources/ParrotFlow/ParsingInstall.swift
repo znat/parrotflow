@@ -135,7 +135,19 @@ enum ParsingInstall {
         if Phonemes.binary == nil {
             out.append(Step(what: "eSpeak NG", command: EspeakInstall.command))
         }
-        if !isInstalled, let interpreter = interpreter() {
+        if !isInstalled {
+            guard let interpreter = interpreter() else {
+                // Every step below names the venv's own interpreter, and there
+                // is no venv without one to build it with. Saying so here
+                // rather than in the caller is what makes `--check` honest:
+                // it used to print the pip line for a path that could not
+                // exist, and never mention the missing python at all.
+                out.append(Step(
+                    what: "a python3 to build the venv with",
+                    command: EspeakInstall.brew.map { "\($0) install python" }
+                        ?? "xcode-select --install"))
+                return out
+            }
             out.append(Step(
                 what: "a Python for parsing",
                 command: "\(shellQuoted(interpreter)) -m venv \(shellQuoted(root.path))"))

@@ -26,13 +26,6 @@ enum SetupParsingCommand {
             return 1
         }
 
-        guard ParsingInstall.interpreter() != nil else {
-            print("\n✗ no python3 on this Mac.")
-            print("  Install the Xcode command line tools, or `brew install python`,")
-            print("  then run this again.")
-            return 1
-        }
-
         print("\nAbout 170 MB, into \(ParsingInstall.root.path)\n")
         for step in steps {
             print("==> \(step.what)")
