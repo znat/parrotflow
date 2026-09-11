@@ -112,6 +112,13 @@ jobs:
       - name: Setting up a parsing transform
         run: scripts/check-setup-parsing.sh
 
+      # That the binary refuses to start the app from a terminal. The cask puts
+      # `parrotflow` on the PATH, and a copy started from a shell holds TCC
+      # permissions credited to the shell — a menu bar app that cannot type.
+      # Needs a pty, which `script -q /dev/null` supplies.
+      - name: Starting from a terminal
+        run: scripts/check-terminal-launch.sh
+
       # Which pipeline a whole config resolves to, including the retired
       # `pipelines:` map. Both halves of a refusal: the message, and the steps
       # the app is left running.

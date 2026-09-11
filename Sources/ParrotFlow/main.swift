@@ -882,6 +882,26 @@ if let unknown = arguments.dropFirst().first(where: {
     exit(2)
 }
 
+// A terminal is not how this app should be started, and the cask now puts
+// `parrotflow` on the PATH, so somebody will try.
+//
+// TCC credits a permission to the *responsible* process, and for a binary
+// exec'd from a shell that is the terminal. Measured, and recorded in
+// docs/distribution.md: on a Mac where the app held accessibility and was
+// using it, launched by macOS it read `Granted` and the same bundle run from a
+// terminal read `Not granted`. So a copy started this way is a menu bar app
+// that cannot type, with nothing on screen to say why.
+//
+// stdout, not stdin: `open` gives the app neither, and a subcommand piping its
+// output is still a subcommand. The check is terminal AND no arguments, so
+// `open` — which passes none either — still starts the app.
+if arguments.count == 1 && isatty(FileHandle.standardOutput.fileDescriptor) == 1 {
+    print("✗ ParrotFlow does not start from a terminal — it would hold permissions it cannot use.")
+    print("  open -a ParrotFlow        start it")
+    print("  parrotflow --check-config check the install")
+    exit(2)
+}
+
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
