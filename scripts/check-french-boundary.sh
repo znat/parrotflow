@@ -54,3 +54,31 @@ print()
 print(f"  {ok}/{len(cases) - cost}  and {cost} known costs  (tests/french-boundary-cases.json)")
 sys.exit(0 if bad == 0 else 1)
 PY
+bench=$?
+
+# The bench above scores which reading wins. It never applies one, so it cannot
+# see what is written. These three do.
+echo
+echo "  what a won join writes"
+echo
+fail=$bench
+check () {   # $1 said, $2 wanted, $3 why
+  got="$("$BIN" --sentence-join "$1" 2>/dev/null | sed -n 's/^  text       //p')"
+  if [ "$got" = "$2" ]; then
+    printf '  ✓  %s\n' "$3"
+  else
+    printf '  ✗  %s\n     got  %s\n     want %s\n' "$3" "$got" "$2"
+    fail=1
+  fi
+}
+check "Je me demande si on ne devrait pas ? Attendre la prochaine version." \
+      "Je me demande si on ne devrait pas attendre la prochaine version." \
+      "the space French sets before ? goes with the mark, and one is left"
+check "On ne peut pas continuer comme ça. Parce que le budget est déjà dépassé." \
+      "On ne peut pas continuer comme ça. Parce que le budget est déjà dépassé." \
+      "a real French period is left alone"
+check "You should see a parrot. At the top right of your screen." \
+      "You should see a parrot at the top right of your screen." \
+      "English is unchanged"
+exit $fail
+

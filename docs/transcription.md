@@ -741,9 +741,12 @@ English word is the one case the lemma rule cannot see.
 
 English and French, and the stage refuses the rest itself, so a `when:` on the
 step is not needed. French adds `:` to its mark set, where English writes a full
-stop, and the space French sets before `?` and `!` is stepped over when the
-boundary is looked for — without that every French question is skipped and
-nothing says so. Over 234 French boundaries the readings score AUC 0.968 against
+stop, and the space French sets before `?` is stepped over when the boundary is
+looked for — without that every French question is skipped and nothing says so.
+When a join wins, that space goes with the mark, so one separator is left and
+not two. `NLTagger` is asked in the language of the dictation: in English it
+gives no lemma for most French words, and "no lemma" is what the lowercasing
+rule reads as a name, so a joined French boundary used to keep its capital. Over 234 French boundaries the readings score AUC 0.968 against
 0.984 in English and repair 91% of cuts, for about 2 false joins per 100 real
 periods. Nothing is waited for:
 with no cached model, a load that threw or a boundary it cannot read, the text
