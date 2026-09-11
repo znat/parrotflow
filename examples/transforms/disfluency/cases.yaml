@@ -1,4 +1,4 @@
-# Validation set for `repetitions`. Scored with `ParrotFlow --eval repetitions`,
+# Validation set for `disfluency`. Scored with `ParrotFlow --eval disfluency`,
 # which runs the deployed command, not a reimplementation of it.
 #
 # `change`: a word/phrase said twice by accident — collapse it.
@@ -45,7 +45,9 @@ cases:
     expect: "the replace dialogue and the vocabulary replacement dialogue"
   - probe: word
     input: "so that like two hundred forty-three is is always return two four three."
-    expect: "so that like two hundred forty-three is always return two four three."
+    parse: true
+    # `like` goes too now: the marker rule reads it as a filler, which it is.
+    expect: "so that two hundred forty-three is always return two four three."
   - probe: word
     input: "the substitution with the brackets and and then there would be a code step"
     expect: "the substitution with the brackets and then there would be a code step"
@@ -116,10 +118,14 @@ cases:
   # and no English phrase starting "I ..." was ever collapsed.
   - probe: phrase
     input: "I mean I mean what I want is this."
-    expect: "I mean what I want is this."
+    parse: true
+    # The surviving "I mean" is a marker, and spaCy parses it as parataxis —
+    # without an explicit "that" it is not the verb of the clause after it.
+    expect: "What I want is this."
   - probe: phrase
     input: "I mean I mean I want want this."
-    expect: "I mean I want this."
+    parse: true
+    expect: "I want this."
   - probe: phrase
     input: "I think I think we should try it."
     expect: "I think we should try it."
@@ -163,7 +169,8 @@ cases:
   # --- fragment: a word begun, abandoned, then said in full ---
   - probe: fragment
     input: "Yeah. I mean w we can try I'm not exactly sure how it's gonna work."
-    expect: "Yeah. I mean we can try I'm not exactly sure how it's gonna work."
+    parse: true
+    expect: "Yeah. We can try I'm not exactly sure how it's gonna work."
   - probe: fragment
     input: "Of course vocabulary is important. Like t teammates names Slack mentions."
     expect: "Of course vocabulary is important. Like teammates names Slack mentions."
@@ -197,3 +204,140 @@ cases:
     input: "the source is B B C news"
   - probe: meant
     input: "it takes A A batteries"
+
+  # --- restart: a phrase begun, abandoned, begun again ----------------------
+  # The frame is the gate: `n-1` words match exactly and the last is a prefix
+  # of its counterpart. No word list, because 22 of the 30 archive fires have
+  # a partial that is an ordinary word.
+  - probe: restart
+    input: "let's say I enter the two phrases in the ter in the terminal input"
+    expect: "let's say I enter the two phrases in the terminal input"
+  - probe: restart
+    input: "see if it mak if it makes sense to adapt the schema"
+    expect: "see if it makes sense to adapt the schema"
+  - probe: restart
+    input: "so I think the con the conclusion is that one"
+    expect: "so I think the conclusion is that one"
+  - probe: restart
+    input: "but it was broke it was broken before and that line has never been in the file"
+    expect: "but it was broken before and that line has never been in the file"
+  - probe: restart
+    input: "good morning Alex what's on your pla what's on your plate today"
+    expect: "good morning Alex what's on your plate today"
+  - probe: restart
+    input: "we currently log that for every transcript, for every transcription"
+    expect: "we currently log that for every transcription"
+
+  # --- partial: a word begun, abandoned, said in full -----------------------
+  - probe: partial
+    input: "what do you mean you and wh why do we need anything over SSH"
+    expect: "what do you mean you and why do we need anything over SSH"
+  - probe: partial
+    input: "I think the conclusion wa was that it didn't really work"
+    expect: "I think the conclusion was that it didn't really work"
+  - probe: partial
+    input: "it should support both syntax syntaxes to avoid problems"
+    expect: "it should support both syntaxes to avoid problems"
+  - probe: partial
+    input: "Eric is rev reviewing my PR"
+    expect: "Eric is reviewing my PR"
+  # A function word is exempt only when the completion adds an apostrophe.
+  - probe: partial
+    input: "in fact we we're just using openai for that"
+    expect: "in fact we're just using openai for that"
+  - probe: partial
+    input: "the way I understand it it's just because hormone therapies may help"
+    expect: "the way I understand it's just because hormone therapies may help"
+
+  # --- meant: what the two passes must not touch ----------------------------
+  # A function word before a longer word starting the same way is two ordinary
+  # words. This is 87 of the 142 bare prefix matches in the archive.
+  - probe: meant
+    input: "we had a one on one yesterday and two days stand up"
+  - probe: meant
+    input: "you remember which site we were working on when it broke"
+  - probe: meant
+    input: "I owe Prissy an answer on this"
+  - probe: meant
+    input: "an animated icon for downloading and a green check"
+  - probe: meant
+    input: "is it a bug or do does open ai not support it"
+  # A hyphen is not a clitic: "peut" is a modal and "an" is a determiner.
+  - probe: meant
+    input: "ça n'est pas disponible il peut peut-être simplement envoyer un message"
+  - probe: meant
+    input: "it's an anti-bounds system for decreasing traffic"
+  # A term of yours that no list of function words holds. See NEVER_START.
+  - probe: meant
+    input: "with the sequence of pr proposed and the size of each"
+  # The stop is what saves this one — two sentences, not a restart.
+  - probe: meant
+    input: "There's only one user. Don't worry about it. It'll ask loud to fix."
+  # A spelling, not a stutter.
+  - probe: meant
+    input: "the source is B B C news and she spells it m a r c"
+
+  # --- marker: a discourse marker that carries nothing ----------------------
+  # Needs spaCy. Not a word list: "you know" is a real verb with a real object
+  # half the time, and deleting the string destroys the sentence.
+  - probe: marker
+    parse: true
+    input: "So use like you know five maximum eight lines."
+    expect: "So use five maximum eight lines."
+  - probe: marker
+    parse: true
+    input: "And you know, the comments should be just enough."
+    expect: "And the comments should be just enough."
+  - probe: marker
+    parse: true
+    input: "Then like I'm twelve."
+    expect: "Then I'm twelve."
+  # Across a boundary. Every case above is one sentence, which is exactly how
+  # the space and the capital went missing without anything failing.
+  - probe: marker
+    parse: true
+    input: "It works fine. I mean the hesitations part. And then we ship."
+    expect: "It works fine. The hesitations part. And then we ship."
+  - probe: marker
+    parse: true
+    input: "You know what I mean? It's about when everything goes right. I mean you should try."
+    expect: "You know what I mean? It's about when everything goes right. You should try."
+
+  # --- meant: the marker is doing work --------------------------------------
+  - probe: meant
+    parse: true
+    input: "Okay, we'll let you know."
+  - probe: meant
+    parse: true
+    input: "You see what I mean?"
+  - probe: meant
+    parse: true
+    input: "Do you know who owns this account?"
+  - probe: meant
+    parse: true
+    input: "And therefore you know what you are allowed to modify without risk."
+  - probe: meant
+    parse: true
+    input: "Unless you know it's gonna fail in that case, mention it's failing."
+  - probe: meant
+    parse: true
+    input: "like a cat on a mat"
+  # A hedge, not a filler: "I think THAT we should" — deleting it turns an
+  # opinion into an assertion. Only `--hedges` touches these.
+  - probe: meant
+    parse: true
+    input: "I think we should do this before Friday."
+  # A self-correction, not a filler. Cutting the cue alone keeps both names.
+  - probe: meant
+    parse: true
+    input: "So the other day I was with James I mean Peter, sorry."
+  # Two markers, one sentence, different jobs. Matching on lemma alone gave the
+  # second one the first one's verdict and cut both.
+  - probe: marker
+    parse: true
+    input: "You know, do you know who owns this account?"
+    expect: "Do you know who owns this account?"
+  - probe: marker
+    parse: true
+    input: "I mean, what I mean is this."
+    expect: "What I mean is this."

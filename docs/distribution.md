@@ -206,6 +206,13 @@ Notes on getting this right:
   granted`. So `--check-config` deliberately does not test it — a check that
   says no when the answer is yes is worse than no check. The app tests it at
   launch and logs the result; that log line is the reliable read.
+- **`parrotflow` is on the PATH, and refuses to start the app.** The cask links
+  the binary in so a subcommand is reachable without a 52-character path. With
+  no arguments *and* a terminal for stdout it prints how to start the app
+  properly and exits 2, because that is the case above: a copy launched from a
+  shell holds grants credited to the shell. `open` supplies neither condition,
+  so the normal launch is untouched. `scripts/check-terminal-launch.sh` scores
+  it.
 - **The model download must not block.** Recording should work immediately;
   transcription unlocks when the download finishes. Resumable, cancellable,
   with a real progress figure — a silent 470 MB fetch reads as a hang.

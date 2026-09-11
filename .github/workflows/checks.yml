@@ -90,6 +90,13 @@ jobs:
       - name: Numbers
         run: examples/transforms/numbers/score.py
 
+      # Repeats, false starts and empty markers. The marker rule needs a
+      # dependency parse and this runner has no venv, so those cases are
+      # skipped here and the scorer says how many — a green run never means
+      # more than it did.
+      - name: Disfluency
+        run: examples/transforms/disfluency/score.py
+
       - name: Replacements
         # The fuzzy half asks NSSpellChecker whether a word is real, and that
         # service intermittently times out — a timeout reads as "known word", so
@@ -99,6 +106,18 @@ jobs:
 
       - name: Pipeline
         run: scripts/check-pipeline.sh
+
+      # What `--setup-parsing` reports and what it would run. Stub trees, so it
+      # installs nothing and needs no network.
+      - name: Setting up a parsing transform
+        run: scripts/check-setup-parsing.sh
+
+      # That the binary refuses to start the app from a terminal. The cask puts
+      # `parrotflow` on the PATH, and a copy started from a shell holds TCC
+      # permissions credited to the shell — a menu bar app that cannot type.
+      # Needs a pty, which `script -q /dev/null` supplies.
+      - name: Starting from a terminal
+        run: scripts/check-terminal-launch.sh
 
       # Which pipeline a whole config resolves to, including the retired
       # `pipelines:` map. Both halves of a refusal: the message, and the steps

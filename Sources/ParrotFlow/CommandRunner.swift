@@ -442,8 +442,8 @@ enum CommandRunner {
     ///
     ///     python3 -c pass  through the shim              301 ms
     ///     python3 -c pass  through the real interpreter    20 ms
-    ///     repetitions.py   through the shim              308 ms
-    ///     repetitions.py   through the real interpreter    25 ms
+    ///     disfluency.py    through the shim              308 ms
+    ///     disfluency.py    through the real interpreter    25 ms
     ///
     /// The interpreter reports its own path, so this asks it rather than
     /// guessing at one manager's layout. pyenv, asdf, mise and a plain Homebrew

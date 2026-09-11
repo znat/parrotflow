@@ -198,8 +198,7 @@ transforms:
 ```
 
 Say *"hey parrot, correct me"*, or press `S` on the pill after any
-dictation. A longer version, tuned and scored against real transcripts, is in
-[examples/transforms/self_correction](examples/transforms/self_correction).
+dictation.
 
 ![Dictating "let's ship Friday, no wait, Thursday", then pressing S on the pill
 to get "let's ship Thursday"](Resources/self-correct.gif)
@@ -241,17 +240,17 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
 - [numbers](examples/transforms/numbers) — spoken numbers as digits, one
   script per language: *"two hundred forty-three"* → `243`,
   *"soixante-quinze pour cent"* → `75%`.
-- [repetitions](examples/transforms/repetitions) — drops disfluencies, a word
-  said twice by accident: *"the the prompt"* → *"the prompt"*.
+- [disfluency](examples/transforms/disfluency) — what you did not mean to say,
+  taken out: a word said twice, *"the the prompt"* → *"the prompt"*; a phrase
+  begun again, *"in the ter in the terminal"*; and a marker that carries
+  nothing, *"so use like you know five"* → *"so use five"*. Only that last one
+  wants a parse; the rest are string work.
 - [punctuation](examples/transforms/punctuation) — spoken marks as
   punctuation, *"is that true question mark"* → *"is that true?"*.
 - [dates](examples/transforms/dates) — a dictated date or time in the shape it
   was said, *"at ten fifteen"* → *"at 10:15"*. One script per language, above
   the numbers step; English ships in the pipeline and French is two lines of
   config away.
-- [self_correction](examples/transforms/self_correction) — the prompt above,
-  and the 89 cases it is scored on: *"my config my vocabulary"* →
-  *"my vocabulary"*.
 
 [Pipelines](docs/pipelines.md) · [Writing a transform](docs/authoring.md) ·
 [Where the time goes](docs/architecture.md#where-the-time-goes)

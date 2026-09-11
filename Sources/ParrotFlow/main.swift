@@ -62,6 +62,12 @@ if arguments.contains("--check-config") {
     exit(CheckConfigCommand.run())
 }
 
+// Above the config, like the two around it: this reports on an install and has
+// to answer while one is half-finished.
+if arguments.contains("--setup-parsing") {
+    exit(SetupParsingCommand.run(check: arguments.contains("--check")))
+}
+
 if arguments.contains("--microphones") {
     if let at = arguments.firstIndex(of: "--set") {
         // `--set ""` clears the list, and a missing value must not do the same
@@ -873,6 +879,29 @@ if let unknown = arguments.dropFirst().first(where: {
 }) {
     print("✗ unknown option \(unknown)")
     print("run ParrotFlow with no arguments to start the app")
+    exit(2)
+}
+
+// A terminal is not how this app should be started, and the cask now puts
+// `parrotflow` on the PATH, so somebody will try.
+//
+// TCC credits a permission to the *responsible* process, and for a binary
+// exec'd from a shell that is the terminal. Measured, and recorded in
+// docs/distribution.md: on a Mac where the app held accessibility and was
+// using it, launched by macOS it read `Granted` and the same bundle run from a
+// terminal read `Not granted`. So a copy started this way is a menu bar app
+// that cannot type, with nothing on screen to say why.
+//
+// All three descriptors, not just stdout. `parrotflow >log` redirects stdout
+// and is still a terminal launch — checking that one alone let the case this
+// exists to stop straight through. LaunchServices gives the app /dev/null for
+// all three, so `open` still falls past this and starts the app.
+let attached = [FileHandle.standardInput, FileHandle.standardOutput,
+                FileHandle.standardError].contains { isatty($0.fileDescriptor) == 1 }
+if arguments.count == 1 && attached {
+    print("✗ ParrotFlow does not start from a terminal — it would hold permissions it cannot use.")
+    print("  open -a ParrotFlow        start it")
+    print("  parrotflow --check-config check the install")
     exit(2)
 }
 

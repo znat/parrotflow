@@ -38,6 +38,15 @@ cases:
 
   # --- decimals, ordinals, years, spoken digits ---------------------------
   - { probe: extras, lang: en, input: three point one four, expect: '3.14' }
+  # A fraction said as one number, not digit by digit. Reading only digits left
+  # the point orphaned and `dotted` then wrote it as a full stop: "above zero
+  # point eighty five" came out "above zero.85".
+  - { probe: extras, lang: en, input: above zero point eighty five, expect: above 0.85 }
+  - { probe: extras, lang: en, input: three point fourteen, expect: '3.14' }
+  - { probe: extras, lang: en, input: a threshold of zero point seventy five, expect: a threshold of 0.75 }
+  - { probe: extras, lang: en, input: zero point twenty, expect: '0.20' }
+  # A scale is not a fraction. This is what `simple` guards.
+  - { probe: extras, lang: en, input: one point five million, expect: 1.5 million }
   - { probe: extras, lang: en, input: the twenty third of June, expect: the 23rd of June }
   - { probe: extras, lang: en, input: nineteen eighty-four, expect: '1984' }
   - { probe: extras, lang: en, input: it shipped in twenty twenty five, expect: it shipped in 2025 }

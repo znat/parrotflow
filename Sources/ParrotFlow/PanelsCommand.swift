@@ -151,7 +151,7 @@ enum PanelsCommand {
     private static let offerManyChips = offerChips + [
         OfferedCommand(title: "slack handles", key: "S"),
         OfferedCommand(title: "punctuation", key: "P"),
-        OfferedCommand(title: "repetitions", key: "R"),
+        OfferedCommand(title: "disfluency", key: "D"),
         OfferedCommand(title: "bullets", key: "B")
     ]
 

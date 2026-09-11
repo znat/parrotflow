@@ -109,13 +109,20 @@ transcription:
     #   by_sound: false      match spelling only, never how a word sounds
     #   lowercase_refused: false   revert a refused glued span as heard
     - vocabulary
+    # Hesitation sounds, above the number stages and not below them: a filler
+    # inside a number splits it, and "two uh two three" comes out "two uh 23".
+    - transform: fillers
+    - transform: fillers_fr
+      when: language == "fr"
     # Dates, times and numbers as digits: "March third" -> March 3, "at ten
     # fifteen" -> at 10:15, "two hundred forty-three" -> 243. Dates first, or
     # numbers eats its words. French ships too, see docs/pipelines.md.
     - transform: dates_en
     - transform: numbers_en
     - transform: punctuation             # "is that true question mark" -> is that true?
-    - transform: repetitions             # a word or phrase said twice by accident, taken out
+    # Repeats, false starts and empty markers. Below the number stages, or
+    # "two two three" collapses to 23 before anything reads it as 223.
+    - transform: disfluency
 
     # "read user dot name" -> read user.name, in code-ish windows only.
     - transform: dotted
@@ -182,6 +189,18 @@ updates:
 lists:
   # What may sit between "PR" and its number. `github_refs` only.
   ref_words: ["number", "nr", "no", "num", "hash", "numéro"]
+
+  # Hesitation sounds, for the `fillers` transforms. Add a word, not a regex —
+  # entries are escaped, so `u+m+` would look for those characters. A sound
+  # held for any length is a pattern in the transform instead.
+  #
+  # LONGEST FIRST. An alternation is first-match-wins, so `uh` before `uh-huh`
+  # leaves "he said uh-huh" as "he said-huh".
+  fillers_en: ["uh-huh", "mm-hmm", "erm", "mhm", "um", "uh", "hm"]
+  # `ben` and `bah` are deliberately absent. They are the two commonest French
+  # fillers and Ben is a name — a list that deletes it will one day delete
+  # somebody.
+  fillers_fr: ["euh", "heu", "hein"]
 
   # A determiner before a spoken name means prose: "the dot com bubble".
   determiners: ["le", "la", "les", "l", "un", "une", "des", "du", "de", "d", "ce", "cet", "cette", "ces", "mon", "ma", "mes", "ton", "ta", "tes", "son", "sa", "ses", "notre", "nos", "votre", "vos", "leur", "leurs", "au", "aux", "à", "quel", "quelle", "chaque", "autre", "même", "premier", "première", "deuxième", "dernier", "dernière", "seul", "seule", "bon", "bonne", "mauvais", "certain", "tel", "telle", "quelque", "the", "a", "an", "my", "your", "his", "her", "its", "our", "their", "this", "that", "these", "those", "each", "every", "another", "other", "same", "which", "what", "some", "any", "no", "one", "first", "second", "last", "only"]
@@ -319,7 +338,40 @@ transforms:
     returns: json
     tests: { path: examples/numbers/cases-en.yaml }
 
-  # Cheap: ~0.04s, mostly the python3 start.
-  - name: repetitions
-    description: delete a word or phrase said twice by accident
-    command: examples/repetitions/repetitions.py
+  # Hesitation sounds. A `replace:` rule, so it costs no process at all — the
+  # list above is the half you edit, and the pattern beside it catches a sound
+  # held for any length, "uhhhh", which a literal list cannot.
+  - name: fillers
+    description: delete hesitation sounds
+    replace:
+      "": ['/[,]?\s*\b(?:{{fillers_en}})\b[,]?/',
+           '/[,]?\s*\bu+[hm]+\b[,]?/']
+
+  # `euh` never matched the English rule: the word boundary sits before the
+  # `e`, so `u+h+` cannot reach it.
+  - name: fillers_fr
+    description: supprime les hésitations
+    replace:
+      "": ['/[,]?\s*\b(?:{{fillers_fr}})\b[,]?/',
+           '/[,]?\s*\be+u+h+\b[,]?/']
+
+  # Repeats, false starts, and a discourse marker that carries nothing.
+  # ~0.04s for the first four rules, mostly the python3 start.
+  #
+  # The fifth wants a dependency parse, because "you know" is a real verb with
+  # a real object half the time — "we'll let you know" has to survive. Run
+  # `ParrotFlow --setup-parsing` and it is used; without it the other four
+  # still run and `disfluency.declined` says what was lost. No interpreter is
+  # named here: the script finds the venv itself.
+  #
+  # `returns: json` is not optional. It is what sends `ctx.language` in, and
+  # the marker rule is English-only.
+  - name: disfluency
+    description: delete hesitations, repeats and false starts
+    # Nobody asks for "disfluency" out loud. `say:` is what the keyed path
+    # matches on, and without these "clean up the repetitions" reaches the
+    # catch-all instead of this — which the rename broke, 25/26.
+    say: [repetitions, hesitations, false starts]
+    command: examples/disfluency/disfluency.py
+    returns: json
+    tests: { path: examples/disfluency/cases.yaml }

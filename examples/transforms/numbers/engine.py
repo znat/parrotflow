@@ -409,19 +409,35 @@ def parse_number(run, start, g):
                     begin=start, end=index)
 
     # "three point one four" — single digits after the point, which is how a
-    # decimal is spoken. Anything else ends the number.
+    # decimal is usually spoken. But not always: "zero point eighty five" is
+    # 0.85, and reading only units left the point orphaned, so the run came
+    # out "zero point 85" and a later stage turned the word into "zero.85".
+    #
+    # So ask the same accumulator to read the fraction as one number first, and
+    # keep its answer when it is 10 or more. That is what makes French work —
+    # `quatre-vingt-cinq` is 4 x 20 + 5 and no tens-plus-unit rule of this
+    # function's own can see it; `parse_number` already can. Below 10 the digit
+    # reading is the right one: "point one four" is 14, not 1.
     if not ordinal and index < len(run) and run[index].word[0] == "point":
-        scan = index + 1
         fraction = ""
-        while scan < len(run):
-            kind, value = run[scan].word
-            if kind == "unit" and not run[scan].ordinal:
-                fraction += str(value)
-            elif kind == "oh":
-                fraction += "0"
-            else:
-                break
-            scan += 1
+        scan = index + 1
+        whole = parse_number(run, index + 1, g)
+        # `simple` is the guard that keeps a scale out of the fraction: without
+        # it "one point five million" read the fraction as 5000000.
+        if (whole is not None and whole.simple and not whole.ordinal
+                and not whole.fraction and whole.value >= 10):
+            fraction = str(whole.value)
+            scan = whole.end
+        else:
+            while scan < len(run):
+                kind, value = run[scan].word
+                if kind == "unit" and not run[scan].ordinal:
+                    fraction += str(value)
+                elif kind == "oh":
+                    fraction += "0"
+                else:
+                    break
+                scan += 1
         if fraction:
             number.fraction = fraction
             number.simple = False

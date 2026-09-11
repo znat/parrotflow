@@ -73,6 +73,12 @@ cask "parrotflow" do
 
   app "ParrotFlow.app"
 
+  # So `parrotflow --setup-parsing` works. Every subcommand is reachable only
+  # by a 52-character path otherwise, and the first thing anyone types is the
+  # name. The binary refuses to start the app when it is run from a terminal
+  # with no arguments — see main.swift.
+  binary "#{appdir}/ParrotFlow.app/Contents/MacOS/ParrotFlow", target: "parrotflow"
+
   # Launched with LaunchServices, not by running the binary. TCC credits a
   # permission to the responsible process, and a binary exec'd from a shell is
   # credited to the terminal — the app then holds grants it cannot use. `open`
