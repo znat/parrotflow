@@ -480,6 +480,13 @@ enum PanelsCommand {
         let almostReadyPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(almostReady))
             .environmentObject(almostReady))
+        // eSpeak NG settled and the models still coming: the one state where
+        // the title is the state and there is still a bar under it.
+        let almostThere = sampleDownloads(speech: .downloading(percent: 62))
+        let almostTherePane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(almostThere, espeak: .found))
+            .environmentObject(almostThere))
+
         let readyPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(
                 ready, context: .revisiting, espeak: .found))
@@ -535,6 +542,7 @@ enum PanelsCommand {
             // the only place those sentences can be read against each other.
             (modelsPane, setupSize(modelsPane), .dark, false),
             (almostReadyPane, setupSize(almostReadyPane), .light, false),
+            (almostTherePane, setupSize(almostTherePane), .dark, false),
             (readyPane, setupSize(readyPane), .dark, false),
             (switchedOffPane, setupSize(switchedOffPane), .dark, false),
             (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
