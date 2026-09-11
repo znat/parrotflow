@@ -982,7 +982,7 @@ private struct SetupPane: View {
             Text(title)
                 .font(.system(size: at(19), weight: .semibold, design: .rounded))
                 .padding(.top, at(20))
-                .padding(.bottom, at(7))
+                .padding(.bottom, moment == .ready ? at(9) : at(7))
 
             invitation
 
@@ -1007,8 +1007,8 @@ private struct SetupPane: View {
         case permissionLost
         case dictationOff
         case somethingDidNotArrive
-        /// eSpeak NG is missing or landing. The screen is about it and nothing
-        /// else until it is settled.
+        /// The models are still coming and eSpeak NG is missing or landing.
+        /// The card only ever shows in the time the downloads leave for it.
         case espeak
         case almostReady
         case ready
@@ -1024,8 +1024,11 @@ private struct SetupPane: View {
         if lostPermission != nil { return .permissionLost }
         if downloads.rows.isEmpty { return .dictationOff }
         if downloads.blockingFailure != nil { return .somethingDidNotArrive }
-        if espeak != .found { return .espeak }
-        return downloads.speechIsIn ? .ready : .almostReady
+        // Ready wins over eSpeak NG. Once the models are in there is nothing
+        // left to wait for, and this screen reads the same whether eSpeak NG
+        // was installed or not — Done asks about it once, in its own alert.
+        if downloads.speechIsIn { return .ready }
+        return espeak == .found ? .almostReady : .espeak
     }
 
     private var lostPermission: PermissionStep? {
@@ -1048,9 +1051,7 @@ private struct SetupPane: View {
 
     /// The models are still coming and nothing has gone wrong. Both the bar and
     /// the greyed button are that one condition.
-    private var waiting: Bool {
-        (moment == .espeak || moment == .almostReady) && !downloads.speechIsIn
-    }
+    private var waiting: Bool { moment == .espeak || moment == .almostReady }
 
     private var showsBar: Bool { waiting }
 
