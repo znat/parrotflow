@@ -41,7 +41,7 @@ $ $PF --check-config
 config: /Users/you/.config/parrotflow/config.yaml
   ✓ hotkey            Right ⌥  (push-to-talk, polled)
   ✓ sample rate       16000 Hz mono
-  ✓ output dir        /Users/you/Recordings/ParrotFlow
+  ✓ output dir        /Users/you/.config/parrotflow/recordings
   ✓ min duration      0.3s
   · feedback          sound=true overlay=true
   ✓ microphone        Granted
@@ -938,7 +938,7 @@ made things better or only different.
 
 ```sh
 scripts/check-pipeline.sh          scripts/check-replacements.sh
-scripts/check-dotted.sh            scripts/check-dates.sh
+scripts/check-keyed.sh             scripts/check-dates.sh
 scripts/check-routing.sh           scripts/check-wake.sh
 scripts/check-split.sh             scripts/check-grammar.sh
 scripts/check-inplace.sh           examples/transforms/numbers/score.py
@@ -975,7 +975,6 @@ PF_VIEWPORT=Ghostty scripts/check-inplace.sh   # the same set, in another termin
 $PF --peek 3 --via-copy                        # what Select All + Copy hands back
 
 scripts/validate-prompt.py gemma4:e4b        # spelling + French correction sets
-scripts/validate-code-identifiers.py         # the identifier transform
 scripts/validate-generic.py                  # free-form instructions
 scripts/validate-gate.py                     # what should never be treated as a command
 ```
@@ -1006,7 +1005,7 @@ Ask a question of more than one dictation and you want the trace instead.
 ## The trace
 
 ```sh
-tail -1 ~/Recordings/ParrotFlow/trace.jsonl | jq .
+tail -1 ~/.config/parrotflow/recordings/trace.jsonl | jq .
 ```
 
 One JSON object per line, appended and never rotated, beside the clips it
@@ -1050,7 +1049,7 @@ threshold moves.
 The questions it answers, which the log cannot:
 
 ```sh
-cd ~/Recordings/ParrotFlow
+cd ~/.config/parrotflow/recordings
 
 # Which words is the model least sure of? Candidates for the replacement
 # table, ranked instead of guessed at.
@@ -1135,5 +1134,5 @@ change a table, re-run the clips, and both sets of numbers sit in one file
 joined to the same audio.
 
 ```sh
-for f in ~/Recordings/ParrotFlow/*.wav; do ParrotFlow --transcribe "$f" >/dev/null; done
+for f in ~/.config/parrotflow/recordings/*.wav; do ParrotFlow --transcribe "$f" >/dev/null; done
 ```

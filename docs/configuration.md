@@ -4,7 +4,9 @@ Every setting, what it does, and what happens when it is wrong.
 
 `~/.config/parrotflow/config.yaml`, created on first launch. Save the file and
 the app picks it up immediately — no restart. `config.example.yaml` in the repo
-is the same file with every comment kept.
+is the same file. It carries the keys most people change; every other key
+on this page works when written in, and takes the default below when it is
+not.
 
 **Validate before you trust it:** `--check-config` prints what the app would
 actually use, and names anything it had to ignore. See [cli.md](cli.md).
@@ -18,15 +20,15 @@ hotkey:
   press_delay_seconds: 0.18   # hold a bare modifier this long before it counts
 
 audio:
-  output_dir: ~/Recordings/ParrotFlow
+  output_dir: ~/.config/parrotflow/recordings
   microphones: []       # which microphone to record through, best first
   speech_gate: true     # skip clips with no speech in them
   second_opinion: true  # decode each clip twice and keep the longer decode
 
 transcription:
   insert_mode: paste    # or clipboard
-  activation_phrases: [hey parrot, by the way parrot]
-  languages: [en]       # en and fr are the supported values
+  activation_phrases: [hey parrot]
+  languages: [en]       # en and fr are the supported values; the example file ships [en, fr]
   rewrite_line: true
   pipeline: …           # see pipelines.md
   transforms: …         # see pipelines.md
@@ -66,8 +68,8 @@ logging:
 |---|---|
 | Config | `~/.config/parrotflow/config.yaml` |
 | Transforms | `~/.config/parrotflow/transforms/<name>/` — one folder each |
-| Recordings | `~/Recordings/ParrotFlow` — empty unless `logging.audio: true` |
-| Trace | `~/Recordings/ParrotFlow/trace.jsonl` |
+| Recordings | `~/.config/parrotflow/recordings` — empty unless `logging.audio: true`, and moved by `audio.output_dir` |
+| Trace | `~/.config/parrotflow/recordings/trace.jsonl` |
 | Log | `~/Library/Logs/ParrotFlow.log` — off with `logging.text: false` |
 | The shipped examples | `~/.config/parrotflow/transforms/examples/` — refreshed from the app on every launch, not yours to edit in place |
 
@@ -88,11 +90,11 @@ inside, so it can be written, scored and handed to someone else as one thing:
   config.yaml
   transforms/
     examples/                # every shipped example — the app's, refreshed
-      code_identifiers/      # on every launch, not yours to edit in place
-        code_identifiers.py
+      disfluency/            # on every launch, not yours to edit in place
+        disfluency.py
         cases.yaml
-      punctuation/
-        punctuation.py
+      join/
+        join.py
         cases.yaml
     slack_mentions/          # yours
       slack_mentions.py
@@ -106,7 +108,7 @@ directory. A script can open `roster.json` as a bare relative path, so the
 folder is self-contained: copy it to another machine and it works.
 
 A bare name is only ever looked for in that folder. A path with a directory in
-it — `command: examples/punctuation/punctuation.py` — may also name a file
+it — `command: examples/join/join.py` — may also name a file
 elsewhere under `transforms/`, which is how the config that ships points every
 transform that uses a shipped example at the one copy in `transforms/examples/`
 instead of a copy per transform. The working directory still does not move: a
@@ -377,7 +379,7 @@ noticed on its own is not, however it reads — accepting those would send a who
 sentence as markup for mentioning an address.
 
 **Or emphasis you asked for.** Asterisks, and not inside a word — which is what
-*"start bold … end bold"* produces through `punctuation`. Underscores never
+a transform turning *"start bold … end bold"* into markup produces. Underscores never
 count, and neither does an asterisk inside a word. Those are the two ways
 ordinary dictation trips over emphasis:
 
@@ -450,9 +452,13 @@ judge, under four words. Supported values are `en` and `fr`.
 
 Say one of these instead of dictating and what follows is an instruction:
 "hey parrot, make that a bullet list". An empty list disables spoken commands.
+The default is `[hey parrot]`, and it is not in `config.example.yaml` — write
+the key in to change it.
 
-One of them **mid-sentence** turns the rest into an instruction about the words
-before it, in the same breath — which is why there are two. See
+One **mid-sentence** turns the rest into an instruction about the words before
+it, in the same breath. Any phrase in the list does that, so a second one is
+worth adding if it is easier to say inside a sentence than at the start of one:
+`activation_phrases: [hey parrot, by the way parrot]`. See
 [corrections.md](corrections.md).
 
 ## `transcription.rewrite_line`
@@ -533,8 +539,8 @@ table and a script, and adding a language is adding words here.
 what the check scripts in `scripts/` parse with. An unquoted `on` reaches them
 as the word `true`, so the list silently stops holding the word you wrote.
 
-The lists are not split by language. `dotted` merges English and French into
-one alternation and measures clean, because the words do not collide.
+The lists are not split by language. A pattern can merge English and French
+into one alternation where the words do not collide.
 
 ## `commands`
 
@@ -780,6 +786,21 @@ It was `free_form: true` at the top level. It is here because it is one of the
 router's answers rather than a setting of its own, and because it is the case
 that most deserves its own model — the free-form prompt is where a small local
 one is measured at its ceiling.
+
+## `audio.output_dir`
+
+Where recordings and `trace.jsonl` go. Defaults to
+`~/.config/parrotflow/recordings`, beside `transforms/` and `vocabulary.yaml`,
+so there is one folder to know about rather than two. Not in
+`config.example.yaml`: write the key in to move it.
+
+The dev build uses `~/.config/parrotflow-dev/recordings`, like everything else
+it keeps separate. `PARROTFLOW_CONFIG_DIR` moves this too, so a check script
+running the binary against a config in `/tmp` writes its trace there and not
+into yours.
+
+Recordings are off by default — see [`logging`](#logging). What is normally in
+this folder is one trace file.
 
 ## `audio.microphones`
 

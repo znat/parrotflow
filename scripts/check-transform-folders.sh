@@ -286,12 +286,12 @@ check "a first launch copies the whole examples/ tree" \
   "$expected"
 
 check "the seeded script is executable" \
-  "$([ -x "$FRESH/transforms/examples/code_identifiers/code_identifiers.py" ] && echo yes || echo no)" \
+  "$([ -x "$FRESH/transforms/examples/disfluency/disfluency.py" ] && echo yes || echo no)" \
   "yes"
 
 check "the seeded config resolves its command through transforms/examples/" \
   "$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --check-config 2>/dev/null \
-     | grep -c 'transforms/examples/code_identifiers/code_identifiers.py')" \
+     | grep -c 'transforms/examples/disfluency/disfluency.py')" \
   "1"
 
 check "a seeded config is clean" \
@@ -308,15 +308,15 @@ check "seeding twice writes no new file the second time" \
 # `--seed-config`, the same as it would not survive the next launch. That is
 # what buys one copy of a script instead of a copy per transform that a
 # person has to notice has gone stale.
-echo "# edited" >> "$FRESH/transforms/examples/punctuation/punctuation.py"
+echo "# edited" >> "$FRESH/transforms/examples/join/join.py"
 refreshed_out="$(PARROTFLOW_CONFIG_DIR="$FRESH" "$BIN" --seed-config 2>/dev/null)"
 
 check "an edit under transforms/examples/ does not survive a refresh" \
-  "$(grep -c '# edited' "$FRESH/transforms/examples/punctuation/punctuation.py")" \
+  "$(grep -c '# edited' "$FRESH/transforms/examples/join/join.py")" \
   "0"
 
 check "and the refresh is reported" \
-  "$(printf '%s\n' "$refreshed_out" | grep -c 'transforms/examples/punctuation/punctuation.py — refreshed')" \
+  "$(printf '%s\n' "$refreshed_out" | grep -c 'transforms/examples/join/join.py — refreshed')" \
   "1"
 
 # --- a file the shipped tree drops is pruned, not left stale -----------------

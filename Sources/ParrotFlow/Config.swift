@@ -2389,7 +2389,8 @@ struct Config: Decodable, Equatable {
     struct Audio: Codable, Equatable {
         /// Parakeet expects 16 kHz mono. Changing this is almost never what you want.
         var sampleRate: Double = 16000
-        var outputDir: String = AppVariant.defaultOutputDir
+        /// Unset means `ConfigStore.recordingsDirectory`.
+        var outputDir: String?
         /// Recordings shorter than this are discarded (guards against fumbled hotkeys).
         var minDurationSeconds: Double = 0.3
         /// Run voice-activity detection before transcribing, and skip clips
@@ -3037,7 +3038,8 @@ struct Config: Decodable, Equatable {
     }
 
     var resolvedOutputDir: URL {
-        URL(fileURLWithPath: (audio.outputDir as NSString).expandingTildeInPath)
+        guard let written = audio.outputDir else { return ConfigStore.recordingsDirectory }
+        return URL(fileURLWithPath: (written as NSString).expandingTildeInPath)
     }
 }
 
@@ -3079,6 +3081,15 @@ enum ConfigStore {
 
     static var fileURL: URL {
         directory.appendingPathComponent("config.yaml")
+    }
+
+    /// Recordings and `trace.jsonl`, unless `audio.output_dir` says otherwise.
+    ///
+    /// Under `directory` and not under the home directory, so `overrideVariable`
+    /// carries it too — a check script pointing the binary at a config in /tmp
+    /// would otherwise write its traces into the real one.
+    static var recordingsDirectory: URL {
+        directory.appendingPathComponent("recordings", isDirectory: true)
     }
 
     /// The learnt half. Missing is normal and means an empty vocabulary — it
@@ -3395,7 +3406,7 @@ enum ConfigStore {
 
     /// What a new install's config.yaml is written with.
     ///
-    /// config.example.yaml itself, with the four lines that differ per
+    /// config.example.yaml itself, with the two lines that differ per
     /// variant swapped in. The release build needs no substitution at all —
     /// the file already reads as its own defaults — which is the point: a
     /// release config.yaml and config.example.yaml can now be compared for
@@ -3413,12 +3424,6 @@ enum ConfigStore {
             .replacingOccurrences(
                 of: "  key: right_command",
                 with: "  key: \(AppVariant.defaultHotkey)")
-            .replacingOccurrences(
-                of: "  output_dir: ~/Recordings/ParrotFlow",
-                with: "  output_dir: \(AppVariant.defaultOutputDir)")
-            .replacingOccurrences(
-                of: "~/Library/Logs/ParrotFlow.log",
-                with: "~/Library/Logs/\(AppVariant.logFileName)")
     }
 }
 

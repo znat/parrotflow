@@ -8,8 +8,8 @@
 # than something the shell is left to fail on once per transcript.
 languages: [en]
 transforms:
-  - name: code_identifiers
-    description: spoken names as identifiers
-    command: code_identifiers.py
+  - name: disfluency
+    description: delete hesitations, repeats and false starts
+    command: disfluency.py
 pipeline:
-  - transform: code_identifiers
+  - transform: disfluency

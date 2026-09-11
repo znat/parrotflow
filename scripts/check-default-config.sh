@@ -14,7 +14,7 @@
 # missing *key*.
 #
 # `Config.defaultYAML` now reads config.example.yaml itself and substitutes
-# four lines that differ per variant — see Config.configTemplateURL. There is
+# the two lines that differ per variant — see Config.configTemplateURL. There is
 # one file, so there is nothing left to drift. What is left to check:
 #
 #   1. config.example.yaml still parses as YAML.

@@ -9,8 +9,9 @@ transcription:
     - vocabulary
     - transform: dates_en
     - transform: numbers_en
-    - transform: dotted
-      app: /term|ghostty|iterm|warp/
+    - transform: disfluency
+    - transform: slack
+      app: /slack/
 ```
 
 There is one pipeline, and it runs whatever the language. A step that should
@@ -102,6 +103,22 @@ Both rewrite transcripts that were already correct, so run
 `dates/` — to see what they would do before leaving them in. Adding another
 language is a copy of one file per folder; see the "Adding a language" note in
 each `engine.py`.
+
+## What ships unwired
+
+The app copies `examples/transforms/` into
+`~/.config/parrotflow/transforms/examples/` on every launch. Not all of it is
+in the default pipeline: `email`, `join`, `priorities`, `parse` and
+`substitutions` are there with their case files and no step.
+
+The default pipeline holds what is free and needs nothing running. A prompt
+transform costs about a second and does nothing without Ollama.
+
+`punctuation`, `dotted`, `backticks`, `code_identifiers` and `terse` used to
+ship here. They were removed, not switched off — the files are gone. Each of
+the first four decided that a word you said was code, and the words they acted
+on — *dot*, *dash*, *point*, *question mark* — are words people also just say.
+They are in git history if you want one back.
 
 ## The interpret stage
 
@@ -582,11 +599,11 @@ A path *with a directory in it* may also name a file elsewhere under
 
 ```yaml
 transforms:
-  - name: punctuation
-    command: examples/punctuation/punctuation.py   # transforms/examples/…
+  - name: fitted
+    command: examples/join/join.py   # transforms/examples/…
 ```
 
-The rule is the slash. `punctuation.py` can only ever mean your own folder, so
+The rule is the slash. `join.py` can only ever mean your own folder, so
 the spelling you write every day cannot resolve in two places. `examples/…`
 says out loud that it reaches sideways, and it still cannot leave
 `transforms/`.
@@ -621,187 +638,6 @@ whatever came next would have needed something else. A command needs nothing
 added ever again — which is the point, and the reason it is worth the process
 start.
 
-### `code_identifiers`, which ships
-
-`examples/transforms/code_identifiers/code_identifiers.py` is the first one, and it is in the default pipeline.
-It turns "a python function called max retries" into "…called max_retries", in
-English and French, with the convention taken from the language named in the
-sentence — snake_case for python and rust, camelCase for typescript and go,
-PascalCase for a class or a type, SCREAMING_SNAKE for a constant, camelCase
-when no language was said.
-
-The config that ships points at it as `command:
-examples/code_identifiers/code_identifiers.py` — the shared copy in
-`~/.config/parrotflow/transforms/examples/`, refreshed from the app on every
-launch. The stop lists in it decide where a name ends, which is a judgement
-about how you speak rather than a fact, and they are meant to be edited — but
-that folder is the app's, not yours, and an edit there does not survive the
-next launch. The refresh also drops a file this version stops shipping, so
-renaming or retiring an example does not leave a stale copy still resolving
-under its old path.
-
-**To make it yours, copy it out.** `transforms/examples/code_identifiers/` to
-`transforms/code_identifiers/`, and `command:` from
-`examples/code_identifiers/code_identifiers.py` down to the bare
-`code_identifiers.py`. From then on it is a transform like any other you
-wrote: nothing here ever writes `transforms/code_identifiers/`, reads it, or
-reports on it, while `transforms/examples/code_identifiers/code_identifiers.py`
-— still pointed at by anyone who has not copied it out — keeps refreshing
-underneath it, from the log at startup and from `ParrotFlow --seed-config`.
-
-It is gated twice, and both gates are in the config where you can see them:
-`app:` to editors and terminals, and `when:` to a sentence containing a kind
-word, so no process is started on prose. Delete either line to widen it, or the
-step to turn it off.
-
-**What it costs, and what it will not do.** Scored on 75 cases, 32 of which
-must come back untouched: 90% overall, and one of those 70 is a sentence it
-rewrites and should not — "there is a method called cognitive behavioural
-therapy for that" is three plausible words behind a kind word and a naming
-word, and no surface rule separates it from a name. The other failures are
-namings it declines, which leave the transcript exactly as dictated.
-
-**The model is in there, switched off.** Add `--model gemma4:e4b` to the
-command and the script asks a local model about the namings its rules cannot
-see — a name given with no marker in front of it, "call it max retries",
-"rename the variable to retry count", "a getter for the user profile name".
-The rules decline all of those by construction; the model gets 8/8 on them
-where the rules get 2/8.
-
-```yaml
-  - name: code_identifiers
-    description: spoken names as identifiers
-    command: code_code_identifiers.py --model gemma4:e4b
-```
-
-It **extracts** rather than rewrites: the language the sentence names, and the
-names themselves, one per line. The convention that language writes in, the
-casing, and putting the words back all stay in the script — as a table you can
-add a language to without touching the prompt. That table is worth having on
-its own: it replaced a `python|rust|ruby|elixir` pattern that read zig, julia,
-erlang and c# as camelCase, and the rules alone went from 1/5 to 5/5 on those
-with no model involved. That division is the whole reason it works: asked instead to return
-the rewritten sentence, the same model scores 68% and fails in the expensive
-direction, capitalising "python" to "Python", adding articles, and translating
-French names into English.
-
-And it is off by default because the trade is measured rather than assumed.
-Over 75 cases it takes the sentences that should change from 87% to **100%**,
-and the sentences that must come back untouched from 94% down to **84%** — a
-model asked only about what a careful rule refused sees mostly near-misses, so
-chaining it behind the rules inverts their caution. Turn it on if you dictate
-code all day and would notice a sentence quietly rewritten; leave it off if you
-would not. It also costs about a second, and a model that is cold takes longer
-than the two seconds ParrotFlow waits, in which case the transcript passes
-through untouched.
-
-**It also means config.yaml executes code.** Nothing else in that file does.
-`--check-config` names every command transform out loud, every time, whether or
-not anything is wrong with it — a config that runs something you have forgotten
-about, or that arrived in a config you copied from somewhere, should not be
-able to stay quiet about it.
-
-**Why a table needs a name.** A `replace:` transform is one table
-applied by a single stage, so it cannot be two tables running in two places
-under two conditions. Named ones can:
-
-```yaml
-pipeline:
-  - vocabulary
-  - fuzzy
-  - transform: numbers_en
-  - transform: dotted
-    app: /term|ghostty|iterm|warp/
-  - transform: prose
-    app: /^(?!.*(term|ghostty|iterm|warp))/
-```
-
-Two tables, two conditions, at most one matching. A single shared table
-cannot express that: it is one table run by one stage, in one place.
-
-**`dotted` ships.** A new install is written with it already in the default
-pipeline, because this is a tool for people who dictate identifiers. Delete the
-step and it stops; delete the transform and `--check-config` tells you the step
-names nothing.
-
-### The one rewrite that fires on ordinary language
-
-Every other substitution waits for a name you taught it. This one reads "a
-word, then dot or point, then a word", and that shape occurs in prose: "voilà le
-point sur les tests" would become "voilà le.sur les tests", and "the dot com
-era" would become "the.com era". `point` is an everyday French word.
-
-What keeps them apart is two stop lists, one for what may not come *before* and
-one for what may not come *after*. In code both sides are identifiers; in prose
-at least one side is nearly always a determiner, a preposition, or the head of a
-set phrase — `le point de vue`, `un bon point pour`, `a dot product`.
-
-```
-\b(?!(?:{{determiners}})\b)(\w+) (?:dot|point) (?!(?:{{prose_after_point}})\b)(?=\w)
-```
-
-The second word is matched but not consumed, which is what lets a chain work:
-`user point profile point name` → `user.profile.name`. Consuming it would leave
-the middle token unavailable to the next match.
-
-The two lists are named rather than written out. They are in `lists:` in
-config.yaml, one definition read by every rule that needs them — see
-[configuration.md](configuration.md#lists). `dash`, `slash`, `hyphen` and
-`underscore` are the same rule with the same lists, plus one of their own where
-the trigger is also an ordinary word: `dash` needs an after-list of English
-function words, because a real join has a name part on its right and "a mad
-dash to the door" does not.
-
-A single letter either side is its own rule — "A dot B", "a underscore b". The
-before-list would otherwise throw it away, and one letter is never prose.
-
-A leading-slash path declines whole rather than half-converting: "in slash tmp
-slash x" stays words. `(?<!slash )` is what does it. Half a path is worse than
-none, and half is what a two-step rewrite would give — a `replace:` table is
-built from a Swift dictionary, so its rules run in an unspecified order.
-
-**73/73 on `examples/transforms/dotted/cases.txt`, plus three it cannot do.** Two ordinary words
-either side — "réunion point hebdomadaire" — is a shape only a dictionary would
-tell from code, and every residual case is kept in the set, failing, rather
-than dropped to make the number look better. They are unlikely in a terminal or
-a chat window, which together with the `app:` scoping is the only reason this is
-on by default; in one shared table it would run everywhere and would not be
-defensible.
-
-`scripts/check-dotted.sh` reads the pattern out of `Config.defaultYAML` rather
-than from a fixture, so what is scored is what a new install gets.
-
-### `backticks`, defined and not used
-
-A second transform wraps a dotted path for a chat window:
-
-```yaml
-- transform: backticks
-  app: /slack|discord/
-```
-
-It is a separate transform rather than a cleverer pattern because `dotted` does
-not consume the word after the dot, so it has nowhere to put a closing backtick
-— the first attempt produced ``lis `config.`port``. It requires a letter to
-start, so `21.5` is left alone.
-
-**It is not in the shipped pipeline.** Markdown *characters* arriving by paste
-are not rendered. Tried on a real Slack, including with *Format messages with
-markup* enabled, and the backticks landed in the message as characters either
-way. A default that depends on a setting in another application, and does not
-work when that setting is on, is not a default: it puts noise in your messages
-and gives you nowhere to look.
-
-**That has since changed.** Slack renders rich text that arrives by paste, the
-app now sends it, and a code span counts on a single line — see
-[bullets, bold and links](configuration.md#bullets-bold-and-links). So
-`` `config.port` `` from this transform reaches Slack as a real code span, not
-as two backticks.
-
-It is still not in the shipped pipeline, and that is now a decision rather than
-a limit. Enabling it needs the numbers: what it does to ordinary sentences in a
-chat window, scored, before it runs on every dictation there.
-
 ### `join`, which fits a clip to the box it lands in
 
 `examples/transforms/join/join.py` reads `input.*` and decides two things: what
@@ -817,7 +653,7 @@ transforms:
 
 pipeline:
   - input
-  - transform: code_identifiers
+  - transform: disfluency
   - stage: transform
     transform: join
     when: input.ok
@@ -883,54 +719,6 @@ envelope it really receives, because `--eval` feeds a transcript and nothing
 else. The tags come from `--tag` rather than from the case file, so what is
 scored is the tagger the app ships. A case may name the `rule:` it expects, and
 a right answer reached by the wrong rule counts as a miss.
-### `punctuation`, where a language is a file
-
-Spoken marks as punctuation: *"is that true question mark"* → *"is that
-true?"*. A `command:` transform, `examples/transforms/punctuation/`.
-
-The words live in `<lang>.py` beside the script, and `ctx.language` picks the
-file. `en.py` and `fr.py` ship. A language with no file does nothing and
-says so — `declined: no rules for de` — rather than applying English rules
-nobody checked.
-
-`returns: json` is what sends the language and the word lists in, so it is not
-optional for this stage. Run by hand — `echo "…" | ./punctuation.py` — it falls
-back to English and its own guard list.
-
-If you already had `punctuation` before this, you have two files of your own:
-take the new `punctuation.py` the way [above](#code_identifiers-which-ships)
-says, and add `returns: json` to the step in your `config.yaml`. Without the
-script you get the old marks; with the script but not the key you get the new
-marks in English only.
-
-**A pair is a verb, an optional determiner and a noun.** "ouvrez les
-guillemets … fermez les guillemets" has the same shape as the parentheses, so
-one pass handles every paired mark. English is the irregular one: `quote …
-unquote` is an entry of data with its own `open:` and `close:`, not a special
-case in code. `between:` is the determiner slot; English leaves it empty.
-
-**The typography is in the data.** French `point d'exclamation` writes `" !"`
-and the guillemets are `["« ", " »"]`, both with a narrow no-break space.
-Nothing in the script knows about French spacing.
-
-**Quotations are read before marks.** That order is what tells a decoder's
-guess from a dictation. Before the mark pass, every punctuation character in
-the transcript is the decoder's own.
-
-**Some words are deliberately not marks.** No `period` or `full stop` in
-English, and no `deux points` in French: measured over 3,785 clips, "deux
-points" appears 3 times and never as a mark. "les deux points suivants" is the
-noun. Same call `dotted` makes on bare "point".
-
-The guard is one entry of `lists.talked_about` — an article, a conjunction, or
-"around" right before the trigger means the mark is being talked about. It
-reads `lists.determiners` too, where the French words are, or "une virgule
-sépare deux propositions" loses its "virgule". Adding a word to the list is how
-the next miss gets fixed, rather than editing the script.
-
-**57/57 on `examples/transforms/punctuation/cases.yaml`**, `fr` 9/9. Score it
-with `ParrotFlow --eval punctuation`.
-
 ### Writing to people: `email` and `slack`
 
 Two prompts scoped to one kind of window each, and the first stages that ask
@@ -1010,8 +798,7 @@ rather than argued with.
 
 **Neither is in the shipped default pipeline.** Every stage a new install gets
 is free and needs nothing running; these cost about a second and do nothing at
-all without Ollama. Same rule as the `--model` switch on `code_identifiers`,
-which ships off for the same reason. config.example.yaml has them wired up.
+all without Ollama.
 
 **Gmail in a browser tab is not an app.** `app:` reads the window that was in
 front, which is `Google Chrome com.google.Chrome` — so name your browser in the

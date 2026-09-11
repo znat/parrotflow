@@ -4,8 +4,10 @@
 # the sentences actually arrive, which is with the routing word buried in a
 # longer request, because that is the case the router has to get right.
 #
-# The expectations assume the catalogue in config.example.yaml: bullets, terse,
-# grammar, email, slack, slack_mentions, and the built-ins.
+# The expectations assume a catalogue of bullets, terse, grammar, email, slack,
+# slack_mentions, and the built-ins. config.example.yaml no longer ships terse
+# or punctuation, so the cases naming them score against a config that defines
+# them — which is what most machines running this have.
 #
 # `--route` reads your own config, so a machine with a different list will
 # disagree with this set,
