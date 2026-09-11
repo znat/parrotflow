@@ -133,10 +133,12 @@ enum SentenceProbeCommand {
             /// with it. `enq_real.json` is mined by splitting on the mark, so
             /// its left halves have none.
             let mark: String?
+            /// Which mark set to read the boundary with. English where absent.
+            let language: String?
         }
         var exitCode: Int32 = 0
         let done = DispatchSemaphore(value: 0)
-        let marks = ((try? ConfigStore.load()) ?? Config()).transcription.marks(for: "en")
+        let transcription = ((try? ConfigStore.load()) ?? Config()).transcription
 
         Task {
             do {
@@ -149,6 +151,7 @@ enum SentenceProbeCommand {
                 var times: [Double] = []
                 for (i, row) in rows.enumerated() {
                     let start = DispatchTime.now().uptimeNanoseconds
+                    let marks = transcription.marks(for: row.language ?? "en")
                     let mark = row.mark ?? found(in: row.left, marks: marks)
                     guard let scores = try? await SentenceReadings.shared.read(
                         left: row.left, right: row.right, found: mark, marks: marks

@@ -109,6 +109,21 @@ actor SentenceJoin {
     /// Tags a capital must survive. A name stays a name once the mark goes.
     static let names: Set<String> = ["PersonalName", "PlaceName", "OrganizationName"]
 
+    /// The languages the boundary is read in.
+    ///
+    /// English and French. The reason this was English alone — "the readings
+    /// are scored by an English base model" — went when ModernBERT left; the
+    /// model is Qwen3 and it is multilingual. Measured over 234 French
+    /// boundaries, 103 real periods mined from real dictation and 131 cuts made
+    /// by inserting one: AUC 0.968 against 0.984 in English, 91% of cuts
+    /// repaired, and 6 false joins of which four are repairs the mining
+    /// mislabelled — about 2 per 100 real periods.
+    ///
+    /// The bare-capital half is not measured in French, and French capitalises
+    /// far less than English, so `capitals:` is off for anything but English at
+    /// the call site.
+    static let languages: Set<String> = ["en", "fr"]
+
     // MARK: - Finding the boundaries
 
     /// Every place one of `marks` is followed by a word.
@@ -126,7 +141,11 @@ actor SentenceJoin {
             guard at > text.startIndex, cursor < text.endIndex, text[cursor] != mark else {
                 continue
             }
-            let word = text[..<at].reversed().prefix { $0.isLetter || $0.isNumber }
+            // French sets a space before `?` and `!` — "travailler ?" — so the
+            // word is looked for past it. Without this every French question
+            // boundary is invisible and nothing says so.
+            let ahead = text[..<at].reversed().drop { $0.isWhitespace }
+            let word = ahead.prefix { $0.isLetter || $0.isNumber }
             guard word.count > 1 else { continue }
 
             var start = cursor
@@ -368,11 +387,13 @@ actor SentenceJoin {
         words: [Trace.Word] = []
     ) async -> Outcome {
         let language = Pipeline.language(of: text, config: config)
-        guard language == "en" else { return .unchanged(text) }
+        guard Self.languages.contains(language) else { return .unchanged(text) }
         let marks = written ?? config.transcription.marks(for: language)
         let found = (
             Self.boundaries(in: text, scanning: Self.scanned(marks))
-            + (capitals ? Self.bareBoundaries(in: text) : [])
+            // English only: the refusal rules for a bare capital were tuned on
+            // English capitalisation, and French capitalises far less.
+            + (capitals && language == "en" ? Self.bareBoundaries(in: text) : [])
         ).sorted { $0.next.lowerBound < $1.next.lowerBound }
         guard !found.isEmpty else { return .unchanged(text) }
         guard await SentenceReadings.shared.isLoaded else {

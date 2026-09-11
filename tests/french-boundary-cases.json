@@ -1,0 +1,227 @@
+[
+ {
+  "left": "voulait faire qui était le formatage des fonctions et des variables, des éléments de code",
+  "right": "Selon un langage, programmation.",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "OS.com. Mais quand je clique sur continue, ça ouvre Chrome, mais rien ne se passe",
+  "right": "Est-ce qu'il y a moyen d'avoir le lien à la place ?",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Au fait, tu ne m'as pas répondu",
+  "right": "Combien as-tu mangé aujourd'hui ?",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Rédige moi un mail avec tout ce qu'on a besoin",
+  "right": "Moi je vais rajouter comme pièce jointe mon rib et ma mon passeport.",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Son regard devrait pointer vers la caméra, fier",
+  "right": "Mais pour nous, il ne doit pas avoir l'air pain. Et il doit être...",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Quand tu auras fini, tu peux effacer mon vocabulaire",
+  "right": "Comme ça on recommence de manière fraîche.",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Aussi, il faudra peut-être expliquer que",
+  "right": "Pour expliquer que En fait, ce que l'user, ce que l'utilisateur dicte, c'est ce qu'il",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Moi j'aurai deux choses à te dire. D'abord, je veux qu'on mange demain ensemble",
+  "right": "Ensuite, il faut qu'on discute des termes du contrat. Merci.",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Le problème des dictées dans les apps, c'est que ça ne connaît pas ton vocabulaire",
+  "right": "Les noms des collègues. Le nom des produits ou des venders.",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Quand il y a une transformation, le notch devrait réapparaître",
+  "right": "Après, par exemple, si je fais fixed grammar, pour l'instant, le notch ne réapparaît plus",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period read as a cut; the measured rate is about 2 per 100",
+  "cost": true
+ },
+ {
+  "left": "Je te dis pas ça pour que tu le fixes tout de suite",
+  "right": "Mais j'imagine que tu fais le tour du fonctionnement du crawler donc c'est peut-être un",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Aussi, il y a la question de déclimatisation",
+  "right": "Ils ne retiennent que mille six cents euros. Est-ce que c'est justifié?",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "qu'on va faire. Peut-être qu'il faudra les changer. Les traces ne seront pas les mêmes",
+  "right": "Peut-être qu'on pourra enlever le juge.",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "que je voulais savoir c'est s'il y avait encore des entraînements de modèles à masque",
+  "right": "Parce que le vocabulaire change d'année en année, notamment sur le plan technologique.",
+  "mark": ".",
+  "language": "fr",
+  "want": "keep",
+  "why": "a real period, from real dictation"
+ },
+ {
+  "left": "Donc heard as devient une paire avec le",
+  "right": "Texte transcrit et le phonème reconnu",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Oui mais Versal Je pensais que Versal n'était pas",
+  "right": "Reconnu donc le slot gate aurait dû le choper non",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Le passage acoustique, on parle bien des phonèmes,",
+  "right": "Mais on parle pas de CTC",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Pas forcément si le vecteur Est n'y a pas vraiment de différence entre le",
+  "right": "Vecteur des trois mots avec le mot de vocabulaire et avec celui de la moyenne",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Pourquoi est-ce qu'il faut un appel au modèle lorsqu'il n'y a pas de substitution sur",
+  "right": "Sur une partie de la phrase sans problème grammatico",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Mais si on avait des",
+  "right": "Parts of speech, l'idée du double complément ça fonctionnerait, non",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Alors, à la place de la notice, ouvrons",
+  "right": "Simplement la boîte de vocabulaire qu'on a déjà",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "La décision d'utiliser M IK revient à l'utilisateur ou",
+  "right": "Simplement à une règle de l'application qui met une préférence au vocabulaire personnel",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Donc que dois-je faire pour",
+  "right": "Que ce soit la dernière version de l'app qui soit",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "J'ai vu quelques commentaires sur X également de personnes qui",
+  "right": "Trouvaient que la prose était plus naturelle",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Idéalement, oui, il aurait évolué",
+  "right": "Les deux points mais c'est peut-être en demandé beaucoup",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "De plus, si on prend des modèles",
+  "right": "Plus modernes qui ont une meilleure compréhension du langage, la nuance entre tes phrases sera",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Est-ce que tu peux m'envoyer la liste des",
+  "right": "Topics tels qu'ils vont être dans les crawlfiles",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ },
+ {
+  "left": "Attends donne-moi deux minutes que je me",
+  "right": "Rafraîchisse un peu la mémoire",
+  "mark": ".",
+  "language": "fr",
+  "want": "lower",
+  "why": "a pause cut one sentence in two"
+ }
+]

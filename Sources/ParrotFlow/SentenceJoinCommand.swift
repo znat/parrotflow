@@ -50,7 +50,7 @@ enum SentenceJoinCommand {
 
         let language = Pipeline.language(of: text, config: config)
         print("  language   \(language)")
-        guard language == "en" else {
+        guard SentenceJoin.languages.contains(language) else {
             print("  text       \(text)")
             return 0
         }
