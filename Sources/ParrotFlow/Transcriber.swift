@@ -429,18 +429,18 @@ actor Transcriber {
                 speechEnd: speechEnd,
                 note: "long-pause retry: "
             )
-            if Self.lastWordEnd(retried) > Self.lastWordEnd(result), Self.extends(result, by: retried) {
+            if let spliced = Self.splicingTail(into: result, from: retried, gate: gated) {
                 Log.write(String(
                     format: "decoder stopped %.2fs before the speech did; "
-                        + "closed %d long pause(s) and recovered to %.2fs",
+                        + "closed %d long pause(s); spliced %d word(s) from %.2fs to %.2fs",
                     Self.lastSpeechEnd(gated) - Self.lastWordEnd(result),
-                    closed.pauses, Self.lastWordEnd(retried)
+                    closed.pauses, spliced.words, spliced.from, spliced.to
                 ))
-                result = retried
+                result = spliced.result
             } else if Self.lastWordEnd(retried) > Self.lastWordEnd(result) {
                 Log.write(String(
-                    format: "closed %d long pause(s) and reached %.2fs, but the retry "
-                        + "rewrote text the first pass had already decoded; keeping the first pass",
+                    format: "closed %d long pause(s) and reached %.2fs, but nothing could be "
+                        + "spliced; keeping the first pass",
                     closed.pauses, Self.lastWordEnd(retried)
                 ))
             }
@@ -921,22 +921,15 @@ actor Transcriber {
         gate.segments.last?.end ?? 0
     }
 
-    /// True when the retry says everything the first pass said, in the same
-    /// order, before it says anything new.
+    /// True when a second decode says everything the first pass said, in the
+    /// same order, before it says anything new.
     ///
-    /// Reaching further into the clip is not on its own a reason to take the
-    /// retry. It decodes the *whole* clip, not just the tail, and closing the
-    /// pauses moves every window boundary after the first pause — so its
-    /// version of the opening is a different decode of audio the first pass
-    /// may already have got right. Swapping wholesale on the strength of a
-    /// later ending would trade a recovered tail for a silently rewritten
-    /// beginning, which is a worse bug than the one being fixed: nobody
-    /// re-reads the part that was already correct.
-    ///
-    /// Prefix rather than equality, because what makes the retry worth having
-    /// is precisely the words it adds at the end. Compared on letters and
-    /// digits alone so that a different token split, a comma, or a capital at
-    /// a moved window boundary is not read as rewritten speech.
+    /// Used by the padded arms, which are taken or dropped whole: reaching
+    /// further into the clip is not on its own a reason to swap in a second
+    /// decode of the opening. Prefix rather than equality, because what makes
+    /// an arm worth having is the words it adds at the end. Compared on letters
+    /// and digits alone so that a different token split, a comma or a capital
+    /// is not read as rewritten speech.
     nonisolated static func extends(_ result: ASRResult, by retried: ASRResult) -> Bool {
         let first = comparable(result.text)
         guard !first.isEmpty else { return false }
@@ -1102,6 +1095,75 @@ actor Transcriber {
         return String(text[text.startIndex..<end])
     }
 
+    /// How far outside a gate segment a spliced word may start. Small because
+    /// the VAD's own 0.75s hangover has already stretched the bounds outwards.
+    static let splicedWordMargin = 0.3
+
+    /// The first pass with the retry's tail added to it, plus how many words
+    /// that was and where they sit. Nil when the retry added nothing.
+    ///
+    /// The first pass keeps its text and its tokens exactly. The retry decodes
+    /// the whole clip with every window boundary after the first pause moved,
+    /// so its opening is a second decode of audio the first pass may already
+    /// have got right. On the clip that prompted this it wrote "71%" where the
+    /// first pass wrote "seventy-one percent".
+    ///
+    /// The words taken are a run: from the first one that starts after the
+    /// first pass stopped and that the gate heard speech at, up to the first
+    /// one after that which the gate did not.
+    nonisolated static func splicingTail(
+        into result: ASRResult, from retried: ASRResult, gate: SpeechGate
+    ) -> (result: ASRResult, words: Int, from: Double, to: Double)? {
+        let timings = retried.tokenTimings ?? []
+        let grouped = Trace.grouped(from: timings)
+        let cutoff = lastWordEnd(result)
+        guard let lower = grouped.firstIndex(where: {
+            $0.word.start > cutoff && inSpeech($0.word.start, gate: gate)
+        }) else { return nil }
+        var upper = lower
+        while upper < grouped.count, inSpeech(grouped[upper].word.start, gate: gate) { upper += 1 }
+
+        // A first token with no word-start mark would be glued onto the first
+        // pass's last word the next time these timings are grouped, and the
+        // text and the tokens would stop agreeing on the word count.
+        let head = grouped[lower].tokens.lowerBound
+        let mark = timings[head].token
+        guard mark.hasPrefix("\u{2581}") || mark.hasPrefix(" ") else { return nil }
+
+        guard let before = trimmedText(retried.text, dropping: grouped.count - lower, of: grouped.count),
+              let through = trimmedText(retried.text, dropping: grouped.count - upper, of: grouped.count)
+        else { return nil }
+        var tail = through.dropFirst(before.count).trimmingCharacters(in: .whitespaces)
+        guard !tail.isEmpty else { return nil }
+        // The retry read the closed-up pause as one sentence, so its first
+        // spliced word is lowercase. On the recording that pause is 8s or more
+        // of silence, and the first pass put a full stop before it.
+        if let last = result.text.last, SentenceReadings.enders.contains(String(last)) {
+            tail = tail.prefix(1).uppercased() + tail.dropFirst()
+        }
+
+        let tokens = (result.tokenTimings ?? [])
+            + Array(timings[head..<grouped[upper - 1].tokens.upperBound])
+        let joined = ASRResult(
+            text: result.text + " " + tail,
+            confidence: confidence(of: tokens) ?? result.confidence,
+            duration: result.duration,
+            processingTime: result.processingTime,
+            tokenTimings: tokens,
+            performanceMetrics: result.performanceMetrics,
+            ctcDetectedTerms: result.ctcDetectedTerms,
+            ctcAppliedTerms: result.ctcAppliedTerms
+        )
+        return (joined, upper - lower, grouped[lower].word.start, grouped[upper - 1].word.end)
+    }
+
+    /// True when the gate heard speech where this word starts.
+    private nonisolated static func inSpeech(_ time: Double, gate: SpeechGate) -> Bool {
+        gate.segments.contains {
+            time >= $0.start - splicedWordMargin && time <= $0.end + splicedWordMargin
+        }
+    }
+
     /// A word this unsure, on its own, is not a word.
     static let loneYeahConfidence: Float = 0.6
 
@@ -1195,12 +1257,12 @@ actor Transcriber {
         )
     }
 
-    /// Only a pause approaching the decoder's own 14.88s window can starve one
-    /// of speech, and only a starved window decodes to nothing. Below this a
-    /// pause is just someone thinking mid-sentence, the windows either side of
-    /// it still hold plenty of speech, and touching the audio would be all risk
-    /// and no benefit — a sweep of the archive with this at 2s changed 166 of
-    /// 1219 clips, most of which were never at risk. At 8s it is 33.
+    /// Pauses of 1-5s also lost tails under FluidAudio 0.15.5, measured on
+    /// 2026-08-17 and again on 2026-09-11; 0.15.7 repairs its own window seams,
+    /// so those no longer reach here. What is left is a tail after a pause the
+    /// library's repair cannot see, and 8s is where a sweep of the archive
+    /// stops moving clips that were never at risk: 166 of 1219 changed at 2s,
+    /// 33 at 8s.
     static let minPauseToClose = 8.0
 
     /// What a closed pause is cut down to, half kept on each side so a sentence
