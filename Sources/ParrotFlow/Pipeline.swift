@@ -459,10 +459,10 @@ struct Pipeline: Equatable, Codable {
             // sees the pass behave exactly as before has no way to find out
             // why. Refusing says it once, at load, where they typed it.
             if let named = step.prompt, !named.isEmpty {
-                problems.append("pipeline: `- vocabulary: \(named)` names a prompt file."
+                problems.append("`- vocabulary: \(named)` names a prompt file."
                     + " The prompt is part of the app now — a wording is right or wrong"
-                    + " against a measurement, not a matter of taste. Delete the filename"
-                    + " and write `- vocabulary`")
+                    + " against a measurement, not a matter of taste. Delete the line:"
+                    + " the pass is `transcription.vocabulary:` and runs either way")
             }
             problems += step.caps?.problems ?? []
         }

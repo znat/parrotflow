@@ -3027,7 +3027,13 @@ struct Config: Decodable, Equatable {
                 + " transforms/\(transform.name)/, and the shell cannot find it either")
         }
         let pipeline = Pipeline.resolved(config: self)
-        for problem in pipeline.validate() {
+        // Validated as written, not only as it runs. `resolved` drops the two
+        // fixed passes out of the list and rebuilds them at the head, so a
+        // refusal that belongs to a line — `- vocabulary: judge.md`, the
+        // retired prompt-file spelling — would stop firing the moment the step
+        // it was written on stopped surviving to here.
+        let written = transcription.pipeline ?? pipeline
+        for problem in Set(pipeline.validate() + written.validate()).sorted() {
             found.append("pipeline: \(problem)")
         }
         for step in pipeline.steps where step.stage == .transform {
@@ -3106,6 +3112,23 @@ struct Config: Decodable, Equatable {
                 + " It runs first whatever the list says — delete the line, and"
                 + " use `transcription.\(stage.name): {enabled: false}` to turn"
                 + " it off")
+        }
+        // A condition on one of those lines is the one thing that cannot come
+        // across: the pass is not a step, so there is no position for a
+        // condition to gate. Named, because a `vocabulary` scoped to terminals
+        // that quietly starts running everywhere is exactly the silent change
+        // the rest of this function exists to prevent.
+        for step in transcription.pipeline?.steps ?? []
+        where step.stage == .sentenceRepair || step.stage == .vocabulary {
+            let conditions = [
+                step.when.map { "`when: \($0)`" },
+                step.unless.map { "`unless: \($0)`" },
+                step.app.map { "`app: \($0)`" },
+            ].compactMap { $0 }
+            guard !conditions.isEmpty else { continue }
+            said.append("pipeline: \(conditions.joined(separator: ", ")) on"
+                + " `- \(step.stage.name)` is not read. It is a fixed pass now, so"
+                + " there is no position to gate — it runs on every dictation")
         }
 
         if transcription.retiredInterpretBlock {
