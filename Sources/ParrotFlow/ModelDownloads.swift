@@ -210,6 +210,32 @@ final class ModelDownloads: ObservableObject {
         }
     }
 
+    /// How far every fetch has got together, 0 to 1, weighted by size.
+    ///
+    /// One bar rather than six percentages: the last screen asks "is this
+    /// nearly done", and a row-by-row answer to that is six answers. Weighted
+    /// by megabytes because Parakeet is 461 MB and Silero VAD is 1 MB, and an
+    /// unweighted mean jumps a sixth when the smallest one lands.
+    ///
+    /// A row a setting switched off is not counted at all. `loading` counts
+    /// whole: its bytes are down, and this bar is about the download.
+    var fraction: Double {
+        let counted = rows.filter { if case .off = $0.state { return false } else { return true } }
+        let total = counted.reduce(0) { $0 + $1.megabytes }
+        guard total > 0 else { return 0 }
+        let done = counted.reduce(0.0) { sum, row in
+            switch row.state {
+            case .installed, .loading:
+                return sum + Double(row.megabytes)
+            case .downloading(let percent):
+                return sum + Double(row.megabytes) * Double(percent ?? 0) / 100
+            case .waiting, .failed, .off:
+                return sum
+            }
+        }
+        return done / Double(total)
+    }
+
     /// A failure turned into the one sentence that says what happened.
     ///
     /// `needs` is the free space to name when the disk is full.

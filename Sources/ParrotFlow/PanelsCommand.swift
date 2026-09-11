@@ -470,6 +470,13 @@ enum PanelsCommand {
         let vadDidNotArrive = sampleDownloads(speech: .installed)
         vadDidNotArrive.update(Transcriber.voiceDownload.id, to: .failed(.stopped))
 
+        // Screen one, which is a list and nothing else: the same registry the
+        // screen after it reports on, before any of it has started.
+        let listing = sampleDownloads(speech: .waiting)
+        let modelsPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingModels(listing))
+            .environmentObject(listing))
+
         let almostReadyPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(almostReady))
             .environmentObject(almostReady))
@@ -487,13 +494,11 @@ enum PanelsCommand {
         let vadPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(vadDidNotArrive, espeak: .found))
             .environmentObject(vadDidNotArrive))
-        // The same screen after "Not now": the card is gone and the line says
-        // what was decided. The alert that asks is a sheet on the window and
-        // cannot be drawn here.
-        let skippedPane = AnyView(PermissionsView()
-            .environmentObject(PermissionsModel.showingSetup(
-                ready, context: .revisiting, espeakDeclined: true))
-            .environmentObject(ready))
+        // The middle of the eSpeak NG install: Terminal has the command and
+        // this screen is waiting for the binary to turn up.
+        let openingPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(almostReady, espeak: .opening))
+            .environmentObject(almostReady))
 
         // The third element is the appearance to draw in. Every floating
         // surface is dark whatever the system is set to — that is decided in
@@ -525,15 +530,16 @@ enum PanelsCommand {
                     .accessibility, asked: true, context: .revisiting))
                 .environmentObject(ModelDownloads())),
              NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
-            // The one screen the walk ends on, in its four states. The title
-            // is the state, so this is the only place the four sentences can
-            // be read against each other.
+            // The screen that lists what is coming, then the screen the walk
+            // ends on in each of its states. The title is the state, so this is
+            // the only place those sentences can be read against each other.
+            (modelsPane, setupSize(modelsPane), .dark, false),
             (almostReadyPane, setupSize(almostReadyPane), .light, false),
             (readyPane, setupSize(readyPane), .dark, false),
             (switchedOffPane, setupSize(switchedOffPane), .dark, false),
             (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
             (vadPane, setupSize(vadPane), .dark, false),
-            (skippedPane, setupSize(skippedPane), .light, false),
+            (openingPane, setupSize(openingPane), .light, false),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), .dark, true),
             (AnyView(PillView().environmentObject(thinking)),
@@ -944,6 +950,17 @@ enum PanelsCommand {
                     later: { print("update: later") }
                 )
             )
+        // The screen that lists what is about to be fetched. A still, like the
+        // screen itself: nothing on it has started.
+        case "models":
+            let listing = sampleDownloads(speech: .waiting)
+            let pane = AnyView(
+                PermissionsView()
+                    .environmentObject(PermissionsModel.showingModels(listing))
+                    .environmentObject(listing)
+            )
+            setupWindow = window(for: pane, size: setupSize(pane))
+
         // The setup window, on the step that reports the downloads. A real
         // registry is empty in this process — nothing here fetches anything —
         // so it runs on a sample whose percentage climbs, which is the part

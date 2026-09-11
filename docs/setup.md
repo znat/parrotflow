@@ -134,16 +134,21 @@ grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
-**The last screen.** After the two permissions the setup window shows one
-screen: both permissions, the six models it is fetching (about 1.5 GB, started
-at launch), and eSpeak NG. Nothing there has to be waited for — *Done* closes
-the window and the downloads carry on. The title says the state, and only the
-permissions and the speech model change it: "Almost ready" until Parakeet is
-in, then "Ready". The one line with a button is eSpeak NG, which the app looks
-for rather than downloads: it is GPL-3 and a separate program, so *Run in
-Terminal* runs the Homebrew command where it can be watched. Pressing *Done*
-without it asks once — *Install it* or *Not now* — and remembers the answer, so
-the question is asked once per install and not once per launch.
+**The last two screens.** After the permissions the setup window lists the
+models it is fetching — about 1.5 GB, started at launch — with what each one
+costs. *Next* moves on; the downloads carry on behind it.
+
+The last screen is eSpeak NG, the one thing the app cannot fetch for you. It is
+GPL-3 and a separate program, so the screen shows the Homebrew command, and
+*Install with Terminal* runs it where it can be watched. The screen notices the
+binary landing by itself. Once eSpeak NG is settled the title becomes the state:
+"Almost ready" while a model a dictation waits on is still coming, then "Ready"
+with the key to hold. A bar under it says how far the downloads have got.
+
+*Done* is greyed until those models are in — it closes the window, and an app
+closed over a half-finished fetch is one that does not work yet. Pressing it
+without eSpeak NG asks once, *Install it* or *Not now*, and remembers the
+answer, so the question is asked once per install and not once per launch.
 
 ## Step 3 — Prove transcription works with no voice
 
