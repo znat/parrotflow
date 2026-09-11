@@ -610,7 +610,7 @@ said     "you should see a parrot at the top right of your screen"
 written  "You should see a parrot. At the top right of your screen."
 ```
 
-The `sentence_repair` step reads every such boundary in an English or French
+The `sentence_repair` pass reads every such boundary in an English or French
 transcript three ways and scores each with a small causal language model
 (`mlx-community/Qwen3-0.6B-Base-4bit`, 320 MB):
 

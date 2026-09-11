@@ -1796,8 +1796,8 @@ struct Config: Decodable, Equatable {
                         key: key,
                         value: kept.map { "`\($0)`" }.joined(separator: ", "),
                         expected: "at least one of `.`, `?` or `!` — those are where a"
-                            + " boundary is looked for, so with none the stage never runs."
-                            + " Delete the `interpret` step to turn it off"
+                            + " boundary is looked for, so with none the pass never runs."
+                            + " Write `enabled: false` to turn it off"
                     )
                 }
                 let wrong = kept.filter { $0.count != 1 || !($0.first?.isPunctuation ?? false) }
@@ -1843,10 +1843,18 @@ struct Config: Decodable, Equatable {
             /// Every key optional. A block that writes one line and leaves the
             /// rest out is the ordinary way to use this, and the synthesised
             /// initialiser would refuse it.
+            ///
+            /// `marks:` goes through the same check the old step line used. A
+            /// value refused in one place and accepted in the other is the
+            /// failure a rename is most likely to introduce.
             init(from decoder: Decoder) throws {
                 let c = try decoder.container(keyedBy: CodingKeys.self)
                 if let v = try c.decodeIfPresent(Bool.self, forKey: .enabled) { enabled = v }
-                if let v = try c.decodeIfPresent([String].self, forKey: .marks) { marks = v }
+                if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
+                    marks = try Language.checked(
+                        marks: written, key: "transcription.sentence_repair.marks"
+                    )
+                }
                 if let v = try c.decodeIfPresent(Bool.self, forKey: .capitals) { capitals = v }
                 if let v = try c.decodeIfPresent(Double.self, forKey: .pause) { pause = v }
             }
@@ -1912,9 +1920,24 @@ struct Config: Decodable, Equatable {
                 if let v = try c.decodeIfPresent(Bool.self, forKey: .lowercaseRefused) {
                     lowercaseRefused = v
                 }
-                slotFloor = try c.decodeIfPresent(Pipeline.Step.SlotFloor.self, forKey: .slotFloor)
+                slotFloor = try PipelineEntry.slotFloor(
+                    from: c, at: .slotFloor, named: "transcription.vocabulary.slot_floor"
+                )
                 caps = try c.decodeIfPresent(VocabularyPass.Caps.self, forKey: .caps)
-                soundBelow = try c.decodeIfPresent(Float.self, forKey: .soundBelow)
+                // Same range and the same refusal as the old home: a sound
+                // floor outside 0 to 1 silences the sound path on every
+                // dictation and looks like the feature not working.
+                if let written = try c.decodeIfPresent(Float.self, forKey: .soundBelow) {
+                    guard (0...1).contains(written) else {
+                        throw ConfigError.invalidValue(
+                            key: "transcription.vocabulary.sound_below",
+                            value: "\(written)",
+                            expected: "a similarity from 0 to 1, where 1.0 is the term"
+                                + " said exactly"
+                        )
+                    }
+                    soundBelow = written
+                }
                 gateSentence = try c.decodeIfPresent(Bool.self, forKey: .gateSentence)
                 asks = try c.decodeIfPresent(Bool.self, forKey: .asks)
             }
@@ -2151,7 +2174,9 @@ struct Config: Decodable, Equatable {
                     lowercaseRefused = try c.decodeIfPresent(
                         Bool.self, forKey: .lowercaseRefused
                     )
-                    slotFloor = try Self.slotFloor(from: c)
+                    slotFloor = try Self.slotFloor(
+                        from: c, at: .slotFloor,
+                        named: "pipeline.vocabulary.slot_floor")
                     // Two spellings, `review: false` and `review: <model>`,
                     // and neither reaches anything now. Read in both shapes so
                     // the message names what was written.
@@ -2203,19 +2228,21 @@ struct Config: Decodable, Equatable {
             /// to write its own language code to move one number, and a
             /// bilingual one cannot say what it means with a single number:
             /// the two floors were measured apart.
-            private static func slotFloor(
-                from c: KeyedDecodingContainer<CodingKeys>
+            /// Generic over the container, because `slot_floor:` is written in
+            /// two places now — on an old `- vocabulary` line and in the block
+            /// — and both have to refuse the same values.
+            static func slotFloor<K: CodingKey>(
+                from c: KeyedDecodingContainer<K>, at coded: K, named key: String
             ) throws -> Pipeline.Step.SlotFloor? {
-                let key = "pipeline.vocabulary.slot_floor"
-                if let every = (try? c.decodeIfPresent(Double.self, forKey: .slotFloor)) ?? nil {
+                if let every = (try? c.decodeIfPresent(Double.self, forKey: coded)) ?? nil {
                     return Pipeline.Step.SlotFloor(
                         everyLanguage: try Language.checked(slotFloor: every, key: key)
                     )
                 }
                 guard let written = (try? c.decodeIfPresent(
-                    [String: Double].self, forKey: .slotFloor
+                    [String: Double].self, forKey: coded
                 )) ?? nil else {
-                    guard c.contains(.slotFloor) else { return nil }
+                    guard c.contains(coded) else { return nil }
                     throw ConfigError.invalidValue(
                         key: key,
                         value: "neither a number nor a map",
@@ -2340,14 +2367,14 @@ struct Config: Decodable, Equatable {
                     .filter { !$0.isEmpty }
             }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .rewriteLine) { rewriteLine = v }
-            if let v = try c.decodeIfPresent(SentenceRepair.self, forKey: .sentenceRepair) {
-                sentenceRepair = v
-            }
-            // `interpret:` is what the block was called. Still read, so a
-            // config written before the rename keeps its settings.
+            // `interpret:` is what the block was called. Read first, so that a
+            // config carrying both spellings is decided by the current one.
             if let v = try legacy.decodeIfPresent(SentenceRepair.self, forKey: .interpret) {
                 sentenceRepair = v
                 retiredInterpretBlock = true
+            }
+            if let v = try c.decodeIfPresent(SentenceRepair.self, forKey: .sentenceRepair) {
+                sentenceRepair = v
             }
             if let v = try c.decodeIfPresent(Vocabulary.self, forKey: .vocabulary) { vocabulary = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) {

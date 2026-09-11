@@ -328,8 +328,8 @@ spans score 74% — it is how much of the answer code builds.
 ## Worked example 2: no model at all
 
 `examples/transforms/code_identifiers/cases.yaml` and
-`scripts/validate-code-identifiers.py`, both removed from the tree since and
-readable in git history. The task: turn a name said out loud into the
+`scripts/validate-code-identifiers.py`, both removed from the tree but readable
+in git history. The task: turn a name said out loud into the
 identifier a language spells it as — "a python function called max retries"
 into `max_retries`.
 

@@ -128,7 +128,7 @@ enum CheckConfigCommand {
             }
             if !vocabularySteps.isEmpty, !config.gatesSentence {
                 emit("      the sentence tests are off —"
-                    + " `vocabulary.gate_sentence: false`")
+                    + " `transcription.vocabulary.gate_sentence: false`")
             }
             // The set the step runs with. Silent when the pipeline holds no
             // step at all, which is also what says nothing is downloaded for it.

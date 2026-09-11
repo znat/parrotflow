@@ -5,14 +5,16 @@ Everything a finished transcript goes through, in order:
 ```yaml
 transcription:
   pipeline:
-    - sentence_repair
-    - vocabulary
     - transform: dates_en
     - transform: numbers_en
     - transform: disfluency
     - transform: slack
       app: /slack/
 ```
+
+`sentence_repair` and `vocabulary` are not in this list. They read the
+decoder's own output, so they cannot be ordered — each has a settings block and
+runs before the list. See [The two fixed passes](#the-two-fixed-passes).
 
 There is one pipeline, and it runs whatever the language. A step that should
 only run in one language says so on the line it affects:
@@ -77,10 +79,11 @@ stages. `when: vocabulary.count > 0` on a transform goes on working, and
 **The rule.** A pipeline stage rewrites text and may go anywhere. A pass that
 reads the decoder's output is fixed and takes a settings block.
 
-A config that still writes `- sentence_repair` or `- vocabulary` in its list keeps
+A config that still writes `- interpret` or `- vocabulary` in its list keeps
 working. The line is read as "on" and nothing else: the pass runs at the head
 whatever position it was written in, its options are carried into the block,
-and `--check-config` says the line can go. `when:`, `unless:` and `app:` on
+and `--check-config` says the line can go. `interpret` is what
+`sentence_repair` was called, and that spelling is still read too. `when:`, `unless:` and `app:` on
 those two lines are dropped — there is no longer a step for a condition to sit
 on.
 
@@ -163,13 +166,15 @@ They are in git history if you want one back.
 
 ## The sentence_repair pass
 
-`sentence_repair` reads what the transcript says against what the speaker meant. It
-is not called `repunctuate` because punctuation is only the first thing it
-does: the misheard-word and disfluency passes belong here too, and they will be
-further switches on this same line.
+`sentence_repair` reads what the transcript says against what the speaker
+meant. It is not called `repunctuate` because punctuation is only the first
+thing it does: the misheard-word and disfluency passes belong here too, and
+they will be further switches in this same block.
 
 ```yaml
-- sentence_repair
+transcription:
+  sentence_repair:
+    enabled: true
 ```
 
 A pause mid-sentence makes the transcriber write a period or a question mark

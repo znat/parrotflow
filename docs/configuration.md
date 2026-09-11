@@ -511,7 +511,7 @@ app writes, under a header telling you not to edit it. They belong here now.
 The old spelling is still read, so an install that has one keeps its value, and
 `--check-config` names each one and says where to write it.
 
-**An old `pipeline:` keeps working.** A list that still names `- sentence_repair` or
+**An old `pipeline:` keeps working.** A list that still names `- interpret` or
 `- vocabulary` is read as "on". The pass runs at the head whatever position the
 line was written in, any options on the line are carried into the block, and
 `--check-config` says the line can go. `when:`, `unless:` and `app:` on those
