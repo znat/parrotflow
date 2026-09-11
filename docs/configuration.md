@@ -30,6 +30,8 @@ transcription:
   activation_phrases: [hey parrot]
   languages: [en]       # en and fr are the supported values; the example file ships [en, fr]
   rewrite_line: true
+  interpret: {enabled: true}    # a fixed pass, not a step — see pipelines.md
+  vocabulary: {enabled: true}   # the same
   pipeline: …           # see pipelines.md
   transforms: …         # see pipelines.md
 
@@ -474,6 +476,46 @@ never touches this. It used to be the fallback for those too, which is how a
 correction ended up appended to the end of a line instead of replacing a word in
 it: ⌃K clears nothing in a composer, and the paste that followed landed on the
 end of what was still there.
+
+## `transcription.interpret` and `transcription.vocabulary`
+
+Two passes read the decoder's own output, so neither can be reordered. They are
+settings blocks rather than `pipeline:` lines, they run before the list —
+`interpret` first — and `enabled: false` is the only way off.
+
+```yaml
+transcription:
+  interpret:
+    enabled: true
+    capitals: true         # read a capital with no mark in front as a boundary
+    pause: 0.35            # seconds of silence a bare capital needs first
+    marks: [".", ",", "?"] # what a boundary may be written with
+
+  vocabulary:
+    enabled: true
+    sound_below: 0.85      # how close a run of words must sound to a term
+    gate_sentence: true    # read the sentence before keeping a match
+    asks: true             # ask before typing a name it could not settle
+    slot_floor: {en: 0.20, fr: 0.30}
+```
+
+`near_misses`, `by_sound`, `gate`, `slot_gate`, `portrait` and
+`lowercase_refused` are also keys here, all on by default. They are not
+everyday settings: they exist so a bench can switch off one half of the pass
+and score the other, which is why `config.example.yaml` does not write them
+out. `slot_gate: false` downloads nothing.
+
+**Three keys moved out of `vocabulary.yaml`.** `sound_below`, `gate_sentence`
+and `asks` are person-chosen switches, and they were sitting in the file the
+app writes, under a header telling you not to edit it. They belong here now.
+The old spelling is still read, so an install that has one keeps its value, and
+`--check-config` names each one and says where to write it.
+
+**An old `pipeline:` keeps working.** A list that still names `- interpret` or
+`- vocabulary` is read as "on". The pass runs at the head whatever position the
+line was written in, any options on the line are carried into the block, and
+`--check-config` says the line can go. `when:`, `unless:` and `app:` on those
+two lines are dropped: there is no step left for a condition to sit on.
 
 ## `transcription.replacements` is retired
 

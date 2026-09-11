@@ -57,27 +57,22 @@ struct Pipeline: Equatable, Codable {
 
         var name: String { rawValue }
 
-        /// Whether the stage rewrites the transcript.
-        ///
-        /// Only used to say where `vocabulary` belongs: it reads spans the
-        /// acoustic pass measured before the pipeline started, and every stage
-        /// that edits text moves them (F10). `interpret` is the exception, and
-        /// `vocabularyOrderProblems` is where that is written down.
-        var editsText: Bool { self != .context && self != .input && self != .vocabulary }
-
         /// Whether it can be in a default nobody wrote.
         ///
         /// `transform` cannot: it needs a name, and there is no transform every
-        /// install is guaranteed to have. `vocabulary` cannot either, for the
-        /// same reason — it names a prompt file.
+        /// install is guaranteed to have.
         ///
         /// `context` cannot, for a different and stronger reason. It reads the
         /// screen. Turning that on for everybody who never wrote a `pipeline:`
         /// block would be a silent change to what the app looks at, which is the
         /// one kind of change that has to be asked for by name.
+        ///
+        /// `interpret` and `vocabulary` are not in the list at all any more —
+        /// `Pipeline.resolved(config:)` puts them at the head from their own
+        /// settings blocks.
         var isAutomatic: Bool {
             self != .transform && self != .context && self != .input
-                && self != .vocabulary
+                && self != .interpret && self != .vocabulary
         }
     }
 
@@ -342,13 +337,75 @@ struct Pipeline: Equatable, Codable {
     ///
     /// An empty list is not the same as no list. `pipeline: []` is a choice and
     /// runs nothing; a missing `pipeline:` is silence and runs everything.
+    ///
+    /// `interpret` and `vocabulary` are not here. They are not ordered, so they
+    /// are not in the list a person orders — `resolved` puts them in front.
     static let everything = Pipeline(
         steps: Stage.allCases.filter(\.isAutomatic).map { Step(stage: $0) }
     )
 
-    /// The pipeline the config names, or `everything` when it names none.
+    /// What actually runs: the two fixed passes, then the list.
+    ///
+    /// `interpret` reads the decoder's own word timings and `vocabulary` is
+    /// handed spans measured before any of this started. Both are wrong
+    /// anywhere but the front, so neither is a line in `pipeline:` — each has a
+    /// settings block, and `enabled: false` is the only way off.
+    ///
+    /// A `pipeline:` that still names one is honoured as an on switch and
+    /// nothing else: the step is dropped here and rebuilt at the head from the
+    /// block, so an old config keeps working and cannot reintroduce the order
+    /// bug it used to be warned about. `Transcription.retiredStages` is the
+    /// notice that says so.
     static func resolved(config: Config) -> Pipeline {
-        config.transcription.pipeline ?? everything
+        let listed = config.transcription.pipeline ?? everything
+        let carried = listed.steps
+        var steps: [Step] = []
+        if config.transcription.interpret.enabled {
+            steps.append(interpretStep(
+                config.transcription.interpret,
+                carrying: carried.first { $0.stage == .interpret }))
+        }
+        if config.transcription.vocabulary.enabled {
+            steps.append(vocabularyStep(
+                config.transcription.vocabulary,
+                carrying: carried.first { $0.stage == .vocabulary }))
+        }
+        steps += carried.filter { $0.stage != .interpret && $0.stage != .vocabulary }
+        return Pipeline(steps: steps)
+    }
+
+    /// The block, as the step the stage body still expects.
+    ///
+    /// The two passes kept their `Step` shape rather than growing a second way
+    /// to be configured. The block is the only thing a person writes; this is
+    /// where it becomes what `apply` reads.
+    ///
+    /// `carrying:` is the step an old `pipeline:` still spells out. Its options
+    /// win over the block, because a config that writes `slot_floor:` on the
+    /// line has said the number exactly once and moving the key should not
+    /// silently drop it. `notices()` names the ones it found. Only the options
+    /// come across — the position does not, which is the whole point.
+    static func interpretStep(
+        _ settings: Config.Transcription.Interpret, carrying old: Step? = nil
+    ) -> Step {
+        Step(stage: .interpret,
+             marks: old?.marks ?? settings.marks,
+             capitals: old?.capitals ?? settings.capitals,
+             pause: old?.pause ?? settings.pause)
+    }
+
+    static func vocabularyStep(
+        _ settings: Config.Transcription.Vocabulary, carrying old: Step? = nil
+    ) -> Step {
+        Step(stage: .vocabulary,
+             caps: old?.caps ?? settings.caps,
+             nearMisses: old?.nearMisses ?? settings.nearMisses,
+             bySound: old?.bySound ?? settings.bySound,
+             gate: old?.gate ?? settings.gate,
+             slotGate: old?.slotGate ?? settings.slotGate,
+             portrait: old?.portrait ?? settings.portrait,
+             lowercaseRefused: old?.lowercaseRefused ?? settings.lowercaseRefused,
+             slotFloor: old?.slotFloor ?? settings.slotFloor)
     }
 
     /// The language this text was judged to be in.
@@ -403,7 +460,6 @@ struct Pipeline: Equatable, Codable {
             }
             problems += step.caps?.problems ?? []
         }
-        problems += vocabularyOrderProblems()
         // Which namespaces a condition on this step is allowed to read: the
         // seeds, plus every stage *above* it. Built as the list is walked, which
         // is what makes the ordering check possible at all — a condition reading
@@ -471,20 +527,6 @@ struct Pipeline: Equatable, Codable {
     /// be an exception too, because it ran as a separate `replacements` stage
     /// and the pass needs the rules to have fired; it is inside this stage
     /// now.
-    private func vocabularyOrderProblems() -> [String] {
-        guard let pass = stages.firstIndex(of: .vocabulary) else { return [] }
-        // `interpret` is the exception. It ran above the whole pipeline until
-        // it became a step, so it has always been above this one, and it takes
-        // a mark out rather than rewriting a word.
-        let above = steps[..<pass]
-            .filter { $0.stage.editsText && $0.stage != .interpret }
-            .map { Pipeline.namespace(of: $0) }
-        guard !above.isEmpty else { return [] }
-        return ["vocabulary runs after \(above.joined(separator: ", ")), which rewrite the"
-            + " transcript — the spans it was given no longer point at the same words."
-            + " Put it above everything that edits text"]
-    }
-
     /// What is wrong with an expression, before a transcript ever reaches it.
     ///
     /// Two kinds of thing, and the second is the one worth having. A parse error
@@ -1121,7 +1163,7 @@ struct Pipeline: Equatable, Codable {
             let askedAt = Date()
             let heard = await VocabularyPass.phonemeParts(
                 in: text, sounds: config.vocabularySounds, voice: "en-us",
-                language: "en", floor: config.vocabulary.soundBelow, claimed: parts
+                language: "en", floor: config.soundBelow, claimed: parts
             )
             soundSeconds = Date().timeIntervalSince(askedAt)
             bySound = heard.count
@@ -1160,7 +1202,7 @@ struct Pipeline: Equatable, Codable {
         let reading = [
             (step.slotGate ?? true) ? "slot" : nil, (step.portrait ?? true) ? "portrait" : nil,
         ].compactMap { $0 }
-        if config.vocabulary.gateSentence, !reading.isEmpty {
+        if config.gatesSentence, !reading.isEmpty {
             census += ", sentence gate on (\(reading.joined(separator: " + ")))"
         }
         if !slots.isEmpty, ProcessInfo.processInfo.environment["PARROTFLOW_JUDGE_DUMP"] != nil {
@@ -1201,7 +1243,7 @@ struct Pipeline: Equatable, Codable {
             index < taught.count && taught[index] ? false : settled[index]
         }
         // The two tests that read the sentence, on whatever is still open.
-        if config.vocabulary.gateSentence, #available(macOS 14, *) {
+        if config.gatesSentence, #available(macOS 14, *) {
             let settledBySentence = await SentenceGate.settle(
                 changes, in: text, given: decided,
                 floor: config.transcription.slotFloor(

@@ -47,22 +47,45 @@ transcription:
   # entry turns off language detection.
   languages: [en, fr]
 
-  # What a transcript runs through, in order. Remove a line to skip that
-  # stage. One list for every language, and a step can carry a condition of
-  # its own. See docs/pipelines.md.
+  # What you meant, where the decoder wrote what it heard. A pause makes it
+  # write a period or a question mark mid-sentence and capitalise the next
+  # word; this reads each boundary and takes the mark out again. English only,
+  # and only where the model is already on disk.
+  #
+  # Not a pipeline step: it reads the decoder's own word timings, so anything
+  # that rewrote a word above it would break the alignment. It runs first.
+  interpret:
+    enabled: true
+    # capitals: true         # read a capital with no mark in front as a boundary
+    # pause: 0.35            # seconds of silence a bare capital needs first
+    # marks: [".", ",", "?"] # what a boundary may be written with
+
+  # Matches vocabulary.yaml renderings and settles each match against the
+  # sentence it stands in. No model.
+  #
+  # Not a pipeline step either: it is handed spans measured on the transcript
+  # as the decoder wrote it, and any edit above it moves them. It runs second,
+  # after `interpret` and before everything below.
+  vocabulary:
+    enabled: true
+    # sound_below: 0.85      # how close a run of words must sound to a term
+    # gate_sentence: true    # read the sentence before keeping a match
+    # asks: true             # ask before typing a name it could not settle
+    #
+    # The rest switch off one half of the pass so the other can be scored.
+    # See docs/pipelines.md before changing them.
+    # near_misses: true      # also match a rendering one edit away
+    # by_sound: true         # also match words that sound like a term
+    # gate: true             # the word lists and the slot's part of speech
+    # slot_gate: true        # the mmBERT slot — false downloads nothing
+    # portrait: true         # a term's own sentences and its counter-examples
+    # lowercase_refused: true
+
+  # What a transcript runs through, in order. Everything here rewrites text
+  # and may be moved. Remove a line to skip that stage. One list for every
+  # language, and a step can carry a condition of its own. See
+  # docs/pipelines.md.
   pipeline:
-    # What you meant, where the decoder wrote what it heard. A pause makes it
-    # write a period or a question mark mid-sentence and capitalise the next
-    # word; this reads each boundary and takes the mark out again. English
-    # only, and only where the model is already on disk. See docs/pipelines.md
-    # for `marks:`, `capitals:` and `pause:`.
-    - interpret
-    # Matches vocabulary.yaml renderings and settles each match against the
-    # sentence it stands in. No model. Above everything that edits the text.
-    #   near_misses: false   match exactly, never one edit away
-    #   by_sound: false      match spelling only, never how a word sounds
-    #   lowercase_refused: false   revert a refused glued span as heard
-    - vocabulary
     # Hesitation sounds, above the number stages and not below them: a filler
     # inside a number splits it, and "two uh two three" comes out "two uh 23".
     - transform: fillers

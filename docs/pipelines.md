@@ -22,11 +22,15 @@ only run in one language says so on the line it affects:
       when: language == "fr"
 ```
 
-Being in the pipeline is the only way a stage runs, which is why a new install
-is written with all of them spelled out: turning one off means deleting a line
+Being in the pipeline is the only way a *stage* runs, which is why a new
+install is written with them spelled out: turning one off means deleting a line
 you can see, not finding a setting you cannot. Delete `pipeline:` entirely and
 you get every stage back — a missing section is silence, not a choice. Write
 `pipeline: []` and you get none, which is a choice.
+
+The two fixed passes are the exception, and they are not in this list at all.
+`pipeline: []` still runs them; their own blocks turn them off. See [The two
+fixed passes](#the-two-fixed-passes).
 
 `pipelines:`, the map keyed by language, is retired. Nothing under it is read.
 `--check-config` exits non-zero and says to write one `pipeline:` list, and the
@@ -41,12 +45,49 @@ order they had to run in was enforced by hand because the three were never
 independent. They are one stage, and the order is no longer something a config
 can get wrong.
 
+## The two fixed passes
+
+`interpret` and `vocabulary` are not in `pipeline:`. Each has a settings block
+under `transcription:`, each runs at a fixed point, and `enabled: false` is the
+only way to turn one off.
+
+| Pass | What it does | Why it cannot move |
+|---|---|---|
+| `interpret` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The interpret stage](#the-interpret-stage). English only. | It reads the decoder's own words and their timings. A rewrite above it moves a word and the pause gate lines up against the wrong token. |
+| `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). | It is handed spans measured on the transcript as the decoder wrote it. Any edit above it moves them (F10). |
+
+```yaml
+transcription:
+  interpret:
+    enabled: true
+  vocabulary:
+    enabled: true
+```
+
+Both run before the list, `interpret` first:
+
+```
+asr → vad → interpret → vocabulary → pipeline
+```
+
+Both still publish into the scope, as `asr` and `vad` already do without being
+stages. `when: vocabulary.count > 0` on a transform goes on working, and
+`--pipeline --vars` prints the same variables.
+
+**The rule.** A pipeline stage rewrites text and may go anywhere. A pass that
+reads the decoder's output is fixed and takes a settings block.
+
+A config that still writes `- interpret` or `- vocabulary` in its list keeps
+working. The line is read as "on" and nothing else: the pass runs at the head
+whatever position it was written in, its options are carried into the block,
+and `--check-config` says the line can go. `when:`, `unless:` and `app:` on
+those two lines are dropped — there is no longer a step for a condition to sit
+on.
+
 ## The stages
 
 | Stage | What it does |
 |---|---|
-| `interpret` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The interpret stage](#the-interpret-stage). English only. |
-| `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). |
 | `context` | What is on screen around the field, published as `context.*`. Never touches the transcript. Terminals only, and off unless you ask for it — see [Context](#context-what-is-on-screen-around-the-field). |
 | `input` | What is already *in* the field and where the caret is, published as `input.*`. Never touches the transcript. Every app, and off unless you ask for it — see [Input](#input-what-is-already-in-the-field). |
 | `transform` | One entry of `transforms:`, named — see below. The only stage that names something outside itself. |

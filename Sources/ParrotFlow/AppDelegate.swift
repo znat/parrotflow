@@ -5802,7 +5802,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         focus: SelectionReader.Selection?, for press: Press
     ) -> Bool {
         let open = OpenPlaces.take(for: press.run)
-        guard !open.isEmpty, config.vocabulary.asks else { return false }
+        guard !open.isEmpty, config.asksBeforeTyping else { return false }
         // Not while another dictation is running. Push-to-talk does not wait,
         // so a second press can be recording or decoding while this one asks —
         // and then two sentences are in the air with a question between them.

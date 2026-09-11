@@ -626,10 +626,11 @@ nothing to calibrate. The marks are `marks:` on the step, default
 `[".", ",", "?"]`; `;` and `:` were measured and never changed a decision in
 English.
 
-This is a pipeline step, and it runs at the position the list gives it — see
-[The interpret stage](pipelines.md#the-interpret-stage) for the three options
-and why it belongs first. A pipeline with no `- interpret` line in it does not
-read boundaries at all, and nothing is downloaded for them.
+This is not a pipeline step. It reads the decoder's own word timings, so there
+is no second place it could run — see [The two fixed
+passes](pipelines.md#the-two-fixed-passes). `transcription.interpret:` is its
+settings block, and `enabled: false` is what turns it off; with it off nothing
+is downloaded for boundaries at all.
 
 The list does two jobs. `.` and `?` are where a boundary is looked for; the
 comma is a reading tried at one. The first reading is always the mark the
