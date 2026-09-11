@@ -14,7 +14,7 @@ import MLXLMCommon
 ///
 /// The first reading is the mark the transcriber actually wrote, so a
 /// `word? Capital` boundary is read `"? Word"`, `", word"` and `" word"`. A
-/// boundary with no mark is read four ways — see `bareReadings` — because the
+/// boundary with no mark is read three ways — see `bareReadings` — because the
 /// text as decoded is then a candidate rather than what happens by default.
 /// Reading every configured ender at every boundary was measured too and is
 /// worse: 259 of 325 question cuts repaired against 265, for a fourth forward
@@ -29,6 +29,14 @@ import MLXLMCommon
 /// The comma is a reading, not a term in a subtraction. 26% of real sentence
 /// endings pick it, and that is why none of them picks `join`. Scoring
 /// `max(mark) - log P(next)` instead gives 64% against this shape's 81%.
+///
+/// **It is a marked-boundary reading only.** Where there is no mark, nothing is
+/// written unless `join` wins, so a comma win there is not a decision but a veto
+/// on a join that already beat both readings that keep the capital. Measured
+/// over 616 bare capitals mined from 3,336 English dictations, 225 of which
+/// reach the model: dropping it lowercases 129 against 87, and of the 42 it
+/// changes, 40 are right and 2 destroy a correct capital. A margin threshold
+/// does not buy those two back — 13 of the 40 repairs sit below their margin.
 ///
 /// `mlx-community/Qwen3-0.6B-Base-4bit`, not the DWQ checkpoint: despite the
 /// name that one is a quant of the *instruct* model and repairs 76%.
@@ -152,9 +160,6 @@ actor SentenceReadings {
             [Reading(key: $0, mark: $0, capital: true)]
         } ?? [])
         + [Reading(key: asDecoded, mark: "", capital: true)]
-        + marks.filter { !enders.contains($0) }.map {
-            Reading(key: $0, mark: $0, capital: false)
-        }
         + [Reading(key: join, mark: "", capital: false)]
     }
 

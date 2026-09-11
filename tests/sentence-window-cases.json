@@ -112,7 +112,7 @@
   }
  },
  {
-  "why": "a bare capital has four readings, and only as-decoded keeps the capital with no mark",
+  "why": "a bare capital has three readings: the comma is a marked-boundary reading",
   "left": "imports name definitions ",
   "right": "And all the things",
   "bare": true,
@@ -122,7 +122,6 @@
    "readings": [
     {"key": ".", "continuation": ". And all the things"},
     {"key": "as-decoded", "continuation": " And all the things"},
-    {"key": ",", "continuation": ", and all the things"},
     {"key": "join", "continuation": " and all the things"}
    ]
   }
