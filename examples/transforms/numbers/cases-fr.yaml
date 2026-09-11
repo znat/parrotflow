@@ -66,6 +66,10 @@ cases:
 
   # --- decimals and ordinals ----------------------------------------------
   - { probe: extras, lang: fr, input: trois virgule un quatre, expect: "3,14" }
+  # Vigesimal: `quatre-vingt-cinq` is 4 x 20 + 5, which no tens-plus-unit rule
+  # can see. The fraction is read by the same accumulator as any other number.
+  - { probe: extras, lang: fr, input: zéro virgule quatre-vingt-cinq, expect: '0,85' }
+  - { probe: extras, lang: fr, input: zéro virgule soixante-quinze pour cent, expect: '0,75%' }
   - { probe: extras, lang: fr, input: zéro virgule cinq, expect: "0,5" }
   - { probe: extras, lang: fr, input: le vingtième étage, expect: le 20e étage }
   - { probe: extras, lang: fr, input: le vingt et unième jour, expect: le 21e jour }
