@@ -57,10 +57,10 @@ enum SetupParsingCommand {
         }
     }
 
-    private static func line(_ what: String, _ where_: String?) {
+    private static func line(_ what: String, _ found: String?) {
         let width = 16
         let name = what.padding(toLength: max(width, what.count), withPad: " ", startingAt: 0)
-        print(where_.map { "  ✓ \(name) \($0)" } ?? "  ✗ \(name) not installed")
+        print(found.map { "  ✓ \(name) \($0)" } ?? "  ✗ \(name) not installed")
     }
 
     private static func printUsage() {
