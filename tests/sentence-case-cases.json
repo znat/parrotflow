@@ -37,5 +37,14 @@
  { "text": "we are writing it in English for the other reviewers", "want": "English", "why": "no mark in front of it, the lexicon knows this noun" },
  { "text": "I want to paste it into WhatsApp and the other apps", "want": "WhatsApp", "why": "no mark in front of it, a capital inside the word" },
  { "text": "the release goes out on Friday if the checks are green", "want": "Friday", "why": "no mark in front of it, a weekday is a noun" },
- { "text": "we can format the functions in TypeScript for that case", "want": "TypeScript", "why": "no mark in front of it, a capital inside the word" }
+ { "text": "we can format the functions in TypeScript for that case", "want": "TypeScript", "why": "no mark in front of it, a capital inside the word" },
+ { "text": "boundaries for portrait examples containing Several versions of the same", "want": "several", "why": "a quantifier tagged Adjective; the dictation this rule was fixed for" },
+ { "text": "we looked at the logs and saw Many errors in a row", "want": "many", "why": "a quantifier tagged Adjective" },
+ { "text": "the migration finished and Most tables came over clean", "want": "most", "why": "a quantifier tagged Adjective" },
+ { "text": "we ran the suite again and Few tests failed", "want": "few", "why": "a quantifier tagged Adjective" },
+ { "text": "we shipped the first one and Other changes followed", "want": "other", "why": "a quantifier tagged Adjective" },
+ { "text": "we translated the page into French and it worked", "want": "French", "why": "a language tagged Adjective; the lemma keeps the capital" },
+ { "text": "the docs are only in English at the moment", "want": "English", "why": "a language tagged Noun, refused by the class" },
+ { "text": "we agreed to ship it Friday before the standup", "want": "Friday", "why": "a weekday tagged Noun, refused by the class" },
+ { "text": "the outage report came from Google before lunch", "want": "Google", "why": "an organisation name, refused by the class" }
 ]

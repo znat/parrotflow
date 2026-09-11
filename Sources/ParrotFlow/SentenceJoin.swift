@@ -283,7 +283,15 @@ actor SentenceJoin {
         tagger.string = joined
         tagger.setLanguage(.english, range: joined.startIndex..<joined.endIndex)
         let tag = tagger.tag(at: from, unit: .word, scheme: .nameTypeOrLexicalClass).0?.rawValue
-        return Self.readableClasses.contains(tag ?? "")
+        if Self.readableClasses.contains(tag ?? "") { return true }
+        // An adjective is a quantifier as often as it is a name, so the class
+        // alone cannot decide it. The lemma can: it keeps the capital on
+        // `French` and `English` and drops it on `several`, `many`, `most`.
+        // Only an adjective is asked — `Slack` lemmatises lowercase too, but it
+        // tags Noun and never reaches here.
+        guard tag == "Adjective" else { return false }
+        let lemma = tagger.tag(at: from, unit: .word, scheme: .lemma).0?.rawValue ?? ""
+        return lemma.first?.isLowercase == true
     }
 
     /// The whole text with one mark taken out, and where the word after it
