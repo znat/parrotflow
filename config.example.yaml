@@ -54,7 +54,7 @@ transcription:
   #
   # Not a pipeline step: it reads the decoder's own word timings, so anything
   # that rewrote a word above it would break the alignment. It runs first.
-  interpret:
+  sentence_repair:
     enabled: true
     # capitals: true         # read a capital with no mark in front as a boundary
     # pause: 0.35            # seconds of silence a bare capital needs first
@@ -65,7 +65,7 @@ transcription:
   #
   # Not a pipeline step either: it is handed spans measured on the transcript
   # as the decoder wrote it, and any edit above it moves them. It runs second,
-  # after `interpret` and before everything below.
+  # after `sentence_repair` and before everything below.
   vocabulary:
     enabled: true
     # sound_below: 0.85      # how close a run of words must sound to a term

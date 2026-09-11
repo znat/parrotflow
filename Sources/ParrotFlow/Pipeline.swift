@@ -38,7 +38,10 @@ struct Pipeline: Equatable, Codable {
         /// First in the list, because it reads the decoder's own words: the
         /// pause gate lines the text up against the token timings, and a stage
         /// above it that rewrites a word breaks that alignment.
-        case interpret
+        ///
+        /// Called `interpret` until it was named for what it does. That
+        /// spelling is still read — see `Pipeline.stage(named:)`.
+        case sentenceRepair = "sentence_repair"
         /// What is on screen around the field, published as `context.*` and
         /// never written into the transcript. Terminals only — see `Context`.
         case context
@@ -72,7 +75,7 @@ struct Pipeline: Equatable, Codable {
         /// settings blocks.
         var isAutomatic: Bool {
             self != .transform && self != .context && self != .input
-                && self != .interpret && self != .vocabulary
+                && self != .sentenceRepair && self != .vocabulary
         }
     }
 
@@ -360,17 +363,17 @@ struct Pipeline: Equatable, Codable {
         let listed = config.transcription.pipeline ?? everything
         let carried = listed.steps
         var steps: [Step] = []
-        if config.transcription.interpret.enabled {
-            steps.append(interpretStep(
-                config.transcription.interpret,
-                carrying: carried.first { $0.stage == .interpret }))
+        if config.transcription.sentenceRepair.enabled {
+            steps.append(sentenceRepairStep(
+                config.transcription.sentenceRepair,
+                carrying: carried.first { $0.stage == .sentenceRepair }))
         }
         if config.transcription.vocabulary.enabled {
             steps.append(vocabularyStep(
                 config.transcription.vocabulary,
                 carrying: carried.first { $0.stage == .vocabulary }))
         }
-        steps += carried.filter { $0.stage != .interpret && $0.stage != .vocabulary }
+        steps += carried.filter { $0.stage != .sentenceRepair && $0.stage != .vocabulary }
         return Pipeline(steps: steps)
     }
 
@@ -385,10 +388,10 @@ struct Pipeline: Equatable, Codable {
     /// line has said the number exactly once and moving the key should not
     /// silently drop it. `notices()` names the ones it found. Only the options
     /// come across — the position does not, which is the whole point.
-    static func interpretStep(
-        _ settings: Config.Transcription.Interpret, carrying old: Step? = nil
+    static func sentenceRepairStep(
+        _ settings: Config.Transcription.SentenceRepair, carrying old: Step? = nil
     ) -> Step {
-        Step(stage: .interpret,
+        Step(stage: .sentenceRepair,
              marks: old?.marks ?? settings.marks,
              capitals: old?.capitals ?? settings.capitals,
              pause: old?.pause ?? settings.pause)
@@ -428,6 +431,9 @@ struct Pipeline: Equatable, Codable {
     static func stage(named name: String) -> Stage? {
         let key = name.trimmingCharacters(in: .whitespaces).lowercased()
         if key == "prompt" { return .transform }
+        // `interpret` is what `sentence_repair` was called. A config carrying
+        // the old spelling still loads; `notices()` says the line can go.
+        if key == "interpret" { return .sentenceRepair }
         return Stage(rawValue: key)
     }
 
@@ -893,8 +899,8 @@ struct Pipeline: Equatable, Codable {
         words: [Trace.Word]
     ) async -> StageResult {
         switch step.stage {
-        case .interpret:
-            return await interpret(step, on: text, config: config, words: words)
+        case .sentenceRepair:
+            return await repairSentence(step, on: text, config: config, words: words)
         case .context:
             return await readContext(on: text)
         case .input:
@@ -1043,7 +1049,7 @@ struct Pipeline: Equatable, Codable {
     /// that is not English: the transcript arrives as it was, and the step
     /// still publishes `ran: true` with `count: 0`. A boundary left as decoded
     /// is a worse transcript; an error here would cost the sentence.
-    private func interpret(
+    private func repairSentence(
         _ step: Step, on text: String, config: Config, words: [Trace.Word]
     ) async -> StageResult {
         guard #available(macOS 14, *) else {

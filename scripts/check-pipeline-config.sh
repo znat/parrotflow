@@ -49,11 +49,11 @@ stages() {
 run_config new 'transcription:
   languages: [en, fr]
   pipeline:
-    - interpret
+    - sentence_repair
     - vocabulary'
 
 check "a bare pipeline: list loads" "$code" "0"
-check "and it is the pipeline that runs" "$(stages)" "interpret → vocabulary"
+check "and it is the pipeline that runs" "$(stages)" "sentence_repair → vocabulary"
 
 # --- an empty list is a choice ------------------------------------------------
 
@@ -65,7 +65,7 @@ check "an empty pipeline loads" "$code" "0"
 # The list is empty; the two fixed passes are not in it and still run. That is
 # the point of the blocks — `pipeline: []` says "no transforms", not "no app".
 check "and runs no transforms, the fixed passes still" \
-  "$(stages)" "interpret → vocabulary"
+  "$(stages)" "sentence_repair → vocabulary"
 
 # --- no pipeline at all -------------------------------------------------------
 
@@ -74,7 +74,7 @@ run_config absent 'transcription:
 
 check "a config naming no pipeline loads" "$code" "0"
 check "and gets the built-in default, said out loud" \
-  "$(stages)" "interpret → vocabulary  (nothing configured, so every stage)"
+  "$(stages)" "sentence_repair → vocabulary  (nothing configured, so every stage)"
 
 # --- the interpret step -------------------------------------------------------
 #
@@ -90,18 +90,18 @@ marks() {
 run_config interpret_bare 'transcription:
   languages: [en]
   pipeline:
-    - interpret
+    - sentence_repair
     - vocabulary'
 
 check "a bare - interpret line loads" "$code" "0"
 check "and runs above vocabulary without being refused for it" \
-  "$(stages)" "interpret → vocabulary"
+  "$(stages)" "sentence_repair → vocabulary"
 check "and takes the built-in marks" "$(marks)" ". , ?"
 
 run_config interpret_options 'transcription:
   languages: [en]
   pipeline:
-    - stage: interpret
+    - stage: sentence_repair
       marks: [".", "?"]
       capitals: false
       pause: 0
@@ -111,13 +111,13 @@ check "a map with every option loads" "$code" "0"
 # `app:` is gone from these two. They are not steps, so there is no line for a
 # condition to sit on — the options are still read, the condition is not.
 check "and the condition is dropped with the step's position" \
-  "$(stages)" "interpret → vocabulary"
+  "$(stages)" "sentence_repair → vocabulary"
 check "and the step marks are what runs" "$(marks)" ". ?  (bare capitals off)"
 
 run_config interpret_capitals 'transcription:
   languages: [en]
   pipeline:
-    - {stage: interpret, capitals: false}'
+    - {stage: sentence_repair, capitals: false}'
 
 check "capitals: false alone loads" "$code" "0"
 check "and says so beside the marks" "$(marks)" ". , ?  (bare capitals off)"
@@ -125,24 +125,24 @@ check "and says so beside the marks" "$(marks)" ". , ?  (bare capitals off)"
 run_config interpret_pause 'transcription:
   languages: [en]
   pipeline:
-    - {stage: interpret, pause: 0}'
+    - {stage: sentence_repair, pause: 0}'
 
 check "pause: 0 loads" "$code" "0"
-check "and the step still resolves" "$(stages)" "interpret → vocabulary"
+check "and the step still resolves" "$(stages)" "sentence_repair → vocabulary"
 
 run_config interpret_bad_marks 'transcription:
   languages: [en]
   pipeline:
-    - {stage: interpret, marks: ["hello"]}'
+    - {stage: sentence_repair, marks: ["hello"]}'
 
 check "a mark that is a word is refused" "$code" "1"
 check "and the message names the key that was written" \
-  "$(printf '%s\n' "$out" | grep -c 'pipeline.interpret.marks')" "1"
+  "$(printf '%s\n' "$out" | grep -c 'sentence_repair.marks')" "1"
 
 run_config interpret_comma_only 'transcription:
   languages: [en]
   pipeline:
-    - {stage: interpret, marks: [","]}'
+    - {stage: sentence_repair, marks: [","]}'
 
 check "marks with no sentence ender is refused" "$code" "1"
 check "and says where a boundary is looked for" \
@@ -155,7 +155,7 @@ check "and says where a boundary is looked for" \
 
 run_config without_step 'transcription:
   languages: [en]
-  interpret: {enabled: false}
+  sentence_repair: {enabled: false}
   pipeline: []'
 
 check "interpret enabled: false loads" "$code" "0"
@@ -169,7 +169,7 @@ run_config omitted_step 'transcription:
 
 check "leaving interpret out of the list loads" "$code" "0"
 check "and it runs anyway, because the list is not its switch" \
-  "$(stages)" "interpret → vocabulary"
+  "$(stages)" "sentence_repair → vocabulary"
 
 # --- the vocabulary step's gates ----------------------------------------------
 #
@@ -269,7 +269,7 @@ check "and is named on the step's line" \
 run_config option_wrong_stage 'transcription:
   languages: [en]
   pipeline:
-    - {stage: interpret, slot_gate: false}
+    - {stage: sentence_repair, slot_gate: false}
     - {stage: vocabulary, marks: [".", "?"]}'
 
 check "an option on a stage that does not read it is refused" \
@@ -277,21 +277,21 @@ check "an option on a stage that does not read it is refused" \
 check "and each message names the stage that does read it" \
   "$(printf '%s\n' "$out" | grep -c 'option on the `vocabulary` stage')" "1"
 check "and the stage it was written on" \
-  "$(printf '%s\n' "$out" | grep -c '`interpret`: `slot_gate:`')" "1"
+  "$(printf '%s\n' "$out" | grep -c '`sentence_repair`: `slot_gate:`')" "1"
 
 run_config lowercase_wrong_stage 'transcription:
   languages: [en]
   pipeline:
-    - {stage: interpret, lowercase_refused: false}
+    - {stage: sentence_repair, lowercase_refused: false}
     - vocabulary'
 
 check "lowercase_refused: on another stage is refused too" \
-  "$(printf '%s\n' "$out" | grep -c '`interpret`: `lowercase_refused:`')" "1"
+  "$(printf '%s\n' "$out" | grep -c '`sentence_repair`: `lowercase_refused:`')" "1"
 
 run_config option_right_stage 'transcription:
   languages: [en]
   pipeline:
-    - {stage: interpret, marks: [".", "?"]}
+    - {stage: sentence_repair, marks: [".", "?"]}
     - {stage: vocabulary, slot_gate: false, near_misses: false}'
 
 check "an option on the stage that reads it is not refused" \
@@ -398,7 +398,7 @@ check "and names the other language too" \
   "$(printf '%s\n' "$out" | grep -c 'transform: numbers_fr')" "1"
 check "and does not offer the list of stages instead" \
   "$(printf '%s\n' "$out" | grep -c 'is not a stage')" "0"
-check "and the rest of the pipeline still runs" "$(stages)" "interpret → vocabulary"
+check "and the rest of the pipeline still runs" "$(stages)" "sentence_repair → vocabulary"
 
 # Half the migration: the pipeline line rewritten, the `transforms:` entry
 # forgotten. The message has to name the missing half rather than only say the
@@ -437,7 +437,7 @@ check "and says what to write instead" \
 check "and says the built-in default is what runs" \
   "$(printf '%s\n' "$out" | grep -c 'no pipeline of yours is running')" "1"
 check "and that is what resolves" \
-  "$(stages)" "interpret → vocabulary  (nothing configured, so every stage)"
+  "$(stages)" "sentence_repair → vocabulary  (nothing configured, so every stage)"
 
 # --- any shape under the retired key ------------------------------------------
 #
@@ -447,14 +447,14 @@ check "and that is what resolves" \
 run_config retired_list 'transcription:
   languages: [en]
   pipelines:
-    - interpret
+    - sentence_repair
     - vocabulary'
 
 check "a bare list under pipelines: is refused the same way" "$code" "1"
 check "with the same one message" \
   "$(printf '%s\n' "$out" | grep -c 'transcription.pipelines: is retired')" "1"
 check "and the built-in default resolves" \
-  "$(stages)" "interpret → vocabulary  (nothing configured, so every stage)"
+  "$(stages)" "sentence_repair → vocabulary  (nothing configured, so every stage)"
 
 # --- the rest of the config still loads ---------------------------------------
 #
@@ -474,7 +474,7 @@ check "a refused pipelines: does not cost the rest of the config" \
 check "including a setting read after it" \
   "$(printf '%s\n' "$out" | grep -c 'copy to clipboard')" "1"
 check "and the built-in default is still what resolves" \
-  "$(stages)" "interpret → vocabulary  (nothing configured, so every stage)"
+  "$(stages)" "sentence_repair → vocabulary  (nothing configured, so every stage)"
 
 # --- both keys ----------------------------------------------------------------
 
@@ -486,7 +486,7 @@ run_config both 'transcription:
     default: [interpret]'
 
 check "pipelines: beside pipeline: is still refused" "$code" "1"
-check "and pipeline: is what runs" "$(stages)" "interpret → vocabulary"
+check "and pipeline: is what runs" "$(stages)" "sentence_repair → vocabulary"
 check "and the message says so" \
   "$(printf '%s\n' "$out" | grep -c 'the `pipeline:` list is what runs')" "1"
 

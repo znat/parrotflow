@@ -132,7 +132,7 @@ enum CheckConfigCommand {
             }
             // The set the step runs with. Silent when the pipeline holds no
             // step at all, which is also what says nothing is downloaded for it.
-            if let step = pipeline.steps.first(where: { $0.stage == .interpret }) {
+            if let step = pipeline.steps.first(where: { $0.stage == .sentenceRepair }) {
                 let marks = step.marks ?? transcription.marks(for: "en")
                 emit("  · sentence marks    \(marks.joined(separator: " "))"
                     + (step.capitals == false ? "  (bare capitals off)" : ""))

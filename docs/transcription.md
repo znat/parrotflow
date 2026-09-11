@@ -610,7 +610,7 @@ said     "you should see a parrot at the top right of your screen"
 written  "You should see a parrot. At the top right of your screen."
 ```
 
-The `interpret` step reads every such boundary in an English or French
+The `sentence_repair` step reads every such boundary in an English or French
 transcript three ways and scores each with a small causal language model
 (`mlx-community/Qwen3-0.6B-Base-4bit`, 320 MB):
 
@@ -628,7 +628,7 @@ English.
 
 This is not a pipeline step. It reads the decoder's own word timings, so there
 is no second place it could run — see [The two fixed
-passes](pipelines.md#the-two-fixed-passes). `transcription.interpret:` is its
+passes](pipelines.md#the-two-fixed-passes). `transcription.sentence_repair:` is its
 settings block, and `enabled: false` is what turns it off; with it off nothing
 is downloaded for boundaries at all.
 

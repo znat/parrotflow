@@ -5,7 +5,7 @@ Everything a finished transcript goes through, in order:
 ```yaml
 transcription:
   pipeline:
-    - interpret
+    - sentence_repair
     - vocabulary
     - transform: dates_en
     - transform: numbers_en
@@ -35,7 +35,7 @@ fixed passes](#the-two-fixed-passes).
 `pipelines:`, the map keyed by language, is retired. Nothing under it is read.
 `--check-config` exits non-zero and says to write one `pipeline:` list, and the
 app says the same at launch, in the log and in the menu bar. Until you rewrite
-it none of your steps run — the built-in default does, which is `interpret`
+it none of your steps run — the built-in default does, which is `sentence_repair`
 and nothing else. Move the lists into `pipeline:` and put
 `when: language == "fr"` on the steps that only belong to one language.
 
@@ -47,27 +47,27 @@ can get wrong.
 
 ## The two fixed passes
 
-`interpret` and `vocabulary` are not in `pipeline:`. Each has a settings block
+`sentence_repair` and `vocabulary` are not in `pipeline:`. Each has a settings block
 under `transcription:`, each runs at a fixed point, and `enabled: false` is the
 only way to turn one off.
 
 | Pass | What it does | Why it cannot move |
 |---|---|---|
-| `interpret` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The interpret stage](#the-interpret-stage). English only. | It reads the decoder's own words and their timings. A rewrite above it moves a word and the pause gate lines up against the wrong token. |
+| `sentence_repair` | What you meant, where the decoder wrote what it heard. Today that is the marks a pause put in mid-sentence, taken out again — see [The sentence_repair pass](#the-sentence_repair-pass). English only. | It reads the decoder's own words and their timings. A rewrite above it moves a word and the pause gate lines up against the wrong token. |
 | `vocabulary` | Names. Matches every `heard:` rendering in `vocabulary.yaml`, reaches the near misses you have not taught, then settles each match against the sentence it stands in — see [The name stage](#the-name-stage). | It is handed spans measured on the transcript as the decoder wrote it. Any edit above it moves them (F10). |
 
 ```yaml
 transcription:
-  interpret:
+  sentence_repair:
     enabled: true
   vocabulary:
     enabled: true
 ```
 
-Both run before the list, `interpret` first:
+Both run before the list, `sentence_repair` first:
 
 ```
-asr → vad → interpret → vocabulary → pipeline
+asr → vad → sentence_repair → vocabulary → pipeline
 ```
 
 Both still publish into the scope, as `asr` and `vad` already do without being
@@ -77,7 +77,7 @@ stages. `when: vocabulary.count > 0` on a transform goes on working, and
 **The rule.** A pipeline stage rewrites text and may go anywhere. A pass that
 reads the decoder's output is fixed and takes a settings block.
 
-A config that still writes `- interpret` or `- vocabulary` in its list keeps
+A config that still writes `- sentence_repair` or `- vocabulary` in its list keeps
 working. The line is read as "on" and nothing else: the pass runs at the head
 whatever position it was written in, its options are carried into the block,
 and `--check-config` says the line can go. `when:`, `unless:` and `app:` on
@@ -161,15 +161,15 @@ the first four decided that a word you said was code, and the words they acted
 on — *dot*, *dash*, *point*, *question mark* — are words people also just say.
 They are in git history if you want one back.
 
-## The interpret stage
+## The sentence_repair pass
 
-`interpret` reads what the transcript says against what the speaker meant. It
+`sentence_repair` reads what the transcript says against what the speaker meant. It
 is not called `repunctuate` because punctuation is only the first thing it
 does: the misheard-word and disfluency passes belong here too, and they will be
 further switches on this same line.
 
 ```yaml
-- interpret
+- sentence_repair
 ```
 
 A pause mid-sentence makes the transcriber write a period or a question mark
@@ -184,7 +184,7 @@ repairs and what it costs.
 With anything to say about it, spell the stage out:
 
 ```yaml
-- stage: interpret
+- stage: sentence_repair
   marks: [".", ",", "?"]   # optional; default. What a boundary can be written with
   capitals: true           # optional; default. false reads marks only
   pause: 1.0               # optional; default. Seconds of silence before a bare capital
@@ -224,7 +224,7 @@ otherwise. A dictation that arrives before the weights are in memory keeps its
 boundaries, and the step still publishes `ran: true` with `changed: false` —
 the failure direction every stage here shares.
 
-It publishes `interpret.count`: how many boundaries were joined.
+It publishes `sentence_repair.count`: how many boundaries were joined.
 
 Delete the line to turn the step off. A pipeline without it does not read
 boundaries at all, and nothing is downloaded for it.
@@ -262,7 +262,7 @@ what the decoder wrote and the term — so a third reading would be built and
 never shown. Refused rather than rounded down, because a number that says one
 thing and does another teaches nobody anything.
 
-**An option on the wrong stage is refused.** `slot_gate:` on `interpret`, or
+**An option on the wrong stage is refused.** `slot_gate:` on `sentence_repair`, or
 `marks:` on `vocabulary`, used to load and do nothing. `--check-config` names
 the key, the stage it was written on and the stage that reads it. A switch that
 loads and does nothing is somebody believing a gate is off while it runs.
@@ -359,7 +359,7 @@ capitals because it thought it was writing a name, and the portrait has just
 said this is the ordinary phrase. So the span is written `better stack`.
 
 It fires only on a refused place that glues, and only when every word of the
-span passes the same lexicon test `interpret` uses — `NLTagger` must give the
+span passes the same lexicon test `sentence_repair` uses — `NLTagger` must give the
 word a lemma and must not call it a name. `Mont Blanc` for a term `MontBlanc`
 is left as heard, and so is any word in capitals throughout. A capital that
 starts a sentence is kept, and a possessive survives: `Better Stack's` becomes
@@ -404,7 +404,7 @@ measured on the text the decoder produced. Put it above everything that edits
 text. `--check-config` refuses a pipeline that puts a transform above it, because a span that has moved cannot be told from a span that was
 always wrong.
 
-`interpret` is the one exception, and it is where the default puts it. It
+`sentence_repair` is the one exception, and it is where the default puts it. It
 removes a mark rather than rewriting a word, and it ran above the whole
 pipeline before it was a step. `replacements` used to be the exception, because
 the stage offers a rule's substitution back and the rules had to have fired
@@ -1025,7 +1025,7 @@ any of this exists:
 They are **derived, never claimed**. A stage cannot forget to report `changed`,
 and cannot report it about the wrong string.
 
-Stages add their own on top. `interpret.count` is how many boundaries it
+Stages add their own on top. `sentence_repair.count` is how many boundaries it
 joined. The built-in ones publish `vocabulary.count`,
 `vocabulary.changes` and `vocabulary.before` — how many rules fired, which
 ones, and the sentence the stage was handed — and, for a prompt stage, `model`.

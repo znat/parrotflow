@@ -30,7 +30,7 @@ transcription:
   activation_phrases: [hey parrot]
   languages: [en]       # en and fr are the supported values; the example file ships [en, fr]
   rewrite_line: true
-  interpret: {enabled: true}    # a fixed pass, not a step — see pipelines.md
+  sentence_repair: {enabled: true}    # a fixed pass, not a step — see pipelines.md
   vocabulary: {enabled: true}   # the same
   pipeline: …           # see pipelines.md
   transforms: …         # see pipelines.md
@@ -477,15 +477,15 @@ correction ended up appended to the end of a line instead of replacing a word in
 it: ⌃K clears nothing in a composer, and the paste that followed landed on the
 end of what was still there.
 
-## `transcription.interpret` and `transcription.vocabulary`
+## `transcription.sentence_repair` and `transcription.vocabulary`
 
 Two passes read the decoder's own output, so neither can be reordered. They are
 settings blocks rather than `pipeline:` lines, they run before the list —
-`interpret` first — and `enabled: false` is the only way off.
+`sentence_repair` first — and `enabled: false` is the only way off.
 
 ```yaml
 transcription:
-  interpret:
+  sentence_repair:
     enabled: true
     capitals: true         # read a capital with no mark in front as a boundary
     pause: 0.35            # seconds of silence a bare capital needs first
@@ -511,7 +511,7 @@ app writes, under a header telling you not to edit it. They belong here now.
 The old spelling is still read, so an install that has one keeps its value, and
 `--check-config` names each one and says where to write it.
 
-**An old `pipeline:` keeps working.** A list that still names `- interpret` or
+**An old `pipeline:` keeps working.** A list that still names `- sentence_repair` or
 `- vocabulary` is read as "on". The pass runs at the head whatever position the
 line was written in, any options on the line are carried into the block, and
 `--check-config` says the line can go. `when:`, `unless:` and `app:` on those

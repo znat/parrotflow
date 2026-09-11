@@ -1698,7 +1698,9 @@ struct Config: Decodable, Equatable {
 
         /// The two passes that read the decoder's output. Fixed, not ordered —
         /// see `Pipeline.resolved(config:)`.
-        var interpret = Interpret()
+        var sentenceRepair = SentenceRepair()
+        /// Whether the block was written under its old name, for `notices()`.
+        var retiredInterpretBlock = false
         var vocabulary = Vocabulary()
 
         /// The marks the `interpret` step tries beside removing the period,
@@ -1822,7 +1824,7 @@ struct Config: Decodable, Equatable {
         /// word and the pause gate lines up against the wrong token, so there
         /// is no second place it could go. It runs first, always, and `enabled:
         /// false` is the only way off.
-        struct Interpret: Decodable, Equatable {
+        struct SentenceRepair: Decodable, Equatable {
             var enabled: Bool = true
             /// What a boundary may be written with. Left out, the built-in set
             /// for the language — see `Transcription.marks(for:)`.
@@ -1919,7 +1921,8 @@ struct Config: Decodable, Equatable {
         }
 
         enum CodingKeys: String, CodingKey {
-            case enabled, replacements, pipeline, languages, interpret, vocabulary
+            case enabled, replacements, pipeline, languages, vocabulary
+            case sentenceRepair = "sentence_repair"
             case insertMode = "insert_mode"
             case activationPhrases = "activation_phrases"
             case activationPhrase = "activation_phrase"
@@ -1937,6 +1940,8 @@ struct Config: Decodable, Equatable {
             case fuzzyMatching = "fuzzy_matching"
             // The map keyed by language that `pipeline:` replaced.
             case pipelines
+            // What `sentence_repair:` was called.
+            case interpret
         }
         /// Grouped by the word you want written, since one name accumulates
         /// several mishearings — eleven rules had built up for four names
@@ -2124,7 +2129,7 @@ struct Config: Decodable, Equatable {
                 // key, because the key is how the stage used to be spelled and
                 // `- stage: vocabulary` is how it is spelled now that there is
                 // no file to name.
-                if name.caseInsensitiveCompare("vocabulary") == .orderedSame {
+                if Pipeline.stage(named: name) == .vocabulary {
                     var caps = VocabularyPass.Caps.standard
                     // Each optional and each on its own: a person raising one
                     // ceiling should not have to restate the rest.
@@ -2158,17 +2163,18 @@ struct Config: Decodable, Equatable {
                 }
                 // Each optional and each on its own, as the vocabulary caps
                 // are: turning the capitals off must not restate the marks.
-                if name.caseInsensitiveCompare("interpret") == .orderedSame {
+                if Pipeline.stage(named: name) == .sentenceRepair {
                     if let written = try c.decodeIfPresent([String].self, forKey: .marks) {
                         marks = try Language.checked(
-                            marks: written, key: "pipeline.interpret.marks"
+                            marks: written, key: "sentence_repair.marks"
                         )
                     }
                     capitals = try c.decodeIfPresent(Bool.self, forKey: .capitals)
                     pause = try c.decodeIfPresent(Double.self, forKey: .pause)
                 }
+                let mine = Pipeline.stage(named: name)
                 for (owner, keys) in Self.stageKeys
-                where owner.caseInsensitiveCompare(name) != .orderedSame {
+                where Pipeline.stage(named: owner) != mine {
                     misplaced += keys.filter { c.contains($0) }.map {
                         "`\($0.stringValue):` is an option on the `\(owner)` stage."
                             + " It does nothing here"
@@ -2187,7 +2193,7 @@ struct Config: Decodable, Equatable {
                     .lowercaseRefused, .slotFloor,
                     .review, .maxSlots, .maxReadings, .maxPerSlot, .maxPerTerm,
                 ]),
-                ("interpret", [.marks, .capitals, .pause]),
+                ("sentence_repair", [.marks, .capitals, .pause]),
             ]
 
             /// `slot_floor:` in either spelling — a number for every language,
@@ -2334,7 +2340,15 @@ struct Config: Decodable, Equatable {
                     .filter { !$0.isEmpty }
             }
             if let v = try c.decodeIfPresent(Bool.self, forKey: .rewriteLine) { rewriteLine = v }
-            if let v = try c.decodeIfPresent(Interpret.self, forKey: .interpret) { interpret = v }
+            if let v = try c.decodeIfPresent(SentenceRepair.self, forKey: .sentenceRepair) {
+                sentenceRepair = v
+            }
+            // `interpret:` is what the block was called. Still read, so a
+            // config written before the rename keeps its settings.
+            if let v = try legacy.decodeIfPresent(SentenceRepair.self, forKey: .interpret) {
+                sentenceRepair = v
+                retiredInterpretBlock = true
+            }
             if let v = try c.decodeIfPresent(Vocabulary.self, forKey: .vocabulary) { vocabulary = v }
             if let v = try c.decodeIfPresent([String].self, forKey: .languages) {
                 let known = v.map { $0.lowercased() }
@@ -2388,7 +2402,7 @@ struct Config: Decodable, Equatable {
                     pipeline = Pipeline(steps: steps)
                 }
             } catch let bad as ConfigError {
-                // A step's own key — `pipeline.interpret.marks` — already says
+                // A step's own key — `pipeline.sentenceRepair.marks` — already says
                 // what is wrong and where. Rewriting it as "not a list of
                 // steps" would send the reader to the wrong line.
                 throw bad
@@ -3059,11 +3073,17 @@ struct Config: Decodable, Equatable {
         // from the block — so this says the line is doing nothing rather than
         // letting it look like it still sets a position.
         let stillListed = (transcription.pipeline?.stages ?? [])
-            .filter { $0 == .interpret || $0 == .vocabulary }
+            .filter { $0 == .sentenceRepair || $0 == .vocabulary }
         for stage in Set(stillListed).sorted(by: { $0.name < $1.name }) {
             said.append("pipeline: `- \(stage.name)` is not a step any more."
                 + " It runs first whatever the list says — delete the line, and"
-                + " use `transcription.\(stage.name): {enabled: false}` to turn it off")
+                + " use `transcription.\(stage.name): {enabled: false}` to turn"
+                + " it off")
+        }
+
+        if transcription.retiredInterpretBlock {
+            said.append("transcription: `interpret:` is called `sentence_repair:`"
+                + " now — same keys, still read under the old name")
         }
 
         // Three switches a person chooses used to sit in the file the app
@@ -3156,7 +3176,7 @@ struct Config: Decodable, Equatable {
     /// One predicate, because two places warm the 320 MB sentence model and a
     /// warm that disagrees with the pipeline fetches weights nothing will read.
     var readsBoundaries: Bool {
-        Pipeline.resolved(config: self).stages.contains(.interpret)
+        Pipeline.resolved(config: self).stages.contains(.sentenceRepair)
     }
 
     /// The `vocabulary` steps in the pipeline. More than one is legal, so
