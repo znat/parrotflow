@@ -50,17 +50,46 @@ enum ParsingInstall {
     /// The interpreter the venv would be built on.
     ///
     /// `PARROTFLOW_PYTHON` first, so a test can point at one. Homebrew before
-    /// `/usr/bin/python3`: the system one is a Command Line Tools stub that
-    /// opens an installer dialog when the tools are absent, which is not
-    /// something to hit halfway through a setup run.
+    /// `/usr/bin/python3`: the system one is a shim, and on a Mac with no
+    /// developer tools it opens an installer dialog rather than running —
+    /// which is not something to hit halfway through a setup run.
+    ///
+    /// `isExecutableFile` cannot tell the two apart: the shim is a real
+    /// executable either way. And the obvious test, running it, is the thing
+    /// that opens the dialog. So the shim is accepted only when the tools it
+    /// forwards to are installed, which `xcode-select -p` answers without
+    /// prompting for anything.
     static func interpreter() -> String? {
         var places: [String] = []
         if let named = ProcessInfo.processInfo.environment["PARROTFLOW_PYTHON"] {
             places.append(named)
         }
-        places += ["/opt/homebrew/bin/python3", "/usr/local/bin/python3",
-                   "/usr/bin/python3"]
+        places += ["/opt/homebrew/bin/python3", "/usr/local/bin/python3"]
+        if developerToolsInstalled() {
+            places.append("/usr/bin/python3")
+        }
         return places.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// Whether `/usr/bin/python3` forwards to anything.
+    ///
+    /// `xcode-select -p` prints the developer directory and exits 0 when the
+    /// tools are there, and exits non-zero when they are not. It is the one
+    /// question that can be asked without triggering the install prompt.
+    static func developerToolsInstalled() -> Bool {
+        let probe = Process()
+        probe.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+        probe.arguments = ["-p"]
+        let pipe = Pipe()
+        probe.standardOutput = pipe
+        probe.standardError = FileHandle.nullDevice
+        do { try probe.run() } catch { return false }
+        let printed = pipe.fileHandleForReading.readDataToEndOfFile()
+        probe.waitUntilExit()
+        guard probe.terminationStatus == 0 else { return false }
+        let path = String(decoding: printed, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return !path.isEmpty && FileManager.default.fileExists(atPath: path)
     }
 
     /// Whether the tree can answer for a model. Runs it rather than looking for

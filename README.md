@@ -243,8 +243,8 @@ Each with its own test cases, in [examples/transforms](examples/transforms):
 - [disfluency](examples/transforms/disfluency) — what you did not mean to say,
   taken out: a word said twice, *"the the prompt"* → *"the prompt"*; a phrase
   begun again, *"in the ter in the terminal"*; and a marker that carries
-  nothing, *"so use like you know five"* → *"so use five"*. No model for the
-  first three; the last one wants a parse.
+  nothing, *"so use like you know five"* → *"so use five"*. Only that last one
+  wants a parse; the rest are string work.
 - [punctuation](examples/transforms/punctuation) — spoken marks as
   punctuation, *"is that true question mark"* → *"is that true?"*.
 - [dates](examples/transforms/dates) — a dictated date or time in the shape it
