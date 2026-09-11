@@ -109,6 +109,28 @@ actor SentenceJoin {
     /// Tags a capital must survive. A name stays a name once the mark goes.
     static let names: Set<String> = ["PersonalName", "PlaceName", "OrganizationName"]
 
+    /// The tagger reads the dictation's language. Asked in English, `NLTagger`
+    /// gives no lemma for most French words, and "no lemma" is what this rule
+    /// reads as a name — so a joined French boundary kept its capital.
+    static func tag(for language: String) -> NLLanguage {
+        language == "fr" ? .french : .english
+    }
+
+    /// The languages the boundary is read in.
+    ///
+    /// English and French. The reason this was English alone — "the readings
+    /// are scored by an English base model" — went when ModernBERT left; the
+    /// model is Qwen3 and it is multilingual. Measured over 234 French
+    /// boundaries, 103 real periods mined from real dictation and 131 cuts made
+    /// by inserting one: AUC 0.968 against 0.984 in English, 91% of cuts
+    /// repaired, and 6 false joins of which four are repairs the mining
+    /// mislabelled — about 2 per 100 real periods.
+    ///
+    /// The bare-capital half is not measured in French, and French capitalises
+    /// far less than English, so `capitals:` is off for anything but English at
+    /// the call site.
+    static let languages: Set<String> = ["en", "fr"]
+
     // MARK: - Finding the boundaries
 
     /// Every place one of `marks` is followed by a word.
@@ -126,7 +148,12 @@ actor SentenceJoin {
             guard at > text.startIndex, cursor < text.endIndex, text[cursor] != mark else {
                 continue
             }
-            let word = text[..<at].reversed().prefix { $0.isLetter || $0.isNumber }
+            // French sets a space before `?` — "travailler ?" — so the word is
+            // looked for past it. Without this every French question boundary
+            // is invisible and nothing says so. `!` is in no mark set, in
+            // either language, so it is not scanned here and not a boundary.
+            let ahead = text[..<at].reversed().drop { $0.isWhitespace }
+            let word = ahead.prefix { $0.isLetter || $0.isNumber }
             guard word.count > 1 else { continue }
 
             var start = cursor
@@ -226,7 +253,8 @@ actor SentenceJoin {
     /// than at the head of one: with the period still in place the same set
     /// scored 20 of its first 24 cases, and without it 21.
     static func written(
-        _ word: String, in joined: String, at offset: Int, terms: [String]
+        _ word: String, in joined: String, at offset: Int, terms: [String],
+        language: String = "en"
     ) -> String {
         let bare = String(word.prefix { $0.isLetter })
         guard let first = word.first, first.isUppercase, !bare.isEmpty else { return word }
@@ -240,7 +268,7 @@ actor SentenceJoin {
 
         let tagger = NLTagger(tagSchemes: [.nameTypeOrLexicalClass, .lemma])
         tagger.string = joined
-        tagger.setLanguage(.english, range: joined.startIndex..<joined.endIndex)
+        tagger.setLanguage(Self.tag(for: language), range: joined.startIndex..<joined.endIndex)
         let tag = tagger.tag(at: from, unit: .word, scheme: .nameTypeOrLexicalClass).0?.rawValue
         guard !Self.names.contains(tag ?? "") else { return word }
         let lemma = tagger.tag(at: from, unit: .word, scheme: .lemma).0?.rawValue ?? ""
@@ -273,7 +301,9 @@ actor SentenceJoin {
     ///
     /// The tagger is built with the scheme set `written` uses. Asking for
     /// `.lexicalClass` alongside changes the answer on 3 of the same 621.
-    static func readable(_ word: String, in joined: String, at offset: Int) -> Bool {
+    static func readable(
+        _ word: String, in joined: String, at offset: Int, language: String = "en"
+    ) -> Bool {
         let bare = String(word.prefix { $0.isLetter })
         guard !bare.dropFirst().contains(where: \.isUppercase) else { return false }
         guard let from = joined.index(
@@ -281,9 +311,17 @@ actor SentenceJoin {
         ) else { return false }
         let tagger = NLTagger(tagSchemes: [.nameTypeOrLexicalClass, .lemma])
         tagger.string = joined
-        tagger.setLanguage(.english, range: joined.startIndex..<joined.endIndex)
+        tagger.setLanguage(Self.tag(for: language), range: joined.startIndex..<joined.endIndex)
         let tag = tagger.tag(at: from, unit: .word, scheme: .nameTypeOrLexicalClass).0?.rawValue
-        return Self.readableClasses.contains(tag ?? "")
+        if Self.readableClasses.contains(tag ?? "") { return true }
+        // An adjective is a quantifier as often as it is a name, so the class
+        // alone cannot decide it. The lemma can: it keeps the capital on
+        // `French` and `English` and drops it on `several`, `many`, `most`.
+        // Only an adjective is asked — `Slack` lemmatises lowercase too, but it
+        // tags Noun and never reaches here.
+        guard tag == "Adjective" else { return false }
+        let lemma = tagger.tag(at: from, unit: .word, scheme: .lemma).0?.rawValue ?? ""
+        return lemma.first?.isLowercase == true
     }
 
     /// The whole text with one mark taken out, and where the word after it
@@ -360,11 +398,13 @@ actor SentenceJoin {
         words: [Trace.Word] = []
     ) async -> Outcome {
         let language = Pipeline.language(of: text, config: config)
-        guard language == "en" else { return .unchanged(text) }
+        guard Self.languages.contains(language) else { return .unchanged(text) }
         let marks = written ?? config.transcription.marks(for: language)
         let found = (
             Self.boundaries(in: text, scanning: Self.scanned(marks))
-            + (capitals ? Self.bareBoundaries(in: text) : [])
+            // English only: the refusal rules for a bare capital were tuned on
+            // English capitalisation, and French capitalises far less.
+            + (capitals && language == "en" ? Self.bareBoundaries(in: text) : [])
         ).sorted { $0.next.lowerBound < $1.next.lowerBound }
         guard !found.isEmpty else { return .unchanged(text) }
         guard await SentenceReadings.shared.isLoaded else {
@@ -389,12 +429,15 @@ actor SentenceJoin {
         for boundary in found {
             let word = String(text[boundary.next])
             let (whole, offset) = Self.joining(text, at: boundary)
-            let now = Self.written(word, in: whole, at: offset, terms: terms)
+            let now = Self.written(
+                word, in: whole, at: offset, terms: terms, language: language
+            )
             // A bare capital is filtered before it is read, never after. Half
             // of them are a name the transcriber was right about, and a name
             // must not reach a reading that could vote to lowercase it.
             if boundary.mark == nil,
-               now == word || !Self.readable(word, in: whole, at: offset) {
+               now == word
+                   || !Self.readable(word, in: whole, at: offset, language: language) {
                 continue
             }
             if boundary.mark == nil, pause > 0, let gap = pauses[offset], gap < pause {
@@ -436,7 +479,15 @@ actor SentenceJoin {
             readings.append(Reading(change: change, scores: scores, winner: best.key))
 
             if best.key == SentenceReadings.join {
-                rebuilt += text[cursor..<boundary.at]
+                let head = text[cursor..<boundary.at]
+                // With a mark, the space French sets in front of it goes with
+                // it — "travailler ? Oui" joins to "travailler oui" and not to
+                // "travailler  oui". The separator is the one after the mark.
+                // With no mark there is no separator after it, so the one in
+                // `head` is the only one and it stays.
+                rebuilt += boundary.mark == nil
+                    ? String(head)
+                    : String(head.reversed().drop { $0.isWhitespace }.reversed())
                 let after = boundary.mark == nil ? boundary.at : text.index(after: boundary.at)
                 rebuilt += text[after..<boundary.next.lowerBound]
                 rebuilt += now

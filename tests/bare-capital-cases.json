@@ -1,0 +1,364 @@
+[
+ {
+  "left": "we could just increase the frequency of those meetings and the other one was hmm",
+  "right": "Uh why not increasing the temperature?",
+  "mark": "",
+  "word": "Uh",
+  "want": "lower",
+  "why": "\"Uh\" after a pause, mid-sentence"
+ },
+ {
+  "left": "So what was happening was that the vocabulary was",
+  "right": "Too influent. Vocabulary terms would replace very distantly similar phonetic. Uh fragments.",
+  "mark": "",
+  "word": "Too",
+  "want": "lower",
+  "why": "\"Too\" after a pause, mid-sentence"
+ },
+ {
+  "left": "Context is uh technical terms and acronyms from the code base and from Slack conversations",
+  "right": "And the people I interacted with the last thirty days so a prompt to put",
+  "mark": "",
+  "word": "And",
+  "want": "lower",
+  "why": "\"And\" after a pause, mid-sentence"
+ },
+ {
+  "left": "terms based on the context, but also based on the app name. Currently it's only",
+  "right": "But it could be Slack or Outlook or anything in the future.",
+  "mark": "",
+  "word": "But",
+  "want": "lower",
+  "why": "\"But\" after a pause, mid-sentence"
+ },
+ {
+  "left": "case the LM path should have retries And if after several retries retries it fails",
+  "right": "The ingest should stop. And in case of the short content, then we can just",
+  "mark": "",
+  "word": "The",
+  "want": "keep",
+  "why": "the comma used to veto this; dropping it loses 2 of the 42 it changes",
+  "cost": true
+ },
+ {
+  "left": "he how he went from one PR fruit to another? How many commits are specifically",
+  "right": "For the purpose of that PR it seems like there was a lot of rebase",
+  "mark": "",
+  "word": "For",
+  "want": "lower",
+  "why": "\"For\" after a pause, mid-sentence"
+ },
+ {
+  "left": "onboarding step the calibration but is there something we can learn from the sounds of",
+  "right": "Returned by the C C DTC. For example, for non-native speakers, they will pronounce same",
+  "mark": "",
+  "word": "Returned",
+  "want": "lower",
+  "why": "\"Returned\" after a pause, mid-sentence"
+ },
+ {
+  "left": "There are a few caveats, for example",
+  "right": "The input may contain several dictations or they could have added content such as a",
+  "mark": "",
+  "word": "The",
+  "want": "lower",
+  "why": "\"The\" after a pause, mid-sentence"
+ },
+ {
+  "left": "How can you know it's not",
+  "right": "How can you know it's not the prompt?",
+  "mark": "",
+  "word": "How",
+  "want": "lower",
+  "why": "\"How\" after a pause, mid-sentence"
+ },
+ {
+  "left": "Which mean would we subtract the global mean or the per page mean? And",
+  "right": "And how would we process the query? And do we have to Because if we",
+  "mark": "",
+  "word": "And",
+  "want": "lower",
+  "why": "\"And\" after a pause, mid-sentence"
+ },
+ {
+  "left": "that currently vectors are too close to each other and therefore content is hard to",
+  "right": "Relevant content is hard to get surfaced in at the retrieval stage.",
+  "mark": "",
+  "word": "Relevant",
+  "want": "lower",
+  "why": "\"Relevant\" after a pause, mid-sentence"
+ },
+ {
+  "left": "definition we discussed above, then it works by difference. Everything that is not in the",
+  "right": "Everything that is not in",
+  "mark": "",
+  "word": "Everything",
+  "want": "lower",
+  "why": "\"Everything\" after a pause, mid-sentence"
+ },
+ {
+  "left": "Sorry, yes, we had a one on one yesterday, Henny told me",
+  "right": "That in the end you changed some setting universal and IPs are not visible anymore.",
+  "mark": "",
+  "word": "That",
+  "want": "lower",
+  "why": "\"That\" after a pause, mid-sentence"
+ },
+ {
+  "left": "one of the terms heard in the transcription, you can see that the same th",
+  "right": "Matches a term in the herd list for for one of the vocabulary term, then",
+  "mark": "",
+  "word": "Matches",
+  "want": "lower",
+  "why": "\"Matches\" after a pause, mid-sentence"
+ },
+ {
+  "left": "be overridden by the configuration. So for example, if I V can mean something else",
+  "right": "For a specific brand, they can put it in the configuration and it will completely",
+  "mark": "",
+  "word": "For",
+  "want": "lower",
+  "why": "\"For\" after a pause, mid-sentence"
+ },
+ {
+  "left": "But also I want to see if we can leverage metadata on dictation such as",
+  "right": "Such as duration between clips.",
+  "mark": "",
+  "word": "Such",
+  "want": "lower",
+  "why": "\"Such\" after a pause, mid-sentence"
+ },
+ {
+  "left": "So I want to keep the narrative smaller",
+  "right": "And have the buy engine section. Under it. Then I want to use this area",
+  "mark": "",
+  "word": "And",
+  "want": "lower",
+  "why": "\"And\" after a pause, mid-sentence"
+ },
+ {
+  "left": "Something like a f fast local first programmable dictation tool",
+  "right": "That you can adapt to your very own workflows instead of work.",
+  "mark": "",
+  "word": "That",
+  "want": "lower",
+  "why": "\"That\" after a pause, mid-sentence"
+ },
+ {
+  "left": "is to op okay, so I would open a terminal window and it was just",
+  "right": "Uh scroll like a tail, yeah.",
+  "mark": "",
+  "word": "Uh",
+  "want": "lower",
+  "why": "\"Uh\" after a pause, mid-sentence"
+ },
+ {
+  "left": "I don't think an AI would go against the label, but more",
+  "right": "Yeah we'll just use the site as source of truth.",
+  "mark": "",
+  "word": "Yeah",
+  "want": "lower",
+  "why": "\"Yeah\" after a pause, mid-sentence"
+ },
+ {
+  "left": "how this should be so that the reader, which is usually a brand marketer, understand",
+  "right": "What need expansion? How shallow it is, and how the AI goes deeper.",
+  "mark": "",
+  "word": "What",
+  "want": "lower",
+  "why": "\"What\" after a pause, mid-sentence"
+ },
+ {
+  "left": "Okay, it's catchy, but as a brand manager, I think I would want to understand",
+  "right": "And how and where it drifts.",
+  "mark": "",
+  "word": "And",
+  "want": "lower",
+  "why": "\"And\" after a pause, mid-sentence"
+ },
+ {
+  "left": "Exact same it added the word quote do unquote before quote you unquote",
+  "right": "But without a space and then it reverted the change and said the app couldn't",
+  "mark": "",
+  "word": "But",
+  "want": "lower",
+  "why": "\"But\" after a pause, mid-sentence"
+ },
+ {
+  "left": "Going from one question to a set of questions allows to aggregate metrics but also",
+  "right": "So extract patterns of content drift between AI and The brand websites with some that",
+  "mark": "",
+  "word": "So",
+  "want": "lower",
+  "why": "\"So\" after a pause, mid-sentence"
+ },
+ {
+  "left": "My question is is the first voyage re ranker result generally close to",
+  "right": "Or generate the first from the evaluation set. If we exclude questions where the data",
+  "mark": "",
+  "word": "Or",
+  "want": "lower",
+  "why": "\"Or\" after a pause, mid-sentence"
+ },
+ {
+  "left": "result and below a list of candidates with where the content is the additional information",
+  "right": "Compared to the pinned s result. The candidate could have more the candidates content could",
+  "mark": "",
+  "word": "Compared",
+  "want": "lower",
+  "why": "\"Compared\" after a pause, mid-sentence"
+ },
+ {
+  "left": "We could just show the panel without the fancy border under the string",
+  "right": "But only with the rounded angles at the at the bottom and not just under",
+  "mark": "",
+  "word": "But",
+  "want": "lower",
+  "why": "\"But\" after a pause, mid-sentence"
+ },
+ {
+  "left": "to the centroid of examples or the centroid built from the vectors on the ten",
+  "right": "Generated words by Bert on the basque.",
+  "mark": "",
+  "word": "Generated",
+  "want": "lower",
+  "why": "\"Generated\" after a pause, mid-sentence"
+ },
+ {
+  "left": "is no nothing more than calculating the probability of the dot and the word app",
+  "right": "And decide which one is bigger than the other.",
+  "mark": "",
+  "word": "And",
+  "want": "lower",
+  "why": "\"And\" after a pause, mid-sentence"
+ },
+ {
+  "left": "The borderplay that is common to every query imports name definitions",
+  "right": "And all the things we usually place in the first cells of a notebook to",
+  "mark": "",
+  "word": "And",
+  "want": "lower",
+  "why": "\"And\" after a pause, mid-sentence"
+ },
+ {
+  "left": "what are the most common actions? So you said click a button, a link, then",
+  "right": "What buttons and link specifically, and then Common clusters or clusters of common actions or",
+  "mark": "",
+  "word": "What",
+  "want": "lower",
+  "why": "\"What\" after a pause, mid-sentence"
+ },
+ {
+  "left": "There should be some minimal padding and",
+  "right": "If the sentence is too big, we should only show the segment with five words",
+  "mark": "",
+  "word": "If",
+  "want": "lower",
+  "why": "\"If\" after a pause, mid-sentence"
+ },
+ {
+  "left": "Also add by traffic source paid or organic",
+  "right": "And by landing topic with with two columns, one for paid and one for organic.",
+  "mark": "",
+  "word": "And",
+  "want": "lower",
+  "why": "\"And\" after a pause, mid-sentence"
+ },
+ {
+  "left": "as a hint in addition to the vector similarity, for example, we have to do",
+  "right": "If the majority of what we expect in the counter is an adjective how can",
+  "mark": "",
+  "word": "If",
+  "want": "lower",
+  "why": "\"If\" after a pause, mid-sentence"
+ },
+ {
+  "left": "In Google just ask quote",
+  "right": "What are the top ten questions asked about Darzal X by patients in Reddit?",
+  "mark": "",
+  "word": "What",
+  "want": "keep",
+  "why": "the comma used to veto this; dropping it loses 2 of the 42 it changes",
+  "cost": true
+ },
+ {
+  "left": "the sentence is very long and where ellipsis ellipsis is need is needed and also",
+  "right": "At examples where you have two um um decisions to make. In that case it",
+  "mark": "",
+  "word": "At",
+  "want": "lower",
+  "why": "\"At\" after a pause, mid-sentence"
+ },
+ {
+  "left": "gives the expected results. To get the comparison, we need to ingest the crawl file",
+  "right": "And run the evaluation against these expected results in our evaluation harness.",
+  "mark": "",
+  "word": "And",
+  "want": "lower",
+  "why": "\"And\" after a pause, mid-sentence"
+ },
+ {
+  "left": "I want to be able to select it. And uh if I say hey parrot",
+  "right": "With selected text in the current input I want to use it. To open the",
+  "mark": "",
+  "word": "With",
+  "want": "lower",
+  "why": "\"With\" after a pause, mid-sentence"
+ },
+ {
+  "left": "we don't need to change the summarization because it keeps the important words that would",
+  "right": "Like technical words, numbers, etc. But we could just verify that with an experiment. Control,",
+  "mark": "",
+  "word": "Like",
+  "want": "lower",
+  "why": "\"Like\" after a pause, mid-sentence"
+ },
+ {
+  "left": "we should use um uh a curl install dot sh um but ideally we just",
+  "right": "You know, we just have uh a link, so an instructions with a link to",
+  "mark": "",
+  "word": "You",
+  "want": "lower",
+  "why": "\"You\" after a pause, mid-sentence"
+ },
+ {
+  "left": "that we'll handle separately. But what I want here is to be able to uh",
+  "right": "Um have the awareness of the text field content the input field content as well",
+  "mark": "",
+  "word": "Um",
+  "want": "lower",
+  "why": "\"Um\" after a pause, mid-sentence"
+ },
+ {
+  "left": "the summarization keeps important technical words and numbers um wouldn't that be very much removed",
+  "right": "Remove the need for a keyword search, which I think it is what you are",
+  "mark": "",
+  "word": "Remove",
+  "want": "lower",
+  "why": "\"Remove\" after a pause, mid-sentence"
+ },
+ {
+  "left": "Keep in mind that usually",
+  "right": "Outlook generate email bullets. I mean HTML bullets.",
+  "mark": "",
+  "word": "Outlook",
+  "want": "keep",
+  "why": "a product name the filter lets through"
+ },
+ {
+  "left": "the jargon from The main channels they communicate into",
+  "right": "We feed it and then from that we identify the terms",
+  "mark": "",
+  "word": "We",
+  "want": "keep",
+  "why": "a real sentence start; join must still lose"
+ },
+ {
+  "left": "Iterating through the keys of each result before printing them",
+  "right": "So why would a type checker complaint.",
+  "mark": "",
+  "word": "So",
+  "want": "keep",
+  "why": "a real question; join must still lose"
+ }
+]

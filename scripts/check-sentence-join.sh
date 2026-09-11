@@ -5,7 +5,7 @@
 #
 # Half the cases are real sentence endings and half are pauses that cut one
 # sentence in two, in both the period and the question-mark shape. A third
-# shape, a capital with no mark in front of it, carries its four readings and
+# shape, a capital with no mark in front of it, carries its three readings and
 # is checked on drift alone: it has no real/cut pair. Two numbers
 # decide per shape: how many cuts were repaired, and how many real endings were
 # joined by mistake. A joined real ending is a sentence nobody wrote, with

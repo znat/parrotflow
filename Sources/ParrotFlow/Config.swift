@@ -1729,7 +1729,9 @@ struct Config: Decodable, Equatable {
             /// wrong rewrites it catches.
             static let builtIn: [String: Language] = [
                 "en": Language(marks: defaultMarks, slotFloor: defaultSlotFloor),
-                "fr": Language(marks: defaultMarks, slotFloor: 0.30),
+                // French writes a colon where English writes a full stop, so
+                // it is a reading here and not an ender.
+                "fr": Language(marks: [".", ",", "?", ":"], slotFloor: 0.30),
             ]
 
             init(marks: [String]? = nil, slotFloor: Double? = nil) {
