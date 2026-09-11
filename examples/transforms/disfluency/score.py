@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Score and audit the `repetitions` transform without building the app.
+"""Score and audit the `disfluency` transform without building the app.
 
-    examples/transforms/repetitions/score.py            # score the case set
-    examples/transforms/repetitions/score.py --verbose  # and show the passes
-    examples/transforms/repetitions/score.py --text "the the prompt"
-    examples/transforms/repetitions/score.py --corpus   # every edit it would
+    examples/transforms/disfluency/score.py            # score the case set
+    examples/transforms/disfluency/score.py --verbose  # and show the passes
+    examples/transforms/disfluency/score.py --text "the the prompt"
+    examples/transforms/disfluency/score.py --corpus   # every edit it would
                                                         # make to the archive
 
-`ParrotFlow --eval repetitions` answers a different question, and the numbers
+`ParrotFlow --eval disfluency` answers a different question, and the numbers
 differ for a reason worth knowing: `--eval` scores the copy **installed** at
-`~/.config/parrotflow/transforms/repetitions/`, which is the user's and may be
+`~/.config/parrotflow/transforms/disfluency/`, which is the user's and may be
 older. This scores the copy in the repo, beside it. Measured on 2026-08-19 the
 installed set had 60 cases and this one 65.
 
@@ -17,7 +17,7 @@ So `--eval` says what your machine is running, and this says what the tree
 says. Use this for the loop where you are editing a stop list and do not want
 to rebuild Swift between tries, and for `--corpus`, which `--eval` cannot do.
 
-The transform is loaded from `repetitions.py` beside this file rather than
+The transform is loaded from `disfluency.py` beside this file rather than
 reimplemented here. A runner that reimplements the thing it scores
 drifts from it, and the number then describes code nobody ships.
 
@@ -37,13 +37,13 @@ except ImportError:
 # Everything is found beside this file, so the folder stays the one thing you
 # copy: the transform, its cases and the runner that scores them.
 HERE = Path(__file__).resolve().parent
-TRANSFORM = HERE / "repetitions.py"
+TRANSFORM = HERE / "disfluency.py"
 CASES = HERE / "cases.yaml"
 TRACE = Path.home() / "Recordings/ParrotFlow/trace.jsonl"
 
-_spec = importlib.util.spec_from_file_location("repetitions", TRANSFORM)
-repetitions = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(repetitions)
+_spec = importlib.util.spec_from_file_location("disfluency", TRANSFORM)
+disfluency = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(disfluency)
 
 def collapsed(text):
     """The transform's own entry point, and the passes it named itself into.
@@ -53,15 +53,25 @@ def collapsed(text):
     string you wanted.
     """
     applied = []
-    return repetitions.collapse(text, applied), applied
+    out, applied, _ = disfluency.clean(text)
+    return out, applied
 
 
 def score(verbose):
     """The two failure kinds counted apart, because they cost differently."""
     cases = yaml.safe_load(CASES.read_text())["cases"]
-    passed = missed = damaged = wrong = 0
+    passed = missed = damaged = wrong = skipped = 0
+
+    # `parse: true` marks a case whose expected output depends on the marker
+    # rule — every `marker` probe, and four older cases that now also lose a
+    # filler. CI has no venv, so those are skipped there rather than counted as
+    # failures — but loudly, so a green run never means more than it did.
+    parsing = disfluency.spacy_or_none() is not None
 
     for case in cases:
+        if case.get("parse") and not parsing:
+            skipped += 1
+            continue
         got, applied = collapsed(case["input"])
         # No `expect` means "comes back exactly as it went in" — the --eval
         # contract, in docs/cli.md.
@@ -89,8 +99,12 @@ def score(verbose):
     total = len(cases)
     keeps = sum(1 for c in cases if "expect" not in c)
     changes = total - keeps
+    total -= skipped
+    changes -= skipped
     print(f"\n  {passed}/{total}   collapse {changes - missed - wrong}/{changes}"
           f"   keep {keeps - damaged}/{keeps}")
+    if skipped:
+        print(f"    {skipped} marker case(s) skipped — no spacy on this machine")
     if missed:
         print(f"    {missed} left the stutter in")
     if wrong:

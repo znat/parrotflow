@@ -151,7 +151,7 @@ Mac with pyenv:
 | Command | Through the shim | Through the real interpreter |
 | --- | --- | --- |
 | `python3 -c pass` | 301 ms | 20 ms |
-| `repetitions.py` | 308 ms | 25 ms |
+| `disfluency.py` | 308 ms | 25 ms |
 
 Three Python transforms in a pipeline was about 0.9 s of launcher on every
 dictation. That is more than a warm `prompt:` stage costs, and a `command:`

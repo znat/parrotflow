@@ -4,7 +4,7 @@
     scripts/watch.py                    # follow live dictations
     scripts/watch.py --last 10          # the last 10, then follow
     scripts/watch.py --last 10 --no-follow
-    scripts/watch.py --stage repetitions   # only where that stage changed something
+    scripts/watch.py --stage disfluency    # only where that stage changed something
     scripts/watch.py --all              # include cli sweeps and evals
 
 **No model call anywhere in this file.** It reads `trace.jsonl`, which the app

@@ -67,9 +67,9 @@
 #
 # One of the four fails, and it does not fail cheaply:
 #
-#     I meant Tuesday                            -> repetitions
+#     I meant Tuesday                            -> disfluency
 #
-# The router picks a script. "hey parrot, I meant Tuesday" runs the repetitions
+# The router picks a script. "hey parrot, I meant Tuesday" runs the disfluency
 # transform over the sentence instead of reaching the catch-all, and a script
 # rewrite is not a no-op you can see coming the way a grammar pass over numbers
 # is. It is left standing here rather than argued with because the fix is a

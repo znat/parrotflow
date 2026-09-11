@@ -53,7 +53,7 @@ transforms:
   - name: punctuation
     description: fix spoken punctuation
     command: 'true'
-  - name: repetitions
+  - name: disfluency
     description: drop repeated words
     command: 'true'
   - name: dotted

@@ -90,6 +90,13 @@ jobs:
       - name: Numbers
         run: examples/transforms/numbers/score.py
 
+      # Repeats, false starts and empty markers. The marker rule needs a
+      # dependency parse and this runner has no venv, so those cases are
+      # skipped here and the scorer says how many — a green run never means
+      # more than it did.
+      - name: Disfluency
+        run: examples/transforms/disfluency/score.py
+
       - name: Replacements
         # The fuzzy half asks NSSpellChecker whether a word is real, and that
         # service intermittently times out — a timeout reads as "known word", so

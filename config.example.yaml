@@ -115,7 +115,7 @@ transcription:
     - transform: dates_en
     - transform: numbers_en
     - transform: punctuation             # "is that true question mark" -> is that true?
-    - transform: repetitions             # a word or phrase said twice by accident, taken out
+    - transform: disfluency              # repeats, false starts and empty markers, taken out
 
     # "read user dot name" -> read user.name, in code-ish windows only.
     - transform: dotted
@@ -320,6 +320,6 @@ transforms:
     tests: { path: examples/numbers/cases-en.yaml }
 
   # Cheap: ~0.04s, mostly the python3 start.
-  - name: repetitions
+  - name: disfluency
     description: delete a word or phrase said twice by accident
-    command: examples/repetitions/repetitions.py
+    command: examples/disfluency/disfluency.py

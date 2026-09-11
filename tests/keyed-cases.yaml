@@ -23,7 +23,7 @@
 #   slack_handles command  say: [slack handles, handles]
 #   flag         command  say: [flag this, save this for later]
 #   punctuation  command
-#   repetitions  command
+#   disfluency   command
 #   dotted       replace
 
 cases:
@@ -47,7 +47,7 @@ cases:
   - instruction: use our slack handles
     expect: slack_handles
   - instruction: clean up the repetitions
-    expect: repetitions
+    expect: disfluency
   - instruction: fix the punctuation
     expect: punctuation
   - instruction: can you make that bullets
