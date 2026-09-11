@@ -610,8 +610,8 @@ said     "you should see a parrot at the top right of your screen"
 written  "You should see a parrot. At the top right of your screen."
 ```
 
-The `interpret` step reads every such boundary in an English transcript three
-ways and scores each with a small causal language model
+The `interpret` step reads every such boundary in an English or French
+transcript three ways and scores each with a small causal language model
 (`mlx-community/Qwen3-0.6B-Base-4bit`, 320 MB):
 
 ```
@@ -647,20 +647,31 @@ never been measured.
 
 A pause does not always make the transcriber write the mark. It writes
 `imports name definitions And all the things`, and that shape is about a third
-as common as `word. Capital`. It is scanned too, with a **fourth reading**: the
-text exactly as it was decoded.
+as common as `word. Capital`. It is scanned too, and the comma is dropped for
+a different reading: the text exactly as it was decoded.
 
 ```
 ". A before section B"     the sentence really ended
 " A before section B"      as decoded, a capital that belongs
 " a before section B"      a pause cut one sentence in two
-", a before section B"     it is really a comma
 ```
 
-The fourth reading exists because there is no mark to take out. Everywhere else
-"leave it alone" is what happens when a mark wins; here it is a candidate of its
-own, and it is the one that saves `paste it into Outlook and the other apps`.
-Only the third writes anything. The period is never inserted — where a mark
+The as-decoded reading exists because there is no mark to take out. Everywhere
+else "leave it alone" is what happens when a mark wins; here it is a candidate
+of its own, and it is the one that saves `paste it into Outlook and the other
+apps`. Only the third writes anything.
+
+**The comma is not read here.** Since only the join writes, a comma win was
+never a decision — it was a veto on a join that had already beaten both readings
+that keep the capital. Over 616 bare capitals mined from 3,336 English
+dictations, 225 of which get past the part-of-speech filter, dropping it
+lowercases 129 against 87. Of the 42 it changes, 40 are right and 2 destroy a
+correct capital, and no margin threshold buys those back — 13 of the 40 repairs
+sit below theirs. The marked path keeps its comma, where 26% of real sentence
+endings pick it.
+
+This half is English only: its refusal rules were tuned on English
+capitalisation and French capitalises far less. The period is never inserted — where a mark
 wins, the text is left as it was decoded and the decision is logged.
 
 Half of these capitals are correct and must not be touched: `Slack`, `English`,
@@ -728,10 +739,13 @@ never seen it, which is what a name it has not been told about looks like. A
 term in your `vocabulary.yaml` is asked first, because a name that is also an
 English word is the one case the lemma rule cannot see.
 
-English only, and the stage refuses the rest itself, so `when: language == "en"`
-on the step is not needed. The readings are scored by an English base model, and
-the mark set is English: French uses `:` where English does not. Nothing is
-waited for:
+English and French, and the stage refuses the rest itself, so a `when:` on the
+step is not needed. French adds `:` to its mark set, where English writes a full
+stop, and the space French sets before `?` and `!` is stepped over when the
+boundary is looked for — without that every French question is skipped and
+nothing says so. Over 234 French boundaries the readings score AUC 0.968 against
+0.984 in English and repair 91% of cuts, for about 2 false joins per 100 real
+periods. Nothing is waited for:
 with no cached model, a load that threw or a boundary it cannot read, the text
 arrives as it was. A dictation that arrives before the weights are in memory
 keeps its boundaries and starts the load.
