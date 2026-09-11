@@ -60,7 +60,8 @@ def collapsed(text):
 def score(verbose):
     """The two failure kinds counted apart, because they cost differently."""
     cases = yaml.safe_load(CASES.read_text())["cases"]
-    passed = missed = damaged = wrong = skipped = 0
+    passed = missed = damaged = wrong = 0
+    skipped_changes = skipped_keeps = 0
 
     # `parse: true` marks a case whose expected output depends on the marker
     # rule — every `marker` probe, and four older cases that now also lose a
@@ -70,7 +71,12 @@ def score(verbose):
 
     for case in cases:
         if case.get("parse") and not parsing:
-            skipped += 1
+            # Counted apart. Lumping them together printed "keep 44/44" on a
+            # machine where eight of those keeps never ran.
+            if "expect" in case:
+                skipped_changes += 1
+            else:
+                skipped_keeps += 1
             continue
         got, applied = collapsed(case["input"])
         # No `expect` means "comes back exactly as it went in" — the --eval
@@ -99,8 +105,10 @@ def score(verbose):
     total = len(cases)
     keeps = sum(1 for c in cases if "expect" not in c)
     changes = total - keeps
+    skipped = skipped_changes + skipped_keeps
     total -= skipped
-    changes -= skipped
+    changes -= skipped_changes
+    keeps -= skipped_keeps
     print(f"\n  {passed}/{total}   collapse {changes - missed - wrong}/{changes}"
           f"   keep {keeps - damaged}/{keeps}")
     if skipped:

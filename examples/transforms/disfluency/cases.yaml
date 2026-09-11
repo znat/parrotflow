@@ -305,21 +305,39 @@ cases:
 
   # --- meant: the marker is doing work --------------------------------------
   - probe: meant
+    parse: true
     input: "Okay, we'll let you know."
   - probe: meant
+    parse: true
     input: "You see what I mean?"
   - probe: meant
+    parse: true
     input: "Do you know who owns this account?"
   - probe: meant
+    parse: true
     input: "And therefore you know what you are allowed to modify without risk."
   - probe: meant
+    parse: true
     input: "Unless you know it's gonna fail in that case, mention it's failing."
   - probe: meant
+    parse: true
     input: "like a cat on a mat"
   # A hedge, not a filler: "I think THAT we should" — deleting it turns an
   # opinion into an assertion. Only `--hedges` touches these.
   - probe: meant
+    parse: true
     input: "I think we should do this before Friday."
   # A self-correction, not a filler. Cutting the cue alone keeps both names.
   - probe: meant
+    parse: true
     input: "So the other day I was with James I mean Peter, sorry."
+  # Two markers, one sentence, different jobs. Matching on lemma alone gave the
+  # second one the first one's verdict and cut both.
+  - probe: marker
+    parse: true
+    input: "You know, do you know who owns this account?"
+    expect: "Do you know who owns this account?"
+  - probe: marker
+    parse: true
+    input: "I mean, what I mean is this."
+    expect: "What I mean is this."

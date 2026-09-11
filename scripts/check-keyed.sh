@@ -55,6 +55,7 @@ transforms:
     command: 'true'
   - name: disfluency
     description: drop repeated words
+    say: [repetitions, hesitations, false starts]
     command: 'true'
   - name: dotted
     description: spoken dotted paths as code

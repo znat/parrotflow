@@ -892,10 +892,13 @@ if let unknown = arguments.dropFirst().first(where: {
 // terminal read `Not granted`. So a copy started this way is a menu bar app
 // that cannot type, with nothing on screen to say why.
 //
-// stdout, not stdin: `open` gives the app neither, and a subcommand piping its
-// output is still a subcommand. The check is terminal AND no arguments, so
-// `open` — which passes none either — still starts the app.
-if arguments.count == 1 && isatty(FileHandle.standardOutput.fileDescriptor) == 1 {
+// All three descriptors, not just stdout. `parrotflow >log` redirects stdout
+// and is still a terminal launch — checking that one alone let the case this
+// exists to stop straight through. LaunchServices gives the app /dev/null for
+// all three, so `open` still falls past this and starts the app.
+let attached = [FileHandle.standardInput, FileHandle.standardOutput,
+                FileHandle.standardError].contains { isatty($0.fileDescriptor) == 1 }
+if arguments.count == 1 && attached {
     print("✗ ParrotFlow does not start from a terminal — it would hold permissions it cannot use.")
     print("  open -a ParrotFlow        start it")
     print("  parrotflow --check-config check the install")

@@ -368,6 +368,10 @@ transforms:
   # the marker rule is English-only.
   - name: disfluency
     description: delete hesitations, repeats and false starts
+    # Nobody asks for "disfluency" out loud. `say:` is what the keyed path
+    # matches on, and without these "clean up the repetitions" reaches the
+    # catch-all instead of this — which the rename broke, 25/26.
+    say: [repetitions, hesitations, false starts]
     command: examples/disfluency/disfluency.py
     returns: json
     tests: { path: examples/disfluency/cases.yaml }

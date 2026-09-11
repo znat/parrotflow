@@ -63,6 +63,13 @@ wants "refused, exit 2"            "${r%%|*}" "2"
 says  "and says why"               "${r#*|}"  "does not start from a terminal"
 says  "and how to start it"        "${r#*|}"  "open -a ParrotFlow"
 
+# `parrotflow >log` redirects stdout and is still a terminal launch. Checking
+# stdout alone let this straight through.
+printf '\nno arguments, stdout redirected\n'
+out="$(script -q /dev/null "$BIN" < /dev/null 2>&1 > /tmp/pf-redirect.$$ )"; code=$?
+rm -f "/tmp/pf-redirect.$$"
+wants "still refused, exit 2"      "$code" "2"
+
 printf '\nstill answers everything else\n'
 r="$(on_a_tty --version)"
 wants "--version exits 0"          "${r%%|*}" "0"

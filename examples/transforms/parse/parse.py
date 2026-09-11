@@ -40,8 +40,15 @@ def main():
     lang = "en"
     if "--lang" in sys.argv:
         at = sys.argv.index("--lang")
-        if at + 1 < len(sys.argv):
-            lang = sys.argv[at + 1]
+        if at + 1 >= len(sys.argv):
+            sys.stderr.write("--lang needs a value: %s\n" % ", ".join(MODELS))
+            return 2
+        lang = sys.argv[at + 1]
+        if lang not in MODELS:
+            # Falling back to English silently was worse than refusing: the
+            # output looked like a French parse and was not one.
+            sys.stderr.write("no model for %r — have: %s\n" % (lang, ", ".join(MODELS)))
+            return 2
 
     structured = os.environ.get("PARROTFLOW_PROTOCOL") == "json"
     raw = sys.stdin.read()
@@ -55,7 +62,14 @@ def main():
         sys.stderr.write("no spacy — run: ParrotFlow --setup-parsing\n")
         return 1
 
-    doc = spacy.load(MODELS.get(lang, MODELS["en"]))(text.strip())
+    try:
+        nlp = spacy.load(MODELS[lang])
+    except OSError:
+        # spaCy and its models are separate packages, so the import can succeed
+        # while the model is absent.
+        sys.stderr.write("no %s — run: ParrotFlow --setup-parsing\n" % MODELS[lang])
+        return 1
+    doc = nlp(text.strip())
 
     if structured:
         chunks = [c.text for c in doc.noun_chunks] if doc.has_annotation("DEP") else []

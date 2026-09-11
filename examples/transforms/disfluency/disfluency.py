@@ -435,8 +435,18 @@ def sentence_of(text, at, end):
     return text[lo:hi], at - lo, end - lo, lo
 
 
-def anchored(doc, lemma):
-    return next((t for t in doc if t.lemma_ == lemma and t.pos_ in ("VERB", "AUX")), None)
+def anchored(doc, lemma, a, b):
+    """The marker's OWN verb, not the sentence's first one.
+
+    Looked up by span because a sentence can hold the same marker twice and
+    mean different things by them: "You know, do you know who owns this
+    account?" — the first is a filler and the second is the verb of the
+    question. Matching on lemma alone gave both the first one's verdict and cut
+    both, which left "Do who owns this account?".
+    """
+    return next((t for t in doc
+                 if a <= t.idx < b and t.lemma_ == lemma
+                 and t.pos_ in ("VERB", "AUX")), None)
 
 
 def substitution(doc, a, b):
@@ -517,7 +527,7 @@ def resolve(text, markers, nlp):
                 token = next((t for t in doc if t.idx <= a < t.idx + len(t.text)), None)
                 name = "like"
             else:
-                token = anchored(doc, lemma)
+                token = anchored(doc, lemma, a, b)
                 name = phrase
             if wants_cut(doc, name, token, a, b):
                 slot = per_sentence.setdefault(offset, [sentence, []])
