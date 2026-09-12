@@ -120,12 +120,6 @@ enum TourWalk {
         list.reduce(0) { $0 + $1.length }
     }
 
-    /// The tallest of them, which is the height the window keeps for the whole
-    /// tour: one screen must not resize the window the next one is drawn in.
-    static func height(of list: [TourScreen]) -> CGFloat {
-        list.map(\.height).max() ?? 0
-    }
-
     /// Which screen is on at `elapsed`, and that screen's own clock.
     ///
     /// The walk loops: it is up for as long as the download takes, and nobody
@@ -144,13 +138,17 @@ enum TourWalk {
         return (list.count - 1, 0)
     }
 
-    /// Where the screen after the one showing at `elapsed` begins, or nil when
-    /// it is the last one: there is nothing left of the tour to skip to.
+    /// Where the screen after the one showing at `elapsed` begins.
+    ///
+    /// On the last screen that is the first screen again, because the tour
+    /// loops. Next means "skip this screen" and never means "leave": leaving is
+    /// for the moment there is something to leave for, and that is the window's
+    /// to decide. A Next that handed the walk on early parked somebody on a bar
+    /// with nothing to press and no way back.
     static func next(
         after elapsed: TimeInterval, in list: [TourScreen] = screens
-    ) -> TimeInterval? {
+    ) -> TimeInterval {
         let (index, _) = at(elapsed, in: list)
-        guard index + 1 < list.count else { return nil }
         return start(of: index + 1, at: elapsed, in: list)
     }
 
@@ -166,6 +164,9 @@ enum TourWalk {
     /// Where a screen begins, counted from the start of the pass `elapsed` is
     /// in — so skipping forward on the third screen of the second pass lands on
     /// the fourth screen of that pass, and not on the first pass's.
+    ///
+    /// One past the last screen is the first screen of the next pass, which is
+    /// what `next` leans on to wrap.
     private static func start(
         of index: Int, at elapsed: TimeInterval, in list: [TourScreen]
     ) -> TimeInterval {
@@ -186,8 +187,6 @@ struct SetupTour: View {
     /// `TutorialScreen.progress`.
     var progress: Double?
     var screens: [TourScreen] = TourWalk.screens
-    /// Next on the last screen, where there is no next one.
-    var onFinish: () -> Void = {}
     /// Where Next and Back want the clock put.
     var onSeek: (TimeInterval) -> Void = { _ in }
 
@@ -196,13 +195,7 @@ struct SetupTour: View {
         screens[index].pane(
             clock: clock,
             progress: progress,
-            onNext: {
-                guard let to = TourWalk.next(after: elapsed, in: screens) else {
-                    onFinish()
-                    return
-                }
-                onSeek(to)
-            },
+            onNext: { onSeek(TourWalk.next(after: elapsed, in: screens)) },
             onBack: TourWalk.previous(before: elapsed, in: screens).map { to in
                 { onSeek(to) }
             }
@@ -220,6 +213,11 @@ struct SetupTour: View {
 /// to be able to read it, and a clock kept in a view that is rebuilt sixty
 /// times a second is not one anything else can ask.
 struct SetupTourPane: View {
+    /// The screen has changed, so the window is a different height now. Called
+    /// from the cut rather than left to the poll: a window that catches up a
+    /// second later shows one screen in the last one's frame.
+    var onScreenChange: () -> Void = {}
+
     @EnvironmentObject private var model: PermissionsModel
     @EnvironmentObject private var downloads: ModelDownloads
 
@@ -231,15 +229,22 @@ struct SetupTourPane: View {
         // another window, on another space, with the app in the background —
         // which is a tour frozen at whatever frame it was on.
         TimelineView(.periodic(from: model.tourStartedAt ?? Date(), by: 1.0 / 60)) { context in
+            let elapsed = model.tourElapsed(at: context.date)
+            let index = TourWalk.at(elapsed).index
             SetupTour(
-                elapsed: model.tourElapsed(at: context.date),
+                elapsed: elapsed,
                 // The downloader's own number, the same one the last screen's
                 // bar is drawn from. Never read out: a figure is a claim about
                 // the network that goes wrong the moment the connection does.
                 progress: downloads.fraction,
-                onFinish: { model.advance() },
                 onSeek: { model.seekTour(to: $0) }
             )
+            // Each screen keeps the height of its own tallest beat. Fixed
+            // inside one screen, so no frame of a pass resizes the window;
+            // different between them, so none of them ends in a band of
+            // nothing above the foot.
+            .frame(height: TourWalk.screens[index].height, alignment: .top)
+            .onChange(of: index) { _, _ in onScreenChange() }
         }
         .onAppear { model.startTour() }
     }

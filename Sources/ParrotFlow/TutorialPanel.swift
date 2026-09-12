@@ -562,15 +562,18 @@ struct TutorialRun: Equatable {
     }
 }
 
-/// The downloads bar: thin, dim, and capped. It never arrives, because
-/// arriving is what the screen after this one is for.
+/// The downloads bar: thin, dim, and it fills.
+///
+/// The number is the registry's own, so the bar arrives when the models do. It
+/// used to stop at nine tenths, from when the number was a fiction and arriving
+/// would have been a lie. `--panels` still feeds it one and caps that itself.
 private func progressTrack(_ progress: Double) -> some View {
     GeometryReader { proxy in
         ZStack(alignment: .leading) {
             Capsule().fill(Color.white.opacity(0.10))
             Capsule()
                 .fill(Parrot.action.opacity(0.8))
-                .frame(width: proxy.size.width * min(0.9, max(0, progress)))
+                .frame(width: proxy.size.width * min(1, max(0, progress)))
         }
     }
     .frame(height: 3)

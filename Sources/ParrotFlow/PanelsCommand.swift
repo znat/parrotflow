@@ -1360,18 +1360,21 @@ enum PanelsCommand {
             let screens: [TourScreen] = surface == "tutorial"
                 ? TourScreen.allCases
                 : TourScreen.allCases.filter { $0.rawValue == surface }
-            setupWindow = window(
-                for: AnyView(TourPreview(screens: screens)),
+            // The window follows the screen, which is what the setup window
+            // does: each screen keeps the height of its own tallest beat, so
+            // none of them ends in a band of nothing above the foot.
+            let sizer = TourWindowSizer()
+            let preview = window(
+                for: AnyView(
+                    TourPreview(screens: screens, onScreen: sizer.fit)
+                ),
                 size: NSSize(
                     width: PermissionMetrics.setupWidth,
-                    // The tallest beat of every screen being played, so no
-                    // frame of the loop resizes the window under the pointer.
-                    // One screen by itself gets its own height and not the
-                    // tallest of them all: a window that keeps room for a
-                    // message this screen never sends ends in a gap.
-                    height: TourWalk.height(of: screens)
+                    height: screens.first?.height ?? 0
                 )
             )
+            sizer.window = preview
+            setupWindow = preview
         default:
             print("usage: ParrotFlow --panels <notice|caution|failure|thinking|offer"
                 + "|confidence|vocabulary|punctuation|rule|dictation|preview|microphone"
@@ -1392,13 +1395,33 @@ enum PanelsCommand {
     }
 }
 
+/// The window `--panels` put a tour in, so the tour can resize it the way the
+/// setup window resizes itself.
+private final class TourWindowSizer {
+    weak var window: NSWindow?
+
+    /// The top edge is put back afterwards: `setContentSize` keeps the
+    /// bottom-left corner, and a window that grows upward moves its own title
+    /// bar out from under the pointer. Same as `resizeToContent`.
+    func fit(_ screen: TourScreen) {
+        guard let window else { return }
+        let top = window.frame.maxY
+        window.setContentSize(
+            NSSize(width: PermissionMetrics.setupWidth, height: screen.height)
+        )
+        var frame = window.frame
+        frame.origin.y = top - frame.height
+        window.setFrame(frame, display: true)
+    }
+}
+
 /// The tour, on its own clock, for `--panels`.
 ///
-/// Next and Back move the clock, the way they do in the setup window. There is
-/// nothing here to hand the walk on to, so the last screen's Next starts the
-/// tour again rather than leaving it.
+/// Next and Back move the clock, the way they do in the setup window.
 private struct TourPreview: View {
     let screens: [TourScreen]
+    /// The tour has cut to a screen of another height.
+    var onScreen: (TourScreen) -> Void = { _ in }
 
     @State private var started = Date()
     /// What Next and Back have moved the clock by.
@@ -1407,16 +1430,20 @@ private struct TourPreview: View {
     var body: some View {
         TimelineView(.periodic(from: started, by: 1.0 / 60)) { context in
             let ran = context.date.timeIntervalSince(started)
+            let elapsed = ran + skew
+            let index = TourWalk.at(elapsed, in: screens).index
             SetupTour(
-                elapsed: ran + skew,
+                elapsed: elapsed,
                 // Nothing here downloads anything, so the bar is the clock: a
-                // slow climb to the cap, which from the outside is what a real
-                // one looks like. The app passes the downloader's own number.
-                progress: min(0.9, 0.05 + (ran + skew) / 180),
+                // slow climb, capped short of full, which from the outside is
+                // what a real one looks like. The app passes the downloader's
+                // own number, and that one arrives.
+                progress: min(0.9, 0.05 + elapsed / 180),
                 screens: screens,
-                onFinish: { skew = -ran },
                 onSeek: { skew = $0 - ran }
             )
+            .frame(height: screens[index].height, alignment: .top)
+            .onChange(of: index) { _, _ in onScreen(screens[index]) }
         }
     }
 }

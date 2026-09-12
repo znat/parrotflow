@@ -876,8 +876,12 @@ The tour is what the setup window really plays while the models download. It
 comes after the permission screens and the list of models, it loops for as long
 as the download takes, and the walk moves on to its last screen when there is
 nothing left to wait for. *Next* skips to the screen after the one showing and
-*Back* to the one before it; `downloads` is first and has no *Back*. The bar in
-the corner is the downloader's own figure, drawn and never read out.
+*Back* to the one before it. On the last screen *Next* goes round to the first:
+it never leaves the tour, because the window decides when there is something to
+leave for. `downloads` is first and has no *Back*. The bar in the corner is the
+downloader's own figure. It is drawn and never read out, and it fills when the
+models are in. Each screen keeps the height of its own tallest beat, so the
+window changes size at a cut and never inside one.
 
 There are three demonstrations, and a screen that opens them.
 

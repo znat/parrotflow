@@ -470,15 +470,16 @@ final class PermissionsWindowController {
 
     private func build() {
         // Measured once, here. Read first from the body of the screen the tour
-        // arrives on, it would lay six panes out in the middle of an update.
-        _ = TourWalk.height(of: TourWalk.screens)
+        // cuts to, it would lay panes out in the middle of an update.
+        for screen in TourWalk.screens { _ = screen.height }
 
         let view = PermissionsView(
             onAsk: { [weak self] step in self?.ask(step) },
             onDecline: { [weak self] in self?.decline() },
             onClose: { [weak self] in self?.finish() },
             onRetry: { [weak self] in self?.onRetryDownloads?() },
-            onInstallEspeak: { [weak self] in self?.installEspeak() }
+            onInstallEspeak: { [weak self] in self?.installEspeak() },
+            onTourScreen: { [weak self] in self?.stepSettled() }
         )
         .environmentObject(model)
         .environmentObject(model.downloads)
@@ -676,10 +677,9 @@ enum PermissionMetrics {
     static func height(for step: SetupStep) -> CGFloat? {
         switch step {
         case .permission: return height
-        // The tallest beat of any screen in it. A tour sized to its own frame
-        // would resize the window sixty times a second.
-        case .tour: return TourWalk.height(of: TourWalk.screens)
-        case .models, .setup: return nil
+        // The tour is measured, like the other two. Every screen in it has its
+        // own height and it says so as it cuts — see `SetupTourPane`.
+        case .models, .tour, .setup: return nil
         }
     }
 }
@@ -692,6 +692,9 @@ struct PermissionsView: View {
     var onClose: () -> Void = {}
     var onRetry: () -> Void = {}
     var onInstallEspeak: () -> Void = {}
+    /// The tour has cut to a screen of another height. See
+    /// `SetupTourPane.onScreenChange`.
+    var onTourScreen: () -> Void = {}
 
     /// The header belongs to whichever screen is under it, so it is drawn on
     /// that screen's scale.
@@ -705,8 +708,7 @@ struct PermissionsView: View {
         // is played on its own as well, by `--panels tutorial` — so it is not
         // put inside this screen's chrome.
         if model.current == .tour {
-            SetupTourPane()
-                .frame(height: PermissionMetrics.height(for: .tour), alignment: .top)
+            SetupTourPane(onScreenChange: onTourScreen)
         } else {
             walk
         }
