@@ -156,6 +156,15 @@ answer, so the question is asked once per install and not once per launch.
 *Finish Setup…* stays in the menu bar while eSpeak NG is missing, and opening it
 that way shows the command again — it is the only route back to it.
 
+**What happens after eSpeak NG lands.** The app installs the Python a parse
+needs, quietly, in the background: about 170 MB into `~/Library/Application
+Support/ParrotFlow/python`. It is the fifth rule of the `disfluency` transform,
+the one that tells "we'll let you know" from "you know, it broke". The order is
+the point — the line that installs eSpeak NG installs Homebrew first when there
+is none, and the Homebrew installer installs the Command Line Tools, so by then
+there is a real `python3` to build on. Nothing waits for it and a failure is one
+line in the log. `ParrotFlow --setup-parsing` still does it by hand.
+
 ## Step 3 — Prove transcription works with no voice
 
 Needs no microphone.

@@ -161,6 +161,86 @@ enum ParsingInstall {
         return out
     }
 
+    // MARK: - Finishing it without a terminal
+
+    /// Everything a parse needs is here, eSpeak NG aside.
+    static var isComplete: Bool { isInstalled && models.allSatisfy(has) }
+
+    /// Installs it quietly, once eSpeak NG is on this Mac.
+    ///
+    /// The order is the whole point. eSpeak NG is the one thing a person has to
+    /// install themselves, and the line that installs it installs Homebrew in
+    /// front of it when there is none — and the Homebrew installer installs the
+    /// Command Line Tools. So the moment eSpeak NG lands, `/usr/bin/python3` is
+    /// a real interpreter rather than the shim that opens Apple's installer
+    /// dialog when it is run. That is what makes this safe to do silently,
+    /// where `--setup-parsing` had to be typed.
+    ///
+    /// Built on the interpreter a transform will actually run under, not on
+    /// whichever one this process would pick. `--setup-parsing` prefers
+    /// Homebrew's; an app launched from the Dock inherits launchd's PATH and
+    /// resolves `/usr/bin/python3`. A venv built on one and read by the other
+    /// is invisible — four green ticks from the command and the rule still off.
+    /// Asking `CommandRunner` is what makes them the same by construction.
+    ///
+    /// Fails open, into the log. Nothing waits for it.
+    static func finishQuietly() {
+        guard Phonemes.locate() != nil, !isComplete else { return }
+        lock.lock()
+        guard !running else { lock.unlock(); return }
+        running = true
+        lock.unlock()
+
+        DispatchQueue.global(qos: .utility).async {
+            defer {
+                lock.lock()
+                running = false
+                lock.unlock()
+            }
+            guard let interpreter = CommandRunner.transformInterpreter() else {
+                Log.write("parsing: no python3 a transform could run — nothing installed")
+                return
+            }
+            var lines: [(String, String)] = []
+            if !isInstalled {
+                lines.append((
+                    "a Python for parsing",
+                    "\(shellQuoted(interpreter)) -m venv \(shellQuoted(root.path))"))
+            }
+            lines.append((
+                "spaCy and its models",
+                "\(shellQuoted(python.path)) -m pip install --upgrade"
+                    + " --disable-pip-version-check -r \(shellQuoted(requirements.path))"))
+
+            for (what, command) in lines {
+                let status = run(command)
+                guard status == 0 else {
+                    Log.write("parsing: \(what) exited \(status); nothing after it ran")
+                    return
+                }
+            }
+            Log.write(isComplete
+                ? "parsing: spaCy is in — the disfluency marker rule runs from now on"
+                : "parsing: the install finished and something is still missing")
+        }
+    }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var running = false
+
+    /// Output to the log, not to a pipe nobody reads. pip writes a progress bar
+    /// per wheel and none of it is worth keeping.
+    private static func run(_ command: String) -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return 1 }
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+
     struct Step {
         let what: String
         let command: String

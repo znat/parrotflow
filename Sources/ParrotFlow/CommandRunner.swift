@@ -450,21 +450,32 @@ enum CommandRunner {
     /// install all answer the same question.
     private static let interpreterLock = NSLock()
     /// Outer nil means "not asked yet", inner nil means "asked, found nothing".
-    nonisolated(unsafe) private static var interpreterDirectory: String??
+    nonisolated(unsafe) private static var interpreterPath: String??
 
-    private static func realInterpreterDirectory() -> String? {
+    /// The `python3` a `command:` transform actually runs under.
+    ///
+    /// Exposed because the venv for a parse has to be built on this exact
+    /// interpreter. A site-packages tree built for 3.13 holds C extensions a
+    /// 3.9 cannot load, and `disfluency.py` looks for the tree by its own
+    /// version — so a venv built on a different one is invisible to it. See
+    /// `ParsingInstall.finishQuietly`.
+    static func transformInterpreter() -> String? {
         // Held across the probe on purpose. A second caller waits for the
         // answer instead of starting a second probe, and the wait is bounded
         // by the deadline in it. It happens once per run of the app.
         interpreterLock.lock()
         defer { interpreterLock.unlock() }
-        if let cached = interpreterDirectory { return cached }
-        let found = probeInterpreterDirectory()
-        interpreterDirectory = .some(found)
+        if let cached = interpreterPath { return cached }
+        let found = probeInterpreter()
+        interpreterPath = .some(found)
         return found
     }
 
-    private static func probeInterpreterDirectory() -> String? {
+    private static func realInterpreterDirectory() -> String? {
+        transformInterpreter().map { ($0 as NSString).deletingLastPathComponent }
+    }
+
+    private static func probeInterpreter() -> String? {
         let probe = Process()
         // `env`, not a shell. It execs the interpreter in place, so this holds
         // one process and the deadline below signals the interpreter itself. A
@@ -523,7 +534,7 @@ enum CommandRunner {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) else { return nil }
         Log.write("command: python3 resolves to \(path)")
-        return (path as NSString).deletingLastPathComponent
+        return path
     }
 
     /// Put the real interpreter ahead of the shim for one subprocess.
