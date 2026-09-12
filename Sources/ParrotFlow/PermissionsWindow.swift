@@ -456,7 +456,7 @@ final class PermissionsWindowController {
         alert.messageText = "Install eSpeak NG?"
         alert.informativeText = "Without it, ParrotFlow misses some of the names in your"
             + " vocabulary. It is a separate program, so it installs in Terminal and takes"
-            + " about a minute."
+            + " about a minute. Terminal will ask you to confirm."
         // The real app icon, the same file System Settings reads. `NSAlert`
         // finds it by itself in the app; running the bare binary it does not.
         if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
