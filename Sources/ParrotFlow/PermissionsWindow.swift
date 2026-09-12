@@ -614,7 +614,7 @@ struct PermissionsView: View {
                     micStatus: model.micStatus, axStatus: model.axStatus,
                     hotkeyDisplay: model.hotkeyDisplay,
                     hotkeyRegistered: model.hotkeyRegistered,
-                    espeak: model.espeak,
+                    context: model.context, espeak: model.espeak,
                     onClose: onClose, onRetry: onRetry,
                     onInstallEspeak: onInstallEspeak
                 )
@@ -967,6 +967,7 @@ private struct SetupPane: View {
     let axStatus: Permissions.Status
     let hotkeyDisplay: String
     let hotkeyRegistered: Bool
+    let context: PermissionsContext
     let espeak: PermissionsModel.EspeakPresence
     let onClose: () -> Void
     let onRetry: () -> Void
@@ -1023,9 +1024,13 @@ private struct SetupPane: View {
         if lostPermission != nil { return .permissionLost }
         if downloads.rows.isEmpty { return .dictationOff }
         if downloads.blockingFailure != nil { return .somethingDidNotArrive }
-        // Ready wins over eSpeak NG. Once the models are in there is nothing
-        // left to wait for, and this screen reads the same whether eSpeak NG
-        // was installed or not — Done asks about it once, in its own alert.
+        // Opened from the menu bar, eSpeak NG is the reason: the item only
+        // appears while something is unfinished, and this is where the command
+        // to install it lives. Ready would hide the one thing being asked for.
+        if context == .revisiting, espeak != .found { return .espeak }
+        // Setting up, Ready wins. The walk ends the moment the models land,
+        // and this screen reads the same whether eSpeak NG was installed or
+        // not — Done asks about it once, in its own alert.
         if downloads.speechIsIn { return .ready }
         return espeak == .found ? .almostReady : .espeak
     }
@@ -1050,7 +1055,9 @@ private struct SetupPane: View {
 
     /// The models are still coming and nothing has gone wrong. Both the bar and
     /// the greyed button are that one condition.
-    private var waiting: Bool { moment == .espeak || moment == .almostReady }
+    private var waiting: Bool {
+        (moment == .espeak || moment == .almostReady) && !downloads.speechIsIn
+    }
 
     /// The bar waits for eSpeak NG to be settled. While the card is up the
     /// screen is asking for one thing, and a bar under it is a second thing

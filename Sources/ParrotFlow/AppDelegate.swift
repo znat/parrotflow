@@ -6982,7 +6982,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(settingsItem)
 
         permissionsItem = NSMenuItem(
-            title: "Setup…",
+            title: "Finish Setup…",
             action: #selector(openPermissions),
             keyEquivalent: ""
         )
@@ -7333,12 +7333,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
 
-    /// Granting permissions is a chore, not a feature. The item is there while
-    /// one of them still needs doing and gone once they are done — checked as
-    /// the menu opens, because the answer changes in System Settings rather
-    /// than in this app.
+    /// Setting up is a chore, not a feature. The item is there while something
+    /// still needs doing and gone once nothing does — checked as the menu
+    /// opens, because both answers change outside this app: a permission in
+    /// System Settings, eSpeak NG in Terminal.
     func menuNeedsUpdate(_ menu: NSMenu) {
-        permissionsItem.isHidden = !hasPermissionProblem
+        permissionsItem.isHidden = !hasUnfinishedSetup
 
         // Here rather than in `updateUI`, which runs on a 0.1s timer while
         // recording: the device is picked in System Settings, so the moment the
@@ -7348,6 +7348,16 @@ extension AppDelegate: NSMenuDelegate {
         inputDeviceItem.isHidden = device == nil
         inputDeviceItem.title = device.map { "Microphone  ·  \($0)" } ?? ""
         inputDeviceItem.submenu = microphoneMenu()
+    }
+
+    /// What the menu bar offers to finish.
+    ///
+    /// eSpeak NG as well as the permissions, and it is the only reason this
+    /// item outlives a first run: the setup window is where the command to
+    /// install it lives, and without a way back there is no way to install it
+    /// later at all.
+    private var hasUnfinishedSetup: Bool {
+        hasPermissionProblem || Phonemes.locate() == nil
     }
 
     private var hasPermissionProblem: Bool {

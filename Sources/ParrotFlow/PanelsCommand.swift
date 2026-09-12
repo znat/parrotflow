@@ -493,7 +493,16 @@ enum PanelsCommand {
             .environmentObject(ready))
         // The same screen with eSpeak NG never installed. Drawn to show that it
         // is the same screen: nothing on Ready reports what was installed.
+        // Setting up, not revisiting — a revisit is the one context where
+        // eSpeak NG takes the screen back.
         let readyWithoutEspeakPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(ready))
+            .environmentObject(ready))
+
+        // Opened from the menu bar with eSpeak NG still missing. Everything is
+        // downloaded, so nothing is greyed — the screen exists to offer the one
+        // thing that is left.
+        let revisitPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(ready, context: .revisiting))
             .environmentObject(ready))
 
@@ -551,6 +560,7 @@ enum PanelsCommand {
             (almostTherePane, setupSize(almostTherePane), .dark, false),
             (readyPane, setupSize(readyPane), .dark, false),
             (readyWithoutEspeakPane, setupSize(readyWithoutEspeakPane), .dark, false),
+            (revisitPane, setupSize(revisitPane), .dark, false),
             (switchedOffPane, setupSize(switchedOffPane), .dark, false),
             (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
             (vadPane, setupSize(vadPane), .dark, false),

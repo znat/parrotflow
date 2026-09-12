@@ -153,6 +153,9 @@ closed over a half-finished fetch is one that does not work yet. Pressing it
 without eSpeak NG asks once, *Install it* or *Not now*, and remembers the
 answer, so the question is asked once per install and not once per launch.
 
+*Finish Setup…* stays in the menu bar while eSpeak NG is missing, and opening it
+that way shows the command again — it is the only route back to it.
+
 ## Step 3 — Prove transcription works with no voice
 
 Needs no microphone.
@@ -395,7 +398,8 @@ mention but notifies nobody — tell them that.
 >
 > Settings are in `~/.config/parrotflow/config.yaml`, and the names it has
 > learnt are in `vocabulary.yaml` beside it. Both reload on save. The menu bar
-> icon has *Settings* — *Edit Config…* and *View Transforms* — and *Setup…*.
+> icon has *Settings* — *Edit Config…* and *View Transforms* — and *Finish
+> Setup…* while something is still missing.
 
 ---
 
