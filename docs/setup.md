@@ -134,16 +134,45 @@ grep "launched —" ~/Library/Logs/ParrotFlow.log | tail -1
 Want `accessibility=Granted`. `NotGranted` means the switch is off or they
 ticked a different app.
 
-**The last screen.** After the two permissions the setup window shows one
-screen: both permissions, the six models it is fetching (about 1.5 GB, started
-at launch), and eSpeak NG. Nothing there has to be waited for — *Done* closes
-the window and the downloads carry on. The title says the state, and only the
-permissions and the speech model change it: "Almost ready" until Parakeet is
-in, then "Ready". The one line with a button is eSpeak NG, which the app looks
-for rather than downloads: it is GPL-3 and a separate program, so *Run in
-Terminal* runs the Homebrew command where it can be watched. Pressing *Done*
-without it asks once — *Install it* or *Not now* — and remembers the answer, so
-the question is asked once per install and not once per launch.
+**The last two screens.** After the permissions the setup window lists the
+models it is fetching — about 1.5 GB, started at launch — with what each one
+costs. *Download* moves on; the fetches started at launch and carry on behind it.
+
+The last screen is eSpeak NG, the one thing the app cannot fetch for you. It
+helps ParrotFlow understand your own terms — your jargon, your teammates'
+names. It is GPL-3 and a separate library, so the screen shows the Homebrew
+command, and
+*Install with Terminal* runs it where it can be watched. The screen notices the
+binary landing by itself. Once eSpeak NG is settled the title becomes the state:
+"Almost ready" while a model a dictation waits on is still coming, then "Ready"
+with the key to hold. The bar appears once eSpeak NG is settled: while the card
+is up the screen is asking for one thing.
+
+*Done* is greyed until those models are in — it closes the window, and an app
+closed over a half-finished fetch is one that does not work yet. Pressing it
+without eSpeak NG asks once, *Install it* or *Not now*, and remembers the
+answer, so the question is asked once per install and not once per launch.
+
+*Finish Setup…* stays in the menu bar while eSpeak NG is missing, and opening it
+that way shows the command again — it is the only route back to it.
+
+**The Python a parse needs.** Once eSpeak NG is here, the app installs it in the
+background: about 170 MB into `~/Library/Application Support/ParrotFlow/python`.
+Nothing is asked and nothing waits for it. It is safe to do without a terminal
+because eSpeak NG came from Homebrew and the Homebrew installer installs the
+Command Line Tools, so by then there is a real `python3` to build on.
+
+It pays for the fifth rule of the `disfluency` transform, the one that tells
+"we'll let you know" from "you know, it broke". That rule only runs when a
+dictation carries `you know`, `i mean` or `like` — 3.8% of 24,576 dictations in
+one archive, but the first one was number 10 and all 33 days had one.
+
+A Mac that never installed eSpeak NG still gets it: the transform publishes
+`needs: parsing` the first time the rule is reachable and cannot run, and the
+app installs it then. That dictation keeps its other four rules and says why in
+`disfluency.declined`.
+
+`ParrotFlow --setup-parsing` still does it by hand.
 
 ## Step 3 — Prove transcription works with no voice
 
@@ -387,7 +416,8 @@ mention but notifies nobody — tell them that.
 >
 > Settings are in `~/.config/parrotflow/config.yaml`, and the names it has
 > learnt are in `vocabulary.yaml` beside it. Both reload on save. The menu bar
-> icon has *Settings* — *Edit Config…* and *View Transforms* — and *Setup…*.
+> icon has *Settings* — *Edit Config…* and *View Transforms* — and *Finish
+> Setup…* while something is still missing.
 
 ---
 

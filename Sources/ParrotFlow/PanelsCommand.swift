@@ -470,13 +470,42 @@ enum PanelsCommand {
         let vadDidNotArrive = sampleDownloads(speech: .installed)
         vadDidNotArrive.update(Transcriber.voiceDownload.id, to: .failed(.stopped))
 
+        // Screen one, which is a list and nothing else: the same registry the
+        // screen after it reports on, before any of it has started.
+        let listing = sampleDownloads(speech: .waiting)
+        let modelsPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingModels(listing))
+            .environmentObject(listing))
+
         let almostReadyPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(almostReady))
             .environmentObject(almostReady))
+        // eSpeak NG settled and the models still coming: the one state where
+        // the title is the state and there is still a bar under it.
+        let almostThere = sampleDownloads(speech: .downloading(percent: 62))
+        let almostTherePane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(almostThere, espeak: .found))
+            .environmentObject(almostThere))
+
         let readyPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(
                 ready, context: .revisiting, espeak: .found))
             .environmentObject(ready))
+        // The same screen with eSpeak NG never installed. Drawn to show that it
+        // is the same screen: nothing on Ready reports what was installed.
+        // Setting up, not revisiting — a revisit is the one context where
+        // eSpeak NG takes the screen back.
+        let readyWithoutEspeakPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(ready))
+            .environmentObject(ready))
+
+        // Opened from the menu bar with eSpeak NG still missing. Everything is
+        // downloaded, so nothing is greyed — the screen exists to offer the one
+        // thing that is left.
+        let revisitPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(ready, context: .revisiting))
+            .environmentObject(ready))
+
         let switchedOffPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(
                 ready, axStatus: .notGranted, espeak: .found))
@@ -487,13 +516,11 @@ enum PanelsCommand {
         let vadPane = AnyView(PermissionsView()
             .environmentObject(PermissionsModel.showingSetup(vadDidNotArrive, espeak: .found))
             .environmentObject(vadDidNotArrive))
-        // The same screen after "Not now": the card is gone and the line says
-        // what was decided. The alert that asks is a sheet on the window and
-        // cannot be drawn here.
-        let skippedPane = AnyView(PermissionsView()
-            .environmentObject(PermissionsModel.showingSetup(
-                ready, context: .revisiting, espeakDeclined: true))
-            .environmentObject(ready))
+        // The middle of the eSpeak NG install: Terminal has the command and
+        // this screen is waiting for the binary to turn up.
+        let openingPane = AnyView(PermissionsView()
+            .environmentObject(PermissionsModel.showingSetup(almostReady, espeak: .opening))
+            .environmentObject(almostReady))
 
         // The third element is the appearance to draw in. Every floating
         // surface is dark whatever the system is set to — that is decided in
@@ -525,15 +552,19 @@ enum PanelsCommand {
                     .accessibility, asked: true, context: .revisiting))
                 .environmentObject(ModelDownloads())),
              NSSize(width: PermissionMetrics.width, height: PermissionMetrics.height), .dark, false),
-            // The one screen the walk ends on, in its four states. The title
-            // is the state, so this is the only place the four sentences can
-            // be read against each other.
+            // The screen that lists what is coming, then the screen the walk
+            // ends on in each of its states. The title is the state, so this is
+            // the only place those sentences can be read against each other.
+            (modelsPane, setupSize(modelsPane), .dark, false),
             (almostReadyPane, setupSize(almostReadyPane), .light, false),
+            (almostTherePane, setupSize(almostTherePane), .dark, false),
             (readyPane, setupSize(readyPane), .dark, false),
+            (readyWithoutEspeakPane, setupSize(readyWithoutEspeakPane), .dark, false),
+            (revisitPane, setupSize(revisitPane), .dark, false),
             (switchedOffPane, setupSize(switchedOffPane), .dark, false),
             (didNotArrivePane, setupSize(didNotArrivePane), .light, false),
             (vadPane, setupSize(vadPane), .dark, false),
-            (skippedPane, setupSize(skippedPane), .light, false),
+            (openingPane, setupSize(openingPane), .light, false),
             (AnyView(PillView().environmentObject(notice)),
              pillSize(notice), .dark, true),
             (AnyView(PillView().environmentObject(thinking)),
@@ -743,7 +774,10 @@ enum PanelsCommand {
         downloads.update(NeuralPhonemes.soundDownload.id, to: .failed(.unreachable))
         downloads.expect(SlotModel.download)
         downloads.expect(SentenceReadings.download)
-        downloads.expect(WordVectors.download, off: ModelDownload.gateOff)
+        // Live, not `off`. It was switched off here to draw the "gate is off"
+        // row, and that row went with the old screen — all it did after that
+        // was keep the sixth model off the list.
+        downloads.expect(WordVectors.download)
         return downloads
     }
 
@@ -944,6 +978,17 @@ enum PanelsCommand {
                     later: { print("update: later") }
                 )
             )
+        // The screen that lists what is about to be fetched. A still, like the
+        // screen itself: nothing on it has started.
+        case "models":
+            let listing = sampleDownloads(speech: .waiting)
+            let pane = AnyView(
+                PermissionsView()
+                    .environmentObject(PermissionsModel.showingModels(listing))
+                    .environmentObject(listing)
+            )
+            setupWindow = window(for: pane, size: setupSize(pane))
+
         // The setup window, on the step that reports the downloads. A real
         // registry is empty in this process — nothing here fetches anything —
         // so it runs on a sample whose percentage climbs, which is the part

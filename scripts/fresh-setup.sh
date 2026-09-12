@@ -11,10 +11,11 @@ set -eu
 cd "$(dirname "$0")/.."
 . scripts/variant.sh
 
-ESPEAK=1 CONFIG=0 PURGE=0 INSTALL=1
+ESPEAK=1 PARSING=1 CONFIG=0 PURGE=0 INSTALL=1
 for arg in "$@"; do
     case "$arg" in
         --keep-espeak) ESPEAK=0 ;;
+        --keep-parsing) PARSING=0 ;;
         --config)      CONFIG=1 ;;
         --purge-old)   PURGE=1 ;;
         --no-install)  INSTALL=0 ;;
@@ -23,6 +24,7 @@ for arg in "$@"; do
 usage: scripts/fresh-setup.sh [options]
 
   --keep-espeak   leave eSpeak NG installed
+  --keep-parsing  leave the spaCy venv in place
   --config        move the config directory aside too
   --purge-old     delete .moved-* copies left by earlier runs
   --no-install    stop after the reset, do not build or launch
@@ -35,6 +37,10 @@ USAGE
 done
 
 SUPPORT="$HOME/Library/Application Support/$DISPLAY_NAME"
+# Not under $SUPPORT: the parsing venv has no variant suffix, because both
+# builds read the one copy. So a reset that only cleared $SUPPORT left it, and
+# the install that fetches it on first need had nothing left to do.
+PARSING_DIR="$HOME/Library/Application Support/ParrotFlow/python"
 SHARED="$HOME/Library/Application Support/FluidAudio/Models"
 G2P="$HOME/.cache/fluidaudio/Models"
 STAMP="$(date +%Y-%m-%d-%H%M%S)"
@@ -54,6 +60,8 @@ echo "  move aside the speech models, which the other build reads from the same 
 echo "      $SHARED/{parakeet-tdt-0.6b-v3,silero-vad}"
 echo "      $G2P"
 espeak_here && echo "  brew uninstall espeak-ng — this takes it from the other build too"
+[ "$PARSING" -eq 1 ] && [ -d "$PARSING_DIR" ] \
+    && echo "  move aside the spaCy venv — the other build reads the same copy"
 [ "$CONFIG" -eq 1 ] && echo "  move $HOME/$CONFIG_DIR aside"
 [ "$PURGE" -eq 1 ] && echo "  delete every .moved-* copy from earlier runs"
 [ "$INSTALL" -eq 1 ] && echo "  build, install and launch it again"
@@ -92,6 +100,14 @@ if [ -d "$G2P" ]; then
 fi
 echo "==> Shared speech models moved aside as .moved-$STAMP."
 
+# Moved, like the speech models and for the same reason: it is shared with the
+# other build, and this run only fetches it again if a dictation asks for a
+# parse. `ParsingInstall.finishQuietly` rebuilds it on the first marker said.
+if [ "$PARSING" -eq 1 ] && [ -d "$PARSING_DIR" ]; then
+    mv "$PARSING_DIR" "$PARSING_DIR.moved-$STAMP"
+    echo "==> spaCy venv moved aside as .moved-$STAMP."
+fi
+
 if espeak_here; then
     brew uninstall espeak-ng
     echo "==> eSpeak NG uninstalled."
@@ -103,7 +119,7 @@ if [ "$CONFIG" -eq 1 ] && [ -d "$HOME/$CONFIG_DIR" ]; then
 fi
 
 if [ "$PURGE" -eq 1 ]; then
-    find "$SHARED" "$SUPPORT" "$(dirname "$G2P")" -maxdepth 1 \
+    find "$SHARED" "$SUPPORT" "$(dirname "$G2P")" "$(dirname "$PARSING_DIR")" -maxdepth 1 \
         -name "*.moved-*" ! -name "*$STAMP" -exec rm -rf {} + 2>/dev/null || true
     echo "==> Earlier .moved-* copies deleted."
 fi

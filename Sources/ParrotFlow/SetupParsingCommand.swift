@@ -8,6 +8,12 @@ import Foundation
 /// has yet, and the audience for it is somebody who is already in a terminal.
 ///
 /// `--check` reports and changes nothing, which is what a script wants.
+///
+/// The app installs this by itself the first time a transform asks for a parse
+/// — see `ParsingInstall.finishQuietly`, which builds the venv on the
+/// interpreter a transform will actually run under. This command picks its own,
+/// and the two can differ: a venv built here on Homebrew's python is invisible
+/// to an app launched from the Dock, which resolves `/usr/bin/python3`.
 enum SetupParsingCommand {
 
     static func run(check: Bool) -> Int32 {

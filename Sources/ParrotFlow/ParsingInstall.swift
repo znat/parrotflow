@@ -161,6 +161,122 @@ enum ParsingInstall {
         return out
     }
 
+    // MARK: - Finishing it without a terminal
+
+    /// Everything a parse needs is here, eSpeak NG aside.
+    static var isComplete: Bool { isInstalled && models.allSatisfy(has) }
+
+    /// Installs it quietly, once eSpeak NG is here.
+    ///
+    /// Two callers, and both know a real `python3` exists before they ring.
+    /// At launch and when the setup window sees eSpeak NG land: eSpeak NG came
+    /// from Homebrew, and the Homebrew installer installs the Command Line
+    /// Tools, so `/usr/bin/python3` is an interpreter rather than the shim that
+    /// opens Apple's installer dialog. From `Pipeline`, when a transform
+    /// publishes `needs: parsing`: that transform just ran, so one resolved.
+    ///
+    /// It was first-need only for a while. Measured on 24,576 dictations, the
+    /// first one carrying a marker was number 10 and all 33 days had one — so
+    /// waiting saved nobody the 170 MB and cost that first dictation its rule.
+    /// The `needs: parsing` path stays as the way in for a Mac that never
+    /// installed eSpeak NG.
+    ///
+    /// Built on the interpreter a transform will actually run under, not on
+    /// whichever one this process would pick. `--setup-parsing` prefers
+    /// Homebrew's; an app launched from the Dock inherits launchd's PATH and
+    /// resolves `/usr/bin/python3`. A venv built on one and read by the other
+    /// is invisible — four green ticks from the command and the rule still off.
+    /// Asking `CommandRunner` is what makes them the same by construction.
+    ///
+    /// Fails open, into the log. Nothing waits for it.
+    static func finishQuietly() {
+        lock.lock()
+        guard !running else { lock.unlock(); return }
+        running = true
+        lock.unlock()
+
+        DispatchQueue.global(qos: .utility).async {
+            defer {
+                lock.lock()
+                running = false
+                lock.unlock()
+            }
+            // Asked here rather than at the call site. `isComplete` runs the
+            // venv's own python once per model, and both callers are on the
+            // main thread — two process launches there is a stutter in the
+            // window that is drawing at the time.
+            guard !isComplete else { return }
+            guard let interpreter = CommandRunner.transformInterpreter() else {
+                Log.write("parsing: no python3 a transform could run — nothing installed")
+                return
+            }
+            var lines: [(String, String)] = []
+            if !isInstalled {
+                lines.append((
+                    "a Python for parsing",
+                    "\(shellQuoted(interpreter)) -m venv \(shellQuoted(root.path))"))
+            }
+            lines.append((
+                "spaCy and its models",
+                "\(shellQuoted(python.path)) -m pip install --upgrade"
+                    + " --disable-pip-version-check -r \(shellQuoted(requirements.path))"))
+
+            for (what, command) in lines {
+                let status = run(command)
+                guard status == 0 else {
+                    Log.write("parsing: \(what) exited \(status); nothing after it ran")
+                    return
+                }
+            }
+            Log.write(isComplete
+                ? "parsing: spaCy is in — the disfluency marker rule runs from now on"
+                : "parsing: the install finished and something is still missing")
+        }
+    }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var running = false
+
+    /// Long enough for 170 MB of wheels on a bad connection, and short enough
+    /// that a fetch which has stopped moving does not hold `running` for the
+    /// life of the app. `--setup-parsing` has no deadline because a person is
+    /// watching it and can press ctrl-C; nobody is watching this.
+    private static let deadlineSeconds: TimeInterval = 900
+
+    /// Output to the log, not to a pipe nobody reads. pip writes a progress bar
+    /// per wheel and none of it is worth keeping.
+    private static func run(_ command: String) -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // `exec`, so the tracked process is pip rather than the shell holding
+        // it. Without it the deadline below kills the shell and leaves pip
+        // running, `running` clears, and the next caller starts a second
+        // install into the same tree. Same reason as `CommandRunner`'s own
+        // prefix; these commands are generated here and hold no shell syntax.
+        process.arguments = ["-c", "exec " + command]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return 1 }
+
+        let deadline = Date().addingTimeInterval(deadlineSeconds)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        guard !process.isRunning else {
+            Log.write("parsing: the install stopped moving after"
+                + " \(Int(deadlineSeconds))s and was terminated")
+            // SIGTERM, then SIGKILL, which cannot be ignored. Waiting for the
+            // exit is what reaps it — the same shape as `CommandRunner.stop`.
+            process.terminate()
+            let grace = Date().addingTimeInterval(1)
+            while process.isRunning, Date() < grace { Thread.sleep(forTimeInterval: 0.02) }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
+            return process.terminationStatus == 0 ? 1 : process.terminationStatus
+        }
+        return process.terminationStatus
+    }
+
     struct Step {
         let what: String
         let command: String

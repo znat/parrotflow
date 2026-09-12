@@ -183,7 +183,7 @@ cat <<'EOF'
 
     Next:
       1. Say yes to the microphone prompt — wait until it's granted.
-      2. Click the 🦜 icon, choose Setup…, grant Accessibility, and
+      2. Click the 🦜 icon, choose Finish Setup…, grant Accessibility, and
          wait until that's granted too — without it, dictation transcribes
          but can't type the result in for you.
       3. Hold Right Command, say something, let go.

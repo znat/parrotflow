@@ -629,6 +629,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissions.onRetryDownloads = { [weak self] in self?.retryDownloads() }
         warmModels()
 
+        // eSpeak NG on this Mac means Homebrew installed it, and the Homebrew
+        // installer installs the Command Line Tools — so there is a real
+        // python3 and no installer dialog to trigger. Measured on 24,576
+        // dictations: the first one carrying a marker was number 10, and all
+        // 33 days had one. Waiting for it saves nobody a download and costs
+        // that first one its rule.
+        if Phonemes.locate() != nil { ParsingInstall.finishQuietly() }
+
         // After a grace, not with the fetches. `warmModels` declares every row
         // as `waiting` and the ones already on disk report `installed` a moment
         // later, so asking immediately would put a panel up on every launch and
@@ -638,6 +646,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.launchPanelGraceSeconds) {
             [weak self] in
             guard let self else { return }
+            // Not underneath the setup walk. Its second screen is a list of
+            // the same downloads, and the panel would say it again in front of
+            // it. The walk owns the story until Done; the panel is for an
+            // ordinary launch, where there is no window and somebody wants to
+            // know why dictation is not answering yet.
+            guard !self.permissions.isShowing else { return }
             self.launch.showIfNeeded(hotkey: self.hotKeys.binding?.displayName)
         }
 
@@ -6982,7 +6996,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(settingsItem)
 
         permissionsItem = NSMenuItem(
-            title: "Setup…",
+            title: "Finish Setup…",
             action: #selector(openPermissions),
             keyEquivalent: ""
         )
@@ -7333,12 +7347,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: NSMenuDelegate {
 
-    /// Granting permissions is a chore, not a feature. The item is there while
-    /// one of them still needs doing and gone once they are done — checked as
-    /// the menu opens, because the answer changes in System Settings rather
-    /// than in this app.
+    /// Setting up is a chore, not a feature. The item is there while something
+    /// still needs doing and gone once nothing does — checked as the menu
+    /// opens, because both answers change outside this app: a permission in
+    /// System Settings, eSpeak NG in Terminal.
     func menuNeedsUpdate(_ menu: NSMenu) {
-        permissionsItem.isHidden = !hasPermissionProblem
+        permissionsItem.isHidden = !hasUnfinishedSetup
 
         // Here rather than in `updateUI`, which runs on a 0.1s timer while
         // recording: the device is picked in System Settings, so the moment the
@@ -7348,6 +7362,23 @@ extension AppDelegate: NSMenuDelegate {
         inputDeviceItem.isHidden = device == nil
         inputDeviceItem.title = device.map { "Microphone  ·  \($0)" } ?? ""
         inputDeviceItem.submenu = microphoneMenu()
+    }
+
+    /// What the menu bar offers to finish.
+    ///
+    /// Three things, and none of them fixes itself. A permission is answered in
+    /// System Settings. eSpeak NG is a command in Terminal, and the setup
+    /// window is where that command lives. A blocking download that failed has
+    /// a Try again button on that same window, and this item is the only route
+    /// to it — the walk is over and the hotkey path only opens the window when
+    /// a permission is missing.
+    ///
+    /// A download still in flight is not here. It finishes on its own, and an
+    /// item that came and went every launch would say nothing.
+    private var hasUnfinishedSetup: Bool {
+        hasPermissionProblem
+            || Phonemes.locate() == nil
+            || ModelDownloads.shared.blockingFailure != nil
     }
 
     private var hasPermissionProblem: Bool {

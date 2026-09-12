@@ -140,11 +140,19 @@ repo-settings:
 ## The export reaches scripts/release.sh through the prerequisite. Without it
 ## release.sh refuses to build without a Developer ID, which is what stops a
 ## mis-signed release reaching users — see the note there.
+## TRY_DEST=/Applications rehearses where TCC will actually keep a grant.
+## /tmp is world-writable and an app there may never appear in the
+## Accessibility list, so the permission half cannot be tested from there.
+##
+## The directory is no longer cleared first. install.sh replaces the bundle
+## itself, and an `rm -rf` of a path somebody can pass in is one keystroke
+## from deleting /Applications.
+TRY_DEST ?= /tmp/parrotflow-try
 try-install: export PARROTFLOW_REHEARSAL = 1
 try-install: release
-	@rm -rf /tmp/parrotflow-try && mkdir -p /tmp/parrotflow-try
+	@mkdir -p "$(TRY_DEST)"
 	@PARROTFLOW_BASE_URL="file://$(PWD)/dist" \
-	 PARROTFLOW_DEST=/tmp/parrotflow-try sh scripts/install.sh
+	 PARROTFLOW_DEST="$(TRY_DEST)" sh scripts/install.sh
 
 ## Put this variant back to a first run and install it again — the setup
 ## screen with something to do. Forgets its permissions, deletes its models,
