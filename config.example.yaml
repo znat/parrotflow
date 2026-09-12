@@ -38,6 +38,11 @@ audio:
   second_opinion: true
 
 logging:
+  # One timeline per dictation in spans.jsonl, beside the recordings: every
+  # step, every decode, what each cost. Rotates at 64 MB. `--trace-view` draws
+  # one, and `--bug-report` carries a wordless copy of the last. See docs/cli.md.
+  spans: true
+
   # Saves each dictation's recording to ~/.config/parrotflow/recordings, for
   # --transcribe, calibration, or hearing what the app heard.
   audio: false
@@ -271,3 +276,33 @@ transforms:
     command: examples/disfluency/disfluency.py
     returns: json
     tests: { path: examples/disfluency/cases.yaml }
+
+  # Opens the last dictation's timeline in a text editor: every step, every
+  # decode, what each cost and what each stage changed. See docs/cli.md.
+  #
+  # Asked for out loud, not offered on a chip. Uncomment `offer:` and `key:`
+  # for the chip — `t` collides with "the", "this" and "that", so a dictation
+  # starting with one of those inside the offer window opens a trace. That is
+  # the whole cost: this command only reads, and what it opens is a text file.
+  #
+  # A full path, because `ParrotFlow` is not on `PATH`, and picked at run time
+  # because the dev build lives at `/Applications/ParrotFlowDev.app` and reads
+  # its own `spans.jsonl`. A literal path here is also a `--check-config` error
+  # on any machine that has only the other build.
+  #
+  # `printf %s "$said"` hands the sentence back: whatever a `command:` prints
+  # becomes the new transcript, and this one must leave it alone.
+  #
+  # `done:` is what the pill says afterwards. Without it a transform that
+  # leaves the sentence alone on purpose reports "nothing to change", which is
+  # true and reads as a failure.
+  - name: trace
+    description: open this dictation's trace
+    display: Opening the trace
+    say: [timeline, timings, why that was slow]
+    # offer: true
+    # key: t
+    done: Trace opened
+    command: sh -c 'said=$(cat); app=/Applications/ParrotFlow.app;
+      [ -x "$app/Contents/MacOS/ParrotFlow" ] || app=/Applications/ParrotFlowDev.app;
+      "$app/Contents/MacOS/ParrotFlow" --trace-view >/dev/null; printf %s "$said"'

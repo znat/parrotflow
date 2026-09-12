@@ -848,10 +848,13 @@ struct Pipeline: Equatable, Codable {
             // measured on your own sentences instead of quoted from a README.
             let before = output
             let started = CFAbsoluteTimeGetCurrent()
+            // `nests`, so the sub-steps a stage opens are filed under it.
+            let span = Trace.current?.open(named, kind: .stage, nests: true)
             let result = await apply(
                 step, to: output, config: config, app: app, scope: scope, words: words
             )
             let seconds = CFAbsoluteTimeGetCurrent() - started
+            span?.close(Trace.changeSummary(from: before, to: result.text))
             output = result.text
 
             // Derived, never claimed. `changed` is the comparison this loop just
@@ -1167,11 +1170,15 @@ struct Pipeline: Equatable, Codable {
         // and what it costs.
         if step.bySound ?? true, Pipeline.language(of: text, config: config) == "en" {
             let askedAt = Date()
+            let sound = Trace.current?.open("sound", kind: .part)
             let heard = await VocabularyPass.phonemeParts(
                 in: text, sounds: config.vocabularySounds, voice: "en-us",
                 language: "en", floor: config.soundBelow, claimed: parts
             )
             soundSeconds = Date().timeIntervalSince(askedAt)
+            sound?.close(config.vocabularySounds.isEmpty
+                ? "no terms with a sound"
+                : "\(heard.count) of \(config.vocabularySounds.count) over the floor")
             bySound = heard.count
             parts += heard
         }
@@ -1239,9 +1246,11 @@ struct Pipeline: Equatable, Codable {
             // machine without the 269 MB model already takes: the word lists
             // settle what they settle and the slot is never asked. Read inside
             // the branch so `gate: false` does not load it either.
+            let span = Trace.current?.open("slot_gate", kind: .part)
             let slot = (step.slotGate ?? true) ? await Vocabulary.shared.slotGate() : nil
             settled = VocabularyPass.settle(
                 changes, in: text, by: [.sound: .full, .rule: .lists], gate: slot)
+            span?.close("\(changes.count) change(s)")
         } else {
             settled = [Bool?](repeating: nil, count: changes.count)
         }
@@ -1250,6 +1259,8 @@ struct Pipeline: Equatable, Codable {
         }
         // The two tests that read the sentence, on whatever is still open.
         if config.gatesSentence, #available(macOS 14, *) {
+            let span = Trace.current?.open("sentence_gate", kind: .part)
+            defer { span?.close("\(decided.filter { $0 == nil }.count) still open") }
             let settledBySentence = await SentenceGate.settle(
                 changes, in: text, given: decided,
                 floor: config.transcription.slotFloor(

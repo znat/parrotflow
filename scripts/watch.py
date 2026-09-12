@@ -48,12 +48,31 @@ if not sys.stdout.isatty():
 WORD = re.compile(r"\S+|\s+")
 
 
-def diff(before, after):
-    """What one stage changed, as words rather than as two sentences.
+def edits(stage):
+    """What one stage changed, from the `edits` the trace now carries.
 
-    Seven stages printing their input and their output is fourteen copies of the
-    same line. The change is the only part worth reading.
+    v3 stopped storing a stage's input and output — seven stages printing both
+    was fourteen copies of the same line, and 93.6% of them said nothing had
+    happened. The change itself is all that is kept, and all that is worth
+    reading.
     """
+    changes = stage.get("edits")
+    if changes is None:
+        # A v2 line, which is most of the file. Never converted, so this is how
+        # they still read.
+        return diff(stage.get("before"), stage.get("after"))
+    parts = []
+    for change in changes:
+        was, now = change.get("was", ""), change.get("now", "")
+        if was:
+            parts.append(f"{C['red']}{was}{C['off']}")
+        if now:
+            parts.append(f"{C['green']}{now}{C['off']}")
+    return " ".join(parts) if parts else "—"
+
+
+def diff(before, after):
+    """The same, for a v2 line, which keeps both sentences instead."""
     a, b = WORD.findall(before or ""), WORD.findall(after or "")
     out = []
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
@@ -101,13 +120,24 @@ def render(record, only=None):
             why = stage.get("skip_reason") or stage.get("skipped")
             print(f"  {C['dim']}{name:<14}  skipped: {why}{C['off']}")
             continue
-        before, after = stage.get("before"), stage.get("after")
         ms = (stage.get("seconds") or 0) * 1000
         cost = f"{C['dim']}{ms:6.1f}ms{C['off']}" if ms >= 0.05 else ""
-        if before == after:
+        changed = stage.get("edits") or (
+            stage.get("edits") is None and stage.get("before") != stage.get("after")
+        )
+        if not changed:
             print(f"  {C['dim']}{name:<14}  —{C['off']}        {cost}")
         else:
-            print(f"  {C['yellow']}{name:<14}{C['off']}  {diff(before, after)}   {cost}")
+            print(f"  {C['yellow']}{name:<14}{C['off']}  {edits(stage)}   {cost}")
+        # The sub-steps, when one of them is where the time went. A stage that
+        # is 2ms of table lookups does not need four lines saying so.
+        for part in stage.get("parts") or []:
+            part_ms = (part.get("seconds") or 0) * 1000
+            if part_ms < 20:
+                continue
+            note = part.get("note") or ""
+            print(f"    {C['dim']}{part.get('name', '?'):<12}  {note:<34}"
+                  f"{part_ms:6.1f}ms{C['off']}")
         # Only the variables a stage chose to publish; the pipeline's own
         # ran/ok/ms are noise here because the line above already says them.
         published = {k: v for k, v in (stage.get("vars") or {}).items()

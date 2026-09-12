@@ -17,6 +17,21 @@ import ApplicationServices
 /// instead of being fired into a window that will swallow it.
 enum Destination: Equatable {
 
+    /// Which kind of surface this is, for `spans.jsonl`.
+    ///
+    /// The case alone. `String(describing:)` writes the associated values out
+    /// too, so a route reads `terminal(name: "Ghostty")` — the app name again,
+    /// beside the field that already holds it, and a string nothing can group
+    /// on.
+    var traceName: String {
+        switch self {
+        case .field: return "field"
+        case .terminal: return "terminal"
+        case .named: return "named"
+        case .nowhere(let reason): return "nowhere: \(reason.traceName)"
+        }
+    }
+
     /// Something with keyboard focus that will accept typed text, named by the
     /// accessibility role it reported — the log line is the only way to tell
     /// afterwards why a surface was accepted or refused.
@@ -54,6 +69,17 @@ enum Destination: Equatable {
         case noAccessibility
         case nothingFocused
         case notAField(role: String)
+
+        /// The case alone, for the reason `Destination.traceName` gives:
+        /// `notAField` carries the role, and reflection would put it in the
+        /// route string that nothing could then group on.
+        var traceName: String {
+            switch self {
+            case .noAccessibility: return "no accessibility"
+            case .nothingFocused: return "nothing focused"
+            case .notAField: return "not a field"
+            }
+        }
 
         var described: String {
             switch self {

@@ -62,6 +62,7 @@ feedback:
 logging:
   text: true    # ~/Library/Logs/ParrotFlow.log
   audio: false  # keep each dictation's recording on disk
+  spans: true   # one timeline per dictation, rotating at 64 MB
 ```
 
 ## Where things live
@@ -72,6 +73,7 @@ logging:
 | Transforms | `~/.config/parrotflow/transforms/<name>/` — one folder each |
 | Recordings | `~/.config/parrotflow/recordings` — empty unless `logging.audio: true`, and moved by `audio.output_dir` |
 | Trace | `~/.config/parrotflow/recordings/trace.jsonl` |
+| Timeline | `~/.config/parrotflow/recordings/spans.jsonl` — one per dictation, rotating at 64 MB; off with `logging.spans: false` |
 | Log | `~/Library/Logs/ParrotFlow.log` — off with `logging.text: false` |
 | The shipped examples | `~/.config/parrotflow/transforms/examples/` — refreshed from the app on every launch, not yours to edit in place |
 

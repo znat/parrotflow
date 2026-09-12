@@ -2144,11 +2144,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Taken at the press, not here: a transcript arrives seconds later and
         // the window you dictated into may not be the one in front by then.
         let app = appAtPress
+        // Zero on the timeline: the recording has just been stopped, so this is
+        // the moment the app started having work to do.
+        let stoppedAt = Date()
         // What the clip cost before it existed, both halves measured from the
         // key going down. Read off the recording rather than the recorder:
         // `stop` has already torn the recorder's own copy down.
         let capture = capturePress.map { press in
             (
+                at: press.at,
                 engine: press.engineAfter,
                 firstSample: recording.firstSampleAt.map { $0.timeIntervalSince(press.at) }
             )
@@ -2216,10 +2220,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let text = try await Trace.record(
                     wav: recording.url.lastPathComponent, source: .live,
                     app: app.map { Trace.App(name: $0.name, bundleID: $0.bundleID) },
-                    beside: recording.url.deletingLastPathComponent()
+                    beside: recording.url.deletingLastPathComponent(),
+                    // Zero on the timeline is the key coming up, not going
+                    // down. Holding a key for fifteen seconds is not work the
+                    // app did, and drawn to scale it squashes the second that
+                    // is. What the press cost is in `capture` on the corpus
+                    // line, which is where a number belongs when it is not a
+                    // span.
+                    origin: stoppedAt
                 ) {
                     Trace.current?.recordCapture(
-                        engine: capture?.engine, firstSample: capture?.firstSample
+                        engine: capture?.engine, firstSample: capture?.firstSample,
+                        at: capture?.at,
+                        stopped: capture.map { stoppedAt.timeIntervalSince($0.at) }
                     )
                     let text = try await self?.transcriber.transcribe(
                         url: recording.url, config: config, app: app, press: press.run,
@@ -2261,8 +2274,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         return
                     }
                     self.stopWatchingForEscapeIfIdle()
+                    // Timed from here, which is the wait a person actually
+                    // feels after the words are ready. Not only the paste:
+                    // this branches into commands and the panel too, and every
+                    // one of those is time between the transcript existing and
+                    // something happening.
+                    let delivering = Date()
                     self.finishTranscription(
                         text: text, destination: destination, focus: focus, for: press
+                    )
+                    Trace.deliver(
+                        wav: recording.url.lastPathComponent,
+                        seconds: Date().timeIntervalSince(delivering),
+                        route: destination.traceName,
+                        app: app?.name,
+                        beside: recording.url.deletingLastPathComponent()
                     )
                 }
             } catch {
@@ -4950,9 +4976,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Saying so beats replacing text with itself and calling it done, which
         // looks identical to the prompt having silently failed.
+        //
+        // Unless leaving the text alone was the point. A transform that opens a
+        // trace or a folder has done exactly what it was asked, and "nothing to
+        // change" reads as a failure — `done:` is how it says otherwise.
         guard cleaned != before else {
-            Log.write("offer: \(transform.name) changed nothing")
-            flashThenOffer("\(transform.name): nothing to change", tone: .plain)
+            let acted = !transform.done.isEmpty
+            Log.write("offer: \(transform.name) \(acted ? "ran" : "changed nothing")")
+            flashThenOffer(
+                acted ? transform.done : "\(transform.name): nothing to change",
+                tone: .plain
+            )
             return
         }
 
