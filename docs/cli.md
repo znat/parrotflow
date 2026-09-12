@@ -1175,18 +1175,27 @@ ParrotFlow --trace-view --perfetto   # a file to drag onto ui.perfetto.dev
 2026-09-07T14:19:23.206Z   Ghostty   0.797s
 
   gate                            0.037s  ██                              2.50s of speech
-  first pass                      0.190s    ██████████                    reached 6.08s
-  500ms of silence either side    0.292s    ████████████████              reached 8.40s
-  1000ms of silence either side   0.241s    █████████████                 reached 9.36s
-  vocabulary                      0.245s                    █████████████
+  decode pass 1                   0.190s    ██████████                    reached 6.08s
+  decode pass 2                   0.292s    ████████████████              500ms pad, reached 8.40s
+  decode pass 3                   0.241s    █████████████                 1000ms pad, reached 9.36s
+  vocabulary                      0.245s                    █████████████ Gwen -> Qwen, sarah -> Sarah
     sound                         0.243s                    █████████████ 0 of 80 over the floor
-  transform punctuation           0.072s                                  ███
+  transform punctuation           0.072s                                  ███  dot -> .
 ```
 
 Three decodes of the same clip inside a fifth of a second, and a phoneme pass
 that took more than the decode and matched nothing. Both are invisible in
 `trace.jsonl`, which keeps one figure for the winning arm and one for the whole
 stage.
+
+A stage that changed the text says what it changed, in words. A side that is
+empty renders as `""`, so `um -> ""` is a deletion and `"" -> really` an
+insertion. A stage that moved only whitespace says `spacing`, which is what
+`join` usually did. Both halves are capped: a run over six words reads as
+`7 words`, and the whole note stops at 56 characters, because a row that wraps
+is a row nobody reads. The exact character offsets stay in `trace.jsonl`, where
+`edits` keeps them — see `--trace-edits`. `--redacted` drops every note, so a
+timeline in a bug report carries none of it.
 
 From a terminal it goes to stdout, so it pipes and it **diffs** — two of these
 through `diff` answer "did that change make it slower", which no chart does.

@@ -191,8 +191,44 @@ enum TraceViewCommand {
             }
         }
 
+        // The note a stage's span carries. A different question from replay:
+        // this one is read by a person, so what it says is the whole of it.
+        let summaries: [(String, String, String?)] = [
+            ("there is a lot of borderplay in this file",
+             "there is a lot of boilerplate in this file",
+             "borderplay -> boilerplate"),
+            ("ask Gwen about sarah", "ask Qwen about Sarah",
+             "Gwen -> Qwen, sarah -> Sarah"),
+            ("um I think so", "I think so", "um -> \"\""),
+            ("I think so", "I really think so", "\"\" -> really"),
+            ("nothing changes", "nothing changes", nil),
+            ("spacing   only", "spacing only", "spacing"),
+            ("one two three four five six seven eight",
+             "eight seven six five four three two one",
+             "7 words -> \"\", \"\" -> 7 words"),
+        ]
+        for (before, after, want) in summaries {
+            let got = Trace.changeSummary(from: before, to: after)
+            guard got == want else {
+                print("✗ summary \(before.debugDescription): got"
+                    + " \(got.debugDescription), wanted \(want.debugDescription)")
+                failed += 1
+                continue
+            }
+        }
+        // Never wider than the row it sits on, whatever a stage did.
+        for (before, after) in cases + summaries.map({ ($0.0, $0.1) }) {
+            let note = Trace.changeSummary(from: before, to: after) ?? ""
+            guard note.count <= 60 else {
+                print("✗ note is \(note.count) characters: \(note)")
+                failed += 1
+                continue
+            }
+        }
+
         print(failed == 0
-            ? "✓ \(cases.count) cases and \(fuzzed) fuzzed pairs replay exactly"
+            ? "✓ \(cases.count) cases, \(summaries.count) summaries"
+                + " and \(fuzzed) fuzzed pairs replay exactly"
             : "✗ \(failed) failed")
         return failed == 0 ? 0 : 1
     }

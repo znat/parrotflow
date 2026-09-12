@@ -854,7 +854,7 @@ struct Pipeline: Equatable, Codable {
                 step, to: output, config: config, app: app, scope: scope, words: words
             )
             let seconds = CFAbsoluteTimeGetCurrent() - started
-            span?.close(result.text == before ? nil : "changed")
+            span?.close(Trace.changeSummary(from: before, to: result.text))
             output = result.text
 
             // Derived, never claimed. `changed` is the comparison this loop just

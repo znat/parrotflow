@@ -625,6 +625,75 @@ enum Trace {
         return String(chars)
     }
 
+    /// What a stage changed, in words, for its span's note.
+    ///
+    /// Words rather than the character runs `edits` returns. Those are minimal,
+    /// so `borderplay` to `boilerplate` comes back as two runs inside one word
+    /// and reads as noise. The corpus keeps the exact coordinates; this is the
+    /// line a person reads next to the step that made it.
+    ///
+    /// A side that is empty renders as `""`, so a deletion and an insertion are
+    /// told apart from a swap without a legend.
+    static func changeSummary(from before: String, to after: String) -> String? {
+        guard before != after else { return nil }
+        let old = before.split(whereSeparator: \.isWhitespace).map(String.init)
+        let new = after.split(whereSeparator: \.isWhitespace).map(String.init)
+
+        var removed = Set<Int>()
+        var inserted = Set<Int>()
+        for change in new.difference(from: old) {
+            switch change {
+            case .remove(let offset, _, _): removed.insert(offset)
+            case .insert(let offset, _, _): inserted.insert(offset)
+            }
+        }
+
+        var runs: [String] = []
+        var i = 0
+        var j = 0
+        while i < old.count || j < new.count {
+            let cut = (i < old.count && removed.contains(i))
+                || (j < new.count && inserted.contains(j))
+            guard cut else { i += 1; j += 1; continue }
+            var was: [String] = []
+            var now: [String] = []
+            while i < old.count, removed.contains(i) { was.append(old[i]); i += 1 }
+            while j < new.count, inserted.contains(j) { now.append(new[j]); j += 1 }
+            if was.isEmpty, now.isEmpty { break }
+            runs.append("\(side(was)) -> \(side(now))")
+        }
+
+        // The strings differ but no word does, so by construction the only
+        // thing between them is whitespace. `join` is the stage that does
+        // this, and saying nothing would read as a step that did nothing.
+        guard !runs.isEmpty else { return "spacing" }
+
+        var note = ""
+        for (index, run) in runs.enumerated() {
+            let joined = note.isEmpty ? run : note + ", " + run
+            guard joined.count <= noteLimit else {
+                return note.isEmpty
+                    ? String(run.prefix(noteLimit)) + "…"
+                    : note + ", +\(runs.count - index) more"
+            }
+            note = joined
+        }
+        return note
+    }
+
+    /// How many characters of `changeSummary` reach a span's note. The
+    /// timeline already spends 85 columns on the name, the number and the bar,
+    /// and a row that wraps is a row nobody reads.
+    private static let noteLimit = 56
+
+    /// One half of a change. A run longer than this is a rewrite, and printing
+    /// it would put the sentence in `spans.jsonl`.
+    private static func side(_ words: [String]) -> String {
+        guard !words.isEmpty else { return "\"\"" }
+        guard words.count <= 6 else { return "\(words.count) words" }
+        return words.joined(separator: " ")
+    }
+
     /// One change a stage made. `at` is a character offset into the text that
     /// stage was handed, so a list of these applies left to right with a
     /// running delta, or right to left with none.
@@ -918,9 +987,11 @@ enum Trace {
         /// Seconds from the collector's origin, and how long it took.
         let at: Double
         let dur: Double
-        /// Whatever this kind of span has to say about itself. Small, and never
-        /// the transcript again — a stage already writes its text to the
-        /// corpus, and repeating it here doubles the file for nothing.
+        /// Whatever this kind of span has to say about itself. A stage says
+        /// what it changed, in words — see `Trace.changeSummary`, which caps
+        /// both a run and the whole note. Capped and never the transcript
+        /// again: a stage already writes its text to the corpus, and repeating
+        /// it here doubles the file for nothing.
         let note: String?
 
         enum CodingKeys: String, CodingKey { case id, parent, name, kind, at, dur, note }
