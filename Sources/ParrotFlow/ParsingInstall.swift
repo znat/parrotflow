@@ -166,14 +166,20 @@ enum ParsingInstall {
     /// Everything a parse needs is here, eSpeak NG aside.
     static var isComplete: Bool { isInstalled && models.allSatisfy(has) }
 
-    /// Installs it quietly, the first time something actually needs a parse.
+    /// Installs it quietly, once eSpeak NG is here.
     ///
-    /// Called when a transform publishes `needs: parsing` — see `Pipeline`.
-    /// That only happens when the work was wanted and the install was not
-    /// there, so a person whose dictations never reach the rule never fetches
-    /// the 170 MB. Nothing is asked and nothing is shown: a transform reported
-    /// this, so a `python3` already runs on this Mac and there is no installer
-    /// dialog left to trigger.
+    /// Two callers, and both know a real `python3` exists before they ring.
+    /// At launch and when the setup window sees eSpeak NG land: eSpeak NG came
+    /// from Homebrew, and the Homebrew installer installs the Command Line
+    /// Tools, so `/usr/bin/python3` is an interpreter rather than the shim that
+    /// opens Apple's installer dialog. From `Pipeline`, when a transform
+    /// publishes `needs: parsing`: that transform just ran, so one resolved.
+    ///
+    /// It was first-need only for a while. Measured on 24,576 dictations, the
+    /// first one carrying a marker was number 10 and all 33 days had one — so
+    /// waiting saved nobody the 170 MB and cost that first dictation its rule.
+    /// The `needs: parsing` path stays as the way in for a Mac that never
+    /// installed eSpeak NG.
     ///
     /// Built on the interpreter a transform will actually run under, not on
     /// whichever one this process would pick. `--setup-parsing` prefers

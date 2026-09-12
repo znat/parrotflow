@@ -629,6 +629,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissions.onRetryDownloads = { [weak self] in self?.retryDownloads() }
         warmModels()
 
+        // eSpeak NG on this Mac means Homebrew installed it, and the Homebrew
+        // installer installs the Command Line Tools — so there is a real
+        // python3 and no installer dialog to trigger. Measured on 24,576
+        // dictations: the first one carrying a marker was number 10, and all
+        // 33 days had one. Waiting for it saves nobody a download and costs
+        // that first one its rule.
+        if Phonemes.locate() != nil { ParsingInstall.finishQuietly() }
+
         // After a grace, not with the fetches. `warmModels` declares every row
         // as `waiting` and the ones already on disk report `installed` a moment
         // later, so asking immediately would put a panel up on every launch and
