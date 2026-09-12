@@ -28,7 +28,7 @@ enum Destination: Equatable {
         case .field: return "field"
         case .terminal: return "terminal"
         case .named: return "named"
-        case .nowhere(let reason): return "nowhere: \(reason)"
+        case .nowhere(let reason): return "nowhere: \(reason.traceName)"
         }
     }
 
@@ -69,6 +69,17 @@ enum Destination: Equatable {
         case noAccessibility
         case nothingFocused
         case notAField(role: String)
+
+        /// The case alone, for the reason `Destination.traceName` gives:
+        /// `notAField` carries the role, and reflection would put it in the
+        /// route string that nothing could then group on.
+        var traceName: String {
+            switch self {
+            case .noAccessibility: return "no accessibility"
+            case .nothingFocused: return "nothing focused"
+            case .notAField: return "not a field"
+            }
+        }
 
         var described: String {
             switch self {

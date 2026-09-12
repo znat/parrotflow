@@ -2232,7 +2232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     Trace.current?.recordCapture(
                         engine: capture?.engine, firstSample: capture?.firstSample,
                         at: capture?.at,
-                        stopped: capture.map { -$0.at.timeIntervalSinceNow }
+                        stopped: capture.map { stoppedAt.timeIntervalSince($0.at) }
                     )
                     let text = try await self?.transcriber.transcribe(
                         url: recording.url, config: config, app: app, press: press.run,

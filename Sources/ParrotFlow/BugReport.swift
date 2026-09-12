@@ -112,14 +112,18 @@ enum BugReport {
               )
         else { return nil }
 
+        // Backwards, stopping at the first hit. `spans.jsonl` rotates at
+        // 64 MB, and parsing every line of that to keep the last one is a
+        // stall on the path somebody is already using to report a problem.
         var latest: [String: Any]?
-        for line in contents.split(separator: "\n") {
+        for line in contents.split(separator: "\n").reversed() {
             guard let data = line.data(using: .utf8),
                   let record = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   record["source"] as? String == "live",
                   record["spans"] != nil
             else { continue }
             latest = record
+            break
         }
         guard let latest, let drawn = TraceText.render(latest, notes: false) else { return nil }
         return "Timeline — the last dictation, in seconds. No transcript.\n" + drawn

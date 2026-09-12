@@ -535,9 +535,14 @@ enum Trace {
     /// Parsed back rather than carried twice: the note is what a person reads
     /// on the timeline, and a second field holding the same figure is a second
     /// field to keep in step.
+    ///
+    /// Found anywhere in the note, not at the front. A padded arm writes
+    /// `500ms pad, reached 3.02s`, and anchoring at the start left `reached`
+    /// nil on every arm but the first — which are the rows the field exists to
+    /// compare.
     fileprivate static func reached(_ note: String?) -> Double? {
-        guard let note, note.hasPrefix("reached "), note.hasSuffix("s") else { return nil }
-        return Double(note.dropFirst("reached ".count).dropLast())
+        guard let note, let at = note.range(of: "reached "), note.hasSuffix("s") else { return nil }
+        return Double(note[at.upperBound...].dropLast())
     }
 
     // MARK: - What a stage changed

@@ -353,21 +353,25 @@ enum TraceViewCommand {
 
     /// The last **live** dictation, not the last line. The file also holds
     /// replays from `--transcribe`, and a replay is not what you just said.
+    /// The newest matching timeline, found from the end of the file.
+    ///
+    /// Backwards because the answer is almost always the last line, and this
+    /// file is capped at 64 MB: parsing all of it forward to keep the final
+    /// hit is work for a file that is written far more often than it is read.
     private static func pick(_ wav: String?, from contents: String) -> [String: Any]? {
-        var found: [String: Any]?
-        for line in contents.split(separator: "\n") {
+        for line in contents.split(separator: "\n").reversed() {
             guard let data = line.data(using: .utf8),
                   let object = try? JSONSerialization.jsonObject(with: data),
                   let record = object as? [String: Any],
                   record["spans"] != nil
             else { continue }
             if let wav {
-                if (record["wav"] as? String)?.contains(wav) == true { found = record }
+                if (record["wav"] as? String)?.contains(wav) == true { return record }
             } else if record["source"] as? String == "live" {
-                found = record
+                return record
             }
         }
-        return found
+        return nil
     }
 
     private static func convert(_ record: [String: Any], redacted: Bool) throws -> Data {

@@ -1098,9 +1098,11 @@ jq -r '.stages[]? | .name as $s | (.edits // [])[] |
 
 # Press to text, end to end. `capture.at` is the key going down, to the
 # millisecond; `at` is when the pipeline finished and only to the second.
+# `.stages[]?` and a default: a clip the gate refused has `capture.at` and no
+# stages at all, and `add` over nothing is null.
 jq -r 'select(.capture.at) |
        [.capture.stopped, .vad.seconds, .asr.processing,
-        ([.stages[].seconds // 0] | add)] | @tsv' trace.jsonl
+        ([.stages[]?.seconds // 0] | add // 0)] | @tsv' trace.jsonl
 
 # What each stage really costs on your own sentences.
 jq -r '.stages[]? | select(.seconds) | [.name, .seconds] | @tsv' trace.jsonl |
