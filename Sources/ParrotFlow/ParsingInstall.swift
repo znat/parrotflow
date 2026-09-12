@@ -227,6 +227,12 @@ enum ParsingInstall {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var running = false
 
+    /// Long enough for 170 MB of wheels on a bad connection, and short enough
+    /// that a fetch which has stopped moving does not hold `running` for the
+    /// life of the app. `--setup-parsing` has no deadline because a person is
+    /// watching it and can press ctrl-C; nobody is watching this.
+    private static let deadlineSeconds: TimeInterval = 900
+
     /// Output to the log, not to a pipe nobody reads. pip writes a progress bar
     /// per wheel and none of it is worth keeping.
     private static func run(_ command: String) -> Int32 {
@@ -236,7 +242,23 @@ enum ParsingInstall {
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do { try process.run() } catch { return 1 }
-        process.waitUntilExit()
+
+        let deadline = Date().addingTimeInterval(deadlineSeconds)
+        while process.isRunning, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        guard !process.isRunning else {
+            Log.write("parsing: the install stopped moving after"
+                + " \(Int(deadlineSeconds))s and was terminated")
+            // SIGTERM, then SIGKILL, which cannot be ignored. Waiting for the
+            // exit is what reaps it — the same shape as `CommandRunner.stop`.
+            process.terminate()
+            let grace = Date().addingTimeInterval(1)
+            while process.isRunning, Date() < grace { Thread.sleep(forTimeInterval: 0.02) }
+            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            process.waitUntilExit()
+            return process.terminationStatus == 0 ? 1 : process.terminationStatus
+        }
         return process.terminationStatus
     }
 
