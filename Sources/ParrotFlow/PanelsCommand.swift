@@ -764,7 +764,10 @@ enum PanelsCommand {
         downloads.update(NeuralPhonemes.soundDownload.id, to: .failed(.unreachable))
         downloads.expect(SlotModel.download)
         downloads.expect(SentenceReadings.download)
-        downloads.expect(WordVectors.download, off: ModelDownload.gateOff)
+        // Live, not `off`. It was switched off here to draw the "gate is off"
+        // row, and that row went with the old screen — all it did after that
+        // was keep the sixth model off the list.
+        downloads.expect(WordVectors.download)
         return downloads
     }
 
