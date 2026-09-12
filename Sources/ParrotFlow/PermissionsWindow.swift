@@ -1338,11 +1338,16 @@ private struct EspeakWaitingCard: View {
                     }
                 }
 
-            Text("Terminal is installing it now. This screen notices on its own when"
-                + " it lands.")
-                .font(.system(size: SetupMetrics.at(11)))
-                .foregroundStyle(Parrot.amber)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: SetupMetrics.at(4)) {
+                Text("Terminal is installing it now. This screen notices on its own when"
+                    + " it lands.")
+                // Homebrew asks before it does anything, and a window that only
+                // says "installing" reads as one nobody has to answer.
+                Text("Terminal will ask you to confirm.")
+            }
+            .font(.system(size: SetupMetrics.at(11)))
+            .foregroundStyle(Parrot.amber)
+            .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 0)
         }
