@@ -238,6 +238,18 @@ actor Transcriber {
                 try await SlotModel.shared.prepare { label in
                     Task { await self.reportSlotModel(label) }
                 }
+                // Through `slotGate`, which is what a dictation calls, rather
+                // than loading a probe this throws away: the two must not be
+                // able to warm different things. Preparing the model was only
+                // half of it — the tokenizer and the probe are the other half,
+                // and the first dictation of every launch paid 2.5s for them
+                // while the model sat ready. Measured on three launches.
+                let started = Date()
+                if await Vocabulary.shared.slotGate() != nil {
+                    Log.write(String(
+                        format: "slot gate: warmed in %.1fs", Date().timeIntervalSince(started)
+                    ))
+                }
             } catch {
                 Log.write("slot model: \(error.localizedDescription);"
                     + " the vocabulary pass leaves what it cannot settle as it stands")
