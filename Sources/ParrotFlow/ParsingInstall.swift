@@ -190,7 +190,6 @@ enum ParsingInstall {
     ///
     /// Fails open, into the log. Nothing waits for it.
     static func finishQuietly() {
-        guard !isComplete else { return }
         lock.lock()
         guard !running else { lock.unlock(); return }
         running = true
@@ -202,6 +201,11 @@ enum ParsingInstall {
                 running = false
                 lock.unlock()
             }
+            // Asked here rather than at the call site. `isComplete` runs the
+            // venv's own python once per model, and both callers are on the
+            // main thread — two process launches there is a stutter in the
+            // window that is drawing at the time.
+            guard !isComplete else { return }
             guard let interpreter = CommandRunner.transformInterpreter() else {
                 Log.write("parsing: no python3 a transform could run — nothing installed")
                 return
@@ -244,7 +248,12 @@ enum ParsingInstall {
     private static func run(_ command: String) -> Int32 {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
-        process.arguments = ["-c", command]
+        // `exec`, so the tracked process is pip rather than the shell holding
+        // it. Without it the deadline below kills the shell and leaves pip
+        // running, `running` clears, and the next caller starts a second
+        // install into the same tree. Same reason as `CommandRunner`'s own
+        // prefix; these commands are generated here and hold no shell syntax.
+        process.arguments = ["-c", "exec " + command]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         do { try process.run() } catch { return 1 }
