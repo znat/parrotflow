@@ -7366,12 +7366,19 @@ extension AppDelegate: NSMenuDelegate {
 
     /// What the menu bar offers to finish.
     ///
-    /// eSpeak NG as well as the permissions, and it is the only reason this
-    /// item outlives a first run: the setup window is where the command to
-    /// install it lives, and without a way back there is no way to install it
-    /// later at all.
+    /// Three things, and none of them fixes itself. A permission is answered in
+    /// System Settings. eSpeak NG is a command in Terminal, and the setup
+    /// window is where that command lives. A blocking download that failed has
+    /// a Try again button on that same window, and this item is the only route
+    /// to it — the walk is over and the hotkey path only opens the window when
+    /// a permission is missing.
+    ///
+    /// A download still in flight is not here. It finishes on its own, and an
+    /// item that came and went every launch would say nothing.
     private var hasUnfinishedSetup: Bool {
-        hasPermissionProblem || Phonemes.locate() == nil
+        hasPermissionProblem
+            || Phonemes.locate() == nil
+            || ModelDownloads.shared.blockingFailure != nil
     }
 
     private var hasPermissionProblem: Bool {
