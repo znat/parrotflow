@@ -1052,7 +1052,10 @@ private struct SetupPane: View {
     /// the greyed button are that one condition.
     private var waiting: Bool { moment == .espeak || moment == .almostReady }
 
-    private var showsBar: Bool { waiting }
+    /// The bar waits for eSpeak NG to be settled. While the card is up the
+    /// screen is asking for one thing, and a bar under it is a second thing
+    /// moving in the corner of the eye.
+    private var showsBar: Bool { moment == .almostReady }
 
     /// The sentence under the title, and the key it ends on.
     ///
@@ -1100,8 +1103,8 @@ private struct SetupPane: View {
             // key line, and it would end on "or".
             return hotkeyRegistered ? "\(opening) Try again, or" : "\(opening) Try again"
         case .espeak:
-            return "A separate GPL-3 library. It helps ParrotFlow understand your own"
-                + " terms, such as your work jargon and your teammates' names."
+            return "A separate GPL-3 library. eSpeak helps ParrotFlow understand your"
+                + " own terms, such as your work jargon and your teammates' names."
         case .almostReady:
             // Nothing under the title. The bar below says the same thing
             // without a sentence.

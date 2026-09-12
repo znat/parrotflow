@@ -145,7 +145,8 @@ command, and
 *Install with Terminal* runs it where it can be watched. The screen notices the
 binary landing by itself. Once eSpeak NG is settled the title becomes the state:
 "Almost ready" while a model a dictation waits on is still coming, then "Ready"
-with the key to hold. A bar under it says how far the downloads have got.
+with the key to hold. The bar appears once eSpeak NG is settled: while the card
+is up the screen is asking for one thing.
 
 *Done* is greyed until those models are in — it closes the window, and an app
 closed over a half-finished fetch is one that does not work yet. Pressing it
