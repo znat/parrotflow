@@ -900,8 +900,7 @@ private struct ModelsPane: View {
 
             Text("ParrotFlow will download these models in the background while you"
                 + " finish setup.")
-                .font(.system(size: at(12)))
-                .foregroundStyle(.secondary)
+                .font(.system(size: at(13)))
                 .fixedSize(horizontal: false, vertical: true)
 
             group(
@@ -920,7 +919,7 @@ private struct ModelsPane: View {
 
             Spacer(minLength: at(20))
 
-            SetupFoot(title: "Next", action: onNext)
+            SetupFoot(title: "Download", action: onNext)
         }
     }
 
@@ -1101,7 +1100,8 @@ private struct SetupPane: View {
             // key line, and it would end on "or".
             return hotkeyRegistered ? "\(opening) Try again, or" : "\(opening) Try again"
         case .espeak:
-            return "Turns written words into phonemes (how they sound)."
+            return "A separate GPL-3 library. It helps ParrotFlow understand your own"
+                + " terms, such as your work jargon and your teammates' names."
         case .almostReady:
             // Nothing under the title. The bar below says the same thing
             // without a sentence.

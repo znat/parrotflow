@@ -136,10 +136,12 @@ ticked a different app.
 
 **The last two screens.** After the permissions the setup window lists the
 models it is fetching — about 1.5 GB, started at launch — with what each one
-costs. *Next* moves on; the downloads carry on behind it.
+costs. *Download* moves on; the fetches started at launch and carry on behind it.
 
-The last screen is eSpeak NG, the one thing the app cannot fetch for you. It is
-GPL-3 and a separate program, so the screen shows the Homebrew command, and
+The last screen is eSpeak NG, the one thing the app cannot fetch for you. It
+helps ParrotFlow understand your own terms — your jargon, your teammates'
+names. It is GPL-3 and a separate library, so the screen shows the Homebrew
+command, and
 *Install with Terminal* runs it where it can be watched. The screen notices the
 binary landing by itself. Once eSpeak NG is settled the title becomes the state:
 "Almost ready" while a model a dictation waits on is still coming, then "Ready"
